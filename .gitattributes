@@ -1,0 +1,11 @@
+# Force LF for all text files
+ text=auto eol=lf
+
+# Optional explicitly mark common file types as text
+.py  text eol=lf
+.sh  text eol=lf
+.md  text eol=lf
+.sql  text eol=lf
+.pks  text eol=lf
+.pkb  text eol=lf
+.plb  text eol=lf

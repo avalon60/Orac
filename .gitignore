@@ -1,0 +1,13 @@
+.idea/
+__pycache__/
+src/controller/__pycache__/
+src/lib/__pycache__/
+*.egg-info/
+dist/
+venv/
+.venv/
+build/
+dist/
+screenshots/*.png
+logs/*.log
+/lib/
