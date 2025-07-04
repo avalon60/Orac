@@ -11,3 +11,5 @@ dist/
 screenshots/*.png
 logs/*.log
 /lib/
+
+src/orac/lib/bdds_lib.py
