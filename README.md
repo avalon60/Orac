@@ -1,4 +1,3 @@
-
 <p align="center">
   <img src="assets/images/orac-logo.png" alt="Orac Logo" width="300" height="250">
 </p>
@@ -23,13 +22,16 @@
 
 ---
 
-## ✨ Features
+## ✨ Features (currently a roadmap)
 
 - 🎤 **Voice-Driven AI**: Natural language interaction via satellite Raspberry Pi units.  
 - 🧠 **Conversational Intelligence**: Integrated with LM Studio for cutting-edge AI responses.  
 - 🏠 **Smart Hub Control**: Manage lights, media, and IoT devices seamlessly.  
+- 🧩 **Home Assistant Integrations**: Works hand-in-hand with Home Assistant for extensive smart home control.  
+- 💬 **Client Chatbot**: Interact with Orac through a web or desktop chatbot interface.  
+- 🌐 **Supports Multiple LLM Services**: Connects to LM Studio, Ollama, OpenAI, and more.  
 - 🛠 **Modular Design**: Easily extend Orac with custom skills and automations.  
-- 🌐 **Cross-Platform**: Works with Linux Mint and other major platforms.  
+- 🖥 **Cross-Platform**: Works with Linux Mint and other major platforms.  
 
 ---
 
@@ -50,7 +52,7 @@ Clone the repository and install Orac in editable mode:
 git clone https://github.com/Avalon60/orac.git
 cd orac
 pip install -e .
-````
+```
 
 *(Add any additional setup instructions here)*
 
@@ -126,6 +128,3 @@ The name **Orac** pays homage to the iconic AI from *Blake’s 7*—a nod to ret
 <p align="center">
   <em>"Logic is a wreath of pretty flowers which smell bad."</em>
 </p>
-
-
-

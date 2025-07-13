@@ -1,0 +1,9 @@
+# Include all Python files in the orac directory
+recursive-include src *.py
+
+# Include all files in the assets directory (such as images)
+recursive-include assets *
+
+# Optionally, you can specify any specific files to include
+include README.md
+include LICENSE

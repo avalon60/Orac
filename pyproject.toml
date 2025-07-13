@@ -1,0 +1,18 @@
+[project]
+name = "orac"
+version = "0.1.0"
+description = "Your project description"
+authors = [{name = "Clive Bostock"}]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# Specify the package directory
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# Additional metadata that may be required for pip to correctly identify the package
+[tool.setuptools.package-data]
+"orac" = ["**/*.py"]  # Make sure the Python files are included in the package
+
