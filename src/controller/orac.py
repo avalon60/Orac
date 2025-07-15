@@ -8,6 +8,8 @@ from model.llm_connector import LMStudioConnector, OllamaConnector
 from lib.config_mgr import ConfigManager
 from lib.fsutils import project_home
 from lib.icons import Icons
+from lib.logutil import Logger
+logger = Logger()
 
 APP_HOME = project_home()
 RESOURCES_DIR = APP_HOME / 'resources'

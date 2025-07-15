@@ -93,7 +93,7 @@ class LMStudioConnector(LLMConnector):
     def send_prompt(self, prompt_type: str, prompt: str, stream: bool = False) -> str:
         """Send prompt to LM Studio."""
         print(f"📤 Sending prompt to LM Studio (stream={stream})...")
-        return self.llm_session.predict(prompt)  # Streaming unsupported in ChatOpenAI wrapper
+        return self.llm_session.invoke(prompt)
 
     def list_models(self):
         """List available models from LM Studio."""
