@@ -1,0 +1,97 @@
+# --------------------------------------------------------------------
+# Oracle Free 23ai + APEX + ORDS + SQLcl Dockerfile for Orac (Linux only)
+# Author: Clive Bostock
+# Date: 2025-07-29
+# --------------------------------------------------------------------
+
+# ✅ Full version (not lite) — includes Java, sqlplus, and other tools
+FROM container-registry.oracle.com/database/free:latest
+
+# Build-time args
+ARG ORAC_HOME=/home/oracle/orac
+ARG APEX_VERSION=24.1
+ARG ORDS_VERSION=25.2.2.204.0103
+ARG SQLCL_VERSION=25.2.2.199.0918
+
+# Set runtime environment
+ENV ORAC_HOME=${ORAC_HOME} \
+    ORACLE_BASE=/opt/oracle \
+    ORACLE_HOME=/opt/oracle/product/23ai/dbhomeFree \
+    PATH=$PATH:/opt/oracle/product/23ai/dbhomeFree/bin
+
+# Switch to root for setup
+USER root
+
+# Create required internal directories
+RUN mkdir -p \
+    ${ORAC_HOME}/bin \
+    ${ORAC_HOME}/etc \
+    ${ORAC_HOME}/config/ords \
+    ${ORAC_HOME}/scripts/setup \
+    ${ORAC_HOME}/scripts/startup \
+    ${ORAC_HOME}/scripts/apex \
+    ${ORAC_HOME}/scripts/ords \
+    ${ORAC_HOME}/scripts/sqlcl \
+    ${ORAC_HOME}/scripts/orac_sql \
+    ${ORAC_HOME}/setup/apex/staging \
+    ${ORAC_HOME}/setup/ords/staging \
+    ${ORAC_HOME}/setup/sqlcl/staging \
+    ${ORAC_HOME}/logs
+
+# Copy deployment scripts and binary resources
+COPY --chown=54321 resources/docker/oracle/setup   ${ORAC_HOME}/scripts/setup/
+COPY --chown=54321 resources/docker/oracle/startup ${ORAC_HOME}/scripts/startup/
+COPY --chown=54321 resources/docker/oracle/bin     ${ORAC_HOME}/bin
+COPY --chown=54321 resources/docker/oracle/etc     ${ORAC_HOME}/etc
+
+# Ensure startup and bin scripts are executable
+RUN chmod +x ${ORAC_HOME}/scripts/startup/*.sh && \
+    chmod +x ${ORAC_HOME}/bin/*.sh
+
+# Switch to root to chmod before extracting as oracle
+USER root
+
+# Ensure oracle can write to staging before switching
+RUN chmod -R 777 ${ORAC_HOME}/setup/apex/staging
+RUN chmod -R 777 ${ORAC_HOME}/setup/ords/staging
+RUN chmod -R 777 ${ORAC_HOME}/setup/sqlcl/staging
+
+# Switch to oracle for safe downloads
+USER oracle
+
+# Download and extract APEX to staging
+RUN set -e && \
+  echo "📦 Downloading APEX ${APEX_VERSION}..." && \
+  curl -sL -o /tmp/apex.zip \
+    "https://download.oracle.com/otn_software/apex/apex_${APEX_VERSION}.zip" && \
+  unzip -q /tmp/apex.zip -d ${ORAC_HOME}/setup/apex/staging || (echo "❌ APEX unzip failed" && ls -lh /tmp/apex.zip && exit 1) && \
+  rm -f /tmp/apex.zip
+
+# Download and extract ORDS to staging
+RUN set -e && \
+  echo "📦 Downloading ORDS ${ORDS_VERSION}..." && \
+  curl -sL -o /tmp/ords.zip \
+    "https://download.oracle.com/otn_software/java/ords/ords-${ORDS_VERSION}.zip" && \
+  unzip -tq /tmp/ords.zip || (echo "❌ ORDS zipfile corrupt or HTML!" && head -20 /tmp/ords.zip && exit 1) && \
+  unzip -q /tmp/ords.zip -d ${ORAC_HOME}/setup/ords/staging && \
+  rm -f /tmp/ords.zip
+
+# Download and extract SQLcl to staging
+RUN set -e && \
+  echo "📦 Downloading SQLcl ${SQLCL_VERSION}..." && \
+  curl -sL -o /tmp/sqlcl.zip \
+    "https://download.oracle.com/otn_software/java/sqldeveloper/sqlcl-${SQLCL_VERSION}.zip" && \
+  unzip -q /tmp/sqlcl.zip -d ${ORAC_HOME}/setup/sqlcl/staging || (echo "❌ SQLcl unzip failed" && ls -lh /tmp/sqlcl.zip && exit 1) && \
+  rm -f /tmp/sqlcl.zip
+
+# Back to root for final setup
+USER oracle
+
+# Expose ports for database and ORDS
+EXPOSE 1521 8080 8888
+
+
+
+# Entrypoint to initialize ORDS etc.
+# ENTRYPOINT ["/home/oracle/orac/scripts/startup/start-orac.sh"]
+

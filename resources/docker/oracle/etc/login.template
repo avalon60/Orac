@@ -1,0 +1,76 @@
+# DO NOT EDIT THIS Docker4APEX SECTION.
+########################################
+### Docker4APEX environment settings ###
+########################################
+
+if [ -f ${HOME}/sqlcl/bin/sql ]
+then
+  alias sqlcl="${HOME}/sqlcl/bin/sql"
+  alias sql="${HOME}/sqlcl/bin/sql"
+  export SQLPATH=.:${HOME}/sqlcl
+fi
+                                        #########################################
+                                        #  Not generally advisable for          
+                                        # interactive use, but setting          
+                                        # ORACLE_PDB_SID is a convenient and    
+                                        # safe method in this context.          
+                                        #########################################
+
+                                        #########################################
+                                        # Uncomment the following line if
+                                        # required...
+                                        #########################################
+# export ORACLE_PDB_SID=%ORACLE_PDB%
+                                        #########################################
+                                        #  Set the Linux command prompt to      
+                                        # reflect the current user and the      
+                                        # container name.                       
+                                        #########################################
+PS1="\[\033[01;32m\]\u@%ENV_NAME%\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ "
+
+alias start-ords="/var/tmp/dapex/bin/start_ords.sh"
+alias stop-ords="/var/tmp/dapex/bin/stop_ords.sh"
+
+                                        #########################################
+                                        #  NOTE: The setting of the             
+                                        # ORACLE_PDB_SID intereferes with the   
+                                        # database stop/start operations. For   
+                                        # this reason we temporarily unset it in
+                                        # our aliases.                          
+                                        #########################################
+ORA_SAVE_SID=${ORACLE_PDB_SID}
+alias stop-db="unset ORACLE_PDB_SID; ${HOME}/shutDown.sh immediate; export ORACLE_PDB_SID=${ORACLE_SAVE_SID}"
+alias start-db="unset ORACLE_PDB_SID; cd ${HOME}; ./startUp.sh; export ORACLE_PDB_SID=${ORACLE_SAVE_SID}"
+
+                                        #########################################
+                                        #  Set the Docker4APEX in-container     
+                                        # deployment home.                      
+                                        #########################################
+export DAPEX_HOME=/var/tmp/dapex
+
+                                        #########################################
+                                        #  A dapex-home alias to take us to the 
+                                        # Docker4APEX deployment location in the
+                                        # container.                            
+                                        #########################################
+alias dapex-home="cd ${DAPEX_HOME}"
+                                        #########################################
+                                        #  Set aliases for subdirectories under 
+                                        # DAPEX_HOME...                         
+                                        #########################################
+alias dapex-etc="cd ${DAPEX_HOME}/etc"
+alias dapex-log="cd ${DAPEX_HOME}/log"
+alias dapex-bin="cd ${DAPEX_HOME}/bin"
+alias dapex-schemas="cd ${DAPEX_HOME}/schemas"
+
+                                        #########################################
+                                        #  Set aliases for Oracle database admin
+                                        # locations....                         
+                                        #########################################
+alias ora-diag="cd /opt/oracle/diag"
+LORACLE_SID=`echo ${ORACLE_SID} | tr '[A-Z]' '[a-z]'`
+alias ora-trace="cd /opt/oracle/diag/rdbms/${LORACLE_SID}/${ORACLE_SID}/trace"
+alias ora-setup="cd ${ORACLE_BASE}/scripts/setup"
+alias ora-startup="cd ${ORACLE_BASE}/scripts/startup"
+
+####### End Docker4APEX settings #######

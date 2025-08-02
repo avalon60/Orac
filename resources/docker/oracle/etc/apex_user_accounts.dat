@@ -1,0 +1,16 @@
+# Username|First-Name|Last-Name|Email Id|Default Schema|APEX Workspace|Priveleges
+#
+# The following is runtime only (last field empty)
+billy-nomates|Billy|No-mates|bill@hotmail.com|CARS|COVID_CARS|
+#
+# This is a workspace administrator
+cbostock|Clive|Bostock|clive@gmail.com|CARS|COVID_CARS|ADMIN,CREATE:DATA_LOADER:EDIT:HELP:MONITOR:SQL
+#
+# These are workspace developers
+clive|Clive|Bostock|clive@gmail.com|CARS|COVID_CARS|CREATE:DATA_LOADER:EDIT:HELP:MONITOR:SQL
+jon|Jon|Rhind|jon@gmail.com|CARS|COVID_CARS|CREATE:DATA_LOADER:EDIT:HELP:MONITOR:SQL
+rob|Rob|Castle|rob@hotmail.com|CARS|COVID_CARS|CREATE:DATA_LOADER:EDIT:HELP:MONITOR:SQL
+stuart|Stuart|Wilson|stuart@yahoo.com|CARS|COVID_CARS|CREATE:DATA_LOADER:EDIT:HELP:MONITOR:SQL
+tony|Tony Andrews|tony@yahoo.com|CARS|COVID_CARS|CREATE:DATA_LOADER:EDIT:HELP:MONITOR:SQL
+vince|Vince|Migue|vince@gmail.com|CARS|COVID_CARS|CREATE:DATA_LOADER:EDIT:HELP:MONITOR:SQL
+zed|Zed|Ali|zed@hotmail.com|CARS|COVID_CARS|CREATE:DATA_LOADER:EDIT:HELP:MONITOR:SQL

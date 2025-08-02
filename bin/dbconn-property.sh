@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #------------------------------------------------------------------------------
 # Author: Clive Bostock
-#   Date: 03 July 2025
-#   Name: ldap-resolver.ps1 (LDAP Resolver tool - LDAP Alias -> connect string)
-#  Descr: Wrapper PowerShell script for calling  ldap-resolver.py
+#   Date: 26 July 2025
+#   Name: dbconn-property
+#  Descr: Wrapper shell for calling dbconn-property.py
 #------------------------------------------------------------------------------
 
 # Use a workaround for realpath if it's not available (possibly not on Mac)

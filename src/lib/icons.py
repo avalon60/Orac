@@ -14,9 +14,6 @@ class Icons:
     print(f"{Icons.warn} Disk usage at 95%!")
     print(f"{Icons.error} Failed to connect to database.")
     """
-    robot = '🤖'  # Represents Orac or AI systems
-    settings = '🎛'  # Represents configuration or toggles
-    stop = '🛑'  # Represents shutdown/stop events
     bullet = '•'
     clock = '⏰'
     critical = '❗'
@@ -33,7 +30,6 @@ class Icons:
     star = '⭐'
     tick = '✅'
     warn = '⚠️'
-    wave = '👋'  # For graceful exits
     # We can add more as needed
 
     @classmethod

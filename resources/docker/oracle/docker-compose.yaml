@@ -1,0 +1,13 @@
+services:
+  orac:
+    image: orac:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-orac}
+    ports:
+      - "${PORT_SQLNET:-1521}:1521"
+      - "${PORT_HTTP:-8080}:8080"
+      - "${PORT_EXTRA:-8888}:8888"
+    volumes:
+      - "${ORADATA_DIR:-./data/oradata}:/u01/orac/oradata"
+    environment:
+      - ORACLE_PWD=${ORACLE_PWD}
+    restart: unless-stopped

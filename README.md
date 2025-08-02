@@ -2,7 +2,7 @@
   <img src="assets/images/orac-logo.png" alt="Orac Logo" width="300" height="250">
 </p>
 
-<h1 align="center">Orac</h1>
+<h1 align="center">Orac - Version 0.1.0</h1>
 
 <p align="center">
   <em>Your retro-futuristic home AI assistant.</em>

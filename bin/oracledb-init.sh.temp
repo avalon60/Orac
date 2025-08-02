@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+################################################################################
+# Author  : Clive Bostock
+# Date    : 2025-07-25
+#   Script: oracledb-init.sh
+# Purpose : Script to initialise the Orac container 
+################################################################################
+
+set -e
+PROG=$(basename $0)
+E="-e"
+realpath() {
+  [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"
+}
+ENTRY_POINT="$(basename $0 .sh).py"
+SCRIPT_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
+PROJECT_DIR=$(dirname "${SCRIPT_DIR}")
+BIN_DIR=${PROJECT_DIR}/bin
+CTL_DIR=${PROJECT_DIR}/src/controller
+ORAC_VERSION=$(grep "__version__" ${CTL_DIR}/__init__.py | cut -d'"' -f2)
+
+pushd ${PROJECT_DIR}
+
+ORAC_IMG=orac-db-img
+ORAC_CONTAINER=orac-db
+
+echo "💔 Stopping/removing any existing container..."
+docker stop $ORAC_CONTAINER 2>/dev/null || true
+docker rm $ORAC_CONTAINER 2>/dev/null || true
+
+echo "🔨 Building the Docker image (no cache)..."
+docker build --no-cache -t orac-db-img -f resources/docker/oracle/Dockerfile .
+
+
+echo "🚀 Starting the container..."
+docker run -d --name $ORAC_CONTAINER -p 1521:1521 -p 8080:8080 -p 8888:8888 $ORAC_IMG
+
+# Optionally wait for DB to become open
+# echo "⏳ Waiting for DB to open..."
+# until docker exec $ORAC_CONTAINER bash -c \
+#   "echo 'select open_mode from v\\$database;' | sql / as sysdba | grep -q 'READ WRITE'"
+# do
+#   echo "   ↪️ DB not open yet. Waiting..."
+#   sleep 5
+# done
+
+# echo "✅ Database is open and ready!"
+popd

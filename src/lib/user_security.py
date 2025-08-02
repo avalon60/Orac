@@ -17,7 +17,7 @@ from cryptography.hazmat.backends import default_backend
 from lib.framework_errors import UnsupportedPlatform
 from lib.fsutils import sanitise_dir_name
 from pathlib import Path
-from lib.loggerutl import log_call
+from lib.logutil import log_call
 
 import configparser
 import os

@@ -1,0 +1,27 @@
+--
+-- Docker4APEX prompt add-on.
+--
+-- Script to append to SQL Plus glogin. This causes
+-- the SQL Plus prompt to reflect the PDB name.
+-- set sqlprompt "_user '@' _connect_identifier > "
+
+-- DO NOT EDIT THIS Docker4APEX SECTION.
+----------------------------------------
+--- Docker4APEX environment settings ---
+----------------------------------------
+                                        -----------------------------------------
+                                        --  Set the SQLPLus / SQLcl prompt to   
+                                        -- reflect <pluggable-database-         
+                                        -- name>@<container-name>.              
+                                        -----------------------------------------
+define gname=idle
+column global_name new_value gname
+set heading off
+set termout off
+col global_name noprint
+select upper(sys_context ('userenv', 'con_name') || '@%CONTAINER_NAME%')  global_name from dual;
+set sqlprompt '&gname> '
+set heading on
+set termout on
+
+------- End Docker4APEX settings ------
