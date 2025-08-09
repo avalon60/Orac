@@ -13,3 +13,5 @@ logs/*.log
 /lib/
 
 src/orac/lib/bdds_lib.py
+
+bin/nohup.out

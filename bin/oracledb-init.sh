@@ -7,6 +7,8 @@
 
 set -e
 PROG=$(basename "$0")
+C="\c"
+E="-e"
 
 # Workaround for realpath if not available (e.g., on Mac)
 realpath() {
@@ -32,7 +34,8 @@ Initialise and start the Orac database container.
 Options:
   -h, --help       Show this help message and exit
   -n, --dry-run    Show what would be done, without making changes
-  -f, --force      Remove existing container before creating a new one
+  -f, --force      Remove existing container before creating a new one. 
+                   WARNING: This will destroy an existing Orac database.
       --no-cache   Build Docker image without using cache
 
 Example:
@@ -98,7 +101,8 @@ fi
 
 # Handle existing container
 if docker ps -a --format '{{.Names}}' | grep -q "^$CONTAINER_NAME$"; then
-  if [[ "$FORCE" -eq 1 ]]; then
+  if [[ "$FORCE" -eq 1 ]]
+  then
     echo "♻️ Removing existing container: $CONTAINER_NAME"
     docker rm -f "$CONTAINER_NAME"
   else
@@ -106,6 +110,16 @@ if docker ps -a --format '{{.Names}}' | grep -q "^$CONTAINER_NAME$"; then
     echo " Use --force to remove and recreate it"
     exit 1
   fi
+fi
+
+if [[ "$FORCE" -eq 1 ]]
+then
+  echo "🧹 Cleaning up old Oracle config and Orac database data remnants..."
+  sudo rm -f "${ORADATA_DIR}/.FREE.created" 
+  sudo rm -fr "${ORADATA_DIR}/dbconfig"    
+  sudo rm -fr "${ORADATA_DIR}/FREE"    
+  # echo $E "Press RETURN to continue...$C"; read DUMMY
+
 fi
 
 # Ensure Oracle data directory
@@ -139,9 +153,9 @@ export ORACLE_PWD="$ORACLE_PASSWORD"
 
 if [[ "$NO_CACHE" -eq 1 ]]
 then
-  docker buildx bake --no-cache --allow=fs.read=/home/clive/PycharmProjects/Orac
+  docker buildx bake orac --no-cache --allow=fs.read=/home/clive/PycharmProjects/Orac
 else
-  docker buildx bake --allow=fs.read=/home/clive/PycharmProjects/Orac
+  docker buildx bake orac --allow=fs.read=/home/clive/PycharmProjects/Orac
 fi
 
 popd > /dev/null
