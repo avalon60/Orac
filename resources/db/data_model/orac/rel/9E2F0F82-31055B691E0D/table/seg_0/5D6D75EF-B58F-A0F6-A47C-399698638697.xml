@@ -1,0 +1,271 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<Table class="oracle.dbtools.crest.model.design.relational.Table" directorySegmentName="seg_0" id="5D6D75EF-B58F-A0F6-A47C-399698638697" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="USERS">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>USERS</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[Stores registered users of the Orac system.
+Each record represents a unique user identity, along with their display name, contact details, and active/inactive status.
+Includes audit columns for creation/update tracking and a row_version field for optimistic locking.
+Key uses: Controls ownership of conversation history, preferences, and other user-specific settings.]]></comment>
+<commentInRDBMS><![CDATA[Stores registered users of the Orac system.]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>D5B2E279-6892-C0D2-8370-9192D630811C</importedID>
+<allowColumnReorder>false</allowColumnReorder>
+<existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
+<parsed>true</parsed>
+<columns itemClass="oracle.dbtools.crest.model.design.relational.Column">
+<Column name="USER_ID" id="1FEA3C39-B46D-00D0-8926-978F12A4AEDB">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USERS</sourceObjSchema>
+<sourceObjName>USER_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[user_id — Primary key for the orac.users table.
+Generated automatically by Oracle on insert (generated always as identity).
+Used as a foreign key from orac.user\_preferences.user\_id and orac.context\_history.user\_id to relate preferences and conversation turns to a user.
+Immutable once created and never reused.
+]]></comment>
+<commentInRDBMS><![CDATA[user_id — Primary key for the orac.users table.]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>5E67DC50-AF76-94FB-5AF1-12FBAA1D23DE</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementColumn>true</autoIncrementColumn>
+<identityColumn>true</identityColumn>
+<autoIncrementGenerateAlways>true</autoIncrementGenerateAlways>
+<autoIncrementCycle>false</autoIncrementCycle>
+<autoIncrementDisableCache>false</autoIncrementDisableCache>
+<autoIncrementCache>20</autoIncrementCache>
+<autoIncrementOrder>false</autoIncrementOrder>
+</Column>
+<Column name="USERNAME" id="6FA6DFE8-A068-9055-635E-209D6BF5BDD4">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USERS</sourceObjSchema>
+<sourceObjName>USERNAME</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[username — Unique login handle for the orac.users table.
+Type varchar2(100) not null.
+
+Purpose: stable, human-readable identifier used in UIs, APIs, and audit defaults (preferred over email for identity).
+Change policy: should rarely change; foreign keys are unaffected (they use user_id), but external systems may cache it.
+Validation: not enforced in DDL; recommend restricting to a safe set (e.g., letters/digits/._-) and trimming whitespace in the application.
+Case: treat consistently in the application (decide on case sensitivity and normalize accordingly).]]></comment>
+<commentInRDBMS><![CDATA[username — Unique login handle for the orac.users table.]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>87E99CA2-1842-8B99-B2BC-19BDF446C540</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>100 CHAR</dataTypeSize>
+<ownDataTypeParameters>100 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="DISPLAY_NAME" id="EFA49FA8-D065-3F78-D9D5-BCC1A4A427CE">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USERS</sourceObjSchema>
+<sourceObjName>DISPLAY_NAME</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[display\_name — Human-friendly name for the user (orac.users).
+
+Purpose: shown in UIs, greetings, and reports; not used for authentication or joins.
+Not unique; multiple users may share the same display name.
+If null, the application should fall back to `username`.
+Change policy: user-editable; updates do not affect foreign keys (they use `user_id`).
+Validation: trim whitespace; allow Unicode; avoid storing sensitive info beyond what the user intends to display.
+]]></comment>
+<commentInRDBMS><![CDATA[display\_name — Human-friendly name for the user (orac.users).]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>4A6AC333-5913-C270-9E8A-125B48DF2D65</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>200 CHAR</dataTypeSize>
+<ownDataTypeParameters>200 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="EMAIL" id="D4BDF842-A34A-6F79-B05D-4615F5DE79A0">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USERS</sourceObjSchema>
+<sourceObjName>EMAIL</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[email — Primary contact email for the user (orac.users).
+
+Purpose: notifications, account recovery, and admin contact; not used for joins (foreign keys use user_id).
+Uniqueness: not enforced in DDL; make it unique only if your app requires one-account-per-email.
+Validation: enforce format and domain checks in the application; consider a verified flag and timestamp elsewhere.
+Case: treat comparisons as case-insensitive; store a normalized lowercase copy for lookups.
+Privacy: PII—restrict access, avoid logging, and consider encryption-at-rest if policy requires.]]></comment>
+<commentInRDBMS><![CDATA[email — Primary contact email for the user (orac.users).
+]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>0D0DDA3A-6FB4-9A04-966B-A2C1A4A82F40</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>320 CHAR</dataTypeSize>
+<ownDataTypeParameters>320 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="IS_ACTIVE" id="9CB1BA7F-7DDE-48A5-355F-F06333245FC0">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USERS</sourceObjSchema>
+<sourceObjName>IS_ACTIVE</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[is\_active — Logical enable/disable flag for the user (orac.users).
+Default 'Y'.
+Allowed values: 'Y' (active), 'N' (inactive), enforced by a check constraint.
+Purpose: soft-deactivate accounts without deleting related data (preferences, history remain intact).
+Usage: the application should filter to active users for sign-in/assignment; historical queries should include inactive users as needed.
+Change policy: toggled by admins or automated processes; does not affect foreign keys (they use user\_id).
+]]></comment>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>67020F9C-6096-65EC-F7E2-057D2B0D05A9</importedID>
+<constraintName>SYS_C0013289</constraintName>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT025</logicalDatatype>
+<dataTypeSize>1 CHAR</dataTypeSize>
+<listOfValues>
+<valueDef value="&apos;N&apos;" description=""/>
+<valueDef value="&apos;Y&apos;" description=""/>
+</listOfValues>
+<defaultValue>&apos;Y&apos;</defaultValue>
+<ownDataTypeParameters>1 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_ON" id="F8EE9ABF-46D2-BAC6-65D7-0BBE9DBCB3C1">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USERS</sourceObjSchema>
+<sourceObjName>CREATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>A54CD35D-0181-8153-105F-74DFDCDF8AE0</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<defaultValue>systimestamp</defaultValue>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_BY" id="41DE0ED3-9B81-FA92-7598-D66247D7EAB7">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USERS</sourceObjSchema>
+<sourceObjName>CREATED_BY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>375EBF95-9352-FB37-F9BE-F543414E6D74</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 CHAR</dataTypeSize>
+<defaultValue>coalesce(sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;), sys_context(&apos;USERENV&apos;, &apos;PROXY_USER&apos;), sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;), user)</defaultValue>
+<ownDataTypeParameters>128 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_ON" id="ACB99582-2DF5-AEBF-0323-B5614FD46657">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USERS</sourceObjSchema>
+<sourceObjName>UPDATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>47CD8488-5FA6-77A9-D62B-BA50868BDBAF</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_BY" id="6ECDF786-12EA-F4F6-DB40-71FE3CF0CFA8">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USERS</sourceObjSchema>
+<sourceObjName>UPDATED_BY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>7C4F5963-E93D-8672-7D78-60BB8A48B426</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 CHAR</dataTypeSize>
+<ownDataTypeParameters>128 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="ROW_VERSION" id="3C11281F-D55F-93D9-B065-1293F920293A">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USERS</sourceObjSchema>
+<sourceObjName>ROW_VERSION</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>13594267-3C3D-D037-CF3F-124C48055A12</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<defaultValue>1</defaultValue>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+</columns>
+<indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
+<ind_PK_UK id="769D384C-202F-3C32-667E-3FAE5D7AC07B" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="USERS_PK">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>SYS_C0013290</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>269F36A7-E797-D096-B126-D5EE4C22013E</importedID>
+<pk>true</pk>
+<indexState>Primary Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="1FEA3C39-B46D-00D0-8926-978F12A4AEDB"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="1E2CF011-B5B9-F7BB-60ED-844898842685" name="UQ_USERS_USERNAME">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>UQ_USERS_USERNAME</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>67BA3B68-8280-D5EA-CD82-2D06848A90FC</importedID>
+<indexState>Unique Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="6FA6DFE8-A068-9055-635E-209D6BF5BDD4"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="82691475-01A6-71EF-9D18-E10F1D3BBF94" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="UQ_USERS_USERNAME">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>UQ_USERS_USERNAME</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>3C4FB884-B784-08AE-505D-B88CCAE135CE</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="6FA6DFE8-A068-9055-635E-209D6BF5BDD4"/>
+</indexColumnUsage>
+</ind_PK_UK>
+</indexes>
+</Table>

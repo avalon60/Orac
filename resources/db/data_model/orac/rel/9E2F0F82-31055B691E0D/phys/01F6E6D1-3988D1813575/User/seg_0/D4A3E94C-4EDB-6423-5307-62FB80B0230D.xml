@@ -1,0 +1,25 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<UserOraclev10g class="oracle.dbtools.crest.model.design.storage.oracle.v10g.UserOraclev10g" name="ORAC" directorySegmentName="seg_0" id="D4A3E94C-4EDB-6423-5307-62FB80B0230D">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjName>ORAC</sourceObjName>
+<sourceDDLFile>orac_schema.sql</sourceDDLFile>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 08:50:35 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
+<defTableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</defTableSpace>
+<privileges>CREATE TYPE, CREATE TRIGGER, CREATE PROCEDURE, CREATE SEQUENCE, CREATE VIEW, CREATE SYNONYM, CREATE TABLE, CREATE SESSION</privileges>
+<quotaItems>
+<QuotaItem class="oracle.dbtools.crest.model.design.storage.oracle.v10g.QuotaItemOraclev10g" name="QuotaItem1" id="EC9C8A46-0937-D2D4-01BE-54CB10DDE659">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:41:37 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+</QuotaItem>
+<QuotaItem class="oracle.dbtools.crest.model.design.storage.oracle.v10g.QuotaItemOraclev10g" name="QuotaItem1" id="1ADF334D-984B-6D91-A06F-B2E402F2AD8A">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+</QuotaItem>
+</quotaItems>
+</UserOraclev10g>
