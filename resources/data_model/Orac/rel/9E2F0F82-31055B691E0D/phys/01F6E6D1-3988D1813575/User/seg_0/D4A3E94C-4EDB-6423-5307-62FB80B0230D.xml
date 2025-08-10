@@ -1,0 +1,8 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<UserOraclev10g class="oracle.dbtools.crest.model.design.storage.oracle.v10g.UserOraclev10g" name="orac" directorySegmentName="seg_0" id="D4A3E94C-4EDB-6423-5307-62FB80B0230D">
+<sourceDDLFile>orac_schema.sql</sourceDDLFile>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 08:50:35 UTC</createdTime>
+<ownerDesignName>Orac</ownerDesignName>
+<schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
+</UserOraclev10g>

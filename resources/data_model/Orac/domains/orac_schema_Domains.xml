@@ -1,0 +1,107 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<DomainFile class="oracle.dbtools.crest.model.design.DomainFileWrapper" fileName="orac_schema_Domains">
+<domains>
+<Domain class="oracle.dbtools.crest.model.design.Domain" name="VARCHAR_0_0_200" id="020957EB-869B-D2C0-44BE-EB35A9CB8BE9">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 08:50:40 UTC</createdTime>
+<ownerDesignName>Orac</ownerDesignName>
+<avTSortOrder>0</avTSortOrder>
+<dataTypePrecision>0</dataTypePrecision>
+<dataTypeScale>0</dataTypeScale>
+<dataTypeSize>200</dataTypeSize>
+<fileName>orac_schema_Domains</fileName>
+<logicalDatatype>LOGDT024</logicalDatatype>
+</Domain>
+<Domain class="oracle.dbtools.crest.model.design.Domain" name="VARCHAR_0_0_320" id="24EA59B8-A486-10D8-E5B6-86420E297AAD">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 08:50:40 UTC</createdTime>
+<ownerDesignName>Orac</ownerDesignName>
+<avTSortOrder>0</avTSortOrder>
+<dataTypePrecision>0</dataTypePrecision>
+<dataTypeScale>0</dataTypeScale>
+<dataTypeSize>320</dataTypeSize>
+<fileName>orac_schema_Domains</fileName>
+<logicalDatatype>LOGDT024</logicalDatatype>
+</Domain>
+<Domain class="oracle.dbtools.crest.model.design.Domain" name="Timestamp_6_0_0" id="3B0CE3C6-4C56-38AC-2E45-F27B7F728547">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 08:50:40 UTC</createdTime>
+<ownerDesignName>Orac</ownerDesignName>
+<avTSortOrder>0</avTSortOrder>
+<dataTypePrecision>6</dataTypePrecision>
+<fileName>orac_schema_Domains</fileName>
+<logicalDatatype>LOGDT015</logicalDatatype>
+</Domain>
+<Domain class="oracle.dbtools.crest.model.design.Domain" name="VARCHAR_0_0_64" id="3C59AA80-58F5-5731-6810-81B00DFA8A7A">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 08:50:40 UTC</createdTime>
+<ownerDesignName>Orac</ownerDesignName>
+<avTSortOrder>0</avTSortOrder>
+<dataTypePrecision>0</dataTypePrecision>
+<dataTypeScale>0</dataTypeScale>
+<dataTypeSize>64</dataTypeSize>
+<fileName>orac_schema_Domains</fileName>
+<logicalDatatype>LOGDT024</logicalDatatype>
+</Domain>
+<Domain class="oracle.dbtools.crest.model.design.Domain" name="CHAR_0_0_1" id="7371172D-C9DA-30C3-58EE-C40143F4A8C1">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 08:50:40 UTC</createdTime>
+<ownerDesignName>Orac</ownerDesignName>
+<avTSortOrder>0</avTSortOrder>
+<dataTypePrecision>0</dataTypePrecision>
+<dataTypeScale>0</dataTypeScale>
+<dataTypeSize>1</dataTypeSize>
+<fileName>orac_schema_Domains</fileName>
+<logicalDatatype>LOGDT025</logicalDatatype>
+</Domain>
+<Domain class="oracle.dbtools.crest.model.design.Domain" name="NUMERIC_0_0_0" id="867913E1-9774-9896-EE5C-DE6122939049">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 08:50:40 UTC</createdTime>
+<ownerDesignName>Orac</ownerDesignName>
+<avTSortOrder>0</avTSortOrder>
+<fileName>orac_schema_Domains</fileName>
+<logicalDatatype>LOGDT019</logicalDatatype>
+</Domain>
+<Domain class="oracle.dbtools.crest.model.design.Domain" name="VARCHAR_0_0_20" id="A6CB7776-A49E-7329-27F4-047F67BD6FC0">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 08:50:40 UTC</createdTime>
+<ownerDesignName>Orac</ownerDesignName>
+<avTSortOrder>0</avTSortOrder>
+<dataTypePrecision>0</dataTypePrecision>
+<dataTypeScale>0</dataTypeScale>
+<dataTypeSize>20</dataTypeSize>
+<fileName>orac_schema_Domains</fileName>
+<logicalDatatype>LOGDT024</logicalDatatype>
+</Domain>
+<Domain class="oracle.dbtools.crest.model.design.Domain" name="VARCHAR_0_0_100" id="B49C94F8-06A2-3DA0-5D4B-D772411E89BC">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 08:50:40 UTC</createdTime>
+<ownerDesignName>Orac</ownerDesignName>
+<avTSortOrder>0</avTSortOrder>
+<dataTypePrecision>0</dataTypePrecision>
+<dataTypeScale>0</dataTypeScale>
+<dataTypeSize>100</dataTypeSize>
+<fileName>orac_schema_Domains</fileName>
+<logicalDatatype>LOGDT024</logicalDatatype>
+</Domain>
+<Domain class="oracle.dbtools.crest.model.design.Domain" name="VARCHAR_0_0_128" id="C7155CD1-9A85-FCDF-93A5-2D0D2EB8E5ED">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 08:50:40 UTC</createdTime>
+<ownerDesignName>Orac</ownerDesignName>
+<avTSortOrder>0</avTSortOrder>
+<dataTypePrecision>0</dataTypePrecision>
+<dataTypeScale>0</dataTypeScale>
+<dataTypeSize>128</dataTypeSize>
+<fileName>orac_schema_Domains</fileName>
+<logicalDatatype>LOGDT024</logicalDatatype>
+</Domain>
+<Domain class="oracle.dbtools.crest.model.design.Domain" name="JSON_0_0_0" id="CE896F6C-ABE9-B764-C9A9-0F4DB3F1B247">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 08:50:40 UTC</createdTime>
+<ownerDesignName>Orac</ownerDesignName>
+<avTSortOrder>0</avTSortOrder>
+<fileName>orac_schema_Domains</fileName>
+<logicalDatatype>47823B89-BECE-2D4A-B641-EE3BE6149078</logicalDatatype>
+</Domain>
+</domains>
+</DomainFile>

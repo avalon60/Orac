@@ -1,0 +1,13 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<OSDM_Design class="oracle.dbtools.crest.model.design.Design" name="Orac" id="7044DE98-87D6-184C-D2E7-9A410638FE95" version="3.5">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 08:28:55 UTC</createdTime>
+<ownerDesignName>Orac</ownerDesignName>
+<capitalNames>false</capitalNames>
+<designId>7044DE98-87D6-184C-D2E7-9A410638FE95</designId>
+<usedDesignStorageDescriptors>
+<designDescr class="oracle.dbtools.crest.model.design.Design$DesignStorageDesc" id="D348C66B-2FE0-3699-1992-7C98E8CBA3EF">
+<designStoragePath>/orac_schema</designStoragePath>
+</designDescr>
+</usedDesignStorageDescriptors>
+</OSDM_Design>
