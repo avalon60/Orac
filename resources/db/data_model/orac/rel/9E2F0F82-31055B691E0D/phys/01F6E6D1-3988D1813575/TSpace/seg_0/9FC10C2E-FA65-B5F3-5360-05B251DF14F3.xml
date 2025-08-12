@@ -1,0 +1,18 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<TableSpaceOraclev10g class="oracle.dbtools.crest.model.design.storage.oracle.v10g.TableSpaceOraclev10g" name="USERS" directorySegmentName="seg_0" id="9FC10C2E-FA65-B5F3-5360-05B251DF14F3">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>USERS</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:41:34 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<dsInitialExtent>65536</dsInitialExtent>
+<dsMaxExtents>2147483645</dsMaxExtents>
+<emUniformSize>0</emUniformSize>
+<extentManagement>LOCAL</extentManagement>
+<minExtLen>65536</minExtLen>
+<dsCompression>NOCOMPRESS</dsCompression>
+<encrypt>NO</encrypt>
+<fileType>BIGFILE</fileType>
+<inMemory>NO</inMemory>
+</TableSpaceOraclev10g>

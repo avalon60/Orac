@@ -1,0 +1,19 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<TriggerOraclev10g class="oracle.dbtools.crest.model.design.storage.oracle.v10g.TriggerOraclev10g" name="TRG_CTX_EMB_BU" directorySegmentName="seg_0" id="79E1F2EE-5C08-CBEA-BF6E-A9471FDBBE65">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>TRG_CTX_EMB_BU</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:44:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<actions>UPDATE</actions>
+<body><![CDATA[begin
+  :new.updated_on  := systimestamp;
+  :new.updated_by  := sys_context('USERENV','SESSION_USER');
+  :new.row_version := nvl(:old.row_version,1) + 1;
+end;
+]]></body>
+<triggerTime>BEFORE</triggerTime>
+<owner>D4A3E94C-4EDB-6423-5307-62FB80B0230D</owner>
+<table>A703D056-3A30-58DD-2CFC-5F3E52F72A6E</table>
+</TriggerOraclev10g>

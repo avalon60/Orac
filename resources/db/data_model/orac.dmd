@@ -1,0 +1,25 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<OSDM_Design class="oracle.dbtools.crest.model.design.Design" name="orac" id="7044DE98-87D6-184C-D2E7-9A410638FE95" version="3.5">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 08:28:55 UTC</createdTime>
+<ownerDesignName>Orac</ownerDesignName>
+<capitalNames>false</capitalNames>
+<designId>7044DE98-87D6-184C-D2E7-9A410638FE95</designId>
+<usedDesignStorageDescriptors>
+<designDescr class="oracle.dbtools.crest.model.design.Design$DesignStorageDesc" id="D348C66B-2FE0-3699-1992-7C98E8CBA3EF">
+<designStoragePath>/orac_schema</designStoragePath>
+</designDescr>
+<designDescr class="oracle.dbtools.crest.model.design.Design$DesignStorageDesc" id="C47ED550-BE6D-F94A-350F-6975D1E6447B">
+<designStoragePath>/orac_schema</designStoragePath>
+</designDescr>
+<designDescr class="oracle.dbtools.crest.model.design.Design$DesignStorageDesc" id="76890C99-9750-79E0-B141-C9CE265EE36E">
+<designStoragePath>/home/clive/DataModels</designStoragePath>
+</designDescr>
+<designDescr class="oracle.dbtools.crest.model.design.Design$DesignStorageDesc" id="48492FB5-EA45-AC30-0A6E-7CC0FFA0284D">
+<designStoragePath>/home/clive/DataModels</designStoragePath>
+</designDescr>
+<designDescr class="oracle.dbtools.crest.model.design.Design$DesignStorageDesc" id="1BCF1D37-A744-E12D-7434-118D667E32B5">
+<designStoragePath>/home/clive/DataModels</designStoragePath>
+</designDescr>
+</usedDesignStorageDescriptors>
+</OSDM_Design>

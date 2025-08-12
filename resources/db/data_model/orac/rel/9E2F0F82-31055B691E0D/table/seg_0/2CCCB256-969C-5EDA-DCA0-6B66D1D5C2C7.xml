@@ -1,0 +1,229 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<Table class="oracle.dbtools.crest.model.design.relational.Table" directorySegmentName="seg_0" id="2CCCB256-969C-5EDA-DCA0-6B66D1D5C2C7" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="USER_PREFERENCES">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>USER_PREFERENCES</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[Stores key–value preference settings for each user.
+Each preference belongs to exactly one user and is identified by a pref_key (e.g., "theme", "default_model").
+Values are stored as JSON for flexibility in type and structure.
+Key uses: Allows per-user customisation of behaviour, UI, and defaults without altering the core user record.]]></comment>
+<commentInRDBMS><![CDATA[Stores key–value preference settings for each user.]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>DC2C359E-E805-EEFA-B6D6-10AF43A7226A</importedID>
+<allowColumnReorder>false</allowColumnReorder>
+<existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
+<parsed>true</parsed>
+<columns itemClass="oracle.dbtools.crest.model.design.relational.Column">
+<Column name="PREF_ID" id="CEE460D9-F816-B537-556A-440A3D963E61">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PREFERENCES</sourceObjSchema>
+<sourceObjName>PREF_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>F298401A-DD6D-5B99-D0DB-6DD7314175DF</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementColumn>true</autoIncrementColumn>
+<identityColumn>true</identityColumn>
+<autoIncrementGenerateAlways>true</autoIncrementGenerateAlways>
+<autoIncrementCycle>false</autoIncrementCycle>
+<autoIncrementDisableCache>false</autoIncrementDisableCache>
+<autoIncrementCache>20</autoIncrementCache>
+<autoIncrementOrder>false</autoIncrementOrder>
+</Column>
+<Column name="USER_ID" id="9F284D13-2632-AD60-5384-80CA498428FC">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PREFERENCES</sourceObjSchema>
+<sourceObjName>USER_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>479D26FD-F536-D71B-DE11-0671EA66CBAA</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+<associations>
+<colAssociation fkAssociation="B45D887B-8EF6-D415-4E69-B8B8C4CB5450" referredColumn="1FEA3C39-B46D-00D0-8926-978F12A4AEDB"/>
+</associations>
+</Column>
+<Column name="PREF_KEY" id="36BF75FF-DBC8-0863-0C72-84B91B499355">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PREFERENCES</sourceObjSchema>
+<sourceObjName>PREF_KEY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>54D5079B-D920-8AC3-B702-0F1AB22A3EC3</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>100 BYTE</dataTypeSize>
+<ownDataTypeParameters>100 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="PREF_VALUE" id="6614B507-ADA1-71C1-136E-C579700B02F5">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PREFERENCES</sourceObjSchema>
+<sourceObjName>PREF_VALUE</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>ADB20248-F145-6D17-4A63-3FB2901B90B8</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>47823B89-BECE-2D4A-B641-EE3BE6149078</logicalDatatype>
+<dataTypeSize>8200</dataTypeSize>
+<ownDataTypeParameters>8200,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_ON" id="0BE48982-7C96-A4F1-BA9B-1150451AF29F">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PREFERENCES</sourceObjSchema>
+<sourceObjName>CREATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>4D6F670D-3546-C62B-9AAF-AA473A134617</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<defaultValue>systimestamp</defaultValue>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_BY" id="8329A915-C1E4-78C8-22C1-A235859518D0">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PREFERENCES</sourceObjSchema>
+<sourceObjName>CREATED_BY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>9DE4591E-2DB2-504A-CFC6-A0CEDA6E913B</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 BYTE</dataTypeSize>
+<defaultValue>coalesce(
+                  sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;),
+                  sys_context(&apos;USERENV&apos;,&apos;PROXY_USER&apos;),
+                  sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;),
+                  user
+                )</defaultValue>
+<ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_ON" id="0B9AA781-79F8-07BA-0971-5652EDA5B029">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PREFERENCES</sourceObjSchema>
+<sourceObjName>UPDATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>6649765E-C202-5784-7945-FFFCE5542B81</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_BY" id="3F0DB3EE-C08C-4C55-BFE4-61B8CE1F8CD1">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PREFERENCES</sourceObjSchema>
+<sourceObjName>UPDATED_BY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>0290DB9F-CD2B-F47F-F2A2-8001840EC316</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 BYTE</dataTypeSize>
+<ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="ROW_VERSION" id="F2D67D6E-6ACD-4884-7422-45567BCE384B">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PREFERENCES</sourceObjSchema>
+<sourceObjName>ROW_VERSION</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>F534B493-8A57-DBBB-C6B7-C8432A95FBE8</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<defaultValue>1</defaultValue>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+</columns>
+<indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
+<ind_PK_UK id="8B5C3DC2-742E-26F1-78D3-A5E34ABD2E0D" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="USER_PREFERENCES_PK">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>SYS_C0013332</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>496DE802-3A35-43A6-E6CB-0DC6448978F2</importedID>
+<pk>true</pk>
+<indexState>Primary Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="CEE460D9-F816-B537-556A-440A3D963E61"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="C62EE904-E5F1-0884-8138-37A8DC61B777" name="UQ_USER_PREFERENCES_USER_KEY">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>UQ_USER_PREFERENCES_USER_KEY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>B2575F67-55C5-0261-C6B5-9B117B2B411C</importedID>
+<indexState>Unique Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="9F284D13-2632-AD60-5384-80CA498428FC"/>
+<colUsage columnID="36BF75FF-DBC8-0863-0C72-84B91B499355"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="7301C34C-4EC7-EF7D-4C3B-972E0429AC8B" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="UQ_USER_PREFERENCES_USER_KEY">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>UQ_USER_PREFERENCES_USER_KEY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>0219CB5B-E9C6-935F-694E-A9E60B429BD2</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="9F284D13-2632-AD60-5384-80CA498428FC"/>
+<colUsage columnID="36BF75FF-DBC8-0863-0C72-84B91B499355"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="BF7257B3-FA3E-77EC-A280-A18C8A018F77" name="FK_USER_PREFERENCES_USER">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<indexState>Foreign Key</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="9F284D13-2632-AD60-5384-80CA498428FC"/>
+</indexColumnUsage>
+</ind_PK_UK>
+</indexes>
+</Table>

@@ -1,0 +1,114 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<TableProxyOraclev20c class="oracle.dbtools.crest.model.design.storage.oracle.v20c.TableProxyOraclev20c" name="USER_PREFERENCES" directorySegmentName="seg_0" id="2CCCB256-969C-5EDA-DCA0-6B66D1D5C2C7">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
+<logging>YES</logging>
+<partitionedRowMovement>DISABLE</partitionedRowMovement>
+<segment>BDA69584-4252-01E2-FADA-BF6CE54B7D49</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<temporaryChanged>false</temporaryChanged>
+<accessDriverType>oracle_loader</accessDriverType>
+<rejectLimit></rejectLimit>
+<inMemory>NO</inMemory>
+<columnProxies itemClass="oracle.dbtools.crest.model.design.storage.oracle.v12c.ColumnProxyOraclev12c">
+<ColumnProxy name="UPDATED_ON" id="0B9AA781-79F8-07BA-0971-5652EDA5B029">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="CREATED_ON" id="0BE48982-7C96-A4F1-BA9B-1150451AF29F">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<defaultValue>systimestamp</defaultValue>
+</ColumnProxy>
+<ColumnProxy name="PREF_KEY" id="36BF75FF-DBC8-0863-0C72-84B91B499355">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="UPDATED_BY" id="3F0DB3EE-C08C-4C55-BFE4-61B8CE1F8CD1">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="PREF_VALUE" id="6614B507-ADA1-71C1-136E-C579700B02F5">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="CREATED_BY" id="8329A915-C1E4-78C8-22C1-A235859518D0">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<defaultValue>coalesce(
+                  sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;),
+                  sys_context(&apos;USERENV&apos;,&apos;PROXY_USER&apos;),
+                  sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;),
+                  user
+                )</defaultValue>
+</ColumnProxy>
+<ColumnProxy name="USER_ID" id="9F284D13-2632-AD60-5384-80CA498428FC">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="PREF_ID" id="CEE460D9-F816-B537-556A-440A3D963E61">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<autoIncrementDDL>IDENTITY_CLAUSE</autoIncrementDDL>
+</ColumnProxy>
+<ColumnProxy name="ROW_VERSION" id="F2D67D6E-6ACD-4884-7422-45567BCE384B">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<defaultValue>1</defaultValue>
+</ColumnProxy>
+</columnProxies>
+<indexProxies>
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="UQ_USER_PREFERENCES_USER_KEY" id="7301C34C-4EC7-EF7D-4C3B-972E0429AC8B">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
+<segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+</IndexProxy>
+</indexProxies>
+<foreignKeys>
+<ForeignKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.FKProxyOraclev10g" name="FK_USER_PREFERENCES_USER" id="BF7257B3-FA3E-77EC-A280-A18C8A018F77">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+</ForeignKey>
+</foreignKeys>
+<primaryKeys>
+<PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="USER_PREFERENCES_PK" id="8B5C3DC2-742E-26F1-78D3-A5E34ABD2E0D">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
+<segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<indexSegment>A9F8776D-FB19-2315-445D-6E257FA36DB9</indexSegment>
+<indexSort>SORTED</indexSort>
+<usingIndex>BY INDEX NAME</usingIndex>
+</PrimaryKey>
+</primaryKeys>
+<uniqueKeys>
+<UniqueKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.UniqueOraclev10g" name="UQ_USER_PREFERENCES_USER_KEY" id="C62EE904-E5F1-0884-8138-37A8DC61B777">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<existingIndex>7301C34C-4EC7-EF7D-4C3B-972E0429AC8B</existingIndex>
+<indexSegment>A9F8776D-FB19-2315-445D-6E257FA36DB9</indexSegment>
+<indexSort>SORTED</indexSort>
+<usingIndex>BY INDEX NAME</usingIndex>
+</UniqueKey>
+</uniqueKeys>
+</TableProxyOraclev20c>

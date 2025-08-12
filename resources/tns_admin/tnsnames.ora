@@ -1,4 +1,17 @@
-orac-db= (DESCRIPTION=
-  (ADDRESS=(PROTOCOL=TCP)(HOST=localhost)(PORT=1521))
-  (CONNECT_DATA=(SID=FREE))
-)
+orac-cdb =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = localhost)(PORT = 1521))
+    (CONNECT_DATA = (SID = FREE)(SERVER = DEDICATED))
+  )
+
+orac-pdb =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = localhost)(PORT = 1521))
+    (CONNECT_DATA = (SERVICE_NAME = FREEPDB1)(SERVER = DEDICATED))
+  )
+
+orac-docker =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = orac-db)(PORT = 1521))
+    (CONNECT_DATA = (SERVICE_NAME = FREEPDB1)(SERVER = DEDICATED))
+  )

@@ -15,11 +15,19 @@ realpath() {
 ENTRY_POINT="$(basename $0 .sh).py"
 SCRIPT_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
 PROJECT_DIR=$(dirname "${SCRIPT_DIR}")
+CONFIG_DIR=${PROJECT_DIR}/resources/config
 BIN_DIR=${PROJECT_DIR}/bin
 CTL_DIR=${PROJECT_DIR}/src/controller
 ORAC_VERSION=$(grep "__version__" ${CTL_DIR}/__init__.py | cut -d'"' -f2)
 
+source ${CONFIG_DIR}/orac.env
+
 pushd ${PROJECT_DIR}
+if [[ "$FORCE" == true ]]
+then
+  echo "🧹 Cleaning up old Oracle config and data remnants..."
+  sudo rm -rf "${ORADATA_DIR}/.FREE.created" "${ORADATA_DIR}/dbconfig/FREE"
+fi
 
 ORAC_IMG=orac-db-img
 ORAC_CONTAINER=orac-db

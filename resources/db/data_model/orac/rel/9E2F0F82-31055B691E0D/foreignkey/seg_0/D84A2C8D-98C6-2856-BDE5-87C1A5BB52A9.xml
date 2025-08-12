@@ -1,0 +1,20 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<FKIndexAssociation class="oracle.dbtools.crest.model.design.relational.FKIndexAssociation" directorySegmentName="seg_0" id="D84A2C8D-98C6-2856-BDE5-87C1A5BB52A9" containerWithKeyObject="8EA3B737-EAED-B9AE-0573-E514F573555C" localFKIndex="857231B3-3ABB-6EF7-E489-AD3380E8CAF2" name="FK_CTX_HIST_LLM">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>FK_CTX_HIST_LLM</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>C0D7402B-C461-9970-376A-C8554E2EB4BE</importedID>
+<referredTableLongName>orac.LLM_REGISTRY</referredTableLongName>
+<deleteRule>NO ACTION</deleteRule>
+<referredTableID>B9406389-853B-7191-0C47-31A66752A1C7</referredTableID>
+<keyObject>62FA5879-36CF-60E0-7211-972DB7E00F3F</keyObject>
+<referredKeyID>62FA5879-36CF-60E0-7211-972DB7E00F3F</referredKeyID>
+<mandatory>false</mandatory>
+<refColNames>LLM_ID</refColNames>
+<transferable>true</transferable>
+<rely>false</rely>
+<columnDependencyConstraintGenerateInDDL>true</columnDependencyConstraintGenerateInDDL>
+</FKIndexAssociation>

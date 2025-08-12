@@ -1,0 +1,20 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<FKIndexAssociation class="oracle.dbtools.crest.model.design.relational.FKIndexAssociation" directorySegmentName="seg_0" id="E7213C01-A13A-8C7B-1757-E77CBE553319" containerWithKeyObject="A703D056-3A30-58DD-2CFC-5F3E52F72A6E" localFKIndex="2315FD12-0CF9-0BB2-CD03-F887345560D2" name="FK_CTX_EMB_CTX">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>FK_CTX_EMB_CTX</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>767C49E2-65B3-4E13-1868-748B640DC425</importedID>
+<referredTableLongName>orac.CONTEXT_HISTORY</referredTableLongName>
+<deleteRule>CASCADE</deleteRule>
+<referredTableID>8EA3B737-EAED-B9AE-0573-E514F573555C</referredTableID>
+<keyObject>5A0EC10E-F8ED-ADA9-B79C-A50959E35B91</keyObject>
+<referredKeyID>5A0EC10E-F8ED-ADA9-B79C-A50959E35B91</referredKeyID>
+<mandatory>true</mandatory>
+<refColNames>CTX_ID</refColNames>
+<transferable>true</transferable>
+<rely>false</rely>
+<columnDependencyConstraintGenerateInDDL>true</columnDependencyConstraintGenerateInDDL>
+</FKIndexAssociation>
