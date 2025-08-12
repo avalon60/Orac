@@ -1,0 +1,322 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<Table class="oracle.dbtools.crest.model.design.relational.Table" directorySegmentName="seg_0" id="B9406389-853B-7191-0C47-31A66752A1C7" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="LLM_REGISTRY">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>LLM_REGISTRY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[Registry of available large language models (LLMs) and their configuration.
+Tracks model name, provider, maximum context size, whether the model is enabled, and how it handles conversation state (context_policy: model, app, hybrid, or external).
+Includes a JSON properties column for storing provider-specific metadata (e.g., API endpoints, pricing, fine-tuning details).
+Key uses: Provides a single source of truth for all LLMs accessible to Orac, enabling runtime selection and model-specific logic.]]></comment>
+<commentInRDBMS><![CDATA[Registry of available large language models (LLMs) and their configuration.]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>135B44DB-1AE4-61AB-08D2-8827470CC8FA</importedID>
+<allowColumnReorder>false</allowColumnReorder>
+<existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
+<parsed>true</parsed>
+<columns itemClass="oracle.dbtools.crest.model.design.relational.Column">
+<Column name="LLM_ID" id="9AF75182-54A9-89B6-AEB7-FC34F341385F">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>LLM_REGISTRY</sourceObjSchema>
+<sourceObjName>LLM_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[llm_id — Primary key for the orac.llm_registry table.
+Generated automatically by Oracle on insert (generated always as identity).
+Used as a foreign key from orac.context_history.llm_id to associate turns with a specific model configuration.
+Immutable once created and never reused.]]></comment>
+<commentInRDBMS><![CDATA[llm_id — Primary key for the orac.llm_registry table.]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>EB90874A-8B5E-0D3E-FECA-7ACD1D202263</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementColumn>true</autoIncrementColumn>
+<identityColumn>true</identityColumn>
+<autoIncrementGenerateAlways>true</autoIncrementGenerateAlways>
+<autoIncrementCycle>false</autoIncrementCycle>
+<autoIncrementDisableCache>false</autoIncrementDisableCache>
+<autoIncrementCache>20</autoIncrementCache>
+<autoIncrementOrder>false</autoIncrementOrder>
+</Column>
+<Column name="NAME" id="8DFA2CDC-1082-E69A-3B5E-EAA79C2E977D">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>LLM_REGISTRY</sourceObjSchema>
+<sourceObjName>NAME</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[name — Human-readable unique name for the model configuration.
+Type varchar2(100) not null.
+Must be unique (constraint uq_llm_registry_name).
+Used in UIs/config to select a model config; not used as a foreign key, so renaming is possible but should be rare.]]></comment>
+<commentInRDBMS><![CDATA[name — Human-readable unique name for the model configuration.]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>F500CA5F-7C3E-8035-DA97-3F8003715500</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>100 BYTE</dataTypeSize>
+<ownDataTypeParameters>100 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="PROVIDER" id="F9DFE1D1-4845-34FA-3B89-C238874D1744">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>LLM_REGISTRY</sourceObjSchema>
+<sourceObjName>PROVIDER</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[provider — Vendor/source of the model.
+
+Examples: openai, anthropic, oracle, local.
+Useful for routing, reporting, and policy decisions.]]></comment>
+<commentInRDBMS><![CDATA[provider — Vendor/source of the model.]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>F620A8E4-2811-1BC4-C74A-0D481AC350A6</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>100 BYTE</dataTypeSize>
+<ownDataTypeParameters>100 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="MODEL" id="DFB20E4A-3CDC-D013-675D-258FA0713015">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>LLM_REGISTRY</sourceObjSchema>
+<sourceObjName>MODEL</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[model — Provider’s model identifier.
+Type varchar2(200) not null.
+Examples: gpt-4.1, llama3.1-70b, cohere-command-r-plus.
+Used by the application when calling the provider API.]]></comment>
+<commentInRDBMS><![CDATA[model — Provider’s model identifier.]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>8003596D-7A60-4035-CCCA-462B14D6784B</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>200 BYTE</dataTypeSize>
+<ownDataTypeParameters>200 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CONTEXT_POLICY" id="5D1FCC2D-D173-70B2-C1A4-A784BCEB170F">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>LLM_REGISTRY</sourceObjSchema>
+<sourceObjName>CONTEXT_POLICY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[context_policy — How conversation state is managed for this model.
+
+Values: 'model', 'app', 'hybrid', 'external'.
+‘model’ = provider handles threading/context; ‘app’ = application builds/truncates context; ‘hybrid’ = mix; ‘external’ = context managed in an external service (e.g., memory store/vector DB).
+Drives prompting/assembly logic at runtime.]]></comment>
+<commentInRDBMS><![CDATA[context_policy — How conversation state is managed for this model.]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>24C6191C-07AA-B030-391C-290B441D0766</importedID>
+<constraintName>llm_reg_cc1</constraintName>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>20 BYTE</dataTypeSize>
+<listOfValues>
+<valueDef value="&apos;app&apos;" description=""/>
+<valueDef value="&apos;external&apos;" description=""/>
+<valueDef value="&apos;hybrid&apos;" description=""/>
+<valueDef value="&apos;model&apos;" description=""/>
+</listOfValues>
+<ownDataTypeParameters>20 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="MAX_CONTEXT_TOKENS" id="A99B027B-2B81-9023-D375-BD54B6CEBCA2">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>LLM_REGISTRY</sourceObjSchema>
+<sourceObjName>MAX_CONTEXT_TOKENS</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[max_conext_tokens — Maximum supported context window (tokens).
+
+Used for budgeting and truncation; when null, the application may derive from provider defaults or properties.]]></comment>
+<commentInRDBMS><![CDATA[max_conext_tokens — Maximum supported context window (tokens).
+]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>B132CD2F-190D-3847-2C7A-4674B334F7C2</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="IS_ENABLED" id="11D78E44-4CCF-BB47-B945-0809B518E38E">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>LLM_REGISTRY</sourceObjSchema>
+<sourceObjName>IS_ENABLED</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[is_enabled — Availability flag.
+Allowed values 'Y'/'N'.
+Controls whether this model can be selected without deleting its config.]]></comment>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>083D032A-BBCE-540C-1FC4-43456FA54287</importedID>
+<constraintName>SYS_C0013300</constraintName>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT025</logicalDatatype>
+<dataTypeSize>1 BYTE</dataTypeSize>
+<listOfValues>
+<valueDef value="&apos;N&apos;" description=""/>
+<valueDef value="&apos;Y&apos;" description=""/>
+</listOfValues>
+<defaultValue>&apos;Y&apos;</defaultValue>
+<ownDataTypeParameters>1 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="PROPERTIES" id="CDD8E3F7-52FC-0EED-20B9-6B8B9EBBE15F">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>LLM_REGISTRY</sourceObjSchema>
+<sourceObjName>PROPERTIES</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[preoprties — Free-form JSON for provider/model metadata.
+Type json, optional.
+Typical keys: api_base/deployment_id/endpoint, default parameters (temperature, top_p), tokenizer name, rate limits, pricing notes, safety flags.
+Keep keys stable; avoid storing secrets (use a vault/env vars instead).]]></comment>
+<commentInRDBMS><![CDATA[preoprties — Free-form JSON for provider/model metadata.]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>4E1774B9-BC49-F2F0-7897-D357A6971B53</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>47823B89-BECE-2D4A-B641-EE3BE6149078</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_ON" id="2A7703DA-E85A-FE0A-8F92-65A764418539">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>LLM_REGISTRY</sourceObjSchema>
+<sourceObjName>CREATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>04FCFDB0-8DCE-54DA-8879-BD4EB908D5A6</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<defaultValue>systimestamp</defaultValue>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_BY" id="A930F20C-CED7-4D62-AB03-A69E23EA7755">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>LLM_REGISTRY</sourceObjSchema>
+<sourceObjName>CREATED_BY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>27D37A1F-CC16-E17F-3C27-C3ABA1A9A2FE</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 BYTE</dataTypeSize>
+<defaultValue>coalesce(sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;), sys_context(&apos;USERENV&apos;, &apos;PROXY_USER&apos;), sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;), user)</defaultValue>
+<ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_ON" id="47DA6128-1150-74BD-41E5-505FD2CBCB1E">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>LLM_REGISTRY</sourceObjSchema>
+<sourceObjName>UPDATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>5C3F429D-872B-850F-942F-527311FF5216</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_BY" id="C9A9D253-D647-2C43-65E9-C3CD538A1C4A">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>LLM_REGISTRY</sourceObjSchema>
+<sourceObjName>UPDATED_BY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>9FCC5630-174B-578A-61F8-4F7388759190</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 BYTE</dataTypeSize>
+<ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="ROW_VERSION" id="BEF8DD8D-74F7-C9A8-24C1-3A331C9F692C">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>LLM_REGISTRY</sourceObjSchema>
+<sourceObjName>ROW_VERSION</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>76541B49-D833-7653-5780-9A74521E4D65</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<defaultValue>1</defaultValue>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+</columns>
+<indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
+<ind_PK_UK id="62FA5879-36CF-60E0-7211-972DB7E00F3F" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="LLM_REGISTRY_PK">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>SYS_C0013301</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>82072628-9DF6-F1B5-A2AA-C52F4EC05CCE</importedID>
+<pk>true</pk>
+<indexState>Primary Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="9AF75182-54A9-89B6-AEB7-FC34F341385F"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="360EBA7F-FF12-1B2A-F0FD-4412F839792F" name="UQ_LLM_REGISTRY_NAME">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>UQ_LLM_REGISTRY_NAME</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>CE1DF4F9-2D4A-4FE1-545D-81059C7B7914</importedID>
+<indexState>Unique Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="8DFA2CDC-1082-E69A-3B5E-EAA79C2E977D"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="C702FFDF-0D95-024E-AC57-607E9E6A1F0D" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="UQ_LLM_REGISTRY_NAME">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>UQ_LLM_REGISTRY_NAME</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>70022F4C-69C7-0155-B53A-8C16FC6970BA</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="8DFA2CDC-1082-E69A-3B5E-EAA79C2E977D"/>
+</indexColumnUsage>
+</ind_PK_UK>
+</indexes>
+</Table>

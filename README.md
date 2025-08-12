@@ -38,7 +38,7 @@
 ## 📂 Quick Links
 
 - [Installation](#-installation)
-- [Oracle XE Setup](#-oracle-xe-setup)
+- [Oracle Free Setup](#-oracle-free-setup)
 - [Usage](#-usage)
 - [License](#-license)
 
@@ -52,37 +52,37 @@ Clone the repository and install Orac in editable mode:
 git clone https://github.com/Avalon60/orac.git
 cd orac
 pip install -e .
-```
+````
 
 *(Add any additional setup instructions here)*
 
 ---
 
-## 🛢 Oracle XE Setup
+## 🛢 Oracle Free Setup
 
 Orac uses an Oracle Database for configuration and metadata storage. To get started:
 
-### Install Oracle XE (21c)
+### Install Oracle Free (23ai)
 
-Follow Oracle’s instructions to install XE:
+Follow Oracle’s instructions to install **Oracle Database Free**:
 
-* [Download Oracle XE](https://www.oracle.com/database/technologies/xe-downloads.html)
-* [Oracle XE Documentation](https://docs.oracle.com/en/database/oracle/oracle-database/21/xeinl/index.html)
+* [Download Oracle Free](https://www.oracle.com/database/free/)
+* [Oracle Free Documentation](https://docs.oracle.com/en/database/oracle/oracle-database/23/)
 
 Alternatively, you can use a **Docker container** for local development:
 
 ```bash
 docker run -d \
   -p 1521:1521 -p 5500:5500 \
-  --name oracle-xe \
-  gvenzl/oracle-xe:21-slim
+  --name oracle-free \
+  container-registry.oracle.com/database/free:23.5.0
 ```
 
 * The default container uses:
 
   * **Username**: `system`
   * **Password**: `oracle`
-  * **SID**: `XEPDB1`
+  * **Service Name**: `FREEPDB1`
 
 > ⚠️ *Change credentials for production use.*
 

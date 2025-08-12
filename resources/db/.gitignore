@@ -1,0 +1,26 @@
+# Oracle SQL Developer Data Modeler noise
+*.bak
+*.log
+*.tmp
+*.lock
+*.lck
+**/reports/
+**/exports/
+**/output/
+**/tmp/
+
+# If you ever save the design as a zip, keep it out
+*.dmd.zip
+*.sddm.zip
+
+# Generated DDL / docs (keep only curated snapshots)
+resources/db/ddl/generated/**
+resources/db/docs/exports/**
+
+# OS cruft
+.DS_Store
+Thumbs.db
+**/*.localz
+**/*.local
+**/*.git
+**/*.DS_Store

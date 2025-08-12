@@ -1,0 +1,380 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<Table class="oracle.dbtools.crest.model.design.relational.Table" directorySegmentName="seg_0" id="A703D056-3A30-58DD-2CFC-5F3E52F72A6E" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="CONTEXT_EMBEDDINGS">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>CONTEXT_EMBEDDINGS</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[Stores vector embeddings for conversation turns or other context elements.
+Each embedding links back to a context_history row via ctx_id and is stored using Oracle 23ai’s native vector datatype (size matching the embedding model, e.g., vector(1536)).
+Includes the name of the embedding model used and audit information.
+Key uses: Supports semantic search, retrieval-augmented generation (RAG), and similarity matching over stored conversation content.]]></comment>
+<commentInRDBMS><![CDATA[Stores vector embeddings for conversation turns or other context elements.]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>3DF5575A-52C6-241A-613C-3E29011C4913</importedID>
+<allowColumnReorder>false</allowColumnReorder>
+<existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
+<parsed>true</parsed>
+<columns itemClass="oracle.dbtools.crest.model.design.relational.Column">
+<Column name="EMB_ID" id="D93DC01E-9476-B6F5-0A63-173079FF2B0D">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>CONTEXT_EMBEDDINGS</sourceObjSchema>
+<sourceObjName>EMB_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[emb_id — Primary key for the orac.context_embeddings table. Generated automatically by Oracle on insert (generated always as identity). Immutable and never reused.]]></comment>
+<commentInRDBMS><![CDATA[emb_id — Primary key for the orac.context_embeddings table.]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>33F0AA94-B3A3-DDD6-F304-6AD3E90D963E</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementColumn>true</autoIncrementColumn>
+<identityColumn>true</identityColumn>
+<autoIncrementGenerateAlways>true</autoIncrementGenerateAlways>
+<autoIncrementCycle>false</autoIncrementCycle>
+<autoIncrementDisableCache>false</autoIncrementDisableCache>
+<autoIncrementCache>20</autoIncrementCache>
+<autoIncrementOrder>false</autoIncrementOrder>
+</Column>
+<Column name="CTX_ID" id="23142782-3EC6-0E4C-D0E9-999D393D68F6">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>CONTEXT_EMBEDDINGS</sourceObjSchema>
+<sourceObjName>CTX_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[ctx_id — Foreign key to orac.context_history.ctx_id. Identifies which conversation turn this embedding (or chunk) was derived from. On delete cascade removes dependent embeddings when the source turn is deleted.]]></comment>
+<commentInRDBMS><![CDATA[ctx_id — Foreign key to orac.context_history.ctx_id. ]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>15785988-3A52-D0C1-2B66-AA8E89A36616</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+<associations>
+<colAssociation fkAssociation="E7213C01-A13A-8C7B-1757-E77CBE553319" referredColumn="50C4C4B4-2A0F-EF2F-6352-978E4B1D0C96"/>
+</associations>
+</Column>
+<Column name="CHUNK_INDEX" id="2D41C1F3-F3A6-08DA-EB47-29FB73BAF297">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>CONTEXT_EMBEDDINGS</sourceObjSchema>
+<sourceObjName>CHUNK_INDEX</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[chunk_index — 1-based ordinal of the embedded chunk within a turn. Default 1. Use 1..n to represent multiple chunks for long texts. Uniqueness with (ctx_id, chunk_index) prevents duplicates.]]></comment>
+<commentInRDBMS><![CDATA[chunk_index — 1-based ordinal of the embedded chunk within a turn.]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>A70B4862-DD0F-7D3F-AFB1-17D0BD9BE582</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<defaultValue>1</defaultValue>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="SPAN_START" id="1A66B993-361F-C97C-FD3F-147989A0D32E">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>CONTEXT_EMBEDDINGS</sourceObjSchema>
+<sourceObjName>SPAN_START</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[span_start — Optional character offset (1-based) into the original turn text where this chunk begins. Aids precise reconstruction and highlighting. Nullable.]]></comment>
+<commentInRDBMS><![CDATA[span_start — Optional character offset (1-based) into the original turn text where this chunk begins. ]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>BE8F1B1E-69A2-B2F3-54CE-620E94FDBEF0</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="SPAN_END" id="61AC21B0-35C8-CD1F-2582-20A24F5C0F3C">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>CONTEXT_EMBEDDINGS</sourceObjSchema>
+<sourceObjName>SPAN_END</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[span_end —  1-based index of the last character included in the chunk (inclusive). Must be ≥ span_start.]]></comment>
+<commentInRDBMS><![CDATA[span_end — Optional character offset where this chunk ends (exclusive by convention). ]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>EA079A35-F074-16E4-FE50-524A7029AF1F</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="LOSSLESS_TEXT" id="0399072A-92EB-D086-C2B8-23469638A290">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>CONTEXT_EMBEDDINGS</sourceObjSchema>
+<sourceObjName>LOSSLESS_TEXT</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[lossless_text — Exact text string that was embedded (post any preprocessing your pipeline applied). Stored as CLOB for reproducibility without joining back to context_history. Not null.]]></comment>
+<commentInRDBMS><![CDATA[lossless_text — Exact text string that was embedded (post any preprocessing your pipeline applied). ]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>1040F910-2E3A-706C-D5A3-68B6353B7B9B</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT028</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CONTENT_SNAPSHOT" id="0D1A207D-F579-8571-5A41-BCBB9A2512DF">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>CONTEXT_EMBEDDINGS</sourceObjSchema>
+<sourceObjName>CONTENT_SNAPSHOT</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[content_snapshot — Optional JSON copy of context_history.content at embedding time (for provenance if the source evolves). Nullable; keep keys stable and avoid secrets.]]></comment>
+<commentInRDBMS><![CDATA[content_snapshot — Optional JSON copy of context_history.content at embedding time (for provenance if the source evolves). ]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>265FEB96-1427-3BBC-3838-3F007053E3D4</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>47823B89-BECE-2D4A-B641-EE3BE6149078</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="EMBEDDING" id="8BCA40FA-0071-2E0B-580D-4D766BF614D0">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>CONTEXT_EMBEDDINGS</sourceObjSchema>
+<sourceObjName>EMBEDDING</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[embedding — The vector value produced by the embedding model (Oracle 23a+i native VECTOR type). Dimension follows the model used; leave unspecified in DDL if you plan to switch models.]]></comment>
+<commentInRDBMS><![CDATA[embedding — The vector value produced by the embedding model (Oracle 23ai native VECTOR type).]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>3FD733D6-7CAC-CFB5-D271-1EA6C18CD488</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>36723B89-BECE-2D4A-B530-EE3BE6149967</logicalDatatype>
+<dataTypeScale>*</dataTypeScale>
+<ownDataTypeParameters>,,*</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="EMBEDDING_MODEL" id="74A04E31-7284-569C-3D17-F696B744F729">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>CONTEXT_EMBEDDINGS</sourceObjSchema>
+<sourceObjName>EMBEDDING_MODEL</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[embedding_model — Provider/model identifier for the embedding generator (e.g., text-embedding-3-large, bge-large-en). Used for auditing and routing. Not null.]]></comment>
+<commentInRDBMS><![CDATA[embedding_model — Provider/model identifier for the embedding generator (e.g., text-embedding-3-large, bge-large-en). ]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>B9AB5C42-8949-5CF1-BC20-99952D4B38B1</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>100 BYTE</dataTypeSize>
+<ownDataTypeParameters>100 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="EMBEDDING_PROVIDER" id="38D331B9-0D4E-66A6-9B17-244A49AC9DE7">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>CONTEXT_EMBEDDINGS</sourceObjSchema>
+<sourceObjName>EMBEDDING_PROVIDER</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[embedding_provider — Vendor/source of the embedding model (e.g., openai, oracle, local). Useful for reporting and policy. Nullable.]]></comment>
+<commentInRDBMS><![CDATA[embedding_provider — Vendor/source of the embedding model (e.g., openai, oracle, local). Useful for reporting and policy. ]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>6F0CA55E-17A7-8D52-007B-E17EEEE8E283</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>100 BYTE</dataTypeSize>
+<defaultValue>oracle</defaultValue>
+<ownDataTypeParameters>100 BYTE,,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="DISTANCE_METRIC" id="48205BF0-DAB7-69C0-E568-F1031F7DC7BD">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>CONTEXT_EMBEDDINGS</sourceObjSchema>
+<sourceObjName>DISTANCE_METRIC</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[distance_metric — Similarity metric intended for this embedding column (default 'COSINE'). Allowed values: COSINE, L2, L2_SQUARED, DOT, MANHATTAN, HAMMING, JACCARD. Guides index/ANN choices.]]></comment>
+<commentInRDBMS><![CDATA[distance_metric — Similarity metric intended for this embedding column (default 'COSINE'). Allowed values: COSINE, L2, L2_SQUARED, DOT, MANHATTAN, HAMMING, JACCARD. Guides index/ANN choices.]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>F696AF79-E4C3-55BE-B507-9185619DC5B3</importedID>
+<constraintName>SYS_C0013323</constraintName>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>16 BYTE</dataTypeSize>
+<listOfValues>
+<valueDef value="&apos;COSINE&apos;" description=""/>
+<valueDef value="&apos;DOT&apos;" description=""/>
+<valueDef value="&apos;HAMMING&apos;" description=""/>
+<valueDef value="&apos;JACCARD&apos;" description=""/>
+<valueDef value="&apos;L2&apos;" description=""/>
+<valueDef value="&apos;L2_SQUARED&apos;" description=""/>
+<valueDef value="&apos;MANHATTAN&apos;" description=""/>
+</listOfValues>
+<defaultValue>&apos;COSINE&apos;</defaultValue>
+<ownDataTypeParameters>16 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="TOKENS_USED" id="3EC10D77-E784-D789-A3EF-9FAB0395032E">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>CONTEXT_EMBEDDINGS</sourceObjSchema>
+<sourceObjName>TOKENS_USED</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<comment><![CDATA[tokens_used — Token count attributed to producing this embedding (model-specific). Set by the application from provider usage; leave null if unknown or not reported. Used for cost/usage analytics.]]></comment>
+<commentInRDBMS><![CDATA[tokens_used — Token count attributed to producing this embedding (model-specific). ]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>712F5BB4-242D-72E2-6C3C-AE936D3E74A3</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_ON" id="1E3ADAAB-7683-75AF-4A8C-6184E5AACEF8">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>CONTEXT_EMBEDDINGS</sourceObjSchema>
+<sourceObjName>CREATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>397878B2-8F29-A68D-5B48-AFD10732A99A</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<defaultValue>systimestamp</defaultValue>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_BY" id="A935EC16-8E60-8AD1-7D14-48D08D16DD50">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>CONTEXT_EMBEDDINGS</sourceObjSchema>
+<sourceObjName>CREATED_BY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>A47ED2BD-E6BF-0AF0-B19E-B8329D212CB6</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 BYTE</dataTypeSize>
+<defaultValue>sys_context(&apos;userenv&apos;,&apos;session_user&apos;)</defaultValue>
+<ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_ON" id="D1E24BDF-0141-A86E-B0A6-A9B0A98C54A3">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>CONTEXT_EMBEDDINGS</sourceObjSchema>
+<sourceObjName>UPDATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>014578A4-C5B2-959D-1E04-C18CAC23400A</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_BY" id="34A2FF61-DFBC-DDCD-B254-9DEBCE69DDD3">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>CONTEXT_EMBEDDINGS</sourceObjSchema>
+<sourceObjName>UPDATED_BY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>24647A23-8FF7-62E1-D4F8-2E8C52CEC52E</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 BYTE</dataTypeSize>
+<ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="ROW_VERSION" id="42A700DF-DBF4-101A-0AC7-4BBCAD5531AC">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>CONTEXT_EMBEDDINGS</sourceObjSchema>
+<sourceObjName>ROW_VERSION</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>3B603BBC-45E9-566B-DE2D-ABBD1B8CF58B</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<defaultValue>1</defaultValue>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+</columns>
+<indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
+<ind_PK_UK id="EC06A3C6-0B61-851A-5EFC-EC28B58E0EAC" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="CONTEXT_EMBEDDINGS_PK">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>SYS_C0013324</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>6AC3D6A0-2A89-6D6E-306E-5459A3971BEE</importedID>
+<pk>true</pk>
+<indexState>Primary Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="D93DC01E-9476-B6F5-0A63-173079FF2B0D"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="DEA2AA81-16B4-0E04-AFC6-24B8FD9CEE62" name="UQ_CTX_EMB_TURN_CHUNK">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>UQ_CTX_EMB_TURN_CHUNK</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>C25CBB77-2CA9-D557-98F0-F9A9E8580F69</importedID>
+<indexState>Unique Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="23142782-3EC6-0E4C-D0E9-999D393D68F6"/>
+<colUsage columnID="2D41C1F3-F3A6-08DA-EB47-29FB73BAF297"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="D4417070-4EE6-7316-A866-705DE40730A4" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="UQ_CTX_EMB_TURN_CHUNK">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>UQ_CTX_EMB_TURN_CHUNK</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>7C2E0FE1-B91F-01A1-70D0-B460328E8D33</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="23142782-3EC6-0E4C-D0E9-999D393D68F6"/>
+<colUsage columnID="2D41C1F3-F3A6-08DA-EB47-29FB73BAF297"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="2315FD12-0CF9-0BB2-CD03-F887345560D2" name="FK_CTX_EMB_CTX">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<indexState>Foreign Key</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="23142782-3EC6-0E4C-D0E9-999D393D68F6"/>
+</indexColumnUsage>
+</ind_PK_UK>
+</indexes>
+</Table>

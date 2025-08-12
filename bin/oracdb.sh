@@ -2,7 +2,7 @@
 ################################################################################
 # Author  : Clive Bostock
 # Date    : 2025-07-25
-#   Script: oracledb.sh
+#   Script: oracdb.sh
 # Purpose : Unified script to control Orac (Oracle DB + ORDS + LLM etc.)
 ################################################################################
 
@@ -45,6 +45,38 @@ fi
 # Extract Orac version
 ORAC_VERSION=$(grep "__version__" "${CTL_DIR}/__init__.py" | cut -d'"' -f2)
 
+stop_orac_stack() {
+  echo "🛑 Stopping Orac stack..."
+  if docker ps -a --format '{{.Names}}' | grep -wq "$CONTAINER_NAME"; then
+    docker stop "$CONTAINER_NAME" >/dev/null || true
+    echo "⏹️  '$CONTAINER_NAME' stopped."
+  else
+    echo "ℹ️ No container named '$CONTAINER_NAME' to stop."
+  fi
+}
+
+start_orac_stack() {
+  echo "🚀 Starting Orac stack (Oracle DB + ORDS + LLM)..."
+  ensure_env
+
+  if docker ps -a --format '{{.Names}}' | grep -wq "$CONTAINER_NAME"; then
+    if [[ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME")" == "true" ]]; then
+      echo "✅ '$CONTAINER_NAME' is already running."
+    else
+      echo "▶️  Starting existing container '$CONTAINER_NAME'..."
+      docker start "$CONTAINER_NAME" >/dev/null
+      echo "✅ Started."
+    fi
+  else
+    echo "❌ No container named '$CONTAINER_NAME' found."
+    echo "👉 Run the provisioner first: bin/oracdb-init.sh"
+    exit 1
+  fi
+
+  echo "🧠 (optional) Starting Orac AI engine..."
+  # TODO
+}
+
 print_usage() {
   echo "$PROG - Orac stack control"
   echo "Usage: $0 {start|stop|restart|status|logs}"
@@ -61,17 +93,8 @@ ensure_env() {
 
 
 case "$1" in
-  start)
-    echo "🚀 Starting Orac stack (Oracle DB + ORDS + LLM)..."
-    ensure_env
-    docker compose --project-name "$CONTAINER_NAME" -f "$COMPOSE_FILE" up -d
-    echo "🧠 Starting Orac AI engine..."
-    # TODO: Launch LLM and Orac Python modules here
-    ;;
-  stop)
-    echo "🛑 Stopping Orac stack..."
-    docker compose --project-name "$CONTAINER_NAME" -f "$COMPOSE_FILE" down
-    ;;
+  start)   start_orac_stack ;;
+  stop)    stop_orac_stack ;;
   restart)
     echo "🔄 Restarting Orac stack..."
     "$0" stop
