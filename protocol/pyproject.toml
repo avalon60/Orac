@@ -1,0 +1,15 @@
+[project]
+name = "orac-protocol"
+version = "1.0.0"
+description = "Orac wire protocol schema and validator"
+requires-python = ">=3.10"
+dependencies = ["jsonschema>=4.22"]
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+[tool.setuptools.package-data]
+orac_protocol = ["resources/json_schema/*.json"]
+
