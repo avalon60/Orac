@@ -16,6 +16,7 @@
 <connName>OracSchema</connName>
 <connUser>orac</connUser>
 <connType>1</connType>
+<syncSelected>1</syncSelected>
 </importConnectionStamp>
 </importConnectionStamps>
 <importDDLFileStamps>

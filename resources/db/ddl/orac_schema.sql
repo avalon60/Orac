@@ -1,3 +1,7 @@
+
+--==============================================================================
+-- Orac Schema DDL
+--==============================================================================
 --------------------------------------------------------------------------------
 -- orac.users
 --------------------------------------------------------------------------------
@@ -164,24 +168,24 @@ end;
 -- orac.context_embeddings
 --------------------------------------------------------------------------------
 create table orac.context_embeddings (
-  emb_id            number generated always as identity primary key,
-  ctx_id            number not null,
-  chunk_index       number default 1 not null,
-  span_start        number,
-  span_end          number,
-  lossless_text     clob not null,
-  content_snapshot  json,
-  embedding         vector not null,
-  embedding_model   varchar2(100) not null,
+  emb_id             number generated always as identity primary key,
+  ctx_id             number not null,
+  chunk_index        number default 1 not null,
+  span_start         number,
+  span_end           number,
+  lossless_text      clob not null,
+  content_snapshot   json,
+  embedding          vector(1536) not null,
+  embedding_model    varchar2(100) not null,
   embedding_provider varchar2(100),
-  distance_metric   varchar2(16) default 'COSINE' not null
+  distance_metric    varchar2(16) default 'COSINE' not null
                       check (distance_metric in ('COSINE','L2','L2_SQUARED','DOT','MANHATTAN','HAMMING','JACCARD')),
-  tokens_used       number,
-  created_on        timestamp(6) default systimestamp not null,
-  created_by        varchar2(128) default sys_context('USERENV','SESSION_USER') not null,
-  updated_on        timestamp(6),
-  updated_by        varchar2(128),
-  row_version       number default 1 not null
+  tokens_used        number,
+  created_on         timestamp(6) default systimestamp not null,
+  created_by         varchar2(128) default sys_context('USERENV','SESSION_USER') not null,
+  updated_on         timestamp(6),
+  updated_by         varchar2(128),
+  row_version        number default 1 not null
 );
 
 alter table orac.context_embeddings
@@ -197,7 +201,42 @@ begin
 end;
 /
 --------------------------------------------------------------------------------
--- Foreign keys (constraint names unqualified)
+-- orac.user_synonyms (aligned to numeric user_id) + orac.devices
+--------------------------------------------------------------------------------
+create table orac.user_synonyms (
+  user_id     number       not null,      -- fk to orac.users
+  alias_type  varchar2(16) not null,      -- 'os','email','short'
+  alias_value varchar2(256) not null,     -- e.g. 'clive'
+  is_active   char(1) default 'Y' not null
+               check (is_active in ('Y','N')),
+  created_on  timestamp(6) default systimestamp not null,
+  constraint user_synonyms_pk primary key (alias_type, alias_value)
+);
+
+create index orac.user_synonyms_uid_idx on orac.user_synonyms(user_id);
+
+create table orac.devices (
+  device_id   varchar2(128) not null,     -- machine-id hash or MAC
+  user_id     number        not null,     -- fk to orac.users
+  host_name   varchar2(255),
+  is_active   char(1) default 'Y' not null
+               check (is_active in ('Y','N')),
+  created_on  timestamp(6) default systimestamp not null,
+  constraint devices_pk primary key (device_id)
+);
+
+create index orac.devices_uid_idx on orac.devices(user_id);
+
+--------------------------------------------------------------------------------
+-- supporting indexes for fks / common joins (created before fks)
+--------------------------------------------------------------------------------
+create index orac.uprefs_user_idx   on orac.user_preferences(user_id);
+create index orac.ctx_hist_user_idx on orac.context_history(user_id);
+create index orac.ctx_hist_llm_idx  on orac.context_history(llm_id);
+create index orac.ctx_emb_ctx_idx   on orac.context_embeddings(ctx_id);
+
+--------------------------------------------------------------------------------
+-- foreign keys
 --------------------------------------------------------------------------------
 alter table orac.user_preferences
   add constraint fk_user_preferences_user
@@ -216,5 +255,15 @@ alter table orac.context_history
 alter table orac.context_embeddings
   add constraint fk_ctx_emb_ctx
       foreign key (ctx_id) references orac.context_history(ctx_id)
+      on delete cascade;
+
+alter table orac.user_synonyms
+  add constraint fk_user_synonyms_user
+      foreign key (user_id) references orac.users(user_id)
+      on delete cascade;
+
+alter table orac.devices
+  add constraint fk_devices_user
+      foreign key (user_id) references orac.users(user_id)
       on delete cascade;
 
