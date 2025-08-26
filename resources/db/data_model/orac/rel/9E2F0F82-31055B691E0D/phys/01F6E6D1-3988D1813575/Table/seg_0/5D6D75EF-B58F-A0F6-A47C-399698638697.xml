@@ -17,7 +17,7 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
-<autoIncrementDDL>IDENTITY_CLAUSE</autoIncrementDDL>
+<autoIncrementDDL>TRIGGER</autoIncrementDDL>
 </ColumnProxy>
 <ColumnProxy name="ROW_VERSION" id="3C11281F-D55F-93D9-B065-1293F920293A">
 <createdBy>clive</createdBy>
@@ -29,7 +29,10 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
-<defaultValue>coalesce(sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;), sys_context(&apos;USERENV&apos;, &apos;PROXY_USER&apos;), sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;), user)</defaultValue>
+<defaultValue>coalesce(sys_context(&apos;apex$session&apos;,&apos;app_user&apos;),
+                                                   sys_context(&apos;userenv&apos;,&apos;proxy_user&apos;),
+                                                   sys_context(&apos;userenv&apos;,&apos;session_user&apos;),
+                                                   user)</defaultValue>
 </ColumnProxy>
 <ColumnProxy name="UPDATED_BY" id="6ECDF786-12EA-F4F6-DB40-71FE3CF0CFA8">
 <createdBy>clive</createdBy>
@@ -78,6 +81,14 @@
 <segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 </IndexProxy>
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="USERS_PK" id="9D045375-478A-CA96-946E-DF64E7FCA135">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
+<segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+</IndexProxy>
 </indexProxies>
 <primaryKeys>
 <PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="USERS_PK" id="769D384C-202F-3C32-667E-3FAE5D7AC07B">
@@ -87,6 +98,7 @@
 <schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
 <segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<existingIndex>9D045375-478A-CA96-946E-DF64E7FCA135</existingIndex>
 <indexSegment>A9F8776D-FB19-2315-445D-6E257FA36DB9</indexSegment>
 <indexSort>SORTED</indexSort>
 <usingIndex>BY INDEX NAME</usingIndex>

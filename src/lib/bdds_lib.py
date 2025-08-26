@@ -40,15 +40,15 @@ ENV_MAPPING_FILE = APP_HOME / 'resources' / 'config' / 'env_mappings.ini'
 
 conf_manager = ConfigManager(config_file_path=CONFIG_FILE_PATH)
 env_map_manager = ConfigManager(config_file_path=ENV_MAPPING_FILE)
-SELENIUM_TIMEOUT = float(conf_manager.config_value(config_section='global', config_key='selenium_timeout'))
-SELENIUM_TIMEOUT_SHORT = float(conf_manager.config_value(config_section='global', config_key='selenium_timeout_short'))
-SELENIUM_TIMEOUT_COOKIES = float(conf_manager.config_value(config_section='global',
-                                                           config_key='selenium_timeout_cookies'))
+SELENIUM_TIMEOUT = float(conf_manager.config_value(section='global', key='selenium_timeout'))
+SELENIUM_TIMEOUT_SHORT = float(conf_manager.config_value(section='global', key='selenium_timeout_short'))
+SELENIUM_TIMEOUT_COOKIES = float(conf_manager.config_value(section='global',
+                                                           key='selenium_timeout_cookies'))
 
 # Get the location of the scenario data management directory. The environment.py may make calls to
 # to manage scenario data (e.g. tear down data, post-scenario. We only grab it here to check whether it exists
 # in the before_feature hook function.
-DATA_MGMT_DIR_RAW = conf_manager.config_value(config_section='data_mgmt', config_key='data_mgmt_location',
+DATA_MGMT_DIR_RAW = conf_manager.config_value(section='data_mgmt', key='data_mgmt_location',
                                               default='features/data_mgmt')
 
 if Path(DATA_MGMT_DIR_RAW).is_absolute():
@@ -92,10 +92,10 @@ except OSError:
 
 # Get the location of the scenario data management directory. The environment.py may make calls to
 # to manage scenario data (e.g., tear down data, post-scenario.
-DATA_MGMT_DIR = Path(conf_manager.config_value(config_section='data_mgmt', config_key='data_mgmt_location',
+DATA_MGMT_DIR = Path(conf_manager.config_value(section='data_mgmt', key='data_mgmt_location',
                                                default='features/data_mgmt'))
 
-PROJECT_ID = conf_manager.config_value(config_section='global', config_key='project_identifier')
+PROJECT_ID = conf_manager.config_value(section='global', key='project_identifier')
 
 if DATA_MGMT_DIR.is_absolute():
     DATA_MGMT_DIR = DATA_MGMT_DIR
@@ -198,18 +198,18 @@ def os_mkdir(directory_path: Path | str, description: str, exist_ok=True):
 
 
 def base_url(env_id: str = None) -> str:
-    default_env = conf_manager.config_value(config_section='environment-default', config_key='base_url')
+    default_env = conf_manager.config_value(section='environment-default', key='base_url')
     if env_id:
-        default_env = conf_manager.config_value(config_section=env_id, config_key='base_url')
+        default_env = conf_manager.config_value(section=env_id, key='base_url')
     return default_env
 
 
 def entrypoint_app_url(env_id: str) -> str:
-    return conf_manager.config_value(config_section=f"environment-{env_id}", config_key='base_url')
+    return conf_manager.config_value(section=f"environment-{env_id}", key='base_url')
 
 
 def entrypoint_app_id(env_id: str = "default") -> str:
-    return conf_manager.config_value(config_section=f"environment-{env_id}", config_key='app_id')
+    return conf_manager.config_value(section=f"environment-{env_id}", key='app_id')
 
 
 def log_screen_snapshot(driver, logger_instance, step_function: str, program: str,
@@ -402,8 +402,8 @@ def set_http_headers(driver: webdriver, env: str):
     """
 
     set_chrome_http_headers = conf_manager.bool_config_value(
-        config_section='browser',
-        config_key='set_chrome_http_headers',
+        section='browser',
+        key='set_chrome_http_headers',
         default=False
     )
     if not set_chrome_http_headers:
@@ -411,9 +411,9 @@ def set_http_headers(driver: webdriver, env: str):
 
     # Resolve desired headers
     desired_headers = {
-        "x-auth-uid": env_map_manager.config_value(config_section=env, config_key='x-auth-uid'),
-        "x-auth-name": env_map_manager.config_value(config_section=env, config_key='x-auth-name'),
-        "x-dggiaapproles": env_map_manager.config_value(config_section=env, config_key='x-dggiaapproles')
+        "x-auth-uid": env_map_manager.config_value(section=env, key='x-auth-uid'),
+        "x-auth-name": env_map_manager.config_value(section=env, key='x-auth-name'),
+        "x-dggiaapproles": env_map_manager.config_value(section=env, key='x-dggiaapproles')
     }
 
     # Flag: Enable network only once
@@ -439,7 +439,7 @@ def _return_anchors_javascript(js_path: Path) -> str:
 def sleep(secs: int | float = 1, context=None):
     if context and context.headless:
         return
-    if conf_manager.config_value(config_section='global', config_key='allow_sleeps', default="n").lower() == 'y':
+    if conf_manager.config_value(section='global', key='allow_sleeps', default="n").lower() == 'y':
         time.sleep(secs)
 
 

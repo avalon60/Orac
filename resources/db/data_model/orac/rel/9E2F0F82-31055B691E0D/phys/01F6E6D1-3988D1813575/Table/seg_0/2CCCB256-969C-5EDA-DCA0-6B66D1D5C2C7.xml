@@ -43,12 +43,10 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
-<defaultValue>coalesce(
-                  sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;),
-                  sys_context(&apos;USERENV&apos;,&apos;PROXY_USER&apos;),
-                  sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;),
-                  user
-                )</defaultValue>
+<defaultValue>coalesce(sys_context(&apos;apex$session&apos;,&apos;app_user&apos;),
+                                             sys_context(&apos;userenv&apos;,&apos;proxy_user&apos;),
+                                             sys_context(&apos;userenv&apos;,&apos;session_user&apos;),
+                                             user)</defaultValue>
 </ColumnProxy>
 <ColumnProxy name="USER_ID" id="9F284D13-2632-AD60-5384-80CA498428FC">
 <createdBy>clive</createdBy>
@@ -59,7 +57,7 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
-<autoIncrementDDL>IDENTITY_CLAUSE</autoIncrementDDL>
+<autoIncrementDDL>TRIGGER</autoIncrementDDL>
 </ColumnProxy>
 <ColumnProxy name="ROW_VERSION" id="F2D67D6E-6ACD-4884-7422-45567BCE384B">
 <createdBy>clive</createdBy>
@@ -69,6 +67,22 @@
 </ColumnProxy>
 </columnProxies>
 <indexProxies>
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="IX_USER_PREFS_UID" id="032E4387-BDB2-AD42-1473-B1CAE2DED0FD">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
+<segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+</IndexProxy>
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="USER_PREFERENCES_PK" id="231BC68E-8DFA-4241-55D0-505CF5A7E594">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
+<segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+</IndexProxy>
 <IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="UQ_USER_PREFERENCES_USER_KEY" id="7301C34C-4EC7-EF7D-4C3B-972E0429AC8B">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
@@ -93,6 +107,7 @@
 <schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
 <segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<existingIndex>231BC68E-8DFA-4241-55D0-505CF5A7E594</existingIndex>
 <indexSegment>A9F8776D-FB19-2315-445D-6E257FA36DB9</indexSegment>
 <indexSort>SORTED</indexSort>
 <usingIndex>BY INDEX NAME</usingIndex>

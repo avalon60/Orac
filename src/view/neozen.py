@@ -1,5 +1,5 @@
 """
-Thin TCP client for Orac orchestrator (with JSON decoding and structured logging)
+Zen (slave.py): Thin TCP client for Orac orchestrator (with JSON decoding and structured logging)
 """
 
 import asyncio

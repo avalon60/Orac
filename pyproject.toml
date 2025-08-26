@@ -3,6 +3,9 @@ name = "orac"
 version = "0.1.0"
 description = "Your project description"
 authors = [{name = "Clive Bostock"}]
+dependencies = [
+  "orac-protocol @ git+https://github.com/avalon60/Orac.git@protocol/v1.0.0#subdirectory=protocol"
+]
 
 [build-system]
 requires = ["setuptools", "wheel"]
