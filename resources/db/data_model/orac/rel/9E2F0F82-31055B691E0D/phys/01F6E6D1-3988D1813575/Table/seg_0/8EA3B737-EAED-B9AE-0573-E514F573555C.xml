@@ -48,7 +48,12 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
-<defaultValue>coalesce(sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;), sys_context(&apos;USERENV&apos;, &apos;PROXY_USER&apos;), sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;), user)</defaultValue>
+<defaultValue>coalesce(
+                 sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;),
+                 sys_context(&apos;USERENV&apos;,&apos;PROXY_USER&apos;),
+                 sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;),
+                 user
+               )</defaultValue>
 </ColumnProxy>
 <ColumnProxy name="TOKENS_USED" id="A4FBED5D-61E8-C172-149F-892C50CB294E">
 <createdBy>clive</createdBy>
@@ -89,9 +94,25 @@
 </ColumnProxy>
 </columnProxies>
 <indexProxies>
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="CTX_HIST_USER_IDX" id="367B4058-DA8E-AE74-3A65-50C7189ADEED">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
+<segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+</IndexProxy>
 <IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="UQ_CTX_HIST_SESSION_TURN" id="605AC29F-95C1-11BF-8BEC-0E8BFCB558E7">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
+<segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+</IndexProxy>
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="CTX_HIST_LLM_IDX" id="8839D03D-3DFB-A2CB-BD1F-36CCBA1C110A">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
 <schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
 <segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>

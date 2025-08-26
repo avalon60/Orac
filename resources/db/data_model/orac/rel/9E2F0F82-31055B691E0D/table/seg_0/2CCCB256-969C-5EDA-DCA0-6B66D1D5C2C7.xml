@@ -9,7 +9,7 @@
 Each preference belongs to exactly one user and is identified by a pref_key (e.g., "theme", "default_model").
 Values are stored as JSON for flexibility in type and structure.
 Key uses: Allows per-user customisation of behaviour, UI, and defaults without altering the core user record.]]></comment>
-<commentInRDBMS><![CDATA[Stores key–value preference settings for each user.]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[stores key���value preference settings for each user.]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>DC2C359E-E805-EEFA-B6D6-10AF43A7226A</importedID>
 <allowColumnReorder>false</allowColumnReorder>
@@ -22,6 +22,7 @@ Key uses: Allows per-user customisation of behaviour, UI, and defaults without a
 <sourceObjName>PREF_ID</sourceObjName>
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<commentInRDBMS><![CDATA[pref_id ��� primary key for the preference row.]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>F298401A-DD6D-5B99-D0DB-6DD7314175DF</importedID>
 <useDomainConstraints>false</useDomainConstraints>
@@ -29,12 +30,10 @@ Key uses: Allows per-user customisation of behaviour, UI, and defaults without a
 <logicalDatatype>LOGDT019</logicalDatatype>
 <ownDataTypeParameters>,,</ownDataTypeParameters>
 <autoIncrementColumn>true</autoIncrementColumn>
-<identityColumn>true</identityColumn>
 <autoIncrementGenerateAlways>true</autoIncrementGenerateAlways>
 <autoIncrementCycle>false</autoIncrementCycle>
-<autoIncrementDisableCache>false</autoIncrementDisableCache>
-<autoIncrementCache>20</autoIncrementCache>
-<autoIncrementOrder>false</autoIncrementOrder>
+<autoIncrementSequenceName>user_preferences_pref_id_seq</autoIncrementSequenceName>
+<autoIncrementTriggerName>USER_PREFERENCES_PREF_ID_TRG</autoIncrementTriggerName>
 </Column>
 <Column name="USER_ID" id="9F284D13-2632-AD60-5384-80CA498428FC">
 <sourceConnName>OracSchema</sourceConnName>
@@ -42,6 +41,7 @@ Key uses: Allows per-user customisation of behaviour, UI, and defaults without a
 <sourceObjName>USER_ID</sourceObjName>
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<commentInRDBMS><![CDATA[user_id ��� owning user for the preference.]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>479D26FD-F536-D71B-DE11-0671EA66CBAA</importedID>
 <useDomainConstraints>false</useDomainConstraints>
@@ -59,6 +59,7 @@ Key uses: Allows per-user customisation of behaviour, UI, and defaults without a
 <sourceObjName>PREF_KEY</sourceObjName>
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<commentInRDBMS><![CDATA[pref_key ��� namespaced preference name scoped to a single user.]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>54D5079B-D920-8AC3-B702-0F1AB22A3EC3</importedID>
 <useDomainConstraints>false</useDomainConstraints>
@@ -74,6 +75,7 @@ Key uses: Allows per-user customisation of behaviour, UI, and defaults without a
 <sourceObjName>PREF_VALUE</sourceObjName>
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
+<commentInRDBMS><![CDATA[pref_value ��� the stored preference value.]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>ADB20248-F145-6D17-4A63-3FB2901B90B8</importedID>
 <nullsAllowed>true</nullsAllowed>
@@ -112,12 +114,10 @@ Key uses: Allows per-user customisation of behaviour, UI, and defaults without a
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
 <dataTypeSize>128 BYTE</dataTypeSize>
-<defaultValue>coalesce(
-                  sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;),
-                  sys_context(&apos;USERENV&apos;,&apos;PROXY_USER&apos;),
-                  sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;),
-                  user
-                )</defaultValue>
+<defaultValue>coalesce(sys_context(&apos;apex$session&apos;,&apos;app_user&apos;),
+                                             sys_context(&apos;userenv&apos;,&apos;proxy_user&apos;),
+                                             sys_context(&apos;userenv&apos;,&apos;session_user&apos;),
+                                             user)</defaultValue>
 <ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
@@ -213,6 +213,33 @@ Key uses: Allows per-user customisation of behaviour, UI, and defaults without a
 <indexColumnUsage>
 <colUsage columnID="9F284D13-2632-AD60-5384-80CA498428FC"/>
 <colUsage columnID="36BF75FF-DBC8-0863-0C72-84B91B499355"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="032E4387-BDB2-AD42-1473-B1CAE2DED0FD" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="IX_USER_PREFS_UID">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>IX_USER_PREFS_UID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>9541C4D7-D871-7024-F7D1-73F837036745</importedID>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="9F284D13-2632-AD60-5384-80CA498428FC"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="231BC68E-8DFA-4241-55D0-505CF5A7E594" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="USER_PREFERENCES_PK">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>USER_PREFERENCES_PK</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>4B07A7EA-51AA-AC16-421C-9480379630F0</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="CEE460D9-F816-B537-556A-440A3D963E61"/>
 </indexColumnUsage>
 </ind_PK_UK>
 <ind_PK_UK id="BF7257B3-FA3E-77EC-A280-A18C8A018F77" name="FK_USER_PREFERENCES_USER">

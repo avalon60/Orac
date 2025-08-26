@@ -1,0 +1,21 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<TriggerOraclev10g class="oracle.dbtools.crest.model.design.storage.oracle.v10g.TriggerOraclev10g" name="USERS_ROW_AUDIT_TRG" directorySegmentName="seg_0" id="4E911A86-F269-6FCA-4AAB-90F347BFB93D">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>USERS_ROW_AUDIT_TRG</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:50 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<actions>UPDATE</actions>
+<body><![CDATA[begin
+  :new.updated_on := systimestamp;
+  :new.updated_by := coalesce(sys_context('apex$session','app_user'),
+                              sys_context('userenv','proxy_user'),
+                              sys_context('userenv','session_user'),
+                              user);
+  :new.row_version := nvl(:old.row_version,1) + 1;
+end;]]></body>
+<triggerTime>BEFORE</triggerTime>
+<owner>D4A3E94C-4EDB-6423-5307-62FB80B0230D</owner>
+<table>5D6D75EF-B58F-A0F6-A47C-399698638697</table>
+</TriggerOraclev10g>

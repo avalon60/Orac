@@ -9,7 +9,6 @@
 Each embedding links back to a context_history row via ctx_id and is stored using Oracle 23ai’s native vector datatype (size matching the embedding model, e.g., vector(1536)).
 Includes the name of the embedding model used and audit information.
 Key uses: Supports semantic search, retrieval-augmented generation (RAG), and similarity matching over stored conversation content.]]></comment>
-<commentInRDBMS><![CDATA[Stores vector embeddings for conversation turns or other context elements.]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>3DF5575A-52C6-241A-613C-3E29011C4913</importedID>
 <allowColumnReorder>false</allowColumnReorder>
@@ -23,7 +22,6 @@ Key uses: Supports semantic search, retrieval-augmented generation (RAG), and si
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <comment><![CDATA[emb_id — Primary key for the orac.context_embeddings table. Generated automatically by Oracle on insert (generated always as identity). Immutable and never reused.]]></comment>
-<commentInRDBMS><![CDATA[emb_id — Primary key for the orac.context_embeddings table.]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>33F0AA94-B3A3-DDD6-F304-6AD3E90D963E</importedID>
 <useDomainConstraints>false</useDomainConstraints>
@@ -45,7 +43,6 @@ Key uses: Supports semantic search, retrieval-augmented generation (RAG), and si
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <comment><![CDATA[ctx_id — Foreign key to orac.context_history.ctx_id. Identifies which conversation turn this embedding (or chunk) was derived from. On delete cascade removes dependent embeddings when the source turn is deleted.]]></comment>
-<commentInRDBMS><![CDATA[ctx_id — Foreign key to orac.context_history.ctx_id. ]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>15785988-3A52-D0C1-2B66-AA8E89A36616</importedID>
 <useDomainConstraints>false</useDomainConstraints>
@@ -64,7 +61,6 @@ Key uses: Supports semantic search, retrieval-augmented generation (RAG), and si
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <comment><![CDATA[chunk_index — 1-based ordinal of the embedded chunk within a turn. Default 1. Use 1..n to represent multiple chunks for long texts. Uniqueness with (ctx_id, chunk_index) prevents duplicates.]]></comment>
-<commentInRDBMS><![CDATA[chunk_index — 1-based ordinal of the embedded chunk within a turn.]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>A70B4862-DD0F-7D3F-AFB1-17D0BD9BE582</importedID>
 <useDomainConstraints>false</useDomainConstraints>
@@ -81,7 +77,6 @@ Key uses: Supports semantic search, retrieval-augmented generation (RAG), and si
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <comment><![CDATA[span_start — Optional character offset (1-based) into the original turn text where this chunk begins. Aids precise reconstruction and highlighting. Nullable.]]></comment>
-<commentInRDBMS><![CDATA[span_start — Optional character offset (1-based) into the original turn text where this chunk begins. ]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>BE8F1B1E-69A2-B2F3-54CE-620E94FDBEF0</importedID>
 <nullsAllowed>true</nullsAllowed>
@@ -98,7 +93,6 @@ Key uses: Supports semantic search, retrieval-augmented generation (RAG), and si
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <comment><![CDATA[span_end —  1-based index of the last character included in the chunk (inclusive). Must be ≥ span_start.]]></comment>
-<commentInRDBMS><![CDATA[span_end — Optional character offset where this chunk ends (exclusive by convention). ]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>EA079A35-F074-16E4-FE50-524A7029AF1F</importedID>
 <nullsAllowed>true</nullsAllowed>
@@ -115,7 +109,6 @@ Key uses: Supports semantic search, retrieval-augmented generation (RAG), and si
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <comment><![CDATA[lossless_text — Exact text string that was embedded (post any preprocessing your pipeline applied). Stored as CLOB for reproducibility without joining back to context_history. Not null.]]></comment>
-<commentInRDBMS><![CDATA[lossless_text — Exact text string that was embedded (post any preprocessing your pipeline applied). ]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>1040F910-2E3A-706C-D5A3-68B6353B7B9B</importedID>
 <useDomainConstraints>false</useDomainConstraints>
@@ -131,7 +124,6 @@ Key uses: Supports semantic search, retrieval-augmented generation (RAG), and si
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <comment><![CDATA[content_snapshot — Optional JSON copy of context_history.content at embedding time (for provenance if the source evolves). Nullable; keep keys stable and avoid secrets.]]></comment>
-<commentInRDBMS><![CDATA[content_snapshot — Optional JSON copy of context_history.content at embedding time (for provenance if the source evolves). ]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>265FEB96-1427-3BBC-3838-3F007053E3D4</importedID>
 <nullsAllowed>true</nullsAllowed>
@@ -148,7 +140,6 @@ Key uses: Supports semantic search, retrieval-augmented generation (RAG), and si
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <comment><![CDATA[embedding — The vector value produced by the embedding model (Oracle 23a+i native VECTOR type). Dimension follows the model used; leave unspecified in DDL if you plan to switch models.]]></comment>
-<commentInRDBMS><![CDATA[embedding — The vector value produced by the embedding model (Oracle 23ai native VECTOR type).]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>3FD733D6-7CAC-CFB5-D271-1EA6C18CD488</importedID>
 <useDomainConstraints>false</useDomainConstraints>
@@ -165,7 +156,6 @@ Key uses: Supports semantic search, retrieval-augmented generation (RAG), and si
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <comment><![CDATA[embedding_model — Provider/model identifier for the embedding generator (e.g., text-embedding-3-large, bge-large-en). Used for auditing and routing. Not null.]]></comment>
-<commentInRDBMS><![CDATA[embedding_model — Provider/model identifier for the embedding generator (e.g., text-embedding-3-large, bge-large-en). ]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>B9AB5C42-8949-5CF1-BC20-99952D4B38B1</importedID>
 <useDomainConstraints>false</useDomainConstraints>
@@ -182,7 +172,6 @@ Key uses: Supports semantic search, retrieval-augmented generation (RAG), and si
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <comment><![CDATA[embedding_provider — Vendor/source of the embedding model (e.g., openai, oracle, local). Useful for reporting and policy. Nullable.]]></comment>
-<commentInRDBMS><![CDATA[embedding_provider — Vendor/source of the embedding model (e.g., openai, oracle, local). Useful for reporting and policy. ]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>6F0CA55E-17A7-8D52-007B-E17EEEE8E283</importedID>
 <nullsAllowed>true</nullsAllowed>
@@ -190,9 +179,7 @@ Key uses: Supports semantic search, retrieval-augmented generation (RAG), and si
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
 <dataTypeSize>100 BYTE</dataTypeSize>
-<defaultValue>oracle</defaultValue>
 <ownDataTypeParameters>100 BYTE,,</ownDataTypeParameters>
-<defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
 <Column name="DISTANCE_METRIC" id="48205BF0-DAB7-69C0-E568-F1031F7DC7BD">
@@ -202,7 +189,6 @@ Key uses: Supports semantic search, retrieval-augmented generation (RAG), and si
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <comment><![CDATA[distance_metric — Similarity metric intended for this embedding column (default 'COSINE'). Allowed values: COSINE, L2, L2_SQUARED, DOT, MANHATTAN, HAMMING, JACCARD. Guides index/ANN choices.]]></comment>
-<commentInRDBMS><![CDATA[distance_metric — Similarity metric intended for this embedding column (default 'COSINE'). Allowed values: COSINE, L2, L2_SQUARED, DOT, MANHATTAN, HAMMING, JACCARD. Guides index/ANN choices.]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>F696AF79-E4C3-55BE-B507-9185619DC5B3</importedID>
 <constraintName>SYS_C0013323</constraintName>
@@ -230,7 +216,6 @@ Key uses: Supports semantic search, retrieval-augmented generation (RAG), and si
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <comment><![CDATA[tokens_used — Token count attributed to producing this embedding (model-specific). Set by the application from provider usage; leave null if unknown or not reported. Used for cost/usage analytics.]]></comment>
-<commentInRDBMS><![CDATA[tokens_used — Token count attributed to producing this embedding (model-specific). ]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>712F5BB4-242D-72E2-6C3C-AE936D3E74A3</importedID>
 <nullsAllowed>true</nullsAllowed>
@@ -268,7 +253,7 @@ Key uses: Supports semantic search, retrieval-augmented generation (RAG), and si
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
 <dataTypeSize>128 BYTE</dataTypeSize>
-<defaultValue>sys_context(&apos;userenv&apos;,&apos;session_user&apos;)</defaultValue>
+<defaultValue>sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;)</defaultValue>
 <ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
@@ -364,6 +349,19 @@ Key uses: Supports semantic search, retrieval-augmented generation (RAG), and si
 <indexColumnUsage>
 <colUsage columnID="23142782-3EC6-0E4C-D0E9-999D393D68F6"/>
 <colUsage columnID="2D41C1F3-F3A6-08DA-EB47-29FB73BAF297"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="07229BCC-46D3-BD32-031E-EAD378CAFF46" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="CTX_EMB_CTX_IDX">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>CTX_EMB_CTX_IDX</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>A46A65B6-9D86-B96E-D77C-851710DD509D</importedID>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="23142782-3EC6-0E4C-D0E9-999D393D68F6"/>
 </indexColumnUsage>
 </ind_PK_UK>
 <ind_PK_UK id="2315FD12-0CF9-0BB2-CD03-F887345560D2" name="FK_CTX_EMB_CTX">

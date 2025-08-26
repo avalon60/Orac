@@ -20,7 +20,7 @@ class LLMConnector(LLMConnectorABC):
     def __init__(self, model_service_id: str):
         self.config_mgr = ConfigManager(config_file_path=CONFIG_FILE_PATH)
         self.llm_service_id = self.config_mgr.config_value(
-            config_section='service', config_key='llm_service_id'
+            section='service', key='llm_service_id'
         )
         if model_service_id not in MODEL_SERVICE_DESCRIPTORS:
             valid_ids = ", ".join(MODEL_SERVICE_DESCRIPTORS.keys())
