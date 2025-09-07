@@ -24,5 +24,14 @@
 <designDescr class="oracle.dbtools.crest.model.design.Design$DesignStorageDesc" id="D70D85F4-09E1-C750-E628-F7CDF2E4E403">
 <designStoragePath>/home/clive/PycharmProjects/Orac/resources/db/data_model</designStoragePath>
 </designDescr>
+<designDescr class="oracle.dbtools.crest.model.design.Design$DesignStorageDesc" id="B88085D5-41C4-8A94-9B31-F5A1F36AA984">
+<designStoragePath>/home/clive/PycharmProjects/Orac/resources/db/data_model</designStoragePath>
+</designDescr>
+<designDescr class="oracle.dbtools.crest.model.design.Design$DesignStorageDesc" id="1A4BEC42-FE90-E793-1385-8FDBFC9D8CFA">
+<designStoragePath>/home/clive/PycharmProjects/Orac/resources/db/data_model</designStoragePath>
+</designDescr>
+<designDescr class="oracle.dbtools.crest.model.design.Design$DesignStorageDesc" id="C8855B21-569A-592F-C75D-0E38B70C32FD">
+<designStoragePath>/home/clive/PycharmProjects/Orac/resources/db/data_model</designStoragePath>
+</designDescr>
 </usedDesignStorageDescriptors>
 </OSDM_Design>

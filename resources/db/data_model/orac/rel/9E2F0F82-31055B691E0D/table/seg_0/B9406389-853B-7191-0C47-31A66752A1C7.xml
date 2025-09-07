@@ -12,6 +12,7 @@ Key uses: Provides a single source of truth for all LLMs accessible to Orac, ena
 <commentInRDBMS><![CDATA[registry of available large language models (llms) and their configuration.]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>135B44DB-1AE4-61AB-08D2-8827470CC8FA</importedID>
+<abbreviation>llm_reg</abbreviation>
 <allowColumnReorder>false</allowColumnReorder>
 <existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
 <parsed>true</parsed>
@@ -205,6 +206,7 @@ Keep keys stable; avoid storing secrets (use a vault/env vars instead).]]></comm
 <dataTypePrecision>6</dataTypePrecision>
 <defaultValue>systimestamp</defaultValue>
 <ownDataTypeParameters>,6,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
 <Column name="CREATED_BY" id="A930F20C-CED7-4D62-AB03-A69E23EA7755">
@@ -219,11 +221,14 @@ Keep keys stable; avoid storing secrets (use a vault/env vars instead).]]></comm
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
 <dataTypeSize>128 BYTE</dataTypeSize>
-<defaultValue>coalesce(sys_context(&apos;apex$session&apos;,&apos;app_user&apos;),
-                                                     sys_context(&apos;userenv&apos;,&apos;proxy_user&apos;),
-                                                     sys_context(&apos;userenv&apos;,&apos;session_user&apos;),
-                                                     user)</defaultValue>
+<defaultValue>coalesce(
+    sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;),
+    sys_context(&apos;USERENV&apos;,&apos;PROXY_USER&apos;),
+    sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;),
+    user
+  )</defaultValue>
 <ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
 <Column name="UPDATED_ON" id="47DA6128-1150-74BD-41E5-505FD2CBCB1E">

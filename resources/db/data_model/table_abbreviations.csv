@@ -1,0 +1,10 @@
+Table, Abbreviation
+users, users 
+conversations, convs 
+messages, messgs
+message_embeddings, megemb
+llm_registry, llmreg 
+user_preferences, usrprf 
+user_prompt_elements, usrpre 
+user_synonyms, usrsyns
+devices, devics 

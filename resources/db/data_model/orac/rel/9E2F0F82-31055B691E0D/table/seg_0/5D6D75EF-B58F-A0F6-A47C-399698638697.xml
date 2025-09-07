@@ -12,6 +12,7 @@ Key uses: Controls ownership of conversation history, preferences, and other use
 <commentInRDBMS><![CDATA[stores registered users of the orac system.]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>D5B2E279-6892-C0D2-8370-9192D630811C</importedID>
+<abbreviation>users</abbreviation>
 <allowColumnReorder>false</allowColumnReorder>
 <existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
 <parsed>true</parsed>
@@ -154,6 +155,7 @@ Change policy: toggled by admins or automated processes; does not affect foreign
 <dataTypePrecision>6</dataTypePrecision>
 <defaultValue>systimestamp</defaultValue>
 <ownDataTypeParameters>,6,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
 <Column name="CREATED_BY" id="41DE0ED3-9B81-FA92-7598-D66247D7EAB7">
@@ -168,11 +170,14 @@ Change policy: toggled by admins or automated processes; does not affect foreign
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
 <dataTypeSize>128 CHAR</dataTypeSize>
-<defaultValue>coalesce(sys_context(&apos;apex$session&apos;,&apos;app_user&apos;),
-                                                   sys_context(&apos;userenv&apos;,&apos;proxy_user&apos;),
-                                                   sys_context(&apos;userenv&apos;,&apos;session_user&apos;),
-                                                   user)</defaultValue>
+<defaultValue>coalesce(
+    sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;),
+    sys_context(&apos;USERENV&apos;,&apos;PROXY_USER&apos;),
+    sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;),
+    user
+  )</defaultValue>
 <ownDataTypeParameters>128 CHAR,,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
 <Column name="UPDATED_ON" id="ACB99582-2DF5-AEBF-0323-B5614FD46657">

@@ -8,6 +8,7 @@
 <commentInRDBMS><![CDATA[atomic utterances within a conversation (user/assistant/system/tool).]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>CE99C7F5-A94D-D828-3B00-AF4DBED0BAF5</importedID>
+<abbreviation>mesgs</abbreviation>
 <allowColumnReorder>false</allowColumnReorder>
 <existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
 <parsed>true</parsed>

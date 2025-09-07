@@ -5,8 +5,10 @@
 # Orac script to configure ORDS on container setup.
 #
 # 020-setup-ords.sh
-PROG='020-setup-ords.sh'
-echo "${PROG} Started."
+PROG="Orac: 020-setup-ords.sh"
+timestamp() { date +"%Y-%m-%d %H:%M:%S"; }
+echo "[$(timestamp)] ${PROG} Started"
+
 
 (
   set -Eeuo pipefail
@@ -68,4 +70,4 @@ echo "${PROG} Started."
 
 echo "${PROG}: Done."
 # IMPORTANT: no `exit` here; let the runner continue
-
+echo "[$(timestamp)] ${PROG}: Done." 

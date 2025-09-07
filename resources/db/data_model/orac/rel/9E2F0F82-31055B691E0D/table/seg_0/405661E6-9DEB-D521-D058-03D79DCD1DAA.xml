@@ -8,6 +8,7 @@
 <commentInRDBMS><![CDATA[embeddings for message-level chunks.]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>810E8D83-5346-2614-595F-1021DA3C800E</importedID>
+<abbreviation>mesg_emb</abbreviation>
 <allowColumnReorder>false</allowColumnReorder>
 <existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
 <parsed>true</parsed>

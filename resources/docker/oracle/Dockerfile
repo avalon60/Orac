@@ -4,10 +4,9 @@
 # Date: 2025-07-29
 # --------------------------------------------------------------------
 
-# ✅ Full version (not lite) — includes Java, sqlplus, and other tools
 FROM container-registry.oracle.com/database/free:latest
 
-# Build-time args only — values injected by bake
+# Build-time args (injected by bake)
 ARG ORACLE_BASE
 ARG ORAC_HOME
 ARG APEX_VERSION
@@ -15,7 +14,7 @@ ARG ORDS_VERSION
 ARG SQLCL_VERSION
 ARG ORACLE_PDB
 
-# Set runtime env
+# Runtime env
 ENV ORACLE_BASE=${ORACLE_BASE} \
     ORAC_HOME=${ORAC_HOME} \
     ORACLE_PDB=${ORACLE_PDB} \
@@ -23,53 +22,67 @@ ENV ORACLE_BASE=${ORACLE_BASE} \
     ORDS_VERSION=${ORDS_VERSION} \
     SQLCL_VERSION=${SQLCL_VERSION}
 
-# Switch to root for setup
+# --------------------------------------------------------------------
+# Root phase: layout, copy resources, set sane perms
+# --------------------------------------------------------------------
 USER root
 
-# Create required internal directories
+# Create required dirs
 RUN mkdir -p \
     ${ORAC_HOME}/bin \
     ${ORAC_HOME}/etc \
-    ${ORAC_HOME}/ords \
     ${ORAC_HOME}/ords/params \
     ${ORAC_HOME}/scripts/orac_sql \
     ${ORAC_HOME}/setup/apex \
-    ${ORAC_HOME}/setup/ords \
     ${ORAC_HOME}/setup/sqlcl \
+    ${ORAC_HOME}/app \
+    ${ORAC_HOME}/schema \
     ${ORAC_HOME}/logs
 
-# Copy deployment scripts and binary resources
+# Copy deployment scripts and configs
 COPY --chown=54321 resources/docker/oracle/setup   ${ORACLE_BASE}/scripts/setup/
 COPY --chown=54321 resources/docker/oracle/startup ${ORACLE_BASE}/scripts/startup/
 COPY --chown=54321 resources/docker/oracle/bin     ${ORAC_HOME}/bin
 COPY --chown=54321 resources/docker/oracle/etc     ${ORAC_HOME}/etc
 
-# Copy workspace SQL files
+# Copy schema (whole tree, once) and set perms (dirs 755, *.sql 644)
+COPY --chown=54321 resources/db/schema ${ORAC_HOME}/schema
+RUN find ${ORAC_HOME}/schema -type d -exec chmod 755 {} + \
+ && find ${ORAC_HOME}/schema -type f -name "*.sql" -exec chmod 644 {} +
+
+# Copy APEX workspace/app SQL (once) and set perms
 COPY --chown=54321 resources/docker/oracle/apex_sql ${ORAC_HOME}/setup/apex
-RUN chmod 644 ${ORAC_HOME}/setup/apex/*.sql 
+RUN find ${ORAC_HOME}/setup/apex -type d -exec chmod 755 {} + \
+ && find ${ORAC_HOME}/setup/apex -type f -name "*.sql" -exec chmod 644 {} +
 
-# Ensure startup and bin scripts are executable
-RUN chmod +x  ${ORACLE_BASE}/scripts/startup/*.sh 
-RUN chmod 644 ${ORACLE_BASE}/scripts/setup/*.sql 
-RUN chmod +x  ${ORAC_HOME}/bin/*.sh
-
-# Switch to root to chmod before extracting as oracle
-USER root
-
-# Ensure oracle can write to staging before switching
-RUN chmod -R 777 ${ORAC_HOME}/setup/apex
-RUN chmod -R 777 ${ORAC_HOME}/setup/ords
-RUN chmod -R 777 ${ORAC_HOME}/setup/sqlcl
+# Copy app exports and set perms
+COPY --chown=54321 resources/db/app ${ORAC_HOME}/app
+RUN find ${ORAC_HOME}/app -type d -exec chmod 755 {} + \
+ && find ${ORAC_HOME}/app -type f -name "*.sql" -exec chmod 644 {} +
 
 # Ensure we can read/write logs
-RUN chmod 777 ${ORAC_HOME}
-RUN chmod -R 777 ${ORAC_HOME}/ords
-RUN chmod 777 ${ORAC_HOME}/logs
+RUN chmod 755 ${ORAC_HOME}/logs
 
-# Switch to oracle for safe downloads
+# Make startup scripts executable
+RUN chmod +x  ${ORACLE_BASE}/scripts/startup/*.sh
+RUN chmod +x  ${ORAC_HOME}/bin/*.sh
+RUN chmod 644 ${ORACLE_BASE}/scripts/setup/*.sql
+
+# Make oracle the owner of all locations it will write to during build/runtime
+RUN chown -R 54321:54321 \
+    ${ORAC_HOME}/setup/apex \
+    ${ORAC_HOME}/setup/sqlcl \
+    ${ORAC_HOME}/ords \
+    ${ORAC_HOME}/app \
+    ${ORAC_HOME}/schema \
+    ${ORAC_HOME}/logs
+
+# --------------------------------------------------------------------
+# Fetch APEX / ORDS / SQLcl as oracle
+# --------------------------------------------------------------------
 USER oracle
 
-# Download and extract APEX to staging
+# APEX
 RUN set -e && \
   echo "📦 Downloading APEX ${APEX_VERSION}..." && \
   curl -sL -o /tmp/apex.zip \
@@ -77,7 +90,7 @@ RUN set -e && \
   unzip -q /tmp/apex.zip -d ${ORAC_HOME}/setup/apex || (echo "❌ APEX unzip failed" && ls -lh /tmp/apex.zip && exit 1) && \
   rm -f /tmp/apex.zip
 
-# Download and extract ORDS to staging
+# ORDS
 RUN set -e && \
   echo "📦 Downloading ORDS ${ORDS_VERSION}..." && \
   curl -sL -o /tmp/ords.zip \
@@ -86,7 +99,7 @@ RUN set -e && \
   unzip -q /tmp/ords.zip -d ${ORAC_HOME}/ords && \
   rm -f /tmp/ords.zip
 
-# Download and extract SQLcl to staging
+# SQLcl
 RUN set -e && \
   echo "📦 Downloading SQLcl ${SQLCL_VERSION}..." && \
   curl -sL -o /tmp/sqlcl.zip \
@@ -94,32 +107,26 @@ RUN set -e && \
   unzip -q /tmp/sqlcl.zip -d ${ORAC_HOME}/setup/sqlcl || (echo "❌ SQLcl unzip failed" && ls -lh /tmp/sqlcl.zip && exit 1) && \
   rm -f /tmp/sqlcl.zip
 
-
-# Switch to root to install system packages
+# --------------------------------------------------------------------
+# Root phase: install Java 17 (Adoptium)
+# --------------------------------------------------------------------
 USER root
 
-# Install Java 17
-USER root
-# Install Java 17 manually from Adoptium (recommended for slim Oracle base images)
 ARG JDK_VERSION=17.0.11+9
 ARG JDK_BASE_URL=https://github.com/adoptium/temurin17-binaries/releases/download
 ARG JDK_FILENAME=OpenJDK17U-jdk_x64_linux_hotspot_17.0.11_9.tar.gz
 ARG JDK_URL=${JDK_BASE_URL}/jdk-17.0.11%2B9/${JDK_FILENAME}
-
-
 
 RUN curl -L -o /tmp/${JDK_FILENAME} ${JDK_URL} && \
     mkdir -p /usr/lib/jvm && \
     tar -xzf /tmp/${JDK_FILENAME} -C /usr/lib/jvm && \
     rm /tmp/${JDK_FILENAME}
 
-# Set Java 17 as default
 ENV JAVA_HOME=/usr/lib/jvm/jdk-17.0.11+9
 ENV PATH="${JAVA_HOME}/bin:$PATH"
 
-# Switch back to oracle user
+# Back to oracle
 USER oracle
 
-# Expose ports for database and ORDS
 EXPOSE 1521 8080 8888
 
