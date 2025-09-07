@@ -7,6 +7,7 @@
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>8803FE71-1767-74FE-7001-B22B186A1501</importedID>
+<abbreviation>device</abbreviation>
 <allowColumnReorder>false</allowColumnReorder>
 <existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
 <parsed>true</parsed>
@@ -94,6 +95,55 @@
 <dataTypePrecision>6</dataTypePrecision>
 <defaultValue>systimestamp</defaultValue>
 <ownDataTypeParameters>,6,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_BY" id="8DC4C9BB-BFD6-9134-B58F-EE91915C6C44">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-30 16:55:00 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 BYTE</dataTypeSize>
+<defaultValue>sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;)</defaultValue>
+<ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_ON" id="69769D86-E649-DA39-F429-F89538A4FE75">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-30 16:19:54 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_BY" id="2BEAA9FE-4DF3-376A-6F88-14EAC180EDF4">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-30 16:19:54 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 BYTE</dataTypeSize>
+<ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="ROW_VERSION" id="0884EFF7-C4AD-F2E4-696B-CB2864683CB8">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-30 16:19:54 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<defaultValue>1</defaultValue>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
 </columns>

@@ -6,7 +6,7 @@
 <schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
 <logging>YES</logging>
 <partitionedRowMovement>DISABLE</partitionedRowMovement>
-<segment>BDA69584-4252-01E2-FADA-BF6CE54B7D49</segment>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 <temporaryChanged>false</temporaryChanged>
 <accessDriverType>oracle_loader</accessDriverType>
@@ -112,7 +112,7 @@
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
 <schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
-<segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 </IndexProxy>
 <IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="IX_MSG_EMB_MESSAGE_ID" id="8AA36C77-B989-C932-6CDB-28E1CCD1C209">
@@ -120,7 +120,7 @@
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
 <schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
-<segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 </IndexProxy>
 <IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="MESSAGE_EMBEDDINGS_PK" id="A245CBD1-4E78-9B73-53AA-96824E01170C">
@@ -128,7 +128,7 @@
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
 <schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
-<segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 </IndexProxy>
 </indexProxies>
@@ -140,7 +140,7 @@
 </ForeignKey>
 </foreignKeys>
 <lobStorages>
-<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000076986C00006$$" id="58A70625-3320-9BC3-3322-2C5CD9EDDCED">
+<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000076986C00006$$" id="CE9C7DEF-773B-73E2-86D9-045AB17F48B6">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
@@ -153,7 +153,7 @@
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 <lobStorageType>SECUREFILE</lobStorageType>
 </LobStorage>
-<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000076986C00007$$" id="3FE45F86-2EBE-973C-77CC-F43BADF5847D">
+<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000076986C00007$$" id="79958406-1514-B734-990C-AFD620A4D834">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
@@ -166,7 +166,7 @@
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 <lobStorageType>SECUREFILE</lobStorageType>
 </LobStorage>
-<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000076986C00008$$" id="96055E44-D404-27B5-DEB5-79A23EAE0EC0">
+<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000076986C00008$$" id="A4676280-DD8A-0410-C543-CF42FF35A8BC">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
@@ -185,10 +185,10 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
-<segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 <existingIndex>A245CBD1-4E78-9B73-53AA-96824E01170C</existingIndex>
-<indexSegment>A9F8776D-FB19-2315-445D-6E257FA36DB9</indexSegment>
+<indexSegment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</indexSegment>
 <indexSort>SORTED</indexSort>
 <usingIndex>BY INDEX NAME</usingIndex>
 </PrimaryKey>
@@ -198,10 +198,10 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
-<segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 <existingIndex>5BB11A49-DBF6-7EEF-AD5C-0148B34A70A4</existingIndex>
-<indexSegment>A9F8776D-FB19-2315-445D-6E257FA36DB9</indexSegment>
+<indexSegment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</indexSegment>
 <indexSort>SORTED</indexSort>
 <usingIndex>BY INDEX NAME</usingIndex>
 </UniqueKey>

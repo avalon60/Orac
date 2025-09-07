@@ -8,6 +8,7 @@
 <commentInRDBMS><![CDATA[one row per dialog thread; holds session key and default llm.]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>A5DCCC69-7470-37CB-211C-EF67DCAFC232</importedID>
+<abbreviation>convs</abbreviation>
 <allowColumnReorder>false</allowColumnReorder>
 <existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
 <parsed>true</parsed>
