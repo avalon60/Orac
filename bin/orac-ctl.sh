@@ -87,7 +87,7 @@ start_orac_stack() {
     echo "👉 Run the provisioner first: bin/oracdb-init.sh"
     exit 1
   fi
-
+  $SCRIPT_DIR/dbwait.sh
   echo "🤖 Starting Orac AI engine..."
   "$ORAC_SH" start
 }

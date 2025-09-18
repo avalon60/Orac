@@ -12,6 +12,7 @@ Key uses: Allows per-user customisation of behaviour, UI, and defaults without a
 <commentInRDBMS><![CDATA[stores key���value preference settings for each user.]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>DC2C359E-E805-EEFA-B6D6-10AF43A7226A</importedID>
+<abbreviation>user_pref</abbreviation>
 <allowColumnReorder>false</allowColumnReorder>
 <existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
 <parsed>true</parsed>
@@ -34,6 +35,7 @@ Key uses: Allows per-user customisation of behaviour, UI, and defaults without a
 <autoIncrementCycle>false</autoIncrementCycle>
 <autoIncrementSequenceName>user_preferences_pref_id_seq</autoIncrementSequenceName>
 <autoIncrementTriggerName>USER_PREFERENCES_PREF_ID_TRG</autoIncrementTriggerName>
+<autoIncrementGenerateTrigger>false</autoIncrementGenerateTrigger>
 </Column>
 <Column name="USER_ID" id="9F284D13-2632-AD60-5384-80CA498428FC">
 <sourceConnName>OracSchema</sourceConnName>
@@ -82,8 +84,28 @@ Key uses: Allows per-user customisation of behaviour, UI, and defaults without a
 <useDomainConstraints>false</useDomainConstraints>
 <use>1</use>
 <logicalDatatype>47823B89-BECE-2D4A-B641-EE3BE6149078</logicalDatatype>
-<dataTypeSize>8200</dataTypeSize>
-<ownDataTypeParameters>8200,,</ownDataTypeParameters>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="VALUE_TYPE" id="10A3B27C-7CCC-3108-8C03-03B8E1D26A1E">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PREFERENCES</sourceObjSchema>
+<sourceObjName>VALUE_TYPE</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 15:08:41 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>F8C271BA-0D83-2981-4691-028378FEBA3E</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>8 BYTE</dataTypeSize>
+<listOfValues>
+<valueDef value="&apos;boolean&apos;" description=""/>
+<valueDef value="&apos;number&apos;" description=""/>
+<valueDef value="&apos;string&apos;" description=""/>
+</listOfValues>
+<defaultValue>&apos;string&apos;</defaultValue>
+<ownDataTypeParameters>8 BYTE,,</ownDataTypeParameters>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
 <Column name="CREATED_ON" id="0BE48982-7C96-A4F1-BA9B-1150451AF29F">
@@ -100,6 +122,7 @@ Key uses: Allows per-user customisation of behaviour, UI, and defaults without a
 <dataTypePrecision>6</dataTypePrecision>
 <defaultValue>systimestamp</defaultValue>
 <ownDataTypeParameters>,6,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
 <Column name="CREATED_BY" id="8329A915-C1E4-78C8-22C1-A235859518D0">
@@ -114,11 +137,14 @@ Key uses: Allows per-user customisation of behaviour, UI, and defaults without a
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
 <dataTypeSize>128 BYTE</dataTypeSize>
-<defaultValue>coalesce(sys_context(&apos;apex$session&apos;,&apos;app_user&apos;),
-                                             sys_context(&apos;userenv&apos;,&apos;proxy_user&apos;),
-                                             sys_context(&apos;userenv&apos;,&apos;session_user&apos;),
-                                             user)</defaultValue>
+<defaultValue>coalesce(
+    sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;),
+    sys_context(&apos;USERENV&apos;,&apos;PROXY_USER&apos;),
+    sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;),
+    user
+  )</defaultValue>
 <ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
 <Column name="UPDATED_ON" id="0B9AA781-79F8-07BA-0971-5652EDA5B029">
@@ -253,4 +279,36 @@ Key uses: Allows per-user customisation of behaviour, UI, and defaults without a
 </indexColumnUsage>
 </ind_PK_UK>
 </indexes>
+<tableCheckConstraints itemClass="oracle.dbtools.crest.model.design.constraint.TableLevelConstraint">
+<tableCheckConstraint name="USER_PREF_CK1" directorySegmentName="seg_0" id="8182DD17-8425-DAFD-0763-ED4417041B7B">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>USER_PREF_CK1</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 15:08:41 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>9A646C16-01D6-B2F2-E5FC-97380B6D9B73</importedID>
+<rule><![CDATA[
+    ( value_type = 'string'
+      and json_value(pref_value, '$' returning varchar2(4000) null on error) is not null
+    )
+    or
+    ( value_type = 'number'
+      and json_value(pref_value, '$' returning number         null on error) is not null
+    )
+    or
+    ( value_type = 'boolean'
+      and lower(json_value(pref_value, '$' returning varchar2(5) null on error))
+          in ('true','false')
+    )
+  ]]></rule>
+</tableCheckConstraint>
+<tableCheckConstraint name="SYS_C0013419" directorySegmentName="seg_0" id="F9CA59EB-F4BE-504D-0BC1-B7AFAD9C2B0B">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 15:54:10 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>3BA14778-69B5-E30A-4D31-7CF0A29F6668</importedID>
+<rule><![CDATA[VALUE_TYPE IN ('boolean', 'number', 'string')]]></rule>
+</tableCheckConstraint>
+</tableCheckConstraints>
 </Table>

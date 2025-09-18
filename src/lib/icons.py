@@ -26,6 +26,7 @@ class Icons:
     fire = '🔥'
     idea = '💡'
     clock = '⏰'
+    broom = '🧹'
 
     # Info levels
     info = 'ℹ️'
