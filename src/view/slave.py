@@ -30,11 +30,11 @@ APP_HOME = project_home()
 CONFIG_FILE_PATH = APP_HOME / 'resources' / 'config' / 'orac.ini'
 conf_manager = ConfigManager(config_file_path=CONFIG_FILE_PATH)
 LOG_LEVEL = conf_manager.config_value(section="logging", key="log_level", default='INFO')
-logger = Logger(log_file=LOG_DIR / 'local_client.log', log_level=LOG_LEVEL)
+logger = Logger(log_file=LOG_DIR / 'local_client.log', log_level=LOG_LEVEL, inc_std_err=False)
 
 LLM_TIMEOUT = int(conf_manager.config_value(section="client", key="llm_timeout", default="90"))
 SHOW_TIMESTAMP = conf_manager.bool_config_value(section="client", key="show_timestamp", default=True)
-print(f'LLM_TIMEOUT: {LLM_TIMEOUT} seconds')
+logger.log_debug(f'LLM_TIMEOUT: {LLM_TIMEOUT} seconds')
 
 
 # Protocol validator (installed from Orac repo tag)
