@@ -96,7 +96,9 @@
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
 <dataTypeSize>200 BYTE</dataTypeSize>
+<defaultValue>Brief exchange...</defaultValue>
 <ownDataTypeParameters>200 BYTE,,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
 <Column name="STATE" id="5FC1102F-2335-0546-5828-4FD8A4CE1065">

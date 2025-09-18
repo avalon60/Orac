@@ -31,3 +31,5 @@ alter table orac.llm_registry
 alter table orac.user_preferences
   add constraint usrprf_uk1 unique (user_id, pref_key)
   using index orac.usrprf_uk1_idx;
+
+

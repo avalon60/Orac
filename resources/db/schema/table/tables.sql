@@ -32,7 +32,7 @@ create table orac.conversations (
   user_id         number not null,
   session_id      varchar2(64) not null,
   llm_id          number,
-  title           varchar2(200),
+  title           varchar2(200) default on null 'Brief exchange...',
   state           varchar2(20) default 'open' not null,
   created_on      timestamp default on null systimestamp not null,
   created_by      varchar2(128) default on null coalesce(
