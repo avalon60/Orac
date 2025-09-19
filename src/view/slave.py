@@ -21,6 +21,8 @@ from lib.fsutils import project_home
 from lib.config_mgr import ConfigManager
 # Icons / logging
 from lib.icons import Icons
+import shutil
+
 os.environ["LOGURU_AUTOINIT"] = "0"  # must be set before importing our logger
 from lib.logutil import Logger
 LOG_DIR = project_home() / 'logs'
@@ -54,6 +56,74 @@ SHOW_REASONING = False
 # ---- HMAC secret + signing helpers ------------------------------------------
 
 SECRET_FILE = Path(os.environ.get("ORAC_HMAC_SECRET_FILE", "/run/orac/slave.secret"))
+
+def get_wrap_width(default=100) -> int:
+    try:
+        cols = shutil.get_terminal_size(fallback=(default, 24)).columns
+        return max(40, min(cols, 160))
+    except Exception:
+        return default
+
+_CODE_FENCE_RE = re.compile(r"```.*?```", flags=re.DOTALL)
+
+def render_for_console(text: str, width: int) -> str:
+    """
+    Preserve code fences and deliberate newlines.
+    - Segments inside ```...``` are emitted verbatim.
+    - Non-code segments are wrapped paragraph-by-paragraph.
+    """
+    out: list[str] = []
+    pos = 0
+    for m in _CODE_FENCE_RE.finditer(text):
+        # preface
+        pre = text[pos:m.start()]
+        if pre:
+            out.append(_wrap_paragraphs(pre, width))
+        # code block verbatim
+        out.append(m.group(0))
+        pos = m.end()
+    tail = text[pos:]
+    if tail:
+        out.append(_wrap_paragraphs(tail, width))
+    return "\n".join(out)
+
+def _wrap_paragraphs(chunk: str, width: int) -> str:
+    # split on blank lines to keep paragraph boundaries
+    paras = re.split(r"\n\s*\n", chunk.strip("\n"))
+    wrapped_paras = []
+    for p in paras:
+        # If the paragraph looks like preformatted (leading 4 spaces or tabs), keep as-is
+        if re.match(r"^(?:[ \t]{4,}|\t)", p) or "  \n" in p:
+            wrapped_paras.append(p)
+            continue
+        # Wrap line-by-line if paragraph contains many hard newlines (lists)
+        lines = p.splitlines() if "\n" in p else [p]
+        out_lines = []
+        for ln in lines:
+            # Don’t wrap empty lines
+            if not ln.strip():
+                out_lines.append("")
+                continue
+            # Keep common list prefixes / bullets indentation
+            if re.match(r"^\s*([-*•]|\d+\.)\s+", ln):
+                filled = textwrap.fill(
+                    ln,
+                    width=width,
+                    subsequent_indent=" " * (len(ln) - len(ln.lstrip())),
+                    break_long_words=False,
+                    break_on_hyphens=False,
+                )
+            else:
+                filled = textwrap.fill(
+                    ln,
+                    width=width,
+                    break_long_words=False,
+                    break_on_hyphens=False,
+                )
+            out_lines.append(filled)
+        wrapped_paras.append("\n".join(out_lines))
+    return "\n\n".join(wrapped_paras)
+
 
 def load_secret() -> bytes:
     try:
@@ -230,9 +300,22 @@ async def tcp_client(host=DEFAULT_HOST, port=DEFAULT_PORT):
                 continue
 
             # --- Render to console ---
+            # --- Render to console ---
             clean = strip_reasoning_tags(content)
-            wrapped = textwrap.fill(clean, width=WRAP_WIDTH)
-            print(f"{ts_prefix()}{Icons.robot} Orac: {wrapped}\n")
+            width = get_wrap_width(WRAP_WIDTH)
+            rendered = render_for_console(clean, width)
+            # Print with the prefix only on the first line to avoid polluting code blocks
+            first_prefix = f"{ts_prefix()}{Icons.robot} Orac: "
+            lines = rendered.splitlines(True)  # keepends=True
+            if lines:
+                print(first_prefix + lines[0], end="")
+                for ln in lines[1:]:
+                    print(ln, end="")
+                print()  # final newline
+            else:
+                print(first_prefix + "\n")
+
+# --- Main ---
 
     except ConnectionRefusedError:
         print(f"{Icons.error} Could not connect to Orac at {host}:{port}. Is it running?")

@@ -51,14 +51,14 @@ RUN find ${ORAC_HOME}/schema -type d -exec chmod 755 {} + \
  && find ${ORAC_HOME}/schema -type f -name "*.sql" -exec chmod 644 {} +
 
 # Copy APEX workspace/app SQL (once) and set perms
-COPY --chown=54321 resources/docker/oracle/apex_sql ${ORAC_HOME}/setup/apex
+# COPY --chown=54321 resources/docker/oracle/apex_sql ${ORAC_HOME}/setup/apex
 RUN find ${ORAC_HOME}/setup/apex -type d -exec chmod 755 {} + \
  && find ${ORAC_HOME}/setup/apex -type f -name "*.sql" -exec chmod 644 {} +
 
 # Copy app exports and set perms
-COPY --chown=54321 resources/db/app ${ORAC_HOME}/app
-RUN find ${ORAC_HOME}/app -type d -exec chmod 755 {} + \
- && find ${ORAC_HOME}/app -type f -name "*.sql" -exec chmod 644 {} +
+# COPY --chown=54321 resources/db/app ${ORAC_HOME}/app
+# RUN find ${ORAC_HOME}/app -type d -exec chmod 755 {} + \
+#  && find ${ORAC_HOME}/app -type f -name "*.sql" -exec chmod 644 {} +
 
 # Ensure we can read/write logs
 RUN chmod 755 ${ORAC_HOME}/logs
