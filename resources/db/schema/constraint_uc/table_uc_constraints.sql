@@ -9,7 +9,7 @@ alter table orac.users
 
 -- uk: conversations(session_id)
 alter table orac.conversations
-  add constraint convs_uk1 unique (session_id)
+  add constraint convs_uk1 unique (user_id, session_id)
   using index orac.convs_uk1_idx;
 
 -- uk: messages(conversation_id, turn_index)

@@ -1,10 +1,8 @@
 # model/context_manager.py
 from __future__ import annotations
-
 from typing import Optional, List, Dict, Any
 import json
 import time
-
 import oracledb  # for error code inspection
 from lib.session_manager import DBSession  # <- your DBSession wrapper
 
@@ -12,28 +10,50 @@ from lib.session_manager import DBSession  # <- your DBSession wrapper
 class OracContextManager:
     """
     Minimal Oracle-backed context manager for Orac:
-      - Resolves/creates user by username
+      - Resolves user by username (auto-provision optional; OFF by default)
       - Resolves/creates conversation by session_id (unique)
       - Appends messages with safe turn_index (retries on ORA-00001)
       - Loads/prunes/deletes conversation context
     """
 
-    def __init__(self, db: DBSession):
+    def __init__(self, db: DBSession, *, allow_auto_provision_users: bool = False, logger):
         self.db = db
+        self.allow_auto = bool(allow_auto_provision_users)
+        self.logger = logger
 
     # -------------------------------------------------------------------------
     # Helpers
     # -------------------------------------------------------------------------
 
-    def _get_or_create_user(self, username: str) -> int:
-        norm = username.strip()
+
+    def _conversation_id(self, session_id: str) -> Optional[int]:
+        rows = self.db.dict_sql_dataset(
+            "select conversation_id from orac.conversations where session_id = :s",
+            {"s": session_id}
+        )
+        return int(rows[0]["CONVERSATION_ID"]) if rows else None
+
+    def _next_turn_index(self, conversation_id: int) -> int:
+        rows = self.db.fetch_as_lists(
+            "select nvl(max(turn_index),0)+1 from orac.messages where conversation_id = :cid",
+            {"cid": conversation_id}
+        )
+        return int(rows[0][0]) if rows else 1
+
+    # --- user helpers ---------------------------------------------------------
+
+    def _find_user_id(self, username: str) -> Optional[int]:
+        norm = (username or "").strip()
+        if not norm:
+            return None
         rows = self.db.dict_sql_dataset(
             "select user_id from orac.users where username = :u",
             {"u": norm}
         )
-        if rows:
-            return int(rows[0]["USER_ID"])
+        return int(rows[0]["USER_ID"]) if rows else None
 
+    def _create_user(self, username: str) -> int:
+        norm = username.strip()
         with self.db.cursor() as cur:
             out_id = cur.var(oracledb.NUMBER)
             cur.execute(
@@ -45,18 +65,33 @@ class OracContextManager:
             val = out_id.getvalue()
             return int(val[0]) if isinstance(val, list) else int(val)
 
-    def _get_or_create_conversation(self, user_id: int, session_id: str,
-                                    llm_id: Optional[int]) -> int:
+    def _require_user(self, username: str) -> int:
+        """
+        Lookup only; optionally auto-create based on policy.
+        Raises PermissionError if not found and auto-provision is disabled.
+        """
+        norm = username.strip()  # ensure consistent lookup/logging
+        uid = self._find_user_id(norm)
+        if uid is not None:
+            return uid
+
+        if self.allow_auto:
+            return self._create_user(norm)
+
+        # No user found and auto-provision disabled
+        self.logger.log_warn(f"❌ Invalid user login attempt: '{norm}' not found in orac.users")
+        raise PermissionError(f"user '{norm}' is not registered")
+
+    def _get_or_create_conversation(self, user_id: int, session_id: str, llm_id: Optional[int]) -> int:
         rows = self.db.dict_sql_dataset(
-            "select conversation_id from orac.conversations where session_id = :s",
-            {"s": session_id}
+            "select conversation_id from orac.conversations where user_id = :u and session_id = :s",
+            {"u": user_id, "s": session_id}
         )
         if rows:
             return int(rows[0]["CONVERSATION_ID"])
 
         with self.db.cursor() as cur:
             out_id = cur.var(oracledb.NUMBER)
-            # positional binds throughout (avoid mixing named+positional)
             cur.execute(
                 "insert into orac.conversations(user_id, session_id, llm_id, state) "
                 "values(:1, :2, :3, 'open') returning conversation_id into :4",
@@ -66,95 +101,102 @@ class OracContextManager:
             val = out_id.getvalue()
             return int(val[0]) if isinstance(val, list) else int(val)
 
-    # -------------------------------------------------------------------------
-    # Timeout-aware conversation handling
-    # -------------------------------------------------------------------------
-
-    def _last_activity_utc(self, conversation_id: int) -> float:
+    # --- replace the whole helper with this ---
+    def _last_activity_epoch(self, conversation_id: int) -> float:
         """
-        Returns the last activity epoch seconds for a conversation,
-        based on the latest message.created_on. Falls back to 'now' if none.
+        Returns last-activity time as UNIX epoch seconds (UTC) for a conversation,
+        computed in SQL to avoid Python tz/naive datetime pitfalls.
+        Falls back to 'now' if there are no messages yet.
         """
         rows = self.db.fetch_as_lists(
-            "select max(created_on) from orac.messages where conversation_id = :cid",
+            """
+            select
+              (cast(sys_extract_utc(max(created_on)) as date) - date '1970-01-01') * 86400
+            from orac.messages
+            where conversation_id = :cid
+            """,
             {"cid": conversation_id}
         )
-        if rows and rows[0][0]:
-            # rows[0][0] is a datetime; convert to epoch
-            dt = rows[0][0]
+        if rows and rows[0][0] is not None:
             try:
-                return dt.timestamp()
+                return float(rows[0][0])
             except Exception:
                 pass
-        # No messages yet; treat as 'now' so we don't roll over immediately
-        import time as _t
-        return _t.time()
+        return time.time()
 
     def ensure_conversation_with_timeout(
-        self, *,
-        user_name: str,
-        session_id_base: str,
-        llm_id: Optional[int],
-        timeout_seconds: int
+            self, *,
+            user_name: str,
+            session_id_base: str,  # only used when creating a NEW conversation row
+            llm_id: Optional[int],
+            timeout_seconds: int
     ) -> Dict[str, Any]:
-        """
-        Ensures there is a conversation for session_id_base, but rolls over to a NEW
-        conversation (with a suffixed session_id) if the last activity exceeds timeout_seconds.
+        user_id = self._require_user(user_name)
 
-        Returns: { "conversation_id": int, "session_id": str, "rolled_over": bool }
-        """
-        # First: if an exact session_id exists, consider timeout
+        # Positional bind only; no comments; simple aliases.
         rows = self.db.dict_sql_dataset(
-            "select conversation_id from orac.conversations where session_id = :s",
-            {"s": session_id_base}
-        )
-        if rows:
-            conv_id = int(rows[0]["CONVERSATION_ID"])
-            last_ts = self._last_activity_utc(conv_id)
-            import time as _t
-            age = _t.time() - last_ts
-            if timeout_seconds > 0 and age >= timeout_seconds:
-                # Rollover: create a brand-new conversation with a suffixed session_id
-                suffix = int(_t.time())
-                new_sid = f"{session_id_base}#{suffix}"
-                new_cid = self.ensure_conversation(user_name=user_name, session_id=new_sid, llm_id=llm_id)
-                return {"conversation_id": new_cid, "session_id": new_sid, "rolled_over": True}
-            else:
-                # Keep using the existing one
-                return {"conversation_id": conv_id, "session_id": session_id_base, "rolled_over": False}
-
-        # No exact match: just create the canonical (base) session_id conversation
-        conv_id = self.ensure_conversation(user_name=user_name, session_id=session_id_base, llm_id=llm_id)
-        return {"conversation_id": conv_id, "session_id": session_id_base, "rolled_over": False}
-
-
-    def _conversation_id(self, session_id: str) -> Optional[int]:
-        rows = self.db.dict_sql_dataset(
-            "select conversation_id from orac.conversations where session_id = :s",
-            {"s": session_id}
+            """
+            select conv_id,
+                   session_id,
+                   last_ts,
+                   (
+                     extract(day    from (systimestamp - last_ts)) * 86400
+                   + extract(hour   from (systimestamp - last_ts)) * 3600
+                   + extract(minute from (systimestamp - last_ts)) *  60
+                   + extract(second from (systimestamp - last_ts))
+                   ) as age_seconds
+            from (
+              select
+                c.conversation_id as conv_id,
+                c.session_id      as session_id,
+                coalesce(
+                  max(m.created_on),
+                  c.updated_on,
+                  c.created_on
+                ) as last_ts
+              from orac.conversations c
+              left join orac.messages m
+                on m.conversation_id = c.conversation_id
+              where c.user_id = :user_id
+                and c.state   = 'open'
+              group by c.conversation_id, c.session_id, c.created_on, c.updated_on
             )
-        return int(rows[0]["CONVERSATION_ID"]) if rows else None
-
-    def _next_turn_index(self, conversation_id: int) -> int:
-        rows = self.db.fetch_as_lists(
-            "select nvl(max(turn_index),0)+1 from orac.messages where conversation_id = :cid",
-            {"cid": conversation_id}
+            order by last_ts desc
+            fetch first 1 row only
+            """,
+            {"user_id": user_id}
         )
-        return int(rows[0][0]) if rows else 1
 
-    def get_conversation_title(self, session_id: str) -> Optional[str]:
-        """Returns the current title for a conversation, or None if missing."""
-        cid = self._conversation_id(session_id)
-        if not cid:
-            return None
-        rows = self.db.fetch_as_lists(
-            "select title from orac.conversations where conversation_id = :cid",
-            {"cid": cid}
-        )
-        if not rows:
-            return None
-        title = rows[0][0]
-        return title if isinstance(title, str) and title.strip() else None
+        if rows:
+            conv_id = int(rows[0]["CONV_ID"])
+            sid = rows[0]["SESSION_ID"]
+            age_sec = float(rows[0]["AGE_SECONDS"] or 0.0)
+
+            if timeout_seconds <= 0 or age_sec < float(timeout_seconds):
+                return {
+                    "conversation_id": conv_id,
+                    "session_id": sid,
+                    "rolled_over": False,
+                    "age_seconds": age_sec,
+                    "previous_conversation_id": conv_id,
+                    "previous_session_id": sid,
+                }
+
+        # Stale or none found -> create a brand-new session_id that cannot collide
+        # Use a simple epoch suffix; you could use a monotonic counter if you prefer.
+        suffix = str(int(time.time()))
+        new_sid = f"{session_id_base}#{suffix}"
+        new_cid = self.ensure_conversation(user_name=user_name, session_id=new_sid, llm_id=llm_id)
+
+        return {
+            "conversation_id": new_cid,
+            "session_id": new_sid,
+            "rolled_over": True,
+            "age_seconds": float("inf") if rows else 0.0,
+            # let caller optionally transition the previous one:
+            "previous_conversation_id": int(rows[0]["CONV_ID"]) if rows else None,
+            "previous_session_id": rows[0]["SESSION_ID"] if rows else None,
+        }
 
     # -------------------------------------------------------------------------
     # Public API
@@ -162,8 +204,8 @@ class OracContextManager:
 
     def ensure_conversation(self, *, user_name: str, session_id: str,
                             llm_id: Optional[int] = None) -> int:
-        """Ensures user + conversation exist; returns conversation_id."""
-        user_id = self._get_or_create_user(user_name)
+        """Ensures user exists and conversation exists; returns conversation_id."""
+        user_id = self._require_user(user_name)
         return self._get_or_create_conversation(user_id, session_id, llm_id)
 
     def save_context(self, session_id: str, role: str, content_obj: dict, *,
@@ -179,7 +221,7 @@ class OracContextManager:
         content_json = json.dumps(content_obj, ensure_ascii=False)
         meta_json = json.dumps(meta or {}, ensure_ascii=False)
 
-        user_id = self._get_or_create_user(user_name)
+        user_id = self._require_user(user_name)
         conv_id = self._get_or_create_conversation(user_id, session_id, llm_id)
 
         # light retry loop for (conversation_id, turn_index) unique races
@@ -188,23 +230,18 @@ class OracContextManager:
             try:
                 with self.db.cursor() as cur:
                     out_id = cur.var(oracledb.NUMBER)
-                    # full positional bind list incl. RETURNING out var
                     cur.execute(
                         "insert into orac.messages("
                         "  conversation_id, turn_index, role, content, tokens_used, meta, llm_id"
                         ") values ("
                         "  :1, :2, :3, :4, :5, :6, :7"
                         ") returning message_id into :8",
-                        [
-                            conv_id,
-                            turn_index,
-                            role,
-                            content_json,  # JSON text
-                            tokens_used,
-                            meta_json,  # JSON text
-                            llm_id,
-                            out_id
-                        ]
+                        [conv_id, turn_index, role, content_json, tokens_used, meta_json, llm_id, out_id]
+                    )
+                    # NEW: bump last-activity marker on the conversation
+                    cur.execute(
+                        "update orac.conversations set updated_on = systimestamp where conversation_id = :cid",
+                        {"cid": conv_id}
                     )
                     self.db.commit()
                     val = out_id.getvalue()
@@ -398,3 +435,4 @@ class OracContextManager:
             "update orac.conversations set state = 'archived' where conversation_id = :cid",
             {"cid": cid}
         )
+
