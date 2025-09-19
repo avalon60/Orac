@@ -1,0 +1,342 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<Table class="oracle.dbtools.crest.model.design.relational.Table" directorySegmentName="seg_0" id="67788434-12A4-32C0-35D0-5C86BADAC908" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="MESSAGES">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>MESSAGES</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<commentInRDBMS><![CDATA[atomic utterances within a conversation (user/assistant/system/tool).]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>CE99C7F5-A94D-D828-3B00-AF4DBED0BAF5</importedID>
+<abbreviation>mesgs</abbreviation>
+<allowColumnReorder>false</allowColumnReorder>
+<existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
+<parsed>true</parsed>
+<columns itemClass="oracle.dbtools.crest.model.design.relational.Column">
+<Column name="MESSAGE_ID" id="3E500131-E627-EA38-D858-A94E7DF3E664">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>MESSAGES</sourceObjSchema>
+<sourceObjName>MESSAGE_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>CF940BCF-E611-CED5-A291-85C3597292B2</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementColumn>true</autoIncrementColumn>
+<autoIncrementCycle>false</autoIncrementCycle>
+<autoIncrementSequenceName>messages_message_id_seq</autoIncrementSequenceName>
+<autoIncrementTriggerName>MESSAGES_MESSAGE_ID_TRG</autoIncrementTriggerName>
+</Column>
+<Column name="CONVERSATION_ID" id="419E2679-DAAC-24A9-DFA6-191C56E3F10C">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>MESSAGES</sourceObjSchema>
+<sourceObjName>CONVERSATION_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>72E60690-2877-4019-E9D0-423EB3CAFC5F</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+<associations>
+<colAssociation fkAssociation="F54D763C-1449-DC25-E9C6-BE4FBC5BD1DB" referredColumn="06D74961-242B-27C6-F0A4-906DF7812F73"/>
+</associations>
+</Column>
+<Column name="TURN_INDEX" id="AABC4425-8DC6-979B-1D0D-750185C7615C">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>MESSAGES</sourceObjSchema>
+<sourceObjName>TURN_INDEX</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<commentInRDBMS><![CDATA[ordinal per conversation starting at 1.]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>7C1F4B11-1C9C-7DA5-B3E5-55B88AE11611</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="ROLE" id="C66E8133-6A33-9247-A629-7255F7A9D35E">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>MESSAGES</sourceObjSchema>
+<sourceObjName>ROLE</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>6C7FA0F0-970B-AFCF-BFDC-FD9400940FAE</importedID>
+<constraintName>SYS_C0013326</constraintName>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>20 BYTE</dataTypeSize>
+<listOfValues>
+<valueDef value="&apos;assistant&apos;" description=""/>
+<valueDef value="&apos;system&apos;" description=""/>
+<valueDef value="&apos;tool&apos;" description=""/>
+<valueDef value="&apos;user&apos;" description=""/>
+</listOfValues>
+<ownDataTypeParameters>20 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CONTENT" id="4298A097-8EA2-A857-B001-691F0F3D1372">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>MESSAGES</sourceObjSchema>
+<sourceObjName>CONTENT</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>E03E11F0-F6A5-FE8C-DCC7-D95F9234B4EB</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>47823B89-BECE-2D4A-B641-EE3BE6149078</logicalDatatype>
+<dataTypeSize>8200</dataTypeSize>
+<ownDataTypeParameters>8200,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="TOKENS_USED" id="2BA07778-9838-6F6B-7C21-C4F8A6412006">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>MESSAGES</sourceObjSchema>
+<sourceObjName>TOKENS_USED</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>EC969215-1865-FAC6-F80D-F4CD95A0390F</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="META" id="54066D7D-922D-E676-C7D3-8C0493609C4A">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>MESSAGES</sourceObjSchema>
+<sourceObjName>META</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>48074E6A-CCD6-C0BD-6992-0B21A6EFDEB2</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>47823B89-BECE-2D4A-B641-EE3BE6149078</logicalDatatype>
+<dataTypeSize>8200</dataTypeSize>
+<ownDataTypeParameters>8200,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="LLM_ID" id="E13DE6D1-C204-BECD-B60C-670A85E2890C">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>MESSAGES</sourceObjSchema>
+<sourceObjName>LLM_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<commentInRDBMS><![CDATA[optional override of conversation default llm.]]></commentInRDBMS>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>A542CADB-6A7A-16D4-0D9E-46EFE9F3F711</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+<associations>
+<colAssociation fkAssociation="92DE8E3C-1DEC-A330-69B3-49A407C79F33" referredColumn="9AF75182-54A9-89B6-AEB7-FC34F341385F"/>
+</associations>
+</Column>
+<Column name="CREATED_ON" id="B96917DB-3D68-7F9A-79F6-8EE820A7666E">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>MESSAGES</sourceObjSchema>
+<sourceObjName>CREATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>EB71B9D5-0AAA-BD92-00A4-0126C72B2EF3</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<defaultValue>systimestamp</defaultValue>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_BY" id="AAF3F63A-F989-409B-87A2-44B9CAAC03AF">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>MESSAGES</sourceObjSchema>
+<sourceObjName>CREATED_BY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>C795E9EB-3BBF-ED1C-F01E-C9A1CB8B6C8C</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 BYTE</dataTypeSize>
+<defaultValue>coalesce(sys_context(&apos;apex$session&apos;,&apos;app_user&apos;),
+                                                   sys_context(&apos;userenv&apos;,&apos;proxy_user&apos;),
+                                                   sys_context(&apos;userenv&apos;,&apos;session_user&apos;),
+                                                   user)</defaultValue>
+<ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_ON" id="397F09A9-C8FF-881B-20DF-2156342981FB">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>MESSAGES</sourceObjSchema>
+<sourceObjName>UPDATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>901D11A6-6489-8939-E33E-D16487B4B827</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_BY" id="5DD79A31-C37B-0420-5603-6E9CF8D28EC5">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>MESSAGES</sourceObjSchema>
+<sourceObjName>UPDATED_BY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>18004EB2-F410-F261-E9F5-26EA8F8F772B</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 BYTE</dataTypeSize>
+<ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="ROW_VERSION" id="B2BE5EF9-BD38-70ED-E774-D7B132008511">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>MESSAGES</sourceObjSchema>
+<sourceObjName>ROW_VERSION</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>BF7C0170-CAD4-96EF-C561-325C22512760</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<defaultValue>1</defaultValue>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+</columns>
+<indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
+<ind_PK_UK id="AA9AB783-444D-D69A-3DF3-2F7F00AAE716" name="MESSAGES_PK">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>MESSAGES_PK</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>651A2930-5854-0F2C-F368-3C8C1DC32E31</importedID>
+<pk>true</pk>
+<indexState>Primary Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="3E500131-E627-EA38-D858-A94E7DF3E664"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="A02FA65B-D025-039A-46E7-EC703A84C16A" name="UQ_MESSAGES_CONV_TURN">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>UQ_MESSAGES_CONV_TURN</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>273CDCC5-EA09-655D-7D43-C76D13C6C86F</importedID>
+<indexState>Unique Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="419E2679-DAAC-24A9-DFA6-191C56E3F10C"/>
+<colUsage columnID="AABC4425-8DC6-979B-1D0D-750185C7615C"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="AB0861CD-C2FD-85A9-06D6-0E0203DF5DA2" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="IX_MESSAGES_CONV_ID">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>IX_MESSAGES_CONV_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>CD856466-E6EC-74CF-2EFF-1211891CC92E</importedID>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="419E2679-DAAC-24A9-DFA6-191C56E3F10C"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="537ABB56-BA3F-5126-AD70-EBEB589A8850" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="IX_MESSAGES_LLM_ID">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>IX_MESSAGES_LLM_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>281898AE-15F7-19C0-7F11-0D2226A4E998</importedID>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="E13DE6D1-C204-BECD-B60C-670A85E2890C"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="B5AEAB27-D008-DA69-8A3C-A22E873104F6" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="MESSAGES_PK">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>MESSAGES_PK</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>51639CD0-E8DA-46EB-1D1F-144EEF052380</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="3E500131-E627-EA38-D858-A94E7DF3E664"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="2ACE415B-DB43-00D1-CD90-E9DF7B7076C0" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="UQ_MESSAGES_CONV_TURN">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>UQ_MESSAGES_CONV_TURN</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>AA5ABACD-54D4-486C-4EDD-8F8B14A46B64</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="419E2679-DAAC-24A9-DFA6-191C56E3F10C"/>
+<colUsage columnID="AABC4425-8DC6-979B-1D0D-750185C7615C"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="0B9B9BAB-DFCF-732E-D4B6-109C912AE5CB" name="FK_MESSAGES_CONVERSATION">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<indexState>Foreign Key</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="419E2679-DAAC-24A9-DFA6-191C56E3F10C"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="EBE046F1-CDE7-5A4D-8079-591023A56DE6" name="FK_MESSAGES_LLM">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<indexState>Foreign Key</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="E13DE6D1-C204-BECD-B60C-670A85E2890C"/>
+</indexColumnUsage>
+</ind_PK_UK>
+</indexes>
+</Table>

@@ -6,7 +6,7 @@
 <schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
 <logging>YES</logging>
 <partitionedRowMovement>DISABLE</partitionedRowMovement>
-<segment>BDA69584-4252-01E2-FADA-BF6CE54B7D49</segment>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 <temporaryChanged>false</temporaryChanged>
 <accessDriverType>oracle_loader</accessDriverType>
@@ -44,13 +44,18 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
-<autoIncrementDDL>IDENTITY_CLAUSE</autoIncrementDDL>
+<autoIncrementDDL>TRIGGER</autoIncrementDDL>
 </ColumnProxy>
 <ColumnProxy name="CREATED_BY" id="A930F20C-CED7-4D62-AB03-A69E23EA7755">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
-<defaultValue>coalesce(sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;), sys_context(&apos;USERENV&apos;, &apos;PROXY_USER&apos;), sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;), user)</defaultValue>
+<defaultValue>coalesce(
+    sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;),
+    sys_context(&apos;USERENV&apos;,&apos;PROXY_USER&apos;),
+    sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;),
+    user
+  )</defaultValue>
 </ColumnProxy>
 <ColumnProxy name="MAX_CONTEXT_TOKENS" id="A99B027B-2B81-9023-D375-BD54B6CEBCA2">
 <createdBy>clive</createdBy>
@@ -85,12 +90,20 @@
 </ColumnProxy>
 </columnProxies>
 <indexProxies>
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="LLM_REGISTRY_PK" id="B1D82F34-D5F7-5535-AF9E-AF14108AE749">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+</IndexProxy>
 <IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="UQ_LLM_REGISTRY_NAME" id="C702FFDF-0D95-024E-AC57-607E9E6A1F0D">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
 <schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
-<segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 </IndexProxy>
 </indexProxies>
@@ -100,9 +113,10 @@
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
 <schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
-<segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
-<indexSegment>A9F8776D-FB19-2315-445D-6E257FA36DB9</indexSegment>
+<existingIndex>B1D82F34-D5F7-5535-AF9E-AF14108AE749</existingIndex>
+<indexSegment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</indexSegment>
 <indexSort>SORTED</indexSort>
 <usingIndex>BY INDEX NAME</usingIndex>
 </PrimaryKey>
@@ -112,10 +126,10 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac</ownerDesignName>
-<segment>A9F8776D-FB19-2315-445D-6E257FA36DB9</segment>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 <existingIndex>C702FFDF-0D95-024E-AC57-607E9E6A1F0D</existingIndex>
-<indexSegment>A9F8776D-FB19-2315-445D-6E257FA36DB9</indexSegment>
+<indexSegment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</indexSegment>
 <indexSort>SORTED</indexSort>
 <usingIndex>BY INDEX NAME</usingIndex>
 </UniqueKey>

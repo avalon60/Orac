@@ -14,7 +14,7 @@ BIN_DIR=${PROJECT_DIR}/bin
 CTL_DIR=${PROJECT_DIR}/src/controller
 ORAC_VERSION=$(grep "__version__" ${CTL_DIR}/__init__.py | cut -d'"' -f2)
 
-CONTAINER_NAME="oracle-xe"
+CONTAINER_NAME="orac-db"
 
 print_usage() {
   echo "${PROG}"

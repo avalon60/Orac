@@ -11,11 +11,13 @@
 <connType>1</connType>
 <syncSelected>-1</syncSelected>
 </redirectConnectionStamp>
+<useConnectionUser>true</useConnectionUser>
 <importConnectionStamps>
 <importConnectionStamp class="oracle.dbtools.crest.imports.DBConnectionStamp">
 <connName>OracSchema</connName>
 <connUser>orac</connUser>
 <connType>1</connType>
+<syncSelected>1</syncSelected>
 </importConnectionStamp>
 </importConnectionStamps>
 <importDDLFileStamps>

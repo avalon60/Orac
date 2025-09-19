@@ -9,9 +9,10 @@
 Each record represents a unique user identity, along with their display name, contact details, and active/inactive status.
 Includes audit columns for creation/update tracking and a row_version field for optimistic locking.
 Key uses: Controls ownership of conversation history, preferences, and other user-specific settings.]]></comment>
-<commentInRDBMS><![CDATA[Stores registered users of the Orac system.]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[stores registered users of the orac system.]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>D5B2E279-6892-C0D2-8370-9192D630811C</importedID>
+<abbreviation>users</abbreviation>
 <allowColumnReorder>false</allowColumnReorder>
 <existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
 <parsed>true</parsed>
@@ -27,7 +28,7 @@ Generated automatically by Oracle on insert (generated always as identity).
 Used as a foreign key from orac.user\_preferences.user\_id and orac.context\_history.user\_id to relate preferences and conversation turns to a user.
 Immutable once created and never reused.
 ]]></comment>
-<commentInRDBMS><![CDATA[user_id — Primary key for the orac.users table.]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[user_id ��� primary key for the orac.users table.]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>5E67DC50-AF76-94FB-5AF1-12FBAA1D23DE</importedID>
 <useDomainConstraints>false</useDomainConstraints>
@@ -35,12 +36,10 @@ Immutable once created and never reused.
 <logicalDatatype>LOGDT019</logicalDatatype>
 <ownDataTypeParameters>,,</ownDataTypeParameters>
 <autoIncrementColumn>true</autoIncrementColumn>
-<identityColumn>true</identityColumn>
 <autoIncrementGenerateAlways>true</autoIncrementGenerateAlways>
 <autoIncrementCycle>false</autoIncrementCycle>
-<autoIncrementDisableCache>false</autoIncrementDisableCache>
-<autoIncrementCache>20</autoIncrementCache>
-<autoIncrementOrder>false</autoIncrementOrder>
+<autoIncrementSequenceName>users_user_id_seq</autoIncrementSequenceName>
+<autoIncrementTriggerName>USERS_USER_ID_TRG</autoIncrementTriggerName>
 </Column>
 <Column name="USERNAME" id="6FA6DFE8-A068-9055-635E-209D6BF5BDD4">
 <sourceConnName>OracSchema</sourceConnName>
@@ -55,7 +54,7 @@ Purpose: stable, human-readable identifier used in UIs, APIs, and audit defaults
 Change policy: should rarely change; foreign keys are unaffected (they use user_id), but external systems may cache it.
 Validation: not enforced in DDL; recommend restricting to a safe set (e.g., letters/digits/._-) and trimming whitespace in the application.
 Case: treat consistently in the application (decide on case sensitivity and normalize accordingly).]]></comment>
-<commentInRDBMS><![CDATA[username — Unique login handle for the orac.users table.]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[username ��� unique login handle for the orac.users table.]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>87E99CA2-1842-8B99-B2BC-19BDF446C540</importedID>
 <useDomainConstraints>false</useDomainConstraints>
@@ -79,7 +78,7 @@ If null, the application should fall back to `username`.
 Change policy: user-editable; updates do not affect foreign keys (they use `user_id`).
 Validation: trim whitespace; allow Unicode; avoid storing sensitive info beyond what the user intends to display.
 ]]></comment>
-<commentInRDBMS><![CDATA[display\_name — Human-friendly name for the user (orac.users).]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[display_name ��� human-friendly name for the user (orac.users).]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>4A6AC333-5913-C270-9E8A-125B48DF2D65</importedID>
 <nullsAllowed>true</nullsAllowed>
@@ -103,8 +102,7 @@ Uniqueness: not enforced in DDL; make it unique only if your app requires one-ac
 Validation: enforce format and domain checks in the application; consider a verified flag and timestamp elsewhere.
 Case: treat comparisons as case-insensitive; store a normalized lowercase copy for lookups.
 Privacy: PII—restrict access, avoid logging, and consider encryption-at-rest if policy requires.]]></comment>
-<commentInRDBMS><![CDATA[email — Primary contact email for the user (orac.users).
-]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[email ��� primary contact email for the user (orac.users).]]></commentInRDBMS>
 <ownerDesignName>orac</ownerDesignName>
 <importedID>0D0DDA3A-6FB4-9A04-966B-A2C1A4A82F40</importedID>
 <nullsAllowed>true</nullsAllowed>
@@ -157,6 +155,7 @@ Change policy: toggled by admins or automated processes; does not affect foreign
 <dataTypePrecision>6</dataTypePrecision>
 <defaultValue>systimestamp</defaultValue>
 <ownDataTypeParameters>,6,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
 <Column name="CREATED_BY" id="41DE0ED3-9B81-FA92-7598-D66247D7EAB7">
@@ -171,8 +170,14 @@ Change policy: toggled by admins or automated processes; does not affect foreign
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
 <dataTypeSize>128 CHAR</dataTypeSize>
-<defaultValue>coalesce(sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;), sys_context(&apos;USERENV&apos;, &apos;PROXY_USER&apos;), sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;), user)</defaultValue>
+<defaultValue>coalesce(
+    sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;),
+    sys_context(&apos;USERENV&apos;,&apos;PROXY_USER&apos;),
+    sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;),
+    user
+  )</defaultValue>
 <ownDataTypeParameters>128 CHAR,,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
 <Column name="UPDATED_ON" id="ACB99582-2DF5-AEBF-0323-B5614FD46657">
@@ -265,6 +270,20 @@ Change policy: toggled by admins or automated processes; does not affect foreign
 <isSurrogateKey>false</isSurrogateKey>
 <indexColumnUsage>
 <colUsage columnID="6FA6DFE8-A068-9055-635E-209D6BF5BDD4"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="9D045375-478A-CA96-946E-DF64E7FCA135" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="USERS_PK">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>USERS_PK</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<importedID>CEFC54F8-6C8C-3D29-3C20-439ED9FF33D6</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="1FEA3C39-B46D-00D0-8926-978F12A4AEDB"/>
 </indexColumnUsage>
 </ind_PK_UK>
 </indexes>

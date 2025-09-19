@@ -13,7 +13,7 @@ from lib.icons import Icons
 APP_HOME = project_home()
 CONFIG_FILE_PATH = APP_HOME / 'resources' / 'config' / 'orac.ini'
 conf_manager = ConfigManager(config_file_path=CONFIG_FILE_PATH)
-project_identifier = conf_manager.config_value(config_section='global', config_key='project_identifier')
+project_identifier = conf_manager.config_value(section='global', key='project_identifier')
 
 
 def main():

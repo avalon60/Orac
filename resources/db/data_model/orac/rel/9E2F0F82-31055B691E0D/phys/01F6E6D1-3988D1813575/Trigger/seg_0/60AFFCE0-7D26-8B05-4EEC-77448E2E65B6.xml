@@ -1,0 +1,21 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<TriggerOraclev10g class="oracle.dbtools.crest.model.design.storage.oracle.v10g.TriggerOraclev10g" name="USER_PREFERENCES_ROW_AUDIT_TRG" directorySegmentName="seg_0" id="60AFFCE0-7D26-8B05-4EEC-77448E2E65B6">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>USER_PREFERENCES_ROW_AUDIT_TRG</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:50 UTC</createdTime>
+<ownerDesignName>orac</ownerDesignName>
+<actions>UPDATE</actions>
+<body><![CDATA[begin
+  :new.updated_on := systimestamp;
+  :new.updated_by := coalesce(sys_context('apex$session','app_user'),
+                              sys_context('userenv','proxy_user'),
+                              sys_context('userenv','session_user'),
+                              user);
+  :new.row_version := nvl(:old.row_version,1) + 1;
+end;]]></body>
+<triggerTime>BEFORE</triggerTime>
+<owner>D4A3E94C-4EDB-6423-5307-62FB80B0230D</owner>
+<table>2CCCB256-969C-5EDA-DCA0-6B66D1D5C2C7</table>
+</TriggerOraclev10g>

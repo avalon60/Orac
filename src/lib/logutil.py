@@ -64,8 +64,8 @@ RUN_ID = run_id_manager.run_id
 
 def log_stamp(post_underscore: bool = True, pref_underscore: bool = False) -> str:
     log_stamping = config_manager.bool_config_value(
-        config_section='logging',
-        config_key='log_stamping',
+        section='logging',
+        key='log_stamping',
         default=False
     )
     _log_stamp = str(int(round(time.time() * 1000)))
@@ -77,14 +77,17 @@ def log_stamp(post_underscore: bool = True, pref_underscore: bool = False) -> st
 
 
 class Logger:
-    def __init__(self, log_file: Optional[Path] = None, log_level: str = "INFO"):
+    def __init__(self, log_file: Optional[Path] = None, log_level: str = "INFO", inc_std_err: bool = None):
         self.log_file = log_file or DEFAULT_LOGS_DIR / f"r{RUN_ID}.log"
         self.log_level = log_level
-        self.include_stderr = config_manager.bool_config_value(
-            config_section='logging',
-            config_key='inc_stderr',
-            default=True
-        )
+        if inc_std_err is not None:
+            self.include_stderr = inc_std_err
+        else:
+            self.include_stderr = config_manager.bool_config_value(
+                section='logging',
+                key='inc_stderr',
+                default=True
+            )
         self._init_logger()
 
     def _init_logger(self):

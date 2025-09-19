@@ -1,9 +1,10 @@
+from __future__ import annotations
+
 # src/controller/config_mgr.py
 __author__ = "Clive Bostock"
 __date__ = "2024-11-09"
 __description__ = "Manages configuration via configparser with env/db overrides."
 
-from __future__ import annotations
 from pathlib import Path
 from configparser import ConfigParser, ExtendedInterpolation
 from typing import Iterable, Tuple, Optional, Dict, Any, List

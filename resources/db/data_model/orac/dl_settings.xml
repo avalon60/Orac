@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <settings>
 	<logical_type_for_domain_presentation value="false" />
-	<automatic_pk_generation value="false" />
-	<automatic_uk_generation value="false" />
-	<automatic_fk_generation value="false" />
+	<automatic_pk_generation value="true" />
+	<automatic_uk_generation value="true" />
+	<automatic_fk_generation value="true" />
 	<preserve_ddl_generation_options value="false" />
 	<use_global_design_level_settings value="false" />
 	<use_preferred_classification_types value="false" />
@@ -276,16 +276,16 @@
 			</domain>
 		</domains>
 		<constraints>
-			<pk value="{table}_PK"/>
-			<fk value="{child}_{parent}_FK"/>
-			<ck value="{table}_CK"/>
-			<un value="{table}_{column}_UN"/>
-			<idx value="{table}_{column}_IDX"/>
-			<automatic_idx value="{table}_{column}_IDX"/>
-			<colck value="CK_{table}_{column}"/>
+			<pk value="{table abbr}_PK"/>
+			<fk value="{child abbr}_{parent abbr}_FK{seq nr}"/>
+			<ck value="{table abbr}_CK{seq nr}"/>
+			<un value="{table abbr}_UK{seq nr}"/>
+			<idx value="{table abbr}_IDX{seq nr}"/>
+			<automatic_idx value="{constraint}_IDX"/>
+			<colck value="{table abbr}_CK{seq nr}"/>
 			<colnnc value="NNC_{table abbr}_{column}"/>
 			<column_foreign_key value="{ref table}_{ref column}"/>
-			<ui value="{entity} PK"/>
+			<ui value="{entity}_PK"/>
 			<relation_attribute value="{ref entity}_{ref attribute}"/>
 			<surrogate_key value="{table abbr}_PK"/>
 			<surrogate_key_col value="{table abbr}_ID"/>
