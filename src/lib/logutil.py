@@ -1,47 +1,81 @@
-# logutil.py
-
+# lib/logutil.py
 # Author: Clive Bostock
-# Date: 2024-06-22
-# Description: General-purpose logging utility built on Loguru, with run ID support and decorators.
-
-__title__ = 'Logging Library'
-__author__ = "Clive Bostock"
-__date__ = "2024-06-22"
-__doc__ = """A general-purpose logging utility built on Loguru. Provides APIs for logging,
-managing log levels, and tracing function calls."""
+# Updated: 2025-09-19
+# Duplicate-safe, thread-safe, process-wide logging around Loguru with run ID and decorators.
 
 from pathlib import Path
-import time
-import functools
+import time, functools, os, threading
 from typing import Callable, Any, Optional
 from loguru import logger as logr
 from sys import stderr
-import os
 
 from lib.config_mgr import ConfigManager
 from lib.fsutils import project_home
 from lib.icons import Icons
 
-# Disable Loguru auto-init and preemptively remove stderr sink
+# Disable auto-init; we will configure explicitly.
 os.environ["LOGURU_AUTOINIT"] = "0"
-logr.remove()
 
 APP_HOME = project_home()
 DEFAULT_LOGS_DIR = APP_HOME / "logs"
-CONFIG_DIR = APP_HOME / 'resources' / "config"
+CONFIG_DIR = APP_HOME / "resources" / "config"
 CONFIG_FILE = CONFIG_DIR / "orac.ini"
-
 DEFAULT_LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Global config manager
 config_manager = ConfigManager(config_file_path=CONFIG_FILE)
 
+# ----------------------------
+# Process-global config guards
+# ----------------------------
+_CONFIG_LOCK = threading.RLock()
 
+def _get_state() -> str:
+    """Gets the current logging configuration state.
+
+    Returns:
+        str: The current state, e.g., "idle", "configuring", or "configured".
+    """
+    return getattr(logr, "_ORAC_LOG_STATE", "idle")
+
+def _set_state(state: str) -> None:
+    """Sets the current logging configuration state.
+
+    Args:
+        state: The new state to set.
+    """
+    setattr(logr, "_ORAC_LOG_STATE", state)
+
+def _get_file_path() -> Optional[str]:
+    """Gets the path to the current log file, if configured.
+
+    Returns:
+        Optional[str]: The path of the configured log file, or None.
+    """
+    return getattr(logr, "_ORAC_LOG_FILE", None)
+
+def _set_file_path(p: Path) -> None:
+    """Sets the path to the configured log file.
+
+    Args:
+        p: The path object of the log file.
+    """
+    setattr(logr, "_ORAC_LOG_FILE", str(p))
+
+
+# -------------
+# Run ID helper
+# -------------
 class RunIDManager:
+    """Manages a process-wide, epoch-based Run ID.
+
+    The Run ID is generated once upon the first instantiation of this class
+    and is formatted for readability.
+    """
     _instance: Optional["RunIDManager"] = None
     _run_id: Optional[int] = None
 
     def __new__(cls):
+        """Ensures a single instance of the manager is created (Singleton pattern)."""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._run_id = int(time.time())
@@ -49,117 +83,271 @@ class RunIDManager:
 
     @property
     def run_id(self) -> str:
+        """Returns the formatted, process-wide Run ID.
+
+        Returns:
+            str: The formatted Run ID (e.g., '25-0919-1630').
+        """
         return self.format_epoch_id(str(self._run_id))
 
     @staticmethod
     def format_epoch_id(epoch_id: str) -> str:
+        """Formats a 10-digit epoch timestamp into a readable string.
+
+        Args:
+            epoch_id: A 10-digit string representing an epoch timestamp.
+
+        Returns:
+            str: The formatted ID string, e.g., '25-0919-1630'.
+
+        Raises:
+            ValueError: If the epoch ID is not exactly 10 digits.
+        """
         if len(epoch_id) != 10 or not epoch_id.isdigit():
             raise ValueError("Epoch ID must be exactly 10 digits.")
         return f"{epoch_id[:2]}-{epoch_id[2:6]}-{epoch_id[6:]}"
 
 
-run_id_manager = RunIDManager()
-RUN_ID = run_id_manager.run_id
+RUN_ID = RunIDManager().run_id
 
 
 def log_stamp(post_underscore: bool = True, pref_underscore: bool = False) -> str:
-    log_stamping = config_manager.bool_config_value(
-        section='logging',
-        key='log_stamping',
-        default=False
-    )
-    _log_stamp = str(int(round(time.time() * 1000)))
+    """Generates a millisecond-precision timestamp for log file or context stamping.
+
+    The stamp generation is controlled by a configuration value. If disabled
+    in config, an empty string is returned.
+
+    Args:
+        post_underscore: If True, adds an underscore *after* the timestamp. Defaults to True.
+        pref_underscore: If True, adds an underscore *before* the timestamp. Defaults to False.
+
+    Returns:
+        str: The timestamp string (e.g., "1632000000000_") or an empty string.
+    """
+    log_stamping = config_manager.bool_config_value("logging", "log_stamping", default=False)
+    _ls = str(int(round(time.time() * 1000)))
     if post_underscore:
-        _log_stamp += '_'
+        _ls += "_"
     if pref_underscore:
-        _log_stamp = '_' + _log_stamp
-    return _log_stamp if log_stamping else ''
+        _ls = "_" + _ls
+    return _ls if log_stamping else ""
 
 
+# ---------------
+# Logger wrapper
+# ---------------
 class Logger:
+    """Process-wide singleton around Loguru configuration.
+
+    This class ensures Loguru is configured only once per process,
+    is thread-safe against race conditions, and prevents duplicate sinks
+    across multiple imports/initializations.
+    """
+
+    _instance: Optional["Logger"] = None
+    _file_sink_id: Optional[int] = None
+    _stderr_sink_id: Optional[int] = None
+
+    def __new__(cls, *args, **kwargs):
+        """Ensures a single instance of the Logger is created (Singleton pattern)."""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    @classmethod
+    def get(cls) -> "Logger":
+        """Retrieves the singleton Logger instance.
+
+        Returns:
+            Logger: The process-wide Logger instance.
+        """
+        return cls()
+
     def __init__(self, log_file: Optional[Path] = None, log_level: str = "INFO", inc_std_err: bool = None):
-        self.log_file = log_file or DEFAULT_LOGS_DIR / f"r{RUN_ID}.log"
-        self.log_level = log_level
-        if inc_std_err is not None:
-            self.include_stderr = inc_std_err
-        else:
-            self.include_stderr = config_manager.bool_config_value(
-                section='logging',
-                key='inc_stderr',
-                default=True
-            )
-        self._init_logger()
+        """Initializes the Logger, attempting configuration if needed.
 
-    def _init_logger(self):
-        self.log_file.parent.mkdir(parents=True, exist_ok=True)
-        logr.remove()
+        Configuration is guarded to run only once per process.
 
-        # File sink
-        logr.add(
-            sink=self.log_file,
-            level=self.log_level,
-            format="<green>{time:DD/MM/YYYY HH:mm:ss}</green> | <level>{level:<8}</level> | <level>{message}</level>"
+        Args:
+            log_file: Optional Path to the desired log file. Defaults to
+                'logs/orac.log' within the project home.
+            log_level: The minimum logging level (e.g., 'DEBUG', 'INFO'). Defaults to 'INFO'.
+            inc_std_err: Optional boolean to explicitly include or exclude the
+                stderr sink. Defaults to the value from the configuration file.
+        """
+        # “Construction” may be called multiple times; configuration is guarded.
+        self.log_file = log_file or (DEFAULT_LOGS_DIR / "orac.log")
+        self.log_level = (log_level or "INFO").upper()
+        self.include_stderr = (
+            inc_std_err if inc_std_err is not None
+            else config_manager.bool_config_value("logging", "inc_stderr", default=True)
         )
-        logr.info(f"{Icons.tick} Logging initialized at {self.log_file}")
+        self._ensure_configured()
 
-        # Optional stderr sink
-        if self.include_stderr:
-            logr.add(
-                sink=stderr,
+    def _fmt(self) -> str:
+        """Generates the log message format string for Loguru.
+
+        Returns:
+            str: The format string including timestamp, process ID, level, and message.
+        """
+        # Include {process} to help spot cross-process writers.
+        return (
+            "<green>{time:DD/MM/YYYY HH:mm:ss}</green> | {process} | "
+            "<level>{level:<8}</level> | <level>{message}</level>"
+        )
+
+    def _ensure_configured(self) -> None:
+        """Performs the thread-safe, process-wide configuration of Loguru sinks.
+
+        This method is guaranteed to run configuration only once per process.
+        It adds the file sink and the optional stderr sink.
+        """
+        # Fast-path: if already configured for this same file, bail.
+        if _get_state() == "configured" and _get_file_path() == str(self.log_file):
+            return
+
+        with _CONFIG_LOCK:
+            # Re-check inside the lock (prevents races).
+            if _get_state() == "configured" and _get_file_path() == str(self.log_file):
+                return
+            if _get_state() == "configuring":
+                # Another thread is configuring; nothing to do.
+                return
+
+            _set_state("configuring")
+
+            try:
+                # Clean slate once per process.
+                logr.remove()
+
+                # Ensure directory exists.
+                self.log_file.parent.mkdir(parents=True, exist_ok=True)
+
+                # File sink first.
+                Logger._file_sink_id = logr.add(
+                    sink=self.log_file,
+                    level=self.log_level,
+                    format=self._fmt(),
+                )
+                _set_file_path(self.log_file)
+                _set_state("configured")  # important: flip early to block late joiners
+
+                logr.info(f"{Icons.tick} Logging initialized at {self.log_file}")
+
+                # Optional stderr sink
+                if self.include_stderr:
+                    Logger._stderr_sink_id = logr.add(
+                        sink=stderr,
+                        level=self.log_level,
+                        format=self._fmt(),
+                    )
+                    logr.debug(f"{Icons.info} Console logging ENABLED (stderr sink active)")
+                else:
+                    logr.debug(f"{Icons.warn} Console logging DISABLED (stderr sink skipped)")
+
+            except Exception:
+                # Don’t leave state stuck.
+                _set_state("idle")
+                raise
+
+    # Convenience wrappers
+    def log_info(self, message: str) -> None:
+        """Logs an INFO level message using the configured logger.
+
+        Args:
+            message: The message string to log.
+        """
+        logr.info(f"{Icons.info} {message}")
+
+    def log_debug(self, message: str) -> None:
+        """Logs a DEBUG level message using the configured logger.
+
+        Args:
+            message: The message string to log.
+        """
+        logr.debug(f"{Icons.idea} {message}")
+
+    def log_warning(self, message: str) -> None:
+        """Logs a WARNING level message using the configured logger.
+
+        Args:
+            message: The message string to log.
+        """
+        logr.warning(f"{Icons.warn} {message}")
+
+    def log_error(self, message: str) -> None:
+        """Logs an ERROR level message using the configured logger.
+
+        Args:
+            message: The message string to log.
+        """
+        logr.error(f"{Icons.error} {message}")
+
+    def log_critical(self, message: str) -> None:
+        """Logs a CRITICAL level message using the configured logger.
+
+        Args:
+            message: The message string to log.
+        """
+        logr.critical(f"{Icons.critical} {message}")
+
+    # Change level without multiplying sinks
+    def set_level(self, level: str) -> None:
+        """Changes the logging level dynamically for all active sinks.
+
+        The existing sinks are removed and immediately re-added with the new level.
+
+        Args:
+            level: The new minimum logging level (e.g., 'DEBUG', 'ERROR').
+        """
+        self.log_level = (level or "INFO").upper()
+        with _CONFIG_LOCK:
+            # Rebuild file sink
+            if Logger._file_sink_id is not None:
+                logr.remove(Logger._file_sink_id)
+            Logger._file_sink_id = logr.add(
+                sink=self.log_file,
                 level=self.log_level,
-                format="<green>{time:DD/MM/YYYY HH:mm:ss}</green> | <level>{level:<8}</level> | <level>{message}</level>"
+                format=self._fmt(),
             )
-            logr.debug(f"{Icons.info} Console logging ENABLED (stderr sink active)")
-        else:
-            logr.debug(f"{Icons.warn} Console logging DISABLED (stderr sink skipped)")
-
-    def log_info(self, message: str):
-        logr.info(f'{Icons.info} {message}')
-
-    def log_debug(self, message: str):
-        logr.debug(f'{Icons.idea} {message}')
-
-    def log_warning(self, message: str):
-        logr.warning(f'{Icons.warn} {message}')
-
-    def log_error(self, message: str):
-        logr.error(f'{Icons.error} {message}')
-
-    def log_critical(self, message: str):
-        logr.critical(f'{Icons.critical} {message}')
+            # Rebuild stderr sink if present
+            if self.include_stderr:
+                if Logger._stderr_sink_id is not None:
+                    logr.remove(Logger._stderr_sink_id)
+                Logger._stderr_sink_id = logr.add(
+                    sink=stderr,
+                    level=self.log_level,
+                    format=self._fmt(),
+                )
 
 
+# -------------------------
+# Decorators / trace helper
+# -------------------------
 def _log_trace(debug_message: str) -> None:
-    logr.trace(f'{Icons.bullet} {debug_message}')
+    """Logs an internal trace message.
 
+    Args:
+        debug_message: The message content to be logged at the TRACE level.
+    """
+    logr.trace(f"{Icons.bullet} {debug_message}")
 
 def log_call(func: Callable[..., Any]) -> Callable[..., Any]:
+    """A decorator to log the execution and duration of a function call at TRACE level.
+
+    The logging includes the function's name and the elapsed time in milliseconds.
+
+    Args:
+        func: The function to be wrapped.
+
+    Returns:
+        Callable[..., Any]: The wrapped function.
+    """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        start_time = time.perf_counter()
-        args_list = ", ".join(map(str, args))
-        kwargs_list = ", ".join(f"{k}={v}" for k, v in kwargs.items())
-        params = f"({args_list}, {kwargs_list})" if kwargs else f"({args_list})"
-        result = func(*args, **kwargs)
-        elapsed_ms = (time.perf_counter() - start_time) * 1000
-        _log_trace(f"Call: {func.__name__}{params} [elapsed {elapsed_ms:.2f} ms]")
-        return result
-
+        start = time.perf_counter()
+        res = func(*args, **kwargs)
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        _log_trace(f"Call: {func.__name__} (...) [elapsed {elapsed_ms:.2f} ms]")
+        return res
     return wrapper
-
-
-# Example usage
-if __name__ == '__main__':
-    logger = OracLogger()
-    logger.log_info("This is an info message")
-    logger.log_debug("This is a debug message")
-    logger.log_warning("This is a warning")
-    logger.log_error("This is an error")
-    logger.log_critical("This is critical")
-
-    @log_call
-    def sample_function(x: int, y: int) -> int:
-        return x + y
-
-    result = sample_function(5, 7)
-    print(f"Result of sample_function: {result}")
