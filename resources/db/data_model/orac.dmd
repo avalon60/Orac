@@ -33,5 +33,8 @@
 <designDescr class="oracle.dbtools.crest.model.design.Design$DesignStorageDesc" id="C8855B21-569A-592F-C75D-0E38B70C32FD">
 <designStoragePath>/home/clive/PycharmProjects/Orac/resources/db/data_model</designStoragePath>
 </designDescr>
+<designDescr class="oracle.dbtools.crest.model.design.Design$DesignStorageDesc" id="550DDDEC-4162-D8DE-6781-9AE6498FB79C">
+<designStoragePath>/home/clive/PycharmProjects/Orac/resources/db/data_model</designStoragePath>
+</designDescr>
 </usedDesignStorageDescriptors>
 </OSDM_Design>
