@@ -79,7 +79,7 @@ class OracContextManager:
             return self._create_user(norm)
 
         # No user found and auto-provision disabled
-        self.logger.log_warn(f"❌ Invalid user login attempt: '{norm}' not found in orac.users")
+        self.logger.log_warning(f"❌ Invalid user login attempt: '{norm}' not found in orac.users")
         raise PermissionError(f"user '{norm}' is not registered")
 
     def _get_or_create_conversation(self, user_id: int, session_id: str, llm_id: Optional[int]) -> int:

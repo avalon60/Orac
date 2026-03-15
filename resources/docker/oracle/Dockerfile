@@ -4,7 +4,7 @@
 # Date: 2025-07-29
 # --------------------------------------------------------------------
 
-FROM container-registry.oracle.com/database/free:latest
+FROM container-registry.oracle.com/database/free:23.26.0.0
 
 # Build-time args (injected by bake)
 ARG ORACLE_BASE

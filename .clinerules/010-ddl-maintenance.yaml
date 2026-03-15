@@ -1,0 +1,262 @@
+# .clinerules
+version: 1
+project_name: Orac
+intent: >
+  Maintain Orac SQL assets under resources/db/schema in a one-object-per-file style.
+  When given bulk DDL (e.g., from SQL Developer Data Modeler), split it into
+  per-object scripts, normalise to house style, and place each file into its correct
+  directory with the filename = <object_name>.sql.
+
+globals:
+  sql_root: resources/db/schema
+  indent: "  "                    # 2 spaces
+  lowercase_keywords: true
+  separate_pk_uc_fk: true          # never inline PK/UC/FK in CREATE TABLE
+  separate_check: true
+  separate_triggers: true
+  separate_indexes: true
+  separate_seq_identity: true      # prefer identity columns; sequences allowed if explicit
+  ddl_header: |
+    -- __author__: clive bostock
+    -- __date__: <auto>
+    -- __description__: generated/synchronised by Cline; one object per file
+  helper_scripts:
+    # 🔧 ensure this matches your repo (you had utils/, not tools/)
+    split_ddl: utils/split_ddl.py
+
+paths:
+  # Map object kinds to target folders (relative to sql_root)
+  object_dir_map:
+    table: table
+    view: view
+    index: index
+    sequence: sequence
+    synonym: synonym
+    materialized_view: materialized_view
+    type_spec: type_spec
+    type_body: type_body
+    package_spec: package_spec
+    package_body: package_body
+    procedure: procedure
+    function: function
+    trigger: trigger
+    role: role
+    grant: grant
+    context: context
+    job: job
+    comment: comment
+    constraint_pk: constraint_pk
+    constraint_uc: constraint_uc
+    constraint_fk: constraint_fk
+    constraint_other: constraint_other
+    pre_install: pre_install
+    post_install: post_install
+    seed_data: seed_data
+    orac_apps: orac_apps
+
+  # Bulk sources that Cline will be asked to split
+  carve_sources:
+    - "{sql_root}/table/tables.sql"
+    - "{sql_root}/view/views.sql"
+    - "**/model_dump.sql"
+    - "**/exported_ddl.sql"
+
+style:
+  sql:
+    # enforce lower-case reserved words and 2-space indents
+    normalise_keywords: "{lowercase_keywords}"
+    indent: "{indent}"
+    # table create rules
+    split_constraints:
+      pk: "{separate_pk_uc_fk}"
+      uc: "{separate_pk_uc_fk}"
+      fk: "{separate_pk_uc_fk}"
+      check: "{separate_check}"
+    split_triggers: "{separate_triggers}"
+    split_indexes: "{separate_indexes}"
+
+conventions:
+  filenames:
+    # All object files are named <object_name>.sql (no schema prefix)
+    pattern: "{object_name}.sql"
+  # Fallbacks when no object name is available (e.g., grant/comment/job bundles)
+  fallback_filenames:
+    grant: "grants.sql"
+    comment: "comments.sql"
+    job: "jobs.sql"
+
+  create_drop_policy:
+    # optional: keep drops out of object files
+    write_drops_to_pre_install: true
+    pre_install_subdir: "pre_install/drops"
+
+  # Header to stamp at the top of generated files
+  header_template: "{ddl_header}"
+
+parsing:
+  # Robust regexes for object detection. Schemas optional. Owner/object captured.
+  rules:
+    - kind: table
+      match: (?is)(?:--.*\n|/\*.*?\*/\s*)*create\s+table\s+(?:\"?(\w+)\"?\.)?\"?(\w+)\"?\s*\(
+      capture: { owner: 1, object: 2 }
+      terminator: ;
+    - kind: view
+      match: (?is)(?:--.*\n|/\*.*?\*/\s*)*create\s+(?:or\s+replace\s+)?view\s+(?:\"?(\w+)\"?\.)?\"?(\w+)\"?\s+as\b
+      capture: { owner: 1, object: 2 }
+      terminator: ;
+    - kind: index
+      match: (?is)create\s+(?:unique\s+)?index\s+(?:\"?(\w+)\"?\.)?\"?(\w+)\"?\s+on\s+\"?(\w+)\"?
+      capture: { owner: 1, object: 2 }
+      terminator: ;
+    - kind: sequence
+      match: (?is)create\s+sequence\s+(?:\"?(\w+)\"?\.)?\"?(\w+)\"?
+      capture: { owner: 1, object: 2 }
+      terminator: ;
+    - kind: synonym
+      match: (?is)create\s+(?:or\s+replace\s+)?synonym\s+(?:\"?(\w+)\"?\.)?\"?(\w+)\"?
+      capture: { owner: 1, object: 2 }
+      terminator: ;
+    - kind: materialized_view
+      match: (?is)create\s+materialized\s+view\s+(?:\"?(\w+)\"?\.)?\"?(\w+)\"?\s+as\b
+      capture: { owner: 1, object: 2 }
+      terminator: ;
+    - kind: type_spec
+      match: (?is)create\s+(?:or\s+replace\s+)?type\s+(?:\"?(\w+)\"?\.)?\"?(\w+)\"?\s+as\b
+      capture: { owner: 1, object: 2 }
+      terminator: ;
+    - kind: type_body
+      match: (?is)create\s+(?:or\s+replace\s+)?type\s+body\s+(?:\"?(\w+)\"?\.)?\"?(\w+)\"?\b
+      capture: { owner: 1, object: 2 }
+      terminator: ;
+    - kind: package_spec
+      match: (?is)create\s+(?:or\s+replace\s+)?package\s+(?!body\b)(?:\"?(\w+)\"?\.)?\"?(\w+)\"?\b
+      capture: { owner: 1, object: 2 }
+      terminator: ;
+    - kind: package_body
+      match: (?is)create\s+(?:or\s+replace\s+)?package\s+body\s+(?:\"?(\w+)\"?\.)?\"?(\w+)\"?\b
+      capture: { owner: 1, object: 2 }
+      terminator: ;
+    - kind: procedure
+      match: (?is)create\s+(?:or\s+replace\s+)?procedure\s+(?:\"?(\w+)\"?\.)?\"?(\w+)\"?\b
+      capture: { owner: 1, object: 2 }
+      terminator: ;
+    - kind: function
+      match: (?is)create\s+(?:or\s+replace\s+)?function\s+(?:\"?(\w+)\"?\.)?\"?(\w+)\"?\b
+      capture: { owner: 1, object: 2 }
+      terminator: ;
+    - kind: trigger
+      match: (?is)create\s+(?:or\s+replace\s+)?trigger\s+(?:\"?(\w+)\"?\.)?\"?(\w+)\"?\b
+      capture: { owner: 1, object: 2 }
+      terminator: ;
+    - kind: role
+      match: (?is)create\s+role\s+\"?(\w+)\"?
+      capture: { owner: "", object: 1 }
+      terminator: ;
+    - kind: grant
+      match: (?is)grant\s+.+\s+to\s+.+;
+      capture: { owner: "", object: "" }
+      terminator: ;
+    - kind: context
+      match: (?is)create\s+context\s+\"?(\w+)\"?
+      capture: { owner: "", object: 1 }
+      terminator: ;
+    - kind: job
+      match: (?is)begin\s+dbms_scheduler\.create_job\b
+      capture: { owner: "", object: "" }
+      terminator: /end\s*;/
+    - kind: comment
+      match: (?is)comment\s+on\s+(table|column|index|materialized\s+view|type)\s+.+?\s+is\s+.*?;
+      capture: { owner: "", object: "" }
+      terminator: ;
+
+  # How to route constraints found inside CREATE TABLE blocks
+  constraints:
+    pk: constraint_pk
+    uc: constraint_uc
+    fk: constraint_fk
+    check: constraint_other
+
+tasks:
+  # Worker: split a single file into per-object files
+  - name: split_ddl_into_per_object_files
+    description: >
+      Split the given DDL file into one-object-per-file under {sql_root}, routing by object kind.
+    params:
+      - name: input_file
+        required: true
+    steps:
+      - assert file_exists("{input_file}")
+      - if file_exists("{helper_scripts.split_ddl}"):
+          run: python3 {helper_scripts.split_ddl} {input_file}
+        else:
+          # fallback: inline parser based on parsing.rules (Cline-side)
+          parse using parsing.rules
+          for tables:
+            - move inline PK/UC/FK/CHECK into separate statements per parsing.constraints
+            - move CREATE INDEX found inline to index/ dir
+            - prefer identity vs sequence when instructed by memory-bank rule
+          - normalise keywords and indentation from style.sql
+          - write files to {sql_root}/{object_dir_map[kind]}/{object_name or conventions.fallback_filenames[kind]}.sql
+      - ensure newline at EOF for all written files
+      - produce summary table (kind, object or fallback, file_written)
+
+  # Validation
+  - name: validate_tree
+    description: >
+      Scan {sql_root} ensuring one object per file, filenames match object names,
+      reserved words lowercase, no inline constraints in CREATE TABLE.
+    checks:
+      - filename_vs_object_name
+      - duplicate_object_definitions
+      - inline_constraints_in_create_table
+      - missing_headers
+      - mixed_case_keywords
+    output: markdown_report
+
+  # Orchestrator: handle monolithic files, then delete originals on success
+  - name: rehome_legacy_monoliths
+    description: >
+      For files like table/tables.sql or view/views.sql, split and delete originals,
+      then validate the tree.
+    steps:
+      - set: all_ok = true
+      - for each file in {carve_sources}:
+          - if file_exists("{file}"):
+              - run task: split_ddl_into_per_object_files
+                with:
+                  input_file: "{file}"
+              - if last_run.failed:
+                  - set: all_ok = false
+      - if {all_ok}:
+          - for each file in {carve_sources}:
+              - if file_exists("{file}"):
+                  - copy "{file}" to "{file}.bak"
+                  - delete "{file}"
+      - run task: validate_tree
+
+  # Convenience: ad-hoc one-off split + validate
+  - name: split_one_monolith
+    description: Split a specific bulk DDL file provided at run time, then validate.
+    params:
+      - name: input_file
+        required: true
+    steps:
+      - run task: split_ddl_into_per_object_files
+        with:
+          input_file: "{input_file}"
+      - run task: validate_tree
+
+git:
+  commit_message_template: |
+    chore(sql): split bulk DDL into per-object files
+
+    Generated:
+    {generated_list}
+
+    Rules: lowercase keywords, 2-space indent, separate constraints/indexes/triggers.
+
+safety:
+  never_overwrite_without_backup: true
+  backup_suffix: ".bak"
+  refuse_if_outside_repo: true
+

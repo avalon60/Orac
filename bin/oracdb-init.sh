@@ -6,8 +6,13 @@
 ################################################################################
 
 set -e
-PROG=$(basename "$0")
+# ------------------------------------------------------------------------------
+# Timing
+# ------------------------------------------------------------------------------
+SCRIPT_START_EPOCH=$(date +%s)
+SCRIPT_START_HUMAN=$(date "+%Y-%m-%d %H:%M:%S")
 
+PROG=$(basename "$0")
 # realpath shim
 realpath() { [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"; }
 
@@ -21,6 +26,23 @@ CTL_DIR="${ORAC_PROJECT_HOME}/src/controller"
 ENV_FILE="${CONFIG_DIR}/orac.env"
 CREDENTIALS_FILE="${HOME}/.Orac/dsn_credentials.ini"
 
+
+print_runtime_summary() {
+  local end_epoch end_human elapsed mins secs
+
+  end_epoch=$(date +%s)
+  end_human=$(date "+%Y-%m-%d %H:%M:%S")
+
+  elapsed=$(( end_epoch - SCRIPT_START_EPOCH ))
+  mins=$(( elapsed / 60 ))
+  secs=$(( elapsed % 60 ))
+
+  echo
+  echo "⏱  Script start : ${SCRIPT_START_HUMAN}"
+  echo "⏱  Script end   : ${end_human}"
+  printf "⏱  Duration     : %02dm %02ds\n" "$mins" "$secs"
+}
+
 usage() {
   cat <<EOF
 Usage: $PROG [--dry-run|-n] [--force|-f] [--no-cache] [--help|-h]
@@ -28,6 +50,46 @@ Initialise and start the Orac database container (db-local topology).
 EOF
   exit 0
 }
+
+wait_for_orac_deploy() {
+  local container="${CONTAINER_NAME:-orac-db}"
+  local interval=60
+  local timeout=1800   # 30 minutes
+  local marker="=  ORAC deployment complete ="
+
+  local start_time
+  start_time=$(date +%s)
+
+  echo "⏳ Waiting for Orac deployment to complete..."
+
+  while true; do
+    if docker logs "$container" 2>&1 | grep -q "$marker"; then
+      echo "Orac is deployed!"
+      return 0
+    fi
+
+    # Check container still running
+    if ! docker ps --format '{{.Names}}' | grep -qw "$container"; then
+      echo "❌ Container '$container' stopped unexpectedly."
+      return 1
+    fi
+
+    local now elapsed
+    now=$(date +%s)
+    elapsed=$((now - start_time))
+
+    if (( elapsed >= timeout )); then
+      echo "⚠️ WARNING: Orac deployment did not complete within 30 minutes."
+      echo "   Check container logs: docker logs $container"
+      return 1
+    fi
+
+    echo "Deployment still in progress. Checking again in ${interval}s..."
+    sleep "$interval"
+  done
+}
+
+trap print_runtime_summary EXIT
 
 # Flags
 DRY_RUN=0; FORCE=0; NO_CACHE=0
@@ -145,4 +207,7 @@ echo "🎉 '${CONTAINER_NAME}' is up"
 echo "📡 SQL*Net  : ${PORT_SQLNET}"
 echo "🌐 ORDS/HTTP: http://localhost:${PORT_HTTP}"
 echo "📂 Oradata  : ${ORADATA_DIR}"
+echo -e "⏳ Deploying Orac components..."
+wait_for_orac_deploy
 
+echo -e "\nDone."

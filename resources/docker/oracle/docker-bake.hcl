@@ -12,7 +12,7 @@ target "orac" {
     ORACLE_PDB    = "FREEPDB1"
     ORAC_HOME     = "/home/oracle/orac"
     APEX_VERSION  = "24.2"
-    ORDS_VERSION  = "25.2.2.204.0103"
+    ORDS_VERSION  = "25.4.0.364.1739"
     SQLCL_VERSION = "25.2.2.199.0918"
   }
 }

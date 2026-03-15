@@ -175,11 +175,19 @@ class Orac:
             )
             self._reply_language = self.config_mgr.config_value("context", "reply_language", default="English")
 
-            # Configurable conversation timeout (minutes -> seconds) – kept for future use
-            # orac.py — right after computing the timeout
             conv_timeout_minutes = int(
                 self.config_mgr.config_value("context", "conversation_timeout", default="60")
             )
+            self._use_history = self.config_mgr.bool_config_value(section='context', key='enable_context_history', default=True)
+
+            if not self._use_history:
+                logger.log_warning(
+                    f"{Icons.warn} context augmentation DISABLED "
+                    "(history still being recorded for later use)"
+                )
+            else:
+                logger.log_info(f"{Icons.tick} context augmentation ENABLED")
+
             self._conversation_timeout_secs = max(0, conv_timeout_minutes * 60)
             logger.log_info(
                 f"[context] conversation_timeout={conv_timeout_minutes} minute(s) -> {self._conversation_timeout_secs}s")
@@ -293,6 +301,7 @@ class Orac:
             _log_exception("Fatal error during Orac initialization", e)
             raise
 
+
     # --- Prompt building ------------------------------------------------------
     def _build_contextual_prompt(self, session_id: str, prompt: str, meta: dict) -> str:
         try:
@@ -302,18 +311,39 @@ class Orac:
             }
             clock = system_clock_line(prefs)
 
-            # Inline persona + language policy (forces English unless user's msg is clearly otherwise)
             primer_inline = _orac_system_primer({
                 "reply_language": meta.get("reply_language", self._reply_language)
             })
 
-            # Fetch a generous slice (not the final selection) to give the budget picker material.
-            # Rule of thumb: fetch up to ~4× the budget in "messages", floored at 20.
-            # This is still light on the DB and avoids missing earlier-but-relevant turns.
+            # === NEW: short-circuit if history use is disabled ===
+            if not getattr(self, "_use_history", True):
+                lang = meta.get("reply_language", self._reply_language) or "English"
+                final_directive = (
+                    f"\nFINAL DIRECTIVE: For the CURRENT user message below, respond in {lang} ONLY. "
+                    "Ignore any prior conversation for this reply. Keep the reply concise.\n"
+                )
+                preamble = (
+                    f"{primer_inline}\n"
+                    "ROLE: assistant\n"
+                    "INSTRUCTIONS: Prior conversation is DISABLED for this reply; use ONLY the new user message.\n\n"
+                    f"{clock}\n\n"
+                    "Recent exchange: (context disabled)\n\n"
+                    "USER (new message):"
+                )
+                full = f"{preamble}\n{prompt}\n{final_directive}"
+                if self.enable_prompt_dump:
+                    try:
+                        short = (full[:2000] + " …") if len(full) > 2000 else full
+                        logger.log_info(f"{Icons.info} Final prompt (truncated): {short}")
+                        _dump_debug_blob("final-prompt", full)
+                    except Exception as e:
+                        _log_exception("final prompt dump failed", e)
+                return full
+
+            # --- existing history-enabled path (unchanged) ---
             raw_fetch = max(20, min(200, (self._history_budget_tokens // 50) * 4))
             all_msgs = self.ctx.get_messages_for_prompt(session_id=session_id, limit=raw_fetch)
 
-            # --- DEBUG: dump fetched history -------------------------------------
             if self.enable_prompt_dump:
                 try:
                     dbg_lines = []
@@ -322,40 +352,32 @@ class Orac:
                     _dump_debug_blob("history-fetched", "\n".join(dbg_lines))
                 except Exception as e:
                     _log_exception("history debug dump failed", e)
-            # ---------------------------------------------------------------------
 
-            # Drop the just-saved current user prompt so it doesn't duplicate
             if all_msgs:
                 last = all_msgs[-1]
                 if (last.get("role") == "user") and ((last.get("content") or "").strip() == (prompt or "").strip()):
                     all_msgs = all_msgs[:-1]
 
-            # Compute how many tokens we can spend on prior dialog
-            # Reserve room for: current prompt + preamble + some slack.
             prompt_cost = self._estimate_tokens(prompt)
             reserve = max(0, self._history_budget_reserve + prompt_cost)
             budget_for_history = max(0, self._history_budget_tokens - reserve)
 
             dialog_last_n = self._select_dialog_under_budget(all_msgs, budget_tokens=budget_for_history)
 
-            # Format lines for the preamble
             history_lines = []
             for m in dialog_last_n:
                 r = (m.get("role") or "").upper()
                 c = (m.get("content") or "").strip()
-                if not c:
-                    continue
-                # Don't truncate aggressively here; the budget already decided what fits.
-                history_lines.append(f"{r}: {c}")
+                if c:
+                    history_lines.append(f"{r}: {c}")
 
-            # Strong “final directive” (LLMs usually obey the last rule best)
             lang = meta.get("reply_language", self._reply_language) or "English"
             final_directive = (
                 f"\nFINAL DIRECTIVE: For the CURRENT user message below, respond in {lang} ONLY. "
-                f"Use 'Recent exchange' as session memory for THIS conversation. "
-                f"If it contains explicit facts that answer the question, use the most recent consistent fact. "
-                f"If not present or ambiguous, say you don't know and optionally ask the user to clarify. "
-                f"Keep the reply concise.\n"
+                "Use 'Recent exchange' as session memory for THIS conversation. "
+                "If it contains explicit facts that answer the question, use the most recent consistent fact. "
+                "If not present or ambiguous, say you don't know and optionally ask the user to clarify. "
+                "Keep the reply concise.\n"
             )
 
             preamble = (
@@ -371,7 +393,6 @@ class Orac:
             full = f"{preamble}\n{prompt}\n{final_directive}"
 
             if self.enable_prompt_dump:
-                # If we're in a debug session, dump the full prompt
                 try:
                     short = (full[:2000] + " …") if len(full) > 2000 else full
                     logger.log_info(f"{Icons.info} Final prompt (truncated): {short}")
@@ -380,6 +401,7 @@ class Orac:
                     _log_exception("final prompt dump failed", e)
 
             return full
+
         except Exception as e:
             _log_exception("Failed to build context preamble (non-fatal)", e)
             return prompt

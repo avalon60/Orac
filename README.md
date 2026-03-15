@@ -32,6 +32,7 @@
 - 🌐 **Supports Multiple LLM Services**: Connects to LM Studio, Ollama, OpenAI, and more.  
 - 🛠 **Modular Design**: Easily extend Orac with custom skills and automations.  
 - 🖥 **Cross-Platform**: Works with Linux Mint and other major platforms.  
+- 🔑 **Administered via APEX Web Console**: User and configuration management through Oracle APEX at [http://localhost:8042/ords/orac/f?p=1042:LOGIN](http://localhost:8042/ords/orac/f?p=1042:LOGIN).  
 
 ---
 
@@ -39,6 +40,7 @@
 
 - [Installation](#-installation)
 - [Oracle Free Setup](#-oracle-free-setup)
+- [APEX Administration](#-apex-administration)
 - [Usage](#-usage)
 - [License](#-license)
 
@@ -101,6 +103,81 @@ GRANT CONNECT, RESOURCE TO orac;
 
 ---
 
+## 🧭 APEX Administration
+
+Orac’s user-management and configuration functions are handled through the **Orac Admin APEX application**, which provides a browser-based interface for maintaining users, skills, and system settings.
+
+Once your Oracle Free / ORDS stack is running, open the Orac Admin app in a browser:
+
+```
+http://localhost:8042/ords/orac/f?p=1042:LOGIN
+```
+
+This URL launches the **Orac Administration Application** login page.
+
+### Default Workspace and Credentials
+
+| Setting       | Value                  | Notes                                                       |
+| ------------- | ---------------------- | ----------------------------------------------------------- |
+| **Workspace** | `ORAC`                 | APEX workspace associated with the Orac schema.             |
+| **Username**  | `ORAC_ADMIN`           | The initial administrative account.                         |
+| **Password**  | *(set on first login)* | You’ll be prompted to choose a password at initial sign-in. |
+
+After first login, you can use the APEX interface to manage user accounts, roles, permissions, and configuration data.
+
+> 💡 *This application provides everyday administration of Orac — including user setup, role management, and configuration — with no command-line access required.*
+
+> 🧰 *Developers who need to access the underlying APEX workspace can still do so via:*
+> [http://localhost:8042/ords/orac/r/apex/workspace-sign-in/oracle-apex-sign-in](http://localhost:8042/ords/orac/r/apex/workspace-sign-in/oracle-apex-sign-in)
+
+> 🌍 *If accessing from another machine or container, replace `localhost` in the URL with your host’s IP address or hostname (e.g., `http://192.168.0.42:8042/ords/orac/f?p=1042:LOGIN`).*
+
+---
+
+### 🧩 Troubleshooting APEX Login
+
+If you cannot access the Orac Admin application:
+
+1. **Verify ORDS is running:**
+   Check your container logs or terminal output — you should see a line like:
+
+   ```
+   INFO  ORDS has started and is listening on port 8042
+   ```
+
+2. **Check the URL:**
+   Ensure the URL path ends with `f?p=1042:LOGIN` (not the developer workspace path).
+
+3. **Confirm port mapping (Docker):**
+   If running in a container, make sure port **8042** on the host maps to **8042** in the container:
+
+   ```bash
+   docker ps
+   ```
+
+   Look for `0.0.0.0:8042->8042/tcp`.
+
+4. **Clear browser cache or use incognito mode:**
+   Cached session tokens sometimes prevent APEX login pages from loading correctly.
+
+5. **Reset ORAC_ADMIN password (if forgotten):**
+   Connect via SQL*Plus or SQLcl:
+
+   ```sql
+   ALTER USER ORAC_ADMIN IDENTIFIED BY new_password;
+   ```
+
+6. **Check APEX version / installation:**
+   If the login page still fails to load, confirm that APEX is properly installed and configured in the PDB:
+
+   ```sql
+   SELECT version FROM apex_release;
+   ```
+
+> 🧠 *Tip: If the APEX listener doesn’t respond, restart the ORDS service or your container — it usually resolves transient startup timing issues.*
+
+---
+
 ## 🛠 Usage
 
 Start Orac with:
@@ -112,6 +189,15 @@ python -m orac
 *(Describe how to configure Raspberry Pi satellites and connect to your home network.)*
 
 ---
+
+## Checking the Install
+In the event of any problems after the òracledb-init.sh`is complete, you should open a terminal and run the command:    
+
+`docker logs orac-db`
+
+Also, to monitor this during the install, you can use something like:   
+
+`docker logs --tail 200 -f orac-db`
 
 ## 📄 License
 
