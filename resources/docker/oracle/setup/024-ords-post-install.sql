@@ -1,4 +1,4 @@
---# Author: Clive Bostock
+-- Author: Clive Bostock
 --   Date: 15 Mar 2026
 --
 -- Orac script to add grants to ords_public_user. This was a workaround as we couldn't

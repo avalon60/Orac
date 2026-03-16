@@ -110,7 +110,7 @@ Orac’s user-management and configuration functions are handled through the **O
 Once your Oracle Free / ORDS stack is running, open the Orac Admin app in a browser:
 
 ```
-http://localhost:8042/ords/orac/f?p=1042:LOGIN
+http://localhost:8042/ords/f?p=1042:LOGIN
 ```
 
 This URL launches the **Orac Administration Application** login page.
@@ -128,9 +128,9 @@ After first login, you can use the APEX interface to manage user accounts, roles
 > 💡 *This application provides everyday administration of Orac — including user setup, role management, and configuration — with no command-line access required.*
 
 > 🧰 *Developers who need to access the underlying APEX workspace can still do so via:*
-> [http://localhost:8042/ords/orac/r/apex/workspace-sign-in/oracle-apex-sign-in](http://localhost:8042/ords/orac/r/apex/workspace-sign-in/oracle-apex-sign-in)
+> [http://localhost:8042/ords/r/apex/workspace-sign-in/oracle-apex-sign-in](http://localhost:8042/ords/r/apex/workspace-sign-in/oracle-apex-sign-in)
 
-> 🌍 *If accessing from another machine or container, replace `localhost` in the URL with your host’s IP address or hostname (e.g., `http://192.168.0.42:8042/ords/orac/f?p=1042:LOGIN`).*
+> 🌍 *If accessing from another machine or container, replace `localhost` in the URL with your host’s IP address or hostname (e.g., `http://192.168.0.42:8042/ords/f?p=1042:LOGIN`).*
 
 ---
 
