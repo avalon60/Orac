@@ -31,5 +31,15 @@ create user ORAC identified by ${ORACLE_PWD}
 grant create session, create table, create view, create sequence,
       create procedure, create trigger, create type, create synonym
 to ORAC;
+
+create user ORAC_PLUGIN identified by ${ORACLE_PWD}
+  default tablespace users
+  temporary tablespace temp
+  quota unlimited on users;
+
+grant create session, create table, create view, create sequence,
+      create procedure, create trigger, create type, create synonym
+to ORAC_PLUGIN;
+
 EOF
 echo "[$(timestamp)] ${PROG}: Done." 

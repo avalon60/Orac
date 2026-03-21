@@ -4,11 +4,11 @@ Configuring Oracle Listener.
 Listener configuration succeeded.
 Configuring Oracle AI Database FREE.
 Enter SYS user password: 
- *********
+* *********
 Enter SYSTEM user password: 
 ********* **
 Enter PDBADMIN User Password: 
-******* *****
+********* *
 Prepare for db operation
 7% complete
 Copying database files
@@ -38,10 +38,10 @@ System Identifier(SID):FREE
 Look at the log file "/opt/oracle/cfgtoollogs/dbca/FREE/FREE.log" for further details.
 
 Connect to Oracle AI Database using one of the connect strings:
-     Pluggable database: e918e7ea30a4/FREEPDB1
-     Multitenant container database: e918e7ea30a4
+     Pluggable database: 3a8eebd1f3da/FREEPDB1
+     Multitenant container database: 3a8eebd1f3da
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:47:30 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:15:23 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -81,7 +81,7 @@ User altered.
 SQL> SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:47:30 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:15:23 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -122,14 +122,14 @@ DONE: Executing user defined scripts
 
 
 Executing user defined scripts
-/opt/oracle/runUserScripts.sh: running /opt/oracle/scripts/setup/000-start.sh
+/opt/oracle/runUserScripts.sh: running /opt/oracle/scripts/setup/000-started.sh
 ==================  ORAC deployment started ==================
 
 /opt/oracle/runUserScripts.sh: running /opt/oracle/scripts/setup/010-apex-install.sh
-[2026-03-15 13:47:40] Orac: 010-apex-install.sh Started
+[2026-03-17 00:15:33] Orac: 010-apex-install.sh Started
 Orac: 010-apex-install.sh Launching sqlplus; installing APEX...
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:47:40 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:15:33 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -178,7 +178,7 @@ Session altered.
 
 FOO3
 ------------------------------
-install2026-03-15_13-47-40.log
+install2026-03-17_00-15-33.log
 
 . ORACLE
 .
@@ -1539,7 +1539,7 @@ No errors.
 No errors.
 
 timing for: Installing Package Specs (Runtime)
-Elapsed:    0.23
+Elapsed:    0.22
 
 #
 # Installing Package Bodies (Runtime)
@@ -2928,7 +2928,7 @@ No errors.
 No errors.
 
 timing for: Installing Package Specs (Dev)
-Elapsed:    0.05
+Elapsed:    0.07
 
 #
 # Installing Views (Dev)
@@ -3099,7 +3099,7 @@ No errors.
 No errors.
 
 timing for: Installing Views (Dev)
-Elapsed:    0.03
+Elapsed:    0.02
 
 #
 # Installing Package Bodies (Dev)
@@ -3337,7 +3337,7 @@ No errors.
 ...Marking sensitive columns
 
 timing for: Installing Package Bodies (Dev)
-Elapsed:    0.02
+Elapsed:    0.03
 
 #
 # Recompiling APEX_240200
@@ -3433,13 +3433,13 @@ Elapsed:    0.00
     ok 2 - Creating APEX_GRANTS_FOR_NEW_USERS_ROLE			|   0.00
     ok 3 - Creating SYS Objects 					|   0.02
     ok 4 - Creating APEX Tables 					|   0.10
-    ok 5 - Installing Package Specs (Runtime)				|   0.23
+    ok 5 - Installing Package Specs (Runtime)				|   0.22
     ok 6 - Installing Package Bodies (Runtime)				|   0.23
     ok 7 - Dev Grants							|   0.00
     ok 8 - Creating Dev-Only Tables and Triggers			|   0.00
-    ok 9 - Installing Package Specs (Dev)				|   0.05
-    ok 10 - Installing Views (Dev)					|   0.03
-    ok 11 - Installing Package Bodies (Dev)				|   0.02
+    ok 9 - Installing Package Specs (Dev)				|   0.07
+    ok 10 - Installing Views (Dev)					|   0.02
+    ok 11 - Installing Package Bodies (Dev)				|   0.03
     ok 12 - Recompiling APEX_240200					|   0.53
     ok 13 - Creating Instance Parameter Defaults			|   0.00
     ok 14 - Loading PDF font data					|   0.32
@@ -3475,7 +3475,7 @@ Elapsed:    0.00
 #
 
 timing for: Upgrade Metadata (2)
-Elapsed:    0.00
+Elapsed:    0.02
 
 #
 # Recompiling APEX_240200 schema
@@ -3494,7 +3494,7 @@ Elapsed:    0.02
 ...Service signup Question install
 
 timing for: Configuring Restricted Schemas
-Elapsed:    0.02
+Elapsed:    0.00
 
 #
 # Upgrading Host ACL
@@ -3748,11 +3748,11 @@ APPLICATION 4411 - Oracle APEX Builder, Wizard Messages and Native Plug-Ins
 --application/deployment/checks
 --application/deployment/buildoptions
 --application/end_environment
-... elapsed: 12.73 sec
+... elapsed: 12.46 sec
 ...done
 
 timing for: Installing 4411
-Elapsed:    0.22
+Elapsed:    0.20
 
 #
 # Installing 4470
@@ -3844,11 +3844,11 @@ APPLICATION 4470 - Oracle APEX Runtime Messages
 --application/deployment/checks
 --application/deployment/buildoptions
 --application/end_environment
-... elapsed: 2.44 sec
+... elapsed: 2.4 sec
 ...done
 
 timing for: Installing 4470
-Elapsed:    0.03
+Elapsed:    0.05
 
 #
 # Installing 4155
@@ -3917,7 +3917,7 @@ APPLICATION 4155 - Scheme Authentication Login
 --application/deployment/checks
 --application/deployment/buildoptions
 --application/end_environment
-... elapsed: 1.57 sec
+... elapsed: 1.89 sec
 ...done
 
 timing for: Installing 4155
@@ -4079,7 +4079,7 @@ APPLICATION 8842.242 - Universal Theme 24.2
 --application/deployment/checks
 --application/deployment/buildoptions
 --application/end_environment
-... elapsed: 2.19 sec
+... elapsed: 2.16 sec
 ...done
 
 PL/SQL procedure successfully completed.
@@ -6413,7 +6413,7 @@ APPLICATION 4000 - Oracle APEX App Builder
 --application/deployment/checks
 --application/deployment/buildoptions
 --application/end_environment
-... elapsed: 60.46 sec
+... elapsed: 60.4 sec
 ...done
 
 timing for: Installing 4000
@@ -6750,11 +6750,11 @@ APPLICATION 4020 - Oracle APEX Create App Wizard
 --application/deployment/checks
 --application/deployment/buildoptions
 --application/end_environment
-... elapsed: 5.46 sec
+... elapsed: 5.17 sec
 ...done
 
 timing for: Installing 4020
-Elapsed:    0.10
+Elapsed:    0.08
 
 #
 # Installing 4350
@@ -7166,7 +7166,7 @@ APPLICATION 4350 - Oracle APEX Workspace Administration
 --application/deployment/checks
 --application/deployment/buildoptions
 --application/end_environment
-... elapsed: 7.84 sec
+... elapsed: 7.74 sec
 ...done
 
 timing for: Installing 4350
@@ -7739,7 +7739,7 @@ APPLICATION 4050 - Oracle APEX Internal Administration
 --application/deployment/checks
 --application/deployment/buildoptions
 --application/end_environment
-... elapsed: 12.75 sec
+... elapsed: 12.3 sec
 ...done
 
 timing for: Installing 4050
@@ -7850,7 +7850,7 @@ APPLICATION 4550 - Oracle APEX Workspace / INTERNAL Login
 --application/deployment/checks
 --application/deployment/buildoptions
 --application/end_environment
-... elapsed: 1.96 sec
+... elapsed: 1.5 sec
 ...done
 
 timing for: Installing 4550
@@ -8123,7 +8123,7 @@ APPLICATION 4600 - Oracle APEX Issues
 --application/deployment/checks
 --application/deployment/buildoptions
 --application/end_environment
-... elapsed: 4.77 sec
+... elapsed: 4.74 sec
 ...done
 
 timing for: Installing 4600
@@ -8348,11 +8348,11 @@ APPLICATION 4650 - Oracle APEX Feedback
 --application/deployment/checks
 --application/deployment/buildoptions
 --application/end_environment
-... elapsed: 2.92 sec
+... elapsed: 2.82 sec
 ...done
 
 timing for: Installing 4650
-Elapsed:    0.05
+Elapsed:    0.03
 
 #
 # Installing 4700
@@ -8501,11 +8501,11 @@ APPLICATION 4700 - Oracle APEX New Service Signup
 --application/deployment/checks
 --application/deployment/buildoptions
 --application/end_environment
-... elapsed: 2.43 sec
+... elapsed: 2.23 sec
 ...done
 
 timing for: Installing 4700
-Elapsed:    0.03
+Elapsed:    0.05
 
 #
 # Installing 4750
@@ -8649,11 +8649,11 @@ APPLICATION 4750 - Oracle APEX Productivity and Sample Applications
 --application/deployment/checks
 --application/deployment/buildoptions
 --application/end_environment
-... elapsed: 2.4 sec
+... elapsed: 2.21 sec
 ...done
 
 timing for: Installing 4750
-Elapsed:    0.05
+Elapsed:    0.03
 
 #
 # Installing 4500
@@ -9317,7 +9317,7 @@ APPLICATION 4500 - Oracle APEX SQL Workshop
 --application/deployment/checks
 --application/deployment/buildoptions
 --application/end_environment
-... elapsed: 13.39 sec
+... elapsed: 13.56 sec
 ...done
 
 timing for: Installing 4500
@@ -9490,11 +9490,11 @@ APPLICATION 4300 - Oracle APEX Data Workshop
 --application/deployment/checks
 --application/deployment/buildoptions
 --application/end_environment
-... elapsed: 2.6 sec
+... elapsed: 1.99 sec
 ...done
 
 timing for: Installing 4300
-Elapsed:    0.05
+Elapsed:    0.03
 
 #
 # Installing 4850
@@ -9728,11 +9728,11 @@ APPLICATION 4850 - Oracle APEX RESTful Services
 --application/deployment/checks
 --application/deployment/buildoptions
 --application/end_environment
-... elapsed: 3.59 sec
+... elapsed: 2.73 sec
 ...done
 
 timing for: Installing 4850
-Elapsed:    0.07
+Elapsed:    0.05
 
 #
 # Installing 4100
@@ -9832,7 +9832,7 @@ APPLICATION 4100 - Oracle APEX Home
 --application/deployment/checks
 --application/deployment/buildoptions
 --application/end_environment
-... elapsed: 2.03 sec
+... elapsed: 1.39 sec
 ...done
 
 timing for: Installing 4100
@@ -9894,29 +9894,29 @@ Elapsed:    0.00
 # Actions in Phase 2:
 #
     ok 1 - BEGIN							|   0.00
-    ok 2 - Upgrade Metadata (1) 					|   0.00
+    ok 2 - Upgrade Metadata (1) 					|   0.02
     ok 3 - Upgrade Metadata (2) 					|   0.00
     ok 4 - Recompiling APEX_240200 schema				|   0.02
-    ok 5 - Configuring Restricted Schemas				|   0.02
+    ok 5 - Configuring Restricted Schemas				|   0.00
     ok 6 - Upgrading Host ACL						|   0.00
     ok 7 - Upgrading Wallet ACL 					|   0.00
     ok 8 - Upgrading DIRECTORY object grants				|   0.00
-    ok 9 - Installing 4411						|   0.22
-    ok 10 - Installing 4470						|   0.03
+    ok 9 - Installing 4411						|   0.20
+    ok 10 - Installing 4470						|   0.05
     ok 11 - Installing 4155						|   0.03
     ok 12 - Installing Central Themes					|   0.05
     ok 13 - Installing 4000						|   1.00
-    ok 14 - Installing 4020						|   0.10
+    ok 14 - Installing 4020						|   0.08
     ok 15 - Installing 4350						|   0.13
     ok 16 - Installing 4050						|   0.20
     ok 17 - Installing 4550						|   0.03
     ok 18 - Installing 4600						|   0.08
-    ok 19 - Installing 4650						|   0.05
-    ok 20 - Installing 4700						|   0.03
-    ok 21 - Installing 4750						|   0.05
+    ok 19 - Installing 4650						|   0.03
+    ok 20 - Installing 4700						|   0.05
+    ok 21 - Installing 4750						|   0.03
     ok 22 - Installing 4500						|   0.22
-    ok 23 - Installing 4300						|   0.05
-    ok 24 - Installing 4850						|   0.07
+    ok 23 - Installing 4300						|   0.03
+    ok 24 - Installing 4850						|   0.05
     ok 25 - Installing 4100						|   0.03
     ok 26 - Resetting Internal Authentication				|   0.00
     ok 27 - Installing Dictionary View Metadata 			|   0.00
@@ -9924,14 +9924,14 @@ Elapsed:    0.00
     ok 29 - Updating App Owner/Version					|   0.00
     ok 30 - Updating Plug-in settings of Applications			|   0.00
     ok 31 - Copying Instance settings					|   0.00
-ok 2 - 31 actions passed, 0 actions failed				|   2.42
+ok 2 - 31 actions passed, 0 actions failed				|   2.35
 
 timing for: Copying Instance settings
 Elapsed:    0.00
 
 
 timing for: Phase 2 (Upgrade)
-Elapsed:    2.42
+Elapsed:    2.35
 
 Phase 3 (Switch)
 
@@ -9958,7 +9958,7 @@ Elapsed:    0.00
 #
 
 timing for: Upgrade Hot Metadata and Switch Schemas
-Elapsed:    0.10
+Elapsed:    0.08
 
 #
 # Installing FLOWS_FILES Objects
@@ -10011,18 +10011,18 @@ Elapsed:    0.00
 #
 # Validating Installation
 #
-...(13:51:49) Starting validate_apex for APEX_240200
-...(13:51:49) Checking missing privileges for APEX_240200
-...(13:51:50) Checking missing privileges for APEX_GRANTS_FOR_NEW_USERS_ROLE
-...(13:51:50) Re-generating APEX_240200.wwv_flow_db_version
+...(00:19:37) Starting validate_apex for APEX_240200
+...(00:19:37) Checking missing privileges for APEX_240200
+...(00:19:38) Checking missing privileges for APEX_GRANTS_FOR_NEW_USERS_ROLE
+...(00:19:38) Re-generating APEX_240200.wwv_flow_db_version
 ... wwv_flow_db_version is up to date
-...(13:51:50) Checking for sys.wwv_flow_cu_constraints
-...(13:51:50) Checking invalid public synonyms
-...(13:51:50) Key object existence check
-...(13:51:50) Post-ORDS updates
-...(13:51:50) calling wwv_util_apex_240200.post_ords_upgrade
-...(13:51:51) Setting DBMS Registry for APEX to valid
-...(13:51:51) Exiting validate_apex
+...(00:19:38) Checking for sys.wwv_flow_cu_constraints
+...(00:19:38) Checking invalid public synonyms
+...(00:19:38) Key object existence check
+...(00:19:38) Post-ORDS updates
+...(00:19:38) calling wwv_util_apex_240200.post_ords_upgrade
+...(00:19:39) Setting DBMS Registry for APEX to valid
+...(00:19:39) Exiting validate_apex
 JOB_QUEUE_PROCESSES: 4
 
 timing for: Validating Installation
@@ -10041,7 +10041,7 @@ Elapsed:    0.03
     ok 8 - Granting to FLOWS_FILES					|   0.00
     ok 9 - Creating FLOWS_FILES grants and synonyms			|   0.00
     ok 10 - Syncing ORDS Gateway Allow List				|   0.00
-    ok 11 - Creating Jobs						|   0.02
+    ok 11 - Creating Jobs						|   0.00
     ok 12 - Creating Dev Jobs						|   0.00
     ok 13 - Installing FLOWS_FILES Objects				|   0.00
     ok 14 - Installing APEX$SESSION Context				|   0.00
@@ -10051,7 +10051,7 @@ Elapsed:    0.03
     ok 18 - Setting Patch Status: APPLIED				|   0.00
     ok 19 - Removing Unused SYS Objects and Public Privs		|   0.00
     ok 20 - Validating Installation					|   0.03
-ok 3 - 20 actions passed, 0 actions failed				|   0.15
+ok 3 - 20 actions passed, 0 actions failed				|   0.13
 
 
 
@@ -10067,11 +10067,11 @@ http://host:port/ords/apex
 
 
 timing for: Phase 3 (Switch)
-Elapsed:    0.15
+Elapsed:    0.13
 
 
 timing for: Complete Installation
-Elapsed:    4.18
+Elapsed:    4.10
 
 SYS> SYS> SYS>   2    3    4    5    6    7    8    9   10   11   12   13  
 PL/SQL procedure successfully completed.
@@ -10324,7 +10324,7 @@ APEX		     24.2.0
 not spooling currently
 SYS> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
-[2026-03-15 13:51:52] Orac: 010-apex-install.sh: Done.
+[2026-03-17 00:19:39] Orac: 010-apex-install.sh: Done.
 
 /opt/oracle/runUserScripts.sh: running /opt/oracle/scripts/setup/011-apex-check.sql
 Checking APEX Installation
@@ -10340,34 +10340,52 @@ not spooling currently
 
 
 /opt/oracle/runUserScripts.sh: running /opt/oracle/scripts/setup/020-setup-ords.sh
-[2026-03-15 13:51:52] Orac: 020-setup-ords.sh Started
+[2026-03-17 00:19:39] Orac: 020-setup-ords.sh Started
 ORDS_HOME = /home/oracle/orac/ords
 APEX_HOME = /home/oracle/orac/setup/apex/apex
 020-setup-ords.sh: Creating password file...
--rw-r--r-- 1 oracle oinstall 20 Mar 15 13:51 /home/oracle/orac/ords/install_pwd.txt
+-rw-r--r-- 1 oracle oinstall 20 Mar 17 00:19 /home/oracle/orac/ords/install_pwd.txt
 rm: cannot remove '/home/oracle/orac/logs': Permission denied
 ORDS initialisation starting, with:
 ================================================================
-./bin/ords --config /home/oracle/orac/ords/conf install --admin-user SYSTEM --db-hostname 127.0.0.1 --db-port 1521 --db-servicename FREEPDB1 --log-folder /home/oracle/orac/logs --feature-rest-enabled-sql true --password-stdin
+./bin/ords --config /home/oracle/orac/ords/conf install --admin-user SYSTEM --proxy-user --db-hostname localhost --db-port 1521 --db-servicename FREEPDB1 --log-folder /home/oracle/orac/logs --feature-rest-enabled-sql true --password-stdin
 ================================================================
 Orac: 020-setup-ords.sh: ORDS installation launched.
-2026-03-15T13:51:55.449Z WARNING     Your configuration folder /home/oracle/orac/ords is located in ORDS product folder.  Oracle recommends to use a different configuration folder.
+2026-03-17T00:19:45.469Z WARNING     Your configuration folder /home/oracle/orac/ords is located in ORDS product folder.  Oracle recommends to use a different configuration folder.
 Refer to Oracle REST Data Services Documentation on how to setup your configuration folder.
-2026-03-15T13:51:56.749Z WARNING     Your configuration folder /home/oracle/orac/ords is located in ORDS product folder.  Oracle recommends to use a different configuration folder.
+2026-03-17T00:19:46.835Z WARNING     Your configuration folder /home/oracle/orac/ords is located in ORDS product folder.  Oracle recommends to use a different configuration folder.
 Refer to Oracle REST Data Services Documentation on how to setup your configuration folder.
 Unknown command: ords enable-schema
 
 Use ords --help to review the help for this command
 Orac: 020-setup-ords.sh: Done.
-[2026-03-15 13:51:56] Orac: 020-setup-ords.sh: Done.
+[2026-03-17 00:19:46] Orac: 020-setup-ords.sh: Done.
+
+/opt/oracle/runUserScripts.sh: running /opt/oracle/scripts/setup/024-ords-post-install.sql
+
+Session altered.
+
+
+User altered.
+
+
+User altered.
+
+
+User altered.
+
+
+
+/opt/oracle/runUserScripts.sh: running /opt/oracle/scripts/setup/026-restart-ords.sh
 
 /opt/oracle/runUserScripts.sh: running /opt/oracle/scripts/setup/030-orac-user.sh
-[2026-03-15 13:51:56] Orac: 030-orac-user.sh Started
+/opt/oracle/scripts/setup/026-restart-ords.sh: line 9: ./bin/ords: No such file or directory
+[2026-03-17 00:19:46] Orac: 030-orac-user.sh Started
 ~/orac/setup/apex/apex ~/orac/setup/apex/apex
 Orac: 030-orac-user.sh Started
 Orac: 030-orac-user.sh Launching sqlplus; installing APEX...
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:56 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:46 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -10388,24 +10406,24 @@ Grant succeeded.
 
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
-[2026-03-15 13:51:56] Orac: 030-orac-user.sh: Done.
+[2026-03-17 00:19:47] Orac: 030-orac-user.sh: Done.
 
 /opt/oracle/runUserScripts.sh: running /opt/oracle/scripts/setup/035-orac-schema_and_apps.sh
-[2026-03-15 13:51:56] Orac: 035-orac-schema_and_apps.sh Started
-== 2026-03-15 13:51:56 :: DDL runner starting
+[2026-03-17 00:19:47] Orac: 035-orac-schema_and_apps.sh Started
+== 2026-03-17 00:19:47 :: DDL runner starting
    BASE_DIR     : /home/oracle/orac/schema
    SQLPLUS_CONN : / as sysdba
-   LOG_DIR      : /home/oracle/orac/schema/_logs/20260315_135156
+   LOG_DIR      : /home/oracle/orac/schema/_logs/20260317_001947
    STOP_ON_ERROR: 1
 
--- 2026-03-15 13:51:56 :: No .sql files in: pre_install
--- 2026-03-15 13:51:56 :: No .sql files in: privilege
--- 2026-03-15 13:51:56 :: No .sql files in: role
--- 2026-03-15 13:51:56 :: No .sql files in: sequence
-== 2026-03-15 13:51:56 :: Processing directory: table
--> 2026-03-15 13:51:56 :: Running: /home/oracle/orac/schema/table/conversations.sql
+-- 2026-03-17 00:19:47 :: No .sql files in: pre_install
+-- 2026-03-17 00:19:47 :: No .sql files in: privilege
+-- 2026-03-17 00:19:47 :: No .sql files in: role
+-- 2026-03-17 00:19:47 :: No .sql files in: sequence
+== 2026-03-17 00:19:47 :: Processing directory: table
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/table/conversations.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:56 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -10444,13 +10462,13 @@ SQL> create table orac.conversations (
 
 Table created.
 
-Elapsed: 00:00:00.04
+Elapsed: 00:00:00.02
 SQL> @@@ FINISHED: /home/oracle/orac/schema/table/conversations.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/table/devices.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/table/devices.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -10486,9 +10504,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/table/devices.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/table/ha_areas.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/table/ha_areas.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -10529,9 +10547,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/table/ha_areas.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/table/ha_devices.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/table/ha_devices.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -10583,9 +10601,9 @@ Elapsed: 00:00:00.02
 SQL> @@@ FINISHED: /home/oracle/orac/schema/table/ha_devices.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/table/ha_entities.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/table/ha_entities.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -10636,9 +10654,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/table/ha_entities.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/table/ha_states_current.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/table/ha_states_current.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -10677,9 +10695,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/table/ha_states_current.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/table/llm_registry.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/table/llm_registry.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -10724,9 +10742,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/table/llm_registry.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/table/message_embeddings.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/table/message_embeddings.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -10771,9 +10789,9 @@ Elapsed: 00:00:00.02
 SQL> @@@ FINISHED: /home/oracle/orac/schema/table/message_embeddings.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/table/messages.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/table/messages.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -10814,13 +10832,13 @@ SQL> create table orac.messages (
 
 Table created.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.02
 SQL> @@@ FINISHED: /home/oracle/orac/schema/table/messages.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/table/user_preferences.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/table/user_preferences.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -10865,9 +10883,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/table/user_preferences.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/table/user_prompt_elements.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/table/user_prompt_elements.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -10901,13 +10919,13 @@ SQL> create table orac.user_prompt_elements (
 
 Table created.
 
-Elapsed: 00:00:00.02
+Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/table/user_prompt_elements.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/table/user_synonyms.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/table/user_synonyms.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -10943,9 +10961,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/table/user_synonyms.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/table/users.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/table/users.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -10988,10 +11006,10 @@ SQL> @@@ FINISHED: /home/oracle/orac/schema/table/users.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
 
-== 2026-03-15 13:51:57 :: Processing directory: view
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/view/llm_usage_breakdown_v.sql
+== 2026-03-17 00:19:47 :: Processing directory: view
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/view/llm_usage_breakdown_v.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11025,9 +11043,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/view/llm_usage_breakdown_v.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/view/message_role_breakdown_v.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/view/message_role_breakdown_v.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11054,13 +11072,13 @@ SQL> create or replace view orac.message_role_breakdown_v as
 
 View created.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/view/message_role_breakdown_v.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/view/messages_per_day_v.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/view/messages_per_day_v.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11092,9 +11110,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/view/messages_per_day_v.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/view/token_usage_trend_v.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/view/token_usage_trend_v.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11127,9 +11145,9 @@ Elapsed: 00:00:00.00
 SQL> @@@ FINISHED: /home/oracle/orac/schema/view/token_usage_trend_v.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/view/user_preferences_v.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/view/user_preferences_v.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11164,15 +11182,15 @@ SQL> create or replace view orac.user_preferences_v as
 
 View created.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> @@@ FINISHED: /home/oracle/orac/schema/view/user_preferences_v.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
 
-== 2026-03-15 13:51:57 :: Processing directory: index
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/index/convs_idx1.sql
+== 2026-03-17 00:19:47 :: Processing directory: index
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/index/convs_idx1.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11195,9 +11213,9 @@ Elapsed: 00:00:00.02
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/convs_idx1.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/index/convs_pk_idx.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/index/convs_pk_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11220,9 +11238,9 @@ Elapsed: 00:00:00.00
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/convs_pk_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/index/convs_uk1_idx.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/index/convs_uk1_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11249,9 +11267,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/convs_uk1_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/index/devics_idx1.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/index/devics_idx1.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:47 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11270,14 +11288,14 @@ SQL> create index orac.devics_idx1 on orac.devices(user_id);
 
 Index created.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> 
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/devics_idx1.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/index/devics_pk_idx.sql
+-> 2026-03-17 00:19:47 :: Running: /home/oracle/orac/schema/index/devics_pk_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11296,13 +11314,13 @@ SQL> create unique index orac.devics_pk_idx on orac.devices(device_id);
 
 Index created.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/devics_pk_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/index/ha_areas_pk_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/ha_areas_pk_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11329,9 +11347,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/ha_areas_pk_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/index/ha_devices_area_id_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/ha_devices_area_id_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11358,9 +11376,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/ha_devices_area_id_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:57 :: Running: /home/oracle/orac/schema/index/ha_devices_pk_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/ha_devices_pk_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:57 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11387,9 +11405,9 @@ Elapsed: 00:00:00.00
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/ha_devices_pk_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/ha_entities_device_id_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/ha_entities_device_id_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11416,9 +11434,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/ha_entities_device_id_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/ha_entities_pk_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/ha_entities_pk_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11445,9 +11463,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/ha_entities_pk_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/ha_entities_uk1_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/ha_entities_uk1_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11474,9 +11492,9 @@ Elapsed: 00:00:00.00
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/ha_entities_uk1_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/ha_states_current_pk_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/ha_states_current_pk_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11499,13 +11517,13 @@ SQL> create unique index orac.ha_states_current_pk_idx
 
 Index created.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/ha_states_current_pk_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/ha_states_current_state_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/ha_states_current_state_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11532,9 +11550,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/ha_states_current_state_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/llmreg_pk_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/llmreg_pk_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11557,9 +11575,9 @@ Elapsed: 00:00:00.00
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/llmreg_pk_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/llmreg_uk1_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/llmreg_uk1_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11583,9 +11601,9 @@ SQL>
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/llmreg_uk1_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/megemb_pk_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/megemb_pk_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11608,9 +11626,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/megemb_pk_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/megemb_uk1_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/megemb_uk1_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11633,9 +11651,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/megemb_uk1_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/messgs_idx1.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/messgs_idx1.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11659,9 +11677,9 @@ SQL>
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/messgs_idx1.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/messgs_idx2.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/messgs_idx2.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11684,9 +11702,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/messgs_idx2.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/messgs_pk_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/messgs_pk_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11705,13 +11723,13 @@ SQL> create unique index orac.messgs_pk_idx on orac.messages(message_id);
 
 Index created.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/messgs_pk_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/messgs_uk1_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/messgs_uk1_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11734,9 +11752,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/messgs_uk1_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/user_prompt_elements.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/user_prompt_elements.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11755,13 +11773,13 @@ SQL> create unique index orac.usrpre_pk_idx on orac.user_prompt_elements(element
 
 Index created.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/user_prompt_elements.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/users_pk_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/users_pk_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11784,9 +11802,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/users_pk_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/users_uk1_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/users_uk1_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11809,9 +11827,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/users_uk1_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/usrpre_idx1.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/usrpre_idx1.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11830,13 +11848,13 @@ SQL> create index orac.usrpre_idx1 on orac.user_prompt_elements(user_id, categor
 
 Index created.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/usrpre_idx1.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/usrprf_pk_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/usrprf_pk_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11855,13 +11873,13 @@ SQL> create unique index orac.usrprf_pk_idx on orac.user_preferences(pref_id);
 
 Index created.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/usrprf_pk_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/usrprf_uk1_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/usrprf_uk1_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11880,13 +11898,13 @@ SQL> create unique index orac.usrprf_uk1_idx on orac.user_preferences(user_id, p
 
 Index created.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/usrprf_uk1_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/usrsyns_idx1.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/usrsyns_idx1.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11905,13 +11923,13 @@ SQL> create index orac.usrsyns_idx1 on orac.user_synonyms(user_id);
 
 Index created.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/index/usrsyns_idx1.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/index/usrsyns_pk_idx.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/index/usrsyns_pk_idx.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11935,10 +11953,10 @@ SQL> @@@ FINISHED: /home/oracle/orac/schema/index/usrsyns_pk_idx.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
 
-== 2026-03-15 13:51:58 :: Processing directory: constraint_pk
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/constraint_pk/ha_areas_pk.sql
+== 2026-03-17 00:19:48 :: Processing directory: constraint_pk
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/constraint_pk/ha_areas_pk.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11962,13 +11980,13 @@ SQL> alter table orac.ha_areas
 
 Table altered.
 
-Elapsed: 00:00:00.03
+Elapsed: 00:00:00.02
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_pk/ha_areas_pk.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/constraint_pk/ha_devices_pk.sql
+-> 2026-03-17 00:19:48 :: Running: /home/oracle/orac/schema/constraint_pk/ha_devices_pk.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:48 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -11996,9 +12014,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_pk/ha_devices_pk.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/constraint_pk/ha_entities_pk.sql
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_pk/ha_entities_pk.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12026,9 +12044,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_pk/ha_entities_pk.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/constraint_pk/ha_states_current_pk.sql
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_pk/ha_states_current_pk.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12056,9 +12074,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_pk/ha_states_current_pk.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:58 :: Running: /home/oracle/orac/schema/constraint_pk/table_pks.sql
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_pk/table_pks.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:58 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12159,9 +12177,9 @@ Elapsed: 00:00:00.00
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_pk/table_pks.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_pk/view_pks.sql
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_pk/view_pks.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12186,16 +12204,16 @@ SQL> alter view orac.user_preferences_v
 
 View altered.
 
-Elapsed: 00:00:00.05
+Elapsed: 00:00:00.04
 SQL> 
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_pk/view_pks.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
 
-== 2026-03-15 13:51:59 :: Processing directory: constraint_uc
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_uc/ha_entities_uk1.sql
+== 2026-03-17 00:19:49 :: Processing directory: constraint_uc
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_uc/ha_entities_uk1.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12219,13 +12237,13 @@ SQL> alter table orac.ha_entities
 
 Table altered.
 
-Elapsed: 00:00:00.02
+Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_uc/ha_entities_uk1.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_uc/table_uc_constraints.sql
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_uc/table_uc_constraints.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12250,7 +12268,7 @@ SQL> alter table orac.users
 
 Table altered.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> 
 SQL> -- uk: conversations(session_id)
 SQL> alter table orac.conversations
@@ -12259,7 +12277,7 @@ SQL> alter table orac.conversations
 
 Table altered.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> 
 SQL> -- uk: messages(conversation_id, turn_index)
 SQL> alter table orac.messages
@@ -12268,7 +12286,7 @@ SQL> alter table orac.messages
 
 Table altered.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> 
 SQL> -- uk: message_embeddings(message_id, chunk_index)
 SQL> alter table orac.message_embeddings
@@ -12277,7 +12295,7 @@ SQL> alter table orac.message_embeddings
 
 Table altered.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> 
 SQL> -- uk: llm_registry(name)
 SQL> alter table orac.llm_registry
@@ -12286,7 +12304,7 @@ SQL> alter table orac.llm_registry
 
 Table altered.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> 
 SQL> -- uk: user_preferences(user_id, pref_key)
 SQL> alter table orac.user_preferences
@@ -12301,9 +12319,9 @@ SQL>
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_uc/table_uc_constraints.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_uc/view_uc_constraints.sql
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_uc/view_uc_constraints.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12334,10 +12352,10 @@ SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_uc/view_uc_constraints.sq
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
 
-== 2026-03-15 13:51:59 :: Processing directory: constraint_other
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_other/check_constraints.sql
+== 2026-03-17 00:19:49 :: Processing directory: constraint_other
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_other/check_constraints.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12371,7 +12389,7 @@ SQL> alter table orac.conversations
 
 Table altered.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> 
 SQL> -- messages table check constraints
 SQL> alter table orac.messages
@@ -12380,7 +12398,7 @@ SQL> alter table orac.messages
 
 Table altered.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> 
 SQL> -- message_embeddings table check constraints
 SQL> alter table orac.message_embeddings
@@ -12389,7 +12407,7 @@ SQL> alter table orac.message_embeddings
 
 Table altered.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> 
 SQL> -- llm_registry table check constraints
 SQL> alter table orac.llm_registry
@@ -12398,7 +12416,7 @@ SQL> alter table orac.llm_registry
 
 Table altered.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> 
 SQL> alter table orac.llm_registry
   2    add constraint llmreg_ck2
@@ -12406,7 +12424,7 @@ SQL> alter table orac.llm_registry
 
 Table altered.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> -- ck: enforce value_type alignment with scalar stored in pref_value
 SQL> alter table orac.user_preferences
   2    add constraint usrprf_ck1
@@ -12426,7 +12444,7 @@ SQL> alter table orac.user_preferences
 
 Table altered.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> -- user_preferences table check constraints
 SQL> alter table orac.user_preferences
   2    add constraint usrprf_ck2
@@ -12434,7 +12452,7 @@ SQL> alter table orac.user_preferences
 
 Table altered.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> 
 SQL> -- user_prompt_elements table check constraints
 SQL> alter table orac.user_prompt_elements
@@ -12443,7 +12461,7 @@ SQL> alter table orac.user_prompt_elements
 
 Table altered.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> 
 SQL> -- ck: valid alias_type domain
 SQL> alter table orac.user_synonyms
@@ -12452,7 +12470,7 @@ SQL> alter table orac.user_synonyms
 
 Table altered.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> 
 SQL> -- user_synonyms table check constraints
 SQL> alter table orac.user_synonyms
@@ -12461,7 +12479,7 @@ SQL> alter table orac.user_synonyms
 
 Table altered.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> 
 SQL> -- devices table check constraints
 SQL> alter table orac.devices
@@ -12470,13 +12488,13 @@ SQL> alter table orac.devices
 
 Table altered.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_other/check_constraints.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_other/ha_areas_aliases_json.sql
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_other/ha_areas_aliases_json.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12504,9 +12522,9 @@ Elapsed: 00:00:00.02
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_other/ha_areas_aliases_json.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_other/ha_areas_labels_json.sql
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_other/ha_areas_labels_json.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12534,9 +12552,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_other/ha_areas_labels_json.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_other/ha_devices_cfg_subentries_json.sql
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_other/ha_devices_cfg_subentries_json.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12564,9 +12582,9 @@ Elapsed: 00:00:00.02
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_other/ha_devices_cfg_subentries_json.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_other/ha_devices_config_entries_json.sql
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_other/ha_devices_config_entries_json.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12594,9 +12612,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_other/ha_devices_config_entries_json.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_other/ha_devices_connections_json.sql
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_other/ha_devices_connections_json.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12624,9 +12642,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_other/ha_devices_connections_json.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_other/ha_devices_identifiers_json.sql
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_other/ha_devices_identifiers_json.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12654,9 +12672,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_other/ha_devices_identifiers_json.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_other/ha_devices_labels_json.sql
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_other/ha_devices_labels_json.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12684,9 +12702,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_other/ha_devices_labels_json.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_other/ha_entities_categories_json.sql
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_other/ha_entities_categories_json.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12710,13 +12728,13 @@ SQL> alter table orac.ha_entities
 
 Table altered.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.02
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_other/ha_entities_categories_json.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_other/ha_entities_labels_json.sql
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_other/ha_entities_labels_json.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12740,13 +12758,13 @@ SQL> alter table orac.ha_entities
 
 Table altered.
 
-Elapsed: 00:00:00.02
+Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_other/ha_entities_labels_json.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_other/ha_entities_options_json.sql
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_other/ha_entities_options_json.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12774,9 +12792,9 @@ Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_other/ha_entities_options_json.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_other/ha_states_current_attributes_json.sql
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_other/ha_states_current_attributes_json.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12805,10 +12823,10 @@ SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_other/ha_states_current_a
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
 
-== 2026-03-15 13:51:59 :: Processing directory: constraint_fk
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_fk/foreign_keys.sql
+== 2026-03-17 00:19:49 :: Processing directory: constraint_fk
+-> 2026-03-17 00:19:49 :: Running: /home/oracle/orac/schema/constraint_fk/foreign_keys.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:49 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12843,7 +12861,7 @@ SQL> alter table orac.conversations
 
 Table altered.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> 
 SQL> -- fk: messages.conversation_id → conversations.conversation_id (cascade delete)
 SQL> alter table orac.messages
@@ -12853,7 +12871,7 @@ SQL> alter table orac.messages
 
 Table altered.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> 
 SQL> -- fk: messages.llm_id → llm_registry.llm_id
 SQL> alter table orac.messages
@@ -12872,7 +12890,7 @@ SQL> alter table orac.message_embeddings
 
 Table altered.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> 
 SQL> -- fk: user_preferences.user_id → users.user_id (cascade delete)
 SQL> alter table orac.user_preferences
@@ -12882,7 +12900,7 @@ SQL> alter table orac.user_preferences
 
 Table altered.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> 
 SQL> -- fk: user_prompt_elements.user_id → users.user_id (cascade delete)
 SQL> alter table orac.user_prompt_elements
@@ -12892,7 +12910,7 @@ SQL> alter table orac.user_prompt_elements
 
 Table altered.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> 
 SQL> -- fk: user_synonyms.user_id → users.user_id (cascade delete)
 SQL> alter table orac.user_synonyms
@@ -12902,7 +12920,7 @@ SQL> alter table orac.user_synonyms
 
 Table altered.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> 
 SQL> -- fk: devices.user_id → users.user_id (cascade delete)
 SQL> alter table orac.devices
@@ -12912,14 +12930,14 @@ SQL> alter table orac.devices
 
 Table altered.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> 
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_fk/foreign_keys.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:51:59 :: Running: /home/oracle/orac/schema/constraint_fk/ha_devices_areas_fk.sql
+-> 2026-03-17 00:19:50 :: Running: /home/oracle/orac/schema/constraint_fk/ha_devices_areas_fk.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:51:59 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:50 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12944,13 +12962,13 @@ SQL> alter table orac.ha_devices
 
 Table altered.
 
-Elapsed: 00:00:00.02
+Elapsed: 00:00:00.01
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_fk/ha_devices_areas_fk.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:52:00 :: Running: /home/oracle/orac/schema/constraint_fk/ha_entities_devices_fk.sql
+-> 2026-03-17 00:19:50 :: Running: /home/oracle/orac/schema/constraint_fk/ha_entities_devices_fk.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:52:00 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:50 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -12975,13 +12993,13 @@ SQL> alter table orac.ha_entities
 
 Table altered.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.02
 SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_fk/ha_entities_devices_fk.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:52:00 :: Running: /home/oracle/orac/schema/constraint_fk/ha_states_current_entities_fk.sql
+-> 2026-03-17 00:19:50 :: Running: /home/oracle/orac/schema/constraint_fk/ha_states_current_entities_fk.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:52:00 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:50 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -13011,11 +13029,11 @@ SQL> @@@ FINISHED: /home/oracle/orac/schema/constraint_fk/ha_states_current_enti
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
 
--- 2026-03-15 13:52:00 :: No .sql files in: type_spec
-== 2026-03-15 13:52:00 :: Processing directory: package_spec
--> 2026-03-15 13:52:00 :: Running: /home/oracle/orac/schema/package_spec/orac_prefs_seed.sql
+-- 2026-03-17 00:19:50 :: No .sql files in: type_spec
+== 2026-03-17 00:19:50 :: Processing directory: package_spec
+-> 2026-03-17 00:19:50 :: Running: /home/oracle/orac/schema/package_spec/orac_prefs_seed.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:52:00 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:50 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -13067,9 +13085,9 @@ SQL>
 SQL> @@@ FINISHED: /home/oracle/orac/schema/package_spec/orac_prefs_seed.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:52:00 :: Running: /home/oracle/orac/schema/package_spec/orac_utils.sql
+-> 2026-03-17 00:19:50 :: Running: /home/oracle/orac/schema/package_spec/orac_utils.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:52:00 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:50 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -13202,12 +13220,12 @@ SQL> @@@ FINISHED: /home/oracle/orac/schema/package_spec/orac_utils.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
 
--- 2026-03-15 13:52:00 :: No .sql files in: materialized_view
--- 2026-03-15 13:52:00 :: No .sql files in: type_body
-== 2026-03-15 13:52:00 :: Processing directory: package_body
--> 2026-03-15 13:52:00 :: Running: /home/oracle/orac/schema/package_body/orac_prefs_seed.sql
+-- 2026-03-17 00:19:50 :: No .sql files in: materialized_view
+-- 2026-03-17 00:19:50 :: No .sql files in: type_body
+== 2026-03-17 00:19:50 :: Processing directory: package_body
+-> 2026-03-17 00:19:50 :: Running: /home/oracle/orac/schema/package_body/orac_prefs_seed.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:52:00 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:50 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -13353,14 +13371,14 @@ SQL> SQL> create or replace package body orac.orac_prefs_seed as
 
 Package body created.
 
-Elapsed: 00:00:00.03
+Elapsed: 00:00:00.02
 SQL> 
 SQL> @@@ FINISHED: /home/oracle/orac/schema/package_body/orac_prefs_seed.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:52:00 :: Running: /home/oracle/orac/schema/package_body/orac_utils.sql
+-> 2026-03-17 00:19:50 :: Running: /home/oracle/orac/schema/package_body/orac_utils.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:52:00 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:50 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -13534,10 +13552,10 @@ SQL> @@@ FINISHED: /home/oracle/orac/schema/package_body/orac_utils.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
 
-== 2026-03-15 13:52:00 :: Processing directory: trigger
--> 2026-03-15 13:52:00 :: Running: /home/oracle/orac/schema/trigger/table_triggers.sql
+== 2026-03-17 00:19:50 :: Processing directory: trigger
+-> 2026-03-17 00:19:50 :: Running: /home/oracle/orac/schema/trigger/table_triggers.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:52:00 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:50 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -13648,7 +13666,7 @@ SQL> create or replace trigger orac.llm_registry_bu
 
 Trigger created.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> 
 SQL> -- trg: trg_user_prefs_bu — standard row_version + audit on update
 SQL> create or replace trigger orac.trg_user_prefs_bu
@@ -13668,7 +13686,7 @@ SQL> create or replace trigger orac.trg_user_prefs_bu
 
 Trigger created.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> 
 SQL> -- trg: upe_bu — standard row_version + audit on update
 SQL> create or replace trigger orac.upe_bu
@@ -13688,7 +13706,7 @@ SQL> create or replace trigger orac.upe_bu
 
 Trigger created.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> 
 SQL> -- trg: user_syns_bu — standard row_version + audit on update
 SQL> create or replace trigger orac.user_syns_bu
@@ -13708,7 +13726,7 @@ SQL> create or replace trigger orac.user_syns_bu
 
 Trigger created.
 
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> 
 SQL> -- trg: devices_bu — standard row_version + audit on update
 SQL> create or replace trigger orac.devices_bu
@@ -13728,14 +13746,14 @@ SQL> create or replace trigger orac.devices_bu
 
 Trigger created.
 
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> 
 SQL> @@@ FINISHED: /home/oracle/orac/schema/trigger/table_triggers.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
--> 2026-03-15 13:52:00 :: Running: /home/oracle/orac/schema/trigger/view_triggers.sql
+-> 2026-03-17 00:19:50 :: Running: /home/oracle/orac/schema/trigger/view_triggers.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:52:00 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:50 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -13818,21 +13836,21 @@ SQL> @@@ FINISHED: /home/oracle/orac/schema/trigger/view_triggers.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
 
--- 2026-03-15 13:52:00 :: No .sql files in: context
--- 2026-03-15 13:52:00 :: No .sql files in: procedure
--- 2026-03-15 13:52:00 :: No .sql files in: function
--- 2026-03-15 13:52:00 :: No .sql files in: seed_data
--- 2026-03-15 13:52:00 :: No .sql files in: schedule
--- 2026-03-15 13:52:00 :: No .sql files in: job
--- 2026-03-15 13:52:00 :: No .sql files in: synonym
--- 2026-03-15 13:52:00 :: No .sql files in: grant
--- 2026-03-15 13:52:00 :: No .sql files in: rest_module
--- 2026-03-15 13:52:00 :: No .sql files in: comment
--- 2026-03-15 13:52:00 :: No .sql files in: post_install
-== 2026-03-15 13:52:00 :: Processing directory: orac_ws
--> 2026-03-15 13:52:00 :: Running: /home/oracle/orac/schema/orac_ws/ORAC_workspace_export.sql
+-- 2026-03-17 00:19:50 :: No .sql files in: context
+-- 2026-03-17 00:19:50 :: No .sql files in: procedure
+-- 2026-03-17 00:19:50 :: No .sql files in: function
+-- 2026-03-17 00:19:50 :: No .sql files in: seed_data
+-- 2026-03-17 00:19:50 :: No .sql files in: schedule
+-- 2026-03-17 00:19:50 :: No .sql files in: job
+-- 2026-03-17 00:19:50 :: No .sql files in: synonym
+-- 2026-03-17 00:19:50 :: No .sql files in: grant
+-- 2026-03-17 00:19:50 :: No .sql files in: rest_module
+-- 2026-03-17 00:19:50 :: No .sql files in: comment
+-- 2026-03-17 00:19:50 :: No .sql files in: post_install
+== 2026-03-17 00:19:50 :: Processing directory: orac_ws
+-> 2026-03-17 00:19:50 :: Running: /home/oracle/orac/schema/orac_ws/ORAC_workspace_export.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:52:00 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:50 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -13878,7 +13896,7 @@ This import is compatible with version: 20240531
 COMPATIBLE (You should be able to run this import without issues.)
 ID offset during import: 0
 New ID offset for application: 0
-Elapsed: 00:00:00.13
+Elapsed: 00:00:00.12
 SQL> prompt	WORKSPACE 6124117855177754
 WORKSPACE 6124117855177754
 SQL> --
@@ -13898,7 +13916,7 @@ SQL> begin
   2  	 wwv_flow_imp.set_security_group_id(p_security_group_id=>6124117855177754);
   3  end;
   4  /
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> ----------------
 SQL> -- W O R K S P A C E
 SQL> -- Creating a workspace will not create database schemas or objects.
@@ -13931,7 +13949,7 @@ SQL> begin
  24  );
  25  end;
  26  /
-Elapsed: 00:00:00.40
+Elapsed: 00:00:00.31
 SQL> ----------------
 SQL> -- G R O U P S
 SQL> --
@@ -13945,7 +13963,7 @@ SQL> begin
   6    p_GROUP_DESC => 'Users authorized to register OAuth2 Client Applications');
   7  end;
   8  /
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> begin
   2  wwv_flow_fnd_user_api.create_user_group (
   3    p_id => 5924172299876109,
@@ -14007,7 +14025,7 @@ SQL> begin
   3  wwv_flow_team_api.check_version(p_version_yyyy_mm_dd=>'2010.05.13');
   4  end;
   5  /
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> 
 SQL> begin wwv_flow.g_import_in_progress := true; wwv_flow.g_user := USER; end;
   2  /
@@ -14138,7 +14156,7 @@ SQL> begin
   2  null;
   3  end;
   4  /
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> 
 SQL> prompt ... Extension Links
 ... Extension Links
@@ -14153,8 +14171,8 @@ SQL> begin
   4  commit;
   5  end;
   6  /
-... elapsed: .81 sec
-Elapsed: 00:00:00.31
+... elapsed: .62 sec
+Elapsed: 00:00:00.22
 SQL> set verify on feedback on define on
 SQL> prompt	...done
 ...done
@@ -14162,10 +14180,10 @@ SQL> @@@ FINISHED: /home/oracle/orac/schema/orac_ws/ORAC_workspace_export.sql @@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
 
-== 2026-03-15 13:52:01 :: Processing directory: orac_apps
--> 2026-03-15 13:52:01 :: Running: /home/oracle/orac/schema/orac_apps/f1042.sql
+== 2026-03-17 00:19:51 :: Processing directory: orac_apps
+-> 2026-03-17 00:19:51 :: Running: /home/oracle/orac/schema/orac_apps/f1042.sql
 
-SQL*Plus: Release 23.26.0.0.0 - Production on Sun Mar 15 13:52:01 2026
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:51 2026
 Version 23.26.0.0.0
 
 Copyright (c) 1982, 2025, Oracle.  All rights reserved.
@@ -14215,7 +14233,7 @@ This import is compatible with version: 20241130
 COMPATIBLE (You should be able to run this import without issues.)
 ID offset during import: 0
 New ID offset for application: 6311092752151427
-Elapsed: 00:00:00.05
+Elapsed: 00:00:00.03
 SQL> 
 SQL> prompt APPLICATION 1042 - Orac Administration
 APPLICATION 1042 - Orac Administration
@@ -14265,7 +14283,7 @@ SQL> begin
   2  wwv_flow_imp.remove_flow(wwv_flow.g_flow_id);
   3  end;
   4  /
-Elapsed: 00:00:00.74
+Elapsed: 00:00:00.69
 SQL> prompt --application/create_application
 --application/create_application
 SQL> begin
@@ -14317,7 +14335,7 @@ SQL> begin
  47  );
  48  end;
  49  /
-Elapsed: 00:00:00.13
+Elapsed: 00:00:00.10
 SQL> prompt --application/user_interfaces
 --application/user_interfaces
 SQL> begin
@@ -14679,7 +14697,7 @@ SQL> begin
  44  );
  45  end;
  46  /
-Elapsed: 00:00:00.08
+Elapsed: 00:00:00.07
 SQL> prompt --application/shared_components/files/icons_app_icon_192_png
 --application/shared_components/files/icons_app_icon_192_png
 SQL> begin
@@ -14734,7 +14752,7 @@ SQL> begin
  50  );
  51  end;
  52  /
-Elapsed: 00:00:00.06
+Elapsed: 00:00:00.02
 SQL> prompt --application/shared_components/files/icons_app_icon_256_rounded_png
 --application/shared_components/files/icons_app_icon_256_rounded_png
 SQL> begin
@@ -14814,7 +14832,7 @@ SQL> begin
  75  );
  76  end;
  77  /
-Elapsed: 00:00:00.02
+Elapsed: 00:00:00.01
 SQL> prompt --application/shared_components/files/icons_app_icon_512_png
 --application/shared_components/files/icons_app_icon_512_png
 SQL> begin
@@ -15114,7 +15132,7 @@ SQL> begin
 118  );
 119  end;
 120  /
-Elapsed: 00:00:00.03
+Elapsed: 00:00:00.01
 SQL> prompt --application/shared_components/security/authorizations/administration_rights
 --application/shared_components/security/authorizations/administration_rights
 SQL> begin
@@ -15130,7 +15148,7 @@ SQL> begin
  11  );
  12  end;
  13  /
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> prompt --application/shared_components/security/authorizations/reader_rights
 --application/shared_components/security/authorizations/reader_rights
 SQL> begin
@@ -15155,7 +15173,7 @@ SQL> begin
  20  );
  21  end;
  22  /
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> prompt --application/shared_components/security/authorizations/contribution_rights
 --application/shared_components/security/authorizations/contribution_rights
 SQL> begin
@@ -15184,7 +15202,7 @@ SQL> begin
   8  );
   9  end;
  10  /
-Elapsed: 00:00:00.06
+Elapsed: 00:00:00.04
 SQL> prompt --application/shared_components/security/app_access_control/contributor
 --application/shared_components/security/app_access_control/contributor
 SQL> begin
@@ -15244,7 +15262,7 @@ SQL> begin
  22  );
  23  end;
  24  /
-Elapsed: 00:00:00.02
+Elapsed: 00:00:00.01
 SQL> prompt --application/shared_components/navigation/tabs/standard
 --application/shared_components/navigation/tabs/standard
 SQL> begin
@@ -15277,7 +15295,7 @@ SQL> begin
  14  );
  15  end;
  16  /
-Elapsed: 00:00:00.02
+Elapsed: 00:00:00.00
 SQL> prompt --application/shared_components/user_interface/lovs/desktop_theme_styles
 --application/shared_components/user_interface/lovs/desktop_theme_styles
 SQL> begin
@@ -15302,7 +15320,7 @@ SQL> begin
  20  );
  21  end;
  22  /
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> prompt --application/shared_components/user_interface/lovs/email_username_format
 --application/shared_components/user_interface/lovs/email_username_format
 SQL> begin
@@ -15321,7 +15339,7 @@ SQL> begin
  14  );
  15  end;
  16  /
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> prompt --application/shared_components/user_interface/lovs/feedback_rating
 --application/shared_components/user_interface/lovs/feedback_rating
 SQL> begin
@@ -15355,7 +15373,7 @@ SQL> begin
  29  );
  30  end;
  31  /
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> prompt --application/shared_components/user_interface/lovs/feedback_status
 --application/shared_components/user_interface/lovs/feedback_status
 SQL> begin
@@ -15392,7 +15410,7 @@ SQL> begin
  32  );
  33  end;
  34  /
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> prompt --application/shared_components/user_interface/lovs/timeframe_4_weeks
 --application/shared_components/user_interface/lovs/timeframe_4_weeks
 SQL> begin
@@ -15461,7 +15479,7 @@ SQL> begin
  44  );
  45  end;
  46  /
-Elapsed: 00:00:00.00
+Elapsed: 00:00:00.01
 SQL> prompt --application/shared_components/user_interface/lovs/user_theme_preference
 --application/shared_components/user_interface/lovs/user_theme_preference
 SQL> begin
@@ -15507,7 +15525,7 @@ SQL> begin
  22  );
  23  end;
  24  /
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> prompt --application/shared_components/user_interface/lovs/yes_no_yn
 --application/shared_components/user_interface/lovs/yes_no_yn
 SQL> begin
@@ -15542,7 +15560,7 @@ SQL> begin
   5  );
   6  end;
   7  /
-Elapsed: 00:00:00.02
+Elapsed: 00:00:00.01
 SQL> prompt --application/comments
 --application/comments
 SQL> begin
@@ -15571,7 +15589,7 @@ SQL> begin
  17  );
  18  end;
  19  /
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> prompt --application/shared_components/navigation/breadcrumbentry
 --application/shared_components/navigation/breadcrumbentry
 SQL> begin
@@ -15639,7 +15657,7 @@ SQL> begin
  49  );
  50  end;
  51  /
-Elapsed: 00:00:00.02
+Elapsed: 00:00:00.01
 SQL> prompt --application/shared_components/user_interface/theme_style
 --application/shared_components/user_interface/theme_style
 SQL> begin
@@ -15763,7 +15781,7 @@ SQL> begin
  11  );
  12  end;
  13  /
-Elapsed: 00:00:00.11
+Elapsed: 00:00:00.01
 SQL> prompt --application/user_interfaces/combined_files
 --application/user_interfaces/combined_files
 SQL> begin
@@ -17427,7 +17445,7 @@ SQL> begin
 464  );
 465  end;
 466  /
-Elapsed: 00:00:00.08
+Elapsed: 00:00:00.07
 SQL> prompt --application/pages/page_00005
 --application/pages/page_00005
 SQL> begin
@@ -18244,7 +18262,7 @@ SQL> begin
 208  );
 209  end;
 210  /
-Elapsed: 00:00:00.05
+Elapsed: 00:00:00.04
 SQL> prompt --application/pages/page_10000
 --application/pages/page_10000
 SQL> begin
@@ -18800,7 +18818,7 @@ SQL> begin
 236  );
 237  end;
 238  /
-Elapsed: 00:00:00.06
+Elapsed: 00:00:00.05
 SQL> prompt --application/pages/page_10020
 --application/pages/page_10020
 SQL> begin
@@ -19029,7 +19047,7 @@ SQL> begin
 224  );
 225  end;
 226  /
-Elapsed: 00:00:00.03
+Elapsed: 00:00:00.02
 SQL> prompt --application/pages/page_10030
 --application/pages/page_10030
 SQL> begin
@@ -20620,7 +20638,7 @@ SQL> begin
 337  );
 338  end;
 339  /
-Elapsed: 00:00:00.04
+Elapsed: 00:00:00.03
 SQL> prompt --application/pages/page_10034
 --application/pages/page_10034
 SQL> begin
@@ -21615,7 +21633,7 @@ SQL> begin
 163  );
 164  end;
 165  /
-Elapsed: 00:00:00.02
+Elapsed: 00:00:00.01
 SQL> prompt --application/pages/page_10042
 --application/pages/page_10042
 SQL> begin
@@ -21908,7 +21926,7 @@ SQL> begin
 288  );
 289  end;
 290  /
-Elapsed: 00:00:00.04
+Elapsed: 00:00:00.03
 SQL> prompt --application/pages/page_10043
 --application/pages/page_10043
 SQL> begin
@@ -22559,7 +22577,7 @@ SQL> begin
 340  );
 341  end;
 342  /
-Elapsed: 00:00:00.04
+Elapsed: 00:00:00.05
 SQL> prompt --application/pages/page_10050
 --application/pages/page_10050
 SQL> begin
@@ -22880,7 +22898,7 @@ SQL> begin
  59  );
  60  end;
  61  /
-Elapsed: 00:00:00.01
+Elapsed: 00:00:00.00
 SQL> prompt --application/pages/page_10053
 --application/pages/page_10053
 SQL> begin
@@ -23555,8 +23573,8 @@ SQL> begin
   4  commit;
   5  end;
   6  /
-... elapsed: 2.77 sec
-Elapsed: 00:00:00.21
+... elapsed: 2.27 sec
+Elapsed: 00:00:00.11
 SQL> set verify on feedback on define on
 SQL> prompt	...done
 ...done
@@ -23564,11 +23582,60 @@ SQL> @@@ FINISHED: /home/oracle/orac/schema/orac_apps/f1042.sql @@@
 SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
 Version 23.26.0.0.0
 
-== 2026-03-15 13:52:04 :: DDL runner finished. Logs: /home/oracle/orac/schema/_logs/20260315_135156
-[2026-03-15 13:52:04] Orac: 035-orac-schema_and_apps.sh Done
+== 2026-03-17 00:19:53 :: DDL runner finished. Logs: /home/oracle/orac/schema/_logs/20260317_001947
+[2026-03-17 00:19:53] Orac: 035-orac-schema_and_apps.sh Done
+
+/opt/oracle/runUserScripts.sh: running /opt/oracle/scripts/setup/038-init-app-role.sh
+[2026-03-17 00:19:53] Orac: 038-init-app-role.sh Started
+Orac: 038-init-app-role.sh Launching sqlplus; installing APEX...
+
+SQL*Plus: Release 23.26.0.0.0 - Production on Tue Mar 17 00:19:53 2026
+Version 23.26.0.0.0
+
+Copyright (c) 1982, 2025, Oracle.  All rights reserved.
+
+
+Connected to:
+Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
+Version 23.26.0.0.0
+
+SQL> 
+Session altered.
+
+SQL> SQL>   2    3    4    5    6    7    8    9   10   11   12   13   14   15   16   17   18   19   20   21   22   23   24   25   26   27   28   29  
+PL/SQL procedure successfully completed.
+
+SQL> Disconnected from Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
+Version 23.26.0.0.0
+[2026-03-17 00:19:53] Orac: 038-init-app-role.sh: Done.
+
+/opt/oracle/runUserScripts.sh: running /opt/oracle/scripts/setup/038-init-app-role.sql
+    apex_util.set_workspace(p_workspace => 'ORAC');
+    *
+ERROR at line 4:
+ORA-06550: line 4, column 5:
+PLS-00201: identifier 'APEX_UTIL.SET_WORKSPACE' must be declared
+ORA-06550: line 4, column 5:
+PL/SQL: Statement ignored
+ORA-06550: line 7, column 5:
+PLS-00201: identifier 'APEX_ACL.ADD_USER_ROLE' must be declared
+ORA-06550: line 7, column 5:
+PL/SQL: Statement ignored
+ORA-06550: line 14, column 5:
+PLS-00201: identifier 'APEX_ACL.ADD_USER_ROLE' must be declared
+ORA-06550: line 14, column 5:
+PL/SQL: Statement ignored
+ORA-06550: line 21, column 5:
+PLS-00201: identifier 'APEX_ACL.ADD_USER_ROLE' must be declared
+ORA-06550: line 21, column 5:
+PL/SQL: Statement ignored
+Help: https://docs.oracle.com/error-help/db/ora-06550/
+
+
+
 
 /opt/oracle/runUserScripts.sh: running /opt/oracle/scripts/setup/999-complete.sh
-==================  ORAC deployment started ==================
+==================  ORAC deployment complete ==================
 
 /opt/oracle/runUserScripts.sh: ignoring /opt/oracle/scripts/setup/ords_params.properties
 
@@ -23592,30 +23659,128 @@ The following output is now a tail of the alert.log:
 Thread 1 cannot allocate new log, sequence 5
 Private strand flush not complete
   Current log# 1 seq# 4 mem# 0: /opt/oracle/oradata/FREE/redo01.log
-2026-03-15T13:51:38.437888+00:00
-Thread 1 advanced to log sequence 5 (LGWR switch),  current SCN: 2173240
+2026-03-17T00:19:31.553100+00:00
+Thread 1 advanced to log sequence 5 (LGWR switch),  current SCN: 2172456
   Current log# 2 seq# 5 mem# 0: /opt/oracle/oradata/FREE/redo02.log
-2026-03-15T13:51:38.926002+00:00
-ARC0 (PID:3182): Archived Log entry 4 added for B-1227966386.T-1.S-4 LOS:0x0000000000210b8e NXS:0x0000000000212938 NAB:359819 ID 0x5968b4f2 LAD:1 [krse.c:4876]
-2026-03-15T13:51:43.164591+00:00
+2026-03-17T00:19:32.073863+00:00
+ARC0 (PID:3277): Archived Log entry 4 added for B-1228090460.T-1.S-4 LOS:0x0000000000210698 NXS:0x0000000000212628 NAB:366869 ID 0x596a8c9c LAD:1 [krse.c:4876]
+2026-03-17T00:19:32.078413+00:00
 FREEPDB1(3):Resize operation completed for file# 12, fname /opt/oracle/oradata/FREE/FREEPDB1/system01.dbf, old size 419840K, new size 430080K
-2026-03-15T13:52:05.570Z WARNING     Your configuration folder /home/oracle/orac/ords/conf is located in ORDS product folder.  Oracle recommends to use a different configuration folder.
+2026-03-17T00:19:55.172Z WARNING     Your configuration folder /home/oracle/orac/ords/conf is located in ORDS product folder.  Oracle recommends to use a different configuration folder.
 Refer to Oracle REST Data Services Documentation on how to setup your configuration folder.
 
-ORDS: Release 25.2 Production on Sun Mar 15 13:52:05 2026
+ORDS: Release 25.4 Production on Tue Mar 17 00:19:55 2026
 
 Copyright (c) 2010, 2026, Oracle.
 
 Configuration:
   /home/oracle/orac/ords/conf
 
-2026-03-15T13:52:05.604Z INFO        The configuration folder /home/oracle/orac/ords/conf does not contain any configuration files.
+2026-03-17T00:19:55.369Z INFO        HTTP and HTTP/2 cleartext listening on host: 0.0.0.0 port: 8080
+2026-03-17T00:19:55.390Z INFO        Disabling document root because the specified folder does not exist: /home/oracle/orac/ords/conf/global/doc_root
+2026-03-17T00:19:55.391Z INFO        Default forwarding from / to contextRoot configured.
+2026-03-17T00:19:57.007Z INFO        Configuration properties for: |default|lo|
+db.connectionType=basic
+db.hostname=localhost
+db.port=1521
+db.servicename=FREEPDB1
+db.username=ORDS_PUBLIC_USER
+plsql.gateway.mode=proxied
+restEnabledSql.active=true
+security.requestValidationFunction=ords_util.authorize_plsql_gateway
+file.encoding=ANSI_X3.4-1968
+file.separator=/
+java.awt.headless=true
+java.class.path=/home/oracle/orac/ords/ords.war
+java.class.version=61.0
+java.home=/usr/lib/jvm/jdk-17.0.11+9
+java.io.tmpdir=/tmp
+java.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib
+java.runtime.name=OpenJDK Runtime Environment
+java.runtime.version=17.0.11+9
+java.specification.name=Java Platform API Specification
+java.specification.vendor=Oracle Corporation
+java.specification.version=17
+java.vendor=Eclipse Adoptium
+java.vendor.url=https://adoptium.net/
+java.vendor.url.bug=https://github.com/adoptium/adoptium-support/issues
+java.vendor.version=Temurin-17.0.11+9
+java.version=17.0.11
+java.version.date=2024-04-16
+java.vm.compressedOopsMode=Zero based
+java.vm.info=mixed mode, sharing
+java.vm.name=OpenJDK 64-Bit Server VM
+java.vm.specification.name=Java Virtual Machine Specification
+java.vm.specification.vendor=Oracle Corporation
+java.vm.specification.version=17
+java.vm.vendor=Eclipse Adoptium
+java.vm.version=17.0.11+9
+jdk.debug=release
+line.separator=
 
-2026-03-15T13:52:05.785Z INFO        HTTP and HTTP/2 cleartext listening on host: 0.0.0.0 port: 8080
-2026-03-15T13:52:05.804Z INFO        Disabling document root because the specified folder does not exist: /home/oracle/orac/ords/conf/global/doc_root
-2026-03-15T13:52:05.804Z INFO        Default forwarding from / to contextRoot configured.
-2026-03-15T13:52:06.668Z INFO        Oracle REST Data Services initialized
-Oracle REST Data Services version : 25.2.2.r2040103
-Oracle REST Data Services server info: jetty/12.0.18
+native.encoding=ANSI_X3.4-1968
+oracle.dbtools.cmdline.ShellCommand=ords
+oracle.dbtools.cmdline.home=/home/oracle/orac/ords
+oracle.dbtools.launcher.executable.jar.path=/home/oracle/orac/ords/ords.war
+os.arch=amd64
+os.name=Linux
+os.version=6.8.0-63-generic
+path.separator=:
+sun.arch.data.model=64
+sun.boot.library.path=/usr/lib/jvm/jdk-17.0.11+9/lib
+sun.cpu.endian=little
+sun.io.unicode.encoding=UnicodeLittle
+sun.java.command=/home/oracle/orac/ords/ords.war --config /home/oracle/orac/ords/conf serve
+sun.java.launcher=SUN_STANDARD
+sun.jnu.encoding=ANSI_X3.4-1968
+sun.management.compiler=HotSpot 64-Bit Tiered Compilers
+user.country=US
+user.dir=/home/oracle/orac/ords
+user.home=/home/oracle
+user.language=en
+user.name=oracle
+user.timezone=UTC
+db.password=******
+conf.use.wallet=true
+
+2026-03-17T00:19:57.008Z WARNING     *** jdbc.MaxLimit in configuration |default|lo| is using a value of 10, this setting may not be sized adequately for a production environment ***
+2026-03-17T00:19:57.184Z INFO        Created Pool: |default|lo|-2026-03-17T00-19-56.523725126Z at: 2026-03-17T00:19:56.523725126Z
+2026-03-17T00:19:57.251Z INFO        
+
+Mapped local pools from /home/oracle/orac/ords/conf/databases:
+  /ords/                              => default                        => VALID     
+
+
+2026-03-17T00:19:57.260Z INFO        Oracle REST Data Services initialized
+Oracle REST Data Services version : 25.4.0.r3641739
+Oracle REST Data Services server info: jetty/12.0.25
 Oracle REST Data Services java info: OpenJDK 64-Bit Server VM Temurin-17.0.11+9 (build 17.0.11+9 mixed mode, sharing)
 
+2026-03-17T00:20:41.987867+00:00
+FREEPDB1(3):TABLE SYS.WRP$_REPORTS: ADDED AUTOLIST FRAGMENT SYS_P333 (2) VALUES (( 2354546393, TO_DATE(' 2026-03-16 00:00:00', 'syyyy-mm-dd hh24:mi:ss', 'nls_calendar=gregorian') ))
+FREEPDB1(3):TABLE SYS.WRP$_REPORTS_DETAILS: ADDED AUTOLIST FRAGMENT SYS_P334 (2) VALUES (( 2354546393, TO_DATE(' 2026-03-16 00:00:00', 'syyyy-mm-dd hh24:mi:ss', 'nls_calendar=gregorian') ))
+FREEPDB1(3):TABLE SYS.WRP$_REPORTS_TIME_BANDS: ADDED AUTOLIST FRAGMENT SYS_P337 (2) VALUES (( 2354546393, TO_DATE(' 2026-03-16 00:00:00', 'syyyy-mm-dd hh24:mi:ss', 'nls_calendar=gregorian') ))
+2026-03-17T00:25:31.917309+00:00
+Resize operation completed for file# 3, fname /opt/oracle/oradata/FREE/sysaux01.dbf, old size 624640K, new size 645120K
+2026-03-17T01:05:32.903685+00:00
+FREEPDB1(3):Resize operation completed for file# 13, fname /opt/oracle/oradata/FREE/FREEPDB1/sysaux01.dbf, old size 696320K, new size 706560K
+2026-03-17T01:35:33.688008+00:00
+FREEPDB1(3):Resize operation completed for file# 13, fname /opt/oracle/oradata/FREE/FREEPDB1/sysaux01.dbf, old size 706560K, new size 716800K
+2026-03-17T01:35:33.688802+00:00
+Resize operation completed for file# 3, fname /opt/oracle/oradata/FREE/sysaux01.dbf, old size 645120K, new size 655360K
+2026-03-17T02:00:02.082904+00:00
+FREEPDB1(3):Errors in file /opt/oracle/diag/rdbms/free/FREE/trace/FREE_j002_8563.trc:
+ORA-12012: error on auto execute of job "APEX_240200"."ORACLE_APEX_DAILY_METRICS"
+ORA-12899: value too large for column "APEX_240200"."WWV_INSTANCE_AGGR_METRICS"."CURRENT_DB_VERSION" (actual: 103, maximum: 100)
+ORA-06512: at "APEX_240200.WWV_FLOW_EVENT_METRICS_INT", line 540
+ORA-06512: at "APEX_240200.WWV_FLOW_MAINT", line 400
+2026-03-17T02:30:35.254268+00:00
+TABLE SYS.ACTIVITY_TABLE$: ADDED INTERVAL PARTITION SYS_P365 (2) VALUES LESS THAN (202)
+FREEPDB1(3):TABLE SYS.ACTIVITY_TABLE$: ADDED INTERVAL PARTITION SYS_P353 (2) VALUES LESS THAN (202)
+2026-03-17T09:26:59.579359+00:00
+--ATTENTION--
+Time drifted forward by (8272068) micro seconds at 15520135986 whereas allowed drift is 1000000
+--ATTENTION--
+Time drifted forward by (801163520) micro seconds at 1773739620 whereas allowed drift is 5000000
+2026-03-17T09:36:44.929550+00:00
+FREEPDB1(3):Resize operation completed for file# 13, fname /opt/oracle/oradata/FREE/FREEPDB1/sysaux01.dbf, old size 716800K, new size 727040K

@@ -3,8 +3,8 @@
 # Author: Clive Bostock
 # Date: 2025-07-29
 # --------------------------------------------------------------------
-
-FROM container-registry.oracle.com/database/free:23.26.0.0
+ARG ORACLE_IMAGE_TAG
+FROM container-registry.oracle.com/database/free:${ORACLE_IMAGE_TAG}
 
 # Build-time args (injected by bake)
 ARG ORACLE_BASE
