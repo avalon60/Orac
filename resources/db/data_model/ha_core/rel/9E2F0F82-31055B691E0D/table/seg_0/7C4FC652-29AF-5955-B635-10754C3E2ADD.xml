@@ -1,0 +1,492 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<Table class="oracle.dbtools.crest.model.design.relational.Table" directorySegmentName="seg_0" id="7C4FC652-29AF-5955-B635-10754C3E2ADD" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="HA_DEVICES">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>HA_DEVICES</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>61B88843-7593-C2B2-A233-D97F22C4C894</importedID>
+<allowColumnReorder>false</allowColumnReorder>
+<existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
+<parsed>true</parsed>
+<columns itemClass="oracle.dbtools.crest.model.design.relational.Column">
+<Column name="DEVICE_ID" id="7326BE2A-34E5-642F-FDC6-EEAB3779D941">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>DEVICE_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>AFE235EE-BBA7-42D6-6B89-88E1CCBE14D0</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>64 CHAR</dataTypeSize>
+<ownDataTypeParameters>64 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="NAME" id="A3964D01-37F6-B2FE-868E-133664A20308">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>NAME</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>6086B787-4748-84E9-EA50-5B5B2A509159</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>255 CHAR</dataTypeSize>
+<ownDataTypeParameters>255 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="NAME_BY_USER" id="25A632DC-EECA-1036-D8E1-68ADA05908D6">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>NAME_BY_USER</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>A37EAB14-D5E3-FAAA-41D3-FC040E90457F</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>255 CHAR</dataTypeSize>
+<ownDataTypeParameters>255 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="MANUFACTURER" id="64995CA1-3BEB-22A7-D01C-EF3D2928CAA6">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>MANUFACTURER</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>55947EEF-9413-AFFC-27CC-CA4D6B59B2EB</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>255 CHAR</dataTypeSize>
+<ownDataTypeParameters>255 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="MODEL" id="778B38E7-3AE1-4A09-33B6-EA3A328A579D">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>MODEL</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>CB1ACF2D-D56D-B714-08E9-CBB40AA60B05</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>255 CHAR</dataTypeSize>
+<ownDataTypeParameters>255 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="MODEL_ID" id="FB4702FF-63EE-6F1A-D7AC-EE52F0C4DF7A">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>MODEL_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>E5C78DEE-6570-CD7E-6CBA-DEDB15244EDA</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>255 CHAR</dataTypeSize>
+<ownDataTypeParameters>255 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="AREA_ID" id="C9878CC5-8743-D956-E524-0ED1897BE3EE">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>AREA_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>3FD5BB95-5AD8-CCC6-63F2-861B9FE5A285</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>64 CHAR</dataTypeSize>
+<ownDataTypeParameters>64 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+<associations>
+<colAssociation fkAssociation="29455520-0C7A-F53E-62D6-880BDB7EECE5" referredColumn="0DC360EC-68D6-30D1-975C-A636FA314831"/>
+</associations>
+</Column>
+<Column name="VIA_DEVICE_ID" id="D423677A-F82E-D293-01CF-1498D8580B2B">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>VIA_DEVICE_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>79FAD73D-90D5-00FD-20FD-F2ABE8032C17</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>64 CHAR</dataTypeSize>
+<ownDataTypeParameters>64 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="HW_VERSION" id="E7374181-0CBE-53DF-B605-6C59A746379C">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>HW_VERSION</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>36AE45A3-DB2E-F030-A0ED-00711901850A</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>255 CHAR</dataTypeSize>
+<ownDataTypeParameters>255 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="SW_VERSION" id="63CAF7CE-E4A7-BBB3-E06F-22C73FB0FB53">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>SW_VERSION</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>BA8EAF49-7C4D-CCD5-68BA-A58134161466</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>255 CHAR</dataTypeSize>
+<ownDataTypeParameters>255 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="SERIAL_NUMBER" id="ABCE9AAF-164F-6AAA-B827-80987314CC09">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>SERIAL_NUMBER</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>F7C2082A-7AE1-9256-F541-2C9742F28E3C</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>255 CHAR</dataTypeSize>
+<ownDataTypeParameters>255 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="ENTRY_TYPE" id="CBA8B9E4-5B7B-A00B-32C4-418B80B162CC">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>ENTRY_TYPE</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>F2B2B28B-749C-A53E-5D85-390AF626C996</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>64 CHAR</dataTypeSize>
+<ownDataTypeParameters>64 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="DISABLED_BY" id="CD35AC95-BC65-CE89-30AB-19476C1303B5">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>DISABLED_BY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>67B1EB05-AA6F-22D6-0139-D5F4B39230EE</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>64 CHAR</dataTypeSize>
+<ownDataTypeParameters>64 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="PRIMARY_CONFIG_ENTRY" id="4FA26A20-0EE2-A3B1-1DEB-B788E88008D9">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>PRIMARY_CONFIG_ENTRY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>6CF067CD-A442-0A6C-673D-897A59B9AF65</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>64 CHAR</dataTypeSize>
+<ownDataTypeParameters>64 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CONFIGURATION_URL" id="B12AC3E1-4335-C254-C5D3-BB706340E73E">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>CONFIGURATION_URL</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>540B3F97-A893-D10C-56C2-6BF279B700EE</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>1024 CHAR</dataTypeSize>
+<ownDataTypeParameters>1024 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CONNECTIONS" id="CD9D79B9-3E9E-ECC3-C79E-F1A17FBFA8BB">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>CONNECTIONS</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>DF48AB9E-3550-43AF-5465-B514294787CB</importedID>
+<constraintName>HA_DEVICES_CONNECTIONS_JSON</constraintName>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT028</logicalDatatype>
+<dataTypeSize>4000</dataTypeSize>
+<checkConstraint>
+<implementationDef dbType="Generic Constraint" definition="connections is json"/>
+<implementationDef dbType="Oracle Database 21c" definition="connections is json"/>
+</checkConstraint>
+<ownDataTypeParameters>4000,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="IDENTIFIERS" id="C12790BE-1A83-5D4C-5DBC-DB08C5CF6231">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>IDENTIFIERS</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>BA5D0BD3-B5E2-1698-9A4D-5C66A756544F</importedID>
+<constraintName>HA_DEVICES_IDENTIFIERS_JSON</constraintName>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT028</logicalDatatype>
+<dataTypeSize>4000</dataTypeSize>
+<checkConstraint>
+<implementationDef dbType="Generic Constraint" definition="identifiers is json"/>
+<implementationDef dbType="Oracle Database 21c" definition="identifiers is json"/>
+</checkConstraint>
+<ownDataTypeParameters>4000,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CONFIG_ENTRIES" id="8BCE6959-36E5-7CBD-1C5B-D8BDE8031599">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>CONFIG_ENTRIES</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>EF0F6265-4A4F-6FBD-10CE-8445C662AB5D</importedID>
+<constraintName>HA_DEVICES_CONFIG_ENTRIES_JSON</constraintName>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT028</logicalDatatype>
+<dataTypeSize>4000</dataTypeSize>
+<checkConstraint>
+<implementationDef dbType="Generic Constraint" definition="config_entries is json"/>
+<implementationDef dbType="Oracle Database 21c" definition="config_entries is json"/>
+</checkConstraint>
+<ownDataTypeParameters>4000,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CONFIG_ENTRIES_SUBENTRIES" id="EA70FEF7-7B6F-465B-D5D7-6A58180B5118">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>CONFIG_ENTRIES_SUBENTRIES</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>753CE309-1BAE-5986-C199-482E49D569F0</importedID>
+<constraintName>HA_DEVICES_CFG_SUBENTRIES_JSON</constraintName>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT028</logicalDatatype>
+<dataTypeSize>4000</dataTypeSize>
+<checkConstraint>
+<implementationDef dbType="Generic Constraint" definition="config_entries_subentries is json"/>
+<implementationDef dbType="Oracle Database 21c" definition="config_entries_subentries is json"/>
+</checkConstraint>
+<ownDataTypeParameters>4000,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="LABELS" id="E3684B94-63F0-AECA-033E-CD2218A46161">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>LABELS</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>0543AF36-DC53-08AE-9E20-ABC37B8447CB</importedID>
+<constraintName>HA_DEVICES_LABELS_JSON</constraintName>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT028</logicalDatatype>
+<dataTypeSize>4000</dataTypeSize>
+<checkConstraint>
+<implementationDef dbType="Generic Constraint" definition="labels is json"/>
+<implementationDef dbType="Oracle Database 21c" definition="labels is json"/>
+</checkConstraint>
+<ownDataTypeParameters>4000,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_AT" id="EAAF71A8-8CCA-C809-A6D1-7BBF15AE3DCD">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>CREATED_AT</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>128AF5DF-694F-6381-103D-7032D1AE0BEC</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT046</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="MODIFIED_AT" id="10064881-FB13-9582-14CF-A28067647504">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>MODIFIED_AT</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>1B4F74B0-32AF-8DBB-B9CB-29A6FD86B61B</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT046</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="ROW_VERSION" id="4C0BCF2C-92FE-1F77-3A0E-401AD014B46E">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>ROW_VERSION</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>9CD96D64-C961-C4D1-2182-A53AD660A9F5</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_ON" id="3F12641A-3B59-1993-6CCE-F1BAF36E0438">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>CREATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>ED61FEE2-0E1D-58AF-A856-E58E88B2FB89</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT046</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_ON" id="E501B18D-3EC7-8CA1-B8E2-E4ED0AAF3A7D">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>HA_DEVICES</sourceObjSchema>
+<sourceObjName>UPDATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>651F7437-77F2-B33D-FC92-3292B0F05636</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT046</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+</columns>
+<indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
+<ind_PK_UK id="E6C8F4C9-A0A1-4B06-2E8F-D23047539D52" name="HA_DEVICES_PK">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>HA_DEVICES_PK</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>9B77E073-E2D2-4DAD-2342-FB16A51E9F36</importedID>
+<pk>true</pk>
+<indexState>Primary Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="7326BE2A-34E5-642F-FDC6-EEAB3779D941"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="A794BE04-E3A7-DC73-D0E4-A3F2F5A7919F" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="HA_DEVICES_PK_IDX">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>HA_DEVICES_PK</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>DE802E78-F449-7247-97CC-9781AF461106</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="7326BE2A-34E5-642F-FDC6-EEAB3779D941"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="1E20808C-955E-1852-539D-3F6B40965446" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="HA_DEVICES_AREA_ID_IDX">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>HA_DEVICES_AREA_ID_IDX</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-03-21 11:13:32 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<importedID>2AE3D48F-2A6D-D5F9-FED5-7556E1533487</importedID>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="C9878CC5-8743-D956-E524-0ED1897BE3EE"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="1236B41D-6D97-D8BF-5BDF-D55AC8CCD2F9" name="HA_DEVICES_AREAS_FK">
+<createdBy>clive</createdBy>
+<createdTime>2026-03-21 11:13:32 UTC</createdTime>
+<ownerDesignName>ha_core</ownerDesignName>
+<indexState>Foreign Key</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="C9878CC5-8743-D956-E524-0ED1897BE3EE"/>
+</indexColumnUsage>
+</ind_PK_UK>
+</indexes>
+</Table>
