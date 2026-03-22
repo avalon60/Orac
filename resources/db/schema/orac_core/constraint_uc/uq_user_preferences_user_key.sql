@@ -1,0 +1,9 @@
+-- __author__: clive
+-- __date__: 2026-03-21
+-- __description__: generated/synchronised by split_ddl; one object per file
+
+
+alter table orac.user_preferences
+  add constraint uq_user_preferences_user_key
+  unique (user_id, pref_key)
+;
