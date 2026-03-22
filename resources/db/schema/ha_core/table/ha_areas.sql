@@ -1,9 +1,4 @@
--- __author__: clive
--- __date__: 2026-03-21
--- __description__: generated/synchronised by split_ddl; one object per file
-
-
-create table orac.ha_areas
+create table plugins_core.ha_areas
 (
   area_id               varchar2(64 char) not null,
   name                  varchar2(255 char) not null,
