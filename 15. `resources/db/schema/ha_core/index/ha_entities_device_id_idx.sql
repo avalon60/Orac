@@ -3,5 +3,4 @@ create index plugins_core.ha_entities_device_id_idx
   (
     device_id asc
   )
-logging
-;
+logging;

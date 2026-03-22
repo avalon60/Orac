@@ -3,5 +3,4 @@ create unique index plugins_core.ha_states_current_pk_idx
   (
     entity_id asc
   )
-logging
-;
+logging;

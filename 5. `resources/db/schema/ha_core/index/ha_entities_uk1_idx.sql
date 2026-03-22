@@ -3,5 +3,4 @@ create unique index plugins_core.ha_entities_uk1_idx
   (
     ha_entity_id asc
   )
-logging
-;
+logging;

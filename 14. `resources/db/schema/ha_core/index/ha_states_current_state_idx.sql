@@ -3,5 +3,4 @@ create index plugins_core.ha_states_current_state_idx
   (
     state asc
   )
-logging
-;
+logging;

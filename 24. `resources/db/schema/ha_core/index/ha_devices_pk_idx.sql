@@ -3,5 +3,4 @@ create unique index plugins_core.ha_devices_pk_idx
   (
     device_id asc
   )
-logging
-;
+logging;

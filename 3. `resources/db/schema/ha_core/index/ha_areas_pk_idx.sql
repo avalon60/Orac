@@ -3,5 +3,4 @@ create unique index plugins_core.ha_areas_pk_idx
   (
     area_id asc
   )
-logging
-;
+logging;
