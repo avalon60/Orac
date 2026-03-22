@@ -15,3 +15,4 @@ logs/*.log
 src/orac/lib/bdds_lib.py
 
 bin/nohup.out
+.aider*
