@@ -4,6 +4,6 @@
 
 
 alter table orac.llm_registry
-  add constraint llm_reg_ck2
+  add constraint llm_reg_cc2
   check (is_enabled in ('N', 'Y'))
 ;

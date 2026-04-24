@@ -2,7 +2,7 @@
 -- __date__: 2026-03-21
 -- __description__: generated/synchronised by split_ddl; one object per file
 
-alter table orac.messages add constraint messages_ck2
+alter table orac.messages add constraint messages_cc2
 check (
   message_type in (
     'conversation',

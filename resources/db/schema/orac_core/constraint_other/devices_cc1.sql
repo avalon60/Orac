@@ -4,6 +4,6 @@
 
 
 alter table orac.devices
-  add constraint devices_ck1
+  add constraint devices_cc1
   check (is_active in ('N', 'Y'))
 ;

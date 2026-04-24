@@ -4,6 +4,6 @@
 
 
 alter table orac.user_prompt_elements
-  add constraint user_prompt_elements_ck1
+  add constraint user_prompt_elements_cc1
   check (is_enabled in ('N', 'Y'))
 ;

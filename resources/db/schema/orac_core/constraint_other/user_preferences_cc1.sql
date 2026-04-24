@@ -4,6 +4,6 @@
 
 
 alter table orac.user_preferences
-  add constraint user_preferences_ck1
+  add constraint user_preferences_cc1
   check (value_type in ('boolean', 'number', 'string'))
 ;

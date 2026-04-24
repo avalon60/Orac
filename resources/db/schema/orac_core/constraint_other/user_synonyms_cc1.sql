@@ -4,6 +4,6 @@
 
 
 alter table orac.user_synonyms
-  add constraint user_synonyms_ck1
+  add constraint user_synonyms_cc1
   check (is_active in ('N', 'Y'))
 ;
