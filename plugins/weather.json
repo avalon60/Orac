@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "plugin_id": "weather",
+  "name": "Weather",
+  "description": "Answers current weather and short forecast questions for the user's configured or supported locations.",
+  "version": "1.0.0",
+  "enabled": true,
+  "capabilities": [
+    "weather.current_conditions",
+    "weather.short_forecast"
+  ],
+  "entities": [
+    "location",
+    "temperature",
+    "forecast",
+    "rain",
+    "wind",
+    "time_period"
+  ],
+  "examples": [
+    "Will it rain today?",
+    "What's the weather where I am?",
+    "What's the weather in Manchester?",
+    "Do I need a coat this evening?",
+    "Will it be windy tomorrow morning?",
+    "What's the temperature outside?"
+  ],
+  "entry_point": "plugin:WeatherPlugin"
+}

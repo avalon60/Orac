@@ -10,6 +10,7 @@ import sys
 import traceback
 from pathlib import Path
 from datetime import datetime, timezone
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from model.network import OracListener
@@ -20,6 +21,13 @@ from lib.icons import Icons
 from lib.logutil import Logger
 from model.orac_auth import FrameAuthChain, ZenFrameAuth
 from model.context_manager import OracContextManager
+from model.plugin_routing import (
+    HashEmbeddingProvider,
+    PluginManager,
+    PluginRoutingHandoff,
+    render_plugin_routing_hints,
+)
+from model.plugin_router import PluginRouter
 from lib.session_manager import DBSession
 from lib.user_security import UserSecurity
 
@@ -292,6 +300,23 @@ class Orac:
             self.ctx = OracContextManager(self.db_session, logger=logger)
             self._keep_messages = int(self.config_mgr.config_value("context", "keep_messages", default="200"))
             self._prune_after_turns = int(self.config_mgr.config_value("context", "prune_every_n_turns", default="50"))
+            self._plugin_routing_enabled = self.config_mgr.bool_config_value(
+                "plugin_routing", "enabled", default=True
+            )
+            self._plugin_routing_bootstrap_on_startup = self.config_mgr.bool_config_value(
+                "plugin_routing", "bootstrap_on_startup", default=True
+            )
+            self._plugin_routing_candidate_count = self.config_mgr.int_config_value(
+                "plugin_routing", "candidate_count", default=3
+            )
+            min_score_raw = self.config_mgr.config_value(
+                "plugin_routing", "min_score", default=""
+            ).strip()
+            self._plugin_routing_min_score = float(min_score_raw) if min_score_raw else None
+            self.plugin_manager: PluginManager | None = None
+            self.plugin_router: PluginRouter | None = None
+            self._plugin_routing_ready = False
+            self._init_plugin_routing()
 
             logger.log_info(f"{Icons.robot} Orac orchestrator initialized with model: {self.model_name}")
             logger.log_info(f"{Icons.settings} Reasoning tags stripped by default: {self.strip_reasoning_tags}")
@@ -303,13 +328,20 @@ class Orac:
 
 
     # --- Prompt building ------------------------------------------------------
-    def _build_contextual_prompt(self, session_id: str, prompt: str, meta: dict) -> str:
+    def _build_contextual_prompt(
+        self,
+        session_id: str,
+        prompt: str,
+        meta: dict,
+        plugin_routing_handoff: PluginRoutingHandoff | None = None,
+    ) -> str:
         try:
             prefs = {
                 "timezone": meta.get("timezone", "Europe/London"),
                 "force_concise": meta.get("force_concise"),
             }
             clock = system_clock_line(prefs)
+            routing_block = render_plugin_routing_hints(plugin_routing_handoff)
 
             primer_inline = _orac_system_primer({
                 "reply_language": meta.get("reply_language", self._reply_language)
@@ -327,6 +359,7 @@ class Orac:
                     "ROLE: assistant\n"
                     "INSTRUCTIONS: Prior conversation is DISABLED for this reply; use ONLY the new user message.\n\n"
                     f"{clock}\n\n"
+                    f"{routing_block}"
                     "Recent exchange: (context disabled)\n\n"
                     "USER (new message):"
                 )
@@ -385,6 +418,7 @@ class Orac:
                     "ROLE: assistant\n"
                     "INSTRUCTIONS: Use the recent context only if relevant.\n\n"
                     f"{clock}\n\n"
+                    f"{routing_block}"
                     "Recent exchange (most recent at bottom):\n"
                     + ("\n".join(history_lines) if history_lines else "(no prior context)")
                     + "\n\nUSER (new message):"
@@ -405,6 +439,111 @@ class Orac:
         except Exception as e:
             _log_exception("Failed to build context preamble (non-fatal)", e)
             return prompt
+
+    def _init_plugin_routing(self) -> None:
+        """Initialises plugin routing and performs normal startup bootstrap when enabled."""
+        if not self._plugin_routing_enabled:
+            logger.log_info(f"{Icons.info} Plugin routing disabled by configuration.")
+            return
+
+        try:
+            embedding_model_id = self.config_mgr.config_value(
+                "plugin_routing", "embedding_model_id", default="hash-embedding-v1"
+            )
+            embedding_dimensions = self.config_mgr.int_config_value(
+                "plugin_routing", "embedding_dimensions", default=32
+            )
+            embedding_provider = HashEmbeddingProvider(
+                model_id=embedding_model_id,
+                dimensions=embedding_dimensions,
+            )
+            self.plugin_manager = PluginManager(embedding_provider=embedding_provider, logger=logger)
+            self.plugin_router = PluginRouter(
+                plugin_manager=self.plugin_manager,
+                logger=logger,
+                config_mgr=self.config_mgr,
+            )
+            logger.log_info(f"{Icons.info} Plugin routing bootstrap starting.")
+            logger.log_info(
+                f"{Icons.tick} Plugin routing subsystem initialised with embedding model "
+                f"'{embedding_provider.model_id}'."
+            )
+            if self._plugin_routing_bootstrap_on_startup:
+                self.refresh_plugin_routing()
+        except Exception as e:
+            self.plugin_manager = None
+            self.plugin_router = None
+            self._plugin_routing_ready = False
+            _log_exception("Plugin routing initialisation failed (non-fatal)", e)
+
+    def refresh_plugin_routing(self) -> dict[str, Any] | None:
+        """Bootstraps or refreshes plugin routing state on demand."""
+        if not self._plugin_routing_enabled or self.plugin_manager is None:
+            logger.log_info(f"{Icons.info} Plugin routing refresh skipped because subsystem is unavailable.")
+            return None
+        logger.log_info(f"{Icons.info} Plugin routing refresh requested.")
+        report = self.plugin_manager.refresh()
+        self._plugin_routing_ready = True
+        logger.log_info(
+            f"{Icons.info} Plugin routing refresh complete: "
+            f"discovered={report.get('discovered', 0)} "
+            f"enabled={report.get('enabled', 0)} "
+            f"cache_hits={report.get('cache_hits', 0)} "
+            f"re_embedded={report.get('re_embedded', 0)}"
+        )
+        return report
+
+    def _ensure_plugin_routing_ready(self, *, force_refresh: bool = False) -> dict[str, Any] | None:
+        """Ensures plugin routing is ready without rebuilding on every request."""
+        if not self._plugin_routing_enabled or self.plugin_manager is None:
+            logger.log_debug("Plugin routing unavailable; continuing without routing hints.")
+            return None
+        if self._plugin_routing_ready and not force_refresh:
+            return self.plugin_manager.status()
+        return self.refresh_plugin_routing()
+
+    def _collect_plugin_routing_handoff(
+        self,
+        prompt: str,
+        meta: dict,
+    ) -> PluginRoutingHandoff | None:
+        """Retrieves scored plugin candidates for downstream routing/selection."""
+        if not self._plugin_routing_enabled or self.plugin_manager is None:
+            logger.log_debug("Plugin routing disabled or not initialised; no routing candidates will be used.")
+            return None
+
+        force_refresh = bool((meta or {}).get("plugin_routing_refresh", False))
+        if force_refresh:
+            logger.log_info(f"{Icons.info} Plugin routing on-demand refresh requested by request metadata.")
+        was_ready = self._plugin_routing_ready
+        self._ensure_plugin_routing_ready(force_refresh=force_refresh)
+        refreshed = bool(force_refresh or not was_ready)
+
+        try:
+            candidates = self.plugin_manager.find_candidates(
+                prompt,
+                top_n=self._plugin_routing_candidate_count,
+                min_score=self._plugin_routing_min_score,
+            )
+        except Exception as e:
+            _log_exception("Plugin routing candidate retrieval failed (non-fatal)", e)
+            logger.log_debug("Continuing without plugin routing hints due to retrieval failure.")
+            return None
+
+        if not candidates:
+            logger.log_debug("Plugin routing found no candidate plugins; using normal conversational flow.")
+            return None
+
+        logger.log_debug(f"Plugin routing produced {len(candidates)} candidate plugin(s).")
+        logger.log_debug(
+            "Plugin routing candidate scores: "
+            + ", ".join(f"{candidate.plugin_id}={candidate.score:.4f}" for candidate in candidates)
+        )
+
+        return PluginRoutingHandoff(
+            candidates=tuple(candidates),
+            refreshed=refreshed,
+        )
 
     def _estimate_tokens(self, text: str) -> int:
         """
@@ -598,6 +737,32 @@ class Orac:
                     logger.log_info(f"{Icons.broom} Pruned {deleted} messages for {session_id} at turn {last_turn_index}")
         except Exception as e:
             _log_exception("Context prune failed (non-fatal)", e)
+
+    def _save_assistant_turn(
+        self,
+        session_id: str,
+        auth_user: str,
+        content: str,
+        *,
+        client: str,
+        req_id: str | None,
+        show_reasoning: bool,
+    ) -> int:
+        """Persists an assistant turn and returns the new turn index if available."""
+        asst_meta = {
+            "client": client,
+            "protocol_version": PROTOCOL_VERSION,
+            "ts": iso_now(),
+            "req_id": req_id,
+            "show_reasoning": show_reasoning,
+        }
+        try:
+            save_res_a = self.ctx.save_assistant_turn(session_id, auth_user, content, meta=asst_meta)
+            logger.log_debug(f"Saved assistant msg: {save_res_a}")
+            return int(save_res_a.get("turn_index", 0))
+        except Exception as e:
+            _log_exception("Failed to persist assistant turn (non-fatal)", e)
+            return 0
 
     # --- Response builder -----------------------------------------------------
     def _build_response(self, req_env: dict, content: str, *,
@@ -872,8 +1037,39 @@ class Orac:
             except Exception as e:
                 _log_exception("Failed to persist user turn (non-fatal)", e)
 
+            plugin_routing_handoff = self._collect_plugin_routing_handoff(prompt, meta)
+            plugin_execution_result = None
+            if self.plugin_router is not None:
+                plugin_execution_result = self.plugin_router.route(prompt, meta, plugin_routing_handoff)
+
+            if plugin_execution_result is not None and plugin_execution_result.handled:
+                content = plugin_execution_result.content
+                last_ti = self._save_assistant_turn(
+                    session_id,
+                    auth_user,
+                    content,
+                    client=client,
+                    req_id=req_env.get("id"),
+                    show_reasoning=show_reasoning,
+                )
+                self._maybe_set_conversation_title(session_id, meta)
+                self._maybe_prune(session_id, last_ti)
+                resp_env = self._build_response(
+                    req_env,
+                    content,
+                    stop_reason=plugin_execution_result.stop_reason,
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                )
+                return json.dumps(resp_env, ensure_ascii=False)
+
             # --- Build context-primed prompt -----------------------------------
-            final_prompt = self._build_contextual_prompt(session_id, prompt, meta)
+            final_prompt = self._build_contextual_prompt(
+                session_id,
+                prompt,
+                meta,
+                plugin_routing_handoff=plugin_routing_handoff,
+            )
             short = (final_prompt[:1200] + " …") if len(final_prompt) > 1200 else final_prompt
             logger.log_info(f"{Icons.info} Final prompt (truncated): {short}")
             if self.enable_prompt_dump:
@@ -912,20 +1108,14 @@ class Orac:
                 content = "Hello! 👋"
 
             # --- Save ASSISTANT turn -------------------------------------------
-            asst_meta = {
-                "client": client,
-                "protocol_version": PROTOCOL_VERSION,
-                "ts": iso_now(),
-                "req_id": req_env.get("id"),
-                "show_reasoning": show_reasoning,
-            }
-            last_ti = 0
-            try:
-                save_res_a = self.ctx.save_assistant_turn(session_id, auth_user, content, meta=asst_meta)
-                last_ti = int(save_res_a.get("turn_index", 0))
-                logger.log_debug(f"Saved assistant msg: {save_res_a}")
-            except Exception as e:
-                _log_exception("Failed to persist assistant turn (non-fatal)", e)
+            last_ti = self._save_assistant_turn(
+                session_id,
+                auth_user,
+                content,
+                client=client,
+                req_id=req_env.get("id"),
+                show_reasoning=show_reasoning,
+            )
 
             self._maybe_set_conversation_title(session_id, meta)
             self._maybe_prune(session_id, last_ti)

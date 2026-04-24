@@ -1,0 +1,179 @@
+"""Facade for plugin discovery, embedding cache refresh, and candidate search."""
+# Author: Clive Bostock
+# Date: 2026-04-23
+# Description: Coordinates manifest scanning, cache reuse, in-memory indexing, and candidate lookup.
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from lib.fsutils import project_home
+from model.plugin_routing.cache import PluginEmbeddingCache
+from model.plugin_routing.discovery import PluginDiscovery
+from model.plugin_routing.embeddings import EmbeddingProvider
+from model.plugin_routing.index import PluginIntentIndex
+from model.plugin_routing.intent_text import INTENT_TEXT_VERSION, build_canonical_intent_text
+from model.plugin_routing.models import PluginCandidate, PluginManifest
+
+
+class PluginManager:
+    """Coordinates plugin routing state without importing plugin code."""
+
+    def __init__(
+        self,
+        embedding_provider: EmbeddingProvider,
+        plugins_dir: Path | None = None,
+        cache_dir: Path | None = None,
+        logger=None,
+    ):
+        self._project_root = project_home()
+        self._plugins_dir = Path(plugins_dir) if plugins_dir else self._project_root / "plugins"
+        self._cache = PluginEmbeddingCache(
+            cache_dir or PluginEmbeddingCache.default_cache_dir(self._project_root),
+            logger=logger,
+        )
+        self._embedding_provider = embedding_provider
+        self._discovery = PluginDiscovery(self._plugins_dir)
+        self._index = PluginIntentIndex()
+        self._manifests: dict[str, PluginManifest] = {}
+        self._last_refresh_report: dict[str, Any] = {}
+        self._logger = logger
+
+    def refresh(self) -> dict[str, Any]:
+        """Refreshes manifests, cache, embeddings, and the in-memory index."""
+        self._log_info(f"Plugin routing refresh starting for root {self._plugins_dir}")
+        discovered_count = len(list(self._plugins_dir.glob("*.json"))) if self._plugins_dir.exists() else 0
+        manifests, errors = self._discovery.discover()
+        valid_count = len(manifests)
+        invalid_count = len(errors)
+        enabled_manifests = [manifest for manifest in manifests if manifest.enabled]
+        disabled_count = valid_count - len(enabled_manifests)
+        for error in errors:
+            self._log_warning(f"Plugin routing invalid manifest skipped: {error}")
+        if disabled_count:
+            self._log_info(f"Plugin routing skipped {disabled_count} disabled plugin manifest(s).")
+
+        cached_entries = self._cache.load(
+            embedding_model_id=self._embedding_provider.model_id,
+            intent_text_version=INTENT_TEXT_VERSION,
+        )
+
+        vectors_for_index: dict[str, list[float]] = {}
+        cache_entries_to_save: dict[str, dict] = {}
+        cache_hits = 0
+        cache_misses = 0
+        re_embedded = 0
+
+        for manifest in enabled_manifests:
+            canonical_text = build_canonical_intent_text(manifest)
+            cached_entry = cached_entries.get(manifest.plugin_id)
+
+            if self._is_cache_hit(manifest, canonical_text, cached_entry):
+                vector = [float(value) for value in cached_entry["vector"]]
+                cache_hits += 1
+            else:
+                if cached_entry is None:
+                    cache_misses += 1
+                else:
+                    self._log_debug(
+                        f"Plugin routing cache entry stale for plugin '{manifest.plugin_id}'; re-embedding."
+                    )
+                try:
+                    vector = self._embedding_provider.embed_text(canonical_text)
+                except Exception as exc:
+                    self._log_error(
+                        f"Plugin routing embedding failed for plugin '{manifest.plugin_id}': {exc}"
+                    )
+                    raise
+                re_embedded += 1
+
+            vectors_for_index[manifest.plugin_id] = vector
+            cache_entries_to_save[manifest.plugin_id] = {
+                "plugin_id": manifest.plugin_id,
+                "manifest_hash": manifest.manifest_hash,
+                "canonical_text": canonical_text,
+                "vector": vector,
+            }
+
+        self._cache.save(
+            embedding_model_id=self._embedding_provider.model_id,
+            intent_text_version=INTENT_TEXT_VERSION,
+            plugin_entries=cache_entries_to_save,
+        )
+
+        self._index.build(vectors_for_index)
+        self._manifests = {manifest.plugin_id: manifest for manifest in enabled_manifests}
+        self._last_refresh_report = {
+            "plugin_root": str(self._plugins_dir),
+            "cache_dir": str(self._cache.cache_dir),
+            "discovered": discovered_count,
+            "valid": valid_count,
+            "invalid": invalid_count,
+            "enabled": len(enabled_manifests),
+            "disabled": disabled_count,
+            "indexed_plugin_count": self._index.size(),
+            "cache_hits": cache_hits,
+            "cache_misses": cache_misses,
+            "re_embedded": re_embedded,
+            "validation_errors": errors,
+            "embedding_model_id": self._embedding_provider.model_id,
+            "intent_text_version": INTENT_TEXT_VERSION,
+        }
+        self._log_info(
+            "Plugin routing refresh complete: "
+            f"discovered={discovered_count} valid={valid_count} invalid={invalid_count} "
+            f"enabled={len(enabled_manifests)} disabled={disabled_count} "
+            f"cache_hits={cache_hits} cache_misses={cache_misses} re_embedded={re_embedded}"
+        )
+        return dict(self._last_refresh_report)
+
+    def find_candidates(
+        self,
+        utterance: str,
+        top_n: int = 5,
+        min_score: float | None = None,
+    ) -> list[PluginCandidate]:
+        """Returns scored plugin candidates for a user utterance."""
+        if not self._manifests:
+            self.refresh()
+
+        query_vector = self._embedding_provider.embed_text(utterance)
+        return self._index.search(query_vector=query_vector, top_n=top_n, min_score=min_score)
+
+    def get_manifest(self, plugin_id: str) -> PluginManifest | None:
+        """Returns the manifest for an indexed plugin."""
+        return self._manifests.get(plugin_id)
+
+    def status(self) -> dict[str, Any]:
+        """Returns the last refresh report."""
+        return dict(self._last_refresh_report)
+
+    @staticmethod
+    def _is_cache_hit(
+        manifest: PluginManifest,
+        canonical_text: str,
+        cached_entry: dict[str, Any] | None,
+    ) -> bool:
+        if not cached_entry:
+            return False
+        return (
+            cached_entry.get("manifest_hash") == manifest.manifest_hash
+            and cached_entry.get("canonical_text") == canonical_text
+        )
+
+    def _log_debug(self, message: str) -> None:
+        if self._logger is not None:
+            self._logger.log_debug(message)
+
+    def _log_info(self, message: str) -> None:
+        if self._logger is not None:
+            self._logger.log_info(message)
+
+    def _log_warning(self, message: str) -> None:
+        if self._logger is not None:
+            self._logger.log_warning(message)
+
+    def _log_error(self, message: str) -> None:
+        if self._logger is not None:
+            self._logger.log_error(message)
