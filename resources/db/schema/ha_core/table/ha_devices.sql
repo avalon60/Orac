@@ -1,4 +1,4 @@
-create table plugins_core.ha_devices
+create table ha_core.ha_devices
 (
   device_id                 varchar2(64 char) not null,
   name                      varchar2(255 char),

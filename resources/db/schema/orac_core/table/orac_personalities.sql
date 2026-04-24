@@ -1,4 +1,4 @@
-create table orac_core.orac_personalities
+create table orac.orac_personalities
 (
   personality_id        number generated always as identity,
   personality_code      varchar2(30) not null,

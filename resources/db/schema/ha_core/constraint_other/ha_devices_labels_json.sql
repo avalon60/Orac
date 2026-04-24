@@ -3,7 +3,7 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-alter table orac.ha_devices
+alter table ha_core.ha_devices
   add constraint ha_devices_labels_json
   check (labels is json)
 ;

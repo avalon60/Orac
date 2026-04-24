@@ -5,5 +5,5 @@
 
 alter table orac.messages
   add constraint messages_ck1
-  check (role in ('assistant', 'system', 'tool', 'user'))
+  check (role in ('assistant', 'system', 'tool', 'user', 'plugin'))
 ;

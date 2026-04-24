@@ -3,7 +3,7 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-create table orac.ha_states_current
+create table ha_core.ha_states_current
 (
   entity_id         varchar2(255 char) not null,
   state             varchar2(255 char),

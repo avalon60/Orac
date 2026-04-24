@@ -1,4 +1,4 @@
-alter table plugins_core.ha_entities
+alter table ha_core.ha_entities
   add constraint ha_entities_categories_json
   check (categories is json)
 ;
