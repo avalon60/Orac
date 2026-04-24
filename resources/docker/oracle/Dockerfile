@@ -1,9 +1,9 @@
 # --------------------------------------------------------------------
-# Oracle Free 23ai + APEX + ORDS + SQLcl Dockerfile for Orac (Linux only)
+# Oracle Free ai database + APEX + ORDS + SQLcl Dockerfile for Orac (Linux only)
 # Author: Clive Bostock
 # Date: 2025-07-29
 # --------------------------------------------------------------------
-ARG ORACLE_IMAGE_TAG
+ARG ORACLE_IMAGE_TAG=23.26.0.0
 FROM container-registry.oracle.com/database/free:${ORACLE_IMAGE_TAG}
 
 # Build-time args (injected by bake)
@@ -129,4 +129,3 @@ ENV PATH="${JAVA_HOME}/bin:$PATH"
 USER oracle
 
 EXPOSE 1521 8080 8888
-

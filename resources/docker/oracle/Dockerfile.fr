@@ -1,5 +1,5 @@
 # --------------------------------------------------------------------
-# Oracle Free 23ai + APEX + ORDS + SQLcl Dockerfile for Orac (Linux only)
+# Oracle Free ai database + APEX + ORDS + SQLcl Dockerfile for Orac (Linux only)
 # Author: Clive Bostock
 # Date: 2025-07-29
 # --------------------------------------------------------------------

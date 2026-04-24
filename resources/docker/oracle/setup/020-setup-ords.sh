@@ -46,11 +46,11 @@ echo "[$(timestamp)] ${PROG} Started"
   ORDS_DB_ADMIN_USER="SYSTEM"
 
   INSTALL_CMD="./bin/ords --config ${ORDS_CONF} install \
-  --admin-user SYSTEM \
+  --admin-user ${ORDS_DB_ADMIN_USER} \
   --proxy-user \
-  --db-hostname localhost \
-  --db-port 1521 \
-  --db-servicename FREEPDB1 \
+  --db-hostname ${ORDS_DB_HOSTNAME} \
+  --db-port ${ORDS_DB_PORT} \
+  --db-servicename ${ORDS_DB_SERVICENAME} \
   --log-folder ${ORDS_LOG} \
   --feature-rest-enabled-sql true \
   --password-stdin"
@@ -66,8 +66,7 @@ echo "[$(timestamp)] ${PROG} Started"
   ${INSTALL_CMD} < "${ORDS_PWD_FILE}" >> init_ords.log 2>&1
 
   echo "Integrating APEX:" >> init_ords.log
-  ./bin/ords config set apex.templating.enabled true --conf "${ORDS_CONF}" >> init_ords.log
-  ./bin/ords enable-schema APEX_PUBLIC_USER --db-pool orac >> init_ords.log
+  ./bin/ords --config "${ORDS_CONF}" config set apex.templating.enabled true >> init_ords.log
 
   # rm -f "${ORDS_PWD_FILE}"
   popd >/dev/null

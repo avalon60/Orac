@@ -6,15 +6,11 @@
 PROG='10-start-ords.sh'
 export ORAC_HOME=${ORAC_HOME:-/home/oracle/orac}
 export ORDS_HOME=${ORAC_HOME}/ords
+export ORDS_CONF=${ORDS_HOME}/conf
 JAVA_HOME=/usr/lib/jvm/java-17-openjdk
 PATH=$JAVA_HOME/bin:$PATH
-E="-e"
-export ORDS_HOME=${ORAC_HOME}/ords
-pushd ${ORDS_HOME}
-echo $E "ORDS_HOME = ${ORDS_HOME}" 
-CMD="cd ${ORDS_HOME}"
-echo "${CMD}"                      
-${CMD}
-CMD="bin/ords --config /home/oracle/orac/ords/conf serve"
-echo ${CMD}                        
-nohup ${CMD} &
+pushd "${ORDS_HOME}" >/dev/null
+echo "-e ORDS_HOME = ${ORDS_HOME}"
+echo "./bin/ords --config ${ORDS_CONF} serve"
+nohup ./bin/ords --config "${ORDS_CONF}" serve >/tmp/ords-start.log 2>&1 &
+popd >/dev/null
