@@ -1,9 +1,8 @@
 -- __author__: clive
--- __date__: 2026-04-24
--- __description__: generated/synchronised by split_ddl; one object per file
+-- __date__: 2026-04-25
+-- __description__: published user preferences projection
 
-
-create or replace view orac.user_preferences_v as
+create or replace view orac_code.user_preferences_display_v as
 select
   p.pref_id,
   p.user_id,
@@ -15,5 +14,5 @@ select
     when 'number' then to_char(json_value(p.pref_value, '$' returning number null on error))
     when 'boolean' then lower(json_value(p.pref_value, '$' returning varchar2(5) null on error))
   end as value_display
-from orac.user_preferences p
+from orac_api.user_preferences_v p
 ;

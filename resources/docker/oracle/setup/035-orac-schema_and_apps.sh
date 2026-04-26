@@ -22,6 +22,14 @@ BASE_DIR="${BASE_DIR:-${ORAC_HOME}/schema}"
 SQLPLUS_CONN="${SQLPLUS_CONN:-/ as sysdba}"  # e.g. "user/pass@service" or "/ as sysdba"
 LOG_ROOT="${LOG_ROOT:-$BASE_DIR/_logs}"
 STOP_ON_ERROR="${STOP_ON_ERROR:-1}"          # 1 = stop on first error, 0 = continue
+BUNDLE_ORDER=(
+  ha_core
+  orac_core
+  orac_api
+  orac_code
+  orac_apx_pub
+  orac
+)
 
 # Ordered execution list (directories under each schema bundle)
 DIR_ORDER=(
@@ -113,15 +121,13 @@ SQLPLUS
   )
 }
 
-# --- Main loop ---------------------------------------------------------------
-for bundle_dir in "$BASE_DIR"/*; do
-  [[ -d "$bundle_dir" ]] || continue
-
-  bundle_name="$(basename "$bundle_dir")"
-
-  if [[ "$bundle_name" == "_logs" ]]; then
-    continue
-  fi
+process_bundle_dir() {
+  local bundle_dir="$1"
+  local bundle_name="$2"
+  local dirpath
+  local files
+  local dir
+  local file
 
   echo "== $(timestamp) :: Processing schema bundle: $bundle_name"
 
@@ -156,6 +162,30 @@ for bundle_dir in "$BASE_DIR"/*; do
     done
     echo
   done
+}
+
+# --- Main loop ---------------------------------------------------------------
+declare -A seen_bundles=()
+
+for bundle_name in "${BUNDLE_ORDER[@]}"; do
+  bundle_dir="$BASE_DIR/$bundle_name"
+  if [[ -d "$bundle_dir" ]]; then
+    process_bundle_dir "$bundle_dir" "$bundle_name"
+    seen_bundles["$bundle_name"]=1
+  else
+    echo "-- $(timestamp) :: Skipping missing schema bundle: $bundle_name"
+  fi
+done
+
+for bundle_dir in "$BASE_DIR"/*; do
+  [[ -d "$bundle_dir" ]] || continue
+
+  bundle_name="$(basename "$bundle_dir")"
+  if [[ "$bundle_name" == "_logs" || -n "${seen_bundles[$bundle_name]:-}" ]]; then
+    continue
+  fi
+
+  process_bundle_dir "$bundle_dir" "$bundle_name"
 done
 
 if [[ "$ran_any" == "0" ]]; then

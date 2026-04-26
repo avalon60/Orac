@@ -1,0 +1,18 @@
+--liquibase formatted sql
+
+--changeset clive:user_preferences_v_create stripComments:false runOnChange:true
+
+create or replace force view orac_api.user_preferences_v as
+   select
+        pref_id
+         , user_id
+         , pref_key
+         , pref_value
+         , value_type
+         , created_on
+         , created_by
+         , updated_on
+         , updated_by
+         , row_version
+       from orac.user_preferences;
+--rollback drop view orac_api.user_preferences_v;
