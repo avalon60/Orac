@@ -38,15 +38,9 @@ RUN mkdir -p \
     ${ORAC_HOME}/setup/sqlcl/staging \
     ${ORAC_HOME}/logs
 
-# Copy deployment scripts and binary resources
-COPY --chown=54321 resources/docker/oracle/setup   ${ORAC_HOME}/scripts/setup/
-COPY --chown=54321 resources/docker/oracle/startup ${ORAC_HOME}/scripts/startup/
-COPY --chown=54321 resources/docker/oracle/bin     ${ORAC_HOME}/bin
-COPY --chown=54321 resources/docker/oracle/etc     ${ORAC_HOME}/etc
-
-# Ensure startup and bin scripts are executable
-RUN chmod +x ${ORAC_HOME}/scripts/startup/*.sh && \
-    chmod +x ${ORAC_HOME}/bin/*.sh
+# Keep the heavyweight downloads before repo COPY steps so normal code or SQL
+# edits do not invalidate the cached APEX/ORDS/SQLcl layers.
+RUN chown -R 54321:54321 ${ORAC_HOME}
 
 # Switch to oracle user
 USER oracle
@@ -69,6 +63,19 @@ RUN curl -L -o /tmp/sqlcl.zip \
     unzip /tmp/sqlcl.zip -d ${ORAC_HOME}/setup/sqlcl/staging && \
     rm -f /tmp/sqlcl.zip || true
 
+# Switch to root for repo copies
+USER root
+
+# Copy deployment scripts and binary resources
+COPY --chown=54321 resources/docker/oracle/setup   ${ORAC_HOME}/scripts/setup/
+COPY --chown=54321 resources/docker/oracle/startup ${ORAC_HOME}/scripts/startup/
+COPY --chown=54321 resources/docker/oracle/bin     ${ORAC_HOME}/bin
+COPY --chown=54321 resources/docker/oracle/etc     ${ORAC_HOME}/etc
+
+# Ensure startup and bin scripts are executable
+RUN chmod +x ${ORAC_HOME}/scripts/startup/*.sh && \
+    chmod +x ${ORAC_HOME}/bin/*.sh
+
 # Back to root for final setup
 USER root
 
@@ -77,4 +84,3 @@ EXPOSE 1521 8080 8888
 
 # Entrypoint to initialize ORDS etc.
 # ENTRYPOINT ["/home/oracle/orac/scripts/startup/start-orac.sh"]
-
