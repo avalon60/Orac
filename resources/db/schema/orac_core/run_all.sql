@@ -75,37 +75,24 @@ prompt === constraints_fk ===
 @constraint_fk/fk_user_synonyms_user.sql
 
 prompt === constraints_other ===
-@constraint_other/conversations_cc1.sql
-@constraint_other/devices_cc1.sql
-@constraint_other/llm_reg_cc1.sql
-@constraint_other/llm_reg_cc2.sql
-@constraint_other/message_embeddings_cc1.sql
-@constraint_other/messages_cc1.sql
-@constraint_other/messages_cc2.sql
-@constraint_other/orac_personalities_cc1.sql
-@constraint_other/orac_personalities_cc2.sql
-@constraint_other/orac_personalities_cc3.sql
-@constraint_other/user_pref_cc1.sql
-@constraint_other/user_preferences_cc1.sql
-@constraint_other/user_prompt_elements_cc1.sql
-@constraint_other/user_synonyms_cc1.sql
-@constraint_other/users_cc1.sql
+@constraint_other/conversations_ck1.sql
+@constraint_other/devices_ck1.sql
+@constraint_other/llm_reg_ck1.sql
+@constraint_other/llm_reg_ck2.sql
+@constraint_other/message_embeddings_ck1.sql
+@constraint_other/messages_ck1.sql
+@constraint_other/messages_ck2.sql
+@constraint_other/orac_personalities_ck1.sql
+@constraint_other/orac_personalities_ck2.sql
+@constraint_other/orac_personalities_ck3.sql
+@constraint_other/user_pref_ck1.sql
+@constraint_other/user_preferences_ck1.sql
+@constraint_other/user_prompt_elements_ck1.sql
+@constraint_other/user_synonyms_ck1.sql
+@constraint_other/users_ck1.sql
 
 prompt === comments ===
 @comment/orac_personalities.sql
-
-prompt === views ===
-@view/llm_usage_breakdown_v.sql
-@view/message_role_breakdown_v.sql
-@view/messages_per_day_v.sql
-@view/token_usage_trend_v.sql
-@view/user_preferences_v.sql
-
-prompt === view_constraints_pk ===
-@constraint_pk/user_prefs_v_pk.sql
-
-prompt === view_constraints_uc ===
-@constraint_uc/uq_user_prefs_v_user_key.sql
 
 prompt === triggers ===
 @trigger/conversations_bu.sql
@@ -115,7 +102,6 @@ prompt === triggers ===
 @trigger/messages_bu.sql
 @trigger/trg_user_prefs_bu.sql
 @trigger/upe_bu.sql
-@trigger/user_preferences_v_iud.sql
 @trigger/user_syns_bu.sql
 @trigger/users_bu.sql
 

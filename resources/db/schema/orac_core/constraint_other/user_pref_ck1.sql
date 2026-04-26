@@ -4,7 +4,7 @@
 
 
 alter table orac.user_preferences
-  add constraint user_pref_cc1
+  add constraint user_pref_ck1
   check
   (
     (

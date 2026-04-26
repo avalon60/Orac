@@ -3,7 +3,7 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-alter table orac.user_synonyms
-  add constraint user_synonyms_cc1
-  check (is_active in ('N', 'Y'))
+alter table orac.user_prompt_elements
+  add constraint user_prompt_elements_ck1
+  check (is_enabled in ('N', 'Y'))
 ;

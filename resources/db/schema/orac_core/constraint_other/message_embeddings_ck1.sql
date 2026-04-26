@@ -4,6 +4,6 @@
 
 
 alter table orac.message_embeddings
-  add constraint message_embeddings_cc1
+  add constraint message_embeddings_ck1
   check (distance_metric in ('COSINE', 'DOT', 'HAMMING', 'JACCARD', 'L2', 'L2_SQUARED', 'MANHATTAN'))
 ;

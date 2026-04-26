@@ -3,7 +3,7 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-alter table orac.llm_registry
-  add constraint llm_reg_cc2
-  check (is_enabled in ('N', 'Y'))
+alter table orac.conversations
+  add constraint conversations_ck1
+  check (state in ('archived', 'closed', 'open'))
 ;

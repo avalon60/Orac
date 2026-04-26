@@ -2,8 +2,7 @@
 -- __date__: 2026-03-21
 -- __description__: generated/synchronised by split_ddl; one object per file
 
-
-alter table orac.devices
-  add constraint devices_cc1
-  check (is_active in ('N', 'Y'))
+alter table orac.messages
+  add constraint messages_ck1
+  check (role in ('assistant', 'system', 'tool', 'user'))
 ;

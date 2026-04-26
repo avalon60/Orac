@@ -3,7 +3,7 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-alter table orac.messages
-  add constraint messages_cc1
-  check (role in ('assistant', 'system', 'tool', 'user', 'plugin'))
+alter table orac.devices
+  add constraint devices_ck1
+  check (is_active in ('N', 'Y'))
 ;

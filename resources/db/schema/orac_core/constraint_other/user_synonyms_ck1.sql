@@ -3,7 +3,7 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-alter table orac.llm_registry
-  add constraint llm_reg_cc1
-  check (context_policy in ('app', 'external', 'hybrid', 'model'))
+alter table orac.user_synonyms
+  add constraint user_synonyms_ck1
+  check (is_active in ('N', 'Y'))
 ;
