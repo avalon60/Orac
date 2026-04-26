@@ -3,6 +3,10 @@ Slave (slave.py): Strict protocol-only TCP console client for Orac orchestrator.
 the successor ship to Liberator.
 """
 
+# Author: Clive Bostock
+# Date: 2026-04-25
+# Description: Strict protocol-only TCP console client for Orac with persistent local input history.
+
 import asyncio
 import json
 import os
@@ -17,6 +21,12 @@ import time
 from pathlib import Path
 from datetime import datetime, timezone
 from getpass import getuser
+
+try:
+    import readline
+except ImportError:  # pragma: no cover - platform-dependent availability
+    readline = None
+
 from lib.fsutils import project_home
 from lib.config_mgr import ConfigManager
 # Icons / logging
@@ -36,6 +46,8 @@ logger = Logger(log_file=LOG_DIR / 'local_client.log', log_level=LOG_LEVEL, inc_
 
 LLM_TIMEOUT = int(conf_manager.config_value(section="client", key="llm_timeout", default="90"))
 SHOW_TIMESTAMP = conf_manager.bool_config_value(section="client", key="show_timestamp", default=True)
+HISTORY_FILE = LOG_DIR / "slave_history"
+HISTORY_LENGTH = 500
 logger.log_debug(f'LLM_TIMEOUT: {LLM_TIMEOUT} seconds')
 
 
@@ -167,6 +179,50 @@ def iso_now() -> str:
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
+
+def load_input_history() -> None:
+    """Load local CLI history when readline support is available."""
+    if readline is None:
+        logger.log_debug("readline not available; input history disabled.")
+        return
+
+    try:
+        HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        readline.set_history_length(HISTORY_LENGTH)
+        if HISTORY_FILE.exists():
+            readline.read_history_file(HISTORY_FILE)
+    except Exception as exc:
+        logger.log_warning(f"Unable to load input history from {HISTORY_FILE}: {exc}")
+
+
+def save_input_history() -> None:
+    """Persist local CLI history when readline support is available."""
+    if readline is None:
+        return
+
+    try:
+        HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        readline.set_history_length(HISTORY_LENGTH)
+        readline.write_history_file(HISTORY_FILE)
+    except Exception as exc:
+        logger.log_warning(f"Unable to save input history to {HISTORY_FILE}: {exc}")
+
+
+def remember_history_entry(user_input: str) -> None:
+    """Add a non-empty command to the in-memory readline history."""
+    if readline is None or not user_input:
+        return
+
+    try:
+        last_entry = None
+        current_length = readline.get_current_history_length()
+        if current_length > 0:
+            last_entry = readline.get_history_item(current_length)
+        if user_input != last_entry:
+            readline.add_history(user_input)
+    except Exception as exc:
+        logger.log_warning(f"Unable to update input history: {exc}")
+
 # IMPORTANT: load secret once at module import (fail-fast if missing)
 SECRET = load_secret()
 CALLING_USER = os.getenv("ORAC_CALLING_USER") or getuser()  # allow override for service accounts
@@ -214,6 +270,7 @@ def build_prompt_request(message_text: str) -> dict:
 
 async def tcp_client(host=DEFAULT_HOST, port=DEFAULT_PORT):
     logger.log_info(f"{Icons.rocket} Connecting to Orac at {host}:{port} (protocol {PROTOCOL_VERSION}) ...")
+    load_input_history()
 
     try:
         reader, writer = await asyncio.open_connection(host, port)
@@ -221,10 +278,13 @@ async def tcp_client(host=DEFAULT_HOST, port=DEFAULT_PORT):
         logger.log_info(f"{Icons.robot} Connected.")
 
         while True:
-            user_input = input(f"{ts_prefix()}{Icons.right_arrow} You: ").strip()
+            raw_input_value = input(f"{ts_prefix()}{Icons.right_arrow} You: ")
+            user_input = raw_input_value.strip()
             if not user_input:
                 logger.log_debug("Empty input received. Skipping send.")
                 continue
+
+            remember_history_entry(user_input)
 
             if user_input.lower() in {"exit", "quit"}:
                 print(f"{Icons.wave} Exiting client session.")
@@ -328,10 +388,12 @@ async def tcp_client(host=DEFAULT_HOST, port=DEFAULT_PORT):
         logger.log_critical(f"Unexpected error in tcp_client: {e}")
     finally:
         try:
+            save_input_history()
             writer.close()
             await writer.wait_closed()
             logger.log_info("Connection to Orac closed.")
         except NameError:
+            save_input_history()
             logger.log_warning("Writer was not created; skipping close.")
 
 if __name__ == "__main__":
