@@ -23,7 +23,7 @@ wwv_flow_imp.import_begin (
 ,p_default_workspace_id=>6124117855177754
 ,p_default_application_id=>1042
 ,p_default_id_offset=>6311092752151427
-,p_default_owner=>'ORAC'
+,p_default_owner=>'ORAC_APX_PUB'
 );
 end;
 /
@@ -78,7 +78,7 @@ prompt --application/create_application
 begin
 wwv_imp_workspace.create_flow(
  p_id=>wwv_flow.g_flow_id
-,p_owner=>nvl(wwv_flow_application_install.get_schema,'ORAC')
+,p_owner=>nvl(wwv_flow_application_install.get_schema,'ORAC_APX_PUB')
 ,p_name=>nvl(wwv_flow_application_install.get_application_name,'Orac Administration')
 ,p_alias=>nvl(wwv_flow_application_install.get_application_alias,'ORAC-ADMINISTRATION1042')
 ,p_page_view_logging=>'YES'
@@ -1257,13 +1257,13 @@ wwv_flow_imp_shared.create_static_lov_data(
  p_id=>wwv_flow_imp.id(13042830568059940)
 ,p_lov_disp_sequence=>1
 ,p_lov_disp_value=>'Yes'
-,p_lov_return_value=>'y'
+,p_lov_return_value=>'Y'
 );
 wwv_flow_imp_shared.create_static_lov_data(
  p_id=>wwv_flow_imp.id(13043209973059943)
 ,p_lov_disp_sequence=>2
 ,p_lov_disp_value=>'No'
-,p_lov_return_value=>'n'
+,p_lov_return_value=>'N'
 );
 end;
 /
@@ -2874,7 +2874,7 @@ wwv_flow_imp_page.create_page_item(
 ,p_item_sequence=>50
 ,p_item_plug_id=>wwv_flow_imp.id(12642980846390258)
 ,p_item_source_plug_id=>wwv_flow_imp.id(12642980846390258)
-,p_item_default=>'y'
+,p_item_default=>'Y'
 ,p_prompt=>'Is Active'
 ,p_source=>'IS_ACTIVE'
 ,p_source_type=>'REGION_SOURCE_COLUMN'
@@ -3102,7 +3102,7 @@ wwv_flow_imp_page.create_page_process(
 ,p_process_point=>'AFTER_SUBMIT'
 ,p_process_type=>'NATIVE_PLSQL'
 ,p_process_name=>'Seed User Preferences'
-,p_process_sql_clob=>'orac_prefs_seed.seed_user(p_user_id => :P4_USER_ID);'
+,p_process_sql_clob=>'orac_code.orac_prefs_seed.seed_user(p_user_id => :P4_USER_ID);'
 ,p_process_clob_language=>'PLSQL'
 ,p_error_display_location=>'INLINE_IN_NOTIFICATION'
 ,p_process_when_button_id=>wwv_flow_imp.id(12653655858390269)
