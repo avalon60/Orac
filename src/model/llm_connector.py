@@ -1,8 +1,14 @@
-# llm/base_connector.py
+"""LLM connector implementations for Orac backends."""
+
+# Author: Clive Bostock
+# Date: 2026-04-27
+# Description: Provides LM Studio and Ollama connector implementations for
+#   Orac, including Ollama retry handling for truncated responses.
+
 from model.orac_abc import LLMConnectorABC, MODEL_SERVICE_DESCRIPTORS
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
-from typing import cast
+from typing import Any, cast
 from lib.config_mgr import ConfigManager
 from lib.fsutils import project_home
 
@@ -101,6 +107,7 @@ class LMStudioConnector(LLMConnector):
 import requests
 import re
 import time
+import math
 from urllib.parse import urlparse, urlunparse
 from lib.logutil import Logger
 
@@ -135,13 +142,30 @@ class OllamaConnector(LLMConnector):
         # split connect/read to avoid hanging the server-side loop
         self._connect_timeout = 5
         self._read_timeout = min(req_to, 25)
+        self.default_num_predict = max(
+            1,
+            self.config_mgr.int_config_value(
+                "service",
+                "default_num_predict",
+                default=120,
+            ),
+        )
+        self.num_predict_incr_pct = max(
+            1,
+            self.config_mgr.int_config_value(
+                "service",
+                "num_predict_incr_pct",
+                default=100,
+            ),
+        )
+        self._max_num_predict_retries = 2
 
-        # Keep the system hint minimal; we’ll remove it for very short prompts to match your curl
-        # self.system_hint = "You are Orac. Answer clearly and concisely."
+        # Keep the connector hint minimal. User-facing behaviour belongs in
+        # Orac's main system prompt policy, not the transport wrapper.
         self.system_hint = (
-            "You are Orac. Be concise. If the user poses a hypothetical or counterfactual premise, "
-            "ANSWER UNDER THAT PREMISE and DO NOT CORRECT it unless the user explicitly asks you to verify facts. "
-            "If you wish, you may add one brief 'In reality…' sentence AFTER the answer, but only if asked."
+            "You are Orac. Be concise. If the user poses a hypothetical or "
+            "counterfactual premise, answer under that premise and do not "
+            "correct it unless the user explicitly asks you to verify facts."
         )
 
     # ---------- helpers ----------
@@ -167,7 +191,22 @@ class OllamaConnector(LLMConnector):
         self.logger.log_info(f"⏱️ Ollama RT: {dt:.2f}s model={model} done={done} pe={pe} ce={ce}")
         return data
 
-    def _chat_once(self, prompt: str, *, show_reasoning: bool, num_predict: int, use_system: bool) -> str:
+    def _next_num_predict(self, current_num_predict: int) -> int:
+        """Return the next token budget after a truncated response."""
+        increment = max(
+            1,
+            math.ceil(current_num_predict * (self.num_predict_incr_pct / 100.0)),
+        )
+        return current_num_predict + increment
+
+    def _chat_once(
+        self,
+        prompt: str,
+        *,
+        show_reasoning: bool,
+        num_predict: int,
+        use_system: bool,
+    ) -> dict[str, Any]:
         url = f"{self.service_url}/api/chat"
         msgs = [{"role": "user", "content": prompt}]
         if use_system and self.system_hint:
@@ -190,9 +229,12 @@ class OllamaConnector(LLMConnector):
         )
         data = self._post_json(url, payload)
         text = (data.get("message") or {}).get("content") or data.get("response") or ""
-        return text if isinstance(text, str) else str(text)
+        return {
+            "text": text if isinstance(text, str) else str(text),
+            "done_reason": data.get("done_reason"),
+        }
 
-    def _generate_once(self, prompt: str, *, num_predict: int) -> str:
+    def _generate_once(self, prompt: str, *, num_predict: int) -> dict[str, Any]:
         url = f"{self.service_url}/api/generate"
         payload = {
             "model": self.model_name,
@@ -207,7 +249,44 @@ class OllamaConnector(LLMConnector):
         self.logger.log_info(f"➡️ /api/generate np={num_predict}")
         data = self._post_json(url, payload)
         text = data.get("response") or ""
-        return text if isinstance(text, str) else str(text)
+        return {
+            "text": text if isinstance(text, str) else str(text),
+            "done_reason": data.get("done_reason"),
+        }
+
+    def _run_with_num_predict_growth(
+        self,
+        runner,
+        *,
+        runner_name: str,
+        initial_num_predict: int,
+    ) -> str:
+        """Retry a completion with a larger token budget after truncation."""
+        num_predict = max(1, int(initial_num_predict))
+        last_text = ""
+
+        for attempt in range(self._max_num_predict_retries + 1):
+            result = runner(num_predict)
+            text = self._strip_visible_think(result.get("text", "")).strip()
+            done_reason = str(result.get("done_reason") or "").strip().lower()
+
+            if text:
+                last_text = text
+
+            if done_reason != "length":
+                return text
+
+            if attempt >= self._max_num_predict_retries:
+                return last_text
+
+            next_num_predict = self._next_num_predict(num_predict)
+            self.logger.log_info(
+                f"↩️ Retrying {runner_name} after truncated response "
+                f"(done=length): num_predict {num_predict} -> {next_num_predict}"
+            )
+            num_predict = next_num_predict
+
+        return last_text
 
     # ---------- public API ----------
 
@@ -224,21 +303,28 @@ class OllamaConnector(LLMConnector):
         p = (prompt or "").strip()
         is_very_short = len(p) <= 12  # "Hi", "Hello", etc.
 
-        # Attempt 1: chat think=False, modest budget
-        text = self._chat_once(p, show_reasoning=False, num_predict=120, use_system=not is_very_short)
-        text = self._strip_visible_think(text)
+        text = self._run_with_num_predict_growth(
+            lambda num_predict: self._chat_once(
+                p,
+                show_reasoning=False,
+                num_predict=num_predict,
+                use_system=not is_very_short,
+            ),
+            runner_name="/api/chat",
+            initial_num_predict=self.default_num_predict,
+        )
         if text:
             return text
 
-        # Attempt 2: chat think=False, larger budget
-        text = self._chat_once(p, show_reasoning=False, num_predict=256, use_system=not is_very_short)
-        text = self._strip_visible_think(text)
-        if text:
-            return text
-
-        # Attempt 3: fallback to generate (simple prompt) — close to your curl success path
-        text = self._generate_once(p or "Say hi", num_predict=120).strip()
-        text = self._strip_visible_think(text)
+        # Fallback: /api/generate with the same truncation-aware budget growth.
+        text = self._run_with_num_predict_growth(
+            lambda num_predict: self._generate_once(
+                p or "Say hi",
+                num_predict=num_predict,
+            ),
+            runner_name="/api/generate",
+            initial_num_predict=self.default_num_predict,
+        )
         if text:
             return text
 
