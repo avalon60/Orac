@@ -33,7 +33,7 @@ prompt APPLICATION 1042 - Orac Administration
 -- Application Export:
 --   Application:     1042
 --   Name:            Orac Administration
---   Date and Time:   10:59 Sunday February 22, 2026
+--   Date and Time:   17:12 Monday April 27, 2026
 --   Exported By:     ORAC_ADMIN
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -66,7 +66,7 @@ prompt APPLICATION 1042 - Orac Administration
 --       E-Mail:
 --     Supporting Objects:  Included
 --   Version:         24.2.0
---   Instance ID:     945974488715864
+--   Instance ID:     1084480538910005
 --
 
 prompt --application/delete_application
@@ -115,7 +115,7 @@ wwv_imp_workspace.create_flow(
 ,p_substitution_value_01=>'Orac Administration'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>6
-,p_version_scn=>2331350
+,p_version_scn=>2187571
 ,p_print_server_type=>'NATIVE'
 ,p_file_storage=>'DB'
 ,p_is_pwa=>'Y'
@@ -1322,7 +1322,7 @@ wwv_flow_imp_shared.create_theme(
 ,p_nav_bar_type=>'LIST'
 ,p_reference_id=>4072363937200175119
 ,p_is_locked=>false
-,p_current_theme_style_id=>2597873239612181258
+,p_current_theme_style_id=>3544795214802435419
 ,p_default_page_template=>4072355960268175073
 ,p_default_dialog_template=>2100407606326202693
 ,p_error_template=>2101157952850466385
@@ -2335,7 +2335,7 @@ wwv_flow_imp_page.create_report_region(
 ,p_component_template_options=>'t-Report--stretch:#DEFAULT#:t-Report--altRowsDefault:t-Report--rowHighlight:t-Report--inline'
 ,p_source_type=>'NATIVE_SQL_REPORT'
 ,p_query_type=>'TABLE'
-,p_query_table=>'USER_PREFERENCES_V'
+,p_query_table=>'USER_PREFERENCES_DISPLAY_V'
 ,p_query_where=>'"USER_ID" = :P2_USER_ID'
 ,p_include_rowid_column=>true
 ,p_display_when_condition=>'P2_USER_ID'
@@ -3643,13 +3643,13 @@ wwv_flow_imp_page.create_page_item(
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(13641521105849433)
-,p_name=>'P6_VALUE_DISPLAY'
+,p_name=>'P6_PREF_VALUE'
 ,p_source_data_type=>'VARCHAR2'
 ,p_item_sequence=>120
 ,p_item_plug_id=>wwv_flow_imp.id(12703743415390323)
 ,p_item_source_plug_id=>wwv_flow_imp.id(12703743415390323)
-,p_prompt=>'Value Display'
-,p_source=>'VALUE_DISPLAY'
+,p_prompt=>'Pref Value'
+,p_source=>'PREF_VALUE'
 ,p_source_type=>'REGION_SOURCE_COLUMN'
 ,p_display_as=>'NATIVE_TEXTAREA'
 ,p_cSize=>30

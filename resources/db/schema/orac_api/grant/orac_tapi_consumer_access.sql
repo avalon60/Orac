@@ -48,7 +48,7 @@ grant read on orac_api.user_prompt_elements_v to orac;
 
 grant select on orac_api.users_v to orac_code with grant option;
 grant select on orac_api.user_synonyms_v to orac_code with grant option;
-grant select on orac_api.user_preferences_v to orac_code with grant option;
+grant select, insert, update, delete on orac_api.user_preferences_v to orac_code with grant option;
 grant select on orac_api.messages_v to orac_code with grant option;
 grant select on orac_api.conversations_v to orac_code with grant option;
 grant select on orac_api.llm_registry_v to orac_code with grant option;

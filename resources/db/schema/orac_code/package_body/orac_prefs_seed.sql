@@ -33,8 +33,6 @@ create or replace package body orac_code.orac_prefs_seed as
     p_overwrite in boolean default false
   ) is
     l_pref_id      orac_api.user_preferences_v.pref_id%type;
-    l_pref_key     orac_api.user_preferences_v.pref_key%type;
-    l_value_type   orac_api.user_preferences_v.value_type%type;
     l_pref_value   orac_api.user_preferences_v.pref_value%type;
     l_row_version  orac_api.user_preferences_v.row_version%type;
     l_user_exists  number;
@@ -63,11 +61,12 @@ create or replace package body orac_code.orac_prefs_seed as
            and pref_key = rec.pref_key;
 
         if p_overwrite then
+          l_pref_value := json(rec.pref_value);
           orac_api.user_preferences_tapi.upd(
             p_pref_id     => l_pref_id,
             p_user_id     => p_user_id,
             p_pref_key    => rec.pref_key,
-            p_pref_value  => rec.pref_value,
+            p_pref_value  => l_pref_value,
             p_value_type  => rec.value_type,
             p_row_version => l_row_version
           );
@@ -75,11 +74,12 @@ create or replace package body orac_code.orac_prefs_seed as
       exception
         when no_data_found then
           l_pref_id := null;
+          l_pref_value := json(rec.pref_value);
           orac_api.user_preferences_tapi.ins(
             p_pref_id     => l_pref_id,
             p_user_id     => p_user_id,
             p_pref_key    => rec.pref_key,
-            p_pref_value  => rec.pref_value,
+            p_pref_value  => l_pref_value,
             p_value_type  => rec.value_type,
             p_row_version => l_row_version
           );
