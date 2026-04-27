@@ -15,93 +15,99 @@ prompt === tables ===
 @table/users.sql
 
 prompt === indexes ===
-@index/conversations_pk.sql
-@index/devices_pk.sql
-@index/devices_uid_idx.sql
-@index/ix_conversations_llm_id.sql
-@index/ix_conversations_user_id.sql
-@index/ix_messages_conv_id.sql
-@index/ix_messages_llm_id.sql
-@index/ix_msg_emb_message_id.sql
-@index/ix_user_prefs_uid.sql
-@index/llm_registry_pk.sql
-@index/message_embeddings_pk.sql
-@index/messages_pk.sql
+@index/convs_llm_reg_fk1_idx.sql
+@index/convs_pk.sql
+@index/convs_uk1_idx.sql
+@index/convs_users_fk1_idx.sql
+@index/device_pk.sql
+@index/device_users_fk1_idx.sql
+@index/llm_reg_pk.sql
+@index/llm_reg_uk1_idx.sql
+@index/mesg_emb_mesgs_fk1_idx.sql
+@index/mesg_emb_pk.sql
+@index/mesg_emb_uk1_idx.sql
+@index/mesgs_convs_fk1_idx.sql
+@index/mesgs_llm_reg_fk1_idx.sql
+@index/mesgs_pk.sql
+@index/mesgs_uk1_idx.sql
 @index/orpers_pk.sql
-@index/orpers_uk1.sql
-@index/upe_user_cat_idx.sql
-@index/uq_conversations_session.sql
-@index/uq_llm_registry_name.sql
-@index/uq_messages_conv_turn.sql
-@index/uq_msg_emb_message_chunk.sql
-@index/uq_user_preferences_user_key.sql
-@index/uq_users_username.sql
-@index/user_preferences_pk.sql
-@index/user_prompt_elements_pk_idx.sql
-@index/user_synonyms_pk.sql
-@index/user_synonyms_uid_idx.sql
+@index/orpers_uk1_idx.sql
+@index/user_pe_idx1.sql
+@index/user_pe_pk.sql
+@index/user_pref_pk.sql
+@index/user_pref_uk1_idx.sql
+@index/user_pref_users_fk1_idx.sql
+@index/user_syns_pk.sql
+@index/user_syns_users_fk1_idx.sql
 @index/users_pk.sql
+@index/users_uk1_idx.sql
 
 prompt === constraints_pk ===
-@constraint_pk/conversations_pk.sql
-@constraint_pk/devices_pk.sql
-@constraint_pk/llm_registry_pk.sql
-@constraint_pk/message_embeddings_pk.sql
-@constraint_pk/messages_pk.sql
-@constraint_pk/orac_personalities_pk.sql
-@constraint_pk/user_preferences_pk.sql
-@constraint_pk/user_prompt_elements_pk.sql
-@constraint_pk/user_synonyms_pk.sql
+@constraint_pk/convs_pk.sql
+@constraint_pk/device_pk.sql
+@constraint_pk/llm_reg_pk.sql
+@constraint_pk/mesg_emb_pk.sql
+@constraint_pk/mesgs_pk.sql
+@constraint_pk/orpers_pk.sql
+@constraint_pk/user_pe_pk.sql
+@constraint_pk/user_pref_pk.sql
+@constraint_pk/user_syns_pk.sql
 @constraint_pk/users_pk.sql
 
 prompt === constraints_uc ===
-@constraint_uc/orac_personalities_uk1.sql
-@constraint_uc/uq_conversations_session.sql
-@constraint_uc/uq_llm_registry_name.sql
-@constraint_uc/uq_messages_conv_turn.sql
-@constraint_uc/uq_msg_emb_message_chunk.sql
-@constraint_uc/uq_user_preferences_user_key.sql
-@constraint_uc/uq_users_username.sql
+@constraint_uc/convs_uk1.sql
+@constraint_uc/llm_reg_uk1.sql
+@constraint_uc/mesg_emb_uk1.sql
+@constraint_uc/mesgs_uk1.sql
+@constraint_uc/orpers_uk1.sql
+@constraint_uc/user_pref_uk1.sql
+@constraint_uc/users_uk1.sql
 
 prompt === constraints_fk ===
-@constraint_fk/fk_conversations_llm.sql
-@constraint_fk/fk_conversations_user.sql
-@constraint_fk/fk_devices_user.sql
-@constraint_fk/fk_messages_conversation.sql
-@constraint_fk/fk_messages_llm.sql
-@constraint_fk/fk_msg_emb_message.sql
-@constraint_fk/fk_user_preferences_user.sql
-@constraint_fk/fk_user_prompt_elements_user.sql
-@constraint_fk/fk_user_synonyms_user.sql
+@constraint_fk/convs_llm_reg_fk1.sql
+@constraint_fk/convs_users_fk1.sql
+@constraint_fk/device_users_fk1.sql
+@constraint_fk/mesg_emb_mesgs_fk1.sql
+@constraint_fk/mesgs_convs_fk1.sql
+@constraint_fk/mesgs_llm_reg_fk1.sql
+@constraint_fk/user_pe_users_fk1.sql
+@constraint_fk/user_pref_users_fk1.sql
+@constraint_fk/user_syns_users_fk1.sql
 
 prompt === constraints_other ===
-@constraint_other/conversations_ck1.sql
-@constraint_other/devices_ck1.sql
+@constraint_other/convs_ck1.sql
+@constraint_other/device_ck1.sql
 @constraint_other/llm_reg_ck1.sql
 @constraint_other/llm_reg_ck2.sql
-@constraint_other/message_embeddings_ck1.sql
-@constraint_other/messages_ck1.sql
-@constraint_other/messages_ck2.sql
-@constraint_other/orac_personalities_ck1.sql
-@constraint_other/orac_personalities_ck2.sql
-@constraint_other/orac_personalities_ck3.sql
+@constraint_other/mesg_emb_ck1.sql
+@constraint_other/mesgs_ck1.sql
+@constraint_other/mesgs_ck2.sql
+@constraint_other/orpers_ck1.sql
+@constraint_other/orpers_ck2.sql
+@constraint_other/orpers_ck3.sql
 @constraint_other/user_pref_ck1.sql
-@constraint_other/user_preferences_ck1.sql
-@constraint_other/user_prompt_elements_ck1.sql
-@constraint_other/user_synonyms_ck1.sql
+@constraint_other/user_pref_ck2.sql
+@constraint_other/user_pe_ck1.sql
+@constraint_other/user_syns_ck1.sql
 @constraint_other/users_ck1.sql
 
 prompt === comments ===
+@comment/conversations.sql
+@comment/llm_registry.sql
+@comment/message_embeddings.sql
+@comment/messages.sql
 @comment/orac_personalities.sql
+@comment/user_preferences.sql
+@comment/users.sql
 
 prompt === triggers ===
-@trigger/conversations_bu.sql
-@trigger/devices_bu.sql
-@trigger/llm_registry_bu.sql
-@trigger/message_embeddings_bu.sql
-@trigger/messages_bu.sql
-@trigger/trg_user_prefs_bu.sql
-@trigger/upe_bu.sql
+@trigger/convs_bu.sql
+@trigger/device_bu.sql
+@trigger/llm_reg_bu.sql
+@trigger/mesg_emb_bu.sql
+@trigger/mesgs_bu.sql
+@trigger/user_pe_bu.sql
+@trigger/user_pref_bu.sql
 @trigger/user_syns_bu.sql
 @trigger/users_bu.sql
 
