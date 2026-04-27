@@ -9,7 +9,7 @@
 Tracks model name, provider, maximum context size, whether the model is enabled, and how it handles conversation state (context_policy: model, app, hybrid, or external).
 Includes a JSON properties column for storing provider-specific metadata (e.g., API endpoints, pricing, fine-tuning details).
 Key uses: Provides a single source of truth for all LLMs accessible to Orac, enabling runtime selection and model-specific logic.]]></comment>
-<commentInRDBMS><![CDATA[registry of available large language models (llms) and their configuration.]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[Registry of available large language models (LLMs) and their configuration.]]></commentInRDBMS>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>135B44DB-1AE4-61AB-08D2-8827470CC8FA</importedID>
 <abbreviation>llm_reg</abbreviation>
@@ -27,7 +27,7 @@ Key uses: Provides a single source of truth for all LLMs accessible to Orac, ena
 Generated automatically by Oracle on insert (generated always as identity).
 Used as a foreign key from orac.context_history.llm_id to associate turns with a specific model configuration.
 Immutable once created and never reused.]]></comment>
-<commentInRDBMS><![CDATA[llm_id ��� primary key for the orac.llm_registry table.]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[Primary key for the orac.llm_registry table.]]></commentInRDBMS>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>EB90874A-8B5E-0D3E-FECA-7ACD1D202263</importedID>
 <useDomainConstraints>false</useDomainConstraints>
@@ -35,10 +35,12 @@ Immutable once created and never reused.]]></comment>
 <logicalDatatype>LOGDT019</logicalDatatype>
 <ownDataTypeParameters>,,</ownDataTypeParameters>
 <autoIncrementColumn>true</autoIncrementColumn>
+<identityColumn>true</identityColumn>
 <autoIncrementGenerateAlways>true</autoIncrementGenerateAlways>
 <autoIncrementCycle>false</autoIncrementCycle>
-<autoIncrementSequenceName>llm_registry_llm_id_seq</autoIncrementSequenceName>
-<autoIncrementTriggerName>LLM_REGISTRY_LLM_ID_TRG</autoIncrementTriggerName>
+<autoIncrementDisableCache>false</autoIncrementDisableCache>
+<autoIncrementCache>20</autoIncrementCache>
+<autoIncrementOrder>false</autoIncrementOrder>
 </Column>
 <Column name="NAME" id="8DFA2CDC-1082-E69A-3B5E-EAA79C2E977D">
 <sourceConnName>OracSchema</sourceConnName>
@@ -50,7 +52,7 @@ Immutable once created and never reused.]]></comment>
 Type varchar2(100) not null.
 Must be unique (constraint uq_llm_registry_name).
 Used in UIs/config to select a model config; not used as a foreign key, so renaming is possible but should be rare.]]></comment>
-<commentInRDBMS><![CDATA[name ��� human-readable unique name for the model configuration.]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[Human-readable unique name for the model configuration.]]></commentInRDBMS>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>F500CA5F-7C3E-8035-DA97-3F8003715500</importedID>
 <useDomainConstraints>false</useDomainConstraints>
@@ -70,7 +72,7 @@ Used in UIs/config to select a model config; not used as a foreign key, so renam
 
 Examples: openai, anthropic, oracle, local.
 Useful for routing, reporting, and policy decisions.]]></comment>
-<commentInRDBMS><![CDATA[provider ��� vendor/source of the model.]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[Vendor/source of the model.]]></commentInRDBMS>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>F620A8E4-2811-1BC4-C74A-0D481AC350A6</importedID>
 <nullsAllowed>true</nullsAllowed>
@@ -91,7 +93,7 @@ Useful for routing, reporting, and policy decisions.]]></comment>
 Type varchar2(200) not null.
 Examples: gpt-4.1, llama3.1-70b, cohere-command-r-plus.
 Used by the application when calling the provider API.]]></comment>
-<commentInRDBMS><![CDATA[model ��� provider���s model identifier.]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[Provider model identifier.]]></commentInRDBMS>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>8003596D-7A60-4035-CCCA-462B14D6784B</importedID>
 <useDomainConstraints>false</useDomainConstraints>
@@ -112,10 +114,10 @@ Used by the application when calling the provider API.]]></comment>
 Values: 'model', 'app', 'hybrid', 'external'.
 ‘model’ = provider handles threading/context; ‘app’ = application builds/truncates context; ‘hybrid’ = mix; ‘external’ = context managed in an external service (e.g., memory store/vector DB).
 Drives prompting/assembly logic at runtime.]]></comment>
-<commentInRDBMS><![CDATA[context_policy ��� how conversation state is managed for this model.]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[How conversation state is managed for this model.]]></commentInRDBMS>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>24C6191C-07AA-B030-391C-290B441D0766</importedID>
-<constraintName>llm_reg_cc1</constraintName>
+<constraintName>LLM_REG_CK1</constraintName>
 <useDomainConstraints>false</useDomainConstraints>
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
@@ -138,7 +140,7 @@ Drives prompting/assembly logic at runtime.]]></comment>
 <comment><![CDATA[max_conext_tokens — Maximum supported context window (tokens).
 
 Used for budgeting and truncation; when null, the application may derive from provider defaults or properties.]]></comment>
-<commentInRDBMS><![CDATA[max_context_tokens ��� maximum supported context window (tokens).]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[Maximum supported context window in tokens.]]></commentInRDBMS>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>B132CD2F-190D-3847-2C7A-4674B334F7C2</importedID>
 <nullsAllowed>true</nullsAllowed>
@@ -159,7 +161,7 @@ Allowed values 'Y'/'N'.
 Controls whether this model can be selected without deleting its config.]]></comment>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>083D032A-BBCE-540C-1FC4-43456FA54287</importedID>
-<constraintName>SYS_C0013300</constraintName>
+<constraintName>LLM_REG_CK2</constraintName>
 <useDomainConstraints>false</useDomainConstraints>
 <use>1</use>
 <logicalDatatype>LOGDT025</logicalDatatype>
@@ -182,7 +184,7 @@ Controls whether this model can be selected without deleting its config.]]></com
 Type json, optional.
 Typical keys: api_base/deployment_id/endpoint, default parameters (temperature, top_p), tokenizer name, rate limits, pricing notes, safety flags.
 Keep keys stable; avoid storing secrets (use a vault/env vars instead).]]></comment>
-<commentInRDBMS><![CDATA[properties ��� free-form json for provider/model metadata.]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[Free-form JSON for provider/model metadata.]]></commentInRDBMS>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>4E1774B9-BC49-F2F0-7897-D357A6971B53</importedID>
 <nullsAllowed>true</nullsAllowed>
@@ -222,11 +224,11 @@ Keep keys stable; avoid storing secrets (use a vault/env vars instead).]]></comm
 <logicalDatatype>LOGDT024</logicalDatatype>
 <dataTypeSize>128 BYTE</dataTypeSize>
 <defaultValue>coalesce(
-    sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;),
-    sys_context(&apos;USERENV&apos;,&apos;PROXY_USER&apos;),
-    sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;),
-    user
-  )</defaultValue>
+                       sys_context(&apos;apex$session&apos;, &apos;app_user&apos;),
+                       sys_context(&apos;userenv&apos;, &apos;proxy_user&apos;),
+                       sys_context(&apos;userenv&apos;, &apos;session_user&apos;),
+                       user
+                     )</defaultValue>
 <ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
 <defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
@@ -280,7 +282,7 @@ Keep keys stable; avoid storing secrets (use a vault/env vars instead).]]></comm
 </Column>
 </columns>
 <indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
-<ind_PK_UK id="62FA5879-36CF-60E0-7211-972DB7E00F3F" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="LLM_REGISTRY_PK">
+<ind_PK_UK id="62FA5879-36CF-60E0-7211-972DB7E00F3F" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="LLM_REG_PK">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>SYS_C0013301</sourceObjName>
@@ -295,7 +297,7 @@ Keep keys stable; avoid storing secrets (use a vault/env vars instead).]]></comm
 <colUsage columnID="9AF75182-54A9-89B6-AEB7-FC34F341385F"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="360EBA7F-FF12-1B2A-F0FD-4412F839792F" name="UQ_LLM_REGISTRY_NAME">
+<ind_PK_UK id="360EBA7F-FF12-1B2A-F0FD-4412F839792F" name="LLM_REG_UK1">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>UQ_LLM_REGISTRY_NAME</sourceObjName>
@@ -309,7 +311,7 @@ Keep keys stable; avoid storing secrets (use a vault/env vars instead).]]></comm
 <colUsage columnID="8DFA2CDC-1082-E69A-3B5E-EAA79C2E977D"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="C702FFDF-0D95-024E-AC57-607E9E6A1F0D" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="UQ_LLM_REGISTRY_NAME">
+<ind_PK_UK id="C702FFDF-0D95-024E-AC57-607E9E6A1F0D" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="LLM_REG_UK1_IDX">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>UQ_LLM_REGISTRY_NAME</sourceObjName>
@@ -323,7 +325,7 @@ Keep keys stable; avoid storing secrets (use a vault/env vars instead).]]></comm
 <colUsage columnID="8DFA2CDC-1082-E69A-3B5E-EAA79C2E977D"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="B1D82F34-D5F7-5535-AF9E-AF14108AE749" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="LLM_REGISTRY_PK">
+<ind_PK_UK id="B1D82F34-D5F7-5535-AF9E-AF14108AE749" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="LLM_REG_PK">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>LLM_REGISTRY_PK</sourceObjName>

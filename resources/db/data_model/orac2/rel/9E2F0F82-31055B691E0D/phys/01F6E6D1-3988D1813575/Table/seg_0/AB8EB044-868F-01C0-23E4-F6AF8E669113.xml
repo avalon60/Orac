@@ -43,7 +43,7 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-30 16:55:00 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
-<defaultValue>sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;)</defaultValue>
+<defaultValue>sys_context(&apos;userenv&apos;, &apos;session_user&apos;)</defaultValue>
 </ColumnProxy>
 <ColumnProxy name="CREATED_ON" id="B05B23D7-DC79-1E95-B1CD-1C3BC2BA39EB">
 <createdBy>clive</createdBy>
@@ -64,7 +64,7 @@
 </ColumnProxy>
 </columnProxies>
 <indexProxies>
-<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="DEVICES_UID_IDX" id="09CB43B3-2C2E-9C07-6CB9-D2D8D70930A3">
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="DEVICE_USERS_FK1_IDX" id="09CB43B3-2C2E-9C07-6CB9-D2D8D70930A3">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -72,7 +72,7 @@
 <segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 </IndexProxy>
-<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="DEVICES_PK" id="AAC5F83C-CC7D-9985-50EB-4493AA8B17DB">
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="DEVICE_PK" id="AAC5F83C-CC7D-9985-50EB-4493AA8B17DB">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -82,14 +82,14 @@
 </IndexProxy>
 </indexProxies>
 <foreignKeys>
-<ForeignKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.FKProxyOraclev10g" name="FK_DEVICES_USER" id="48A4160D-3959-9F12-3DFC-D5147A487F86">
+<ForeignKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.FKProxyOraclev10g" name="DEVICE_USERS_FK1" id="48A4160D-3959-9F12-3DFC-D5147A487F86">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 </ForeignKey>
 </foreignKeys>
 <primaryKeys>
-<PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="DEVICES_PK" id="5389EF62-7F7A-98BE-4D33-25A28148A03C">
+<PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="DEVICE_PK" id="5389EF62-7F7A-98BE-4D33-25A28148A03C">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>

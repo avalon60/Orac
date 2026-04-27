@@ -40,7 +40,7 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
-<defaultValue>sys_context(&apos;userenv&apos;,&apos;session_user&apos;)</defaultValue>
+<defaultValue>sys_context(&apos;userenv&apos;, &apos;session_user&apos;)</defaultValue>
 </ColumnProxy>
 <ColumnProxy name="EMBEDDING" id="51AF31CC-49D7-199D-63FA-2D397E9FC828">
 <createdBy>clive</createdBy>
@@ -81,7 +81,7 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
-<autoIncrementDDL>TRIGGER</autoIncrementDDL>
+<autoIncrementDDL>IDENTITY_CLAUSE</autoIncrementDDL>
 </ColumnProxy>
 <ColumnProxy name="MESSAGE_ID" id="A5279262-374B-6F0B-1470-7E1EDBFA523A">
 <createdBy>clive</createdBy>
@@ -107,7 +107,7 @@
 </ColumnProxy>
 </columnProxies>
 <indexProxies>
-<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="UQ_MSG_EMB_MESSAGE_CHUNK" id="5BB11A49-DBF6-7EEF-AD5C-0148B34A70A4">
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="MESG_EMB_UK1_IDX" id="5BB11A49-DBF6-7EEF-AD5C-0148B34A70A4">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -115,7 +115,7 @@
 <segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 </IndexProxy>
-<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="IX_MSG_EMB_MESSAGE_ID" id="8AA36C77-B989-C932-6CDB-28E1CCD1C209">
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="MESG_EMB_MESGS_FK1_IDX" id="8AA36C77-B989-C932-6CDB-28E1CCD1C209">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -123,7 +123,7 @@
 <segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 </IndexProxy>
-<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="MESSAGE_EMBEDDINGS_PK" id="A245CBD1-4E78-9B73-53AA-96824E01170C">
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="MESG_EMB_PK" id="A245CBD1-4E78-9B73-53AA-96824E01170C">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -133,16 +133,16 @@
 </IndexProxy>
 </indexProxies>
 <foreignKeys>
-<ForeignKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.FKProxyOraclev10g" name="FK_MSG_EMB_MESSAGE" id="784062E5-6FC1-7DBD-25A6-B57604B001A1">
+<ForeignKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.FKProxyOraclev10g" name="MESG_EMB_MESGS_FK1" id="784062E5-6FC1-7DBD-25A6-B57604B001A1">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 </ForeignKey>
 </foreignKeys>
 <lobStorages>
-<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000076986C00006$$" id="CE9C7DEF-773B-73E2-86D9-045AB17F48B6">
+<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000077205C00006$$" id="61DCA500-EDB8-F581-07FC-90CD47638CBF">
 <createdBy>clive</createdBy>
-<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<createdTime>2026-04-27 17:22:02 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 <cache>NOCACHE</cache>
 <chunk>8192</chunk>
@@ -153,9 +153,9 @@
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 <lobStorageType>SECUREFILE</lobStorageType>
 </LobStorage>
-<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000076986C00007$$" id="79958406-1514-B734-990C-AFD620A4D834">
+<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000077205C00007$$" id="67ECA484-3276-7F52-7BB7-2137BA3379CE">
 <createdBy>clive</createdBy>
-<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<createdTime>2026-04-27 17:22:02 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 <cache>NOCACHE</cache>
 <chunk>8192</chunk>
@@ -166,9 +166,9 @@
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 <lobStorageType>SECUREFILE</lobStorageType>
 </LobStorage>
-<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000076986C00008$$" id="A4676280-DD8A-0410-C543-CF42FF35A8BC">
+<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000077205C00008$$" id="0AA70733-2D37-69B3-EFC0-A1FA78E40798">
 <createdBy>clive</createdBy>
-<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<createdTime>2026-04-27 17:22:02 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 <cache>NOCACHE</cache>
 <chunk>8192</chunk>
@@ -181,7 +181,7 @@
 </LobStorage>
 </lobStorages>
 <primaryKeys>
-<PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="MESSAGE_EMBEDDINGS_PK" id="F6617E1E-26C8-148C-B4BE-8213520C85B6">
+<PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="MESG_EMB_PK" id="F6617E1E-26C8-148C-B4BE-8213520C85B6">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -194,7 +194,7 @@
 </PrimaryKey>
 </primaryKeys>
 <uniqueKeys>
-<UniqueKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.UniqueOraclev10g" name="UQ_MSG_EMB_MESSAGE_CHUNK" id="87A31D3C-87BE-20A4-E381-7E86775C730E">
+<UniqueKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.UniqueOraclev10g" name="MESG_EMB_UK1" id="87A31D3C-87BE-20A4-E381-7E86775C730E">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>

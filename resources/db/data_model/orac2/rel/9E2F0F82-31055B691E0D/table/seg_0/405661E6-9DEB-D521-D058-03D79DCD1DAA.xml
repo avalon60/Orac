@@ -5,7 +5,7 @@
 <sourceObjName>MESSAGE_EMBEDDINGS</sourceObjName>
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
-<commentInRDBMS><![CDATA[embeddings for message-level chunks.]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[Embeddings for message-level chunks.]]></commentInRDBMS>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>810E8D83-5346-2614-595F-1021DA3C800E</importedID>
 <abbreviation>mesg_emb</abbreviation>
@@ -26,9 +26,12 @@
 <logicalDatatype>LOGDT019</logicalDatatype>
 <ownDataTypeParameters>,,</ownDataTypeParameters>
 <autoIncrementColumn>true</autoIncrementColumn>
+<identityColumn>true</identityColumn>
+<defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
-<autoIncrementSequenceName>message_embeddings_emb_id_seq</autoIncrementSequenceName>
-<autoIncrementTriggerName>MESSAGE_EMBEDDINGS_EMB_ID_TRG</autoIncrementTriggerName>
+<autoIncrementDisableCache>false</autoIncrementDisableCache>
+<autoIncrementCache>20</autoIncrementCache>
+<autoIncrementOrder>false</autoIncrementOrder>
 </Column>
 <Column name="MESSAGE_ID" id="A5279262-374B-6F0B-1470-7E1EDBFA523A">
 <sourceConnName>OracSchema</sourceConnName>
@@ -36,7 +39,7 @@
 <sourceObjName>MESSAGE_ID</sourceObjName>
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
-<commentInRDBMS><![CDATA[fk to orac.messages.message_id.]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[FK to orac.messages.message_id.]]></commentInRDBMS>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>A0D4A40F-3419-A1B1-0290-8CDF16700B70</importedID>
 <useDomainConstraints>false</useDomainConstraints>
@@ -180,7 +183,7 @@
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>198CEBB2-56CC-9DB0-BEBC-E8C8584AB5B1</importedID>
-<constraintName>SYS_C0013340</constraintName>
+<constraintName>MESG_EMB_CK1</constraintName>
 <useDomainConstraints>false</useDomainConstraints>
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
@@ -241,7 +244,7 @@
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
 <dataTypeSize>128 CHAR</dataTypeSize>
-<defaultValue>sys_context(&apos;userenv&apos;,&apos;session_user&apos;)</defaultValue>
+<defaultValue>sys_context(&apos;userenv&apos;, &apos;session_user&apos;)</defaultValue>
 <ownDataTypeParameters>128 CHAR,,</ownDataTypeParameters>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
@@ -294,7 +297,7 @@
 </Column>
 </columns>
 <indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
-<ind_PK_UK id="F6617E1E-26C8-148C-B4BE-8213520C85B6" name="MESSAGE_EMBEDDINGS_PK">
+<ind_PK_UK id="F6617E1E-26C8-148C-B4BE-8213520C85B6" name="MESG_EMB_PK">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>MESSAGE_EMBEDDINGS_PK</sourceObjName>
@@ -309,7 +312,7 @@
 <colUsage columnID="9591DDAE-4311-6C75-3599-BFF639808943"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="87A31D3C-87BE-20A4-E381-7E86775C730E" name="UQ_MSG_EMB_MESSAGE_CHUNK">
+<ind_PK_UK id="87A31D3C-87BE-20A4-E381-7E86775C730E" name="MESG_EMB_UK1">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>UQ_MSG_EMB_MESSAGE_CHUNK</sourceObjName>
@@ -324,7 +327,7 @@
 <colUsage columnID="FC6AFF2B-7969-D83D-F33E-E57B1D7C2C2A"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="8AA36C77-B989-C932-6CDB-28E1CCD1C209" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="IX_MSG_EMB_MESSAGE_ID">
+<ind_PK_UK id="8AA36C77-B989-C932-6CDB-28E1CCD1C209" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="MESG_EMB_MESGS_FK1_IDX">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>IX_MSG_EMB_MESSAGE_ID</sourceObjName>
@@ -337,7 +340,7 @@
 <colUsage columnID="A5279262-374B-6F0B-1470-7E1EDBFA523A"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="A245CBD1-4E78-9B73-53AA-96824E01170C" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="MESSAGE_EMBEDDINGS_PK">
+<ind_PK_UK id="A245CBD1-4E78-9B73-53AA-96824E01170C" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="MESG_EMB_PK">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>MESSAGE_EMBEDDINGS_PK</sourceObjName>
@@ -351,7 +354,7 @@
 <colUsage columnID="9591DDAE-4311-6C75-3599-BFF639808943"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="5BB11A49-DBF6-7EEF-AD5C-0148B34A70A4" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="UQ_MSG_EMB_MESSAGE_CHUNK">
+<ind_PK_UK id="5BB11A49-DBF6-7EEF-AD5C-0148B34A70A4" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="MESG_EMB_UK1_IDX">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>UQ_MSG_EMB_MESSAGE_CHUNK</sourceObjName>
@@ -366,7 +369,7 @@
 <colUsage columnID="FC6AFF2B-7969-D83D-F33E-E57B1D7C2C2A"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="784062E5-6FC1-7DBD-25A6-B57604B001A1" name="FK_MSG_EMB_MESSAGE">
+<ind_PK_UK id="784062E5-6FC1-7DBD-25A6-B57604B001A1" name="MESG_EMB_MESGS_FK1">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>

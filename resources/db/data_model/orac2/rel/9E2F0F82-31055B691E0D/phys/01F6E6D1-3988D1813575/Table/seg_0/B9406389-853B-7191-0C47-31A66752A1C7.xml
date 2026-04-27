@@ -44,18 +44,18 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
-<autoIncrementDDL>TRIGGER</autoIncrementDDL>
+<autoIncrementDDL>IDENTITY_CLAUSE</autoIncrementDDL>
 </ColumnProxy>
 <ColumnProxy name="CREATED_BY" id="A930F20C-CED7-4D62-AB03-A69E23EA7755">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 <defaultValue>coalesce(
-    sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;),
-    sys_context(&apos;USERENV&apos;,&apos;PROXY_USER&apos;),
-    sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;),
-    user
-  )</defaultValue>
+                       sys_context(&apos;apex$session&apos;, &apos;app_user&apos;),
+                       sys_context(&apos;userenv&apos;, &apos;proxy_user&apos;),
+                       sys_context(&apos;userenv&apos;, &apos;session_user&apos;),
+                       user
+                     )</defaultValue>
 </ColumnProxy>
 <ColumnProxy name="MAX_CONTEXT_TOKENS" id="A99B027B-2B81-9023-D375-BD54B6CEBCA2">
 <createdBy>clive</createdBy>
@@ -90,7 +90,7 @@
 </ColumnProxy>
 </columnProxies>
 <indexProxies>
-<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="LLM_REGISTRY_PK" id="B1D82F34-D5F7-5535-AF9E-AF14108AE749">
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="LLM_REG_PK" id="B1D82F34-D5F7-5535-AF9E-AF14108AE749">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -98,7 +98,7 @@
 <segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 </IndexProxy>
-<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="UQ_LLM_REGISTRY_NAME" id="C702FFDF-0D95-024E-AC57-607E9E6A1F0D">
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="LLM_REG_UK1_IDX" id="C702FFDF-0D95-024E-AC57-607E9E6A1F0D">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -108,7 +108,7 @@
 </IndexProxy>
 </indexProxies>
 <primaryKeys>
-<PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="LLM_REGISTRY_PK" id="62FA5879-36CF-60E0-7211-972DB7E00F3F">
+<PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="LLM_REG_PK" id="62FA5879-36CF-60E0-7211-972DB7E00F3F">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -122,7 +122,7 @@
 </PrimaryKey>
 </primaryKeys>
 <uniqueKeys>
-<UniqueKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.UniqueOraclev10g" name="UQ_LLM_REGISTRY_NAME" id="360EBA7F-FF12-1B2A-F0FD-4412F839792F">
+<UniqueKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.UniqueOraclev10g" name="LLM_REG_UK1" id="360EBA7F-FF12-1B2A-F0FD-4412F839792F">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>

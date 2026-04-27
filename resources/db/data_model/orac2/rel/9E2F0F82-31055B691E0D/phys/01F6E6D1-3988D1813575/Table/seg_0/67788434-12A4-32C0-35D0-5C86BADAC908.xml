@@ -32,7 +32,7 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
-<autoIncrementDDL>TRIGGER</autoIncrementDDL>
+<autoIncrementDDL>IDENTITY_CLAUSE</autoIncrementDDL>
 </ColumnProxy>
 <ColumnProxy name="CONVERSATION_ID" id="419E2679-DAAC-24A9-DFA6-191C56E3F10C">
 <createdBy>clive</createdBy>
@@ -63,10 +63,12 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
-<defaultValue>coalesce(sys_context(&apos;apex$session&apos;,&apos;app_user&apos;),
-                                                   sys_context(&apos;userenv&apos;,&apos;proxy_user&apos;),
-                                                   sys_context(&apos;userenv&apos;,&apos;session_user&apos;),
-                                                   user)</defaultValue>
+<defaultValue>coalesce(
+                    sys_context(&apos;apex$session&apos;, &apos;app_user&apos;),
+                    sys_context(&apos;userenv&apos;, &apos;proxy_user&apos;),
+                    sys_context(&apos;userenv&apos;, &apos;session_user&apos;),
+                    user
+                  )</defaultValue>
 </ColumnProxy>
 <ColumnProxy name="ROW_VERSION" id="B2BE5EF9-BD38-70ED-E774-D7B132008511">
 <createdBy>clive</createdBy>
@@ -92,7 +94,7 @@
 </ColumnProxy>
 </columnProxies>
 <indexProxies>
-<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="UQ_MESSAGES_CONV_TURN" id="2ACE415B-DB43-00D1-CD90-E9DF7B7076C0">
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="MESGS_UK1_IDX" id="2ACE415B-DB43-00D1-CD90-E9DF7B7076C0">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -100,7 +102,7 @@
 <segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 </IndexProxy>
-<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="IX_MESSAGES_LLM_ID" id="537ABB56-BA3F-5126-AD70-EBEB589A8850">
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="MESGS_LLM_REG_FK1_IDX" id="537ABB56-BA3F-5126-AD70-EBEB589A8850">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -108,7 +110,7 @@
 <segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 </IndexProxy>
-<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="IX_MESSAGES_CONV_ID" id="AB0861CD-C2FD-85A9-06D6-0E0203DF5DA2">
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="MESGS_CONVS_FK1_IDX" id="AB0861CD-C2FD-85A9-06D6-0E0203DF5DA2">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -116,7 +118,7 @@
 <segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 </IndexProxy>
-<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="MESSAGES_PK" id="B5AEAB27-D008-DA69-8A3C-A22E873104F6">
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="MESGS_PK" id="B5AEAB27-D008-DA69-8A3C-A22E873104F6">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -126,19 +128,19 @@
 </IndexProxy>
 </indexProxies>
 <foreignKeys>
-<ForeignKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.FKProxyOraclev10g" name="FK_MESSAGES_CONVERSATION" id="0B9B9BAB-DFCF-732E-D4B6-109C912AE5CB">
+<ForeignKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.FKProxyOraclev10g" name="MESGS_CONVS_FK1" id="0B9B9BAB-DFCF-732E-D4B6-109C912AE5CB">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 </ForeignKey>
-<ForeignKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.FKProxyOraclev10g" name="FK_MESSAGES_LLM" id="EBE046F1-CDE7-5A4D-8079-591023A56DE6">
+<ForeignKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.FKProxyOraclev10g" name="MESGS_LLM_REG_FK1" id="EBE046F1-CDE7-5A4D-8079-591023A56DE6">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 </ForeignKey>
 </foreignKeys>
 <primaryKeys>
-<PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="MESSAGES_PK" id="AA9AB783-444D-D69A-3DF3-2F7F00AAE716">
+<PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="MESGS_PK" id="AA9AB783-444D-D69A-3DF3-2F7F00AAE716">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -151,7 +153,7 @@
 </PrimaryKey>
 </primaryKeys>
 <uniqueKeys>
-<UniqueKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.UniqueOraclev10g" name="UQ_MESSAGES_CONV_TURN" id="A02FA65B-D025-039A-46E7-EC703A84C16A">
+<UniqueKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.UniqueOraclev10g" name="MESGS_UK1" id="A02FA65B-D025-039A-46E7-EC703A84C16A">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>

@@ -5,7 +5,7 @@
 <sourceObjName>CONVERSATIONS</sourceObjName>
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
-<commentInRDBMS><![CDATA[one row per dialog thread; holds session key and default llm.]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[One row per dialog thread; holds session key and default LLM.]]></commentInRDBMS>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>A5DCCC69-7470-37CB-211C-EF67DCAFC232</importedID>
 <abbreviation>convs</abbreviation>
@@ -19,7 +19,7 @@
 <sourceObjName>CONVERSATION_ID</sourceObjName>
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
-<commentInRDBMS><![CDATA[primary key for conversations.]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[Primary key for conversations.]]></commentInRDBMS>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>400BD802-BF9B-FD78-5C82-DC7F015BD029</importedID>
 <useDomainConstraints>false</useDomainConstraints>
@@ -27,9 +27,12 @@
 <logicalDatatype>LOGDT019</logicalDatatype>
 <ownDataTypeParameters>,,</ownDataTypeParameters>
 <autoIncrementColumn>true</autoIncrementColumn>
+<identityColumn>true</identityColumn>
+<defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
-<autoIncrementSequenceName>conversations_conversation_id_seq</autoIncrementSequenceName>
-<autoIncrementTriggerName>CONVERSATIONS_CONVERSATION_ID_TRG</autoIncrementTriggerName>
+<autoIncrementDisableCache>false</autoIncrementDisableCache>
+<autoIncrementCache>20</autoIncrementCache>
+<autoIncrementOrder>false</autoIncrementOrder>
 </Column>
 <Column name="USER_ID" id="5DE4B7EB-841C-FE40-C532-DE9F1FD01EEA">
 <sourceConnName>OracSchema</sourceConnName>
@@ -54,7 +57,7 @@
 <sourceObjName>SESSION_ID</sourceObjName>
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
-<commentInRDBMS><![CDATA[external/session key (unique).]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[External/session key (unique).]]></commentInRDBMS>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>945A3EB8-AC4D-69E1-1FBA-42377F950FE7</importedID>
 <useDomainConstraints>false</useDomainConstraints>
@@ -70,7 +73,7 @@
 <sourceObjName>LLM_ID</sourceObjName>
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
-<commentInRDBMS><![CDATA[default llm for this conversation; messages may override.]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[Default LLM for this conversation; messages may override.]]></commentInRDBMS>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>EDCAAB11-17C0-3430-F90F-8627A803C079</importedID>
 <nullsAllowed>true</nullsAllowed>
@@ -91,7 +94,6 @@
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>97953DC6-A104-60D7-0D67-AD41421BF9CA</importedID>
-<nullsAllowed>true</nullsAllowed>
 <useDomainConstraints>false</useDomainConstraints>
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
@@ -109,7 +111,7 @@
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>33D7F72A-5A23-3DCA-1471-FFD7720B8AC6</importedID>
-<constraintName>CONVERSATIONS_CC1</constraintName>
+<constraintName>CONVS_CK1</constraintName>
 <useDomainConstraints>false</useDomainConstraints>
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
@@ -151,10 +153,12 @@
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
 <dataTypeSize>128 BYTE</dataTypeSize>
-<defaultValue>coalesce(sys_context(&apos;apex$session&apos;,&apos;app_user&apos;),
-                                                   sys_context(&apos;userenv&apos;,&apos;proxy_user&apos;),
-                                                   sys_context(&apos;userenv&apos;,&apos;session_user&apos;),
-                                                   user)</defaultValue>
+<defaultValue>coalesce(
+                    sys_context(&apos;apex$session&apos;, &apos;app_user&apos;),
+                    sys_context(&apos;userenv&apos;, &apos;proxy_user&apos;),
+                    sys_context(&apos;userenv&apos;, &apos;session_user&apos;),
+                    user
+                  )</defaultValue>
 <ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
@@ -207,7 +211,7 @@
 </Column>
 </columns>
 <indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
-<ind_PK_UK id="1F707E19-00C1-AF3E-40A2-16475B841F2B" name="CONVERSATIONS_PK">
+<ind_PK_UK id="1F707E19-00C1-AF3E-40A2-16475B841F2B" name="CONVS_PK">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>CONVERSATIONS_PK</sourceObjName>
@@ -222,7 +226,7 @@
 <colUsage columnID="06D74961-242B-27C6-F0A4-906DF7812F73"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="163BF191-2587-114F-DDCC-F05594DBDB84" name="UQ_CONVERSATIONS_SESSION">
+<ind_PK_UK id="163BF191-2587-114F-DDCC-F05594DBDB84" name="CONVS_UK1">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>UQ_CONVERSATIONS_SESSION</sourceObjName>
@@ -236,7 +240,7 @@
 <colUsage columnID="E3E4FF7F-A0C4-2E74-510F-F48C7EF6DCD5"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="2772AE73-6AB8-9C27-4FFE-3A6F7F6ABBB0" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="CONVERSATIONS_PK">
+<ind_PK_UK id="2772AE73-6AB8-9C27-4FFE-3A6F7F6ABBB0" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="CONVS_PK">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>CONVERSATIONS_PK</sourceObjName>
@@ -250,7 +254,7 @@
 <colUsage columnID="06D74961-242B-27C6-F0A4-906DF7812F73"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="3E619248-8DCA-337F-FCE2-5FBA7A8C90C3" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="IX_CONVERSATIONS_LLM_ID">
+<ind_PK_UK id="3E619248-8DCA-337F-FCE2-5FBA7A8C90C3" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="CONVS_LLM_REG_FK1_IDX">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>IX_CONVERSATIONS_LLM_ID</sourceObjName>
@@ -263,7 +267,7 @@
 <colUsage columnID="B95EA849-4CEA-4F0C-7211-A7E8B8023886"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="702E2173-DCD7-DCEE-3747-804EA80C1A63" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="IX_CONVERSATIONS_USER_ID">
+<ind_PK_UK id="702E2173-DCD7-DCEE-3747-804EA80C1A63" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="CONVS_USERS_FK1_IDX">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>IX_CONVERSATIONS_USER_ID</sourceObjName>
@@ -276,7 +280,7 @@
 <colUsage columnID="5DE4B7EB-841C-FE40-C532-DE9F1FD01EEA"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="0A32D922-D4E3-ABD8-3C05-A63C7D49EE72" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="UQ_CONVERSATIONS_SESSION">
+<ind_PK_UK id="0A32D922-D4E3-ABD8-3C05-A63C7D49EE72" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="CONVS_UK1_IDX">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>UQ_CONVERSATIONS_SESSION</sourceObjName>
@@ -290,7 +294,7 @@
 <colUsage columnID="E3E4FF7F-A0C4-2E74-510F-F48C7EF6DCD5"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="22A7741B-C524-C87C-F668-D4DC96FC2046" name="FK_CONVERSATIONS_LLM">
+<ind_PK_UK id="22A7741B-C524-C87C-F668-D4DC96FC2046" name="CONVS_LLM_REG_FK1">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -300,7 +304,7 @@
 <colUsage columnID="B95EA849-4CEA-4F0C-7211-A7E8B8023886"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="13B68C7B-136F-A8C9-05F2-D1CCDBAACB26" name="FK_CONVERSATIONS_USER">
+<ind_PK_UK id="13B68C7B-136F-A8C9-05F2-D1CCDBAACB26" name="CONVS_USERS_FK1">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>

@@ -68,7 +68,7 @@
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>05D8EA02-CF1C-2ED8-1420-B92EA78109DC</importedID>
-<constraintName>SYS_C0013389</constraintName>
+<constraintName>DEVICE_CK1</constraintName>
 <useDomainConstraints>false</useDomainConstraints>
 <use>1</use>
 <logicalDatatype>LOGDT025</logicalDatatype>
@@ -106,7 +106,7 @@
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
 <dataTypeSize>128 BYTE</dataTypeSize>
-<defaultValue>sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;)</defaultValue>
+<defaultValue>sys_context(&apos;userenv&apos;, &apos;session_user&apos;)</defaultValue>
 <ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
 <defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
@@ -148,7 +148,7 @@
 </Column>
 </columns>
 <indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
-<ind_PK_UK id="5389EF62-7F7A-98BE-4D33-25A28148A03C" name="DEVICES_PK">
+<ind_PK_UK id="5389EF62-7F7A-98BE-4D33-25A28148A03C" name="DEVICE_PK">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>DEVICES_PK</sourceObjName>
@@ -163,7 +163,7 @@
 <colUsage columnID="46D64DEC-49DC-5387-09EC-5F001134DEB8"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="AAC5F83C-CC7D-9985-50EB-4493AA8B17DB" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="DEVICES_PK">
+<ind_PK_UK id="AAC5F83C-CC7D-9985-50EB-4493AA8B17DB" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="DEVICE_PK">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>DEVICES_PK</sourceObjName>
@@ -177,7 +177,7 @@
 <colUsage columnID="46D64DEC-49DC-5387-09EC-5F001134DEB8"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="09CB43B3-2C2E-9C07-6CB9-D2D8D70930A3" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="DEVICES_UID_IDX">
+<ind_PK_UK id="09CB43B3-2C2E-9C07-6CB9-D2D8D70930A3" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="DEVICE_USERS_FK1_IDX">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>DEVICES_UID_IDX</sourceObjName>
@@ -190,7 +190,7 @@
 <colUsage columnID="B8A25B2B-6A8B-9B88-4929-7506E40EFEAD"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="48A4160D-3959-9F12-3DFC-D5147A487F86" name="FK_DEVICES_USER">
+<ind_PK_UK id="48A4160D-3959-9F12-3DFC-D5147A487F86" name="DEVICE_USERS_FK1">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>

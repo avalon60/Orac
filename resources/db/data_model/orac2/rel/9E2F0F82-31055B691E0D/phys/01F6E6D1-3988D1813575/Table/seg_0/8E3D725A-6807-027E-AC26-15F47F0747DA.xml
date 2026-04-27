@@ -44,7 +44,7 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-31 08:53:21 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
-<defaultValue>sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;)</defaultValue>
+<defaultValue>sys_context(&apos;userenv&apos;, &apos;session_user&apos;)</defaultValue>
 </ColumnProxy>
 <ColumnProxy name="WEIGHT_SCORE" id="A9D83617-7434-EA74-CBA2-5199F31861EF">
 <createdBy>clive</createdBy>
@@ -76,7 +76,7 @@
 </ColumnProxy>
 </columnProxies>
 <indexProxies>
-<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="UPE_USER_CAT_IDX" id="80E0884A-5C8C-F1CB-7CCA-7CCE9836D7A7">
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="USER_PE_IDX1" id="80E0884A-5C8C-F1CB-7CCA-7CCE9836D7A7">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-31 08:53:21 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -84,18 +84,26 @@
 <segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 </IndexProxy>
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="USER_PE_PK_IDX" id="AB6EFD2D-7F04-BFC9-F7AD-DF4AA7FA3915">
+<createdBy>clive</createdBy>
+<createdTime>2026-04-27 17:22:02 UTC</createdTime>
+<ownerDesignName>orac2</ownerDesignName>
+<schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+</IndexProxy>
 </indexProxies>
 <foreignKeys>
-<ForeignKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.FKProxyOraclev10g" name="SYS_C0013413" id="99939551-548C-FEA3-6D33-1E0EE71AF43F">
+<ForeignKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.FKProxyOraclev10g" name="USER_PE_USERS_FK1" id="99939551-548C-FEA3-6D33-1E0EE71AF43F">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-31 09:07:03 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 </ForeignKey>
 </foreignKeys>
 <lobStorages>
-<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000077719C00004$$" id="F64C6CFB-462B-8DD0-D0CB-3CA0C386DEF0">
+<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000077229C00004$$" id="566DA9C5-2FA1-AB08-D7E4-F00BC5FF14C9">
 <createdBy>clive</createdBy>
-<createdTime>2025-08-31 08:53:21 UTC</createdTime>
+<createdTime>2026-04-27 17:22:02 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 <cache>NOCACHE</cache>
 <chunk>8192</chunk>
@@ -108,12 +116,13 @@
 </LobStorage>
 </lobStorages>
 <primaryKeys>
-<PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="USER_PROMPT_ELEMENTS_PK" id="63FC6E9D-18E8-5615-6E02-2D4338E9C712">
+<PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="USER_PE_PK" id="63FC6E9D-18E8-5615-6E02-2D4338E9C712">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-31 09:06:24 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 <segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<existingIndex>AB6EFD2D-7F04-BFC9-F7AD-DF4AA7FA3915</existingIndex>
 <indexSegment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</indexSegment>
 <indexSort>SORTED</indexSort>
 <usingIndex>BY INDEX NAME</usingIndex>

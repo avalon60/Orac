@@ -27,7 +27,7 @@
 <ownDataTypeParameters>,,</ownDataTypeParameters>
 <autoIncrementColumn>true</autoIncrementColumn>
 <identityColumn>true</identityColumn>
-<autoIncrementGenerateAlways>true</autoIncrementGenerateAlways>
+<defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
 <autoIncrementDisableCache>false</autoIncrementDisableCache>
 <autoIncrementCache>20</autoIncrementCache>
@@ -107,7 +107,7 @@
 <createdTime>2025-08-31 08:53:21 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>56B198C9-3C1C-9501-5693-6B49499B3D81</importedID>
-<constraintName>SYS_C0013411</constraintName>
+<constraintName>USER_PE_CK1</constraintName>
 <useDomainConstraints>false</useDomainConstraints>
 <use>1</use>
 <logicalDatatype>LOGDT025</logicalDatatype>
@@ -149,7 +149,7 @@
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
 <dataTypeSize>128 BYTE</dataTypeSize>
-<defaultValue>sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;)</defaultValue>
+<defaultValue>sys_context(&apos;userenv&apos;, &apos;session_user&apos;)</defaultValue>
 <ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
 <defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
@@ -203,7 +203,7 @@
 </Column>
 </columns>
 <indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
-<ind_PK_UK id="63FC6E9D-18E8-5615-6E02-2D4338E9C712" name="USER_PROMPT_ELEMENTS_PK">
+<ind_PK_UK id="63FC6E9D-18E8-5615-6E02-2D4338E9C712" name="USER_PE_PK">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-31 09:06:24 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -214,7 +214,7 @@
 <colUsage columnID="3E1DB7A4-80C6-3DCB-69E6-963F2EB19681"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="80E0884A-5C8C-F1CB-7CCA-7CCE9836D7A7" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="UPE_USER_CAT_IDX">
+<ind_PK_UK id="80E0884A-5C8C-F1CB-7CCA-7CCE9836D7A7" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="USER_PE_IDX1">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>UPE_USER_CAT_IDX</sourceObjName>
@@ -228,7 +228,21 @@
 <colUsage columnID="047E879C-CF08-62A8-996C-4C4FA2211784"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="99939551-548C-FEA3-6D33-1E0EE71AF43F" name="SYS_C0013413">
+<ind_PK_UK id="AB6EFD2D-7F04-BFC9-F7AD-DF4AA7FA3915" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="USER_PE_PK_IDX">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>USER_PE_PK_IDX</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-04-27 17:22:02 UTC</createdTime>
+<ownerDesignName>orac2</ownerDesignName>
+<importedID>57FC307D-256D-CC93-B8EB-1E0CFC6F2E10</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="3E1DB7A4-80C6-3DCB-69E6-963F2EB19681"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="99939551-548C-FEA3-6D33-1E0EE71AF43F" name="USER_PE_USERS_FK1">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-31 09:07:03 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>

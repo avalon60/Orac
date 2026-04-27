@@ -67,7 +67,7 @@
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>1B3D3AB3-BA7E-F841-A2F6-A4A581729640</importedID>
-<constraintName>SYS_C0013383</constraintName>
+<constraintName>USER_SYNS_CK1</constraintName>
 <useDomainConstraints>false</useDomainConstraints>
 <use>1</use>
 <logicalDatatype>LOGDT025</logicalDatatype>
@@ -105,7 +105,7 @@
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
 <dataTypeSize>128 BYTE</dataTypeSize>
-<defaultValue>sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;)</defaultValue>
+<defaultValue>sys_context(&apos;userenv&apos;, &apos;session_user&apos;)</defaultValue>
 <ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
 <defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
@@ -147,7 +147,7 @@
 </Column>
 </columns>
 <indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
-<ind_PK_UK id="73F92850-CF9A-63C6-DA9D-2BD9CECD9B3F" name="USER_SYNONYMS_PK">
+<ind_PK_UK id="73F92850-CF9A-63C6-DA9D-2BD9CECD9B3F" name="USER_SYNS_PK">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>USER_SYNONYMS_PK</sourceObjName>
@@ -163,7 +163,7 @@
 <colUsage columnID="62AC097C-EDA1-E116-8F85-F12C472496D8"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="A48C9EEF-F9E6-58E6-B589-CFF79A9E20F3" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="USER_SYNONYMS_PK">
+<ind_PK_UK id="A48C9EEF-F9E6-58E6-B589-CFF79A9E20F3" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="USER_SYNS_PK">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>USER_SYNONYMS_PK</sourceObjName>
@@ -178,7 +178,7 @@
 <colUsage columnID="62AC097C-EDA1-E116-8F85-F12C472496D8"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="6357922C-4DD1-3586-7ADE-D1C85AD8DD22" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="USER_SYNONYMS_UID_IDX">
+<ind_PK_UK id="6357922C-4DD1-3586-7ADE-D1C85AD8DD22" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="USER_SYNS_USERS_FK1_IDX">
 <sourceConnName>OracSchema</sourceConnName>
 <sourceObjSchema>ORAC</sourceObjSchema>
 <sourceObjName>USER_SYNONYMS_UID_IDX</sourceObjName>
@@ -191,7 +191,7 @@
 <colUsage columnID="B2A1A157-2128-9C42-E448-2220BC838294"/>
 </indexColumnUsage>
 </ind_PK_UK>
-<ind_PK_UK id="2C7C6522-2F0F-563B-0BCC-D8C80FE7BAB3" name="FK_USER_SYNONYMS_USER">
+<ind_PK_UK id="2C7C6522-2F0F-563B-0BCC-D8C80FE7BAB3" name="USER_SYNS_USERS_FK1">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>

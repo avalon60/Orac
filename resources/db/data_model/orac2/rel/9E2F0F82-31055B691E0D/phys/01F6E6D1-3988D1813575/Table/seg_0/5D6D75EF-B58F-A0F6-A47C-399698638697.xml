@@ -17,7 +17,7 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
-<autoIncrementDDL>TRIGGER</autoIncrementDDL>
+<autoIncrementDDL>IDENTITY_CLAUSE</autoIncrementDDL>
 </ColumnProxy>
 <ColumnProxy name="ROW_VERSION" id="3C11281F-D55F-93D9-B065-1293F920293A">
 <createdBy>clive</createdBy>
@@ -30,11 +30,11 @@
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 <defaultValue>coalesce(
-    sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;),
-    sys_context(&apos;USERENV&apos;,&apos;PROXY_USER&apos;),
-    sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;),
-    user
-  )</defaultValue>
+                 sys_context(&apos;apex$session&apos;, &apos;app_user&apos;),
+                 sys_context(&apos;userenv&apos;, &apos;proxy_user&apos;),
+                 sys_context(&apos;userenv&apos;, &apos;session_user&apos;),
+                 user
+               )</defaultValue>
 </ColumnProxy>
 <ColumnProxy name="UPDATED_BY" id="6ECDF786-12EA-F4F6-DB40-71FE3CF0CFA8">
 <createdBy>clive</createdBy>
@@ -75,7 +75,7 @@
 </ColumnProxy>
 </columnProxies>
 <indexProxies>
-<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="UQ_USERS_USERNAME" id="82691475-01A6-71EF-9D18-E10F1D3BBF94">
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="USERS_UK1_IDX" id="82691475-01A6-71EF-9D18-E10F1D3BBF94">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -107,7 +107,7 @@
 </PrimaryKey>
 </primaryKeys>
 <uniqueKeys>
-<UniqueKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.UniqueOraclev10g" name="UQ_USERS_USERNAME" id="1E2CF011-B5B9-F7BB-60ED-844898842685">
+<UniqueKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.UniqueOraclev10g" name="USERS_UK1" id="1E2CF011-B5B9-F7BB-60ED-844898842685">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>

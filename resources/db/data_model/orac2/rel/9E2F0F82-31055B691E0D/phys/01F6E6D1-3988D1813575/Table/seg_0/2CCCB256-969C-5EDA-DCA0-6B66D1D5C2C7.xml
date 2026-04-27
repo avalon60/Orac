@@ -50,11 +50,11 @@
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 <defaultValue>coalesce(
-    sys_context(&apos;APEX$SESSION&apos;,&apos;APP_USER&apos;),
-    sys_context(&apos;USERENV&apos;,&apos;PROXY_USER&apos;),
-    sys_context(&apos;USERENV&apos;,&apos;SESSION_USER&apos;),
-    user
-  )</defaultValue>
+                sys_context(&apos;apex$session&apos;, &apos;app_user&apos;),
+                sys_context(&apos;userenv&apos;, &apos;proxy_user&apos;),
+                sys_context(&apos;userenv&apos;, &apos;session_user&apos;),
+                user
+              )</defaultValue>
 </ColumnProxy>
 <ColumnProxy name="USER_ID" id="9F284D13-2632-AD60-5384-80CA498428FC">
 <createdBy>clive</createdBy>
@@ -65,7 +65,7 @@
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
-<autoIncrementDDL>TRIGGER</autoIncrementDDL>
+<autoIncrementDDL>IDENTITY_CLAUSE</autoIncrementDDL>
 </ColumnProxy>
 <ColumnProxy name="ROW_VERSION" id="F2D67D6E-6ACD-4884-7422-45567BCE384B">
 <createdBy>clive</createdBy>
@@ -75,7 +75,7 @@
 </ColumnProxy>
 </columnProxies>
 <indexProxies>
-<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="IX_USER_PREFS_UID" id="032E4387-BDB2-AD42-1473-B1CAE2DED0FD">
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="USER_PREF_USERS_FK1_IDX" id="032E4387-BDB2-AD42-1473-B1CAE2DED0FD">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -83,7 +83,7 @@
 <segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 </IndexProxy>
-<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="USER_PREFERENCES_PK" id="231BC68E-8DFA-4241-55D0-505CF5A7E594">
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="USER_PREF_PK" id="231BC68E-8DFA-4241-55D0-505CF5A7E594">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-22 18:09:57 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -91,7 +91,7 @@
 <segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 </IndexProxy>
-<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="UQ_USER_PREFERENCES_USER_KEY" id="7301C34C-4EC7-EF7D-4C3B-972E0429AC8B">
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="USER_PREF_UK1_IDX" id="7301C34C-4EC7-EF7D-4C3B-972E0429AC8B">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -101,14 +101,14 @@
 </IndexProxy>
 </indexProxies>
 <foreignKeys>
-<ForeignKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.FKProxyOraclev10g" name="FK_USER_PREFERENCES_USER" id="BF7257B3-FA3E-77EC-A280-A18C8A018F77">
+<ForeignKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.FKProxyOraclev10g" name="USER_PREF_USERS_FK1" id="BF7257B3-FA3E-77EC-A280-A18C8A018F77">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
 </ForeignKey>
 </foreignKeys>
 <primaryKeys>
-<PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="USER_PREFERENCES_PK" id="8B5C3DC2-742E-26F1-78D3-A5E34ABD2E0D">
+<PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="USER_PREF_PK" id="8B5C3DC2-742E-26F1-78D3-A5E34ABD2E0D">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -128,7 +128,7 @@
 <ownerDesignName>orac2</ownerDesignName>
 <nameChanged>true</nameChanged>
 </TableCheckConstraint>
-<TableCheckConstraint name="SYS_C0013419" id="F9CA59EB-F4BE-504D-0BC1-B7AFAD9C2B0B">
+<TableCheckConstraint name="USER_PREF_CK2" id="F9CA59EB-F4BE-504D-0BC1-B7AFAD9C2B0B">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-31 15:54:10 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
@@ -136,7 +136,7 @@
 </TableCheckConstraint>
 </tableCheckConstraints>
 <uniqueKeys>
-<UniqueKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.UniqueOraclev10g" name="UQ_USER_PREFERENCES_USER_KEY" id="C62EE904-E5F1-0884-8138-37A8DC61B777">
+<UniqueKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.UniqueOraclev10g" name="USER_PREF_UK1" id="C62EE904-E5F1-0884-8138-37A8DC61B777">
 <createdBy>clive</createdBy>
 <createdTime>2025-08-10 09:45:00 UTC</createdTime>
 <ownerDesignName>orac2</ownerDesignName>
