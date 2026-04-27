@@ -10,6 +10,7 @@ from typing import Optional, List, Dict, Any
 import json
 import os
 import time
+from datetime import datetime, timezone
 import oracledb  # for error code inspection
 from lib.session_manager import DBSession  # <- your DBSession wrapper
 
@@ -68,6 +69,32 @@ class OracContextManager:
             {"u": norm}
         )
         return int(rows[0]["USER_ID"]) if rows else None
+
+    def get_user_profile(self, username: str) -> Dict[str, str]:
+        """Return stable profile facts for an authenticated runtime user."""
+        norm = (username or "").strip()
+        if not norm:
+            return {}
+
+        rows = self.db.dict_sql_dataset(
+            (
+                f"select username, display_name "
+                f"from {self.users_object} "
+                f"where username = :u"
+            ),
+            {"u": norm},
+        )
+        if not rows:
+            return {}
+
+        row = rows[0]
+        profile: Dict[str, str] = {
+            "authenticated_username": row.get("USERNAME") or norm,
+        }
+        display_name = row.get("DISPLAY_NAME")
+        if display_name:
+            profile["display_name"] = display_name
+        return profile
 
     def _create_user(self, username: str) -> int:
         norm = username.strip()
@@ -152,18 +179,11 @@ class OracContextManager:
     ) -> Dict[str, Any]:
         user_id = self._require_user(user_name)
 
-        # Positional bind only; no comments; simple aliases.
         rows = self.db.dict_sql_dataset(
             f"""
             select conv_id,
                    session_id,
-                   last_ts,
-                   (
-                     extract(day    from (systimestamp - last_ts)) * 86400
-                   + extract(hour   from (systimestamp - last_ts)) * 3600
-                   + extract(minute from (systimestamp - last_ts)) *  60
-                   + extract(second from (systimestamp - last_ts))
-                   ) as age_seconds
+                   last_ts
             from (
               select
                 c.conversation_id as conv_id,
@@ -189,7 +209,7 @@ class OracContextManager:
         if rows:
             conv_id = int(rows[0]["CONV_ID"])
             sid = rows[0]["SESSION_ID"]
-            age_sec = float(rows[0]["AGE_SECONDS"] or 0.0)
+            age_sec = self._age_seconds(rows[0].get("LAST_TS"))
 
             if timeout_seconds <= 0 or age_sec < float(timeout_seconds):
                 return {
@@ -216,6 +236,35 @@ class OracContextManager:
             "previous_conversation_id": int(rows[0]["CONV_ID"]) if rows else None,
             "previous_session_id": rows[0]["SESSION_ID"] if rows else None,
         }
+
+    def _age_seconds(self, last_ts: Any) -> float:
+        """Return age in seconds for an Oracle timestamp-like value."""
+        if last_ts is None:
+            return float("inf")
+
+        if isinstance(last_ts, datetime):
+            if last_ts.tzinfo is None:
+                last_ts = last_ts.replace(tzinfo=timezone.utc)
+            else:
+                last_ts = last_ts.astimezone(timezone.utc)
+            return max(0.0, (datetime.now(timezone.utc) - last_ts).total_seconds())
+
+        for parse_fmt in (
+            "%d-%b-%y %I.%M.%S.%f %p",
+            "%Y-%m-%d %H:%M:%S.%f",
+            "%Y-%m-%d %H:%M:%S",
+        ):
+            try:
+                parsed = datetime.strptime(str(last_ts), parse_fmt).replace(
+                    tzinfo=timezone.utc
+                )
+                return max(
+                    0.0, (datetime.now(timezone.utc) - parsed).total_seconds()
+                )
+            except ValueError:
+                continue
+
+        return float("inf")
 
     # -------------------------------------------------------------------------
     # Public API
@@ -324,16 +373,28 @@ class OracContextManager:
             return []
 
         role_filter = "" if include_system else "and role <> 'system'"
-        lim = f"fetch first {int(limit)} rows only" if limit and limit > 0 else ""
 
-        sql = f"""
-            select turn_index, role, content, tokens_used, meta, created_on
-              from {self.messages_object}
-             where conversation_id = :cid
-               {role_filter}
-             order by turn_index
-             {lim}
-        """
+        if limit and limit > 0:
+            sql = f"""
+                select turn_index, role, content, tokens_used, meta, created_on
+                  from (
+                    select turn_index, role, content, tokens_used, meta, created_on
+                      from {self.messages_object}
+                     where conversation_id = :cid
+                       {role_filter}
+                     order by turn_index desc
+                     fetch first {int(limit)} rows only
+                  )
+                 order by turn_index
+            """
+        else:
+            sql = f"""
+                select turn_index, role, content, tokens_used, meta, created_on
+                  from {self.messages_object}
+                 where conversation_id = :cid
+                   {role_filter}
+                 order by turn_index
+            """
         rows = self.db.dict_sql_dataset(sql, {"cid": cid})
         # Ensure JSON comes back as Python objects
         for r in rows:

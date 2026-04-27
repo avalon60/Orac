@@ -268,6 +268,19 @@ def build_prompt_request(message_text: str) -> dict:
         logger.log_critical(f"Client built an invalid protocol frame: {e}")
     return env
 
+
+def _render_user_registration_notice(meta: dict | None, notice_shown: bool) -> bool:
+    """Render a one-time anonymous-user notice from response metadata."""
+    if notice_shown or not isinstance(meta, dict):
+        return notice_shown
+
+    if meta.get("user_registration") == "anonymous":
+        print(f"{ts_prefix()}{Icons.robot} Orac: You are connected as an anonymous user.\n")
+        logger.log_info("Displayed anonymous-user notice from response metadata.")
+        return True
+
+    return notice_shown
+
 async def tcp_client(host=DEFAULT_HOST, port=DEFAULT_PORT):
     logger.log_info(f"{Icons.rocket} Connecting to Orac at {host}:{port} (protocol {PROTOCOL_VERSION}) ...")
     load_input_history()
@@ -276,6 +289,7 @@ async def tcp_client(host=DEFAULT_HOST, port=DEFAULT_PORT):
         reader, writer = await asyncio.open_connection(host, port)
         print(f"{Icons.robot} Connected. Type 'exit' or 'quit' to quit.\n")
         logger.log_info(f"{Icons.robot} Connected.")
+        anonymous_notice_shown = False
 
         while True:
             raw_input_value = input(f"{ts_prefix()}{Icons.right_arrow} You: ")
@@ -340,6 +354,11 @@ async def tcp_client(host=DEFAULT_HOST, port=DEFAULT_PORT):
                 print(f"{ts_prefix()}{Icons.error} [invalid protocol frame] unexpected envelope type\n")
                 continue
 
+            anonymous_notice_shown = _render_user_registration_notice(
+                env.get("meta"),
+                anonymous_notice_shown,
+            )
+
             # --- If the server returned an error, surface it cleanly and continue ---
             err_obj = env.get("error")
             if isinstance(err_obj, dict) and err_obj:
@@ -372,6 +391,7 @@ async def tcp_client(host=DEFAULT_HOST, port=DEFAULT_PORT):
                 for ln in lines[1:]:
                     print(ln, end="")
                 print()  # final newline
+                print()  # blank line between assistant responses and next prompt
             else:
                 print(first_prefix + "\n")
 
