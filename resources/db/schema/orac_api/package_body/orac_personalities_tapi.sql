@@ -43,27 +43,7 @@ as
         p_row                      in out   orac_api.orac_personalities_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'ins';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '  p_row.personality_code', p_row.personality_code);
-      logger_user.logger.append_param(l_params, '  p_row.personality_name', p_row.personality_name);
-      logger_user.logger.append_param(l_params, '  p_row.description', p_row.description);
-      logger_user.logger.append_param(l_params, '  p_row.attitude_base_level', p_row.attitude_base_level);
-      logger_user.logger.append_param(l_params, '  p_row.sarcasm_level', p_row.sarcasm_level);
-      logger_user.logger.append_param(l_params, '  p_row.verbosity_level', p_row.verbosity_level);
-      logger_user.logger.append_param(l_params, '  p_row.allow_humour', p_row.allow_humour);
-      logger_user.logger.append_param(l_params, '  p_row.allow_critique', p_row.allow_critique);
-      logger_user.logger.append_param(l_params, '  p_row.enforce_precision', p_row.enforce_precision);
-      logger_user.logger.append_param(l_params, '  p_row.admit_uncertainty', p_row.admit_uncertainty);
-      logger_user.logger.append_param(l_params, '  p_row.packaged_persona', p_row.packaged_persona);
-      logger_user.logger.append_param(l_params, '  p_row.is_active', p_row.is_active);
-
-      logger.log('START', l_scope, null, l_params);
 
       insert into orac_api.orac_personalities_v
          (
@@ -105,14 +85,6 @@ as
             into
               p_row.personality_id
             , p_row.row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end ins;
 
 
@@ -138,27 +110,7 @@ as
       , p_row_version                 out   orac_api.orac_personalities_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'ins';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '  p_personality_code', p_personality_code);
-      logger_user.logger.append_param(l_params, '  p_personality_name', p_personality_name);
-      logger_user.logger.append_param(l_params, '  p_description', p_description);
-      logger_user.logger.append_param(l_params, '  p_attitude_base_level', p_attitude_base_level);
-      logger_user.logger.append_param(l_params, '  p_sarcasm_level', p_sarcasm_level);
-      logger_user.logger.append_param(l_params, '  p_verbosity_level', p_verbosity_level);
-      logger_user.logger.append_param(l_params, '  p_allow_humour', p_allow_humour);
-      logger_user.logger.append_param(l_params, '  p_allow_critique', p_allow_critique);
-      logger_user.logger.append_param(l_params, '  p_enforce_precision', p_enforce_precision);
-      logger_user.logger.append_param(l_params, '  p_admit_uncertainty', p_admit_uncertainty);
-      logger_user.logger.append_param(l_params, '  p_packaged_persona', p_packaged_persona);
-      logger_user.logger.append_param(l_params, '  p_is_active', p_is_active);
-
-      logger.log('START', l_scope, null, l_params);
 
       insert into orac_api.orac_personalities_v
          (
@@ -198,16 +150,8 @@ as
               personality_id
             , row_version
             into
-              p_personality_id
+              g_row.personality_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end ins;
 
 
@@ -220,16 +164,7 @@ as
       , p_row                         out   orac_api.orac_personalities_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'get';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_personality_id', p_personality_id);
-
-      logger.log('START', l_scope, null, l_params);
 
       select
            personality_id
@@ -276,14 +211,6 @@ as
        from orac_api.orac_personalities_v
       where
             personality_id = p_personality_id;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end get;
 
 
@@ -314,16 +241,7 @@ as
       , p_row_version                 out   orac_api.orac_personalities_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'get';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_personality_id', p_personality_id);
-
-      logger.log('START', l_scope, null, l_params);
 
       select
            personality_id
@@ -370,14 +288,6 @@ as
        from orac_api.orac_personalities_v
       where
             personality_id = p_personality_id;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end get;
 
 
@@ -390,28 +300,7 @@ as
       , p_row                      in out   orac_api.orac_personalities_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'upd';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_personality_id', p_personality_id);
-      logger_user.logger.append_param(l_params, '  p_row.personality_code', p_row.personality_code);
-      logger_user.logger.append_param(l_params, '  p_row.personality_name', p_row.personality_name);
-      logger_user.logger.append_param(l_params, '  p_row.description', p_row.description);
-      logger_user.logger.append_param(l_params, '  p_row.attitude_base_level', p_row.attitude_base_level);
-      logger_user.logger.append_param(l_params, '  p_row.sarcasm_level', p_row.sarcasm_level);
-      logger_user.logger.append_param(l_params, '  p_row.verbosity_level', p_row.verbosity_level);
-      logger_user.logger.append_param(l_params, '  p_row.allow_humour', p_row.allow_humour);
-      logger_user.logger.append_param(l_params, '  p_row.allow_critique', p_row.allow_critique);
-      logger_user.logger.append_param(l_params, '  p_row.enforce_precision', p_row.enforce_precision);
-      logger_user.logger.append_param(l_params, '  p_row.admit_uncertainty', p_row.admit_uncertainty);
-      logger_user.logger.append_param(l_params, '  p_row.packaged_persona', p_row.packaged_persona);
-      logger_user.logger.append_param(l_params, '  p_row.is_active', p_row.is_active);
-
-      logger.log('START', l_scope, null, l_params);
 
       update orac_api.orac_personalities_v
       set
@@ -437,14 +326,6 @@ as
             into
               p_row.personality_id
             , p_row.row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end upd;
 
 
@@ -471,28 +352,7 @@ as
       , p_row_version                 out   orac_api.orac_personalities_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'upd';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_personality_id', p_personality_id);
-      logger_user.logger.append_param(l_params, '  p_personality_code', p_personality_code);
-      logger_user.logger.append_param(l_params, '  p_personality_name', p_personality_name);
-      logger_user.logger.append_param(l_params, '  p_description', p_description);
-      logger_user.logger.append_param(l_params, '  p_attitude_base_level', p_attitude_base_level);
-      logger_user.logger.append_param(l_params, '  p_sarcasm_level', p_sarcasm_level);
-      logger_user.logger.append_param(l_params, '  p_verbosity_level', p_verbosity_level);
-      logger_user.logger.append_param(l_params, '  p_allow_humour', p_allow_humour);
-      logger_user.logger.append_param(l_params, '  p_allow_critique', p_allow_critique);
-      logger_user.logger.append_param(l_params, '  p_enforce_precision', p_enforce_precision);
-      logger_user.logger.append_param(l_params, '  p_admit_uncertainty', p_admit_uncertainty);
-      logger_user.logger.append_param(l_params, '  p_packaged_persona', p_packaged_persona);
-      logger_user.logger.append_param(l_params, '  p_is_active', p_is_active);
-
-      logger.log('START', l_scope, null, l_params);
 
       update orac_api.orac_personalities_v
       set
@@ -518,14 +378,6 @@ as
             into
               p_personality_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end upd;
 
 
@@ -538,16 +390,7 @@ as
       , p_row_version                 out   orac_api.orac_personalities_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'del';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_personality_id', p_personality_id);
-
-      logger.log('START', l_scope, null, l_params);
 
         delete
           from orac_api.orac_personalities_v
@@ -559,14 +402,6 @@ as
             into
               p_personality_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end del;
 
 end orac_personalities_tapi;

@@ -43,25 +43,7 @@ as
         p_row                     in out   orac_api.message_embeddings_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'ins';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '  p_row.message_id', p_row.message_id);
-      logger_user.logger.append_param(l_params, '  p_row.chunk_index', p_row.chunk_index);
-      logger_user.logger.append_param(l_params, '  p_row.span_start', p_row.span_start);
-      logger_user.logger.append_param(l_params, '  p_row.span_end', p_row.span_end);
-      logger_user.logger.append_param(l_params, '  p_row.content_snapshot', p_row.content_snapshot);
-      logger_user.logger.append_param(l_params, '  p_row.embedding', p_row.embedding);
-      logger_user.logger.append_param(l_params, '  p_row.embedding_model', p_row.embedding_model);
-      logger_user.logger.append_param(l_params, '  p_row.embedding_provider', p_row.embedding_provider);
-      logger_user.logger.append_param(l_params, '  p_row.distance_metric', p_row.distance_metric);
-      logger_user.logger.append_param(l_params, '  p_row.tokens_used', p_row.tokens_used);
-
-      logger.log('START', l_scope, null, l_params);
 
       insert into orac_api.message_embeddings_v
          (
@@ -97,14 +79,6 @@ as
             into
               p_row.emb_id
             , p_row.row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end ins;
 
 
@@ -128,25 +102,7 @@ as
       , p_row_version                out   orac_api.message_embeddings_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'ins';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '  p_message_id', p_message_id);
-      logger_user.logger.append_param(l_params, '  p_chunk_index', p_chunk_index);
-      logger_user.logger.append_param(l_params, '  p_span_start', p_span_start);
-      logger_user.logger.append_param(l_params, '  p_span_end', p_span_end);
-      logger_user.logger.append_param(l_params, '  p_content_snapshot', p_content_snapshot);
-      logger_user.logger.append_param(l_params, '  p_embedding', p_embedding);
-      logger_user.logger.append_param(l_params, '  p_embedding_model', p_embedding_model);
-      logger_user.logger.append_param(l_params, '  p_embedding_provider', p_embedding_provider);
-      logger_user.logger.append_param(l_params, '  p_distance_metric', p_distance_metric);
-      logger_user.logger.append_param(l_params, '  p_tokens_used', p_tokens_used);
-
-      logger.log('START', l_scope, null, l_params);
 
       insert into orac_api.message_embeddings_v
          (
@@ -182,14 +138,6 @@ as
             into
               p_emb_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end ins;
 
 
@@ -202,16 +150,7 @@ as
       , p_row                        out   orac_api.message_embeddings_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'get';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_emb_id', p_emb_id);
-
-      logger.log('START', l_scope, null, l_params);
 
       select
            emb_id
@@ -252,14 +191,6 @@ as
        from orac_api.message_embeddings_v
       where
             emb_id = p_emb_id;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end get;
 
 
@@ -287,16 +218,7 @@ as
       , p_row_version                out   orac_api.message_embeddings_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'get';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_emb_id', p_emb_id);
-
-      logger.log('START', l_scope, null, l_params);
 
       select
            emb_id
@@ -337,14 +259,6 @@ as
        from orac_api.message_embeddings_v
       where
             emb_id = p_emb_id;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end get;
 
 
@@ -357,26 +271,7 @@ as
       , p_row                     in out   orac_api.message_embeddings_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'upd';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_emb_id', p_emb_id);
-      logger_user.logger.append_param(l_params, '  p_row.message_id', p_row.message_id);
-      logger_user.logger.append_param(l_params, '  p_row.chunk_index', p_row.chunk_index);
-      logger_user.logger.append_param(l_params, '  p_row.span_start', p_row.span_start);
-      logger_user.logger.append_param(l_params, '  p_row.span_end', p_row.span_end);
-      logger_user.logger.append_param(l_params, '  p_row.content_snapshot', p_row.content_snapshot);
-      logger_user.logger.append_param(l_params, '  p_row.embedding', p_row.embedding);
-      logger_user.logger.append_param(l_params, '  p_row.embedding_model', p_row.embedding_model);
-      logger_user.logger.append_param(l_params, '  p_row.embedding_provider', p_row.embedding_provider);
-      logger_user.logger.append_param(l_params, '  p_row.distance_metric', p_row.distance_metric);
-      logger_user.logger.append_param(l_params, '  p_row.tokens_used', p_row.tokens_used);
-
-      logger.log('START', l_scope, null, l_params);
 
       update orac_api.message_embeddings_v
       set
@@ -399,14 +294,6 @@ as
             into
               p_row.emb_id
             , p_row.row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end upd;
 
 
@@ -430,26 +317,7 @@ as
       , p_row_version                out   orac_api.message_embeddings_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'upd';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_emb_id', p_emb_id);
-      logger_user.logger.append_param(l_params, '  p_message_id', p_message_id);
-      logger_user.logger.append_param(l_params, '  p_chunk_index', p_chunk_index);
-      logger_user.logger.append_param(l_params, '  p_span_start', p_span_start);
-      logger_user.logger.append_param(l_params, '  p_span_end', p_span_end);
-      logger_user.logger.append_param(l_params, '  p_content_snapshot', p_content_snapshot);
-      logger_user.logger.append_param(l_params, '  p_embedding', p_embedding);
-      logger_user.logger.append_param(l_params, '  p_embedding_model', p_embedding_model);
-      logger_user.logger.append_param(l_params, '  p_embedding_provider', p_embedding_provider);
-      logger_user.logger.append_param(l_params, '  p_distance_metric', p_distance_metric);
-      logger_user.logger.append_param(l_params, '  p_tokens_used', p_tokens_used);
-
-      logger.log('START', l_scope, null, l_params);
 
       update orac_api.message_embeddings_v
       set
@@ -472,14 +340,6 @@ as
             into
               p_emb_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end upd;
 
 
@@ -492,16 +352,7 @@ as
       , p_row_version                out   orac_api.message_embeddings_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'del';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_emb_id', p_emb_id);
-
-      logger.log('START', l_scope, null, l_params);
 
         delete
           from orac_api.message_embeddings_v
@@ -513,14 +364,6 @@ as
             into
               p_emb_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end del;
 
 end message_embeddings_tapi;

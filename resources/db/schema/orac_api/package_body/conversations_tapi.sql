@@ -43,20 +43,7 @@ as
         p_row                  in out   orac_api.conversations_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'ins';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '  p_row.user_id', p_row.user_id);
-      logger_user.logger.append_param(l_params, '  p_row.session_id', p_row.session_id);
-      logger_user.logger.append_param(l_params, '  p_row.llm_id', p_row.llm_id);
-      logger_user.logger.append_param(l_params, '  p_row.title', p_row.title);
-      logger_user.logger.append_param(l_params, '  p_row.state', p_row.state);
-
-      logger.log('START', l_scope, null, l_params);
 
       insert into orac_api.conversations_v
          (
@@ -80,14 +67,6 @@ as
             into
               p_row.conversation_id
             , p_row.row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end ins;
 
 
@@ -105,20 +84,7 @@ as
       , p_row_version             out   orac_api.conversations_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'ins';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '  p_user_id', p_user_id);
-      logger_user.logger.append_param(l_params, '  p_session_id', p_session_id);
-      logger_user.logger.append_param(l_params, '  p_llm_id', p_llm_id);
-      logger_user.logger.append_param(l_params, '  p_title', p_title);
-      logger_user.logger.append_param(l_params, '  p_state', p_state);
-
-      logger.log('START', l_scope, null, l_params);
 
       insert into orac_api.conversations_v
          (
@@ -142,14 +108,6 @@ as
             into
               p_conversation_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end ins;
 
 
@@ -162,16 +120,7 @@ as
       , p_row                     out   orac_api.conversations_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'get';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_conversation_id', p_conversation_id);
-
-      logger.log('START', l_scope, null, l_params);
 
       select
            conversation_id
@@ -200,14 +149,6 @@ as
        from orac_api.conversations_v
       where
             conversation_id = p_conversation_id;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end get;
 
 
@@ -229,16 +170,7 @@ as
       , p_row_version             out   orac_api.conversations_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'get';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_conversation_id', p_conversation_id);
-
-      logger.log('START', l_scope, null, l_params);
 
       select
            conversation_id
@@ -267,14 +199,6 @@ as
        from orac_api.conversations_v
       where
             conversation_id = p_conversation_id;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end get;
 
 
@@ -287,21 +211,7 @@ as
       , p_row                  in out   orac_api.conversations_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'upd';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_conversation_id', p_conversation_id);
-      logger_user.logger.append_param(l_params, '  p_row.user_id', p_row.user_id);
-      logger_user.logger.append_param(l_params, '  p_row.session_id', p_row.session_id);
-      logger_user.logger.append_param(l_params, '  p_row.llm_id', p_row.llm_id);
-      logger_user.logger.append_param(l_params, '  p_row.title', p_row.title);
-      logger_user.logger.append_param(l_params, '  p_row.state', p_row.state);
-
-      logger.log('START', l_scope, null, l_params);
 
       update orac_api.conversations_v
       set
@@ -318,14 +228,6 @@ as
             into
               p_row.conversation_id
             , p_row.row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end upd;
 
 
@@ -343,21 +245,7 @@ as
       , p_row_version             out   orac_api.conversations_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'upd';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_conversation_id', p_conversation_id);
-      logger_user.logger.append_param(l_params, '  p_user_id', p_user_id);
-      logger_user.logger.append_param(l_params, '  p_session_id', p_session_id);
-      logger_user.logger.append_param(l_params, '  p_llm_id', p_llm_id);
-      logger_user.logger.append_param(l_params, '  p_title', p_title);
-      logger_user.logger.append_param(l_params, '  p_state', p_state);
-
-      logger.log('START', l_scope, null, l_params);
 
       update orac_api.conversations_v
       set
@@ -374,14 +262,6 @@ as
             into
               p_conversation_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end upd;
 
 
@@ -394,16 +274,7 @@ as
       , p_row_version             out   orac_api.conversations_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'del';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_conversation_id', p_conversation_id);
-
-      logger.log('START', l_scope, null, l_params);
 
         delete
           from orac_api.conversations_v
@@ -415,14 +286,6 @@ as
             into
               p_conversation_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end del;
 
 end conversations_tapi;

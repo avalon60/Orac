@@ -43,19 +43,7 @@ as
         p_row                 in out   orac_api.user_prompt_elements_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'ins';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '  p_row.user_id', p_row.user_id);
-      logger_user.logger.append_param(l_params, '  p_row.category_code', p_row.category_code);
-      logger_user.logger.append_param(l_params, '  p_row.weight_score', p_row.weight_score);
-      logger_user.logger.append_param(l_params, '  p_row.is_enabled', p_row.is_enabled);
-
-      logger.log('START', l_scope, null, l_params);
 
       insert into orac_api.user_prompt_elements_v
          (
@@ -79,14 +67,6 @@ as
             into
               p_row.element_id
             , p_row.row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end ins;
 
 
@@ -104,19 +84,7 @@ as
       , p_row_version            out   orac_api.user_prompt_elements_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'ins';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '  p_user_id', p_user_id);
-      logger_user.logger.append_param(l_params, '  p_category_code', p_category_code);
-      logger_user.logger.append_param(l_params, '  p_weight_score', p_weight_score);
-      logger_user.logger.append_param(l_params, '  p_is_enabled', p_is_enabled);
-
-      logger.log('START', l_scope, null, l_params);
 
       insert into orac_api.user_prompt_elements_v
          (
@@ -140,14 +108,6 @@ as
             into
               p_element_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end ins;
 
 
@@ -160,16 +120,7 @@ as
       , p_row                    out   orac_api.user_prompt_elements_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'get';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_element_id', p_element_id);
-
-      logger.log('START', l_scope, null, l_params);
 
       select
            element_id
@@ -198,14 +149,6 @@ as
        from orac_api.user_prompt_elements_v
       where
             element_id = p_element_id;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end get;
 
 
@@ -227,16 +170,7 @@ as
       , p_row_version            out   orac_api.user_prompt_elements_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'get';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_element_id', p_element_id);
-
-      logger.log('START', l_scope, null, l_params);
 
       select
            element_id
@@ -265,14 +199,6 @@ as
        from orac_api.user_prompt_elements_v
       where
             element_id = p_element_id;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end get;
 
 
@@ -285,20 +211,7 @@ as
       , p_row                 in out   orac_api.user_prompt_elements_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'upd';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_element_id', p_element_id);
-      logger_user.logger.append_param(l_params, '  p_row.user_id', p_row.user_id);
-      logger_user.logger.append_param(l_params, '  p_row.category_code', p_row.category_code);
-      logger_user.logger.append_param(l_params, '  p_row.weight_score', p_row.weight_score);
-      logger_user.logger.append_param(l_params, '  p_row.is_enabled', p_row.is_enabled);
-
-      logger.log('START', l_scope, null, l_params);
 
       update orac_api.user_prompt_elements_v
       set
@@ -315,14 +228,6 @@ as
             into
               p_row.element_id
             , p_row.row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end upd;
 
 
@@ -340,20 +245,7 @@ as
       , p_row_version            out   orac_api.user_prompt_elements_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'upd';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_element_id', p_element_id);
-      logger_user.logger.append_param(l_params, '  p_user_id', p_user_id);
-      logger_user.logger.append_param(l_params, '  p_category_code', p_category_code);
-      logger_user.logger.append_param(l_params, '  p_weight_score', p_weight_score);
-      logger_user.logger.append_param(l_params, '  p_is_enabled', p_is_enabled);
-
-      logger.log('START', l_scope, null, l_params);
 
       update orac_api.user_prompt_elements_v
       set
@@ -370,14 +262,6 @@ as
             into
               p_element_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end upd;
 
 
@@ -390,16 +274,7 @@ as
       , p_row_version            out   orac_api.user_prompt_elements_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'del';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_element_id', p_element_id);
-
-      logger.log('START', l_scope, null, l_params);
 
         delete
           from orac_api.user_prompt_elements_v
@@ -411,14 +286,6 @@ as
             into
               p_element_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end del;
 
 end user_prompt_elements_tapi;

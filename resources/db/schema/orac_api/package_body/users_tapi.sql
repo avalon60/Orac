@@ -43,19 +43,7 @@ as
         p_row               in out   orac_api.users_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'ins';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '  p_row.username', p_row.username);
-      logger_user.logger.append_param(l_params, '  p_row.display_name', p_row.display_name);
-      logger_user.logger.append_param(l_params, '  p_row.email', p_row.email);
-      logger_user.logger.append_param(l_params, '  p_row.is_active', p_row.is_active);
-
-      logger.log('START', l_scope, null, l_params);
 
       insert into orac_api.users_v
          (
@@ -77,14 +65,6 @@ as
             into
               p_row.user_id
             , p_row.row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end ins;
 
 
@@ -100,19 +80,7 @@ as
       , p_row_version          out   orac_api.users_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'ins';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '  p_username', p_username);
-      logger_user.logger.append_param(l_params, '  p_display_name', p_display_name);
-      logger_user.logger.append_param(l_params, '  p_email', p_email);
-      logger_user.logger.append_param(l_params, '  p_is_active', p_is_active);
-
-      logger.log('START', l_scope, null, l_params);
 
       insert into orac_api.users_v
          (
@@ -134,14 +102,6 @@ as
             into
               g_row.user_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end ins;
 
 
@@ -154,16 +114,7 @@ as
       , p_row                  out   orac_api.users_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'get';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_user_id', p_user_id);
-
-      logger.log('START', l_scope, null, l_params);
 
       select
            user_id
@@ -190,14 +141,6 @@ as
        from orac_api.users_v
       where
             user_id = p_user_id;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end get;
 
 
@@ -218,16 +161,7 @@ as
       , p_row_version          out   orac_api.users_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'get';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_user_id', p_user_id);
-
-      logger.log('START', l_scope, null, l_params);
 
       select
            user_id
@@ -254,14 +188,6 @@ as
        from orac_api.users_v
       where
             user_id = p_user_id;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end get;
 
 
@@ -274,20 +200,7 @@ as
       , p_row               in out   orac_api.users_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'upd';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_user_id', p_user_id);
-      logger_user.logger.append_param(l_params, '  p_row.username', p_row.username);
-      logger_user.logger.append_param(l_params, '  p_row.display_name', p_row.display_name);
-      logger_user.logger.append_param(l_params, '  p_row.email', p_row.email);
-      logger_user.logger.append_param(l_params, '  p_row.is_active', p_row.is_active);
-
-      logger.log('START', l_scope, null, l_params);
 
       update orac_api.users_v
       set
@@ -303,14 +216,6 @@ as
             into
               p_row.user_id
             , p_row.row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end upd;
 
 
@@ -327,20 +232,7 @@ as
       , p_row_version          out   orac_api.users_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'upd';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_user_id', p_user_id);
-      logger_user.logger.append_param(l_params, '  p_username', p_username);
-      logger_user.logger.append_param(l_params, '  p_display_name', p_display_name);
-      logger_user.logger.append_param(l_params, '  p_email', p_email);
-      logger_user.logger.append_param(l_params, '  p_is_active', p_is_active);
-
-      logger.log('START', l_scope, null, l_params);
 
       update orac_api.users_v
       set
@@ -356,14 +248,6 @@ as
             into
               p_user_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end upd;
 
 
@@ -376,16 +260,7 @@ as
       , p_row_version          out   orac_api.users_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'del';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_user_id', p_user_id);
-
-      logger.log('START', l_scope, null, l_params);
 
         delete
           from orac_api.users_v
@@ -397,14 +272,6 @@ as
             into
               p_user_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end del;
 
 end users_tapi;

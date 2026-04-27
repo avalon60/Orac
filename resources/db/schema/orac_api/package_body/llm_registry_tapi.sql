@@ -43,22 +43,7 @@ as
         p_row                     in out   orac_api.llm_registry_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'ins';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '  p_row.name', p_row.name);
-      logger_user.logger.append_param(l_params, '  p_row.provider', p_row.provider);
-      logger_user.logger.append_param(l_params, '  p_row.model', p_row.model);
-      logger_user.logger.append_param(l_params, '  p_row.context_policy', p_row.context_policy);
-      logger_user.logger.append_param(l_params, '  p_row.max_context_tokens', p_row.max_context_tokens);
-      logger_user.logger.append_param(l_params, '  p_row.is_enabled', p_row.is_enabled);
-      logger_user.logger.append_param(l_params, '  p_row.properties', p_row.properties);
-
-      logger.log('START', l_scope, null, l_params);
 
       insert into orac_api.llm_registry_v
          (
@@ -86,14 +71,6 @@ as
             into
               p_row.llm_id
             , p_row.row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end ins;
 
 
@@ -112,22 +89,7 @@ as
       , p_row_version                out   orac_api.llm_registry_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'ins';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '  p_name', p_name);
-      logger_user.logger.append_param(l_params, '  p_provider', p_provider);
-      logger_user.logger.append_param(l_params, '  p_model', p_model);
-      logger_user.logger.append_param(l_params, '  p_context_policy', p_context_policy);
-      logger_user.logger.append_param(l_params, '  p_max_context_tokens', p_max_context_tokens);
-      logger_user.logger.append_param(l_params, '  p_is_enabled', p_is_enabled);
-      logger_user.logger.append_param(l_params, '  p_properties', p_properties);
-
-      logger.log('START', l_scope, null, l_params);
 
       insert into orac_api.llm_registry_v
          (
@@ -153,16 +115,8 @@ as
               llm_id
             , row_version
             into
-              p_llm_id
+              g_row.llm_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end ins;
 
 
@@ -175,16 +129,7 @@ as
       , p_row                        out   orac_api.llm_registry_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'get';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_llm_id', p_llm_id);
-
-      logger.log('START', l_scope, null, l_params);
 
       select
            llm_id
@@ -217,14 +162,6 @@ as
        from orac_api.llm_registry_v
       where
             llm_id = p_llm_id;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end get;
 
 
@@ -248,16 +185,7 @@ as
       , p_row_version                out   orac_api.llm_registry_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'get';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_llm_id', p_llm_id);
-
-      logger.log('START', l_scope, null, l_params);
 
       select
            llm_id
@@ -290,14 +218,6 @@ as
        from orac_api.llm_registry_v
       where
             llm_id = p_llm_id;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end get;
 
 
@@ -310,23 +230,7 @@ as
       , p_row                     in out   orac_api.llm_registry_v%rowtype
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'upd';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_llm_id', p_llm_id);
-      logger_user.logger.append_param(l_params, '  p_row.name', p_row.name);
-      logger_user.logger.append_param(l_params, '  p_row.provider', p_row.provider);
-      logger_user.logger.append_param(l_params, '  p_row.model', p_row.model);
-      logger_user.logger.append_param(l_params, '  p_row.context_policy', p_row.context_policy);
-      logger_user.logger.append_param(l_params, '  p_row.max_context_tokens', p_row.max_context_tokens);
-      logger_user.logger.append_param(l_params, '  p_row.is_enabled', p_row.is_enabled);
-      logger_user.logger.append_param(l_params, '  p_row.properties', p_row.properties);
-
-      logger.log('START', l_scope, null, l_params);
 
       update orac_api.llm_registry_v
       set
@@ -345,14 +249,6 @@ as
             into
               p_row.llm_id
             , p_row.row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end upd;
 
 
@@ -372,23 +268,7 @@ as
       , p_row_version                out   orac_api.llm_registry_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'upd';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_llm_id', p_llm_id);
-      logger_user.logger.append_param(l_params, '  p_name', p_name);
-      logger_user.logger.append_param(l_params, '  p_provider', p_provider);
-      logger_user.logger.append_param(l_params, '  p_model', p_model);
-      logger_user.logger.append_param(l_params, '  p_context_policy', p_context_policy);
-      logger_user.logger.append_param(l_params, '  p_max_context_tokens', p_max_context_tokens);
-      logger_user.logger.append_param(l_params, '  p_is_enabled', p_is_enabled);
-      logger_user.logger.append_param(l_params, '  p_properties', p_properties);
-
-      logger.log('START', l_scope, null, l_params);
 
       update orac_api.llm_registry_v
       set
@@ -407,14 +287,6 @@ as
             into
               p_llm_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end upd;
 
 
@@ -427,16 +299,7 @@ as
       , p_row_version                out   orac_api.llm_registry_v.row_version%type
    )
    is
-
-      l_scope           logger_user.logger_logs.scope%type    := gc_unit_prefix || 'del';
-      l_params          logger_user.logger.tab_param;
-
    begin
-
-      -- We don't log any CLOB parameters here.
-      logger_user.logger.append_param(l_params, '* p_llm_id', p_llm_id);
-
-      logger.log('START', l_scope, null, l_params);
 
         delete
           from orac_api.llm_registry_v
@@ -448,14 +311,6 @@ as
             into
               p_llm_id
             , p_row_version;
-
-      logger.log('END', l_scope);
-
-   exception
-      when others then
-         logger_user.logger.log_error('Unhandled exception ', l_scope, null, l_params);
-         raise;
-
    end del;
 
 end llm_registry_tapi;
