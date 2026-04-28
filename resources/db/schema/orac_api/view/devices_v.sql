@@ -13,5 +13,5 @@ create or replace force view orac_api.devices_v as
          , updated_on
          , updated_by
          , row_version
-       from orac.devices;
+       from orac_core.devices;
 --rollback drop view orac_api.devices_v;

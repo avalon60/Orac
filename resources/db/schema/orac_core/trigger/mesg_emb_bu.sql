@@ -3,8 +3,8 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-create or replace trigger orac.mesg_emb_bu
-before update on orac.message_embeddings
+create or replace trigger orac_core.mesg_emb_bu
+before update on orac_core.message_embeddings
 for each row
 begin
   :new.updated_on := systimestamp;

@@ -3,8 +3,8 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-create index orac.user_pref_users_fk1_idx
-  on orac.user_preferences
+create index orac_core.user_pref_users_fk1_idx
+  on orac_core.user_preferences
   (
     user_id asc
   )

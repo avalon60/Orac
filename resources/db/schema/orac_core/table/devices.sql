@@ -3,7 +3,7 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-create table orac.devices
+create table orac_core.devices
 (
   device_id   varchar2(128 byte) not null,
   user_id     number not null,

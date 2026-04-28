@@ -3,13 +3,13 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-alter table orac.conversations
+alter table orac_core.conversations
   add constraint convs_users_fk1
   foreign key
   (
     user_id
   )
-  references orac.users
+  references orac_core.users
   (
     user_id
   )

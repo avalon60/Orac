@@ -3,7 +3,7 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-alter table orac.user_preferences
+alter table orac_core.user_preferences
   add constraint user_pref_uk1
   unique (user_id, pref_key)
 ;

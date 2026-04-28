@@ -14,5 +14,5 @@ create or replace force view orac_api.users_v as
          , updated_on
          , updated_by
          , row_version
-       from orac.users;
+       from orac_core.users;
 --rollback drop view orac_api.users_v;

@@ -3,8 +3,8 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-create unique index orac.llm_reg_pk
-  on orac.llm_registry
+create unique index orac_core.llm_reg_pk
+  on orac_core.llm_registry
   (
     llm_id asc
   )

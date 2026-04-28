@@ -621,6 +621,44 @@ class Orac:
             refreshed=refreshed,
         )
 
+    def _apply_user_preference_meta(
+        self,
+        meta: dict[str, Any],
+        auth_user: str,
+    ) -> dict[str, Any]:
+        """Overlay selected user preferences into request metadata."""
+        if meta.get("weather_location"):
+            return meta
+
+        try:
+            weather_pref = self.ctx.get_user_preference_value(
+                username=auth_user,
+                pref_key="weather_location",
+            )
+        except Exception as e:
+            _log_exception("Failed to load weather_location preference", e)
+            return meta
+
+        if not isinstance(weather_pref, dict):
+            return meta
+
+        name = str(weather_pref.get("name") or "").strip()
+        if not name:
+            return meta
+
+        parts = [name]
+        admin1 = str(weather_pref.get("admin1") or "").strip()
+        country = str(weather_pref.get("country") or "").strip()
+        if admin1:
+            parts.append(admin1)
+        if country:
+            parts.append(country)
+
+        enriched_meta = dict(meta)
+        enriched_meta["weather_location"] = ", ".join(parts)
+        enriched_meta["weather_location_pref"] = weather_pref
+        return enriched_meta
+
     def _estimate_tokens(self, text: str) -> int:
         """
         Very rough token estimate that works across local models:
@@ -1099,6 +1137,7 @@ class Orac:
             show_reasoning = bool(meta.get("show_reasoning", not self.strip_reasoning_tags))
             client = meta.get("client", "unknown")
             auth_user = getattr(auth_res, "user", "unknown")
+            meta = self._apply_user_preference_meta(meta, auth_user)
 
             logger.log_info(f"{Icons.info} [{client}] user={auth_user} Prompt received")
             logger.log_debug(f"Prompt text: {prompt}")

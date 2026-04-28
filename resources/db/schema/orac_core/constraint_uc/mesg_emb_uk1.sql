@@ -3,7 +3,7 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-alter table orac.message_embeddings
+alter table orac_core.message_embeddings
   add constraint mesg_emb_uk1
   unique (message_id, chunk_index)
 ;

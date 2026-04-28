@@ -1,4 +1,6 @@
 schema_name, table_name, table abbreviation
+orac_core,preference_definitions,prfdfn
+orac_core,timezones,tmzone
 orac_core,conversations,convs
 orac_core,devices,device
 orac_core,llm_registry,llm_reg

@@ -3,8 +3,8 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-create or replace trigger orac.mesgs_bu
-before update on orac.messages
+create or replace trigger orac_core.mesgs_bu
+before update on orac_core.messages
 for each row
 begin
   :new.updated_on := systimestamp;

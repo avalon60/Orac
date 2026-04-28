@@ -3,13 +3,13 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-alter table orac.conversations
+alter table orac_core.conversations
   add constraint convs_llm_reg_fk1
   foreign key
   (
     llm_id
   )
-  references orac.llm_registry
+  references orac_core.llm_registry
   (
     llm_id
   )

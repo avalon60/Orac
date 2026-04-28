@@ -3,6 +3,8 @@ set echo on
 spool run_all.log
 
 prompt === tables ===
+@table/preference_definitions.sql
+@table/timezones.sql
 @table/conversations.sql
 @table/devices.sql
 @table/llm_registry.sql
@@ -15,6 +17,10 @@ prompt === tables ===
 @table/users.sql
 
 prompt === indexes ===
+@index/prfdfn_pk.sql
+@index/prfdfn_uk1_idx.sql
+@index/tmzone_pk.sql
+@index/tmzone_uk1_idx.sql
 @index/convs_llm_reg_fk1_idx.sql
 @index/convs_pk.sql
 @index/convs_uk1_idx.sql
@@ -43,6 +49,8 @@ prompt === indexes ===
 @index/users_uk1_idx.sql
 
 prompt === constraints_pk ===
+@constraint_pk/prfdfn_pk.sql
+@constraint_pk/tmzone_pk.sql
 @constraint_pk/convs_pk.sql
 @constraint_pk/device_pk.sql
 @constraint_pk/llm_reg_pk.sql
@@ -55,6 +63,8 @@ prompt === constraints_pk ===
 @constraint_pk/users_pk.sql
 
 prompt === constraints_uc ===
+@constraint_uc/prfdfn_uk1.sql
+@constraint_uc/tmzone_uk1.sql
 @constraint_uc/convs_uk1.sql
 @constraint_uc/llm_reg_uk1.sql
 @constraint_uc/mesg_emb_uk1.sql
@@ -75,6 +85,13 @@ prompt === constraints_fk ===
 @constraint_fk/user_syns_users_fk1.sql
 
 prompt === constraints_other ===
+@constraint_other/prfdfn_ck1.sql
+@constraint_other/prfdfn_ck2.sql
+@constraint_other/prfdfn_ck3.sql
+@constraint_other/prfdfn_ck4.sql
+@constraint_other/prfdfn_ck5.sql
+@constraint_other/prfdfn_ck6.sql
+@constraint_other/tmzone_ck1.sql
 @constraint_other/convs_ck1.sql
 @constraint_other/device_ck1.sql
 @constraint_other/llm_reg_ck1.sql
@@ -92,6 +109,8 @@ prompt === constraints_other ===
 @constraint_other/users_ck1.sql
 
 prompt === comments ===
+@comment/preference_definitions.sql
+@comment/timezones.sql
 @comment/conversations.sql
 @comment/llm_registry.sql
 @comment/message_embeddings.sql
@@ -101,6 +120,8 @@ prompt === comments ===
 @comment/users.sql
 
 prompt === triggers ===
+@trigger/prfdfn_bu.sql
+@trigger/tmzone_bu.sql
 @trigger/convs_bu.sql
 @trigger/device_bu.sql
 @trigger/llm_reg_bu.sql

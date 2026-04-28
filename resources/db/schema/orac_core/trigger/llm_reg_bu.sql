@@ -3,8 +3,8 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-create or replace trigger orac.llm_reg_bu
-before update on orac.llm_registry
+create or replace trigger orac_core.llm_reg_bu
+before update on orac_core.llm_registry
 for each row
 begin
   :new.updated_on := systimestamp;

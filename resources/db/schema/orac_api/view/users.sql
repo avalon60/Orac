@@ -14,5 +14,5 @@ select
   u.updated_on,
   u.updated_by,
   u.row_version
-from orac.users u
+from orac_core.users u
 ;

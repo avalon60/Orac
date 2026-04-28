@@ -15,5 +15,5 @@ create or replace force view orac_api.user_prompt_elements_v as
          , updated_on
          , updated_by
          , row_version
-       from orac.user_prompt_elements;
+       from orac_core.user_prompt_elements;
 --rollback drop view orac_api.user_prompt_elements_v;

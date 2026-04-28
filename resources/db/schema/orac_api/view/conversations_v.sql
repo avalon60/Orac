@@ -15,5 +15,5 @@ create or replace force view orac_api.conversations_v as
          , updated_on
          , updated_by
          , row_version
-       from orac.conversations;
+       from orac_core.conversations;
 --rollback drop view orac_api.conversations_v;

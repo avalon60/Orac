@@ -3,7 +3,7 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-alter table orac.messages
+alter table orac_core.messages
   add constraint mesgs_uk1
   unique (conversation_id, turn_index)
 ;

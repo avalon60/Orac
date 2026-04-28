@@ -3,7 +3,7 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-create table orac.user_synonyms
+create table orac_core.user_synonyms
 (
   user_id     number not null,
   alias_type  varchar2(16 byte) not null,

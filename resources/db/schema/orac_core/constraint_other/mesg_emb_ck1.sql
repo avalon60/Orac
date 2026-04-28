@@ -3,7 +3,7 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-alter table orac.message_embeddings
+alter table orac_core.message_embeddings
   add constraint mesg_emb_ck1
   check (distance_metric in ('COSINE', 'DOT', 'HAMMING', 'JACCARD', 'L2', 'L2_SQUARED', 'MANHATTAN'))
 ;

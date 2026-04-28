@@ -3,7 +3,7 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-alter table orac.devices
+alter table orac_core.devices
   add constraint device_pk
   primary key (device_id)
 ;

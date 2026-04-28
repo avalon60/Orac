@@ -1,31 +1,31 @@
-comment on table orac.llm_registry is
+comment on table orac_core.llm_registry is
   'Registry of available large language models (LLMs) and their configuration.'
 ;
 
-comment on column orac.llm_registry.llm_id is
-  'Primary key for the orac.llm_registry table.'
+comment on column orac_core.llm_registry.llm_id is
+  'Primary key for the orac_core.llm_registry table.'
 ;
 
-comment on column orac.llm_registry.name is
+comment on column orac_core.llm_registry.name is
   'Human-readable unique name for the model configuration.'
 ;
 
-comment on column orac.llm_registry.provider is
+comment on column orac_core.llm_registry.provider is
   'Vendor/source of the model.'
 ;
 
-comment on column orac.llm_registry.model is
+comment on column orac_core.llm_registry.model is
   'Provider model identifier.'
 ;
 
-comment on column orac.llm_registry.context_policy is
+comment on column orac_core.llm_registry.context_policy is
   'How conversation state is managed for this model.'
 ;
 
-comment on column orac.llm_registry.max_context_tokens is
+comment on column orac_core.llm_registry.max_context_tokens is
   'Maximum supported context window in tokens.'
 ;
 
-comment on column orac.llm_registry.properties is
+comment on column orac_core.llm_registry.properties is
   'Free-form JSON for provider/model metadata.'
 ;

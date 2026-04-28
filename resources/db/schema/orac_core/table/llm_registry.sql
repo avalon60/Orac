@@ -3,7 +3,7 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-create table orac.llm_registry
+create table orac_core.llm_registry
 (
   llm_id             number generated always as identity not null,
   name               varchar2(100 byte) not null,

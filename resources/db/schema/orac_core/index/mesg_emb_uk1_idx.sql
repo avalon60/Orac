@@ -3,8 +3,8 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-create unique index orac.mesg_emb_uk1_idx
-  on orac.message_embeddings
+create unique index orac_core.mesg_emb_uk1_idx
+  on orac_core.message_embeddings
   (
     message_id asc,
     chunk_index asc

@@ -21,5 +21,5 @@ create or replace force view orac_api.message_embeddings_v as
          , updated_on
          , updated_by
          , row_version
-       from orac.message_embeddings;
+       from orac_core.message_embeddings;
 --rollback drop view orac_api.message_embeddings_v;

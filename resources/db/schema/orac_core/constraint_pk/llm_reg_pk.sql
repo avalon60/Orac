@@ -3,7 +3,7 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-alter table orac.llm_registry
+alter table orac_core.llm_registry
   add constraint llm_reg_pk
   primary key (llm_id)
 ;

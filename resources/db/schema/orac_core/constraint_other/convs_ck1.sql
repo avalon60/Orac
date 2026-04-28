@@ -3,7 +3,7 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-alter table orac.conversations
+alter table orac_core.conversations
   add constraint convs_ck1
   check (state in ('archived', 'closed', 'open'))
 ;

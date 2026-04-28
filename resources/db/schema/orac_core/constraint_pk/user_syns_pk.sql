@@ -3,7 +3,7 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-alter table orac.user_synonyms
+alter table orac_core.user_synonyms
   add constraint user_syns_pk
   primary key (alias_type, alias_value)
 ;

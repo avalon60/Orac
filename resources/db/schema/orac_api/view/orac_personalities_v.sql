@@ -24,5 +24,5 @@ create or replace force view orac_api.orac_personalities_v as
          , updated_on
          , updated_by
          , row_version
-       from orac.orac_personalities;
+       from orac_core.orac_personalities;
 --rollback drop view orac_api.orac_personalities_v;

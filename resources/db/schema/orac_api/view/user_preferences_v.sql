@@ -14,5 +14,5 @@ create or replace force view orac_api.user_preferences_v as
          , updated_on
          , updated_by
          , row_version
-       from orac.user_preferences;
+       from orac_core.user_preferences;
 --rollback drop view orac_api.user_preferences_v;

@@ -32,6 +32,7 @@ class OracContextManager:
         self.users_object = self._qualify("users")
         self.conversations_object = self._qualify("conversations_v")
         self.messages_object = self._qualify("messages_v")
+        self.user_preferences_object = self._qualify("user_preferences_v")
 
     def _qualify(self, object_name: str) -> str:
         """Return a schema-qualified object name for runtime SQL."""
@@ -95,6 +96,38 @@ class OracContextManager:
         if display_name:
             profile["display_name"] = display_name
         return profile
+
+    def get_user_preference_value(self, username: str, pref_key: str) -> Any | None:
+        """Return a deserialised user preference value when one exists."""
+        norm = (username or "").strip()
+        pref = (pref_key or "").strip()
+        if not norm or not pref:
+            return None
+
+        rows = self.db.dict_sql_dataset(
+            (
+                f"select json_serialize(pref_value returning clob null on error) as pref_value "
+                f"from {self.user_preferences_object} "
+                f"where user_id = ("
+                f"  select user_id "
+                f"    from {self.users_object} "
+                f"   where username = :u"
+                f") "
+                f"and pref_key = :k"
+            ),
+            {"u": norm, "k": pref},
+        )
+        if not rows:
+            return None
+
+        raw_value = rows[0].get("PREF_VALUE")
+        if raw_value is None:
+            return None
+
+        try:
+            return json.loads(raw_value)
+        except Exception:
+            return raw_value
 
     def _create_user(self, username: str) -> int:
         norm = username.strip()

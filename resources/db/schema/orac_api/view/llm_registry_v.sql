@@ -17,5 +17,5 @@ create or replace force view orac_api.llm_registry_v as
          , updated_on
          , updated_by
          , row_version
-       from orac.llm_registry;
+       from orac_core.llm_registry;
 --rollback drop view orac_api.llm_registry_v;

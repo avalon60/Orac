@@ -3,8 +3,8 @@
 -- __description__: generated/synchronised by split_ddl; one object per file
 
 
-create unique index orac.convs_pk
-  on orac.conversations
+create unique index orac_core.convs_pk
+  on orac_core.conversations
   (
     conversation_id asc
   )

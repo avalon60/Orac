@@ -1,4 +1,4 @@
-merge into orac.orac_personalities tgt
+merge into orac_core.orac_personalities tgt
 using (
   select
     'ZEN' as personality_code,

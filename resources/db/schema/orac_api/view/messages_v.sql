@@ -18,5 +18,5 @@ create or replace force view orac_api.messages_v as
          , updated_on
          , updated_by
          , row_version
-       from orac.messages;
+       from orac_core.messages;
 --rollback drop view orac_api.messages_v;
