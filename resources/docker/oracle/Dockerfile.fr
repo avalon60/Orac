@@ -1,5 +1,5 @@
 # --------------------------------------------------------------------
-# Oracle Free 23ai + APEX + ORDS + SQLcl Dockerfile for Orac (Linux only)
+# Oracle Free ai database + APEX + ORDS + SQLcl Dockerfile for Orac (Linux only)
 # Author: Clive Bostock
 # Date: 2025-07-29
 # --------------------------------------------------------------------
@@ -38,23 +38,9 @@ RUN mkdir -p \
     ${ORAC_HOME}/setup/sqlcl/staging \
     ${ORAC_HOME}/logs
 
-# Copy deployment scripts and binary resources
-COPY --chown=54321 resources/docker/oracle/setup   ${ORAC_HOME}/scripts/setup/
-COPY --chown=54321 resources/docker/oracle/startup ${ORAC_HOME}/scripts/startup/
-COPY --chown=54321 resources/docker/oracle/bin     ${ORAC_HOME}/bin
-COPY --chown=54321 resources/docker/oracle/etc     ${ORAC_HOME}/etc
-
-# Ensure startup and bin scripts are executable
-RUN chmod +x ${ORAC_HOME}/scripts/startup/*.sh && \
-    chmod +x ${ORAC_HOME}/bin/*.sh
-
-# Switch to root to chmod before extracting as oracle
-USER root
-
-# Ensure oracle can write to staging before switching
-RUN chmod -R 777 ${ORAC_HOME}/setup/apex/staging
-RUN chmod -R 777 ${ORAC_HOME}/setup/ords/staging
-RUN chmod -R 777 ${ORAC_HOME}/setup/sqlcl/staging
+# Keep the heavyweight downloads before repo COPY steps so normal code or SQL
+# edits do not invalidate the cached APEX/ORDS/SQLcl layers.
+RUN chown -R 54321:54321 ${ORAC_HOME}
 
 # Switch to oracle for safe downloads
 USER oracle
@@ -84,6 +70,19 @@ RUN set -e && \
   unzip -q /tmp/sqlcl.zip -d ${ORAC_HOME}/setup/sqlcl/staging || (echo "❌ SQLcl unzip failed" && ls -lh /tmp/sqlcl.zip && exit 1) && \
   rm -f /tmp/sqlcl.zip
 
+# Switch to root for repo copies
+USER root
+
+# Copy deployment scripts and binary resources
+COPY --chown=54321 resources/docker/oracle/setup   ${ORAC_HOME}/scripts/setup/
+COPY --chown=54321 resources/docker/oracle/startup ${ORAC_HOME}/scripts/startup/
+COPY --chown=54321 resources/docker/oracle/bin     ${ORAC_HOME}/bin
+COPY --chown=54321 resources/docker/oracle/etc     ${ORAC_HOME}/etc
+
+# Ensure startup and bin scripts are executable
+RUN chmod +x ${ORAC_HOME}/scripts/startup/*.sh && \
+    chmod +x ${ORAC_HOME}/bin/*.sh
+
 # Back to root for final setup
 USER oracle
 
@@ -94,5 +93,4 @@ EXPOSE 1521 8080 8888
 
 # Entrypoint to initialize ORDS etc.
 # ENTRYPOINT ["/home/oracle/orac/scripts/startup/start-orac.sh"]
-
 

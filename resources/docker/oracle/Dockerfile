@@ -1,10 +1,10 @@
 # --------------------------------------------------------------------
-# Oracle Free 23ai + APEX + ORDS + SQLcl Dockerfile for Orac (Linux only)
+# Oracle Free ai database + APEX + ORDS + SQLcl Dockerfile for Orac (Linux only)
 # Author: Clive Bostock
 # Date: 2025-07-29
 # --------------------------------------------------------------------
-
-FROM container-registry.oracle.com/database/free:latest
+ARG ORACLE_IMAGE_TAG=23.26.0.0
+FROM container-registry.oracle.com/database/free:${ORACLE_IMAGE_TAG}
 
 # Build-time args (injected by bake)
 ARG ORACLE_BASE
@@ -23,7 +23,7 @@ ENV ORACLE_BASE=${ORACLE_BASE} \
     SQLCL_VERSION=${SQLCL_VERSION}
 
 # --------------------------------------------------------------------
-# Root phase: layout, copy resources, set sane perms
+# Root phase: create stable layout for cached tool downloads
 # --------------------------------------------------------------------
 USER root
 
@@ -39,36 +39,9 @@ RUN mkdir -p \
     ${ORAC_HOME}/schema \
     ${ORAC_HOME}/logs
 
-# Copy deployment scripts and configs
-COPY --chown=54321 resources/docker/oracle/setup   ${ORACLE_BASE}/scripts/setup/
-COPY --chown=54321 resources/docker/oracle/startup ${ORACLE_BASE}/scripts/startup/
-COPY --chown=54321 resources/docker/oracle/bin     ${ORAC_HOME}/bin
-COPY --chown=54321 resources/docker/oracle/etc     ${ORAC_HOME}/etc
-
-# Copy schema (whole tree, once) and set perms (dirs 755, *.sql 644)
-COPY --chown=54321 resources/db/schema ${ORAC_HOME}/schema
-RUN find ${ORAC_HOME}/schema -type d -exec chmod 755 {} + \
- && find ${ORAC_HOME}/schema -type f -name "*.sql" -exec chmod 644 {} +
-
-# Copy APEX workspace/app SQL (once) and set perms
-# COPY --chown=54321 resources/docker/oracle/apex_sql ${ORAC_HOME}/setup/apex
-RUN find ${ORAC_HOME}/setup/apex -type d -exec chmod 755 {} + \
- && find ${ORAC_HOME}/setup/apex -type f -name "*.sql" -exec chmod 644 {} +
-
-# Copy app exports and set perms
-# COPY --chown=54321 resources/db/app ${ORAC_HOME}/app
-# RUN find ${ORAC_HOME}/app -type d -exec chmod 755 {} + \
-#  && find ${ORAC_HOME}/app -type f -name "*.sql" -exec chmod 644 {} +
-
-# Ensure we can read/write logs
-RUN chmod 755 ${ORAC_HOME}/logs
-
-# Make startup scripts executable
-RUN chmod +x  ${ORACLE_BASE}/scripts/startup/*.sh
-RUN chmod +x  ${ORAC_HOME}/bin/*.sh
-RUN chmod 644 ${ORACLE_BASE}/scripts/setup/*.sql
-
-# Make oracle the owner of all locations it will write to during build/runtime
+# Make oracle the owner of all locations it will write to during build/runtime.
+# Keep this before the large downloads so those layers can be reused even when
+# repo-tracked SQL or shell scripts change.
 RUN chown -R 54321:54321 \
     ${ORAC_HOME}/setup/apex \
     ${ORAC_HOME}/setup/sqlcl \
@@ -79,6 +52,8 @@ RUN chown -R 54321:54321 \
 
 # --------------------------------------------------------------------
 # Fetch APEX / ORDS / SQLcl as oracle
+# Keep these downloads ahead of repo COPY steps so Docker can cache them across
+# normal application and schema edits.
 # --------------------------------------------------------------------
 USER oracle
 
@@ -109,6 +84,7 @@ RUN set -e && \
 
 # --------------------------------------------------------------------
 # Root phase: install Java 17 (Adoptium)
+# Keep this ahead of repo COPY steps for the same caching reason.
 # --------------------------------------------------------------------
 USER root
 
@@ -125,8 +101,41 @@ RUN curl -L -o /tmp/${JDK_FILENAME} ${JDK_URL} && \
 ENV JAVA_HOME=/usr/lib/jvm/jdk-17.0.11+9
 ENV PATH="${JAVA_HOME}/bin:$PATH"
 
+# --------------------------------------------------------------------
+# Root phase: copy repo resources and set sane perms
+# --------------------------------------------------------------------
+USER root
+
+# Copy deployment scripts and configs
+COPY --chown=54321 resources/docker/oracle/setup   ${ORACLE_BASE}/scripts/setup/
+COPY --chown=54321 resources/docker/oracle/startup ${ORACLE_BASE}/scripts/startup/
+COPY --chown=54321 resources/docker/oracle/bin     ${ORAC_HOME}/bin
+COPY --chown=54321 resources/docker/oracle/etc     ${ORAC_HOME}/etc
+
+# Copy schema (whole tree, once) and set perms (dirs 755, *.sql 644)
+COPY --chown=54321 resources/db/schema ${ORAC_HOME}/schema
+RUN find ${ORAC_HOME}/schema -type d -exec chmod 755 {} + \
+ && find ${ORAC_HOME}/schema -type f -name "*.sql" -exec chmod 644 {} +
+
+# Copy APEX workspace/app SQL (once) and set perms
+# COPY --chown=54321 resources/docker/oracle/apex_sql ${ORAC_HOME}/setup/apex
+RUN find ${ORAC_HOME}/setup/apex -type d -exec chmod 755 {} + \
+ && find ${ORAC_HOME}/setup/apex -type f -name "*.sql" -exec chmod 644 {} +
+
+# Copy app exports and set perms
+# COPY --chown=54321 resources/db/app ${ORAC_HOME}/app
+# RUN find ${ORAC_HOME}/app -type d -exec chmod 755 {} + \
+#  && find ${ORAC_HOME}/app -type f -name "*.sql" -exec chmod 644 {} +
+
+# Ensure we can read/write logs
+RUN chmod 755 ${ORAC_HOME}/logs
+
+# Make startup scripts executable
+RUN chmod +x  ${ORACLE_BASE}/scripts/startup/*.sh
+RUN chmod +x  ${ORAC_HOME}/bin/*.sh
+RUN chmod 644 ${ORACLE_BASE}/scripts/setup/*.sql
+
 # Back to oracle
 USER oracle
 
 EXPOSE 1521 8080 8888
-

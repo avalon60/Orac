@@ -31,7 +31,9 @@ echo "[$(timestamp)] ${PROG} Started"
   echo "APEX_HOME = ${APEX_HOME}"
 
   : "${ORACLE_PWD:?ORACLE_PWD not set}"   # fail early if missing
+  echo "020-setup-ords.sh: Creating password file..."
   printf '%s\n%s\n' "${ORACLE_PWD}" "${ORACLE_PWD}" > "${ORDS_PWD_FILE}"
+  ls -l ${ORDS_PWD_FILE}
   chmod 600 "${ORDS_PWD_FILE}"
 
   rm -f nohup.out 2>/dev/null || true
@@ -41,30 +43,32 @@ echo "[$(timestamp)] ${PROG} Started"
   ORDS_DB_HOSTNAME="localhost"
   ORDS_DB_PORT="1521"
   ORDS_DB_SERVICENAME="${ORACLE_PDB:-FREEPDB1}"
-  ORDS_DB_ADMIN_USER="SYS"
+  ORDS_DB_ADMIN_USER="SYSTEM"
 
   INSTALL_CMD="./bin/ords --config ${ORDS_CONF} install \
-    --db-pool orac \
-    --admin-user ${ORDS_DB_ADMIN_USER} \
-    --proxy-user \
-    --db-hostname ${ORDS_DB_HOSTNAME} \
-    --db-port ${ORDS_DB_PORT} \
-    --db-servicename ${ORDS_DB_SERVICENAME} \
-    --log-folder ${ORDS_LOG} \
-    --feature-rest-enabled-sql true \
-    --password-stdin"
+  --admin-user ${ORDS_DB_ADMIN_USER} \
+  --proxy-user \
+  --db-hostname ${ORDS_DB_HOSTNAME} \
+  --db-port ${ORDS_DB_PORT} \
+  --db-servicename ${ORDS_DB_SERVICENAME} \
+  --log-folder ${ORDS_LOG} \
+  --feature-rest-enabled-sql true \
+  --password-stdin"
 
+  echo "ORDS initialisation starting, with:"
+  echo "================================================================"
+  echo ${INSTALL_CMD}
+  echo "================================================================"
   echo "Running ORDS Install:" > init_ords.log
   echo "${INSTALL_CMD} < ${ORDS_PWD_FILE}" >> init_ords.log
 
   echo "${PROG}: ORDS installation launched."
-  bash -c "${INSTALL_CMD}" < "${ORDS_PWD_FILE}"
+  ${INSTALL_CMD} < "${ORDS_PWD_FILE}" >> init_ords.log 2>&1
 
   echo "Integrating APEX:" >> init_ords.log
-  ./bin/ords config set apex.templating.enabled true --conf "${ORDS_CONF}" >> init_ords.log
-  ./bin/ords enable-schema APEX_PUBLIC_USER --db-pool orac >> init_ords.log
+  ./bin/ords --config "${ORDS_CONF}" config set apex.templating.enabled true >> init_ords.log
 
-  rm -f "${ORDS_PWD_FILE}"
+  # rm -f "${ORDS_PWD_FILE}"
   popd >/dev/null
 ) || { echo "${PROG}: FAILED"; return 1 2>/dev/null || exit 1; }
 

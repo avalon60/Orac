@@ -486,41 +486,41 @@ alter table orac.devices
 --------------------------------------------------------------------------------
 -- views (dashboard)
 --------------------------------------------------------------------------------
-create or replace view orac.messages_per_day_v as
+create or replace view orac_code.messages_per_day_v as
 select
   trunc(m.created_on) as day,
   count(*) as messages
-from orac.messages m
+from orac_api.messages_v m
 group by trunc(m.created_on)
 order by day;
 
-create or replace view orac.llm_usage_breakdown_v as
+create or replace view orac_code.llm_usage_breakdown_v as
 select
   l.name as model_name,
   count(*) as usage_count
-from orac.messages m
-join orac.conversations c on m.conversation_id = c.conversation_id
-join orac.llm_registry l on c.llm_id = l.llm_id
+from orac_api.messages_v m
+join orac_api.conversations_v c on m.conversation_id = c.conversation_id
+join orac_api.llm_registry_v l on c.llm_id = l.llm_id
 group by l.name
 order by usage_count desc;
 
-create or replace view orac.token_usage_trend_v as
+create or replace view orac_code.token_usage_trend_v as
 select
   trunc(m.created_on) as day,
   sum(m.tokens_used) as total_tokens
-from orac.messages m
+from orac_api.messages_v m
 where m.tokens_used is not null
 group by trunc(m.created_on)
 order by day;
 
-create or replace view orac.message_role_breakdown_v as
+create or replace view orac_code.message_role_breakdown_v as
 select
   m.role,
   count(*) as message_count
-from orac.messages m
+from orac_api.messages_v m
 group by m.role;
 
-create or replace view orac.user_preferences_v as
+create or replace view orac_code.user_preferences_display_v as
 select
   p.pref_id,                 -- primary key (unique, not null)
   p.user_id,
@@ -533,81 +533,4 @@ select
     when 'number'  then to_char(json_value(p.pref_value, '$' returning number         null on error))
     when 'boolean' then lower(json_value(p.pref_value, '$' returning varchar2(5)     null on error))
   end as value_display
-from orac.user_preferences p;
-
--- Pseudo Primary Key on the view (metadata only)
-alter view orac.user_preferences_v
-  add constraint user_prefs_v_pk
-  primary key (pref_id)
-  rely disable novalidate;
-
--- Pseudo Unique Key on (user_id, pref_key)
-alter view orac.user_preferences_v
-  add constraint uq_user_prefs_v_user_key
-  unique (user_id, pref_key)
-  rely disable novalidate;
-
-
-create or replace trigger orac.user_preferences_v_iud
-instead of insert or update or delete on orac.user_preferences_v
-for each row
-declare
-  l_json_txt  clob;        -- JSON text we will pass to json(...)
-  l_bool_txt  varchar2(5);
-  l_new_id    number;
-begin
-  if inserting or updating then
-    -- validate first (can't raise inside an expression)
-    if :new.value_type not in ('string','number','boolean') then
-      raise_application_error(-20002, 'Unknown value_type: '||:new.value_type);
-    end if;
-
-    -- build JSON scalar as text
-    if :new.value_type = 'string' then
-      -- wrap in quotes and escape any embedded quotes
-      l_json_txt := '"' || replace(nvl(:new.value_display,''), '"', '\"') || '"';
-
-    elsif :new.value_type = 'number' then
-      -- optional: sanity check it’s numeric
-      begin
-        declare d number; begin d := to_number(trim(:new.value_display)); end;
-      exception when others then
-        raise_application_error(-20003, 'Invalid number: '||:new.value_display);
-      end;
-      l_json_txt := trim(:new.value_display);
-
-    else  -- boolean
-      l_bool_txt :=
-        case lower(nvl(:new.value_display,'false'))
-          when 'true' then 'true'
-          when '1'    then 'true'
-          when 'yes'  then 'true'
-          when 'y'    then 'true'
-          else 'false'
-        end;
-      l_json_txt := l_bool_txt;
-    end if;
-  end if;
-
-  if inserting then
-    insert into orac.user_preferences (user_id, pref_key, value_type, pref_value)
-    values (:new.user_id, :new.pref_key, :new.value_type, json(l_json_txt))
-    returning pref_id into l_new_id;
-
-    -- NOTE: cannot assign :NEW.pref_id here (ORA-04084). Let APEX re-query.
-
-  elsif updating then
-    update orac.user_preferences
-       set user_id    = :new.user_id,
-           pref_key   = :new.pref_key,
-           value_type = :new.value_type,
-           pref_value = json(l_json_txt)
-     where pref_id = :old.pref_id;
-
-  elsif deleting then
-    delete from orac.user_preferences
-     where pref_id = :old.pref_id;
-  end if;
-end;
-/
-
+from orac_api.user_preferences_v p;

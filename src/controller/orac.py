@@ -10,7 +10,9 @@ import sys
 import traceback
 from pathlib import Path
 from datetime import datetime, timezone
+from typing import Any
 from zoneinfo import ZoneInfo
+import yaml
 
 from model.network import OracListener
 from model.llm_connector import LMStudioConnector, OllamaConnector
@@ -20,6 +22,13 @@ from lib.icons import Icons
 from lib.logutil import Logger
 from model.orac_auth import FrameAuthChain, ZenFrameAuth
 from model.context_manager import OracContextManager
+from model.plugin_routing import (
+    HashEmbeddingProvider,
+    PluginManager,
+    PluginRoutingHandoff,
+    render_plugin_routing_hints,
+)
+from model.plugin_router import PluginRouter
 from lib.session_manager import DBSession
 from lib.user_security import UserSecurity
 
@@ -29,6 +38,7 @@ APP_HOME = project_home()
 RESOURCES_DIR = APP_HOME / "resources"
 CONFIG_DIR = RESOURCES_DIR / "config"
 CONFIG_FILE_PATH = CONFIG_DIR / "orac.ini"
+SYSTEM_PROMPT_POLICY_FILE_PATH = CONFIG_DIR / "orac_system_prompt.yaml"
 ORACLE_HOME = os.environ.get("ORACLE_HOME")
 TNS_ADMIN = RESOURCES_DIR / "tns_admin"
 
@@ -128,27 +138,69 @@ def system_clock_line(prefs: dict) -> str:
         lines.append("Keep answers concise.")
     return "\n".join(lines)
 
+
+def _load_system_prompt_policy(policy_path: Path) -> dict[str, Any]:
+    """Load the Orac system prompt policy from YAML."""
+    with policy_path.open("r", encoding="utf-8") as policy_file:
+        loaded = yaml.safe_load(policy_file) or {}
+
+    if not isinstance(loaded, dict):
+        raise ValueError(
+            f"System prompt policy at {policy_path} must contain a YAML mapping."
+        )
+
+    title = loaded.get("title")
+    if not isinstance(title, str) or not title.strip():
+        raise ValueError(
+            f"System prompt policy at {policy_path} is missing a valid 'title'."
+        )
+
+    return loaded
+
+
+def _render_policy_lines(lines: list[str]) -> str:
+    """Render a list of policy lines as bullet points."""
+    return "\n".join(f"- {line}" for line in lines if isinstance(line, str) and line.strip())
+
+
 # --- System primer (module-level, used both inline and for first system turn) -
-def _orac_system_primer(meta: dict) -> str:
+def _orac_system_primer(meta: dict, policy: dict[str, Any]) -> str:
     """
     Single source of truth for Orac's persona, language policy, and safety rails.
     """
     lang_pref = (meta or {}).get("reply_language", "English")
-    return (
-        "SYSTEM POLICY — ORAC PERSONA:\n"
-        "- Your name is Orac. Never claim to be DeepSeek, OpenAI, or any other vendor model.\n"
-        "- Be concise, helpful, and neutral.\n"
-        f"- Reply in {lang_pref} unless the user's message is clearly in another language; "
-        "in that case, reply in the user's language.\n"
-        "- The 'Recent exchange' below contains the COMPLETE conversation history for this session.\n"
-        "- You MUST use information the user has voluntarily shared in this conversation to answer their questions.\n"
-        "- When asked about personal details (name, location, preferences, etc.), check the conversation history first.\n"
-        "- If the user previously mentioned a fact in this conversation, reference it directly.\n"
-        "- Only say you don't know if the information was never mentioned in this conversation.\n"
-        "- Do not invoke privacy restrictions for information the user has already shared with you.\n"
-        "- Do not invent facts or claim long-term memory beyond what is shown.\n"
-        "- Do not include <think>…</think> or similar tags in your replies.\n"
-    )
+    lines: list[str] = []
+
+    identity = policy.get("identity", {})
+    assistant_name = identity.get("assistant_name", "Orac")
+    vendor_claims = identity.get("disallowed_vendor_claims", [])
+    if vendor_claims:
+        claims_text = ", ".join(vendor_claims[:-1])
+        if len(vendor_claims) > 1:
+            claims_text = f"{claims_text}, or {vendor_claims[-1]}"
+        else:
+            claims_text = vendor_claims[0]
+        lines.append(
+            f"Your name is {assistant_name}. Never claim to be {claims_text}."
+        )
+
+    for section_name in (
+        "response_style",
+        "language",
+        "memory",
+        "profile_facts",
+        "safety",
+    ):
+        section = policy.get(section_name, {})
+        section_lines = section.get("rules", [])
+        if section_name == "language":
+            section_lines = [
+                line.format(reply_language=lang_pref)
+                for line in section_lines
+            ]
+        lines.extend(section_lines)
+
+    return f"{policy['title']}\n{_render_policy_lines(lines)}\n"
 
 
 
@@ -170,16 +222,36 @@ class Orac:
             self.strip_reasoning_tags = (
                 self.config_mgr.config_value("settings", "strip_reasoning_tags", default="true").lower() == "true"
             )
+            policy_path_raw = self.config_mgr.config_value(
+                "context",
+                "system_prompt_policy_file",
+                default=str(SYSTEM_PROMPT_POLICY_FILE_PATH),
+            )
+            policy_path = Path(policy_path_raw)
+            if not policy_path.is_absolute():
+                policy_path = APP_HOME / policy_path
+            self._system_prompt_policy_path = policy_path
+            self._system_prompt_policy = _load_system_prompt_policy(policy_path)
             self._history_turn_pairs = int(
                 self.config_mgr.config_value("context", "history_turn_pairs", default="6")
             )
             self._reply_language = self.config_mgr.config_value("context", "reply_language", default="English")
+            self._persistence_failures: list[dict[str, str]] = []
+            self._fail_on_persistence_error = False
 
-            # Configurable conversation timeout (minutes -> seconds) – kept for future use
-            # orac.py — right after computing the timeout
             conv_timeout_minutes = int(
                 self.config_mgr.config_value("context", "conversation_timeout", default="60")
             )
+            self._use_history = self.config_mgr.bool_config_value(section='context', key='enable_context_history', default=True)
+
+            if not self._use_history:
+                logger.log_warning(
+                    f"{Icons.warn} context augmentation DISABLED "
+                    "(history still being recorded for later use)"
+                )
+            else:
+                logger.log_info(f"{Icons.tick} context augmentation ENABLED")
+
             self._conversation_timeout_secs = max(0, conv_timeout_minutes * 60)
             logger.log_info(
                 f"[context] conversation_timeout={conv_timeout_minutes} minute(s) -> {self._conversation_timeout_secs}s")
@@ -284,6 +356,23 @@ class Orac:
             self.ctx = OracContextManager(self.db_session, logger=logger)
             self._keep_messages = int(self.config_mgr.config_value("context", "keep_messages", default="200"))
             self._prune_after_turns = int(self.config_mgr.config_value("context", "prune_every_n_turns", default="50"))
+            self._plugin_routing_enabled = self.config_mgr.bool_config_value(
+                "plugin_routing", "enabled", default=True
+            )
+            self._plugin_routing_bootstrap_on_startup = self.config_mgr.bool_config_value(
+                "plugin_routing", "bootstrap_on_startup", default=True
+            )
+            self._plugin_routing_candidate_count = self.config_mgr.int_config_value(
+                "plugin_routing", "candidate_count", default=3
+            )
+            min_score_raw = self.config_mgr.config_value(
+                "plugin_routing", "min_score", default=""
+            ).strip()
+            self._plugin_routing_min_score = float(min_score_raw) if min_score_raw else None
+            self.plugin_manager: PluginManager | None = None
+            self.plugin_router: PluginRouter | None = None
+            self._plugin_routing_ready = False
+            self._init_plugin_routing()
 
             logger.log_info(f"{Icons.robot} Orac orchestrator initialized with model: {self.model_name}")
             logger.log_info(f"{Icons.settings} Reasoning tags stripped by default: {self.strip_reasoning_tags}")
@@ -293,27 +382,76 @@ class Orac:
             _log_exception("Fatal error during Orac initialization", e)
             raise
 
+
     # --- Prompt building ------------------------------------------------------
-    def _build_contextual_prompt(self, session_id: str, prompt: str, meta: dict) -> str:
+    def _build_contextual_prompt(
+        self,
+        session_id: str,
+        prompt: str,
+        meta: dict,
+        auth_user: str,
+        plugin_routing_handoff: PluginRoutingHandoff | None = None,
+    ) -> str:
         try:
             prefs = {
                 "timezone": meta.get("timezone", "Europe/London"),
                 "force_concise": meta.get("force_concise"),
             }
             clock = system_clock_line(prefs)
+            routing_block = render_plugin_routing_hints(plugin_routing_handoff)
+            user_facts_block = ""
+            try:
+                user_profile = self.ctx.get_user_profile(auth_user)
+            except Exception as e:
+                _log_exception("Failed to load authenticated user profile", e)
+                user_profile = {}
+            if user_profile:
+                fact_lines = ["Known user facts:"]
+                if user_profile.get("authenticated_username"):
+                    fact_lines.append(
+                        f"- Authenticated username: {user_profile['authenticated_username']}"
+                    )
+                if user_profile.get("display_name"):
+                    fact_lines.append(
+                        f"- Display name: {user_profile['display_name']}"
+                    )
+                user_facts_block = "\n".join(fact_lines) + "\n\n"
 
-            # Inline persona + language policy (forces English unless user's msg is clearly otherwise)
             primer_inline = _orac_system_primer({
                 "reply_language": meta.get("reply_language", self._reply_language)
-            })
+            }, self._system_prompt_policy)
 
-            # Fetch a generous slice (not the final selection) to give the budget picker material.
-            # Rule of thumb: fetch up to ~4× the budget in "messages", floored at 20.
-            # This is still light on the DB and avoids missing earlier-but-relevant turns.
+            # === NEW: short-circuit if history use is disabled ===
+            if not getattr(self, "_use_history", True):
+                lang = meta.get("reply_language", self._reply_language) or "English"
+                final_directive = (
+                    f"\nFINAL DIRECTIVE: For the CURRENT user message below, respond in {lang} ONLY. "
+                    "Ignore any prior conversation for this reply. Keep the reply concise.\n"
+                )
+                preamble = (
+                    f"{primer_inline}\n"
+                    "ROLE: assistant\n"
+                    "INSTRUCTIONS: Prior conversation is DISABLED for this reply; use ONLY the new user message.\n\n"
+                    f"{clock}\n\n"
+                    f"{user_facts_block}"
+                    f"{routing_block}"
+                    "Recent exchange: (context disabled)\n\n"
+                    "USER (new message):"
+                )
+                full = f"{preamble}\n{prompt}\n{final_directive}"
+                if self.enable_prompt_dump:
+                    try:
+                        short = (full[:2000] + " …") if len(full) > 2000 else full
+                        logger.log_info(f"{Icons.info} Final prompt (truncated): {short}")
+                        _dump_debug_blob("final-prompt", full)
+                    except Exception as e:
+                        _log_exception("final prompt dump failed", e)
+                return full
+
+            # --- existing history-enabled path (unchanged) ---
             raw_fetch = max(20, min(200, (self._history_budget_tokens // 50) * 4))
             all_msgs = self.ctx.get_messages_for_prompt(session_id=session_id, limit=raw_fetch)
 
-            # --- DEBUG: dump fetched history -------------------------------------
             if self.enable_prompt_dump:
                 try:
                     dbg_lines = []
@@ -322,40 +460,32 @@ class Orac:
                     _dump_debug_blob("history-fetched", "\n".join(dbg_lines))
                 except Exception as e:
                     _log_exception("history debug dump failed", e)
-            # ---------------------------------------------------------------------
 
-            # Drop the just-saved current user prompt so it doesn't duplicate
             if all_msgs:
                 last = all_msgs[-1]
                 if (last.get("role") == "user") and ((last.get("content") or "").strip() == (prompt or "").strip()):
                     all_msgs = all_msgs[:-1]
 
-            # Compute how many tokens we can spend on prior dialog
-            # Reserve room for: current prompt + preamble + some slack.
             prompt_cost = self._estimate_tokens(prompt)
             reserve = max(0, self._history_budget_reserve + prompt_cost)
             budget_for_history = max(0, self._history_budget_tokens - reserve)
 
             dialog_last_n = self._select_dialog_under_budget(all_msgs, budget_tokens=budget_for_history)
 
-            # Format lines for the preamble
             history_lines = []
             for m in dialog_last_n:
                 r = (m.get("role") or "").upper()
                 c = (m.get("content") or "").strip()
-                if not c:
-                    continue
-                # Don't truncate aggressively here; the budget already decided what fits.
-                history_lines.append(f"{r}: {c}")
+                if c:
+                    history_lines.append(f"{r}: {c}")
 
-            # Strong “final directive” (LLMs usually obey the last rule best)
             lang = meta.get("reply_language", self._reply_language) or "English"
             final_directive = (
                 f"\nFINAL DIRECTIVE: For the CURRENT user message below, respond in {lang} ONLY. "
-                f"Use 'Recent exchange' as session memory for THIS conversation. "
-                f"If it contains explicit facts that answer the question, use the most recent consistent fact. "
-                f"If not present or ambiguous, say you don't know and optionally ask the user to clarify. "
-                f"Keep the reply concise.\n"
+                "Use 'Recent exchange' as session memory for THIS conversation. "
+                "If it contains explicit facts that answer the question, use the most recent consistent fact. "
+                "If not present or ambiguous, say you don't know and optionally ask the user to clarify. "
+                "Keep the reply concise.\n"
             )
 
             preamble = (
@@ -363,6 +493,8 @@ class Orac:
                     "ROLE: assistant\n"
                     "INSTRUCTIONS: Use the recent context only if relevant.\n\n"
                     f"{clock}\n\n"
+                    f"{user_facts_block}"
+                    f"{routing_block}"
                     "Recent exchange (most recent at bottom):\n"
                     + ("\n".join(history_lines) if history_lines else "(no prior context)")
                     + "\n\nUSER (new message):"
@@ -371,7 +503,6 @@ class Orac:
             full = f"{preamble}\n{prompt}\n{final_directive}"
 
             if self.enable_prompt_dump:
-                # If we're in a debug session, dump the full prompt
                 try:
                     short = (full[:2000] + " …") if len(full) > 2000 else full
                     logger.log_info(f"{Icons.info} Final prompt (truncated): {short}")
@@ -380,9 +511,153 @@ class Orac:
                     _log_exception("final prompt dump failed", e)
 
             return full
+
         except Exception as e:
             _log_exception("Failed to build context preamble (non-fatal)", e)
             return prompt
+
+    def _init_plugin_routing(self) -> None:
+        """Initialises plugin routing and performs normal startup bootstrap when enabled."""
+        if not self._plugin_routing_enabled:
+            logger.log_info(f"{Icons.info} Plugin routing disabled by configuration.")
+            return
+
+        try:
+            embedding_model_id = self.config_mgr.config_value(
+                "plugin_routing", "embedding_model_id", default="hash-embedding-v1"
+            )
+            embedding_dimensions = self.config_mgr.int_config_value(
+                "plugin_routing", "embedding_dimensions", default=32
+            )
+            embedding_provider = HashEmbeddingProvider(
+                model_id=embedding_model_id,
+                dimensions=embedding_dimensions,
+            )
+            self.plugin_manager = PluginManager(embedding_provider=embedding_provider, logger=logger)
+            self.plugin_router = PluginRouter(
+                plugin_manager=self.plugin_manager,
+                logger=logger,
+                config_mgr=self.config_mgr,
+            )
+            logger.log_info(f"{Icons.info} Plugin routing bootstrap starting.")
+            logger.log_info(
+                f"{Icons.tick} Plugin routing subsystem initialised with embedding model "
+                f"'{embedding_provider.model_id}'."
+            )
+            if self._plugin_routing_bootstrap_on_startup:
+                self.refresh_plugin_routing()
+        except Exception as e:
+            self.plugin_manager = None
+            self.plugin_router = None
+            self._plugin_routing_ready = False
+            _log_exception("Plugin routing initialisation failed (non-fatal)", e)
+
+    def refresh_plugin_routing(self) -> dict[str, Any] | None:
+        """Bootstraps or refreshes plugin routing state on demand."""
+        if not self._plugin_routing_enabled or self.plugin_manager is None:
+            logger.log_info(f"{Icons.info} Plugin routing refresh skipped because subsystem is unavailable.")
+            return None
+        logger.log_info(f"{Icons.info} Plugin routing refresh requested.")
+        report = self.plugin_manager.refresh()
+        self._plugin_routing_ready = True
+        logger.log_info(
+            f"{Icons.info} Plugin routing refresh complete: "
+            f"discovered={report.get('discovered', 0)} "
+            f"enabled={report.get('enabled', 0)} "
+            f"cache_hits={report.get('cache_hits', 0)} "
+            f"re_embedded={report.get('re_embedded', 0)}"
+        )
+        return report
+
+    def _ensure_plugin_routing_ready(self, *, force_refresh: bool = False) -> dict[str, Any] | None:
+        """Ensures plugin routing is ready without rebuilding on every request."""
+        if not self._plugin_routing_enabled or self.plugin_manager is None:
+            logger.log_debug("Plugin routing unavailable; continuing without routing hints.")
+            return None
+        if self._plugin_routing_ready and not force_refresh:
+            return self.plugin_manager.status()
+        return self.refresh_plugin_routing()
+
+    def _collect_plugin_routing_handoff(
+        self,
+        prompt: str,
+        meta: dict,
+    ) -> PluginRoutingHandoff | None:
+        """Retrieves scored plugin candidates for downstream routing/selection."""
+        if not self._plugin_routing_enabled or self.plugin_manager is None:
+            logger.log_debug("Plugin routing disabled or not initialised; no routing candidates will be used.")
+            return None
+
+        force_refresh = bool((meta or {}).get("plugin_routing_refresh", False))
+        if force_refresh:
+            logger.log_info(f"{Icons.info} Plugin routing on-demand refresh requested by request metadata.")
+        was_ready = self._plugin_routing_ready
+        self._ensure_plugin_routing_ready(force_refresh=force_refresh)
+        refreshed = bool(force_refresh or not was_ready)
+
+        try:
+            candidates = self.plugin_manager.find_candidates(
+                prompt,
+                top_n=self._plugin_routing_candidate_count,
+                min_score=self._plugin_routing_min_score,
+            )
+        except Exception as e:
+            _log_exception("Plugin routing candidate retrieval failed (non-fatal)", e)
+            logger.log_debug("Continuing without plugin routing hints due to retrieval failure.")
+            return None
+
+        if not candidates:
+            logger.log_debug("Plugin routing found no candidate plugins; using normal conversational flow.")
+            return None
+
+        logger.log_debug(f"Plugin routing produced {len(candidates)} candidate plugin(s).")
+        logger.log_debug(
+            "Plugin routing candidate scores: "
+            + ", ".join(f"{candidate.plugin_id}={candidate.score:.4f}" for candidate in candidates)
+        )
+
+        return PluginRoutingHandoff(
+            candidates=tuple(candidates),
+            refreshed=refreshed,
+        )
+
+    def _apply_user_preference_meta(
+        self,
+        meta: dict[str, Any],
+        auth_user: str,
+    ) -> dict[str, Any]:
+        """Overlay selected user preferences into request metadata."""
+        if meta.get("weather_location"):
+            return meta
+
+        try:
+            weather_pref = self.ctx.get_user_preference_value(
+                username=auth_user,
+                pref_key="weather_location",
+            )
+        except Exception as e:
+            _log_exception("Failed to load weather_location preference", e)
+            return meta
+
+        if not isinstance(weather_pref, dict):
+            return meta
+
+        name = str(weather_pref.get("name") or "").strip()
+        if not name:
+            return meta
+
+        parts = [name]
+        admin1 = str(weather_pref.get("admin1") or "").strip()
+        country = str(weather_pref.get("country") or "").strip()
+        if admin1:
+            parts.append(admin1)
+        if country:
+            parts.append(country)
+
+        enriched_meta = dict(meta)
+        enriched_meta["weather_location"] = ", ".join(parts)
+        enriched_meta["weather_location_pref"] = weather_pref
+        return enriched_meta
 
     def _estimate_tokens(self, text: str) -> int:
         """
@@ -577,11 +852,124 @@ class Orac:
         except Exception as e:
             _log_exception("Context prune failed (non-fatal)", e)
 
+    def _handle_persistence_failure(self, phase: str, exc: BaseException) -> None:
+        """Record and log persistence failures for diagnostics and tests."""
+        failure = {
+            "phase": phase,
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+        }
+        failures = getattr(self, "_persistence_failures", None)
+        if failures is None:
+            self._persistence_failures = []
+            failures = self._persistence_failures
+        failures.append(failure)
+        _log_exception(f"Failed to persist {phase}", exc)
+        if self._is_recoverable_db_disconnect(exc):
+            try:
+                self._refresh_db_session()
+            except Exception as reconnect_exc:
+                _log_exception(
+                    "Follow-up Oracle reconnect after persistence failure failed",
+                    reconnect_exc,
+                )
+        if getattr(self, "_fail_on_persistence_error", False):
+            raise RuntimeError(
+                f"Persistence failure during {phase}: {exc}"
+            ) from exc
+
+    @staticmethod
+    def _is_recoverable_db_disconnect(exc: BaseException) -> bool:
+        """Return whether an exception represents a recoverable Oracle disconnect."""
+        text = str(exc)
+        return any(
+            token in text
+            for token in (
+                "DPY-1001",
+                "DPY-4011",
+                "DPI-1010",
+                "ORA-03113",
+                "ORA-03114",
+            )
+        )
+
+    @staticmethod
+    def _is_unregistered_user_error(exc: BaseException) -> bool:
+        """Return whether an exception represents an unregistered runtime user."""
+        return isinstance(exc, PermissionError) and "not registered" in str(exc)
+
+    def _refresh_db_session(self) -> None:
+        """Recreate the owned DB session and rebind it into the context layer."""
+        logger.log_warning(
+            f"{Icons.warn} Reconnecting Oracle session for Orac runtime."
+        )
+        new_session = DBSession(
+            wallet_zip_path="",
+            verbose=True,
+            user=self._user,
+            password=self._password,
+            dsn=self._dsn,
+            config_dir=TNS_ADMIN,
+        )
+        old_session = getattr(self, "db_session", None)
+        self.db_session = new_session
+        if getattr(self, "ctx", None) is not None:
+            self.ctx.db = new_session
+        if old_session is not None:
+            try:
+                old_session.close()
+            except Exception:
+                logger.log_debug("Ignored close failure on stale Oracle session.")
+
+    def _ensure_db_session_ready(self) -> None:
+        """Validate the Oracle session and reconnect once if it has gone stale."""
+        db_session = getattr(self, "db_session", None)
+        if db_session is None:
+            return
+        try:
+            db_session.fetch_as_lists("select 1 from dual")
+        except Exception as exc:
+            if not self._is_recoverable_db_disconnect(exc):
+                raise
+            _log_exception("Oracle session health check failed; reconnecting", exc)
+            self._refresh_db_session()
+            self.db_session.fetch_as_lists("select 1 from dual")
+
+    def _save_assistant_turn(
+        self,
+        session_id: str,
+        auth_user: str,
+        content: str,
+        *,
+        client: str,
+        req_id: str | None,
+        show_reasoning: bool,
+        request_flags: dict[str, bool] | None = None,
+    ) -> int:
+        """Persists an assistant turn and returns the new turn index if available."""
+        asst_meta = {
+            "client": client,
+            "protocol_version": PROTOCOL_VERSION,
+            "ts": iso_now(),
+            "req_id": req_id,
+            "show_reasoning": show_reasoning,
+        }
+        try:
+            save_res_a = self.ctx.save_assistant_turn(session_id, auth_user, content, meta=asst_meta)
+            logger.log_debug(f"Saved assistant msg: {save_res_a}")
+            return int(save_res_a.get("turn_index", 0))
+        except Exception as e:
+            if request_flags is not None and self._is_unregistered_user_error(e):
+                request_flags["anonymous_user"] = True
+            self._handle_persistence_failure("assistant_turn", e)
+            return 0
+
     # --- Response builder -----------------------------------------------------
     def _build_response(self, req_env: dict, content: str, *,
                         stop_reason: str = "stop",
                         prompt_tokens: int = 0,
-                        completion_tokens: int = 0) -> dict:
+                        completion_tokens: int = 0,
+                        user_registration: str = "registered") -> dict:
         """Build a protocol-compliant non-streaming response envelope."""
         resp = {
             "v": 1,
@@ -594,6 +982,7 @@ class Orac:
                 "status": "ok",
                 "model": self.model_name,
                 "req_id": req_env.get("id"),
+                "user_registration": user_registration,
             },
             "payload": {
                 "content": content,
@@ -748,10 +1137,17 @@ class Orac:
             show_reasoning = bool(meta.get("show_reasoning", not self.strip_reasoning_tags))
             client = meta.get("client", "unknown")
             auth_user = getattr(auth_res, "user", "unknown")
+            meta = self._apply_user_preference_meta(meta, auth_user)
 
             logger.log_info(f"{Icons.info} [{client}] user={auth_user} Prompt received")
             logger.log_debug(f"Prompt text: {prompt}")
             logger.log_info(f"meta.show_reasoning={show_reasoning} (strip_reasoning_default={self.strip_reasoning_tags})")
+            request_flags = {"anonymous_user": False}
+
+            try:
+                self._ensure_db_session_ready()
+            except Exception as e:
+                _log_exception("Oracle session validation failed (non-fatal)", e)
 
             # --- Session + conversation (timeout-aware) ---------------------------------
             logger.log_debug(
@@ -805,37 +1201,47 @@ class Orac:
 
                     # Transition old conversation state if configured
                     try:
+                        previous_session_id = roll.get("previous_session_id") or session_id_base
                         if getattr(self, "_archive_on_rollover", False):
-                            self.ctx.archive_conversation(session_id_base)
-                            logger.log_info(f"{Icons.box} Archived prior conversation: {session_id_base}")
+                            self.ctx.archive_conversation(previous_session_id)
+                            logger.log_info(f"{Icons.box} Archived prior conversation: {previous_session_id}")
                         elif getattr(self, "_close_on_rollover", True):
-                            self.ctx.close_conversation(session_id_base)
-                            logger.log_info(f"{Icons.stop} Closed prior conversation: {session_id_base}")
+                            self.ctx.close_conversation(previous_session_id)
+                            logger.log_info(f"{Icons.stop} Closed prior conversation: {previous_session_id}")
                         else:
-                            logger.log_debug(f"{Icons.info} Prior conversation left 'open': {session_id_base}")
+                            logger.log_debug(f"{Icons.info} Prior conversation left 'open': {previous_session_id}")
                     except Exception as e_state:
                         _log_exception("State transition on rollover failed (non-fatal)", e_state)
                 else:
                     logger.log_debug(f"{Icons.tick} Using existing conversation for {session_id}")
             except Exception as e:
+                if self._is_unregistered_user_error(e):
+                    request_flags["anonymous_user"] = True
                 _log_exception("ensure_conversation_with_timeout failed (non-fatal)", e)
                 session_id = session_id_base
                 try:
                     self.ctx.ensure_conversation(user_name=auth_user, session_id=session_id, llm_id=None)
                 except Exception as e2:
+                    if self._is_unregistered_user_error(e2):
+                        request_flags["anonymous_user"] = True
                     _log_exception("ensure_conversation fallback failed (non-fatal)", e2)
 
             # --- Ensure a system primer is stored once per conversation ---------
             try:
                 if self.ctx.last_turn_index(session_id) == 0:
-                    primer = _orac_system_primer({"reply_language": self._reply_language})
+                    primer = _orac_system_primer(
+                        {"reply_language": self._reply_language},
+                        self._system_prompt_policy,
+                    )
                     self.ctx.save_system_turn(session_id, auth_user, primer, meta={
                         "kind": "primer",
                         "ts": iso_now(),
                         "protocol_version": PROTOCOL_VERSION,
                     })
             except Exception as e:
-                _log_exception("Failed to persist system primer (non-fatal)", e)
+                if self._is_unregistered_user_error(e):
+                    request_flags["anonymous_user"] = True
+                self._handle_persistence_failure("system_primer", e)
 
             # --- Save USER turn -------------------------------------------------
             user_meta = {
@@ -848,10 +1254,50 @@ class Orac:
                 save_res_u = self.ctx.save_user_turn(session_id, auth_user, prompt, meta=user_meta)
                 logger.log_debug(f"Saved user msg: {save_res_u}")
             except Exception as e:
-                _log_exception("Failed to persist user turn (non-fatal)", e)
+                if self._is_unregistered_user_error(e):
+                    request_flags["anonymous_user"] = True
+                self._handle_persistence_failure("user_turn", e)
+
+            plugin_routing_handoff = self._collect_plugin_routing_handoff(prompt, meta)
+            plugin_execution_result = None
+            if self.plugin_router is not None:
+                plugin_execution_result = self.plugin_router.route(prompt, meta, plugin_routing_handoff)
+
+            if plugin_execution_result is not None and plugin_execution_result.handled:
+                content = plugin_execution_result.content
+                # TODO: Persist plugin_result separately from assistant_response once
+                # context/message provenance is introduced explicitly.
+                last_ti = self._save_assistant_turn(
+                    session_id,
+                    auth_user,
+                    content,
+                    client=client,
+                    req_id=req_env.get("id"),
+                    show_reasoning=show_reasoning,
+                    request_flags=request_flags,
+                )
+                self._maybe_set_conversation_title(session_id, meta)
+                self._maybe_prune(session_id, last_ti)
+                resp_env = self._build_response(
+                    req_env,
+                    content,
+                    stop_reason=plugin_execution_result.stop_reason,
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    user_registration=(
+                        "anonymous" if request_flags["anonymous_user"] else "registered"
+                    ),
+                )
+                return json.dumps(resp_env, ensure_ascii=False)
 
             # --- Build context-primed prompt -----------------------------------
-            final_prompt = self._build_contextual_prompt(session_id, prompt, meta)
+            final_prompt = self._build_contextual_prompt(
+                session_id,
+                prompt,
+                meta,
+                auth_user,
+                plugin_routing_handoff=plugin_routing_handoff,
+            )
             short = (final_prompt[:1200] + " …") if len(final_prompt) > 1200 else final_prompt
             logger.log_info(f"{Icons.info} Final prompt (truncated): {short}")
             if self.enable_prompt_dump:
@@ -890,26 +1336,29 @@ class Orac:
                 content = "Hello! 👋"
 
             # --- Save ASSISTANT turn -------------------------------------------
-            asst_meta = {
-                "client": client,
-                "protocol_version": PROTOCOL_VERSION,
-                "ts": iso_now(),
-                "req_id": req_env.get("id"),
-                "show_reasoning": show_reasoning,
-            }
-            last_ti = 0
-            try:
-                save_res_a = self.ctx.save_assistant_turn(session_id, auth_user, content, meta=asst_meta)
-                last_ti = int(save_res_a.get("turn_index", 0))
-                logger.log_debug(f"Saved assistant msg: {save_res_a}")
-            except Exception as e:
-                _log_exception("Failed to persist assistant turn (non-fatal)", e)
+            last_ti = self._save_assistant_turn(
+                session_id,
+                auth_user,
+                content,
+                client=client,
+                req_id=req_env.get("id"),
+                show_reasoning=show_reasoning,
+                request_flags=request_flags,
+            )
 
             self._maybe_set_conversation_title(session_id, meta)
             self._maybe_prune(session_id, last_ti)
 
-            resp_env = self._build_response(req_env, content, stop_reason="stop",
-                                            prompt_tokens=0, completion_tokens=0)
+            resp_env = self._build_response(
+                req_env,
+                content,
+                stop_reason="stop",
+                prompt_tokens=0,
+                completion_tokens=0,
+                user_registration=(
+                    "anonymous" if request_flags["anonymous_user"] else "registered"
+                ),
+            )
 
             wire = json.dumps(resp_env, ensure_ascii=False)
             logger.log_debug(f"Returning response frame: {wire[:300]}{'…' if len(wire) > 300 else ''}")

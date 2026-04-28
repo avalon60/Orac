@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "plugin_id": "media_control",
+  "name": "Media Control",
+  "description": "Handles playback control for TVs, speakers, and media scenes across the home.",
+  "version": "1.0.0",
+  "enabled": true,
+  "capabilities": [
+    "media.playback_control",
+    "media.volume_control",
+    "media.source_selection"
+  ],
+  "entities": [
+    "tv",
+    "speaker",
+    "playlist",
+    "volume",
+    "input_source"
+  ],
+  "examples": [
+    "Pause the lounge TV.",
+    "Turn the volume down in the kitchen.",
+    "Play jazz in the study."
+  ],
+  "entry_point": "plugin:MediaControlPlugin"
+}

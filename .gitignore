@@ -11,7 +11,21 @@ dist/
 screenshots/*.png
 logs/*.log
 /lib/
+var/cache/
 
 src/orac/lib/bdds_lib.py
 
 bin/nohup.out
+.aider*
+
+# Local agent and workspace artefacts
+.claude/
+.codex
+**/.codex
+TODO/
+detailed-architecture.md
+logs/
+docs/agent-guardrails/Untitled Document
+resources/db/schema/orac_core/orac_ws/*.sqlx
+resources/logger_3.1.1.zip
+resources/logger_3.1.1/

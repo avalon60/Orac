@@ -1,0 +1,20 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<FKIndexAssociation class="oracle.dbtools.crest.model.design.relational.FKIndexAssociation" directorySegmentName="seg_0" id="939EA528-61A6-1EB3-E7C8-210203DFC57A" containerWithKeyObject="405661E6-9DEB-D521-D058-03D79DCD1DAA" localFKIndex="784062E5-6FC1-7DBD-25A6-B57604B001A1" name="MESG_EMB_MESGS_FK1">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>FK_MSG_EMB_MESSAGE</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-22 18:09:57 UTC</createdTime>
+<ownerDesignName>orac2</ownerDesignName>
+<importedID>23BC0672-18FA-642F-AB8D-66244F46239F</importedID>
+<referredTableLongName>orac.MESSAGES</referredTableLongName>
+<deleteRule>CASCADE</deleteRule>
+<referredTableID>67788434-12A4-32C0-35D0-5C86BADAC908</referredTableID>
+<keyObject>AA9AB783-444D-D69A-3DF3-2F7F00AAE716</keyObject>
+<referredKeyID>AA9AB783-444D-D69A-3DF3-2F7F00AAE716</referredKeyID>
+<mandatory>true</mandatory>
+<refColNames>MESSAGE_ID</refColNames>
+<transferable>true</transferable>
+<rely>false</rely>
+<columnDependencyConstraintGenerateInDDL>true</columnDependencyConstraintGenerateInDDL>
+</FKIndexAssociation>

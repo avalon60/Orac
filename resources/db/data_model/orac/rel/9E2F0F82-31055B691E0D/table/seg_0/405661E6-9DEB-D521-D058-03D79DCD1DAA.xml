@@ -151,8 +151,8 @@
 <useDomainConstraints>false</useDomainConstraints>
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
-<dataTypeSize>100 BYTE</dataTypeSize>
-<ownDataTypeParameters>100 BYTE,,</ownDataTypeParameters>
+<dataTypeSize>100 CHAR</dataTypeSize>
+<ownDataTypeParameters>100 CHAR,,</ownDataTypeParameters>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
 <Column name="EMBEDDING_PROVIDER" id="2182F259-D427-9ABE-4226-E87A2A4991BE">
@@ -166,9 +166,9 @@
 <useDomainConstraints>false</useDomainConstraints>
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
-<dataTypeSize>100 BYTE</dataTypeSize>
+<dataTypeSize>100 CHAR</dataTypeSize>
 <defaultValue>&apos;oracle&apos;</defaultValue>
-<ownDataTypeParameters>100 BYTE,,</ownDataTypeParameters>
+<ownDataTypeParameters>100 CHAR,,</ownDataTypeParameters>
 <defaultOntNull>true</defaultOntNull>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
@@ -184,7 +184,7 @@
 <useDomainConstraints>false</useDomainConstraints>
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
-<dataTypeSize>16 BYTE</dataTypeSize>
+<dataTypeSize>16 CHAR</dataTypeSize>
 <listOfValues>
 <valueDef value="&apos;COSINE&apos;" description=""/>
 <valueDef value="&apos;DOT&apos;" description=""/>
@@ -195,7 +195,7 @@
 <valueDef value="&apos;MANHATTAN&apos;" description=""/>
 </listOfValues>
 <defaultValue>&apos;COSINE&apos;</defaultValue>
-<ownDataTypeParameters>16 BYTE,,</ownDataTypeParameters>
+<ownDataTypeParameters>16 CHAR,,</ownDataTypeParameters>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
 <Column name="TOKENS_USED" id="73F03FD8-7EEC-DE35-551A-EF02486E32FF">
@@ -240,9 +240,9 @@
 <useDomainConstraints>false</useDomainConstraints>
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
-<dataTypeSize>128 BYTE</dataTypeSize>
+<dataTypeSize>128 CHAR</dataTypeSize>
 <defaultValue>sys_context(&apos;userenv&apos;,&apos;session_user&apos;)</defaultValue>
-<ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<ownDataTypeParameters>128 CHAR,,</ownDataTypeParameters>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
 <Column name="UPDATED_ON" id="820D49BC-A10C-9965-48FA-6853E5A33B9B">
@@ -273,8 +273,8 @@
 <useDomainConstraints>false</useDomainConstraints>
 <use>1</use>
 <logicalDatatype>LOGDT024</logicalDatatype>
-<dataTypeSize>128 BYTE</dataTypeSize>
-<ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<dataTypeSize>128 CHAR</dataTypeSize>
+<ownDataTypeParameters>128 CHAR,,</ownDataTypeParameters>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
 <Column name="ROW_VERSION" id="173E5137-2575-B20A-A826-80F508BC9B71">

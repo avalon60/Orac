@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "plugin_id": "home_assistant",
+  "name": "Home Assistant",
+  "description": "Controls Home Assistant devices, scenes, and state queries for the user's smart home.",
+  "version": "1.0.0",
+  "enabled": true,
+  "capabilities": [
+    "home_automation.control",
+    "home_automation.state_query",
+    "home_automation.scene_activation"
+  ],
+  "entities": [
+    "lights",
+    "switches",
+    "scenes",
+    "rooms",
+    "sensors"
+  ],
+  "examples": [
+    "Turn on the kitchen lights.",
+    "Is the front door locked?",
+    "Activate movie night."
+  ],
+  "entry_point": "plugin:HomeAssistantPlugin"
+}

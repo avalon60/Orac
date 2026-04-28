@@ -1,0 +1,13 @@
+schema_name, table_name, table abbreviation
+orac_core,preference_definitions,prfdfn
+orac_core,timezones,tmzone
+orac_core,conversations,convs
+orac_core,devices,device
+orac_core,llm_registry,llm_reg
+orac_core,message_embeddings,mesg_emb
+orac_core,messages,mesgs
+orac_core,orac_personalities,orpers
+orac_core,user_preferences,user_pref
+orac_core,user_prompt_elements,user_pe
+orac_core,user_synonyms,user_syns
+orac_core,users,users

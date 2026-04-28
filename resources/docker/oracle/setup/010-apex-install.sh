@@ -54,9 +54,8 @@ end;
 alter user ANONYMOUS account unlock;
 alter user APEX_REST_PUBLIC_USER  account unlock;
 alter user APEX_PUBLIC_USER account unlock;
-alter user ORDS_PUBLIC_USER account unlock;
 alter user APEX_LISTENER account unlock;
 @${APEX_HOME}/utilities/reset_image_prefix_core.sql ${CDN} x
-@${ORACLE_BASE}/scripts/setup/apex_check.sql
+@${ORACLE_BASE}/scripts/setup/011-apex-check.sql
 EOF
 echo "[$(timestamp)] ${PROG}: Done."     
