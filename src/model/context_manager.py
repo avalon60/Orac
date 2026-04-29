@@ -33,6 +33,8 @@ class OracContextManager:
         self.conversations_object = self._qualify("conversations_v")
         self.messages_object = self._qualify("messages_v")
         self.user_preferences_object = self._qualify("user_preferences_v")
+        self.orac_personalities_object = "orac_api.orac_personalities_v"
+        self.llm_registry_object = "orac_api.llm_registry_v"
 
     def _qualify(self, object_name: str) -> str:
         """Return a schema-qualified object name for runtime SQL."""
@@ -124,10 +126,152 @@ class OracContextManager:
         if raw_value is None:
             return None
 
+        if hasattr(raw_value, "read"):
+            try:
+                raw_value = raw_value.read()
+            except Exception:
+                pass
+
         try:
             return json.loads(raw_value)
         except Exception:
             return raw_value
+
+    def get_orac_personality(self, personality_code: str) -> Dict[str, Any]:
+        """Return an active Orac personality definition by code."""
+        code = (personality_code or "").strip().upper()
+        if not code:
+            return {}
+
+        rows = self.db.dict_sql_dataset(
+            (
+                f"select personality_code,"
+                f"       personality_name,"
+                f"       description,"
+                f"       attitude_base_level,"
+                f"       sarcasm_level,"
+                f"       verbosity_level,"
+                f"       allow_humour,"
+                f"       allow_critique,"
+                f"       enforce_precision,"
+                f"       admit_uncertainty,"
+                f"       packaged_persona,"
+                f"       system_prompt,"
+                f"       style_prompt,"
+                f"       is_active "
+                f"from {self.orac_personalities_object} "
+                f"where upper(personality_code) = :code "
+                f"  and is_active = true"
+            ),
+            {"code": code},
+        )
+        return rows[0] if rows else {}
+
+    def get_llm_registry_entry(self, llm_id: int | str | None) -> Dict[str, Any]:
+        """Return an LLM registry row by primary key."""
+        if llm_id in (None, ""):
+            return {}
+
+        try:
+            resolved_llm_id = int(llm_id)
+        except Exception:
+            return {}
+
+        rows = self.db.dict_sql_dataset(
+            (
+                f"select llm_id,"
+                f"       name,"
+                f"       provider,"
+                f"       model,"
+                f"       context_policy,"
+                f"       max_context_tokens,"
+                f"       is_enabled,"
+                f"       properties "
+                f"from {self.llm_registry_object} "
+                f"where llm_id = :llm_id"
+            ),
+            {"llm_id": resolved_llm_id},
+        )
+        return rows[0] if rows else {}
+
+    def get_llm_registry_entry_by_provider_model(
+        self,
+        provider: str,
+        model_name: str,
+    ) -> Dict[str, Any]:
+        """Return an LLM registry row for a provider/model pair."""
+        provider_norm = (provider or "").strip().lower()
+        model_norm = (model_name or "").strip()
+        if not provider_norm or not model_norm:
+            return {}
+
+        rows = self.db.dict_sql_dataset(
+            (
+                f"select llm_id,"
+                f"       name,"
+                f"       provider,"
+                f"       model,"
+                f"       context_policy,"
+                f"       max_context_tokens,"
+                f"       is_enabled,"
+                f"       properties "
+                f"from {self.llm_registry_object} "
+                f"where lower(provider) = :provider "
+                f"  and model = :model "
+                f"fetch first 1 row only"
+            ),
+            {"provider": provider_norm, "model": model_norm},
+        )
+        return rows[0] if rows else {}
+
+    def get_conversation_llm_id(self, session_id: str) -> Optional[int]:
+        """Return the stored LLM id for a conversation session."""
+        rows = self.db.dict_sql_dataset(
+            (
+                f"select llm_id "
+                f"from {self.conversations_object} "
+                f"where session_id = :session_id"
+            ),
+            {"session_id": session_id},
+        )
+        if not rows:
+            return None
+
+        value = rows[0].get("LLM_ID")
+        if value is None:
+            return None
+
+        try:
+            return int(value)
+        except Exception:
+            return None
+
+    def get_conversation_personality_code(self, session_id: str) -> Optional[str]:
+        """Return the stored personality code from the conversation primer meta."""
+        cid = self._conversation_id(session_id)
+        if not cid:
+            return None
+
+        rows = self.db.dict_sql_dataset(
+            (
+                f"select json_value(meta, '$.personality_code' returning varchar2(30) null on error) "
+                f"         as personality_code "
+                f"from {self.messages_object} "
+                f"where conversation_id = :cid "
+                f"  and role = 'system' "
+                f"  and turn_index = 1"
+            ),
+            {"cid": cid},
+        )
+        if not rows:
+            return None
+
+        value = rows[0].get("PERSONALITY_CODE")
+        if value is None:
+            return None
+
+        resolved = str(value).strip().upper()
+        return resolved or None
 
     def _create_user(self, username: str) -> int:
         norm = username.strip()

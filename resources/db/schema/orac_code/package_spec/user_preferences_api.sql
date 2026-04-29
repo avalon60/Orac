@@ -3,6 +3,12 @@
 -- __description__: ORAC_CODE wrapper API for user preference maintenance
 
 create or replace package orac_code.user_preferences_api as
+  function validate_preference_value(
+    p_pref_key     in orac_api.user_preferences_v.pref_key%type,
+    p_pref_value   in orac_api.user_preferences_v.pref_value%type,
+    p_value_type   in orac_api.user_preferences_v.value_type%type default null
+  ) return varchar2;
+
   procedure ins(
     p_pref_id      in out orac_api.user_preferences_v.pref_id%type,
     p_user_id      in     orac_api.user_preferences_v.user_id%type,

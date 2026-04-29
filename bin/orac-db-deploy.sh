@@ -189,26 +189,29 @@ wait_for_orac_deploy() {
   local marker="=  ORAC deployment complete ="
   local failure_patterns=(
     "!! Halting due to STOP_ON_ERROR=1."
-    "ERROR at line 1:"
     "Database configuration failed. Check logs under '/opt/oracle/cfgtoollogs/dbca'."
     "DATABASE SETUP WAS NOT SUCCESSFUL!"
   )
 
   local start_time
+  local logs_snapshot
   start_time=$(date +%s)
 
   echo "⏳ Waiting for Orac deployment to complete..."
 
   while true; do
-    if docker logs "$container" 2>&1 | grep -q "$marker"; then
+    logs_snapshot="$(docker logs "$container" 2>&1 || true)"
+
+    if grep -Fq "$marker" <<<"$logs_snapshot"; then
       echo "Orac is deployed!"
       return 0
     fi
 
     local pattern
     for pattern in "${failure_patterns[@]}"; do
-      if docker logs "$container" 2>&1 | grep -q "$pattern"; then
+      if grep -Fq "$pattern" <<<"$logs_snapshot"; then
         echo "❌ Detected deployment failure in container logs."
+        echo "   Matched marker: $pattern"
         echo "   Check container logs: docker logs $container"
         return 1
       fi

@@ -6,7 +6,8 @@ Move Orac user-preference LOV handling from the current partially
 metadata-driven model to a fully metadata-driven model.
 
 The immediate goal is to stop needing one-off code and APEX patches for
-preferences such as `timezone`, `theme_style`, and `weather_location`.
+normal scalar LOV preferences such as `timezone`,
+while preserving the current search-backed `weather_location` flow.
 
 The long-term goal is:
 
@@ -48,7 +49,6 @@ preference needs a new SQL-backed or search-backed LOV.
 Examples:
 
 - `timezone` required custom handling
-- `theme_style` needed a dedicated branch
 - `weather_location` needed a dedicated branch and HTTP integration
 
 This creates a mismatch between:
@@ -64,7 +64,7 @@ The target design is:
 - `orac_code.preference_lov_api` reads the metadata row
 - `preference_lov_api` resolves the LOV generically
 - page 6 uses one generic select-list path and one generic popup-LOV
-  path
+  path for standard LOV-backed preferences
 - adding a new packaged LOV-backed preference is normally a seed-data
   change only
 
@@ -93,6 +93,7 @@ Use the existing columns:
 - `control_type`
   - `select_list`
   - `popup_lov`
+  - `select_one`
 - `lov_type`
   - `static`
   - `sql`
@@ -171,6 +172,10 @@ This is especially important for:
 The resolver should allow current-value replay even when the search term
 is empty, so an already-saved selection can still render.
 
+For phase 1, `weather_location` remains a curated packaged path rather
+than a generic SQL LOV. Its metadata remains useful for form rendering,
+but its execution and page-6 interaction model stay specialised.
+
 ## Safety Model
 
 This refactor should not become “run arbitrary SQL from a table”.
@@ -205,10 +210,16 @@ After the package refactor:
 APEX should not need special preference-key logic for:
 
 - `timezone`
-- `theme_style`
 - `default_llm_id`
 - `landing_page_id`
-- `weather_location`
+
+Phase-1 exception:
+
+- `weather_location` keeps its dedicated page-6 search term item,
+  selected-location display item, search button, results region, and
+  JSON save/load handling
+- page 6 must preserve existing `weather_location` behaviour unchanged
+  until a richer metadata model exists for search-backed JSON LOVs
 
 ## Preferences To Normalise First
 
@@ -217,10 +228,8 @@ These should be moved onto the generic metadata-driven LOV path first:
 - `date_format`
 - `default_llm_id`
 - `landing_page_id`
-- `theme_style`
 - `timezone`
 - `tts_voice`
-- `weather_location`
 
 ## Suggested Implementation Sequence
 
@@ -232,13 +241,12 @@ These should be moved onto the generic metadata-driven LOV path first:
    - `date_format`
    - `default_llm_id`
    - `landing_page_id`
-   - `theme_style`
    - `timezone`
    - `tts_voice`
-5. Keep `weather_location` as a special packaged path until the generic
-   SQL execution model is stable.
-6. Optionally move `weather_location` onto metadata-driven SQL after the
-   generic path proves safe and stable.
+5. Keep `weather_location` as a special packaged path until a richer
+   metadata model exists for search-backed JSON preferences.
+6. Optionally move `weather_location` onto metadata-driven execution in
+   a later phase once page-6 interaction metadata exists.
 
 ## Why `weather_location` May Stay Special Longer
 
@@ -249,7 +257,7 @@ These should be moved onto the generic metadata-driven LOV path first:
 - returns JSON payloads, not simple scalar values
 - depends on network ACLs and error handling
 
-So the most practical target state may be:
+So the most practical target state for phase 1 is:
 
 - generic metadata-driven execution for normal SQL/static LOVs
 - curated packaged special handling for external-service LOVs
@@ -258,7 +266,8 @@ That is still a major improvement over the current key-by-key approach.
 
 ## Expected End Result
 
-After this refactor, most new LOV-backed preferences should require only:
+After this refactor, most new scalar LOV-backed preferences should
+require only:
 
 1. a seeded `preference_definitions` row
 2. optional supporting reference data
@@ -285,6 +294,7 @@ The refactor is successful when:
 
 - page 6 renders LOV-backed preferences from metadata without
   preference-key branches for normal LOVs
-- `theme_style` and `timezone` work from metadata alone
+- `timezone` works from metadata alone
 - packaged SQL LOVs can be introduced through seed data
-- `weather_location` remains usable without weakening security
+- `weather_location` remains usable without weakening security or
+  changing current page-6 behaviour

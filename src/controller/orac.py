@@ -1,4 +1,10 @@
 """Oracle orchestrator, orac.py (protocol-enabled, non-streaming response)"""
+
+# Author: Clive Bostock
+# Date: 2026-04-29
+# Description: Orac runtime orchestration, including conversation-aware LLM
+#   selection and fallback handling.
+
 import asyncio
 import subprocess
 import re
@@ -99,6 +105,13 @@ def _dump_debug_blob(name: str, content: str) -> None:
     except Exception as e:
         _log_exception("Failed writing debug blob", e)
 
+
+def _bool_env_flag(value: str | None) -> bool:
+    """Interpret an environment flag value as boolean."""
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "t", "y", "yes", "on"}
+
 # --- Small utils --------------------------------------------------------------
 def iso_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -106,6 +119,11 @@ def iso_now() -> str:
 
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
+
+
+def new_session_id(base: str) -> str:
+    """Return a fresh session id suffix for explicit conversation rollover."""
+    return f"{base}#{int(time.time() * 1000)}"
 
 
 def _log_exception(prefix: str, exc: BaseException):
@@ -163,6 +181,123 @@ def _render_policy_lines(lines: list[str]) -> str:
     return "\n".join(f"- {line}" for line in lines if isinstance(line, str) and line.strip())
 
 
+def _split_prompt_text(text: Any) -> list[str]:
+    """Split stored prompt text into clean instruction lines."""
+    if not isinstance(text, str):
+        return []
+
+    cleaned: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        line = re.sub(r"^[\-\*\u2022]\s*", "", line)
+        cleaned.append(line)
+    return cleaned
+
+
+def _as_bool(value: Any) -> bool | None:
+    """Normalise database and JSON boolean-like values."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        norm = value.strip().lower()
+        if norm in {"true", "t", "1", "y", "yes"}:
+            return True
+        if norm in {"false", "f", "0", "n", "no"}:
+            return False
+    return None
+
+
+def _as_int(value: Any, default: int) -> int:
+    """Return an integer value with fallback."""
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
+def _personality_rule_lines(personality: dict[str, Any]) -> list[str]:
+    """Render structured personality settings into prompt rules."""
+    if not personality:
+        return []
+
+    code = str(personality.get("PERSONALITY_CODE") or "").strip().upper()
+    name = str(personality.get("PERSONALITY_NAME") or code or "Orac").strip()
+    lines = [f"Selected personality: {name} ({code})."]
+
+    attitude_level = _as_int(personality.get("ATTITUDE_BASE_LEVEL"), 1)
+    attitude_map = {
+        0: "Maintain a neutral, composed tone.",
+        1: "Maintain a dry, self-possessed tone.",
+        2: "Maintain a sharper tone when appropriate, while remaining useful.",
+    }
+    lines.append(attitude_map.get(attitude_level, attitude_map[1]))
+
+    sarcasm_level = _as_int(personality.get("SARCASM_LEVEL"), 1)
+    sarcasm_map = {
+        0: "Do not use sarcasm.",
+        1: "Light sarcasm is acceptable when it sharpens clarity.",
+        2: "A noticeable sarcastic edge is acceptable, but do not become hostile.",
+    }
+    lines.append(sarcasm_map.get(sarcasm_level, sarcasm_map[1]))
+
+    verbosity_level = _as_int(personality.get("VERBOSITY_LEVEL"), 1)
+    verbosity_map = {
+        0: "Prefer concise answers by default.",
+        1: "Prefer balanced detail.",
+        2: "Prefer fuller explanations when useful.",
+    }
+    lines.append(verbosity_map.get(verbosity_level, verbosity_map[1]))
+
+    humour = _as_bool(personality.get("ALLOW_HUMOUR"))
+    if humour is True:
+        lines.append("Humour is allowed when appropriate.")
+    elif humour is False:
+        lines.append("Do not use humour.")
+
+    critique = _as_bool(personality.get("ALLOW_CRITIQUE"))
+    if critique is True:
+        lines.append("Challenge weak assumptions when necessary.")
+    elif critique is False:
+        lines.append("Avoid confrontational critique; correct gently.")
+
+    precision = _as_bool(personality.get("ENFORCE_PRECISION"))
+    if precision is True:
+        lines.append("Prioritise precision and careful wording.")
+
+    uncertainty = _as_bool(personality.get("ADMIT_UNCERTAINTY"))
+    if uncertainty is True:
+        lines.append("State uncertainty plainly when confidence is limited.")
+    elif uncertainty is False:
+        lines.append("Do not hedge unnecessarily; speak decisively when the facts support it.")
+
+    lines.extend(_split_prompt_text(personality.get("SYSTEM_PROMPT")))
+    lines.extend(_split_prompt_text(personality.get("STYLE_PROMPT")))
+    return lines
+
+
+def _normalise_discovered_model_names(models: list[Any]) -> list[str]:
+    """Return a stable, de-duplicated list of discovered model names."""
+    seen: set[str] = set()
+    result: list[str] = []
+
+    for item in models:
+        name = str(item or "").strip()
+        if not name:
+            continue
+        if name in seen:
+            continue
+        seen.add(name)
+        result.append(name)
+
+    return result
+
+
 # --- System primer (module-level, used both inline and for first system turn) -
 def _orac_system_primer(meta: dict, policy: dict[str, Any]) -> str:
     """
@@ -200,7 +335,16 @@ def _orac_system_primer(meta: dict, policy: dict[str, Any]) -> str:
             ]
         lines.extend(section_lines)
 
-    return f"{policy['title']}\n{_render_policy_lines(lines)}\n"
+    rendered = f"{policy['title']}\n{_render_policy_lines(lines)}\n"
+    personality_lines = _personality_rule_lines(
+        (meta or {}).get("orac_personality") or {}
+    )
+    if personality_lines:
+        rendered += (
+            "\nPersonality overlay:\n"
+            f"{_render_policy_lines(personality_lines)}\n"
+        )
+    return rendered
 
 
 
@@ -219,6 +363,9 @@ class Orac:
             self.model_name = self.config_mgr.config_value("service", "default_model_name")
             self.service_url = self.config_mgr.config_value("service", "service_url")
             self.enable_prompt_dump = self.config_mgr.bool_config_value("context", "enable_prompt_dump", default=False)
+            self._orac_run_dir = Path(os.environ.get("ORAC_RUN_DIR", "/run/orac"))
+            self._dump_context_flag = self._orac_run_dir / "dump-context.once"
+            self._force_prompt_dump = _bool_env_flag(os.environ.get("ORAC_FORCE_PROMPT_DUMP"))
             self.strip_reasoning_tags = (
                 self.config_mgr.config_value("settings", "strip_reasoning_tags", default="true").lower() == "true"
             )
@@ -312,6 +459,10 @@ class Orac:
                 raise NotImplementedError(message)
 
             self.llm = connector_cls(service_url=self.service_url, model_name=self.model_name)
+            self._llm_connector_cache: dict[tuple[str, str, str], Any] = {
+                (self.llm_service_id.strip().lower(), self.service_url.strip(), self.model_name.strip()): self.llm,
+            }
+            self._available_backend_models: set[str] = {self.model_name.strip()}
 
             # --- Auth setup: load secret, nonce store, auth chain -----------------
             secret_path = Path(os.environ.get("ORAC_HMAC_SECRET_FILE", "/run/orac/slave.secret"))
@@ -354,6 +505,7 @@ class Orac:
 
             # Context manager + pruning policy
             self.ctx = OracContextManager(self.db_session, logger=logger)
+            self._sync_llm_registry()
             self._keep_messages = int(self.config_mgr.config_value("context", "keep_messages", default="200"))
             self._prune_after_turns = int(self.config_mgr.config_value("context", "prune_every_n_turns", default="50"))
             self._plugin_routing_enabled = self.config_mgr.bool_config_value(
@@ -382,6 +534,28 @@ class Orac:
             _log_exception("Fatal error during Orac initialization", e)
             raise
 
+    def _consume_prompt_dump_request(self) -> bool:
+        """Return True when a one-shot context dump has been requested."""
+        if self._force_prompt_dump:
+            return True
+
+        try:
+            if self._dump_context_flag.exists():
+                self._dump_context_flag.unlink(missing_ok=True)
+                logger.log_info(
+                    f"{Icons.info} Consumed one-shot context dump request from {self._dump_context_flag}"
+                )
+                return True
+        except Exception as e:
+            _log_exception("Failed to consume one-shot context dump request", e)
+
+        return False
+
+    def _should_dump_prompt(self) -> bool:
+        """Return True when the current request should emit prompt debug dumps."""
+        if self.enable_prompt_dump:
+            return True
+        return self._consume_prompt_dump_request()
 
     # --- Prompt building ------------------------------------------------------
     def _build_contextual_prompt(
@@ -393,6 +567,7 @@ class Orac:
         plugin_routing_handoff: PluginRoutingHandoff | None = None,
     ) -> str:
         try:
+            dump_prompt = self._should_dump_prompt()
             prefs = {
                 "timezone": meta.get("timezone", "Europe/London"),
                 "force_concise": meta.get("force_concise"),
@@ -417,9 +592,14 @@ class Orac:
                     )
                 user_facts_block = "\n".join(fact_lines) + "\n\n"
 
-            primer_inline = _orac_system_primer({
-                "reply_language": meta.get("reply_language", self._reply_language)
-            }, self._system_prompt_policy)
+            primer_meta = {
+                "reply_language": meta.get("reply_language", self._reply_language),
+                "orac_personality": meta.get("orac_personality"),
+            }
+            primer_inline = _orac_system_primer(
+                primer_meta,
+                self._system_prompt_policy,
+            )
 
             # === NEW: short-circuit if history use is disabled ===
             if not getattr(self, "_use_history", True):
@@ -439,7 +619,7 @@ class Orac:
                     "USER (new message):"
                 )
                 full = f"{preamble}\n{prompt}\n{final_directive}"
-                if self.enable_prompt_dump:
+                if dump_prompt:
                     try:
                         short = (full[:2000] + " …") if len(full) > 2000 else full
                         logger.log_info(f"{Icons.info} Final prompt (truncated): {short}")
@@ -452,7 +632,7 @@ class Orac:
             raw_fetch = max(20, min(200, (self._history_budget_tokens // 50) * 4))
             all_msgs = self.ctx.get_messages_for_prompt(session_id=session_id, limit=raw_fetch)
 
-            if self.enable_prompt_dump:
+            if dump_prompt:
                 try:
                     dbg_lines = []
                     for m in all_msgs:
@@ -502,7 +682,7 @@ class Orac:
 
             full = f"{preamble}\n{prompt}\n{final_directive}"
 
-            if self.enable_prompt_dump:
+            if dump_prompt:
                 try:
                     short = (full[:2000] + " …") if len(full) > 2000 else full
                     logger.log_info(f"{Icons.info} Final prompt (truncated): {short}")
@@ -515,6 +695,128 @@ class Orac:
         except Exception as e:
             _log_exception("Failed to build context preamble (non-fatal)", e)
             return prompt
+
+    def _sync_llm_registry(self) -> None:
+        """Discover models from the active backend and upsert them into the registry."""
+        try:
+            discovered = _normalise_discovered_model_names(self.llm.list_models())
+        except Exception as e:
+            _log_exception(
+                "LLM model discovery failed (registry sync skipped)",
+                e,
+            )
+            return
+
+        if not discovered:
+            self._available_backend_models = {self.model_name.strip()}
+            logger.log_warning(
+                "LLM model discovery returned no models; registry sync skipped."
+            )
+            return
+
+        self._available_backend_models = set(discovered)
+
+        provider = self.llm_service_id.strip().lower()
+        context_policy = "app"
+        synced = 0
+        inserted = 0
+        updated = 0
+
+        try:
+            existing_rows = self.db_session.dict_sql_dataset(
+                """
+                select llm_id,
+                       name,
+                       provider,
+                       model,
+                       context_policy,
+                       max_context_tokens,
+                       is_enabled
+                  from orac_api.llm_registry_v
+                """
+            )
+            existing_by_key = {
+                (
+                    str(row.get("PROVIDER") or "").strip().lower(),
+                    str(row.get("MODEL") or "").strip(),
+                ): row
+                for row in existing_rows
+            }
+
+            with self.db_session.cursor() as cursor:
+                for model_name in discovered:
+                    key = (provider, model_name)
+                    existing = existing_by_key.get(key)
+                    properties = json.dumps(
+                        {
+                            "discovered_by": "startup_sync",
+                            "service_url": self.service_url,
+                            "provider": provider,
+                            "model": model_name,
+                            "is_default_runtime_model": (
+                                model_name == self.model_name
+                            ),
+                        },
+                        ensure_ascii=False,
+                    )
+
+                    if existing:
+                        cursor.execute(
+                            """
+                            update orac_api.llm_registry_v
+                               set provider = :provider,
+                                   model = :model,
+                                   context_policy = :context_policy,
+                                   properties = json(:properties)
+                             where llm_id = :llm_id
+                            """,
+                            {
+                                "provider": provider,
+                                "model": model_name,
+                                "context_policy": context_policy,
+                                "properties": properties,
+                                "llm_id": existing["LLM_ID"],
+                            },
+                        )
+                        updated += 1
+                    else:
+                        cursor.execute(
+                            """
+                            insert into orac_api.llm_registry_v
+                              (name, provider, model, context_policy,
+                               max_context_tokens, is_enabled, properties)
+                            values
+                              (:name, :provider, :model, :context_policy,
+                               null, 'Y', json(:properties))
+                            """,
+                            {
+                                "name": model_name,
+                                "provider": provider,
+                                "model": model_name,
+                                "context_policy": context_policy,
+                                "properties": properties,
+                            },
+                        )
+                        inserted += 1
+
+                    synced += 1
+
+                self.db_session.commit()
+        except Exception as e:
+            _log_exception("LLM registry sync failed", e)
+            try:
+                self.db_session.rollback()
+            except Exception:
+                logger.log_debug(
+                    "Ignored rollback failure after llm registry sync error."
+                )
+            return
+
+        logger.log_info(
+            f"{Icons.tick} LLM registry sync complete: "
+            f"discovered={len(discovered)} synced={synced} "
+            f"inserted={inserted} updated={updated}"
+        )
 
     def _init_plugin_routing(self) -> None:
         """Initialises plugin routing and performs normal startup bootstrap when enabled."""
@@ -627,8 +929,60 @@ class Orac:
         auth_user: str,
     ) -> dict[str, Any]:
         """Overlay selected user preferences into request metadata."""
+        enriched_meta = dict(meta)
+
+        try:
+            default_llm_pref = self.ctx.get_user_preference_value(
+                username=auth_user,
+                pref_key="default_llm_id",
+            )
+        except Exception as e:
+            _log_exception("Failed to load default_llm_id preference", e)
+            default_llm_pref = None
+
+        default_llm_id: int | None = None
+        if default_llm_pref not in (None, ""):
+            try:
+                default_llm_id = int(default_llm_pref)
+            except Exception:
+                logger.log_warning(
+                    f"{Icons.warn} Ignoring non-numeric default_llm_id preference "
+                    f"for user '{auth_user}': {default_llm_pref!r}"
+                )
+        if default_llm_id is not None:
+            enriched_meta["default_llm_id"] = default_llm_id
+
+        try:
+            personality_pref = self.ctx.get_user_preference_value(
+                username=auth_user,
+                pref_key="personality_code",
+            )
+        except Exception as e:
+            _log_exception("Failed to load personality_code preference", e)
+            personality_pref = None
+
+        personality_code = str(personality_pref or "DEFAULT").strip().upper()
+        try:
+            personality = self.ctx.get_orac_personality(personality_code)
+            if not personality and personality_code != "DEFAULT":
+                logger.log_warning(
+                    f"{Icons.warn} Personality '{personality_code}' unavailable; falling back to DEFAULT."
+                )
+                personality = self.ctx.get_orac_personality("DEFAULT")
+        except Exception as e:
+            _log_exception("Failed to load selected Orac personality", e)
+            personality = {}
+
+        if personality:
+            enriched_meta["personality_code"] = (
+                str(personality.get("PERSONALITY_CODE") or personality_code)
+                .strip()
+                .upper()
+            )
+            enriched_meta["orac_personality"] = personality
+
         if meta.get("weather_location"):
-            return meta
+            return enriched_meta
 
         try:
             weather_pref = self.ctx.get_user_preference_value(
@@ -637,14 +991,14 @@ class Orac:
             )
         except Exception as e:
             _log_exception("Failed to load weather_location preference", e)
-            return meta
+            return enriched_meta
 
         if not isinstance(weather_pref, dict):
-            return meta
+            return enriched_meta
 
         name = str(weather_pref.get("name") or "").strip()
         if not name:
-            return meta
+            return enriched_meta
 
         parts = [name]
         admin1 = str(weather_pref.get("admin1") or "").strip()
@@ -654,10 +1008,190 @@ class Orac:
         if country:
             parts.append(country)
 
-        enriched_meta = dict(meta)
         enriched_meta["weather_location"] = ", ".join(parts)
         enriched_meta["weather_location_pref"] = weather_pref
         return enriched_meta
+
+    def _get_llm_connector(
+        self,
+        *,
+        service_id: str,
+        service_url: str,
+        model_name: str,
+    ) -> Any:
+        """Return a cached connector for the requested backend/model tuple."""
+        key = (
+            str(service_id or "").strip().lower(),
+            str(service_url or "").strip(),
+            str(model_name or "").strip(),
+        )
+        cached = self._llm_connector_cache.get(key)
+        if cached is not None:
+            return cached
+
+        service_map = {
+            "ollama": OllamaConnector,
+            "lmstudio": LMStudioConnector,
+        }
+        connector_cls = service_map.get(key[0])
+        if connector_cls is None:
+            raise RuntimeError(f"Unsupported LLM service: {service_id}")
+
+        connector = connector_cls(service_url=key[1], model_name=key[2])
+        self._llm_connector_cache[key] = connector
+        return connector
+
+    def _registry_row_enabled(self, llm_row: dict[str, Any]) -> bool:
+        """Return whether a registry row is enabled for conversational use."""
+        if not llm_row:
+            return False
+        enabled = _as_bool(llm_row.get("IS_ENABLED"))
+        return enabled is True
+
+    def _backend_model_available(self, *, provider: str, model_name: str) -> bool:
+        """Return whether the configured backend currently exposes a model."""
+        provider_norm = str(provider or "").strip().lower()
+        model_norm = str(model_name or "").strip()
+        if not provider_norm or not model_norm:
+            return False
+        if provider_norm != self.llm_service_id.strip().lower():
+            return False
+        if model_norm in self._available_backend_models:
+            return True
+        return model_norm == self.model_name.strip()
+
+    def _configured_fallback_selection(
+        self,
+        *,
+        warning_message: str | None = None,
+    ) -> dict[str, Any]:
+        """Return the configured runtime model selection, with registry row if present."""
+        if warning_message:
+            logger.log_warning(warning_message)
+
+        fallback_row = self.ctx.get_llm_registry_entry_by_provider_model(
+            self.llm_service_id,
+            self.model_name,
+        )
+        selection = {
+            "llm_id": fallback_row.get("LLM_ID") if fallback_row else None,
+            "provider": self.llm_service_id,
+            "model_name": self.model_name,
+            "service_url": self.service_url,
+            "source": "configured_fallback",
+            "registry_row": fallback_row,
+        }
+        if not fallback_row:
+            logger.log_warning(
+                f"{Icons.warn} Configured fallback model '{self.model_name}' "
+                f"for provider '{self.llm_service_id}' has no registry row; "
+                f"conversation llm_id will remain null."
+            )
+        return selection
+
+    def _resolve_new_conversation_llm(
+        self,
+        *,
+        auth_user: str,
+        meta: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Resolve the LLM to persist when creating a new conversation."""
+        preferred_llm_id = meta.get("default_llm_id")
+        if preferred_llm_id in (None, ""):
+            return self._configured_fallback_selection()
+
+        llm_row = self.ctx.get_llm_registry_entry(preferred_llm_id)
+        if not llm_row:
+            return self._configured_fallback_selection(
+                warning_message=(
+                    f"{Icons.warn} User '{auth_user}' selected default_llm_id "
+                    f"{preferred_llm_id}, but no registry row exists. "
+                    f"Falling back to configured model '{self.model_name}'."
+                )
+            )
+
+        provider = str(llm_row.get("PROVIDER") or "").strip().lower()
+        model_name = str(llm_row.get("MODEL") or "").strip()
+        if not self._registry_row_enabled(llm_row):
+            return self._configured_fallback_selection(
+                warning_message=(
+                    f"{Icons.warn} User '{auth_user}' selected disabled LLM "
+                    f"'{model_name}' (llm_id={llm_row.get('LLM_ID')}). "
+                    f"Falling back to configured model '{self.model_name}'."
+                )
+            )
+
+        if not self._backend_model_available(provider=provider, model_name=model_name):
+            return self._configured_fallback_selection(
+                warning_message=(
+                    f"{Icons.warn} User '{auth_user}' selected unavailable LLM "
+                    f"'{model_name}' (provider='{provider}', llm_id={llm_row.get('LLM_ID')}). "
+                    f"Falling back to configured model '{self.model_name}'."
+                )
+            )
+
+        return {
+            "llm_id": llm_row.get("LLM_ID"),
+            "provider": provider,
+            "model_name": model_name,
+            "service_url": self.service_url,
+            "source": "user_preference",
+            "registry_row": llm_row,
+        }
+
+    def _resolve_effective_llm(
+        self,
+        *,
+        session_id: str,
+        auth_user: str,
+        created_new_conversation: bool,
+        new_conversation_selection: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Resolve the effective runtime LLM for a concrete conversation session."""
+        stored_llm_id = self.ctx.get_conversation_llm_id(session_id)
+        if stored_llm_id is None:
+            if created_new_conversation:
+                return dict(new_conversation_selection)
+            return self._configured_fallback_selection()
+
+        llm_row = self.ctx.get_llm_registry_entry(stored_llm_id)
+        if not llm_row:
+            return self._configured_fallback_selection(
+                warning_message=(
+                    f"{Icons.warn} Conversation '{session_id}' for user '{auth_user}' "
+                    f"references missing llm_id={stored_llm_id}. "
+                    f"Using configured model '{self.model_name}' at runtime."
+                )
+            )
+
+        provider = str(llm_row.get("PROVIDER") or "").strip().lower()
+        model_name = str(llm_row.get("MODEL") or "").strip()
+        if not self._registry_row_enabled(llm_row):
+            return self._configured_fallback_selection(
+                warning_message=(
+                    f"{Icons.warn} Conversation '{session_id}' for user '{auth_user}' "
+                    f"references disabled LLM '{model_name}' (llm_id={stored_llm_id}). "
+                    f"Using configured model '{self.model_name}' at runtime."
+                )
+            )
+
+        if not self._backend_model_available(provider=provider, model_name=model_name):
+            return self._configured_fallback_selection(
+                warning_message=(
+                    f"{Icons.warn} Conversation '{session_id}' for user '{auth_user}' "
+                    f"references unavailable LLM '{model_name}' (provider='{provider}', llm_id={stored_llm_id}). "
+                    f"Using configured model '{self.model_name}' at runtime."
+                )
+            )
+
+        return {
+            "llm_id": llm_row.get("LLM_ID"),
+            "provider": provider,
+            "model_name": model_name,
+            "service_url": self.service_url,
+            "source": "conversation",
+            "registry_row": llm_row,
+        }
 
     def _estimate_tokens(self, text: str) -> int:
         """
@@ -944,6 +1478,7 @@ class Orac:
         client: str,
         req_id: str | None,
         show_reasoning: bool,
+        llm_id: int | None = None,
         request_flags: dict[str, bool] | None = None,
     ) -> int:
         """Persists an assistant turn and returns the new turn index if available."""
@@ -955,7 +1490,13 @@ class Orac:
             "show_reasoning": show_reasoning,
         }
         try:
-            save_res_a = self.ctx.save_assistant_turn(session_id, auth_user, content, meta=asst_meta)
+            save_res_a = self.ctx.save_assistant_turn(
+                session_id,
+                auth_user,
+                content,
+                meta=asst_meta,
+                llm_id=llm_id,
+            )
             logger.log_debug(f"Saved assistant msg: {save_res_a}")
             return int(save_res_a.get("turn_index", 0))
         except Exception as e:
@@ -969,8 +1510,10 @@ class Orac:
                         stop_reason: str = "stop",
                         prompt_tokens: int = 0,
                         completion_tokens: int = 0,
+                        model_name: str | None = None,
                         user_registration: str = "registered") -> dict:
         """Build a protocol-compliant non-streaming response envelope."""
+        response_model = str(model_name or self.model_name)
         resp = {
             "v": 1,
             "type": "response",
@@ -980,7 +1523,7 @@ class Orac:
             "route": req_env.get("route", "orac.prompt"),
             "meta": {
                 "status": "ok",
-                "model": self.model_name,
+                "model": response_model,
                 "req_id": req_env.get("id"),
                 "user_registration": user_registration,
             },
@@ -1015,7 +1558,7 @@ class Orac:
         t = " ".join(t.split()[:6]).title()
         return t[:120].strip()
 
-    def _maybe_set_conversation_title(self, session_id: str, meta: dict) -> None:
+    def _maybe_set_conversation_title(self, session_id: str, meta: dict, llm_connector: Any) -> None:
         """
         If the conversation has at least 2 turns and no title yet, ask the LLM for a short title and store it.
         """
@@ -1048,7 +1591,7 @@ class Orac:
             ]
             title_prompt = "\n".join(lines)
 
-            raw = self.llm.send_prompt(prompt_type="U", prompt=title_prompt, stream=False)
+            raw = llm_connector.send_prompt(prompt_type="U", prompt=title_prompt, stream=False)
             if hasattr(raw, "content"):
                 raw = raw.content
             if not isinstance(raw, str):
@@ -1137,17 +1680,18 @@ class Orac:
             show_reasoning = bool(meta.get("show_reasoning", not self.strip_reasoning_tags))
             client = meta.get("client", "unknown")
             auth_user = getattr(auth_res, "user", "unknown")
+
+            try:
+                self._ensure_db_session_ready()
+            except Exception as e:
+                _log_exception("Oracle session validation failed (non-fatal)", e)
+
             meta = self._apply_user_preference_meta(meta, auth_user)
 
             logger.log_info(f"{Icons.info} [{client}] user={auth_user} Prompt received")
             logger.log_debug(f"Prompt text: {prompt}")
             logger.log_info(f"meta.show_reasoning={show_reasoning} (strip_reasoning_default={self.strip_reasoning_tags})")
             request_flags = {"anonymous_user": False}
-
-            try:
-                self._ensure_db_session_ready()
-            except Exception as e:
-                _log_exception("Oracle session validation failed (non-fatal)", e)
 
             # --- Session + conversation (timeout-aware) ---------------------------------
             logger.log_debug(
@@ -1161,6 +1705,10 @@ class Orac:
 
             session_id_base = self._derive_session_id(meta, auth_user)
             logger.log_debug(f"{Icons.tick} derived session_id_base='{session_id_base}'")
+            new_conversation_selection = self._resolve_new_conversation_llm(
+                auth_user=auth_user,
+                meta=meta,
+            )
 
             # Prefer timeout-aware conversation rollover. If anything goes wrong,
             # fall back to the non-timeout path and keep going.
@@ -1168,7 +1716,7 @@ class Orac:
                 roll = self.ctx.ensure_conversation_with_timeout(
                     user_name=auth_user,
                     session_id_base=session_id_base,
-                    llm_id=None,
+                    llm_id=new_conversation_selection.get("llm_id"),
                     timeout_seconds=self._conversation_timeout_secs,
                 )
 
@@ -1184,6 +1732,7 @@ class Orac:
 
                 # Use the (possibly rolled-over) session_id from now on
                 session_id = roll.get("session_id", session_id_base)
+                created_new_conversation = bool(roll.get("rolled_over"))
                 if roll.get("rolled_over"):
                     logger.log_info(
                         f"{Icons.info} Conversation rollover: base={session_id_base} -> new={session_id} "
@@ -1219,25 +1768,114 @@ class Orac:
                     request_flags["anonymous_user"] = True
                 _log_exception("ensure_conversation_with_timeout failed (non-fatal)", e)
                 session_id = session_id_base
+                created_new_conversation = False
                 try:
-                    self.ctx.ensure_conversation(user_name=auth_user, session_id=session_id, llm_id=None)
+                    existing_llm_id = self.ctx.get_conversation_llm_id(session_id)
+                    if existing_llm_id is None:
+                        self.ctx.ensure_conversation(
+                            user_name=auth_user,
+                            session_id=session_id,
+                            llm_id=new_conversation_selection.get("llm_id"),
+                        )
+                        created_new_conversation = True
+                    else:
+                        self.ctx.ensure_conversation(
+                            user_name=auth_user,
+                            session_id=session_id,
+                            llm_id=existing_llm_id,
+                        )
                 except Exception as e2:
                     if self._is_unregistered_user_error(e2):
                         request_flags["anonymous_user"] = True
                     _log_exception("ensure_conversation fallback failed (non-fatal)", e2)
 
+            selected_personality_code = str(
+                meta.get("personality_code") or "DEFAULT"
+            ).strip().upper()
+            if not created_new_conversation:
+                try:
+                    conversation_personality_code = self.ctx.get_conversation_personality_code(
+                        session_id
+                    )
+                except Exception as e:
+                    _log_exception(
+                        "Failed to read conversation personality for reuse check",
+                        e,
+                    )
+                    conversation_personality_code = None
+
+                if conversation_personality_code != selected_personality_code:
+                    logger.log_info(
+                        f"{Icons.info} Persona change detected for session '{session_id}': "
+                        f"stored='{conversation_personality_code or 'UNKNOWN'}', "
+                        f"selected='{selected_personality_code}'. Starting a new conversation."
+                    )
+                    try:
+                        if getattr(self, "_archive_on_rollover", False):
+                            self.ctx.archive_conversation(session_id)
+                            logger.log_info(f"{Icons.box} Archived prior conversation: {session_id}")
+                        else:
+                            self.ctx.close_conversation(session_id)
+                            logger.log_info(f"{Icons.stop} Closed prior conversation: {session_id}")
+                    except Exception as e_state:
+                        _log_exception(
+                            "Failed to transition prior conversation during persona rollover",
+                            e_state,
+                        )
+
+                    session_id = new_session_id(session_id_base)
+                    self.ctx.ensure_conversation(
+                        user_name=auth_user,
+                        session_id=session_id,
+                        llm_id=new_conversation_selection.get("llm_id"),
+                    )
+                    created_new_conversation = True
+
+            effective_llm = self._resolve_effective_llm(
+                session_id=session_id,
+                auth_user=auth_user,
+                created_new_conversation=created_new_conversation,
+                new_conversation_selection=new_conversation_selection,
+            )
+            llm_connector = self._get_llm_connector(
+                service_id=str(effective_llm.get("provider") or self.llm_service_id),
+                service_url=str(effective_llm.get("service_url") or self.service_url),
+                model_name=str(effective_llm.get("model_name") or self.model_name),
+            )
+            effective_llm_id = effective_llm.get("llm_id")
+            if effective_llm_id is not None:
+                try:
+                    effective_llm_id = int(effective_llm_id)
+                except Exception:
+                    effective_llm_id = None
+            effective_model_name = str(effective_llm.get("model_name") or self.model_name)
+            logger.log_info(
+                f"{Icons.info} Effective LLM for session '{session_id}': "
+                f"model='{effective_model_name}', provider='{effective_llm.get('provider')}', "
+                f"llm_id={effective_llm_id}, source='{effective_llm.get('source')}'"
+            )
+
             # --- Ensure a system primer is stored once per conversation ---------
             try:
                 if self.ctx.last_turn_index(session_id) == 0:
                     primer = _orac_system_primer(
-                        {"reply_language": self._reply_language},
+                        {
+                            "reply_language": meta.get(
+                                "reply_language",
+                                self._reply_language,
+                            ),
+                            "orac_personality": meta.get("orac_personality"),
+                        },
                         self._system_prompt_policy,
                     )
                     self.ctx.save_system_turn(session_id, auth_user, primer, meta={
                         "kind": "primer",
                         "ts": iso_now(),
                         "protocol_version": PROTOCOL_VERSION,
-                    })
+                        "personality_code": str(
+                            meta.get("personality_code") or "DEFAULT"
+                        ).strip().upper(),
+                    }, llm_id=effective_llm_id)
             except Exception as e:
                 if self._is_unregistered_user_error(e):
                     request_flags["anonymous_user"] = True
@@ -1251,7 +1889,13 @@ class Orac:
                 "req_id": req_env.get("id"),
             }
             try:
-                save_res_u = self.ctx.save_user_turn(session_id, auth_user, prompt, meta=user_meta)
+                save_res_u = self.ctx.save_user_turn(
+                    session_id,
+                    auth_user,
+                    prompt,
+                    meta=user_meta,
+                    llm_id=effective_llm_id,
+                )
                 logger.log_debug(f"Saved user msg: {save_res_u}")
             except Exception as e:
                 if self._is_unregistered_user_error(e):
@@ -1274,9 +1918,10 @@ class Orac:
                     client=client,
                     req_id=req_env.get("id"),
                     show_reasoning=show_reasoning,
+                    llm_id=effective_llm_id,
                     request_flags=request_flags,
                 )
-                self._maybe_set_conversation_title(session_id, meta)
+                self._maybe_set_conversation_title(session_id, meta, llm_connector)
                 self._maybe_prune(session_id, last_ti)
                 resp_env = self._build_response(
                     req_env,
@@ -1284,6 +1929,7 @@ class Orac:
                     stop_reason=plugin_execution_result.stop_reason,
                     prompt_tokens=0,
                     completion_tokens=0,
+                    model_name=effective_model_name,
                     user_registration=(
                         "anonymous" if request_flags["anonymous_user"] else "registered"
                     ),
@@ -1305,13 +1951,13 @@ class Orac:
 
             # === Call backend (non-streaming path) ===
             try:
-                raw = self.llm.send_prompt(prompt_type="U", prompt=final_prompt, stream=False)
+                raw = llm_connector.send_prompt(prompt_type="U", prompt=final_prompt, stream=False)
             except Exception as e:
                 _log_exception("LLM backend call failed", e)
                 err = {
                     "v": 1, "type": "response", "id": new_id("res"),
                     "reply_to": req_env.get("id"), "ts": iso_now(), "route": "orac.prompt",
-                    "meta": {"status": "error", "model": self.model_name, "req_id": req_env.get("id")},
+                    "meta": {"status": "error", "model": effective_model_name, "req_id": req_env.get("id")},
                     "payload": None,
                     "error": {"code": "LLM_BACKEND_ERROR", "message": str(e)},
                 }
@@ -1343,10 +1989,11 @@ class Orac:
                 client=client,
                 req_id=req_env.get("id"),
                 show_reasoning=show_reasoning,
+                llm_id=effective_llm_id,
                 request_flags=request_flags,
             )
 
-            self._maybe_set_conversation_title(session_id, meta)
+            self._maybe_set_conversation_title(session_id, meta, llm_connector)
             self._maybe_prune(session_id, last_ti)
 
             resp_env = self._build_response(
@@ -1355,6 +2002,7 @@ class Orac:
                 stop_reason="stop",
                 prompt_tokens=0,
                 completion_tokens=0,
+                model_name=effective_model_name,
                 user_registration=(
                     "anonymous" if request_flags["anonymous_user"] else "registered"
                 ),

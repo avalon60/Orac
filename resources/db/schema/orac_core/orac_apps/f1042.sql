@@ -180,6 +180,15 @@ wwv_flow_imp_shared.create_list_item(
 ,p_list_item_current_for_pages=>'7'
 );
 wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(14000100000000001)
+,p_list_item_display_sequence=>45
+,p_list_item_link_text=>'Orac Personas'
+,p_list_item_link_target=>'f?p=&APP_ID.:9:&SESSION.::&DEBUG.::::'
+,p_list_item_icon=>'fa-user-circle-o'
+,p_list_item_current_type=>'COLON_DELIMITED_PAGE_LIST'
+,p_list_item_current_for_pages=>'9'
+);
+wwv_flow_imp_shared.create_list_item(
  p_id=>wwv_flow_imp.id(11644460366769356)
 ,p_list_item_display_sequence=>10000
 ,p_list_item_link_text=>'Administration'
@@ -1353,6 +1362,85 @@ end;
 prompt --application/shared_components/user_interface/lovs/timeframe_4_weeks
 begin
 wwv_flow_imp_shared.create_list_of_values(
+ p_id=>wwv_flow_imp.id(14000100000000101)
+,p_lov_name=>'ORAC_PERSONALITY_ATTITUDE_LEVEL'
+,p_lov_query=>'.'||wwv_flow_imp.id(14000100000000101)||'.'
+,p_location=>'STATIC'
+,p_version_scn=>2645056
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(14000100000000102)
+,p_lov_disp_sequence=>1
+,p_lov_disp_value=>'Neutral'
+,p_lov_return_value=>'0'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(14000100000000103)
+,p_lov_disp_sequence=>2
+,p_lov_disp_value=>'Dry'
+,p_lov_return_value=>'1'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(14000100000000104)
+,p_lov_disp_sequence=>3
+,p_lov_disp_value=>'Sharper'
+,p_lov_return_value=>'2'
+);
+wwv_flow_imp_shared.create_list_of_values(
+ p_id=>wwv_flow_imp.id(14000100000000105)
+,p_lov_name=>'ORAC_PERSONALITY_SARCASM_LEVEL'
+,p_lov_query=>'.'||wwv_flow_imp.id(14000100000000105)||'.'
+,p_location=>'STATIC'
+,p_version_scn=>2645056
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(14000100000000106)
+,p_lov_disp_sequence=>1
+,p_lov_disp_value=>'None'
+,p_lov_return_value=>'0'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(14000100000000107)
+,p_lov_disp_sequence=>2
+,p_lov_disp_value=>'Light'
+,p_lov_return_value=>'1'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(14000100000000108)
+,p_lov_disp_sequence=>3
+,p_lov_disp_value=>'Strong'
+,p_lov_return_value=>'2'
+);
+wwv_flow_imp_shared.create_list_of_values(
+ p_id=>wwv_flow_imp.id(14000100000000109)
+,p_lov_name=>'ORAC_PERSONALITY_VERBOSITY_LEVEL'
+,p_lov_query=>'.'||wwv_flow_imp.id(14000100000000109)||'.'
+,p_location=>'STATIC'
+,p_version_scn=>2645056
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(14000100000000110)
+,p_lov_disp_sequence=>1
+,p_lov_disp_value=>'Concise'
+,p_lov_return_value=>'0'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(14000100000000111)
+,p_lov_disp_sequence=>2
+,p_lov_disp_value=>'Balanced'
+,p_lov_return_value=>'1'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(14000100000000112)
+,p_lov_disp_sequence=>3
+,p_lov_disp_value=>'Detailed'
+,p_lov_return_value=>'2'
+);
+end;
+/
+prompt --application/shared_components/user_interface/lovs/timeframe_4_weeks
+begin
+wwv_flow_imp_shared.create_list_of_values(
  p_id=>wwv_flow_imp.id(11505263637769211)
 ,p_lov_name=>'TIMEFRAME (4 WEEKS)'
 ,p_lov_query=>wwv_flow_string.join(wwv_flow_t_varchar2(
@@ -1529,6 +1617,12 @@ wwv_flow_imp_shared.create_menu_option(
 ,p_short_name=>'User Maintenance'
 ,p_link=>'f?p=&APP_ID.:2:&APP_SESSION.::&DEBUG.:::'
 ,p_page_id=>2
+);
+wwv_flow_imp_shared.create_menu_option(
+ p_id=>wwv_flow_imp.id(14000100000000002)
+,p_short_name=>'Orac Personas'
+,p_link=>'f?p=&APP_ID.:9:&APP_SESSION.::&DEBUG.:::'
+,p_page_id=>9
 );
 end;
 /
@@ -2691,8 +2785,7 @@ wwv_flow_imp_page.create_page_button(
 ,p_button_template_id=>2349107722467437027
 ,p_button_image_alt=>'Add User Preferences'
 ,p_button_position=>'EDIT'
-,p_button_redirect_url=>'f?p=&APP_ID.:6:&APP_SESSION.::&DEBUG.:RP,6:P6_USER_ID:&P2_USER_ID.'
-,p_icon_css_classes=>'fa-plus'
+,p_button_display_condition_type=>'NEVER'
 );
 wwv_flow_imp_page.create_page_button(
  p_id=>wwv_flow_imp.id(12717157375390327)
@@ -3676,7 +3769,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_query_table=>'USER_PREFERENCES_V'
 ,p_include_rowid_column=>true
 ,p_is_editable=>true
-,p_edit_operations=>'i:u:d'
+,p_edit_operations=>'u'
 ,p_lost_update_check_type=>'VALUES'
 ,p_plug_source_type=>'NATIVE_FORM'
 );
@@ -3790,7 +3883,7 @@ wwv_flow_imp_page.create_page_button(
 ,p_confirm_message=>'&APP_TEXT$DELETE_MSG!RAW.'
 ,p_confirm_style=>'danger'
 ,p_button_condition=>'P6_ROWID'
-,p_button_condition_type=>'ITEM_IS_NOT_NULL'
+,p_button_condition_type=>'NEVER'
 ,p_database_action=>'DELETE'
 );
 wwv_flow_imp_page.create_page_button(
@@ -3822,7 +3915,7 @@ wwv_flow_imp_page.create_page_button(
 ,p_button_position=>'NEXT'
 ,p_button_alignment=>'RIGHT'
 ,p_button_condition=>'P6_ROWID'
-,p_button_condition_type=>'ITEM_IS_NULL'
+,p_button_condition_type=>'NEVER'
 ,p_database_action=>'INSERT'
 );
 wwv_flow_imp_page.create_page_button(
@@ -4328,13 +4421,8 @@ wwv_flow_imp_page.create_page_process(
 'begin',
 '  l_pref_id := :P6_PREF_ID;',
 '',
-'  if :REQUEST = ''DELETE'' then',
-'    orac_code.user_preferences_api.del(',
-'      p_pref_id     => l_pref_id,',
-'      p_row_version => l_row_version',
-'    );',
-'    :P6_ROW_VERSION := l_row_version;',
-'    return;',
+'  if l_pref_id is null then',
+'    raise_application_error(-20000, ''User preferences are seeded and may only be edited, not created.'');',
 '  end if;',
 '',
 '  select value_type',
@@ -4382,25 +4470,14 @@ wwv_flow_imp_page.create_page_process(
 '',
 '  l_pref_value := json(l_pref_value_txt);',
 '',
-'  if :REQUEST = ''CREATE'' then',
-'    orac_code.user_preferences_api.ins(',
-'      p_pref_id     => l_pref_id,',
-'      p_user_id     => :P6_USER_ID,',
-'      p_pref_key    => :P6_PREF_KEY,',
-'      p_pref_value  => l_pref_value,',
-'      p_value_type  => l_value_type,',
-'      p_row_version => l_row_version',
-'    );',
-'  else',
-'    orac_code.user_preferences_api.upd(',
-'      p_pref_id     => l_pref_id,',
-'      p_user_id     => :P6_USER_ID,',
-'      p_pref_key    => :P6_PREF_KEY,',
-'      p_pref_value  => l_pref_value,',
-'      p_value_type  => l_value_type,',
-'      p_row_version => l_row_version',
-'    );',
-'  end if;',
+'  orac_code.user_preferences_api.upd(',
+'    p_pref_id     => l_pref_id,',
+'    p_user_id     => :P6_USER_ID,',
+'    p_pref_key    => :P6_PREF_KEY,',
+'    p_pref_value  => l_pref_value,',
+'    p_value_type  => l_value_type,',
+'    p_row_version => l_row_version',
+'  );',
 '',
 '  :P6_PREF_ID := l_pref_id;',
 '  :P6_ROW_VERSION := l_row_version;',
@@ -4417,7 +4494,7 @@ wwv_flow_imp_page.create_page_process(
 ,p_process_name=>'Close Dialog'
 ,p_attribute_01=>'P6_ROWID,REQUEST'
 ,p_error_display_location=>'INLINE_IN_NOTIFICATION'
-,p_process_when=>'CREATE,SAVE,DELETE'
+,p_process_when=>'SAVE'
 ,p_process_when_type=>'REQUEST_IN_CONDITION'
 ,p_internal_uid=>6404607863238899
 );
@@ -5311,6 +5388,748 @@ wwv_flow_imp_page.create_page_process(
 ,p_process_name=>'Initialize form Preference Definitions'
 ,p_error_display_location=>'INLINE_IN_NOTIFICATION'
 ,p_internal_uid=>13900100000000334
+);
+end;
+/
+prompt --application/pages/page_00009
+begin
+wwv_flow_imp_page.create_page(
+ p_id=>9
+,p_name=>'Orac Personas'
+,p_alias=>'ORAC-PERSONAS'
+,p_step_title=>'Orac Personas'
+,p_warn_on_unsaved_changes=>'N'
+,p_autocomplete_on_off=>'OFF'
+,p_step_template=>2526643373347724467
+,p_page_template_options=>'#DEFAULT#'
+,p_protection_level=>'C'
+,p_page_component_map=>'03'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(14000100000000201)
+,p_plug_name=>'Breadcrumb'
+,p_region_template_options=>'#DEFAULT#:t-BreadcrumbRegion--useBreadcrumbTitle'
+,p_component_template_options=>'#DEFAULT#'
+,p_plug_template=>2531463326621247859
+,p_plug_display_sequence=>10
+,p_plug_display_point=>'REGION_POSITION_01'
+,p_menu_id=>wwv_flow_imp.id(11444266688769030)
+,p_plug_source_type=>'NATIVE_BREADCRUMB'
+,p_menu_template_id=>4072363345357175094
+);
+wwv_flow_imp_page.create_report_region(
+ p_id=>wwv_flow_imp.id(14000100000000202)
+,p_name=>'Orac Personas'
+,p_template=>4072358936313175081
+,p_display_sequence=>20
+,p_region_template_options=>'#DEFAULT#:t-Region--noPadding:t-Region--scrollBody'
+,p_component_template_options=>'t-Report--stretch:#DEFAULT#:t-Report--altRowsDefault:t-Report--rowHighlight:t-Report--inline'
+,p_source_type=>'NATIVE_SQL_REPORT'
+,p_query_type=>'SQL'
+,p_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select personality_id,',
+'       personality_code,',
+'       personality_name,',
+'       attitude_base_level,',
+'       sarcasm_level,',
+'       verbosity_level,',
+'       case when packaged_persona then ''Y'' else ''N'' end as packaged_persona_yn,',
+'       case when is_active then ''Y'' else ''N'' end as is_active_yn',
+'  from orac_api.orac_personalities_v',
+' order by personality_name'))
+,p_ajax_enabled=>'Y'
+,p_lazy_loading=>false
+,p_query_row_template=>2538654340625403440
+,p_query_num_rows=>100
+,p_query_options=>'DERIVED_REPORT_COLUMNS'
+,p_query_no_data_found=>'No data found.'
+,p_query_num_rows_type=>'NEXT_PREVIOUS_LINKS'
+,p_query_row_count_max=>5000
+,p_pagination_display_position=>'BOTTOM_RIGHT'
+,p_csv_output=>'N'
+,p_prn_output=>'N'
+,p_sort_null=>'L'
+,p_plug_query_strip_html=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(14000100000000203)
+,p_query_column_id=>1
+,p_column_alias=>'PERSONALITY_ID'
+,p_column_display_sequence=>1
+,p_column_heading=>'<span class="u-VisuallyHidden">Edit</span>'
+,p_column_link=>'f?p=&APP_ID.:10:&APP_SESSION.::&DEBUG.:RP:P10_PERSONALITY_ID:#PERSONALITY_ID#'
+,p_column_linktext=>'<span role="img" aria-label="Edit" class="fa fa-edit" title="Edit"></span>'
+,p_heading_alignment=>'LEFT'
+,p_report_column_width=>32
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(14000100000000204)
+,p_query_column_id=>2
+,p_column_alias=>'PERSONALITY_CODE'
+,p_column_display_sequence=>2
+,p_column_heading=>'Code'
+,p_heading_alignment=>'LEFT'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(14000100000000205)
+,p_query_column_id=>3
+,p_column_alias=>'PERSONALITY_NAME'
+,p_column_display_sequence=>3
+,p_column_heading=>'Name'
+,p_heading_alignment=>'LEFT'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(14000100000000206)
+,p_query_column_id=>4
+,p_column_alias=>'ATTITUDE_BASE_LEVEL'
+,p_column_display_sequence=>4
+,p_column_heading=>'Attitude'
+,p_heading_alignment=>'LEFT'
+,p_display_as=>'TEXT_FROM_LOV_ESC'
+,p_named_lov=>wwv_flow_imp.id(14000100000000101)
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(14000100000000207)
+,p_query_column_id=>5
+,p_column_alias=>'SARCASM_LEVEL'
+,p_column_display_sequence=>5
+,p_column_heading=>'Sarcasm'
+,p_heading_alignment=>'LEFT'
+,p_display_as=>'TEXT_FROM_LOV_ESC'
+,p_named_lov=>wwv_flow_imp.id(14000100000000105)
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(14000100000000208)
+,p_query_column_id=>6
+,p_column_alias=>'VERBOSITY_LEVEL'
+,p_column_display_sequence=>6
+,p_column_heading=>'Verbosity'
+,p_heading_alignment=>'LEFT'
+,p_display_as=>'TEXT_FROM_LOV_ESC'
+,p_named_lov=>wwv_flow_imp.id(14000100000000109)
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(14000100000000209)
+,p_query_column_id=>7
+,p_column_alias=>'PACKAGED_PERSONA_YN'
+,p_column_display_sequence=>7
+,p_column_heading=>'Packaged'
+,p_heading_alignment=>'LEFT'
+,p_display_as=>'TEXT_FROM_LOV_ESC'
+,p_named_lov=>wwv_flow_imp.id(13042552942059931)
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(14000100000000210)
+,p_query_column_id=>8
+,p_column_alias=>'IS_ACTIVE_YN'
+,p_column_display_sequence=>8
+,p_column_heading=>'Is Active'
+,p_heading_alignment=>'LEFT'
+,p_display_as=>'TEXT_FROM_LOV_ESC'
+,p_named_lov=>wwv_flow_imp.id(13042552942059931)
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(14000100000000211)
+,p_button_sequence=>10
+,p_button_plug_id=>wwv_flow_imp.id(14000100000000202)
+,p_button_name=>'POP_ORAC_PERSONAS'
+,p_button_action=>'REDIRECT_PAGE'
+,p_button_template_options=>'#DEFAULT#:t-Button--noUI'
+,p_button_template_id=>2349107722467437027
+,p_button_image_alt=>'Add Orac Persona'
+,p_button_position=>'EDIT'
+,p_button_redirect_url=>'f?p=&APP_ID.:10:&APP_SESSION.::&DEBUG.:RP,10::'
+,p_icon_css_classes=>'fa-plus'
+);
+wwv_flow_imp_page.create_page_da_event(
+ p_id=>wwv_flow_imp.id(14000100000000212)
+,p_name=>'Dialog Closed'
+,p_event_sequence=>10
+,p_triggering_element_type=>'REGION'
+,p_triggering_region_id=>wwv_flow_imp.id(14000100000000202)
+,p_bind_type=>'bind'
+,p_execution_type=>'IMMEDIATE'
+,p_bind_event_type=>'apexafterclosedialog'
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(14000100000000213)
+,p_event_id=>wwv_flow_imp.id(14000100000000212)
+,p_event_result=>'TRUE'
+,p_action_sequence=>10
+,p_execute_on_page_init=>'N'
+,p_action=>'NATIVE_REFRESH'
+,p_affected_elements_type=>'REGION'
+,p_affected_region_id=>wwv_flow_imp.id(14000100000000202)
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(14000100000000214)
+,p_event_id=>wwv_flow_imp.id(14000100000000212)
+,p_event_result=>'TRUE'
+,p_action_sequence=>20
+,p_execute_on_page_init=>'N'
+,p_action=>'NATIVE_JAVASCRIPT_CODE'
+,p_attribute_01=>'apex.message.showPageSuccess(''Orac persona row(s) updated.'');'
+);
+end;
+/
+prompt --application/pages/page_00010
+begin
+wwv_flow_imp_page.create_page(
+ p_id=>10
+,p_name=>'Orac Personas'
+,p_alias=>'ORAC-PERSONA'
+,p_page_mode=>'MODAL'
+,p_step_title=>'Orac Personas'
+,p_autocomplete_on_off=>'OFF'
+,p_step_template=>1661186590416509825
+,p_page_template_options=>'#DEFAULT#:js-dialog-class-t-Drawer--pullOutEnd'
+,p_dialog_chained=>'N'
+,p_dialog_resizable=>'Y'
+,p_protection_level=>'C'
+,p_page_component_map=>'02'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(14000100000000301)
+,p_plug_name=>'Orac Personas'
+,p_region_template_options=>'#DEFAULT#'
+,p_plug_template=>4501440665235496320
+,p_plug_display_sequence=>10
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(14000100000000302)
+,p_plug_name=>'Buttons'
+,p_region_template_options=>'#DEFAULT#'
+,p_plug_template=>2126429139436695430
+,p_plug_display_sequence=>20
+,p_plug_display_point=>'REGION_POSITION_03'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'expand_shortcuts', 'N',
+  'output_as', 'TEXT',
+  'show_line_breaks', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(14000100000000303)
+,p_button_sequence=>10
+,p_button_plug_id=>wwv_flow_imp.id(14000100000000302)
+,p_button_name=>'CANCEL'
+,p_button_action=>'DEFINED_BY_DA'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>4072362960822175091
+,p_button_image_alt=>'Cancel'
+,p_button_position=>'CLOSE'
+,p_button_alignment=>'RIGHT'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(14000100000000304)
+,p_button_sequence=>20
+,p_button_plug_id=>wwv_flow_imp.id(14000100000000302)
+,p_button_name=>'DELETE'
+,p_button_action=>'SUBMIT'
+,p_button_template_options=>'#DEFAULT#:t-Button--danger:t-Button--simple'
+,p_button_template_id=>4072362960822175091
+,p_button_image_alt=>'Delete'
+,p_button_position=>'DELETE'
+,p_button_alignment=>'RIGHT'
+,p_button_execute_validations=>'N'
+,p_confirm_message=>'&APP_TEXT$DELETE_MSG!RAW.'
+,p_confirm_style=>'danger'
+,p_button_condition=>'P10_PERSONALITY_ID'
+,p_button_condition_type=>'ITEM_IS_NOT_NULL'
+,p_database_action=>'DELETE'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(14000100000000305)
+,p_button_sequence=>30
+,p_button_plug_id=>wwv_flow_imp.id(14000100000000302)
+,p_button_name=>'SAVE'
+,p_button_action=>'SUBMIT'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>4072362960822175091
+,p_button_is_hot=>'Y'
+,p_button_image_alt=>'Apply Changes'
+,p_button_position=>'NEXT'
+,p_button_alignment=>'RIGHT'
+,p_button_condition=>'P10_PERSONALITY_ID'
+,p_button_condition_type=>'ITEM_IS_NOT_NULL'
+,p_database_action=>'UPDATE'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(14000100000000306)
+,p_button_sequence=>40
+,p_button_plug_id=>wwv_flow_imp.id(14000100000000302)
+,p_button_name=>'CREATE'
+,p_button_action=>'SUBMIT'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>4072362960822175091
+,p_button_is_hot=>'Y'
+,p_button_image_alt=>'Create'
+,p_button_position=>'NEXT'
+,p_button_alignment=>'RIGHT'
+,p_button_condition=>'P10_PERSONALITY_ID'
+,p_button_condition_type=>'ITEM_IS_NULL'
+,p_database_action=>'INSERT'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000307)
+,p_name=>'P10_PERSONALITY_ID'
+,p_source_data_type=>'NUMBER'
+,p_item_sequence=>10
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_display_as=>'NATIVE_HIDDEN'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000308)
+,p_name=>'P10_PERSONALITY_CODE'
+,p_source_data_type=>'VARCHAR2'
+,p_is_required=>true
+,p_item_sequence=>20
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_prompt=>'Personality Code'
+,p_display_as=>'NATIVE_TEXT_FIELD'
+,p_cSize=>30
+,p_cMaxlength=>30
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'disabled', 'N',
+  'submit_when_enter_pressed', 'N',
+  'subtype', 'TEXT',
+  'trim_spaces', 'BOTH')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000309)
+,p_name=>'P10_PERSONALITY_NAME'
+,p_source_data_type=>'VARCHAR2'
+,p_is_required=>true
+,p_item_sequence=>30
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_prompt=>'Personality Name'
+,p_display_as=>'NATIVE_TEXT_FIELD'
+,p_cSize=>50
+,p_cMaxlength=>100
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'disabled', 'N',
+  'submit_when_enter_pressed', 'N',
+  'subtype', 'TEXT',
+  'trim_spaces', 'BOTH')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000310)
+,p_name=>'P10_DESCRIPTION'
+,p_source_data_type=>'VARCHAR2'
+,p_item_sequence=>40
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_prompt=>'Description'
+,p_display_as=>'NATIVE_TEXTAREA'
+,p_cSize=>60
+,p_cMaxlength=>500
+,p_cHeight=>4
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'auto_height', 'N',
+  'character_counter', 'N',
+  'resizable', 'Y',
+  'trim_spaces', 'BOTH')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000311)
+,p_name=>'P10_ATTITUDE_BASE_LEVEL'
+,p_source_data_type=>'NUMBER'
+,p_is_required=>true
+,p_item_sequence=>50
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_item_default=>'1'
+,p_prompt=>'Attitude'
+,p_display_as=>'NATIVE_SELECT_LIST'
+,p_named_lov=>'ORAC_PERSONALITY_ATTITUDE_LEVEL'
+,p_lov=>'.'||wwv_flow_imp.id(14000100000000101)||'.'
+,p_lov_display_null=>'YES'
+,p_cHeight=>1
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'YES'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000312)
+,p_name=>'P10_SARCASM_LEVEL'
+,p_source_data_type=>'NUMBER'
+,p_is_required=>true
+,p_item_sequence=>60
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_item_default=>'1'
+,p_prompt=>'Sarcasm'
+,p_display_as=>'NATIVE_SELECT_LIST'
+,p_named_lov=>'ORAC_PERSONALITY_SARCASM_LEVEL'
+,p_lov=>'.'||wwv_flow_imp.id(14000100000000105)||'.'
+,p_lov_display_null=>'YES'
+,p_cHeight=>1
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'YES'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000313)
+,p_name=>'P10_VERBOSITY_LEVEL'
+,p_source_data_type=>'NUMBER'
+,p_is_required=>true
+,p_item_sequence=>70
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_item_default=>'1'
+,p_prompt=>'Verbosity'
+,p_display_as=>'NATIVE_SELECT_LIST'
+,p_named_lov=>'ORAC_PERSONALITY_VERBOSITY_LEVEL'
+,p_lov=>'.'||wwv_flow_imp.id(14000100000000109)||'.'
+,p_lov_display_null=>'YES'
+,p_cHeight=>1
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'YES'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000314)
+,p_name=>'P10_ALLOW_HUMOUR'
+,p_source_data_type=>'VARCHAR2'
+,p_is_required=>true
+,p_item_sequence=>80
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_item_default=>'Y'
+,p_prompt=>'Allow Humour'
+,p_display_as=>'NATIVE_YES_NO'
+,p_cSize=>64
+,p_cMaxlength=>4000
+,p_field_template=>2318601014859922299
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'NO'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'use_defaults', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000315)
+,p_name=>'P10_ALLOW_CRITIQUE'
+,p_source_data_type=>'VARCHAR2'
+,p_is_required=>true
+,p_item_sequence=>90
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_item_default=>'Y'
+,p_prompt=>'Allow Critique'
+,p_display_as=>'NATIVE_YES_NO'
+,p_cSize=>64
+,p_cMaxlength=>4000
+,p_field_template=>2318601014859922299
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'NO'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'use_defaults', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000316)
+,p_name=>'P10_ENFORCE_PRECISION'
+,p_source_data_type=>'VARCHAR2'
+,p_is_required=>true
+,p_item_sequence=>100
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_item_default=>'Y'
+,p_prompt=>'Enforce Precision'
+,p_display_as=>'NATIVE_YES_NO'
+,p_cSize=>64
+,p_cMaxlength=>4000
+,p_field_template=>2318601014859922299
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'NO'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'use_defaults', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000317)
+,p_name=>'P10_ADMIT_UNCERTAINTY'
+,p_source_data_type=>'VARCHAR2'
+,p_is_required=>true
+,p_item_sequence=>110
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_item_default=>'Y'
+,p_prompt=>'Admit Uncertainty'
+,p_display_as=>'NATIVE_YES_NO'
+,p_cSize=>64
+,p_cMaxlength=>4000
+,p_field_template=>2318601014859922299
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'NO'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'use_defaults', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000318)
+,p_name=>'P10_PACKAGED_PERSONA'
+,p_source_data_type=>'VARCHAR2'
+,p_is_required=>true
+,p_item_sequence=>120
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_item_default=>'N'
+,p_prompt=>'Packaged Persona'
+,p_display_as=>'NATIVE_YES_NO'
+,p_cSize=>64
+,p_cMaxlength=>4000
+,p_field_template=>2318601014859922299
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'NO'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'use_defaults', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000319)
+,p_name=>'P10_IS_ACTIVE'
+,p_source_data_type=>'VARCHAR2'
+,p_is_required=>true
+,p_item_sequence=>130
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_item_default=>'Y'
+,p_prompt=>'Is Active'
+,p_display_as=>'NATIVE_YES_NO'
+,p_cSize=>64
+,p_cMaxlength=>4000
+,p_field_template=>2318601014859922299
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'NO'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'use_defaults', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000320)
+,p_name=>'P10_SYSTEM_PROMPT'
+,p_source_data_type=>'CLOB'
+,p_item_sequence=>140
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_prompt=>'System Prompt'
+,p_display_as=>'NATIVE_TEXTAREA'
+,p_cSize=>60
+,p_cHeight=>8
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'auto_height', 'N',
+  'character_counter', 'N',
+  'resizable', 'Y',
+  'trim_spaces', 'NONE')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000321)
+,p_name=>'P10_STYLE_PROMPT'
+,p_source_data_type=>'CLOB'
+,p_item_sequence=>150
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_prompt=>'Style Prompt'
+,p_display_as=>'NATIVE_TEXTAREA'
+,p_cSize=>60
+,p_cHeight=>8
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'auto_height', 'N',
+  'character_counter', 'N',
+  'resizable', 'Y',
+  'trim_spaces', 'NONE')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000322)
+,p_name=>'P10_ROW_VERSION'
+,p_source_data_type=>'NUMBER'
+,p_item_sequence=>160
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_display_as=>'NATIVE_HIDDEN'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_da_event(
+ p_id=>wwv_flow_imp.id(14000100000000323)
+,p_name=>'Cancel Dialog'
+,p_event_sequence=>10
+,p_triggering_element_type=>'BUTTON'
+,p_triggering_button_id=>wwv_flow_imp.id(14000100000000303)
+,p_bind_type=>'bind'
+,p_execution_type=>'IMMEDIATE'
+,p_bind_event_type=>'click'
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(14000100000000324)
+,p_event_id=>wwv_flow_imp.id(14000100000000323)
+,p_event_result=>'TRUE'
+,p_action_sequence=>10
+,p_execute_on_page_init=>'N'
+,p_action=>'NATIVE_DIALOG_CANCEL'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(14000100000000325)
+,p_process_sequence=>10
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Process form Orac Personas'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'declare',
+'  l_personality_id      orac_api.orac_personalities_v.personality_id%type;',
+'  l_row_version         orac_api.orac_personalities_v.row_version%type;',
+'',
+'  function to_bool(p_value in varchar2) return boolean is',
+'  begin',
+'    return p_value = ''Y'';',
+'  end to_bool;',
+'begin',
+'  l_personality_id := :P10_PERSONALITY_ID;',
+'',
+'  if :REQUEST = ''DELETE'' then',
+'    orac_code.orac_personalities_api.del(',
+'      p_personality_id => l_personality_id,',
+'      p_row_version    => l_row_version',
+'    );',
+'  elsif :REQUEST = ''CREATE'' then',
+'    orac_code.orac_personalities_api.ins(',
+'      p_personality_id      => l_personality_id,',
+'      p_personality_code    => :P10_PERSONALITY_CODE,',
+'      p_personality_name    => :P10_PERSONALITY_NAME,',
+'      p_description         => :P10_DESCRIPTION,',
+'      p_attitude_base_level => :P10_ATTITUDE_BASE_LEVEL,',
+'      p_sarcasm_level       => :P10_SARCASM_LEVEL,',
+'      p_verbosity_level     => :P10_VERBOSITY_LEVEL,',
+'      p_allow_humour        => to_bool(:P10_ALLOW_HUMOUR),',
+'      p_allow_critique      => to_bool(:P10_ALLOW_CRITIQUE),',
+'      p_enforce_precision   => to_bool(:P10_ENFORCE_PRECISION),',
+'      p_admit_uncertainty   => to_bool(:P10_ADMIT_UNCERTAINTY),',
+'      p_packaged_persona    => to_bool(:P10_PACKAGED_PERSONA),',
+'      p_system_prompt       => :P10_SYSTEM_PROMPT,',
+'      p_style_prompt        => :P10_STYLE_PROMPT,',
+'      p_is_active           => to_bool(:P10_IS_ACTIVE),',
+'      p_row_version         => l_row_version',
+'    );',
+'  else',
+'    orac_code.orac_personalities_api.upd(',
+'      p_personality_id      => l_personality_id,',
+'      p_personality_code    => :P10_PERSONALITY_CODE,',
+'      p_personality_name    => :P10_PERSONALITY_NAME,',
+'      p_description         => :P10_DESCRIPTION,',
+'      p_attitude_base_level => :P10_ATTITUDE_BASE_LEVEL,',
+'      p_sarcasm_level       => :P10_SARCASM_LEVEL,',
+'      p_verbosity_level     => :P10_VERBOSITY_LEVEL,',
+'      p_allow_humour        => to_bool(:P10_ALLOW_HUMOUR),',
+'      p_allow_critique      => to_bool(:P10_ALLOW_CRITIQUE),',
+'      p_enforce_precision   => to_bool(:P10_ENFORCE_PRECISION),',
+'      p_admit_uncertainty   => to_bool(:P10_ADMIT_UNCERTAINTY),',
+'      p_packaged_persona    => to_bool(:P10_PACKAGED_PERSONA),',
+'      p_system_prompt       => :P10_SYSTEM_PROMPT,',
+'      p_style_prompt        => :P10_STYLE_PROMPT,',
+'      p_is_active           => to_bool(:P10_IS_ACTIVE),',
+'      p_row_version         => l_row_version',
+'    );',
+'  end if;',
+'',
+'  :P10_PERSONALITY_ID := l_personality_id;',
+'  :P10_ROW_VERSION := l_row_version;',
+'end;'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_internal_uid=>14000100000000325
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(14000100000000326)
+,p_process_sequence=>50
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_CLOSE_WINDOW'
+,p_process_name=>'Close Dialog'
+,p_attribute_01=>'P10_PERSONALITY_ID,REQUEST'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_process_when=>'CREATE,SAVE,DELETE'
+,p_process_when_type=>'REQUEST_IN_CONDITION'
+,p_internal_uid=>14000100000000326
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(14000100000000327)
+,p_process_sequence=>10
+,p_process_point=>'BEFORE_HEADER'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Initialize Orac Persona'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'declare',
+'  l_allow_humour      boolean;',
+'  l_allow_critique    boolean;',
+'  l_enforce_precision boolean;',
+'  l_admit_uncertainty boolean;',
+'  l_packaged_persona  boolean;',
+'  l_is_active         boolean;',
+'begin',
+'  if :P10_PERSONALITY_ID is not null then',
+'    select personality_code,',
+'           personality_name,',
+'           description,',
+'           attitude_base_level,',
+'           sarcasm_level,',
+'           verbosity_level,',
+'           allow_humour,',
+'           allow_critique,',
+'           enforce_precision,',
+'           admit_uncertainty,',
+'           packaged_persona,',
+'           system_prompt,',
+'           style_prompt,',
+'           is_active,',
+'           row_version',
+'      into :P10_PERSONALITY_CODE,',
+'           :P10_PERSONALITY_NAME,',
+'           :P10_DESCRIPTION,',
+'           :P10_ATTITUDE_BASE_LEVEL,',
+'           :P10_SARCASM_LEVEL,',
+'           :P10_VERBOSITY_LEVEL,',
+'           l_allow_humour,',
+'           l_allow_critique,',
+'           l_enforce_precision,',
+'           l_admit_uncertainty,',
+'           l_packaged_persona,',
+'           :P10_SYSTEM_PROMPT,',
+'           :P10_STYLE_PROMPT,',
+'           l_is_active,',
+'           :P10_ROW_VERSION',
+'      from orac_api.orac_personalities_v',
+'     where personality_id = :P10_PERSONALITY_ID;',
+'',
+'    :P10_ALLOW_HUMOUR := case when l_allow_humour then ''Y'' else ''N'' end;',
+'    :P10_ALLOW_CRITIQUE := case when l_allow_critique then ''Y'' else ''N'' end;',
+'    :P10_ENFORCE_PRECISION := case when l_enforce_precision then ''Y'' else ''N'' end;',
+'    :P10_ADMIT_UNCERTAINTY := case when l_admit_uncertainty then ''Y'' else ''N'' end;',
+'    :P10_PACKAGED_PERSONA := case when l_packaged_persona then ''Y'' else ''N'' end;',
+'    :P10_IS_ACTIVE := case when l_is_active then ''Y'' else ''N'' end;',
+'  else',
+'    :P10_ATTITUDE_BASE_LEVEL := coalesce(:P10_ATTITUDE_BASE_LEVEL, 1);',
+'    :P10_SARCASM_LEVEL := coalesce(:P10_SARCASM_LEVEL, 1);',
+'    :P10_VERBOSITY_LEVEL := coalesce(:P10_VERBOSITY_LEVEL, 1);',
+'    :P10_ALLOW_HUMOUR := coalesce(:P10_ALLOW_HUMOUR, ''Y'');',
+'    :P10_ALLOW_CRITIQUE := coalesce(:P10_ALLOW_CRITIQUE, ''Y'');',
+'    :P10_ENFORCE_PRECISION := coalesce(:P10_ENFORCE_PRECISION, ''Y'');',
+'    :P10_ADMIT_UNCERTAINTY := coalesce(:P10_ADMIT_UNCERTAINTY, ''Y'');',
+'    :P10_PACKAGED_PERSONA := coalesce(:P10_PACKAGED_PERSONA, ''N'');',
+'    :P10_IS_ACTIVE := coalesce(:P10_IS_ACTIVE, ''Y'');',
+'  end if;',
+'end;'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_internal_uid=>14000100000000327
 );
 end;
 /

@@ -23,6 +23,22 @@ select
                  ', ' || json_value(p.pref_value, '$.country' returning varchar2(4000) null on error)
              end
       end
+    when p.pref_key = 'default_llm_id' then
+      coalesce(
+        (
+          select r.name
+                 || ' ('
+                 || r.provider
+                 || ')'
+                 || case
+                      when nvl(r.is_enabled, 'N') <> 'Y' then
+                        ' [disabled]'
+                    end
+            from orac_api.llm_registry_v r
+           where r.llm_id = json_value(p.pref_value, '$' returning number null on error)
+        )
+      , to_char(json_value(p.pref_value, '$' returning number null on error))
+      )
     when p.value_type = 'string' then
       json_value(p.pref_value, '$' returning varchar2(4000) null on error)
     when p.value_type = 'number' then

@@ -23,7 +23,7 @@ declare
       );
     exception
       when others then
-        if sqlcode not in (-24243, -46377) then
+        if sqlcode not in (-24243, -46377, -1927) then
           raise;
         end if;
     end;
