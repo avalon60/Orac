@@ -290,6 +290,19 @@ class OllamaConnector(LLMConnector):
 
     # ---------- public API ----------
 
+    def list_models(self):
+        """List available models from Ollama."""
+        response = requests.get(
+            f"{self.service_url}/api/tags",
+            timeout=(self._connect_timeout, self._read_timeout),
+        )
+        response.raise_for_status()
+        return [
+            model.get("name")
+            for model in response.json().get("models", [])
+            if isinstance(model.get("name"), str) and model.get("name").strip()
+        ]
+
     def send_prompt(self, prompt_type: str, prompt: str, stream: bool = False) -> str:
         """
         FORCE think=False (hide visible chain-of-thought). For very short prompts (like "Hi"),

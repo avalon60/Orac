@@ -21,6 +21,8 @@ DEFAULTS_FILE="${CONFIG_DIR}/init-defaults.ini"
 ORA_DOCKER_DIR=${PROJECT_DIR}/resources/docker/oracle
 COMPOSE_FILE="${ORA_DOCKER_DIR}/docker-compose.yaml"
 ENV_FILE="${CONFIG_DIR}/orac.env"
+RUN_DIR="/run/orac"
+DUMP_CONTEXT_FLAG="${RUN_DIR}/dump-context.once"
 
 # AI server control script (owns PID, /run/orac, logs)
 ORAC_SH="${SCRIPT_DIR}/orac.sh"
@@ -129,9 +131,55 @@ logs_orac_stack() {
   esac
 }
 
+dump_context_orac_stack() {
+  mkdir -p "${PROJECT_DIR}/logs/_debug"
+
+  if [[ ! -d "$RUN_DIR" ]]; then
+    echo "⚠️  Runtime directory '$RUN_DIR' does not exist yet."
+    echo "   Start Orac first, then rerun '$PROG dump-context'."
+    exit 1
+  fi
+
+  : > "$DUMP_CONTEXT_FLAG"
+  chmod 600 "$DUMP_CONTEXT_FLAG"
+
+  echo "📝 Armed one-shot context dump."
+  echo "   The next Orac request will write debug files under:"
+  echo "   ${PROJECT_DIR}/logs/_debug"
+  echo "   Expected files:"
+  echo "   - latest-final-prompt.txt"
+  echo "   - latest-history-fetched.txt"
+}
+
 print_usage() {
   echo "$PROG - Orac stack control (version: ${ORAC_VERSION})"
-  echo "Usage: $0 {start|stop|restart|status|logs [ai|db]}"
+  echo "Usage: $0 {start|stop|restart|status|logs [ai|db]|dump-context}"
+  echo
+  echo "Commands:"
+  echo "  start"
+  echo "    Start the Oracle DB/ORDS container if needed, wait for it to be ready,"
+  echo "    then start the Orac AI engine process."
+  echo
+  echo "  stop"
+  echo "    Stop the Orac AI engine process, then stop the Oracle DB/ORDS container."
+  echo
+  echo "  restart"
+  echo "    Stop and then start the full Orac stack."
+  echo
+  echo "  status"
+  echo "    Show container status for the DB/ORDS tier and process status for the"
+  echo "    Orac AI engine."
+  echo
+  echo "  logs [ai|db]"
+  echo "    Tail logs for one part of the stack."
+  echo "    ai   - follow the Orac AI engine log."
+  echo "    db   - follow the Oracle DB/ORDS container log."
+  echo "    If omitted, defaults to db."
+  echo
+  echo "  dump-context"
+  echo "    Arm a one-shot context dump for the next Orac request."
+  echo "    The next handled request writes debug files under logs/_debug, then the"
+  echo "    trigger is cleared automatically."
   exit 1
 }
 
@@ -144,6 +192,6 @@ case "${1:-}" in
   restart) echo "🔄 Restarting Orac stack..."; stop_orac_stack; start_orac_stack ;;
   status)  status_orac_stack ;;
   logs)    shift || true; logs_orac_stack "${1:-}" ;;
+  dump-context) dump_context_orac_stack ;;
   *)       print_usage ;;
 esac
-

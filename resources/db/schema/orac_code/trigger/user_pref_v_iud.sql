@@ -15,7 +15,7 @@ begin
       l_pref_value_text := json_serialize(:new.pref_value returning varchar2);
     end if;
 
-    if :new.value_type not in ('string', 'number', 'boolean') then
+    if :new.value_type not in ('string', 'number', 'boolean', 'json') then
       raise_application_error(-20002, 'Unknown value_type: ' || :new.value_type);
     end if;
 

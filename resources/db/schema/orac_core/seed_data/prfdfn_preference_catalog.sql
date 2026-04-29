@@ -32,7 +32,7 @@ using (
     'sql',
     q'[select name || ' (' || provider || ')' d,
              to_char(llm_id) r
-        from llm_registry_v
+        from orac_api.llm_registry_v
        where is_enabled = 'Y'
        order by provider, name]',
     cast(null as varchar2(100 byte)),
@@ -70,6 +70,38 @@ using (
     30,
     'notifications',
     'Enable or disable email notifications.',
+    'Y'
+  from dual
+  union all
+  select
+    'personality_code',
+    'Orac Personality',
+    'Preferred Orac personality used to shape the assistant''s system prompt and response style.',
+    'string',
+    'select_list',
+    'sql',
+    q'[select personality_name || ' (' || personality_code || ')' d,
+             personality_code r
+        from orac_api.orac_personalities_v
+       where is_active = true
+       order by case packaged_persona
+                  when true then 0
+                  else 1
+                end,
+                personality_name,
+                personality_code]',
+    cast(null as varchar2(100 byte)),
+    json(q'["ORAC"]'),
+    cast(null as number),
+    cast(null as number),
+    1,
+    100,
+    cast(null as varchar2(1000 byte)),
+    'Y',
+    'Y',
+    35,
+    'personality',
+    'Selects the assistant persona to apply for this user.',
     'Y'
   from dual
   union all
@@ -312,58 +344,26 @@ using (
   from dual
   union all
   select
-    'theme_style',
-    'Theme Style',
-    'Preferred application theme style.',
-    'string',
-    'select_list',
-    'sql',
-    q'[select name as style_name_display,
-             name as style_name_return
-        from apex_application_theme_styles
-       where application_id = :APP_ID
-         and is_public = 'Yes'
-       order by case is_current
-                  when 'Yes' then 0
-                  else 1
-                end,
-                name]',
-    cast(null as varchar2(100 byte)),
-    json(q'["Vita"]'),
-    cast(null as number),
-    cast(null as number),
-    1,
-    100,
-    cast(null as varchar2(1000 byte)),
-    'Y',
-    'Y',
-    140,
-    'ui',
-    'Controls the overall application look and feel.',
-    'Y'
-  from dual
-  union all
-  select
     'weather_location',
     'Weather Location',
     'Default place used for weather questions when no explicit location is given.',
     'json',
-    'popup_lov',
+    'select_one',
     'sql',
-    q'[select jt.display_value d,
-             jt.return_value r
-        from json_table(
-               orac_code.preference_lov_api.get_lov_json(
-                 p_pref_key      => 'weather_location',
-                 p_search        => :APEX$SEARCH,
-                 p_current_value => null
-               ),
-               '$[*]'
-               columns (
-                 display_value varchar2(4000) path '$.display_value',
-                 return_value varchar2(4000) path '$.return_value'
-               )
-             ) jt]',
+    q'~select jt.display_value d,
+              jt.return_value r
+         from json_table(
+                orac_code.preference_lov_api.get_lov_json(
+                  p_pref_key      => 'weather_location',
+                  p_search        => :APEX$SEARCH,
+                  p_current_value => null
+                ),
+                '$[*]'
+                columns (
+                  display_value varchar2(4000) path '$.display_value',
+                  return_value varchar2(4000) path '$.return_value'
+                )
+              ) jt~',
     cast(null as varchar2(100 byte)),
     json('{"name":null,"latitude":null,"longitude":null,"timezone":null,"country":null,"admin1":null}'),
     cast(null as number),
@@ -387,7 +387,7 @@ using (
     'select_list',
     'sql',
     q'[select display_label d, tz_name r
-         from timezones_v
+         from orac_api.timezones_v
         where is_active = 'Y'
         order by region_group, display_sequence, display_label]',
     cast(null as varchar2(100 byte)),
@@ -538,3 +538,9 @@ when not matched then insert (
   src.help_text,
   src.is_active
 );
+
+delete from orac_core.user_preferences
+ where pref_key = 'theme_style';
+
+delete from orac_core.preference_definitions
+ where pref_key = 'theme_style';

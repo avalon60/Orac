@@ -214,6 +214,42 @@ Notes:
 - `--force` removes the existing container and deletes Oracle marker directories under `ORADATA_DIR` before rebuilding.
 - The first build and deployment can take a significant amount of time. The script waits up to 30 minutes for completion.
 
+Important:
+
+- `bin/orac-db-deploy.sh` deploys the Oracle database container, ORDS/APEX, and the Orac database objects.
+- At the end of that script, the database side is running, but the full Orac stack is not yet up.
+- The Orac AI engine is a separate host process and must be started afterward.
+
+### What constitutes the Orac stack
+
+For operational purposes, the Orac stack consists of:
+
+- the Oracle database container
+- ORDS / APEX served from that container
+- the Orac AI engine running on the Linux host
+
+`bin/orac-db-deploy.sh` only handles the first two items plus schema/app deployment. It does not start the AI engine.
+
+### Start the full Orac stack after database deployment
+
+After `bin/orac-db-deploy.sh` completes successfully, start the full stack with:
+
+```bash
+bin/orac-ctl.sh start
+```
+
+Then confirm both halves are running:
+
+```bash
+bin/orac-ctl.sh status
+```
+
+If you only want to start the AI engine after the database is already running, you can use:
+
+```bash
+bin/orac.sh start
+```
+
 ---
 
 ## 🧭 APEX Administration
@@ -293,15 +329,46 @@ If you cannot access the Orac Admin application:
 
 ## 🛠 Usage
 
-Once the database container is up, start the Orac server on the Linux host with:
+Use `bin/orac-ctl.sh` as the primary control script for the full Orac stack:
+
+- Oracle database container
+- ORDS / APEX HTTP endpoint
+- Orac AI engine
+
+Common commands:
+
+```bash
+bin/orac-ctl.sh start
+bin/orac-ctl.sh stop
+bin/orac-ctl.sh restart
+bin/orac-ctl.sh status
+bin/orac-ctl.sh logs
+bin/orac-ctl.sh logs ai
+bin/orac-ctl.sh logs db
+```
+
+What these do:
+
+- `start`
+  Starts the Oracle/ORDS container if needed, waits for the database, then starts the Orac AI engine.
+- `stop`
+  Stops the Orac AI engine, then stops the Oracle/ORDS container.
+- `restart`
+  Restarts the full stack.
+- `status`
+  Shows both container status and Orac AI engine status.
+- `logs`
+  Tails database / ORDS container logs by default.
+- `logs ai`
+  Shows Orac AI engine logs.
+- `logs db`
+  Shows database / ORDS container logs.
+
+The lower-level `bin/orac.sh` script is still available if you only want to control the AI engine itself:
 
 ```bash
 bin/orac.sh start
-```
-
-To inspect status or logs:
-
-```bash
+bin/orac.sh stop
 bin/orac.sh status
 bin/orac.sh logs
 ```

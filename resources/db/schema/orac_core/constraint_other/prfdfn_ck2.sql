@@ -14,6 +14,7 @@ alter table orac_core.preference_definitions
       'number',
       'checkbox',
       'select_list',
+      'select_one',
       'popup_lov',
       'radio_group',
       'switch',

@@ -21,5 +21,10 @@ alter table orac_core.user_preferences
       value_type = 'boolean'
       and lower(json_value(pref_value, '$' returning varchar2(5) null on error)) in ('true', 'false')
     )
+    or
+    (
+      value_type = 'json'
+      and json_exists(pref_value, '$')
+    )
   )
 ;
