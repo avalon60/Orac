@@ -60,6 +60,25 @@ class LLMConnector(LLMConnectorABC):
             f"{self.__class__.__name__}.send_prompt() must be implemented in the subclass"
         )
 
+    def send_prompt_with_meta(
+        self,
+        prompt_type: str,
+        prompt: str,
+        stream: bool = False,
+    ) -> dict[str, Any]:
+        """Send a prompt and return response text with optional usage metadata."""
+        raw = self.send_prompt(prompt_type=prompt_type, prompt=prompt, stream=stream)
+        if hasattr(raw, "content"):
+            text = raw.content
+        else:
+            text = raw
+        return {
+            "text": text if isinstance(text, str) else str(text),
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+
     def interface_name(self) -> str:
         """Return the backend name (e.g. 'LM Studio', 'Ollama', etc)."""
         return MODEL_SERVICE_DESCRIPTORS[self.model_interface_id]
@@ -97,6 +116,38 @@ class LMStudioConnector(LLMConnector):
         """Send prompt to LM Studio."""
         print(f"📤 Sending prompt to LM Studio (stream={stream})...")
         return self.llm_session.invoke(prompt)
+
+    def send_prompt_with_meta(
+        self,
+        prompt_type: str,
+        prompt: str,
+        stream: bool = False,
+    ) -> dict[str, Any]:
+        """Send prompt to LM Studio and return text with token metadata when available."""
+        print(f"📤 Sending prompt to LM Studio (stream={stream})...")
+        raw = self.llm_session.invoke(prompt)
+        text = raw.content if hasattr(raw, "content") else raw
+        usage = getattr(raw, "usage_metadata", None) or {}
+        prompt_tokens = int(
+            usage.get("input_tokens")
+            or usage.get("prompt_tokens")
+            or 0
+        )
+        completion_tokens = int(
+            usage.get("output_tokens")
+            or usage.get("completion_tokens")
+            or 0
+        )
+        total_tokens = int(
+            usage.get("total_tokens")
+            or (prompt_tokens + completion_tokens)
+        )
+        return {
+            "text": text if isinstance(text, str) else str(text),
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+        }
 
     def list_models(self):
         """List available models from LM Studio."""
@@ -232,6 +283,9 @@ class OllamaConnector(LLMConnector):
         return {
             "text": text if isinstance(text, str) else str(text),
             "done_reason": data.get("done_reason"),
+            "prompt_tokens": int(data.get("prompt_eval_count") or 0),
+            "completion_tokens": int(data.get("eval_count") or 0),
+            "total_tokens": int(data.get("prompt_eval_count") or 0) + int(data.get("eval_count") or 0),
         }
 
     def _generate_once(self, prompt: str, *, num_predict: int) -> dict[str, Any]:
@@ -252,6 +306,9 @@ class OllamaConnector(LLMConnector):
         return {
             "text": text if isinstance(text, str) else str(text),
             "done_reason": data.get("done_reason"),
+            "prompt_tokens": int(data.get("prompt_eval_count") or 0),
+            "completion_tokens": int(data.get("eval_count") or 0),
+            "total_tokens": int(data.get("prompt_eval_count") or 0) + int(data.get("eval_count") or 0),
         }
 
     def _run_with_num_predict_growth(
@@ -260,24 +317,30 @@ class OllamaConnector(LLMConnector):
         *,
         runner_name: str,
         initial_num_predict: int,
-    ) -> str:
+    ) -> dict[str, Any]:
         """Retry a completion with a larger token budget after truncation."""
         num_predict = max(1, int(initial_num_predict))
-        last_text = ""
+        last_result: dict[str, Any] = {
+            "text": "",
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
 
         for attempt in range(self._max_num_predict_retries + 1):
             result = runner(num_predict)
             text = self._strip_visible_think(result.get("text", "")).strip()
             done_reason = str(result.get("done_reason") or "").strip().lower()
+            result["text"] = text
 
             if text:
-                last_text = text
+                last_result = result
 
             if done_reason != "length":
-                return text
+                return result
 
             if attempt >= self._max_num_predict_retries:
-                return last_text
+                return last_result
 
             next_num_predict = self._next_num_predict(num_predict)
             self.logger.log_info(
@@ -286,7 +349,7 @@ class OllamaConnector(LLMConnector):
             )
             num_predict = next_num_predict
 
-        return last_text
+        return last_result
 
     # ---------- public API ----------
 
@@ -316,7 +379,7 @@ class OllamaConnector(LLMConnector):
         p = (prompt or "").strip()
         is_very_short = len(p) <= 12  # "Hi", "Hello", etc.
 
-        text = self._run_with_num_predict_growth(
+        result = self._run_with_num_predict_growth(
             lambda num_predict: self._chat_once(
                 p,
                 show_reasoning=False,
@@ -326,11 +389,12 @@ class OllamaConnector(LLMConnector):
             runner_name="/api/chat",
             initial_num_predict=self.default_num_predict,
         )
+        text = str(result.get("text") or "").strip()
         if text:
             return text
 
         # Fallback: /api/generate with the same truncation-aware budget growth.
-        text = self._run_with_num_predict_growth(
+        result = self._run_with_num_predict_growth(
             lambda num_predict: self._generate_once(
                 p or "Say hi",
                 num_predict=num_predict,
@@ -338,8 +402,56 @@ class OllamaConnector(LLMConnector):
             runner_name="/api/generate",
             initial_num_predict=self.default_num_predict,
         )
+        text = str(result.get("text") or "").strip()
         if text:
             return text
 
         # Absolute last resort: avoid empty payload to server
         return "Hello! 👋"
+
+    def send_prompt_with_meta(
+        self,
+        prompt_type: str,
+        prompt: str,
+        stream: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Send prompt to Ollama and return text plus token metadata.
+
+        Token counts use Ollama's prompt/eval counts. The returned total is
+        stored against the assistant turn for dashboard trending.
+        """
+        p = (prompt or "").strip()
+        is_very_short = len(p) <= 12
+
+        result = self._run_with_num_predict_growth(
+            lambda num_predict: self._chat_once(
+                p,
+                show_reasoning=False,
+                num_predict=num_predict,
+                use_system=not is_very_short,
+            ),
+            runner_name="/api/chat",
+            initial_num_predict=self.default_num_predict,
+        )
+        text = str(result.get("text") or "").strip()
+        if not text:
+            result = self._run_with_num_predict_growth(
+                lambda num_predict: self._generate_once(
+                    p or "Say hi",
+                    num_predict=num_predict,
+                ),
+                runner_name="/api/generate",
+                initial_num_predict=self.default_num_predict,
+            )
+            text = str(result.get("text") or "").strip()
+
+        if not text:
+            text = "Hello! 👋"
+
+        return {
+            "text": text,
+            "prompt_tokens": int(result.get("prompt_tokens") or 0),
+            "completion_tokens": int(result.get("completion_tokens") or 0),
+            "total_tokens": int(result.get("total_tokens") or 0),
+        }

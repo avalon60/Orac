@@ -1924,7 +1924,7 @@ wwv_flow_imp_page.create_jet_chart_axis(
 );
 wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(16993282897477733)
-,p_plug_name=>'LLM Usage Breakdown'
+,p_plug_name=>'Message Volume by LLM'
 ,p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'
 ,p_plug_template=>4072358936313175081
 ,p_plug_display_sequence=>20
@@ -2785,7 +2785,7 @@ wwv_flow_imp_page.create_page_button(
 ,p_button_template_id=>2349107722467437027
 ,p_button_image_alt=>'Add User Preferences'
 ,p_button_position=>'EDIT'
-,p_button_display_condition_type=>'NEVER'
+,p_button_condition_type=>'NEVER'
 );
 wwv_flow_imp_page.create_page_button(
  p_id=>wwv_flow_imp.id(12717157375390327)
@@ -3238,7 +3238,7 @@ wwv_flow_imp_page.create_page_item(
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'based_on', 'VALUE',
   'format', 'PLAIN',
-  'send_on_page_submit', 'Y',
+  'send_on_page_submit', 'N',
   'show_line_breaks', 'Y')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
@@ -3258,7 +3258,7 @@ wwv_flow_imp_page.create_page_item(
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'based_on', 'VALUE',
   'format', 'PLAIN',
-  'send_on_page_submit', 'Y',
+  'send_on_page_submit', 'N',
   'show_line_breaks', 'Y')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
@@ -4232,7 +4232,7 @@ wwv_flow_imp_page.create_page_item(
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'based_on', 'VALUE',
   'format', 'PLAIN',
-  'send_on_page_submit', 'Y',
+  'send_on_page_submit', 'N',
   'show_line_breaks', 'Y')).to_clob
 );
 wwv_flow_imp_page.create_page_item(

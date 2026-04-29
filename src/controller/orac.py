@@ -132,8 +132,18 @@ def _log_exception(prefix: str, exc: BaseException):
     logger.log_error(f"{prefix}: {exc}\n{tb}")
 
 
+def _timezone_location_label(tz_name: str) -> str:
+    """Return a human-readable fallback location label from an IANA timezone."""
+    parts = [part for part in str(tz_name or "").split("/") if part]
+    if not parts:
+        return "UTC"
+    return parts[-1].replace("_", " ")
+
+
 def system_clock_line(prefs: dict) -> str:
+    """Render time and location context for the current session."""
     tz_name = (prefs or {}).get("timezone", "Europe/London")
+    weather_location = str((prefs or {}).get("weather_location") or "").strip()
     now_utc = datetime.now(timezone.utc)
     try:
         tz = ZoneInfo(tz_name)
@@ -147,9 +157,17 @@ def system_clock_line(prefs: dict) -> str:
     dow = now_local.strftime("%A").upper()
 
     lines = [
-        f"Current time: {utc_iso} (UTC).",
-        f"Local time: {local_str} ({tz_name}); day: {dow}.",
+        f"Current UTC time: {utc_iso}.",
+        f"Session timezone preference: {tz_name}.",
+        f"Time in that timezone: {local_str}; day: {dow}.",
     ]
+    if weather_location:
+        lines.append(f"Assume your current location is {weather_location}.")
+    else:
+        lines.append(
+            f"No explicit weather location is set. Assume your current location is "
+            f"{_timezone_location_label(tz_name)} based on the session timezone."
+        )
     if "date_format" in (prefs or {}):
         lines.append(f"Use date format {prefs['date_format']}.")
     if (prefs or {}).get("force_concise") is True:
@@ -570,6 +588,7 @@ class Orac:
             dump_prompt = self._should_dump_prompt()
             prefs = {
                 "timezone": meta.get("timezone", "Europe/London"),
+                "weather_location": meta.get("weather_location"),
                 "force_concise": meta.get("force_concise"),
             }
             clock = system_clock_line(prefs)
@@ -1060,6 +1079,45 @@ class Orac:
             return True
         return model_norm == self.model_name.strip()
 
+    def _configured_model_lookup_candidates(self) -> list[str]:
+        """Return model-name candidates for resolving the configured fallback row."""
+        configured_model = str(self.model_name or "").strip()
+        if not configured_model:
+            return []
+
+        candidates: list[str] = [configured_model]
+        provider = self.llm_service_id.strip().lower()
+
+        if provider == "ollama":
+            if ":" not in configured_model:
+                candidates.append(f"{configured_model}:latest")
+            elif configured_model.endswith(":latest"):
+                candidates.append(configured_model[: -len(":latest")])
+
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            if candidate and candidate not in seen:
+                seen.add(candidate)
+                deduped.append(candidate)
+        return deduped
+
+    def _configured_fallback_registry_row(self) -> dict[str, Any]:
+        """Resolve the registry row for the configured fallback model, tolerating aliases."""
+        for candidate in self._configured_model_lookup_candidates():
+            row = self.ctx.get_llm_registry_entry_by_provider_model(
+                self.llm_service_id,
+                candidate,
+            )
+            if row:
+                if candidate != str(self.model_name or "").strip():
+                    logger.log_info(
+                        f"{Icons.info} Resolved configured model '{self.model_name}' "
+                        f"to registry entry '{candidate}'."
+                    )
+                return row
+        return {}
+
     def _configured_fallback_selection(
         self,
         *,
@@ -1069,14 +1127,16 @@ class Orac:
         if warning_message:
             logger.log_warning(warning_message)
 
-        fallback_row = self.ctx.get_llm_registry_entry_by_provider_model(
-            self.llm_service_id,
-            self.model_name,
+        fallback_row = self._configured_fallback_registry_row()
+        resolved_model_name = (
+            str(fallback_row.get("MODEL") or "").strip()
+            if fallback_row
+            else self.model_name
         )
         selection = {
             "llm_id": fallback_row.get("LLM_ID") if fallback_row else None,
             "provider": self.llm_service_id,
-            "model_name": self.model_name,
+            "model_name": resolved_model_name,
             "service_url": self.service_url,
             "source": "configured_fallback",
             "registry_row": fallback_row,
@@ -1479,6 +1539,7 @@ class Orac:
         req_id: str | None,
         show_reasoning: bool,
         llm_id: int | None = None,
+        tokens_used: int | None = None,
         request_flags: dict[str, bool] | None = None,
     ) -> int:
         """Persists an assistant turn and returns the new turn index if available."""
@@ -1496,6 +1557,7 @@ class Orac:
                 content,
                 meta=asst_meta,
                 llm_id=llm_id,
+                tokens_used=tokens_used,
             )
             logger.log_debug(f"Saved assistant msg: {save_res_a}")
             return int(save_res_a.get("turn_index", 0))
@@ -1951,7 +2013,11 @@ class Orac:
 
             # === Call backend (non-streaming path) ===
             try:
-                raw = llm_connector.send_prompt(prompt_type="U", prompt=final_prompt, stream=False)
+                prompt_result = llm_connector.send_prompt_with_meta(
+                    prompt_type="U",
+                    prompt=final_prompt,
+                    stream=False,
+                )
             except Exception as e:
                 _log_exception("LLM backend call failed", e)
                 err = {
@@ -1964,11 +2030,10 @@ class Orac:
                 return json.dumps(err, ensure_ascii=False)
 
             # Normalise: ensure string
-            if hasattr(raw, "content"):
-                raw = raw.content
-            if not isinstance(raw, str):
-                raw = str(raw)
-            raw = raw.strip()
+            raw = str(prompt_result.get("text") or "").strip()
+            prompt_tokens = int(prompt_result.get("prompt_tokens") or 0)
+            completion_tokens = int(prompt_result.get("completion_tokens") or 0)
+            total_tokens = int(prompt_result.get("total_tokens") or 0)
 
             # Apply local reasoning-strip unless explicitly requested
             if show_reasoning:
@@ -1990,6 +2055,7 @@ class Orac:
                 req_id=req_env.get("id"),
                 show_reasoning=show_reasoning,
                 llm_id=effective_llm_id,
+                tokens_used=total_tokens or None,
                 request_flags=request_flags,
             )
 
@@ -2000,8 +2066,8 @@ class Orac:
                 req_env,
                 content,
                 stop_reason="stop",
-                prompt_tokens=0,
-                completion_tokens=0,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
                 model_name=effective_model_name,
                 user_registration=(
                     "anonymous" if request_flags["anonymous_user"] else "registered"

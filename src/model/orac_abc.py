@@ -21,6 +21,10 @@ class LLMConnectorABC(ABC):
         """
 
     @abstractmethod
+    def send_prompt_with_meta(self, prompt_type: str, prompt: str, stream: bool = False) -> dict:
+        """Send a prompt and return response text plus usage metadata."""
+
+    @abstractmethod
     def interface_name(self) -> str:
         """Return the backend name (e.g. 'LM Studio', 'Ollama', 'OpenAI ChatGPT API'...)."""
         pass
