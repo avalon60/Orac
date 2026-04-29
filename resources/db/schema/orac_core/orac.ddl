@@ -359,7 +359,7 @@ create table orac_core.user_preferences
 
 alter table orac_core.user_preferences
   add constraint user_preferences_ck1
-  check (value_type in ('boolean', 'number', 'string'))
+  check (value_type in ('boolean', 'json', 'number', 'string'))
 ;
 
 comment on table orac_core.user_preferences is 'Stores key-value preference settings for each user.'
@@ -416,6 +416,11 @@ alter table orac_core.user_preferences
     (
       value_type = 'boolean'
       and lower(json_value(pref_value, '$' returning varchar2(5) null on error)) in ('true', 'false')
+    )
+    or
+    (
+      value_type = 'json'
+      and json_exists(pref_value, '$')
     )
   )
 ;

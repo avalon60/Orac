@@ -5,5 +5,5 @@
 
 alter table orac_core.user_preferences
   add constraint user_pref_ck2
-  check (value_type in ('boolean', 'number', 'string'))
+  check (value_type in ('boolean', 'json', 'number', 'string'))
 ;

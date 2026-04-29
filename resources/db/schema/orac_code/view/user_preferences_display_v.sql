@@ -31,6 +31,9 @@ select
       lower(json_value(p.pref_value, '$' returning varchar2(5) null on error))
     when p.value_type = 'json' then
       json_serialize(p.pref_value returning varchar2(4000) null on error)
-  end as value_display
+  end as value_display,
+  coalesce(d.display_label, p.pref_key) as pref_label
 from orac_api.user_preferences_v p
+left join orac_api.preference_definitions_v d
+  on d.pref_key = p.pref_key
 ;

@@ -6,3 +6,5 @@ grant execute on orac_code.orac_prefs_seed to orac_apx_pub;
 grant execute on orac_code.orac_prefs_seed to orac;
 grant execute on orac_code.preference_lov_api to orac_apx_pub;
 grant execute on orac_code.preference_lov_api to orac;
+grant execute on orac_code.user_preferences_api to orac_apx_pub;
+grant execute on orac_code.user_preferences_api to orac;

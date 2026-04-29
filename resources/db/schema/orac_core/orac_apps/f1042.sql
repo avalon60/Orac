@@ -33,17 +33,17 @@ prompt APPLICATION 1042 - Orac Administration
 -- Application Export:
 --   Application:     1042
 --   Name:            Orac Administration
---   Date and Time:   17:12 Monday April 27, 2026
+--   Date and Time:   18:45 Tuesday April 28, 2026
 --   Exported By:     ORAC_ADMIN
 --   Flashback:       0
 --   Export Type:     Application Export
---     Pages:                     26
---       Items:                   62
+--     Pages:                     28
+--       Items:                   96
 --       Validations:              7
---       Processes:               31
---       Regions:                 74
---       Buttons:                 53
---       Dynamic Actions:         23
+--       Processes:               35
+--       Regions:                 79
+--       Buttons:                 59
+--       Dynamic Actions:         27
 --     Shared Components:
 --       Logic:
 --         App Settings:           2
@@ -59,14 +59,14 @@ prompt APPLICATION 1042 - Orac Administration
 --       User Interface:
 --         Themes:                 1
 --         Templates:
---         LOVs:                  10
+--         LOVs:                  17
 --       PWA:
 --       Globalization:
 --       Reports:
 --       E-Mail:
 --     Supporting Objects:  Included
 --   Version:         24.2.0
---   Instance ID:     1084480538910005
+--   Instance ID:     1048490923578583
 --
 
 prompt --application/delete_application
@@ -115,7 +115,7 @@ wwv_imp_workspace.create_flow(
 ,p_substitution_value_01=>'Orac Administration'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>6
-,p_version_scn=>2187571
+,p_version_scn=>2341565
 ,p_print_server_type=>'NATIVE'
 ,p_file_storage=>'DB'
 ,p_is_pwa=>'Y'
@@ -1039,6 +1039,29 @@ wwv_flow_imp_shared.create_list_of_values(
 );
 end;
 /
+prompt --application/shared_components/user_interface/lovs/boolean_true_false
+begin
+wwv_flow_imp_shared.create_list_of_values(
+ p_id=>wwv_flow_imp.id(13900100000000118)
+,p_lov_name=>'BOOLEAN_TRUE_FALSE'
+,p_lov_query=>'.'||wwv_flow_imp.id(13900100000000118)||'.'
+,p_location=>'STATIC'
+,p_version_scn=>2340856
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(13900100000000119)
+,p_lov_disp_sequence=>1
+,p_lov_disp_value=>'Yes'
+,p_lov_return_value=>'Y'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(13900100000000120)
+,p_lov_disp_sequence=>2
+,p_lov_disp_value=>'No'
+,p_lov_return_value=>'N'
+);
+end;
+/
 prompt --application/shared_components/user_interface/lovs/desktop_theme_styles
 begin
 wwv_flow_imp_shared.create_list_of_values(
@@ -1146,6 +1169,187 @@ wwv_flow_imp_shared.create_static_lov_data(
 );
 end;
 /
+prompt --application/shared_components/user_interface/lovs/preference_control_types
+begin
+wwv_flow_imp_shared.create_list_of_values(
+ p_id=>wwv_flow_imp.id(13900100000000101)
+,p_lov_name=>'PREFERENCE_CONTROL_TYPES'
+,p_lov_query=>'.'||wwv_flow_imp.id(13900100000000101)||'.'
+,p_location=>'STATIC'
+,p_version_scn=>2340856
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(13900100000000102)
+,p_lov_disp_sequence=>1
+,p_lov_disp_value=>'Text'
+,p_lov_return_value=>'text'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(13900100000000103)
+,p_lov_disp_sequence=>2
+,p_lov_disp_value=>'Textarea'
+,p_lov_return_value=>'textarea'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(13900100000000104)
+,p_lov_disp_sequence=>3
+,p_lov_disp_value=>'Number'
+,p_lov_return_value=>'number'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(13900100000000105)
+,p_lov_disp_sequence=>4
+,p_lov_disp_value=>'Checkbox'
+,p_lov_return_value=>'checkbox'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(13900100000000106)
+,p_lov_disp_sequence=>5
+,p_lov_disp_value=>'Select List'
+,p_lov_return_value=>'select_list'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(13900100000000124)
+,p_lov_disp_sequence=>6
+,p_lov_disp_value=>'Popup LOV'
+,p_lov_return_value=>'popup_lov'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(13900100000000107)
+,p_lov_disp_sequence=>7
+,p_lov_disp_value=>'Radio Group'
+,p_lov_return_value=>'radio_group'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(13900100000000108)
+,p_lov_disp_sequence=>8
+,p_lov_disp_value=>'Switch'
+,p_lov_return_value=>'switch'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(13900100000000109)
+,p_lov_disp_sequence=>9
+,p_lov_disp_value=>'Display Only'
+,p_lov_return_value=>'display_only'
+);
+end;
+/
+prompt --application/shared_components/user_interface/lovs/preference_lov_types
+begin
+wwv_flow_imp_shared.create_list_of_values(
+ p_id=>wwv_flow_imp.id(13900100000000110)
+,p_lov_name=>'PREFERENCE_LOV_TYPES'
+,p_lov_query=>'.'||wwv_flow_imp.id(13900100000000110)||'.'
+,p_location=>'STATIC'
+,p_version_scn=>2340856
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(13900100000000111)
+,p_lov_disp_sequence=>1
+,p_lov_disp_value=>'Static'
+,p_lov_return_value=>'static'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(13900100000000112)
+,p_lov_disp_sequence=>2
+,p_lov_disp_value=>'SQL'
+,p_lov_return_value=>'sql'
+);
+end;
+/
+prompt --application/shared_components/user_interface/lovs/preference_popup_values
+begin
+wwv_flow_imp_shared.create_list_of_values(
+ p_id=>wwv_flow_imp.id(13900100000000123)
+,p_lov_name=>'PREFERENCE_POPUP_VALUES'
+,p_lov_query=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select jt.display_value d,',
+'       jt.return_value r',
+'  from json_table(',
+'         orac_code.preference_lov_api.get_lov_json(',
+'           p_pref_key      => :P6_PREF_KEY,',
+'           p_search        => :APEX$SEARCH,',
+'           p_current_value => coalesce(:P6_PREF_VALUE_POPUP_LOV, :P6_PREF_VALUE_TEXT)',
+'         ),',
+'         ''$[*]''',
+'         columns (',
+'           display_value varchar2(4000) path ''$.display_value'',',
+'           return_value varchar2(4000) path ''$.return_value''',
+'         )',
+'       ) jt'))
+,p_source_type=>'SQL'
+,p_location=>'LOCAL'
+,p_return_column_name=>'R'
+,p_display_column_name=>'D'
+,p_version_scn=>2340856
+);
+end;
+/
+prompt --application/shared_components/user_interface/lovs/preference_select_values
+begin
+wwv_flow_imp_shared.create_list_of_values(
+ p_id=>wwv_flow_imp.id(13900100000000122)
+,p_lov_name=>'PREFERENCE_SELECT_VALUES'
+,p_lov_query=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select jt.display_value d,',
+'       jt.return_value r',
+'  from json_table(',
+'         orac_code.preference_lov_api.get_lov_json(',
+'           p_pref_key      => :P6_PREF_KEY,',
+'           p_search        => case',
+'                                when :P6_PREF_KEY = ''weather_location'' then :P6_PREF_VALUE_SEARCH_TERM',
+'                              end,',
+'           p_current_value => :P6_PREF_VALUE_SELECT_LIST',
+'         ),',
+'         ''$[*]''',
+'         columns (',
+'           display_value varchar2(4000) path ''$.display_value'',',
+'           return_value varchar2(4000) path ''$.return_value''',
+'         )',
+'       ) jt'))
+,p_source_type=>'SQL'
+,p_location=>'LOCAL'
+,p_return_column_name=>'R'
+,p_display_column_name=>'D'
+,p_version_scn=>2340856
+);
+end;
+/
+prompt --application/shared_components/user_interface/lovs/preference_value_types
+begin
+wwv_flow_imp_shared.create_list_of_values(
+ p_id=>wwv_flow_imp.id(13900100000000113)
+,p_lov_name=>'PREFERENCE_VALUE_TYPES'
+,p_lov_query=>'.'||wwv_flow_imp.id(13900100000000113)||'.'
+,p_location=>'STATIC'
+,p_version_scn=>2340856
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(13900100000000114)
+,p_lov_disp_sequence=>1
+,p_lov_disp_value=>'String'
+,p_lov_return_value=>'string'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(13900100000000115)
+,p_lov_disp_sequence=>2
+,p_lov_disp_value=>'Number'
+,p_lov_return_value=>'number'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(13900100000000116)
+,p_lov_disp_sequence=>3
+,p_lov_disp_value=>'Boolean'
+,p_lov_return_value=>'boolean'
+);
+wwv_flow_imp_shared.create_static_lov_data(
+ p_id=>wwv_flow_imp.id(13900100000000117)
+,p_lov_disp_sequence=>4
+,p_lov_disp_value=>'JSON'
+,p_lov_return_value=>'json'
+);
+end;
+/
 prompt --application/shared_components/user_interface/lovs/timeframe_4_weeks
 begin
 wwv_flow_imp_shared.create_list_of_values(
@@ -1161,6 +1365,25 @@ wwv_flow_imp_shared.create_list_of_values(
 ,p_return_column_name=>'SECONDS'
 ,p_display_column_name=>'DISP'
 ,p_version_scn=>2434462
+);
+end;
+/
+prompt --application/shared_components/user_interface/lovs/timezones
+begin
+wwv_flow_imp_shared.create_list_of_values(
+ p_id=>wwv_flow_imp.id(13900100000000121)
+,p_lov_name=>'TIMEZONES'
+,p_lov_query=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select display_label d,',
+'       tz_name r',
+'  from timezones_v',
+' where is_active = ''Y''',
+' order by region_group, display_sequence, display_label'))
+,p_source_type=>'SQL'
+,p_location=>'LOCAL'
+,p_return_column_name=>'R'
+,p_display_column_name=>'D'
+,p_version_scn=>2340856
 );
 end;
 /
@@ -1273,219 +1496,6 @@ wwv_flow_imp_shared.create_static_lov_data(
 ,p_lov_disp_sequence=>2
 ,p_lov_disp_value=>'No'
 ,p_lov_return_value=>'N'
-);
-end;
-/
-prompt --application/shared_components/user_interface/lovs/preference_control_types
-begin
-wwv_flow_imp_shared.create_list_of_values(
- p_id=>wwv_flow_imp.id(13900100000000101)
-,p_lov_name=>'PREFERENCE_CONTROL_TYPES'
-,p_lov_query=>'.'||wwv_flow_imp.id(13900100000000101)||'.'
-,p_location=>'STATIC'
-);
-wwv_flow_imp_shared.create_static_lov_data(
- p_id=>wwv_flow_imp.id(13900100000000102)
-,p_lov_disp_sequence=>1
-,p_lov_disp_value=>'Text'
-,p_lov_return_value=>'text'
-);
-wwv_flow_imp_shared.create_static_lov_data(
- p_id=>wwv_flow_imp.id(13900100000000103)
-,p_lov_disp_sequence=>2
-,p_lov_disp_value=>'Textarea'
-,p_lov_return_value=>'textarea'
-);
-wwv_flow_imp_shared.create_static_lov_data(
- p_id=>wwv_flow_imp.id(13900100000000104)
-,p_lov_disp_sequence=>3
-,p_lov_disp_value=>'Number'
-,p_lov_return_value=>'number'
-);
-wwv_flow_imp_shared.create_static_lov_data(
- p_id=>wwv_flow_imp.id(13900100000000105)
-,p_lov_disp_sequence=>4
-,p_lov_disp_value=>'Checkbox'
-,p_lov_return_value=>'checkbox'
-);
-wwv_flow_imp_shared.create_static_lov_data(
- p_id=>wwv_flow_imp.id(13900100000000106)
-,p_lov_disp_sequence=>5
-,p_lov_disp_value=>'Select List'
-,p_lov_return_value=>'select_list'
-);
-wwv_flow_imp_shared.create_static_lov_data(
- p_id=>wwv_flow_imp.id(13900100000000124)
-,p_lov_disp_sequence=>6
-,p_lov_disp_value=>'Popup LOV'
-,p_lov_return_value=>'popup_lov'
-);
-wwv_flow_imp_shared.create_static_lov_data(
- p_id=>wwv_flow_imp.id(13900100000000107)
-,p_lov_disp_sequence=>7
-,p_lov_disp_value=>'Radio Group'
-,p_lov_return_value=>'radio_group'
-);
-wwv_flow_imp_shared.create_static_lov_data(
- p_id=>wwv_flow_imp.id(13900100000000108)
-,p_lov_disp_sequence=>8
-,p_lov_disp_value=>'Switch'
-,p_lov_return_value=>'switch'
-);
-wwv_flow_imp_shared.create_static_lov_data(
- p_id=>wwv_flow_imp.id(13900100000000109)
-,p_lov_disp_sequence=>9
-,p_lov_disp_value=>'Display Only'
-,p_lov_return_value=>'display_only'
-);
-end;
-/
-prompt --application/shared_components/user_interface/lovs/preference_lov_types
-begin
-wwv_flow_imp_shared.create_list_of_values(
- p_id=>wwv_flow_imp.id(13900100000000110)
-,p_lov_name=>'PREFERENCE_LOV_TYPES'
-,p_lov_query=>'.'||wwv_flow_imp.id(13900100000000110)||'.'
-,p_location=>'STATIC'
-);
-wwv_flow_imp_shared.create_static_lov_data(
- p_id=>wwv_flow_imp.id(13900100000000111)
-,p_lov_disp_sequence=>1
-,p_lov_disp_value=>'Static'
-,p_lov_return_value=>'static'
-);
-wwv_flow_imp_shared.create_static_lov_data(
- p_id=>wwv_flow_imp.id(13900100000000112)
-,p_lov_disp_sequence=>2
-,p_lov_disp_value=>'SQL'
-,p_lov_return_value=>'sql'
-);
-end;
-/
-prompt --application/shared_components/user_interface/lovs/preference_value_types
-begin
-wwv_flow_imp_shared.create_list_of_values(
- p_id=>wwv_flow_imp.id(13900100000000113)
-,p_lov_name=>'PREFERENCE_VALUE_TYPES'
-,p_lov_query=>'.'||wwv_flow_imp.id(13900100000000113)||'.'
-,p_location=>'STATIC'
-);
-wwv_flow_imp_shared.create_static_lov_data(
- p_id=>wwv_flow_imp.id(13900100000000114)
-,p_lov_disp_sequence=>1
-,p_lov_disp_value=>'String'
-,p_lov_return_value=>'string'
-);
-wwv_flow_imp_shared.create_static_lov_data(
- p_id=>wwv_flow_imp.id(13900100000000115)
-,p_lov_disp_sequence=>2
-,p_lov_disp_value=>'Number'
-,p_lov_return_value=>'number'
-);
-wwv_flow_imp_shared.create_static_lov_data(
- p_id=>wwv_flow_imp.id(13900100000000116)
-,p_lov_disp_sequence=>3
-,p_lov_disp_value=>'Boolean'
-,p_lov_return_value=>'boolean'
-);
-wwv_flow_imp_shared.create_static_lov_data(
- p_id=>wwv_flow_imp.id(13900100000000117)
-,p_lov_disp_sequence=>4
-,p_lov_disp_value=>'JSON'
-,p_lov_return_value=>'json'
-);
-end;
-/
-prompt --application/shared_components/user_interface/lovs/boolean_true_false
-begin
-wwv_flow_imp_shared.create_list_of_values(
- p_id=>wwv_flow_imp.id(13900100000000118)
-,p_lov_name=>'BOOLEAN_TRUE_FALSE'
-,p_lov_query=>'.'||wwv_flow_imp.id(13900100000000118)||'.'
-,p_location=>'STATIC'
-);
-wwv_flow_imp_shared.create_static_lov_data(
- p_id=>wwv_flow_imp.id(13900100000000119)
-,p_lov_disp_sequence=>1
-,p_lov_disp_value=>'Yes'
-,p_lov_return_value=>'Y'
-);
-wwv_flow_imp_shared.create_static_lov_data(
- p_id=>wwv_flow_imp.id(13900100000000120)
-,p_lov_disp_sequence=>2
-,p_lov_disp_value=>'No'
-,p_lov_return_value=>'N'
-);
-end;
-/
-prompt --application/shared_components/user_interface/lovs/timezones
-begin
-wwv_flow_imp_shared.create_list_of_values(
- p_id=>wwv_flow_imp.id(13900100000000121)
-,p_lov_name=>'TIMEZONES'
-,p_lov_query=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select display_label d,',
-'       tz_name r',
-'  from timezones_v',
-' where is_active = ''Y''',
-' order by region_group, display_sequence, display_label'))
-,p_source_type=>'SQL'
-,p_location=>'LOCAL'
-,p_return_column_name=>'R'
-,p_display_column_name=>'D'
-);
-end;
-/
-prompt --application/shared_components/user_interface/lovs/preference_select_values
-begin
-wwv_flow_imp_shared.create_list_of_values(
- p_id=>wwv_flow_imp.id(13900100000000122)
-,p_lov_name=>'PREFERENCE_SELECT_VALUES'
-,p_lov_query=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select jt.display_value d,',
-'       jt.return_value r',
-'  from json_table(',
-'         orac_code.preference_lov_api.get_lov_json(',
-'           p_pref_key      => :P6_PREF_KEY,',
-'           p_current_value => coalesce(:P6_PREF_VALUE_SELECT_LIST, :P6_PREF_VALUE_TEXT)',
-'         ),',
-'         ''$[*]''',
-'         columns (',
-'           display_value varchar2(4000) path ''$.display_value'',',
-'           return_value varchar2(4000) path ''$.return_value''',
-'         )',
-'       ) jt'))
-,p_source_type=>'SQL'
-,p_location=>'LOCAL'
-,p_return_column_name=>'R'
-,p_display_column_name=>'D'
-);
-end;
-/
-prompt --application/shared_components/user_interface/lovs/preference_popup_values
-begin
-wwv_flow_imp_shared.create_list_of_values(
- p_id=>wwv_flow_imp.id(13900100000000123)
-,p_lov_name=>'PREFERENCE_POPUP_VALUES'
-,p_lov_query=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select jt.display_value d,',
-'       jt.return_value r',
-'  from json_table(',
-'         orac_code.preference_lov_api.get_lov_json(',
-'           p_pref_key      => :P6_PREF_KEY,',
-'           p_search        => :APEX$SEARCH,',
-'           p_current_value => coalesce(:P6_PREF_VALUE_POPUP_LOV, :P6_PREF_VALUE_TEXT)',
-'         ),',
-'         ''$[*]''',
-'         columns (',
-'           display_value varchar2(4000) path ''$.display_value'',',
-'           return_value varchar2(4000) path ''$.return_value''',
-'         )',
-'       ) jt'))
-,p_source_type=>'SQL'
-,p_location=>'LOCAL'
-,p_return_column_name=>'R'
-,p_display_column_name=>'D'
 );
 end;
 /
@@ -2592,8 +2602,8 @@ wwv_flow_imp_page.create_report_columns(
 ,p_query_column_id=>2
 ,p_column_alias=>'PREF_ID'
 ,p_column_display_sequence=>2
-,p_column_heading=>'Pref Id'
-,p_heading_alignment=>'LEFT'
+,p_hidden_column=>'Y'
+,p_derived_column=>'N'
 );
 wwv_flow_imp_page.create_report_columns(
  p_id=>wwv_flow_imp.id(12694977115390311)
@@ -2603,14 +2613,6 @@ wwv_flow_imp_page.create_report_columns(
 ,p_column_heading=>'User Id'
 ,p_heading_alignment=>'LEFT'
 ,p_hidden_column=>'Y'
-);
-wwv_flow_imp_page.create_report_columns(
- p_id=>wwv_flow_imp.id(12695326935390312)
-,p_query_column_id=>4
-,p_column_alias=>'PREF_KEY'
-,p_column_display_sequence=>4
-,p_column_heading=>'Pref Key'
-,p_heading_alignment=>'LEFT'
 );
 wwv_flow_imp_page.create_report_columns(
  p_id=>wwv_flow_imp.id(13641261619849430)
@@ -2639,6 +2641,16 @@ wwv_flow_imp_page.create_report_columns(
 ,p_column_heading=>'Value Display'
 ,p_heading_alignment=>'LEFT'
 ,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(12695326935390312)
+,p_query_column_id=>8
+,p_column_alias=>'PREF_LABEL'
+,p_column_display_sequence=>4
+,p_column_heading=>'Preference'
+,p_heading_alignment=>'LEFT'
 ,p_derived_column=>'N'
 ,p_include_in_export=>'Y'
 );
@@ -3652,7 +3664,7 @@ wwv_flow_imp_page.create_page(
 ,p_dialog_chained=>'N'
 ,p_dialog_resizable=>'Y'
 ,p_protection_level=>'C'
-,p_page_component_map=>'02'
+,p_page_component_map=>'03'
 );
 wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(12703743415390323)
@@ -3667,6 +3679,77 @@ wwv_flow_imp_page.create_page_plug(
 ,p_edit_operations=>'i:u:d'
 ,p_lost_update_check_type=>'VALUES'
 ,p_plug_source_type=>'NATIVE_FORM'
+);
+wwv_flow_imp_page.create_report_region(
+ p_id=>wwv_flow_imp.id(13900100000000417)
+,p_name=>'Weather Location Results'
+,p_parent_plug_id=>wwv_flow_imp.id(12703743415390323)
+,p_template=>4072358936313175081
+,p_display_sequence=>16
+,p_region_css_classes=>'search-results weather-location-results'
+,p_region_template_options=>'#DEFAULT#:t-Region--noPadding:t-Region--scrollBody'
+,p_component_template_options=>'t-Report--stretch:#DEFAULT#:t-Report--altRowsDefault:t-Report--rowHighlight:t-Report--inline'
+,p_source_type=>'NATIVE_SQL_REPORT'
+,p_query_type=>'SQL'
+,p_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select jt.display_value,',
+'       replace(replace(jt.return_value, chr(92), chr(92) || chr(92)), chr(39), chr(92) || chr(39)) as js_return_value,',
+'       replace(replace(jt.display_value, chr(92), chr(92) || chr(92)), chr(39), chr(92) || chr(39)) as js_display_value',
+'  from json_table(',
+'         orac_code.preference_lov_api.get_lov_json(',
+'           p_pref_key      => :P6_PREF_KEY,',
+'           p_search        => :P6_PREF_VALUE_SEARCH_TERM,',
+'           p_current_value => null,',
+'           p_limit         => 50',
+'         ),',
+'         ''$[*]''',
+'         columns (',
+'           display_value varchar2(4000) path ''$.display_value'',',
+'           return_value  varchar2(4000) path ''$.return_value''',
+'         )',
+'       ) jt'))
+,p_ajax_enabled=>'Y'
+,p_ajax_items_to_submit=>'P6_PREF_KEY,P6_PREF_VALUE_SEARCH_TERM'
+,p_lazy_loading=>false
+,p_query_row_template=>2538654340625403440
+,p_query_num_rows=>50
+,p_query_options=>'DERIVED_REPORT_COLUMNS'
+,p_query_no_data_found=>'No matches found. Try a more specific search.'
+,p_query_num_rows_type=>'NEXT_PREVIOUS_LINKS'
+,p_query_row_count_max=>500
+,p_pagination_display_position=>'BOTTOM_RIGHT'
+,p_csv_output=>'N'
+,p_prn_output=>'N'
+,p_sort_null=>'L'
+,p_plug_query_strip_html=>'N'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(13900100000000418)
+,p_query_column_id=>1
+,p_column_alias=>'DISPLAY_VALUE'
+,p_column_display_sequence=>1
+,p_column_heading=>'Location'
+,p_column_link=>'javascript:$s(''P6_PREF_VALUE'',''#JS_RETURN_VALUE#'');$s(''P6_SELECTED_LOCATION'',''#JS_DISPLAY_VALUE#'');void(0);'
+,p_column_linktext=>'#DISPLAY_VALUE#'
+,p_heading_alignment=>'LEFT'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(13900100000000419)
+,p_query_column_id=>2
+,p_column_alias=>'JS_RETURN_VALUE'
+,p_column_display_sequence=>2
+,p_column_heading=>'Js Return Value'
+,p_heading_alignment=>'LEFT'
+,p_display_when_cond_type=>'NEVER'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(13900100000000420)
+,p_query_column_id=>3
+,p_column_alias=>'JS_DISPLAY_VALUE'
+,p_column_display_sequence=>3
+,p_column_heading=>'Js Display Value'
+,p_heading_alignment=>'LEFT'
+,p_display_when_cond_type=>'NEVER'
 );
 wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(12711992648390325)
@@ -3742,6 +3825,18 @@ wwv_flow_imp_page.create_page_button(
 ,p_button_condition_type=>'ITEM_IS_NULL'
 ,p_database_action=>'INSERT'
 );
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(13900100000000415)
+,p_button_sequence=>50
+,p_button_plug_id=>wwv_flow_imp.id(12711992648390325)
+,p_button_name=>'SEARCH_LOCATION'
+,p_button_action=>'DEFINED_BY_DA'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>4072362960822175091
+,p_button_image_alt=>'Search Location'
+,p_button_position=>'NEXT'
+,p_button_alignment=>'RIGHT'
+);
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(12704156340390323)
 ,p_name=>'P6_ROWID'
@@ -3770,17 +3865,10 @@ wwv_flow_imp_page.create_page_item(
 ,p_prompt=>'Pref Id'
 ,p_source=>'PREF_ID'
 ,p_source_type=>'REGION_SOURCE_COLUMN'
-,p_display_as=>'NATIVE_NUMBER_FIELD'
-,p_cSize=>32
-,p_cMaxlength=>255
-,p_cHeight=>1
-,p_label_alignment=>'RIGHT'
-,p_field_template=>1609122147107268652
-,p_item_template_options=>'#DEFAULT#'
+,p_display_as=>'NATIVE_HIDDEN'
 ,p_is_persistent=>'N'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'number_alignment', 'left',
-  'virtual_keyboard', 'decimal')).to_clob
+  'value_protected', 'Y')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(12704944911390324)
@@ -3806,15 +3894,10 @@ wwv_flow_imp_page.create_page_item(
 ,p_prompt=>'Pref Key'
 ,p_source=>'PREF_KEY'
 ,p_source_type=>'REGION_SOURCE_COLUMN'
-,p_display_as=>'NATIVE_DISPLAY_ONLY'
-,p_field_template=>1609122147107268652
-,p_item_template_options=>'#DEFAULT#'
+,p_display_as=>'NATIVE_HIDDEN'
 ,p_is_persistent=>'N'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'based_on', 'VALUE',
-  'format', 'PLAIN',
-  'send_on_page_submit', 'Y',
-  'show_line_breaks', 'Y')).to_clob
+  'value_protected', 'N')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(12708559794390325)
@@ -3828,17 +3911,10 @@ wwv_flow_imp_page.create_page_item(
 ,p_prompt=>'Row Version'
 ,p_source=>'ROW_VERSION'
 ,p_source_type=>'REGION_SOURCE_COLUMN'
-,p_display_as=>'NATIVE_NUMBER_FIELD'
-,p_cSize=>32
-,p_cMaxlength=>255
-,p_cHeight=>1
-,p_label_alignment=>'RIGHT'
-,p_field_template=>1609122147107268652
-,p_item_template_options=>'#DEFAULT#'
+,p_display_as=>'NATIVE_HIDDEN'
 ,p_is_persistent=>'N'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'number_alignment', 'left',
-  'virtual_keyboard', 'decimal')).to_clob
+  'value_protected', 'Y')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(13641482686849432)
@@ -3873,7 +3949,6 @@ wwv_flow_imp_page.create_page_item(
 ,p_source_type=>'REGION_SOURCE_COLUMN'
 ,p_display_as=>'NATIVE_HIDDEN'
 ,p_is_persistent=>'N'
-,p_protection_level=>'N'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'value_protected', 'N')).to_clob
 );
@@ -3928,6 +4003,39 @@ wwv_flow_imp_page.create_page_item(
 ,p_lov_display_extra=>'YES'
 );
 wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(13900100000000404)
+,p_name=>'P6_CONTROL_TYPE'
+,p_source_data_type=>'VARCHAR2'
+,p_item_sequence=>160
+,p_item_plug_id=>wwv_flow_imp.id(12703743415390323)
+,p_display_as=>'NATIVE_HIDDEN'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(13900100000000405)
+,p_name=>'P6_LOV_TYPE'
+,p_source_data_type=>'VARCHAR2'
+,p_item_sequence=>170
+,p_item_plug_id=>wwv_flow_imp.id(12703743415390323)
+,p_display_as=>'NATIVE_HIDDEN'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(13900100000000406)
+,p_name=>'P6_STATIC_LOV_CODE'
+,p_source_data_type=>'VARCHAR2'
+,p_item_sequence=>180
+,p_item_plug_id=>wwv_flow_imp.id(12703743415390323)
+,p_display_as=>'NATIVE_HIDDEN'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(13900100000000410)
 ,p_name=>'P6_PREF_VALUE_SELECT_LIST'
 ,p_source_data_type=>'VARCHAR2'
@@ -3942,7 +4050,10 @@ wwv_flow_imp_page.create_page_item(
 '  from json_table(',
 '         orac_code.preference_lov_api.get_lov_json(',
 '           p_pref_key      => :P6_PREF_KEY,',
-'           p_current_value => coalesce(:P6_PREF_VALUE_SELECT_LIST, :P6_PREF_VALUE_TEXT)',
+'           p_search        => case',
+'                                when :P6_PREF_KEY = ''weather_location'' then :P6_PREF_VALUE_SEARCH_TERM',
+'                              end,',
+'           p_current_value => :P6_PREF_VALUE_SELECT_LIST',
 '         ),',
 '         ''$[*]''',
 '         columns (',
@@ -3951,6 +4062,7 @@ wwv_flow_imp_page.create_page_item(
 '         )',
 '       ) jt'))
 ,p_lov_display_null=>'YES'
+,p_ajax_items_to_submit=>'P6_PREF_KEY,P6_PREF_VALUE_SEARCH_TERM,P6_PREF_VALUE_SELECT_LIST'
 ,p_cHeight=>1
 ,p_field_template=>1609121967514267634
 ,p_item_template_options=>'#DEFAULT#'
@@ -3964,7 +4076,7 @@ wwv_flow_imp_page.create_page_item(
 ,p_item_sequence=>156
 ,p_item_plug_id=>wwv_flow_imp.id(12703743415390323)
 ,p_prompt=>'Preference Value'
-,p_display_as=>'NATIVE_POPUP_LOV'
+,p_display_as=>'NATIVE_SELECT_ONE'
 ,p_named_lov=>'PREFERENCE_POPUP_VALUES'
 ,p_lov=>wwv_flow_string.join(wwv_flow_t_varchar2(
 'select jt.display_value d,',
@@ -3982,37 +4094,69 @@ wwv_flow_imp_page.create_page_item(
 '         )',
 '       ) jt'))
 ,p_lov_display_null=>'YES'
+,p_lov_cascade_parent_items=>'P6_PREF_KEY'
+,p_ajax_items_to_submit=>'P6_PREF_KEY,P6_PREF_VALUE_TEXT,P6_PREF_VALUE_POPUP_LOV'
 ,p_field_template=>1609121967514267634
 ,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
 ,p_lov_display_extra=>'YES'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'case_sensitive', 'N',
+  'fetch_on_search', 'Y',
+  'match_type', 'CONTAINS',
+  'min_chars', '3')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
- p_id=>wwv_flow_imp.id(13900100000000404)
-,p_name=>'P6_CONTROL_TYPE'
+ p_id=>wwv_flow_imp.id(13900100000000414)
+,p_name=>'P6_PREF_VALUE_SEARCH_TERM'
 ,p_source_data_type=>'VARCHAR2'
-,p_item_sequence=>160
+,p_item_sequence=>157
 ,p_item_plug_id=>wwv_flow_imp.id(12703743415390323)
-,p_display_as=>'NATIVE_HIDDEN'
+,p_prompt=>'Search Location'
+,p_display_as=>'NATIVE_TEXT_FIELD'
+,p_cSize=>40
+,p_cMaxlength=>4000
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'disabled', 'N',
+  'submit_when_enter_pressed', 'N',
+  'subtype', 'TEXT',
+  'trim_spaces', 'BOTH')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
- p_id=>wwv_flow_imp.id(13900100000000405)
-,p_name=>'P6_LOV_TYPE'
+ p_id=>wwv_flow_imp.id(13900100000000421)
+,p_name=>'P6_SELECTED_LOCATION'
 ,p_source_data_type=>'VARCHAR2'
-,p_item_sequence=>170
+,p_item_sequence=>158
 ,p_item_plug_id=>wwv_flow_imp.id(12703743415390323)
-,p_display_as=>'NATIVE_HIDDEN'
+,p_prompt=>'Selected Location'
+,p_display_as=>'NATIVE_DISPLAY_ONLY'
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'based_on', 'VALUE',
+  'format', 'PLAIN',
+  'send_on_page_submit', 'Y',
+  'show_line_breaks', 'Y')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
- p_id=>wwv_flow_imp.id(13900100000000406)
-,p_name=>'P6_STATIC_LOV_CODE'
-,p_source_data_type=>'VARCHAR2'
-,p_item_sequence=>180
+ p_id=>wwv_flow_imp.id(13900100000000422)
+,p_name=>'P6_PREF_LABEL'
+,p_item_sequence=>50
 ,p_item_plug_id=>wwv_flow_imp.id(12703743415390323)
-,p_display_as=>'NATIVE_HIDDEN'
+,p_prompt=>'Preference'
+,p_display_as=>'NATIVE_DISPLAY_ONLY'
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'based_on', 'VALUE',
+  'format', 'PLAIN',
+  'send_on_page_submit', 'N',
+  'show_line_breaks', 'Y')).to_clob
 );
 wwv_flow_imp_page.create_page_da_event(
  p_id=>wwv_flow_imp.id(12712434173390326)
@@ -4053,18 +4197,58 @@ wwv_flow_imp_page.create_page_da_action(
 'var valueType = ($v(''P6_VALUE_TYPE'') || '''').toLowerCase();',
 'var controlType = ($v(''P6_CONTROL_TYPE'') || '''').toLowerCase();',
 'var textItem = apex.item(''P6_PREF_VALUE_TEXT'');',
+'var searchItem = apex.item(''P6_PREF_VALUE_SEARCH_TERM'');',
+'var selectedLocationItem = apex.item(''P6_SELECTED_LOCATION'');',
 'var numberItem = apex.item(''P6_PREF_VALUE_NUMBER'');',
 'var booleanItem = apex.item(''P6_PREF_VALUE_BOOLEAN'');',
 'var selectItem = apex.item(''P6_PREF_VALUE_SELECT_LIST'');',
 'var popupItem = apex.item(''P6_PREF_VALUE_POPUP_LOV'');',
+'var searchButton = apex.jQuery(''#SEARCH_LOCATION'');',
+'var resultsRegion = apex.jQuery(''.weather-location-results'');',
+'var resultsRegionBody = resultsRegion.find(''.t-Region-body'');',
+'var selectedContainer = selectedLocationItem.node ? apex.jQuery(selectedLocationItem.node).closest(''.t-Form-fieldContainer'') : apex.jQuery();',
+'',
+'var sizeWeatherResults = function () {',
+'  if (!resultsRegion.length || !resultsRegionBody.length) {',
+'    return;',
+'  }',
+'',
+'  var footer = searchButton.closest(''.ui-dialog-content, .t-DialogRegion, .t-DrawerRegion'').find(''.t-ButtonRegion, .t-Dialog-footer'').first();',
+'  var regionTop = resultsRegion.offset().top;',
+'  var footerTop = footer.length ? footer.offset().top : (apex.jQuery(window).scrollTop() + apex.jQuery(window).height() - 24);',
+'  var availableHeight = Math.max(260, footerTop - regionTop - 16);',
+'',
+'  resultsRegionBody.css({',
+'    maxHeight: availableHeight + ''px'',',
+'    minHeight: ''16rem'',',
+'    overflowY: ''auto''',
+'  });',
+'};',
 '',
 'textItem.hide();',
+'searchItem.hide();',
+'selectedLocationItem.hide();',
 'numberItem.hide();',
 'booleanItem.hide();',
 'selectItem.hide();',
 'popupItem.hide();',
+'searchButton.hide();',
+'resultsRegion.hide();',
 '',
-'if (controlType === ''popup_lov'') {',
+'if ($v(''P6_PREF_KEY'') === ''weather_location'') {',
+'  selectedLocationItem.show();',
+'  searchItem.show();',
+'  searchButton.show();',
+'  if (resultsRegion.length) {',
+'    if (selectedContainer.length) {',
+'      resultsRegion.insertAfter(selectedContainer);',
+'    }',
+'    resultsRegion.css({',
+'      marginTop: ''1rem''',
+'    }).show();',
+'    sizeWeatherResults();',
+'  }',
+'} else if (controlType === ''popup_lov'' || controlType === ''select_one'') {',
 '  popupItem.show();',
 '} else if (controlType === ''select_list'') {',
 '  selectItem.show();',
@@ -4075,6 +4259,58 @@ wwv_flow_imp_page.create_page_da_action(
 '} else {',
 '  textItem.show();',
 '}'))
+);
+wwv_flow_imp_page.create_page_da_event(
+ p_id=>wwv_flow_imp.id(13900100000000412)
+,p_name=>'Refresh Weather Location Results'
+,p_event_sequence=>30
+,p_triggering_element_type=>'BUTTON'
+,p_triggering_button_id=>wwv_flow_imp.id(13900100000000415)
+,p_bind_type=>'bind'
+,p_execution_type=>'IMMEDIATE'
+,p_bind_event_type=>'click'
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(13900100000000413)
+,p_event_id=>wwv_flow_imp.id(13900100000000412)
+,p_event_result=>'TRUE'
+,p_action_sequence=>10
+,p_execute_on_page_init=>'N'
+,p_action=>'NATIVE_REFRESH'
+,p_affected_elements_type=>'REGION'
+,p_affected_region_id=>wwv_flow_imp.id(13900100000000417)
+,p_client_condition_type=>'JAVASCRIPT_EXPRESSION'
+,p_client_condition_expression=>'$v(''P6_PREF_KEY'') === ''weather_location'''
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(13900100000000416)
+,p_event_id=>wwv_flow_imp.id(13900100000000412)
+,p_event_result=>'TRUE'
+,p_action_sequence=>20
+,p_execute_on_page_init=>'N'
+,p_action=>'NATIVE_JAVASCRIPT_CODE'
+,p_attribute_01=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'setTimeout(function () {',
+'  var region = document.querySelector(''.weather-location-results'');',
+'  var footer = apex.jQuery(''#SEARCH_LOCATION'').closest(''.ui-dialog-content, .t-DialogRegion, .t-DrawerRegion'').find(''.t-ButtonRegion, .t-Dialog-footer'').first();',
+'  var body = apex.jQuery(region).find(''.t-Region-body'');',
+'  if (region) {',
+'    if (body.length) {',
+'      var regionTop = apex.jQuery(region).offset().top;',
+'      var footerTop = footer.length ? footer.offset().top : (apex.jQuery(window).scrollTop() + apex.jQuery(window).height() - 24);',
+'      var availableHeight = Math.max(260, footerTop - regionTop - 16);',
+'      body.css({',
+'        maxHeight: availableHeight + ''px'',',
+'        minHeight: ''16rem'',',
+'        overflowY: ''auto''',
+'      });',
+'    }',
+'    region.scrollIntoView({behavior: ''smooth'', block: ''start''});',
+'  }',
+'  apex.item(''P6_PREF_VALUE_SEARCH_TERM'').setFocus();',
+'}, 150);'))
+,p_client_condition_type=>'JAVASCRIPT_EXPRESSION'
+,p_client_condition_expression=>'$v(''P6_PREF_KEY'') === ''weather_location'''
 );
 wwv_flow_imp_page.create_page_process(
  p_id=>wwv_flow_imp.id(12715386492390326)
@@ -4106,7 +4342,13 @@ wwv_flow_imp_page.create_page_process(
 '    from preference_definitions_v',
 '   where pref_key = :P6_PREF_KEY;',
 '',
-'  if :P6_CONTROL_TYPE = ''popup_lov'' then',
+'  if :P6_PREF_KEY = ''weather_location'' then',
+'    l_pref_value_txt := case',
+'      when :P6_PREF_VALUE is null then',
+'        ''{"name":null,"latitude":null,"longitude":null,"timezone":null,"country":null,"admin1":null}''',
+'      else :P6_PREF_VALUE',
+'    end;',
+'  elsif :P6_CONTROL_TYPE in (''popup_lov'', ''select_one'') then',
 '    if l_value_type = ''json'' then',
 '      l_pref_value_txt := case',
 '        when :P6_PREF_KEY = ''weather_location'' and :P6_PREF_VALUE_POPUP_LOV is null then',
@@ -4198,11 +4440,13 @@ wwv_flow_imp_page.create_page_process(
 ,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
 'begin',
 '  if :P6_PREF_KEY is not null then',
-'    select d.value_type',
+'    select coalesce(d.display_label, d.pref_key)',
+'         , d.value_type',
 '         , d.control_type',
 '         , d.lov_type',
 '         , d.static_lov_code',
-'      into :P6_VALUE_TYPE',
+'      into :P6_PREF_LABEL',
+'         , :P6_VALUE_TYPE',
 '         , :P6_CONTROL_TYPE',
 '         , :P6_LOV_TYPE',
 '         , :P6_STATIC_LOV_CODE',
@@ -4210,6 +4454,8 @@ wwv_flow_imp_page.create_page_process(
 '     where d.pref_key = :P6_PREF_KEY;',
 '',
 '    :P6_PREF_VALUE_TEXT := null;',
+'    :P6_PREF_VALUE_SEARCH_TERM := null;',
+'    :P6_SELECTED_LOCATION := null;',
 '    :P6_PREF_VALUE_NUMBER := null;',
 '    :P6_PREF_VALUE_BOOLEAN := null;',
 '    :P6_PREF_VALUE_SELECT_LIST := null;',
@@ -4220,6 +4466,25 @@ wwv_flow_imp_page.create_page_process(
 '               when ''string'' then json_value(p.pref_value, ''$'' returning varchar2(4000) null on error)',
 '               when ''json'' then json_serialize(p.pref_value returning varchar2(4000) null on error)',
 '             end as pref_value_text',
+'           , case',
+'               when :P6_PREF_KEY = ''weather_location'' then',
+'                 json_value(p.pref_value, ''$.name'' returning varchar2(4000) null on error)',
+'             end as pref_value_search_term',
+'           , case',
+'               when :P6_PREF_KEY = ''weather_location'' then',
+'                 case',
+'                   when json_value(p.pref_value, ''$.name'' returning varchar2(4000) null on error) is not null then',
+'                     json_value(p.pref_value, ''$.name'' returning varchar2(4000) null on error)',
+'                     || case',
+'                          when json_value(p.pref_value, ''$.admin1'' returning varchar2(4000) null on error) is not null then',
+'                            '', '' || json_value(p.pref_value, ''$.admin1'' returning varchar2(4000) null on error)',
+'                        end',
+'                     || case',
+'                          when json_value(p.pref_value, ''$.country'' returning varchar2(4000) null on error) is not null then',
+'                            '', '' || json_value(p.pref_value, ''$.country'' returning varchar2(4000) null on error)',
+'                        end',
+'                 end',
+'             end as selected_location',
 '           , case :P6_VALUE_TYPE',
 '               when ''number'' then json_value(p.pref_value, ''$'' returning number null on error)',
 '             end as pref_value_number',
@@ -4228,18 +4493,25 @@ wwv_flow_imp_page.create_page_process(
 '               when ''false'' then ''N''',
 '             end as pref_value_boolean',
 '           , case',
-'               when :P6_CONTROL_TYPE = ''popup_lov''',
+'               when :P6_PREF_KEY = ''weather_location'' then',
+'                 json_serialize(p.pref_value returning varchar2(4000) null on error)',
+'               when :P6_CONTROL_TYPE in (''popup_lov'', ''select_one'')',
 '                and json_value(p.pref_value, ''$.name'' returning varchar2(4000) null on error) is not null then',
 '                 json_serialize(p.pref_value returning varchar2(4000) null on error)',
 '             end as pref_value_popup_lov',
 '        into :P6_PREF_VALUE_TEXT',
+'           , :P6_PREF_VALUE_SEARCH_TERM',
+'           , :P6_SELECTED_LOCATION',
 '           , :P6_PREF_VALUE_NUMBER',
 '           , :P6_PREF_VALUE_BOOLEAN',
 '           , :P6_PREF_VALUE_POPUP_LOV',
 '        from user_preferences_v p',
 '       where p.pref_id = :P6_PREF_ID;',
 '',
-'      if :P6_CONTROL_TYPE = ''select_list'' then',
+'      if :P6_PREF_KEY = ''weather_location'' then',
+'        :P6_PREF_VALUE := :P6_PREF_VALUE_POPUP_LOV;',
+'        :P6_PREF_VALUE_SELECT_LIST := :P6_PREF_VALUE_POPUP_LOV;',
+'      elsif :P6_CONTROL_TYPE = ''select_list'' then',
 '        if :P6_VALUE_TYPE = ''number'' then',
 '          :P6_PREF_VALUE_SELECT_LIST := to_char(:P6_PREF_VALUE_NUMBER);',
 '        else',
@@ -4247,10 +4519,13 @@ wwv_flow_imp_page.create_page_process(
 '        end if;',
 '      end if;',
 '    end if;',
+'  else',
+'    :P6_PREF_LABEL := null;',
 '  end if;',
 'end;'))
 ,p_process_clob_language=>'PLSQL'
 ,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_internal_uid=>13900100000000407
 );
 end;
 /
@@ -4459,6 +4734,10 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_template=>2126429139436695430
 ,p_plug_display_sequence=>20
 ,p_plug_display_point=>'REGION_POSITION_03'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'expand_shortcuts', 'N',
+  'output_as', 'TEXT',
+  'show_line_breaks', 'Y')).to_clob
 );
 wwv_flow_imp_page.create_page_button(
  p_id=>wwv_flow_imp.id(13900100000000303)
@@ -4549,6 +4828,8 @@ wwv_flow_imp_page.create_page_item(
 ,p_source_type=>'REGION_SOURCE_COLUMN'
 ,p_display_as=>'NATIVE_HIDDEN'
 ,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(13900100000000309)
@@ -4567,6 +4848,11 @@ wwv_flow_imp_page.create_page_item(
 ,p_field_template=>1609122147107268652
 ,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'disabled', 'N',
+  'submit_when_enter_pressed', 'N',
+  'subtype', 'TEXT',
+  'trim_spaces', 'BOTH')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(13900100000000310)
@@ -4585,6 +4871,11 @@ wwv_flow_imp_page.create_page_item(
 ,p_field_template=>1609122147107268652
 ,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'disabled', 'N',
+  'submit_when_enter_pressed', 'N',
+  'subtype', 'TEXT',
+  'trim_spaces', 'BOTH')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(13900100000000311)
@@ -4687,6 +4978,11 @@ wwv_flow_imp_page.create_page_item(
 ,p_field_template=>1609121967514267634
 ,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'disabled', 'N',
+  'submit_when_enter_pressed', 'N',
+  'subtype', 'TEXT',
+  'trim_spaces', 'BOTH')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(13900100000000316)
@@ -4897,6 +5193,11 @@ wwv_flow_imp_page.create_page_item(
 ,p_field_template=>1609121967514267634
 ,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'disabled', 'N',
+  'submit_when_enter_pressed', 'N',
+  'subtype', 'TEXT',
+  'trim_spaces', 'BOTH')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(13900100000000327)
@@ -4954,6 +5255,8 @@ wwv_flow_imp_page.create_page_item(
 ,p_source_type=>'REGION_SOURCE_COLUMN'
 ,p_display_as=>'NATIVE_HIDDEN'
 ,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
 );
 wwv_flow_imp_page.create_page_da_event(
  p_id=>wwv_flow_imp.id(13900100000000330)
@@ -4985,6 +5288,7 @@ wwv_flow_imp_page.create_page_process(
 ,p_attribute_06=>'Y'
 ,p_attribute_08=>'Y'
 ,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_internal_uid=>13900100000000332
 );
 wwv_flow_imp_page.create_page_process(
  p_id=>wwv_flow_imp.id(13900100000000333)
@@ -4996,6 +5300,7 @@ wwv_flow_imp_page.create_page_process(
 ,p_error_display_location=>'INLINE_IN_NOTIFICATION'
 ,p_process_when=>'CREATE,SAVE,DELETE'
 ,p_process_when_type=>'REQUEST_IN_CONDITION'
+,p_internal_uid=>13900100000000333
 );
 wwv_flow_imp_page.create_page_process(
  p_id=>wwv_flow_imp.id(13900100000000334)
@@ -5005,6 +5310,7 @@ wwv_flow_imp_page.create_page_process(
 ,p_process_type=>'NATIVE_FORM_INIT'
 ,p_process_name=>'Initialize form Preference Definitions'
 ,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_internal_uid=>13900100000000334
 );
 end;
 /

@@ -348,22 +348,22 @@ using (
     'Weather Location',
     'Default place used for weather questions when no explicit location is given.',
     'json',
-    'popup_lov',
+    'select_one',
     'sql',
-    q'[select jt.display_value d,
-             jt.return_value r
-        from json_table(
-               orac_code.preference_lov_api.get_lov_json(
-                 p_pref_key      => 'weather_location',
-                 p_search        => :APEX$SEARCH,
-                 p_current_value => null
-               ),
-               '$[*]'
-               columns (
-                 display_value varchar2(4000) path '$.display_value',
-                 return_value varchar2(4000) path '$.return_value'
-               )
-             ) jt]',
+    q'~select jt.display_value d,
+              jt.return_value r
+         from json_table(
+                orac_code.preference_lov_api.get_lov_json(
+                  p_pref_key      => 'weather_location',
+                  p_search        => :APEX$SEARCH,
+                  p_current_value => null
+                ),
+                '$[*]'
+                columns (
+                  display_value varchar2(4000) path '$.display_value',
+                  return_value varchar2(4000) path '$.return_value'
+                )
+              ) jt~',
     cast(null as varchar2(100 byte)),
     json('{"name":null,"latitude":null,"longitude":null,"timezone":null,"country":null,"admin1":null}'),
     cast(null as number),

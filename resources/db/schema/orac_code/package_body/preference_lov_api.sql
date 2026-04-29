@@ -50,6 +50,45 @@ create or replace package body orac_code.preference_lov_api as
     return l_label;
   end build_location_label;
 
+  function http_get(
+    p_url in varchar2
+  ) return clob is
+    l_req   utl_http.req;
+    l_resp  utl_http.resp;
+    l_chunk varchar2(32767);
+    l_body  clob;
+  begin
+    dbms_lob.createtemporary(l_body, true);
+
+    l_req := utl_http.begin_request(p_url, 'GET');
+    l_resp := utl_http.get_response(l_req);
+
+    begin
+      loop
+        utl_http.read_text(l_resp, l_chunk, 32767);
+        dbms_lob.writeappend(l_body, length(l_chunk), l_chunk);
+      end loop;
+    exception
+      when utl_http.end_of_body then
+        null;
+    end;
+
+    utl_http.end_response(l_resp);
+    return l_body;
+  exception
+    when others then
+      begin
+        utl_http.end_response(l_resp);
+      exception
+        when others then
+          null;
+      end;
+      if dbms_lob.istemporary(l_body) = 1 then
+        dbms_lob.freetemporary(l_body);
+      end if;
+      raise;
+  end http_get;
+
   procedure append_location_row(
     p_rows      in out nocopy json_array_t,
     p_name      in varchar2,
@@ -140,13 +179,16 @@ create or replace package body orac_code.preference_lov_api as
   function get_lov_json(
     p_pref_key      in orac_api.preference_definitions_v.pref_key%type,
     p_search        in varchar2 default null,
-    p_current_value in varchar2 default null
+    p_current_value in varchar2 default null,
+    p_limit         in pls_integer default 50
   ) return clob is
     l_pref_key  varchar2(100) := lower(trim(p_pref_key));
     l_search    varchar2(4000) := trim(p_search);
+    l_current_value varchar2(4000) := trim(p_current_value);
     l_response  clob;
     l_rows      json_array_t := json_array_t();
     l_app_id    number := current_app_id;
+    l_limit     pls_integer := least(greatest(nvl(p_limit, 50), 1), 100);
   begin
     case l_pref_key
       when 'date_format' then
@@ -221,6 +263,13 @@ create or replace package body orac_code.preference_lov_api as
         append_row(l_rows, 'English (US) Male 1', 'en-US-male-1');
 
       when 'weather_location' then
+        if (l_search is null or length(l_search) < 3)
+           and l_current_value is not null
+           and not regexp_like(l_current_value, '^\s*\{')
+        then
+          l_search := l_current_value;
+        end if;
+
         if l_search is null or length(l_search) < 3 then
           append_current_weather_location(
             p_rows          => l_rows,
@@ -229,13 +278,12 @@ create or replace package body orac_code.preference_lov_api as
           return l_rows.to_clob;
         end if;
 
-        l_response := apex_web_service.make_rest_request(
-          p_url         => gc_open_meteo_geocoder_url
-                           || '?name=' || utl_url.escape(l_search, true, 'AL32UTF8')
-                           || chr(38) || 'count=10'
-                           || chr(38) || 'language=en'
-                           || chr(38) || 'format=json',
-          p_http_method => 'GET'
+        l_response := http_get(
+          gc_open_meteo_geocoder_url
+          || '?name=' || utl_url.escape(l_search, true, 'AL32UTF8')
+          || chr(38) || 'count=' || to_char(l_limit)
+          || chr(38) || 'language=en'
+          || chr(38) || 'format=json'
         );
 
         for rec in (
