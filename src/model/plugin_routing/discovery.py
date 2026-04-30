@@ -1,6 +1,6 @@
 """Manifest discovery and validation for plugin routing."""
 # Author: Clive Bostock
-# Date: 2026-04-23
+# Date: 2026-04-30
 # Description: Scans manifest files, validates schema v1, and constructs manifest models.
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ REQUIRED_FIELDS = {
     "version",
     "enabled",
     "capabilities",
+    "entitlements",
 }
 OPTIONAL_FIELDS = {
     "entities",
@@ -117,6 +118,10 @@ class PluginDiscovery:
             "capabilities",
             allow_empty=False,
         )
+        entitlements = self._require_string_list(
+            data["entitlements"],
+            "entitlements",
+        )
         entities = self._require_string_list(data.get("entities", []), "entities")
         examples = self._require_string_list(data.get("examples", []), "examples")
         entry_point = self._require_optional_string(data.get("entry_point"), "entry_point")
@@ -131,6 +136,7 @@ class PluginDiscovery:
             version=version,
             enabled=enabled,
             capabilities=tuple(capabilities),
+            entitlements=tuple(entitlements),
             entities=tuple(entities),
             examples=tuple(examples),
             entry_point=entry_point,

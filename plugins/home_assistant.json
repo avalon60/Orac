@@ -10,6 +10,7 @@
     "home_automation.state_query",
     "home_automation.scene_activation"
   ],
+  "entitlements": [],
   "entities": [
     "lights",
     "switches",

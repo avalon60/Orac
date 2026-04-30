@@ -1,29 +1,38 @@
 """Plugin execution orchestration for candidate plugins."""
 # Author: Clive Bostock
-# Date: 2026-04-23
-# Description: Tries routed plugin candidates in order and returns the first handled result.
+# Date: 2026-04-30
+# Description: Tries routed plugin candidates in order and returns the first
+#   handled result.
 
 from __future__ import annotations
 
 from typing import Any
 
 from model.plugin_routing.handoff import PluginRoutingHandoff
-from model.plugin_runtime import PluginExecutionResult, PluginRuntimeError, load_plugin_class
+from model.plugin_runtime import (
+    PluginDataAccess,
+    PluginExecutionResult,
+    PluginRuntimeError,
+    instantiate_plugin,
+    load_plugin_class,
+)
 
 
 class PluginRouter:
     """Attempts execution for candidate plugins without owning discovery or indexing."""
 
-    def __init__(self, plugin_manager, logger, config_mgr):
+    def __init__(self, plugin_manager, logger, config_mgr, context_manager):
         self._plugin_manager = plugin_manager
         self._logger = logger
         self._config_mgr = config_mgr
+        self._context_manager = context_manager
 
     def route(
         self,
         prompt: str,
         meta: dict[str, Any] | None,
         handoff: PluginRoutingHandoff | None,
+        auth_user: str,
     ) -> PluginExecutionResult | None:
         """Returns the first successful plugin execution result, or None."""
         if handoff is None or not handoff.candidates or self._plugin_manager is None:
@@ -46,7 +55,18 @@ class PluginRouter:
 
             try:
                 plugin_class = load_plugin_class(manifest)
-                plugin_instance = plugin_class(logger=self._logger, config_mgr=self._config_mgr)
+                data_access = PluginDataAccess(
+                    manifest=manifest,
+                    context_manager=self._context_manager,
+                    auth_user=auth_user,
+                    logger=self._logger,
+                )
+                plugin_instance = instantiate_plugin(
+                    plugin_class,
+                    logger=self._logger,
+                    config_mgr=self._config_mgr,
+                    data_access=data_access,
+                )
                 if hasattr(plugin_instance, "can_handle") and not plugin_instance.can_handle(prompt):
                     self._logger.log_debug(
                         f"Plugin '{candidate.plugin_id}' declined prompt after execution-time handle check."

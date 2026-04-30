@@ -859,6 +859,7 @@ class Orac:
                 plugin_manager=self.plugin_manager,
                 logger=logger,
                 config_mgr=self.config_mgr,
+                context_manager=self.ctx,
             )
             logger.log_info(f"{Icons.info} Plugin routing bootstrap starting.")
             logger.log_info(
@@ -1967,7 +1968,12 @@ class Orac:
             plugin_routing_handoff = self._collect_plugin_routing_handoff(prompt, meta)
             plugin_execution_result = None
             if self.plugin_router is not None:
-                plugin_execution_result = self.plugin_router.route(prompt, meta, plugin_routing_handoff)
+                plugin_execution_result = self.plugin_router.route(
+                    prompt,
+                    meta,
+                    plugin_routing_handoff,
+                    auth_user,
+                )
 
             if plugin_execution_result is not None and plugin_execution_result.handled:
                 content = plugin_execution_result.content

@@ -9,6 +9,10 @@
     "weather.current_conditions",
     "weather.short_forecast"
   ],
+  "entitlements": [
+    "user_preferences.weather_location",
+    "user_preferences.timezone"
+  ],
   "entities": [
     "location",
     "temperature",

@@ -1,6 +1,6 @@
 """Weather provider abstraction and Open-Meteo implementation for the weather plugin."""
 # Author: Clive Bostock
-# Date: 2026-04-23
+# Date: 2026-04-30
 # Description: Encapsulates weather and geocoding access behind a narrow provider interface.
 
 from __future__ import annotations
@@ -81,6 +81,14 @@ class WeatherProvider(ABC):
         """Resolves a human-readable location name to coordinates."""
 
     @abstractmethod
+    def search_locations(
+        self,
+        location_name: str,
+        limit: int = 10,
+    ) -> tuple[ResolvedLocation, ...]:
+        """Returns candidate locations for an ambiguous human-readable name."""
+
+    @abstractmethod
     def get_weather(self, location: ResolvedLocation) -> WeatherSnapshot:
         """Returns weather data for a resolved location."""
 
@@ -96,11 +104,20 @@ class OpenMeteoWeatherProvider(WeatherProvider):
         self._timeout = timeout
 
     def resolve_location(self, location_name: str) -> ResolvedLocation | None:
+        results = self.search_locations(location_name, limit=1)
+        return results[0] if results else None
+
+    def search_locations(
+        self,
+        location_name: str,
+        limit: int = 10,
+    ) -> tuple[ResolvedLocation, ...]:
+        """Return up to `limit` Open-Meteo geocoding candidates for a place name."""
         response = self._session.get(
             self.GEOCODING_URL,
             params={
                 "name": location_name,
-                "count": 1,
+                "count": max(1, min(int(limit), 50)),
                 "language": "en",
                 "format": "json",
             },
@@ -109,18 +126,7 @@ class OpenMeteoWeatherProvider(WeatherProvider):
         response.raise_for_status()
         payload = response.json()
         results = payload.get("results") or []
-        if not results:
-            return None
-
-        record = results[0]
-        return ResolvedLocation(
-            name=record["name"],
-            latitude=float(record["latitude"]),
-            longitude=float(record["longitude"]),
-            timezone=record.get("timezone", "UTC"),
-            country=record.get("country"),
-            admin1=record.get("admin1"),
-        )
+        return tuple(self._resolved_location_from_record(record) for record in results)
 
     def get_weather(self, location: ResolvedLocation) -> WeatherSnapshot:
         response = self._session.get(
@@ -217,6 +223,18 @@ class OpenMeteoWeatherProvider(WeatherProvider):
             )
         return tuple(points)
 
+    @staticmethod
+    def _resolved_location_from_record(record: dict[str, Any]) -> ResolvedLocation:
+        """Build a `ResolvedLocation` from an Open-Meteo geocoding record."""
+        return ResolvedLocation(
+            name=record["name"],
+            latitude=float(record["latitude"]),
+            longitude=float(record["longitude"]),
+            timezone=record.get("timezone", "UTC"),
+            country=record.get("country"),
+            admin1=record.get("admin1"),
+        )
+
 
 class StubWeatherProvider(WeatherProvider):
     """Deterministic provider for plugin tests."""
@@ -229,6 +247,16 @@ class StubWeatherProvider(WeatherProvider):
         if location_name.strip().lower() == self._location.name.lower():
             return self._location
         return None
+
+    def search_locations(
+        self,
+        location_name: str,
+        limit: int = 10,
+    ) -> tuple[ResolvedLocation, ...]:
+        """Return deterministic location candidates for tests."""
+        del limit
+        resolved = self.resolve_location(location_name)
+        return (resolved,) if resolved is not None else tuple()
 
     def get_weather(self, location: ResolvedLocation) -> WeatherSnapshot:
         return self._snapshot

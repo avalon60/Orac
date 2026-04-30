@@ -1,6 +1,6 @@
 """Data models for plugin routing manifests and candidate results."""
 # Author: Clive Bostock
-# Date: 2026-04-23
+# Date: 2026-04-30
 # Description: Defines core dataclasses used by the plugin routing subsystem.
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ class PluginManifest:
     version: str
     enabled: bool
     capabilities: tuple[str, ...]
+    entitlements: tuple[str, ...]
     entities: tuple[str, ...]
     examples: tuple[str, ...]
     entry_point: str | None

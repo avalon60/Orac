@@ -1278,7 +1278,7 @@ wwv_flow_imp_shared.create_list_of_values(
 '         orac_code.preference_lov_api.get_lov_json(',
 '           p_pref_key      => :P6_PREF_KEY,',
 '           p_search        => :APEX$SEARCH,',
-'           p_current_value => coalesce(:P6_PREF_VALUE_POPUP_LOV, :P6_PREF_VALUE_TEXT)',
+'           p_current_value => coalesce(:P6_PREF_VALUE_POPUP_LOV, :P6_PREF_VALUE_SELECT_LIST, to_char(:P6_PREF_VALUE_NUMBER), :P6_PREF_VALUE_TEXT)',
 '         ),',
 '         ''$[*]''',
 '         columns (',
@@ -1876,7 +1876,7 @@ wwv_flow_imp_page.create_jet_chart_series(
 ,p_query_table=>'MESSAGES_PER_DAY_V'
 ,p_series_type=>'line'
 ,p_items_value_column_name=>'MESSAGES'
-,p_items_label_column_name=>'DAY'
+,p_items_label_column_name=>'DAY_LABEL'
 ,p_items_label_rendered=>false
 ,p_items_label_position=>'auto'
 ,p_items_label_display_as=>'PERCENT'
@@ -2076,7 +2076,7 @@ wwv_flow_imp_page.create_jet_chart_series(
 ,p_query_table=>'TOKEN_USAGE_TREND_V'
 ,p_series_type=>'area'
 ,p_items_value_column_name=>'TOTAL_TOKENS'
-,p_items_label_column_name=>'DAY'
+,p_items_label_column_name=>'DAY_LABEL'
 ,p_items_label_rendered=>false
 ,p_items_label_position=>'auto'
 ,p_items_label_display_as=>'PERCENT'
@@ -2745,6 +2745,8 @@ wwv_flow_imp_page.create_report_columns(
 ,p_column_display_sequence=>4
 ,p_column_heading=>'Preference'
 ,p_heading_alignment=>'LEFT'
+,p_default_sort_column_sequence=>1
+,p_default_sort_dir=>'asc'
 ,p_derived_column=>'N'
 ,p_include_in_export=>'Y'
 );
@@ -4178,7 +4180,7 @@ wwv_flow_imp_page.create_page_item(
 '         orac_code.preference_lov_api.get_lov_json(',
 '           p_pref_key      => :P6_PREF_KEY,',
 '           p_search        => :APEX$SEARCH,',
-'           p_current_value => coalesce(:P6_PREF_VALUE_POPUP_LOV, :P6_PREF_VALUE_TEXT)',
+'           p_current_value => coalesce(:P6_PREF_VALUE_POPUP_LOV, :P6_PREF_VALUE_SELECT_LIST, to_char(:P6_PREF_VALUE_NUMBER), :P6_PREF_VALUE_TEXT)',
 '         ),',
 '         ''$[*]''',
 '         columns (',
@@ -4197,7 +4199,7 @@ wwv_flow_imp_page.create_page_item(
   'case_sensitive', 'N',
   'fetch_on_search', 'Y',
   'match_type', 'CONTAINS',
-  'min_chars', '3')).to_clob
+  'min_chars', '0')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(13900100000000414)
@@ -4672,7 +4674,7 @@ wwv_flow_imp_page.create_report_columns(
  p_id=>wwv_flow_imp.id(13900100000000204)
 ,p_query_column_id=>3
 ,p_column_alias=>'PREF_KEY'
-,p_column_display_sequence=>2
+,p_column_display_sequence=>3
 ,p_column_heading=>'Pref Key'
 ,p_heading_alignment=>'LEFT'
 );
@@ -4680,9 +4682,11 @@ wwv_flow_imp_page.create_report_columns(
  p_id=>wwv_flow_imp.id(13900100000000205)
 ,p_query_column_id=>4
 ,p_column_alias=>'DISPLAY_LABEL'
-,p_column_display_sequence=>3
+,p_column_display_sequence=>2
 ,p_column_heading=>'Display Label'
 ,p_heading_alignment=>'LEFT'
+,p_default_sort_column_sequence=>1
+,p_default_sort_dir=>'asc'
 );
 wwv_flow_imp_page.create_report_columns(
  p_id=>wwv_flow_imp.id(13900100000000206)

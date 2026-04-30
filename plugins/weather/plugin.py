@@ -1,11 +1,12 @@
 """Weather plugin implementation using a modest Open-Meteo-backed provider."""
 # Author: Clive Bostock
-# Date: 2026-04-23
+# Date: 2026-04-30
 # Description: Handles current weather and short forecast requests for supported locations.
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import math
 import re
 from typing import Any
 
@@ -45,9 +46,16 @@ WEATHER_CODE_LABELS = {
 class WeatherPlugin:
     """First real Orac plugin for weather questions."""
 
-    def __init__(self, logger, config_mgr, provider: WeatherProvider | None = None):
+    def __init__(
+        self,
+        logger,
+        config_mgr,
+        data_access=None,
+        provider: WeatherProvider | None = None,
+    ):
         self._logger = logger
         self._config_mgr = config_mgr
+        self._data_access = data_access
         self._provider = provider or OpenMeteoWeatherProvider()
 
     def can_handle(self, prompt: str) -> bool:
@@ -73,8 +81,8 @@ class WeatherPlugin:
             return None
 
         meta = meta or {}
-        location_name = self._resolve_location_name(prompt, meta)
-        if location_name is None:
+        resolved_location = self._resolve_location(prompt, meta)
+        if resolved_location is None:
             return PluginExecutionResult(
                 plugin_id="weather",
                 content=(
@@ -84,20 +92,16 @@ class WeatherPlugin:
                 ),
             )
 
-        try:
-            location = self._provider.resolve_location(location_name)
-        except Exception as exc:
-            self._logger.log_error(f"Weather plugin location lookup failed for '{location_name}': {exc}")
-            return PluginExecutionResult(
-                plugin_id="weather",
-                content="I couldn't resolve that location right now. Please try again shortly.",
-            )
-
-        if location is None:
-            return PluginExecutionResult(
-                plugin_id="weather",
-                content=f"I couldn't find a supported location for '{location_name}'.",
-            )
+        if isinstance(resolved_location, ResolvedLocation):
+            location = resolved_location
+        else:
+            location_name = resolved_location
+            location = self._lookup_named_location(location_name)
+            if location is None:
+                return PluginExecutionResult(
+                    plugin_id="weather",
+                    content=f"I couldn't find a supported location for '{location_name}'.",
+                )
 
         try:
             snapshot = self._provider.get_weather(location)
@@ -112,32 +116,192 @@ class WeatherPlugin:
         self._logger.log_info(f"Weather plugin handled weather request for {location.name}.")
         return PluginExecutionResult(plugin_id="weather", content=response)
 
-    def _resolve_location_name(self, prompt: str, meta: dict[str, Any]) -> str | None:
+    def _resolve_location(self, prompt: str, meta: dict[str, Any]) -> ResolvedLocation | str | None:
+        """Resolve a weather target from the prompt or saved session metadata."""
         explicit_location = self._extract_explicit_location(prompt)
         if explicit_location:
             return explicit_location
 
-        text = prompt.lower()
-        if any(marker in text for marker in ("where i am", "outside", "here", "my area")):
-            return (
-                meta.get("weather_location")
-                or self._config_mgr.config_value("weather", "default_location", default="").strip()
-                or None
-            )
+        home_location = self._home_location()
+        if home_location is not None:
+            return home_location
 
-        return (
-            meta.get("weather_location")
-            or self._config_mgr.config_value("weather", "default_location", default="").strip()
-            or None
+        return self._config_mgr.config_value("weather", "default_location", default="").strip() or None
+
+    def _lookup_named_location(
+        self,
+        location_name: str,
+    ) -> ResolvedLocation | None:
+        """Resolve a plain-text location name, preferring nearby candidates when ambiguous."""
+        candidates = self._location_lookup_candidates(location_name)
+        home_location = self._home_location()
+        seen: set[str] = set()
+        for candidate in candidates:
+            normalized_candidate = candidate.strip()
+            if not normalized_candidate:
+                continue
+            dedupe_key = normalized_candidate.lower()
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            try:
+                locations = self._provider.search_locations(normalized_candidate, limit=10)
+            except Exception as exc:
+                self._logger.log_error(
+                    f"Weather plugin location lookup failed for '{normalized_candidate}': {exc}"
+                )
+                return None
+            location = self._best_location_match(locations, normalized_candidate, home_location)
+            if location is not None:
+                return location
+        return None
+
+    def _location_lookup_candidates(self, location_name: str) -> list[str]:
+        """Return lookup candidates from most specific to more forgiving variants."""
+        normalized_name = str(location_name or "").strip(" ?.!,")
+        if not normalized_name:
+            return []
+
+        candidates = [normalized_name]
+        country_hint = self._country_hint_from_home_location(self._home_location())
+        if country_hint and "," not in normalized_name:
+            candidates.append(f"{normalized_name}, {country_hint}")
+
+        parts = [part.strip() for part in normalized_name.split(",") if part.strip()]
+        if len(parts) > 1:
+            primary = parts[0]
+            qualifiers = parts[1:]
+            candidates.append(primary)
+            if country_hint:
+                candidates.append(f"{primary}, {country_hint}")
+            for qualifier in qualifiers:
+                candidates.append(f"{primary}, {qualifier}")
+
+        return candidates
+
+    @staticmethod
+    def _resolved_location_from_meta(weather_pref: dict[str, Any] | None) -> ResolvedLocation | None:
+        """Build a resolved location directly from the saved weather preference payload."""
+        if not isinstance(weather_pref, dict):
+            return None
+
+        name = str(weather_pref.get("name") or "").strip()
+        timezone_name = str(weather_pref.get("timezone") or "").strip()
+        if not name or not timezone_name:
+            return None
+
+        try:
+            latitude = float(weather_pref.get("latitude"))
+            longitude = float(weather_pref.get("longitude"))
+        except (TypeError, ValueError):
+            return None
+
+        country = str(weather_pref.get("country") or "").strip() or None
+        admin1 = str(weather_pref.get("admin1") or "").strip() or None
+        return ResolvedLocation(
+            name=name,
+            latitude=latitude,
+            longitude=longitude,
+            timezone=timezone_name,
+            country=country,
+            admin1=admin1,
         )
+
+    @staticmethod
+    def _country_hint_from_home_location(home_location: ResolvedLocation | None) -> str | None:
+        """Return a country hint from the saved weather location when available."""
+        if home_location is None:
+            return None
+        country = str(home_location.country or "").strip()
+        return country or None
+
+    def _home_location(self) -> ResolvedLocation | None:
+        """Return the saved weather location through the entitlement-checked data API."""
+        if self._data_access is None:
+            return None
+        weather_pref = self._data_access.get("user_preferences.weather_location")
+        return self._resolved_location_from_meta(weather_pref)
+
+    @staticmethod
+    def _best_location_match(
+        locations: tuple[ResolvedLocation, ...],
+        requested_name: str,
+        home_location: ResolvedLocation | None,
+    ) -> ResolvedLocation | None:
+        """Choose the best location candidate for an explicit weather query."""
+        if not locations:
+            return None
+
+        requested_parts = [
+            part.strip().lower()
+            for part in str(requested_name or "").split(",")
+            if part.strip()
+        ]
+        primary_name = requested_parts[0] if requested_parts else ""
+        qualifier_parts = requested_parts[1:]
+        normalized_qualifiers = {
+            part
+            for part in qualifier_parts
+            if part not in {"england", "united kingdom", "great britain", "uk"}
+        }
+
+        matching_name_locations = tuple(
+            location
+            for location in locations
+            if location.name.strip().lower() == primary_name
+        ) or locations
+
+        if normalized_qualifiers:
+            qualified_matches = tuple(
+                location
+                for location in matching_name_locations
+                if WeatherPlugin._location_matches_qualifiers(location, normalized_qualifiers)
+            )
+            if qualified_matches:
+                matching_name_locations = qualified_matches
+
+        if " " in primary_name:
+            return matching_name_locations[0]
+
+        if home_location is None or len(matching_name_locations) == 1:
+            return matching_name_locations[0]
+
+        return min(
+            matching_name_locations,
+            key=lambda location: WeatherPlugin._distance_score(home_location, location),
+        )
+
+    @staticmethod
+    def _location_matches_qualifiers(
+        location: ResolvedLocation,
+        qualifiers: set[str],
+    ) -> bool:
+        """Return whether a geocoded location matches all non-country qualifiers."""
+        candidate_parts = {
+            str(location.admin1 or "").strip().lower(),
+            str(location.country or "").strip().lower(),
+            str(location.name or "").strip().lower(),
+        }
+        candidate_parts.discard("")
+        return qualifiers.issubset(candidate_parts)
+
+    @staticmethod
+    def _distance_score(
+        origin: ResolvedLocation,
+        candidate: ResolvedLocation,
+    ) -> float:
+        """Return an approximate squared distance between two locations."""
+        lat_delta = origin.latitude - candidate.latitude
+        lon_delta = origin.longitude - candidate.longitude
+        return math.pow(lat_delta, 2) + math.pow(lon_delta, 2)
 
     @staticmethod
     def _extract_explicit_location(prompt: str) -> str | None:
         patterns = [
-            r"\bweather in ([A-Za-z][A-Za-z .'\-]+)",
-            r"\btemperature in ([A-Za-z][A-Za-z .'\-]+)",
-            r"\bforecast for ([A-Za-z][A-Za-z .'\-]+)",
-            r"\bin ([A-Za-z][A-Za-z .'\-]+)\??$",
+            r"\bweather in ([A-Za-z][A-Za-z ,.'\-]+)",
+            r"\btemperature in ([A-Za-z][A-Za-z ,.'\-]+)",
+            r"\bforecast for ([A-Za-z][A-Za-z ,.'\-]+)",
+            r"\bin ([A-Za-z][A-Za-z ,.'\-]+)\??$",
         ]
         for pattern in patterns:
             match = re.search(pattern, prompt, flags=re.IGNORECASE)
