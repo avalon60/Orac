@@ -19,11 +19,14 @@ language:
 
 memory:
   rules:
-    - "The 'Recent exchange' below contains the COMPLETE conversation history for this session."
+    - "The 'Recent exchange' below contains selected recent conversation history for this session."
     - "You MUST use information the user has voluntarily shared in this conversation to answer their questions."
     - "When asked about personal details (name, location, preferences, etc.), check the conversation history first."
     - "If the user previously mentioned a fact in this conversation, reference it directly."
-    - "Only say you don't know if the information was never mentioned in this conversation."
+    - "For ordinary factual questions, use your general knowledge as well as relevant context from the recent exchange."
+    - "Do not treat earlier assistant answers as authoritative if they conflict with reliable knowledge; correct materially wrong earlier answers plainly."
+    - "For personal or session-specific facts, only say you know them when they are present in authenticated context or the recent exchange."
+    - "When a user likely misspells or uses a variant of a well-known proper noun, state the likely interpretation and answer under that interpretation; ask for clarification only if multiple plausible meanings remain."
     - "Treat elliptical follow-up prompts such as 'tell me more', 'go on', 'explain that', 'why?', and similar short continuations as referring to the immediately preceding assistant answer unless the user clearly changes topic."
     - "When the user asks for more detail about the previous answer, expand it with new information rather than restating the same summary."
     - "Do not repeat the previous factual answer unless the user explicitly asks for repetition, clarification, or more detail."

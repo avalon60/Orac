@@ -9,6 +9,7 @@ import asyncio
 import subprocess
 import re
 import json
+import threading
 import uuid
 import os
 import time
@@ -524,6 +525,16 @@ class Orac:
             # Context manager + pruning policy
             self.ctx = OracContextManager(self.db_session, logger=logger)
             self._sync_llm_registry()
+            self._llm_probe_stop = threading.Event()
+            self._llm_probe_thread: threading.Thread | None = None
+            self._llm_probe_interval_secs = int(
+                self.config_mgr.config_value(
+                    "context",
+                    "llm_probe_interval_secs",
+                    default="30",
+                )
+            )
+            self._start_llm_probe_worker()
             self._keep_messages = int(self.config_mgr.config_value("context", "keep_messages", default="200"))
             self._prune_after_turns = int(self.config_mgr.config_value("context", "prune_every_n_turns", default="50"))
             self._plugin_routing_enabled = self.config_mgr.bool_config_value(
@@ -681,9 +692,13 @@ class Orac:
             lang = meta.get("reply_language", self._reply_language) or "English"
             final_directive = (
                 f"\nFINAL DIRECTIVE: For the CURRENT user message below, respond in {lang} ONLY. "
-                "Use 'Recent exchange' as session memory for THIS conversation. "
-                "If it contains explicit facts that answer the question, use the most recent consistent fact. "
-                "If not present or ambiguous, say you don't know and optionally ask the user to clarify. "
+                "Use 'Recent exchange' to resolve references, follow-up wording, and user-provided session facts. "
+                "For ordinary factual questions, use your general knowledge as well as relevant context. "
+                "Do not treat earlier assistant answers as authoritative if they conflict with reliable knowledge; "
+                "correct materially wrong earlier answers plainly. "
+                "If a proper noun appears misspelled or variant, state the likely interpretation and answer under "
+                "that interpretation; ask for clarification only when multiple plausible meanings remain. "
+                "For personal/session facts, only claim facts present in authenticated context or recent exchange. "
                 "Keep the reply concise.\n"
             )
 
@@ -736,7 +751,6 @@ class Orac:
         self._available_backend_models = set(discovered)
 
         provider = self.llm_service_id.strip().lower()
-        context_policy = "app"
         synced = 0
         inserted = 0
         updated = 0
@@ -750,7 +764,8 @@ class Orac:
                        model,
                        context_policy,
                        max_context_tokens,
-                       is_enabled
+                       is_enabled,
+                       properties
                   from orac_api.llm_registry_v
                 """
             )
@@ -766,17 +781,25 @@ class Orac:
                 for model_name in discovered:
                     key = (provider, model_name)
                     existing = existing_by_key.get(key)
-                    properties = json.dumps(
-                        {
-                            "discovered_by": "startup_sync",
-                            "service_url": self.service_url,
-                            "provider": provider,
-                            "model": model_name,
-                            "is_default_runtime_model": (
-                                model_name == self.model_name
-                            ),
-                        },
-                        ensure_ascii=False,
+                    existing_properties = (
+                        existing.get("PROPERTIES")
+                        if existing
+                        else None
+                    )
+                    existing_context_policy = (
+                        str(existing.get("CONTEXT_POLICY") or "").strip()
+                        if existing
+                        else ""
+                    )
+                    context_policy = existing_context_policy or "unresolved"
+                    properties = self._build_llm_registry_properties(
+                        existing_properties,
+                        provider=provider,
+                        service_url=self.service_url,
+                        model_name=model_name,
+                        is_default_runtime_model=(
+                            model_name == self.model_name
+                        ),
                     )
 
                     if existing:
@@ -836,6 +859,288 @@ class Orac:
             f"discovered={len(discovered)} synced={synced} "
             f"inserted={inserted} updated={updated}"
         )
+
+    @staticmethod
+    def _build_llm_registry_properties(
+        existing_properties: Any,
+        *,
+        provider: str,
+        service_url: str,
+        model_name: str,
+        is_default_runtime_model: bool,
+    ) -> str:
+        """Merge startup sync metadata into existing registry properties.
+
+        Args:
+            existing_properties (Any): Existing JSON properties payload.
+            provider (str): LLM provider name.
+            service_url (str): Backend service URL.
+            model_name (str): Model name being synchronised.
+            is_default_runtime_model (bool): Whether this is the configured model.
+
+        Returns:
+            str: JSON document suitable for persistence in the registry.
+        """
+        merged: dict[str, Any] = {}
+
+        if isinstance(existing_properties, dict):
+            merged.update(existing_properties)
+        elif isinstance(existing_properties, str) and existing_properties.strip():
+            try:
+                parsed = json.loads(existing_properties)
+            except Exception:
+                parsed = {}
+            if isinstance(parsed, dict):
+                merged.update(parsed)
+
+        merged.update(
+            {
+                "discovered_by": "startup_sync",
+                "service_url": service_url,
+                "provider": provider,
+                "model": model_name,
+                "is_default_runtime_model": is_default_runtime_model,
+            }
+        )
+        return json.dumps(merged, ensure_ascii=False)
+
+    def _start_llm_probe_worker(self) -> None:
+        """Start a background worker that probes unresolved LLM rows."""
+        if self._llm_probe_thread and self._llm_probe_thread.is_alive():
+            return
+
+        thread = threading.Thread(
+            target=self._llm_probe_worker_loop,
+            name="orac-llm-probe",
+            daemon=True,
+        )
+        self._llm_probe_thread = thread
+        thread.start()
+        logger.log_info(
+            f"{Icons.info} Started LLM registry probe worker for provider "
+            f"'{self.llm_service_id}' every {self._llm_probe_interval_secs}s."
+        )
+
+    def _llm_probe_worker_loop(self) -> None:
+        """Continuously probe unresolved registry entries on a background loop."""
+        while not self._llm_probe_stop.is_set():
+            try:
+                self._probe_unresolved_llm_registry()
+            except Exception as e:
+                _log_exception("LLM registry probe worker failed", e)
+
+            if self._llm_probe_stop.wait(max(1, self._llm_probe_interval_secs)):
+                break
+
+    def _probe_unresolved_llm_registry(self) -> None:
+        """Probe unresolved registry entries and persist the derived metadata."""
+        probe_db = None
+        probe_rows = []
+        try:
+            probe_db = DBSession(
+                wallet_zip_path="",
+                verbose=False,
+                user=self._user,
+                password=self._password,
+                dsn=self._dsn,
+                config_dir=TNS_ADMIN,
+            )
+            probe_rows = probe_db.dict_sql_dataset(
+                """
+                select llm_id,
+                       name,
+                       provider,
+                       model,
+                       context_policy,
+                       properties
+                  from orac_api.llm_registry_v
+                 where lower(context_policy) = 'unresolved'
+                   and upper(is_enabled) = 'Y'
+                 order by llm_id
+                """
+            )
+            logger.log_info(
+                f"{Icons.info} LLM probe worker discovered {len(probe_rows)} unresolved row(s)."
+            )
+        except Exception as e:
+            _log_exception("Failed to load unresolved LLM registry rows", e)
+            if probe_db is not None:
+                try:
+                    probe_db.close()
+                except Exception:
+                    pass
+            return
+
+        for row in probe_rows:
+            try:
+                self._probe_single_llm_registry_row(probe_db, row)
+            except Exception as e:
+                _log_exception(
+                    f"Failed to probe LLM registry row {row.get('LLM_ID')}",
+                    e,
+                )
+
+        if probe_db is not None:
+            try:
+                probe_db.close()
+            except Exception:
+                pass
+        logger.log_info(
+            f"{Icons.info} LLM registry probe pass complete: rows={len(probe_rows)}."
+        )
+
+    def _probe_single_llm_registry_row(
+        self,
+        db_session: DBSession,
+        row: dict[str, Any],
+    ) -> None:
+        """Probe one unresolved registry row and persist the results."""
+        llm_id = row.get("LLM_ID")
+        provider = str(row.get("PROVIDER") or self.llm_service_id or "").strip().lower()
+        model_name = str(row.get("MODEL") or "").strip()
+        if llm_id in (None, "") or not provider or not model_name:
+            return
+
+        properties = row.get("PROPERTIES")
+        service_url = self.service_url
+        if isinstance(properties, dict):
+            service_url = str(properties.get("service_url") or service_url).strip() or service_url
+        elif isinstance(properties, str) and properties.strip():
+            try:
+                parsed_props = json.loads(properties)
+            except Exception:
+                parsed_props = {}
+            if isinstance(parsed_props, dict):
+                service_url = str(parsed_props.get("service_url") or service_url).strip() or service_url
+
+        connector = self._get_llm_connector(
+            service_id=provider,
+            service_url=service_url,
+            model_name=model_name,
+        )
+
+        probe_token = f"ORAC-PROBE-{llm_id}-{uuid.uuid4().hex[:8]}"
+        first_prompt = (
+            "Reply with the exact token "
+            f"`{probe_token}` and nothing else."
+        )
+        second_prompt = (
+            "Recent exchange (most recent at bottom):\n"
+            f"USER: Reply with the exact token `{probe_token}` and nothing else.\n"
+            f"ASSISTANT: {probe_token}\n\n"
+            "USER (new message):\n"
+            "What exact token did I ask you to repeat? Reply with the exact token only."
+        )
+
+        first_started = time.perf_counter()
+        first_result = connector.send_prompt_with_meta(
+            prompt_type="U",
+            prompt=first_prompt,
+            stream=False,
+        )
+        first_response_ms = int((time.perf_counter() - first_started) * 1000)
+        first_reply = str(first_result.get("text") or "").strip()
+
+        second_started = time.perf_counter()
+        second_result = connector.send_prompt_with_meta(
+            prompt_type="U",
+            prompt=second_prompt,
+            stream=False,
+        )
+        second_response_ms = int((time.perf_counter() - second_started) * 1000)
+        second_reply = str(second_result.get("text") or "").strip()
+
+        total_response_ms = first_response_ms + second_response_ms
+        responsiveness_class = self._classify_probe_responsiveness(total_response_ms)
+        supports_provider_history = "Y" if probe_token in second_reply else "N"
+        suggested_context_policy = "app"
+        history_probe_status = "complete"
+        checked_on = iso_now()
+
+        merged_properties = self._build_llm_registry_probe_properties(
+            properties,
+            history_probe_status=history_probe_status,
+            supports_provider_history=supports_provider_history,
+            suggested_context_policy=suggested_context_policy,
+            history_probe_checked_on=checked_on,
+            first_response_ms=first_response_ms,
+            second_response_ms=second_response_ms,
+            total_response_ms=total_response_ms,
+            responsiveness_class=responsiveness_class,
+            first_reply=first_reply,
+            second_reply=second_reply,
+        )
+
+        with db_session.cursor() as cursor:
+            cursor.execute(
+                """
+                update orac_api.llm_registry_v
+                   set context_policy = :context_policy,
+                       properties = json(:properties)
+                 where llm_id = :llm_id
+                """,
+                {
+                    "context_policy": suggested_context_policy,
+                    "properties": merged_properties,
+                    "llm_id": llm_id,
+                },
+            )
+            db_session.commit()
+
+    @staticmethod
+    def _classify_probe_responsiveness(total_response_ms: int) -> str:
+        """Classify probe responsiveness into the existing APEX LOV values."""
+        if total_response_ms <= 0:
+            return "fast"
+        if total_response_ms < 2500:
+            return "fast"
+        if total_response_ms < 10000:
+            return "normal"
+        return "slow"
+
+    @staticmethod
+    def _build_llm_registry_probe_properties(
+        existing_properties: Any,
+        *,
+        history_probe_status: str,
+        supports_provider_history: str,
+        suggested_context_policy: str,
+        history_probe_checked_on: str,
+        first_response_ms: int,
+        second_response_ms: int,
+        total_response_ms: int,
+        responsiveness_class: str,
+        first_reply: str,
+        second_reply: str,
+    ) -> str:
+        """Merge probe metadata into the registry properties JSON payload."""
+        merged: dict[str, Any] = {}
+
+        if isinstance(existing_properties, dict):
+            merged.update(existing_properties)
+        elif isinstance(existing_properties, str) and existing_properties.strip():
+            try:
+                parsed = json.loads(existing_properties)
+            except Exception:
+                parsed = {}
+            if isinstance(parsed, dict):
+                merged.update(parsed)
+
+        merged.update(
+            {
+                "history_probe_status": history_probe_status,
+                "supports_provider_history": supports_provider_history,
+                "history_probe_suggested_context_policy": suggested_context_policy,
+                "history_probe_checked_on": history_probe_checked_on,
+                "history_probe_first_response_ms": first_response_ms,
+                "history_probe_second_response_ms": second_response_ms,
+                "history_probe_total_response_ms": total_response_ms,
+                "history_probe_responsiveness_class": responsiveness_class,
+                "history_probe_first_reply": first_reply,
+                "history_probe_second_reply": second_reply,
+            }
+        )
+        return json.dumps(merged, ensure_ascii=False)
 
     def _init_plugin_routing(self) -> None:
         """Initialises plugin routing and performs normal startup bootstrap when enabled."""

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 import sys
 from datetime import datetime, timedelta, timezone
@@ -109,6 +110,52 @@ class _FakeLLM:
         if self._responses:
             return self._responses.pop(0)
         return "stubbed response"
+
+    def send_prompt_with_meta(
+        self,
+        prompt_type: str,
+        prompt: str,
+        stream: bool = False,
+    ) -> dict[str, int | str]:
+        text = self.send_prompt(prompt_type=prompt_type, prompt=prompt, stream=stream)
+        return {
+            "text": text,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+
+
+class _ProbeLLM:
+    """Returns probe responses based on the prompt content."""
+
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    def send_prompt_with_meta(
+        self,
+        prompt_type: str,
+        prompt: str,
+        stream: bool = False,
+    ) -> dict[str, int | str]:
+        del prompt_type, stream
+        self.prompts.append(prompt)
+        if "and nothing else" in prompt and "Recent exchange" not in prompt:
+            return {
+                "text": "ACK",
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            }
+
+        match = re.search(r"ORAC-PROBE-[^-]+-[A-Fa-f0-9]{8}", prompt)
+        token = match.group(0) if match else "ORAC-PROBE-UNKNOWN"
+        return {
+            "text": token,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
 
 
 class _MemoryContextManager:
@@ -211,6 +258,34 @@ class _MemoryContextManager:
             "display_name": "Clive",
         }
 
+    def get_user_preference_value(self, *args, **kwargs) -> str | None:
+        del args, kwargs
+        return None
+
+    def get_orac_personality(self, personality_code: str) -> dict[str, str] | None:
+        del personality_code
+        return None
+
+    def get_llm_registry_entry_by_provider_model(
+        self,
+        provider: str,
+        model: str,
+    ) -> dict[str, object]:
+        return {
+            "LLM_ID": 1,
+            "PROVIDER": provider,
+            "MODEL": model,
+            "IS_ENABLED": "Y",
+        }
+
+    def get_llm_registry_entry(self, llm_id: int | str) -> dict[str, object]:
+        return {
+            "LLM_ID": llm_id,
+            "PROVIDER": "ollama",
+            "MODEL": "test-model",
+            "IS_ENABLED": "Y",
+        }
+
     def prune_context(
         self,
         session_id: str,
@@ -228,6 +303,14 @@ class _MemoryContextManager:
 
     def get_conversation_title(self, session_id: str) -> str | None:
         return self.titles.get(session_id)
+
+    def get_conversation_personality_code(self, session_id: str) -> str:
+        del session_id
+        return "DEFAULT"
+
+    def get_conversation_llm_id(self, session_id: str) -> int:
+        del session_id
+        return 1
 
     def set_conversation_title(self, session_id: str, title: str) -> None:
         self.titles[session_id] = title
@@ -307,8 +390,14 @@ class _ConditionalPluginRouter:
         self.weather_content = weather_content
         self.calls: list[str] = []
 
-    def route(self, prompt: str, meta: dict, handoff) -> PluginExecutionResult | None:
-        del meta, handoff
+    def route(
+        self,
+        prompt: str,
+        meta: dict,
+        handoff,
+        auth_user: str | None = None,
+    ) -> PluginExecutionResult | None:
+        del meta, handoff, auth_user
         self.calls.append(prompt)
         if prompt == "What is the weather like in Brigadoon?":
             return PluginExecutionResult(plugin_id="weather", content=self.weather_content)
@@ -335,6 +424,85 @@ class _FakeDBSession:
         if "fetch first 2 rows only" in sql:
             return self.rows[:2]
         return list(self.rows)
+
+
+class _SyncCursor:
+    """Captures registry sync update statements for assertions."""
+
+    def __init__(self) -> None:
+        self.statements: list[tuple[str, dict]] = []
+
+    def __enter__(self) -> "_SyncCursor":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        del exc_type, exc, tb
+        return False
+
+    def execute(self, sql: str, params: dict) -> None:
+        self.statements.append((sql, params))
+
+
+class _SyncDBSession:
+    """DB stub for llm registry sync tests."""
+
+    def __init__(self, rows: list[dict]) -> None:
+        self.rows = rows
+        self.cursor_obj = _SyncCursor()
+        self.committed = False
+
+    def dict_sql_dataset(self, sql: str) -> list[dict]:
+        del sql
+        return list(self.rows)
+
+    def cursor(self) -> _SyncCursor:
+        return self.cursor_obj
+
+    def commit(self) -> None:
+        self.committed = True
+
+    def rollback(self) -> None:
+        return None
+
+
+class _ProbeCursor:
+    """Captures probe update statements for assertions."""
+
+    def __init__(self) -> None:
+        self.statements: list[tuple[str, dict]] = []
+
+    def __enter__(self) -> "_ProbeCursor":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        del exc_type, exc, tb
+        return False
+
+    def execute(self, sql: str, params: dict) -> None:
+        self.statements.append((sql, params))
+
+
+class _ProbeDBSession:
+    """DB stub for unresolved LLM probe tests."""
+
+    def __init__(self, rows: list[dict]) -> None:
+        self.rows = rows
+        self.cursor_obj = _ProbeCursor()
+        self.committed = False
+        self.closed = False
+
+    def dict_sql_dataset(self, sql: str) -> list[dict]:
+        del sql
+        return list(self.rows)
+
+    def cursor(self) -> _ProbeCursor:
+        return self.cursor_obj
+
+    def commit(self) -> None:
+        self.committed = True
+
+    def close(self) -> None:
+        self.closed = True
 
 
 class _TimeoutDBSession:
@@ -399,7 +567,13 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
     ) -> Orac:
         orchestrator = Orac.__new__(Orac)
         orchestrator.model_name = "test-model"
+        orchestrator.llm_service_id = "ollama"
+        orchestrator.service_url = "http://localhost:11434"
+        orchestrator._available_backend_models = {"test-model"}
+        orchestrator._llm_connector_cache = {}
         orchestrator.enable_prompt_dump = False
+        orchestrator._force_prompt_dump = False
+        orchestrator._dump_context_flag = PROJECT_ROOT / ".orac-dump-context"
         orchestrator.strip_reasoning_tags = True
         orchestrator._history_turn_pairs = 24
         orchestrator._reply_language = "English"
@@ -442,11 +616,14 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             },
             "memory": {
                 "rules": [
-                    "The 'Recent exchange' below contains the COMPLETE conversation history for this session.",
+                    "The 'Recent exchange' below contains selected recent conversation history for this session.",
                     "You MUST use information the user has voluntarily shared in this conversation to answer their questions.",
                     "When asked about personal details (name, location, preferences, etc.), check the conversation history first.",
                     "If the user previously mentioned a fact in this conversation, reference it directly.",
-                    "Only say you don't know if the information was never mentioned in this conversation.",
+                    "For ordinary factual questions, use your general knowledge as well as relevant context from the recent exchange.",
+                    "Do not treat earlier assistant answers as authoritative if they conflict with reliable knowledge; correct materially wrong earlier answers plainly.",
+                    "For personal or session-specific facts, only say you know them when they are present in authenticated context or the recent exchange.",
+                    "When a user likely misspells or uses a variant of a well-known proper noun, state the likely interpretation and answer under that interpretation; ask for clarification only if multiple plausible meanings remain.",
                     "Treat elliptical follow-up prompts such as 'tell me more', 'go on', 'explain that', 'why?', and similar short continuations as referring to the immediately preceding assistant answer unless the user clearly changes topic.",
                     "When the user asks for more detail about the previous answer, expand it with new information rather than restating the same summary.",
                     "Do not repeat the previous factual answer unless the user explicitly asks for repetition, clarification, or more detail.",
@@ -470,11 +647,12 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             },
         }
         orchestrator.llm = _FakeLLM(llm_responses)
+        orchestrator._get_llm_connector = lambda **kwargs: orchestrator.llm
         orchestrator.ctx = context_manager or _MemoryContextManager()
         orchestrator.auth_chain = _FakeAuthChain("clive")
         orchestrator._persistence_failures = []
         orchestrator._fail_on_persistence_error = False
-        orchestrator._maybe_set_conversation_title = lambda session_id, meta: None
+        orchestrator._maybe_set_conversation_title = lambda *args, **kwargs: None
         orchestrator._maybe_prune = lambda session_id, last_turn_index: None
         return orchestrator
 
@@ -591,6 +769,51 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             prompt,
         )
         self.assertNotIn("If you wish, you may add one brief 'In reality", prompt)
+
+    async def test_follow_up_prompt_allows_general_knowledge_correction(
+        self,
+    ) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=[
+                "The Battle of Ajincourt was a naval engagement in 1744.",
+                "Henry won through terrain, longbows, and French disorder.",
+            ],
+        )
+
+        await orchestrator.handle_request(
+            self._request("What was the battle of Ajincourt?", req_id="req1")
+        )
+        await orchestrator.handle_request(
+            self._request("How did king Henry manage to win?", req_id="req2")
+        )
+
+        self.assertEqual(len(orchestrator.llm.prompts), 2)
+        follow_up_prompt = orchestrator.llm.prompts[1]
+        self.assertIn("USER: What was the battle of Ajincourt?", follow_up_prompt)
+        self.assertIn(
+            "ASSISTANT: The Battle of Ajincourt was a naval engagement in 1744.",
+            follow_up_prompt,
+        )
+        self.assertIn(
+            "USER (new message):\nHow did king Henry manage to win?",
+            follow_up_prompt,
+        )
+        self.assertIn(
+            "For ordinary factual questions, use your general knowledge as "
+            "well as relevant context.",
+            follow_up_prompt,
+        )
+        self.assertIn(
+            "Do not treat earlier assistant answers as authoritative if "
+            "they conflict with reliable knowledge; correct materially "
+            "wrong earlier answers plainly.",
+            follow_up_prompt,
+        )
+        self.assertIn(
+            "If a proper noun appears misspelled or variant, state the "
+            "likely interpretation and answer under that interpretation",
+            follow_up_prompt,
+        )
 
     async def test_reaction_turn_prompt_discourages_repeating_previous_answer(
         self,
@@ -739,6 +962,120 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(orchestrator.db_session, healthy_session)
         self.assertIs(orchestrator.ctx.db, healthy_session)
         self.assertGreaterEqual(healthy_session.health_checks, 1)
+
+    def test_llm_registry_sync_preserves_existing_probe_metadata(self) -> None:
+        orchestrator = Orac.__new__(Orac)
+        orchestrator.model_name = "qwen2.5:7b"
+        orchestrator.llm_service_id = "ollama"
+        orchestrator.service_url = "http://localhost:11434"
+        orchestrator._available_backend_models = set()
+        orchestrator.db_session = _SyncDBSession(
+            rows=[
+                {
+                    "LLM_ID": 42,
+                    "NAME": "qwen2.5:7b",
+                    "PROVIDER": "ollama",
+                    "MODEL": "qwen2.5:7b",
+                    "CONTEXT_POLICY": "unresolved",
+                    "MAX_CONTEXT_TOKENS": 8192,
+                    "IS_ENABLED": "Y",
+                    "PROPERTIES": {
+                        "size_mb": 14.2,
+                        "history_probe_status": "complete",
+                        "history_probe_total_response_ms": 987,
+                        "history_probe_responsiveness_class": "normal",
+                    },
+                }
+            ]
+        )
+        orchestrator.llm = types.SimpleNamespace(
+            list_models=lambda: ["qwen2.5:7b"]
+        )
+
+        orchestrator._sync_llm_registry()
+
+        self.assertTrue(orchestrator.db_session.committed)
+        self.assertEqual(len(orchestrator.db_session.cursor_obj.statements), 1)
+        sql, params = orchestrator.db_session.cursor_obj.statements[0]
+        self.assertIn("update orac_api.llm_registry_v", sql.lower())
+        self.assertEqual(params["context_policy"], "unresolved")
+        merged_properties = json.loads(params["properties"])
+        self.assertEqual(merged_properties["size_mb"], 14.2)
+        self.assertEqual(
+            merged_properties["history_probe_status"],
+            "complete",
+        )
+        self.assertEqual(
+            merged_properties["history_probe_total_response_ms"],
+            987,
+        )
+        self.assertEqual(
+            merged_properties["history_probe_responsiveness_class"],
+            "normal",
+        )
+        self.assertEqual(merged_properties["discovered_by"], "startup_sync")
+        self.assertEqual(merged_properties["service_url"], "http://localhost:11434")
+        self.assertEqual(merged_properties["provider"], "ollama")
+        self.assertEqual(merged_properties["model"], "qwen2.5:7b")
+        self.assertTrue(merged_properties["is_default_runtime_model"])
+
+    def test_llm_registry_sync_defaults_new_rows_to_unresolved(self) -> None:
+        orchestrator = Orac.__new__(Orac)
+        orchestrator.model_name = "qwen2.5:7b"
+        orchestrator.llm_service_id = "ollama"
+        orchestrator.service_url = "http://localhost:11434"
+        orchestrator._available_backend_models = set()
+        orchestrator.db_session = _SyncDBSession(rows=[])
+        orchestrator.llm = types.SimpleNamespace(
+            list_models=lambda: ["qwen2.5:7b"]
+        )
+
+        orchestrator._sync_llm_registry()
+
+        self.assertTrue(orchestrator.db_session.committed)
+        self.assertEqual(len(orchestrator.db_session.cursor_obj.statements), 1)
+        sql, params = orchestrator.db_session.cursor_obj.statements[0]
+        self.assertIn("insert into orac_api.llm_registry_v", sql.lower())
+        self.assertEqual(params["context_policy"], "unresolved")
+        inserted_properties = json.loads(params["properties"])
+        self.assertEqual(inserted_properties["discovered_by"], "startup_sync")
+        self.assertEqual(inserted_properties["service_url"], "http://localhost:11434")
+
+    def test_unresolved_llm_probe_marks_row_complete(self) -> None:
+        orchestrator = Orac.__new__(Orac)
+        orchestrator.llm_service_id = "ollama"
+        orchestrator.service_url = "http://localhost:11434"
+        probe_db = _ProbeDBSession(
+            rows=[
+                {
+                    "LLM_ID": 22,
+                    "NAME": "qwen2.5:7b",
+                    "PROVIDER": "ollama",
+                    "MODEL": "qwen2.5:7b",
+                    "CONTEXT_POLICY": "unresolved",
+                    "PROPERTIES": {
+                        "service_url": "http://localhost:11434",
+                        "size_mb": 9.5,
+                    },
+                }
+            ]
+        )
+        probe_llm = _ProbeLLM()
+        orchestrator._get_llm_connector = lambda **kwargs: probe_llm
+
+        orchestrator._probe_single_llm_registry_row(probe_db, probe_db.rows[0])
+
+        self.assertTrue(probe_db.committed)
+        self.assertEqual(len(probe_db.cursor_obj.statements), 1)
+        sql, params = probe_db.cursor_obj.statements[0]
+        self.assertIn("update orac_api.llm_registry_v", sql.lower())
+        self.assertEqual(params["context_policy"], "app")
+        merged = json.loads(params["properties"])
+        self.assertEqual(merged["history_probe_status"], "complete")
+        self.assertEqual(merged["supports_provider_history"], "Y")
+        self.assertEqual(merged["history_probe_suggested_context_policy"], "app")
+        self.assertEqual(merged["history_probe_responsiveness_class"], "fast")
+        self.assertEqual(merged["size_mb"], 9.5)
 
 
 class OracContextManagerLoadTests(unittest.TestCase):

@@ -83,6 +83,7 @@ as
       , p_provider                in       orac_api.llm_registry_v.provider%type
       , p_model                   in       orac_api.llm_registry_v.model%type
       , p_context_policy          in       orac_api.llm_registry_v.context_policy%type
+                                          := 'unresolved'
       , p_max_context_tokens      in       orac_api.llm_registry_v.max_context_tokens%type
       , p_is_enabled              in       orac_api.llm_registry_v.is_enabled%type                              := 'Y'
       , p_properties              in       orac_api.llm_registry_v.properties%type
