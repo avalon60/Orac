@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 import json
 import re
 from pathlib import Path
@@ -156,6 +157,23 @@ class _ProbeLLM:
             "completion_tokens": 0,
             "total_tokens": 0,
         }
+
+
+class _ProbeLLMShouldNotBeCalled:
+    """LLM stub that fails if a chat probe is attempted."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def send_prompt_with_meta(
+        self,
+        prompt_type: str,
+        prompt: str,
+        stream: bool = False,
+    ) -> dict[str, int | str]:
+        del prompt_type, prompt, stream
+        self.calls += 1
+        raise AssertionError("chat probe should not run for non-chat models")
 
 
 class _MemoryContextManager:
@@ -980,7 +998,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
                     "MAX_CONTEXT_TOKENS": 8192,
                     "IS_ENABLED": "Y",
                     "PROPERTIES": {
-                        "size_mb": 14.2,
+                        "size_mb": Decimal("14.2"),
                         "history_probe_status": "complete",
                         "history_probe_total_response_ms": 987,
                         "history_probe_responsiveness_class": "normal",
@@ -989,7 +1007,15 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         orchestrator.llm = types.SimpleNamespace(
-            list_models=lambda: ["qwen2.5:7b"]
+            list_models=lambda: ["qwen2.5:7b"],
+            list_model_details=lambda: [
+                {
+                    "name": "qwen2.5:7b",
+                    "size_bytes": 15461468160,
+                    "parameter_size": "7B",
+                    "quantization_level": "Q4_K_M",
+                }
+            ],
         )
 
         orchestrator._sync_llm_registry()
@@ -1000,7 +1026,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("update orac_api.llm_registry_v", sql.lower())
         self.assertEqual(params["context_policy"], "unresolved")
         merged_properties = json.loads(params["properties"])
-        self.assertEqual(merged_properties["size_mb"], 14.2)
+        self.assertEqual(merged_properties["size_mb"], 14745)
         self.assertEqual(
             merged_properties["history_probe_status"],
             "complete",
@@ -1013,6 +1039,10 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             merged_properties["history_probe_responsiveness_class"],
             "normal",
         )
+        self.assertEqual(merged_properties["size_bytes"], 15461468160)
+        self.assertEqual(merged_properties["size_mb"], 14745)
+        self.assertEqual(merged_properties["parameter_size"], "7B")
+        self.assertEqual(merged_properties["quantization_level"], "Q4_K_M")
         self.assertEqual(merged_properties["discovered_by"], "startup_sync")
         self.assertEqual(merged_properties["service_url"], "http://localhost:11434")
         self.assertEqual(merged_properties["provider"], "ollama")
@@ -1027,7 +1057,15 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         orchestrator._available_backend_models = set()
         orchestrator.db_session = _SyncDBSession(rows=[])
         orchestrator.llm = types.SimpleNamespace(
-            list_models=lambda: ["qwen2.5:7b"]
+            list_models=lambda: ["qwen2.5:7b"],
+            list_model_details=lambda: [
+                {
+                    "name": "qwen2.5:7b",
+                    "size_bytes": 15461468160,
+                    "parameter_size": "7B",
+                    "quantization_level": "Q4_K_M",
+                }
+            ],
         )
 
         orchestrator._sync_llm_registry()
@@ -1040,11 +1078,25 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         inserted_properties = json.loads(params["properties"])
         self.assertEqual(inserted_properties["discovered_by"], "startup_sync")
         self.assertEqual(inserted_properties["service_url"], "http://localhost:11434")
+        self.assertEqual(inserted_properties["size_bytes"], 15461468160)
+        self.assertEqual(inserted_properties["size_mb"], 14745)
+        self.assertEqual(inserted_properties["parameter_size"], "7B")
+        self.assertEqual(inserted_properties["quantization_level"], "Q4_K_M")
 
     def test_unresolved_llm_probe_marks_row_complete(self) -> None:
         orchestrator = Orac.__new__(Orac)
         orchestrator.llm_service_id = "ollama"
         orchestrator.service_url = "http://localhost:11434"
+        orchestrator.llm = types.SimpleNamespace(
+            list_model_details=lambda: [
+                {
+                    "name": "qwen2.5:7b",
+                    "size_bytes": 15461468160,
+                    "parameter_size": "7B",
+                    "quantization_level": "Q4_K_M",
+                }
+            ]
+        )
         probe_db = _ProbeDBSession(
             rows=[
                 {
@@ -1055,7 +1107,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
                     "CONTEXT_POLICY": "unresolved",
                     "PROPERTIES": {
                         "service_url": "http://localhost:11434",
-                        "size_mb": 9.5,
+                        "size_mb": Decimal("9.5"),
                     },
                 }
             ]
@@ -1075,7 +1127,63 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(merged["supports_provider_history"], "Y")
         self.assertEqual(merged["history_probe_suggested_context_policy"], "app")
         self.assertEqual(merged["history_probe_responsiveness_class"], "fast")
-        self.assertEqual(merged["size_mb"], 9.5)
+        self.assertEqual(merged["size_mb"], 14745)
+        self.assertEqual(merged["size_bytes"], 15461468160)
+        self.assertEqual(merged["parameter_size"], "7B")
+        self.assertEqual(merged["quantization_level"], "Q4_K_M")
+
+    def test_non_chat_llm_probe_is_skipped_and_marked_model(self) -> None:
+        orchestrator = Orac.__new__(Orac)
+        orchestrator.llm_service_id = "ollama"
+        orchestrator.service_url = "http://localhost:11434"
+        orchestrator.llm = types.SimpleNamespace(
+            list_model_details=lambda: [
+                {
+                    "name": "nomic-embed-text:latest",
+                    "size_bytes": 287309056,
+                    "parameter_size": "7B",
+                    "quantization_level": "Q4_K_M",
+                }
+            ]
+        )
+        probe_db = _ProbeDBSession(
+            rows=[
+                {
+                    "LLM_ID": 25,
+                    "NAME": "nomic-embed-text:latest",
+                    "PROVIDER": "ollama",
+                    "MODEL": "nomic-embed-text:latest",
+                    "CONTEXT_POLICY": "unresolved",
+                    "PROPERTIES": {
+                        "service_url": "http://localhost:11434",
+                        "size_mb": Decimal("274.0"),
+                    },
+                }
+            ]
+        )
+        probe_llm = _ProbeLLMShouldNotBeCalled()
+        orchestrator._get_llm_connector = lambda **kwargs: probe_llm
+
+        orchestrator._probe_single_llm_registry_row(probe_db, probe_db.rows[0])
+
+        self.assertTrue(probe_db.committed)
+        self.assertEqual(probe_llm.calls, 0)
+        self.assertEqual(len(probe_db.cursor_obj.statements), 1)
+        sql, params = probe_db.cursor_obj.statements[0]
+        self.assertIn("update orac_api.llm_registry_v", sql.lower())
+        self.assertEqual(params["context_policy"], "model")
+        merged = json.loads(params["properties"])
+        self.assertEqual(merged["history_probe_status"], "skipped_non_chat_model")
+        self.assertEqual(merged["supports_provider_history"], "N")
+        self.assertEqual(merged["history_probe_suggested_context_policy"], "model")
+        self.assertEqual(merged["history_probe_responsiveness_class"], "skipped")
+        self.assertIsNone(merged["history_probe_first_response_ms"])
+        self.assertIsNone(merged["history_probe_second_response_ms"])
+        self.assertIsNone(merged["history_probe_total_response_ms"])
+        self.assertEqual(merged["size_bytes"], 287309056)
+        self.assertEqual(merged["size_mb"], 274)
+        self.assertEqual(merged["parameter_size"], "7B")
+        self.assertEqual(merged["quantization_level"], "Q4_K_M")
 
 
 class OracContextManagerLoadTests(unittest.TestCase):

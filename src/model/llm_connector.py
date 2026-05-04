@@ -40,6 +40,10 @@ class LLMConnector(LLMConnectorABC):
             f"{self.__class__.__name__}.send_prompt() must be implemented in the subclass"
         )
 
+    def list_model_details(self) -> list[dict[str, Any]]:
+        """Return available models with any backend-provided metadata."""
+        return []
+
     def switch_model(self, model_name):
         message = f"Switching models is not implemented for LLM Service {self.llm_service_id}"
         raise NotImplemented(message)
@@ -365,6 +369,51 @@ class OllamaConnector(LLMConnector):
             for model in response.json().get("models", [])
             if isinstance(model.get("name"), str) and model.get("name").strip()
         ]
+
+    def list_model_details(self) -> list[dict[str, Any]]:
+        """List available Ollama models with backend size metadata."""
+        response = requests.get(
+            f"{self.service_url}/api/tags",
+            timeout=(self._connect_timeout, self._read_timeout),
+        )
+        response.raise_for_status()
+        models: list[dict[str, Any]] = []
+
+        for item in response.json().get("models", []):
+            if not isinstance(item, dict):
+                continue
+
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+
+            details = item.get("details") if isinstance(item.get("details"), dict) else {}
+            size_bytes = item.get("size_bytes", item.get("size"))
+            size_mb = item.get("size_mb")
+            if size_mb in (None, "") and size_bytes not in (None, ""):
+                try:
+                    size_mb = int(round(float(size_bytes) / (1024.0 * 1024.0)))
+                except Exception:
+                    size_mb = None
+            elif size_mb not in (None, ""):
+                try:
+                    size_mb = int(round(float(size_mb)))
+                except Exception:
+                    size_mb = None
+
+            parameter_size = item.get("parameter_size") or details.get("parameter_size")
+            quantization_level = item.get("quantization_level") or details.get("quantization_level")
+            models.append(
+                {
+                    "name": name,
+                    "size_bytes": size_bytes,
+                    "size_mb": size_mb,
+                    "parameter_size": parameter_size,
+                    "quantization_level": quantization_level,
+                }
+            )
+
+        return models
 
     def send_prompt(self, prompt_type: str, prompt: str, stream: bool = False) -> str:
         """

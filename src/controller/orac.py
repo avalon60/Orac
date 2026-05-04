@@ -15,6 +15,7 @@ import os
 import time
 import sys
 import traceback
+from decimal import Decimal
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
@@ -116,6 +117,32 @@ def _bool_env_flag(value: str | None) -> bool:
 # --- Small utils --------------------------------------------------------------
 def iso_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _json_default(value: Any) -> Any:
+    """Serialize Oracle-native numeric values into JSON-compatible scalars."""
+    if isinstance(value, Decimal):
+        normalized = value.normalize()
+        if normalized == normalized.to_integral():
+            return int(normalized)
+        return float(normalized)
+    raise TypeError(f"Object of type {value.__class__.__name__} is not JSON serializable")
+
+
+def _close_db_session_quietly(db_session: DBSession | None) -> None:
+    """Close a DB session without surfacing shutdown noise."""
+    if db_session is None:
+        return
+
+    try:
+        db_session.close()
+    except Exception:
+        pass
+    finally:
+        try:
+            db_session.connection_succeeded = False
+        except Exception:
+            pass
 
 
 def new_id(prefix: str) -> str:
@@ -482,6 +509,7 @@ class Orac:
                 (self.llm_service_id.strip().lower(), self.service_url.strip(), self.model_name.strip()): self.llm,
             }
             self._available_backend_models: set[str] = {self.model_name.strip()}
+            self._available_backend_model_details: dict[str, dict[str, Any]] = {}
 
             # --- Auth setup: load secret, nonce store, auth chain -----------------
             secret_path = Path(os.environ.get("ORAC_HMAC_SECRET_FILE", "/run/orac/slave.secret"))
@@ -741,6 +769,8 @@ class Orac:
             )
             return
 
+        self._refresh_backend_model_inventory()
+
         if not discovered:
             self._available_backend_models = {self.model_name.strip()}
             logger.log_warning(
@@ -786,6 +816,7 @@ class Orac:
                         if existing
                         else None
                     )
+                    model_metadata = self._lookup_backend_model_metadata(model_name)
                     existing_context_policy = (
                         str(existing.get("CONTEXT_POLICY") or "").strip()
                         if existing
@@ -800,6 +831,7 @@ class Orac:
                         is_default_runtime_model=(
                             model_name == self.model_name
                         ),
+                        model_metadata=model_metadata,
                     )
 
                     if existing:
@@ -868,6 +900,7 @@ class Orac:
         service_url: str,
         model_name: str,
         is_default_runtime_model: bool,
+        model_metadata: dict[str, Any] | None = None,
     ) -> str:
         """Merge startup sync metadata into existing registry properties.
 
@@ -902,7 +935,97 @@ class Orac:
                 "is_default_runtime_model": is_default_runtime_model,
             }
         )
-        return json.dumps(merged, ensure_ascii=False)
+        if model_metadata:
+            merged.update(model_metadata)
+        return json.dumps(merged, ensure_ascii=False, default=_json_default)
+
+    def _refresh_backend_model_inventory(self) -> dict[str, dict[str, Any]]:
+        """Refresh cached backend model metadata used for registry updates."""
+        inventory: dict[str, dict[str, Any]] = {}
+        details_getter = getattr(self.llm, "list_model_details", None)
+        if not callable(details_getter):
+            self._available_backend_model_details = inventory
+            return inventory
+
+        try:
+            discovered_details = details_getter()
+        except Exception as e:
+            _log_exception("Backend model metadata discovery failed", e)
+            self._available_backend_model_details = inventory
+            return inventory
+
+        for item in discovered_details or []:
+            model_metadata = self._normalise_backend_model_details(item)
+            model_name = str(model_metadata.get("name") or "").strip()
+            if not model_name:
+                continue
+            inventory[model_name] = model_metadata
+            inventory[model_name.lower()] = model_metadata
+
+        self._available_backend_model_details = inventory
+        return inventory
+
+    def _lookup_backend_model_metadata(self, model_name: str) -> dict[str, Any]:
+        """Look up cached backend metadata for a discovered model name."""
+        normalized = (model_name or "").strip()
+        if not normalized:
+            return {}
+
+        backend_model_details = getattr(self, "_available_backend_model_details", {})
+        if not backend_model_details:
+            self._refresh_backend_model_inventory()
+            backend_model_details = getattr(self, "_available_backend_model_details", {})
+
+        return backend_model_details.get(normalized) or backend_model_details.get(normalized.lower()) or {}
+
+    @staticmethod
+    def _normalise_backend_model_details(model_details: Any) -> dict[str, Any]:
+        """Convert backend model metadata into a JSON-safe mapping."""
+        if isinstance(model_details, str):
+            name = model_details.strip()
+            return {"name": name} if name else {}
+
+        if not isinstance(model_details, dict):
+            return {}
+
+        name = str(model_details.get("name") or model_details.get("id") or "").strip()
+        if not name:
+            return {}
+
+        normalized: dict[str, Any] = {"name": name}
+        details = model_details.get("details")
+        details_map = details if isinstance(details, dict) else {}
+
+        size_bytes = model_details.get("size_bytes", model_details.get("size"))
+        if size_bytes in (None, ""):
+            size_bytes = details_map.get("size_bytes")
+        if size_bytes not in (None, ""):
+            try:
+                normalized_size_bytes = int(size_bytes)
+                if normalized_size_bytes >= 0:
+                    normalized["size_bytes"] = normalized_size_bytes
+                    normalized["size_mb"] = int(round(normalized_size_bytes / (1024 * 1024)))
+            except Exception:
+                pass
+
+        size_mb = model_details.get("size_mb")
+        if size_mb in (None, ""):
+            size_mb = details_map.get("size_mb")
+        if size_mb not in (None, ""):
+            try:
+                normalized["size_mb"] = int(round(float(size_mb)))
+            except Exception:
+                pass
+
+        parameter_size = model_details.get("parameter_size") or details_map.get("parameter_size")
+        if parameter_size not in (None, ""):
+            normalized["parameter_size"] = str(parameter_size)
+
+        quantization_level = model_details.get("quantization_level") or details_map.get("quantization_level")
+        if quantization_level not in (None, ""):
+            normalized["quantization_level"] = str(quantization_level)
+
+        return normalized
 
     def _start_llm_probe_worker(self) -> None:
         """Start a background worker that probes unresolved LLM rows."""
@@ -964,11 +1087,7 @@ class Orac:
             )
         except Exception as e:
             _log_exception("Failed to load unresolved LLM registry rows", e)
-            if probe_db is not None:
-                try:
-                    probe_db.close()
-                except Exception:
-                    pass
+            _close_db_session_quietly(probe_db)
             return
 
         for row in probe_rows:
@@ -980,11 +1099,7 @@ class Orac:
                     e,
                 )
 
-        if probe_db is not None:
-            try:
-                probe_db.close()
-            except Exception:
-                pass
+        _close_db_session_quietly(probe_db)
         logger.log_info(
             f"{Icons.info} LLM registry probe pass complete: rows={len(probe_rows)}."
         )
@@ -1012,6 +1127,42 @@ class Orac:
                 parsed_props = {}
             if isinstance(parsed_props, dict):
                 service_url = str(parsed_props.get("service_url") or service_url).strip() or service_url
+
+        model_metadata = self._lookup_backend_model_metadata(model_name)
+
+        if not self._is_chat_capable_llm_model(model_name):
+            checked_on = iso_now()
+            merged_properties = self._build_llm_registry_probe_properties(
+                properties,
+                history_probe_status="skipped_non_chat_model",
+                supports_provider_history="N",
+                suggested_context_policy="model",
+                history_probe_checked_on=checked_on,
+                first_response_ms=None,
+                second_response_ms=None,
+                total_response_ms=None,
+                responsiveness_class="skipped",
+                first_reply=None,
+                second_reply=None,
+                model_metadata=model_metadata,
+            )
+
+            with db_session.cursor() as cursor:
+                cursor.execute(
+                    """
+                    update orac_api.llm_registry_v
+                       set context_policy = :context_policy,
+                           properties = json(:properties)
+                     where llm_id = :llm_id
+                    """,
+                    {
+                        "context_policy": "model",
+                        "properties": merged_properties,
+                        "llm_id": llm_id,
+                    },
+                )
+                db_session.commit()
+            return
 
         connector = self._get_llm_connector(
             service_id=provider,
@@ -1069,6 +1220,7 @@ class Orac:
             responsiveness_class=responsiveness_class,
             first_reply=first_reply,
             second_reply=second_reply,
+            model_metadata=model_metadata,
         )
 
         with db_session.cursor() as cursor:
@@ -1099,6 +1251,14 @@ class Orac:
         return "slow"
 
     @staticmethod
+    def _is_chat_capable_llm_model(model_name: str) -> bool:
+        """Return True for models that can participate in chat probes."""
+        normalized = model_name.strip().lower()
+        if not normalized:
+            return False
+        return "embed" not in normalized and "embedding" not in normalized
+
+    @staticmethod
     def _build_llm_registry_probe_properties(
         existing_properties: Any,
         *,
@@ -1106,12 +1266,13 @@ class Orac:
         supports_provider_history: str,
         suggested_context_policy: str,
         history_probe_checked_on: str,
-        first_response_ms: int,
-        second_response_ms: int,
-        total_response_ms: int,
+        first_response_ms: int | None,
+        second_response_ms: int | None,
+        total_response_ms: int | None,
         responsiveness_class: str,
-        first_reply: str,
-        second_reply: str,
+        first_reply: str | None,
+        second_reply: str | None,
+        model_metadata: dict[str, Any] | None = None,
     ) -> str:
         """Merge probe metadata into the registry properties JSON payload."""
         merged: dict[str, Any] = {}
@@ -1140,7 +1301,9 @@ class Orac:
                 "history_probe_second_reply": second_reply,
             }
         )
-        return json.dumps(merged, ensure_ascii=False)
+        if model_metadata:
+            merged.update(model_metadata)
+        return json.dumps(merged, ensure_ascii=False, default=_json_default)
 
     def _init_plugin_routing(self) -> None:
         """Initialises plugin routing and performs normal startup bootstrap when enabled."""
