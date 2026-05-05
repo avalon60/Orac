@@ -61,6 +61,14 @@ except Exception:  # if not installed yet
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 WRAP_WIDTH = 100
+STREAM_EVENT_TYPES = {
+    "stream_start",
+    "text_delta",
+    "text_chunk",
+    "stream_end",
+    "stream_error",
+    "stream_cancelled",
+}
 
 # Local preference for showing <think>…</think> blocks
 SHOW_REASONING = False
@@ -77,6 +85,7 @@ def get_wrap_width(default=100) -> int:
         return default
 
 _CODE_FENCE_RE = re.compile(r"```.*?```", flags=re.DOTALL)
+_STREAM_THINK_RE = re.compile(r"<think>.*?</think>", flags=re.DOTALL)
 
 def render_for_console(text: str, width: int) -> str:
     """
@@ -167,6 +176,13 @@ def strip_reasoning_tags(text: str) -> str:
         return text
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
+
+def strip_reasoning_tags_from_delta(text: str) -> str:
+    """Remove complete reasoning blocks without trimming stream spacing."""
+    if SHOW_REASONING:
+        return text
+    return _STREAM_THINK_RE.sub("", text)
+
 def ts_prefix() -> str:
     """Return [HH:MM:SS] prefix if SHOW_TIMESTAMP is enabled."""
     if SHOW_TIMESTAMP:
@@ -226,11 +242,12 @@ def remember_history_entry(user_input: str) -> None:
 # IMPORTANT: load secret once at module import (fail-fast if missing)
 SECRET = load_secret()
 CALLING_USER = os.getenv("ORAC_CALLING_USER") or getuser()  # allow override for service accounts
+CLIENT_SESSION_ID = f"slave-{CALLING_USER}-{uuid.uuid4().hex[:12]}"
 
 def build_prompt_request(message_text: str) -> dict:
     """
     Build a strict protocol-compliant 'request' envelope for route 'orac.prompt'.
-    Streaming off; channel=text. Adds meta.auth (hmac-v1).
+    Streaming on; channel=text. Adds meta.auth (hmac-v1).
     """
     route = "orac.prompt"
     payload = {
@@ -243,8 +260,8 @@ def build_prompt_request(message_text: str) -> dict:
     # Meta WITHOUT auth first (auth signs over route + payload)
     meta = {
         "client": "slave",
-        "session_id": "local",
-        "stream": False,
+        "session_id": CLIENT_SESSION_ID,
+        "stream": True,
         "channel": "text",
         "show_reasoning": SHOW_REASONING,
     }
@@ -311,89 +328,144 @@ async def tcp_client(host=DEFAULT_HOST, port=DEFAULT_PORT):
             writer.write(wire.encode("utf-8"))
             await writer.drain()
 
-            # --- Read one protocol response line (server is protocol-only single-line) ---
-            try:
-                resp_bytes = await asyncio.wait_for(reader.readline(), timeout=LLM_TIMEOUT)
-            except asyncio.TimeoutError:
-                logger.log_error("Timeout waiting for server response.")
-                print(f"{Icons.error} [protocol error] server timeout\n")
-                # Optional: reconnect here to avoid late-reply bleed (uncomment if desired)
-                # try:
-                #     writer.close()
-                #     await writer.wait_closed()
-                # finally:
-                #     reader, writer = await asyncio.open_connection(host, port)
-                #     logger.log_info(f"{Icons.robot} Reconnected after timeout.")
-                continue
+            stream_rendered = False
+            stream_finished = False
+            stream_error_seen = False
 
-            response_text = resp_bytes.decode("utf-8", errors="replace").strip()
-            logger.log_debug(f"Raw response from Orac: {response_text!r}")
+            while True:
+                try:
+                    resp_bytes = await asyncio.wait_for(
+                        reader.readline(),
+                        timeout=LLM_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    logger.log_error("Timeout waiting for server response.")
+                    print(f"{Icons.error} [protocol error] server timeout\n")
+                    break
 
-            # --- Parse strictly as JSON object ---
-            try:
-                env = json.loads(response_text)
-            except json.JSONDecodeError as e:
-                logger.log_error(f"Invalid JSON from server: {e} | raw={response_text!r}")
-                print(f"{Icons.error} [invalid protocol frame] see log\n")
-                continue
+                response_text = resp_bytes.decode("utf-8", errors="replace").strip()
+                logger.log_debug(f"Raw response from Orac: {response_text!r}")
 
-            if not isinstance(env, dict) or "v" not in env:
-                logger.log_error("Non-envelope frame received (missing 'v' or not an object).")
-                print(f"{Icons.error} [invalid protocol frame] see log\n")
-                continue
+                try:
+                    env = json.loads(response_text)
+                except json.JSONDecodeError as e:
+                    logger.log_error(
+                        f"Invalid JSON from server: {e} | raw={response_text!r}"
+                    )
+                    print(f"{Icons.error} [invalid protocol frame] see log\n")
+                    break
 
-            # --- Validate envelope (warn if server drifts) ---
-            try:
-                validate_frame(env)
-            except Exception as e:
-                logger.log_warning(f"Server frame failed protocol validation: {e}")
+                if not isinstance(env, dict) or "v" not in env:
+                    logger.log_error(
+                        "Non-envelope frame received (missing 'v' or not an object)."
+                    )
+                    print(f"{Icons.error} [invalid protocol frame] see log\n")
+                    break
 
-            # --- Envelope type must be a response for this non-streaming client ---
-            if env.get("type") != "response":
-                logger.log_error(f"Unexpected envelope type: {env.get('type')}")
-                print(f"{ts_prefix()}{Icons.error} [invalid protocol frame] unexpected envelope type\n")
-                continue
+                try:
+                    validate_frame(env)
+                except Exception as e:
+                    logger.log_warning(f"Server frame failed protocol validation: {e}")
 
-            anonymous_notice_shown = _render_user_registration_notice(
-                env.get("meta"),
-                anonymous_notice_shown,
-            )
+                frame_type = env.get("type")
+                anonymous_notice_shown = _render_user_registration_notice(
+                    env.get("meta"),
+                    anonymous_notice_shown,
+                )
 
-            # --- If the server returned an error, surface it cleanly and continue ---
-            err_obj = env.get("error")
-            if isinstance(err_obj, dict) and err_obj:
-                code = err_obj.get("code", "SERVER_ERROR")
-                msg  = err_obj.get("message", "Unknown error")
-                print(f"{ts_prefix()}{Icons.error} [server error] {code}: {msg}\n")
-                details = err_obj.get("details")
-                if isinstance(details, dict) and details:
-                    logger.log_error(f"Server error details: {details}")
-                continue
+                if frame_type in STREAM_EVENT_TYPES:
+                    err_obj = env.get("error")
+                    if isinstance(err_obj, dict) and err_obj:
+                        stream_error_seen = True
+                        code = err_obj.get("code", "SERVER_ERROR")
+                        msg = err_obj.get("message", "Unknown error")
+                        if stream_rendered:
+                            print()
+                        print(f"{ts_prefix()}{Icons.error} [stream error] {code}: {msg}\n")
+                        continue
 
-            # --- Normal response: extract payload.content (schema-compliant) ---
-            payload = env.get("payload")
-            content = payload.get("content") if isinstance(payload, dict) else None
-            if not isinstance(content, str) or not content.strip():
-                logger.log_error("Envelope missing payload.content or it is empty.")
-                print(f"{ts_prefix()}{Icons.error} [invalid protocol frame] missing payload.content\n")
-                continue
+                    payload = env.get("payload")
+                    payload = payload if isinstance(payload, dict) else {}
 
-            # --- Render to console ---
-            # --- Render to console ---
-            clean = strip_reasoning_tags(content)
-            width = get_wrap_width(WRAP_WIDTH)
-            rendered = render_for_console(clean, width)
-            # Print with the prefix only on the first line to avoid polluting code blocks
-            first_prefix = f"{ts_prefix()}{Icons.robot} Orac: "
-            lines = rendered.splitlines(True)  # keepends=True
-            if lines:
-                print(first_prefix + lines[0], end="")
-                for ln in lines[1:]:
-                    print(ln, end="")
-                print()  # final newline
-                print()  # blank line between assistant responses and next prompt
-            else:
-                print(first_prefix + "\n")
+                    if frame_type == "stream_start":
+                        print(f"{ts_prefix()}{Icons.robot} Orac: ", end="", flush=True)
+                        stream_rendered = True
+                    elif frame_type == "text_delta":
+                        if not stream_rendered:
+                            print(
+                                f"{ts_prefix()}{Icons.robot} Orac: ",
+                                end="",
+                                flush=True,
+                            )
+                            stream_rendered = True
+                        delta = payload.get("delta", "")
+                        print(
+                            strip_reasoning_tags_from_delta(str(delta)),
+                            end="",
+                            flush=True,
+                        )
+                    elif frame_type == "text_chunk":
+                        logger.log_debug(
+                            f"Speech text chunk received: {payload.get('chunk', '')!r}"
+                        )
+                    elif frame_type == "stream_end":
+                        stream_finished = True
+                        if stream_rendered:
+                            print()
+                    elif frame_type == "stream_cancelled":
+                        stream_finished = True
+                        if stream_rendered:
+                            print()
+                        print(f"{ts_prefix()}{Icons.warn} [stream cancelled]\n")
+                    continue
+
+                if frame_type != "response":
+                    logger.log_error(f"Unexpected envelope type: {frame_type}")
+                    print(
+                        f"{ts_prefix()}{Icons.error} "
+                        "[invalid protocol frame] unexpected envelope type\n"
+                    )
+                    break
+
+                err_obj = env.get("error")
+                if isinstance(err_obj, dict) and err_obj:
+                    code = err_obj.get("code", "SERVER_ERROR")
+                    msg = err_obj.get("message", "Unknown error")
+                    if not stream_error_seen:
+                        print(f"{ts_prefix()}{Icons.error} [server error] {code}: {msg}\n")
+                    details = err_obj.get("details")
+                    if isinstance(details, dict) and details:
+                        logger.log_error(f"Server error details: {details}")
+                    break
+
+                payload = env.get("payload")
+                content = payload.get("content") if isinstance(payload, dict) else None
+                if not isinstance(content, str) or not content.strip():
+                    logger.log_error("Envelope missing payload.content or it is empty.")
+                    print(
+                        f"{ts_prefix()}{Icons.error} "
+                        "[invalid protocol frame] missing payload.content\n"
+                    )
+                    break
+
+                if stream_rendered or stream_finished:
+                    print()
+                    break
+
+                clean = strip_reasoning_tags(content)
+                width = get_wrap_width(WRAP_WIDTH)
+                rendered = render_for_console(clean, width)
+                first_prefix = f"{ts_prefix()}{Icons.robot} Orac: "
+                lines = rendered.splitlines(True)
+                if lines:
+                    print(first_prefix + lines[0], end="")
+                    for ln in lines[1:]:
+                        print(ln, end="")
+                    print()
+                    print()
+                else:
+                    print(first_prefix + "\n")
+                break
 
 # --- Main ---
 
@@ -403,6 +475,9 @@ async def tcp_client(host=DEFAULT_HOST, port=DEFAULT_PORT):
     except KeyboardInterrupt:
         print(f"\n{Icons.wave} Client terminated by user.")
         logger.log_warning("Client session terminated by user (KeyboardInterrupt).")
+    except EOFError:
+        print(f"\n{Icons.wave} Client session closed.")
+        logger.log_info("Client session terminated by EOF.")
     except Exception as e:
         print(f"{Icons.critical} Unexpected error: {e}")
         logger.log_critical(f"Unexpected error in tcp_client: {e}")

@@ -8,6 +8,7 @@
 from model.orac_abc import LLMConnectorABC, MODEL_SERVICE_DESCRIPTORS
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
+from collections.abc import Iterator
 from typing import Any, cast
 from lib.config_mgr import ConfigManager
 from lib.fsutils import project_home
@@ -82,6 +83,19 @@ class LLMConnector(LLMConnectorABC):
             "completion_tokens": 0,
             "total_tokens": 0,
         }
+
+    def stream_prompt_deltas(
+        self,
+        prompt_type: str,
+        prompt: str,
+    ) -> Iterator[str]:
+        """Yield streamed response text deltas.
+
+        Connectors without a native streaming implementation fall back to
+        the existing non-streaming path and emit one final delta.
+        """
+        text = self.send_prompt(prompt_type=prompt_type, prompt=prompt, stream=False)
+        yield text if isinstance(text, str) else str(text)
 
     def interface_name(self) -> str:
         """Return the backend name (e.g. 'LM Studio', 'Ollama', etc)."""
@@ -159,6 +173,7 @@ class LMStudioConnector(LLMConnector):
         return [model["id"] for model in response.json().get("data", [])]
 
 
+import json
 import requests
 import re
 import time
@@ -192,11 +207,21 @@ class OllamaConnector(LLMConnector):
         )
         self.default_show_reasoning = not strip_reasoning
 
-        # HTTP timeouts
-        req_to = int(self.config_mgr.config_value("service", "llm_timeout", default="60"))
-        # split connect/read to avoid hanging the server-side loop
+        # HTTP timeouts. Prefer the service setting when present, otherwise
+        # honour the client-facing timeout used by the local slave display.
+        req_to = int(
+            self.config_mgr.config_value(
+                "service",
+                "llm_timeout",
+                default=self.config_mgr.config_value(
+                    "client",
+                    "llm_timeout",
+                    default="60",
+                ),
+            )
+        )
         self._connect_timeout = 5
-        self._read_timeout = min(req_to, 25)
+        self._read_timeout = max(30, req_to)
         self.default_num_predict = max(
             1,
             self.config_mgr.int_config_value(
@@ -314,6 +339,62 @@ class OllamaConnector(LLMConnector):
             "completion_tokens": int(data.get("eval_count") or 0),
             "total_tokens": int(data.get("prompt_eval_count") or 0) + int(data.get("eval_count") or 0),
         }
+
+    def _chat_stream(
+        self,
+        prompt: str,
+        *,
+        show_reasoning: bool,
+        num_predict: int,
+        use_system: bool,
+    ) -> Iterator[str]:
+        """Yield native Ollama chat stream response deltas."""
+        url = f"{self.service_url}/api/chat"
+        msgs = [{"role": "user", "content": prompt}]
+        if use_system and self.system_hint:
+            msgs.insert(0, {"role": "system", "content": self.system_hint})
+
+        payload = {
+            "model": self.model_name,
+            "messages": msgs,
+            "stream": True,
+            "think": bool(show_reasoning),
+            "options": {
+                "num_predict": int(num_predict),
+                "temperature": 0.2,
+                "repeat_penalty": 1.1,
+            },
+        }
+        self.logger.log_info(
+            f"➡️ /api/chat think={payload['think']} stream={payload['stream']} "
+            f"np={payload['options']['num_predict']} sys={use_system}"
+        )
+
+        with requests.post(
+            url,
+            json=payload,
+            stream=True,
+            timeout=(self._connect_timeout, self._read_timeout),
+        ) as response:
+            response.raise_for_status()
+            for raw_line in response.iter_lines(decode_unicode=True):
+                if not raw_line:
+                    continue
+                try:
+                    data = json.loads(raw_line)
+                except Exception:
+                    self.logger.log_warning(
+                        f"Ignoring invalid Ollama stream line: {raw_line!r}"
+                    )
+                    continue
+
+                delta = (data.get("message") or {}).get("content")
+                if delta is None:
+                    delta = data.get("response")
+                if delta:
+                    yield str(delta)
+                if data.get("done") is True:
+                    break
 
     def _run_with_num_predict_growth(
         self,
@@ -457,6 +538,31 @@ class OllamaConnector(LLMConnector):
 
         # Absolute last resort: avoid empty payload to server
         return "Hello! 👋"
+
+    def stream_prompt_deltas(
+        self,
+        prompt_type: str,
+        prompt: str,
+    ) -> Iterator[str]:
+        """Yield Ollama response text deltas using native HTTP streaming."""
+        del prompt_type
+        p = (prompt or "").strip()
+        is_very_short = len(p) <= 12
+        yielded = False
+
+        for delta in self._chat_stream(
+            p,
+            show_reasoning=False,
+            num_predict=self.default_num_predict,
+            use_system=not is_very_short,
+        ):
+            yielded = True
+            yield delta
+
+        if not yielded:
+            text = self.send_prompt(prompt_type="U", prompt=p, stream=False)
+            if text:
+                yield text
 
     def send_prompt_with_meta(
         self,

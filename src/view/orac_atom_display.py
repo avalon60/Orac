@@ -449,7 +449,7 @@ class OracAtomDisplay:
     self._draw_state_label(style=style)
 
   def _draw_background(self, t: float, style: AtomStateStyle) -> None:
-    """Draw the dark background, grid, and stars."""
+    """Draw the dark background and stars."""
     self.canvas.create_rectangle(
       0,
       0,
@@ -471,34 +471,12 @@ class OracAtomDisplay:
         outline="",
       )
 
-    grid_colour = _mix_colour("#06111b", style.orbit, 0.12)
-    spacing = 56
-    offset = int((t * 8) % spacing)
-    for x_pos in range(-spacing + offset, self.width + spacing, spacing):
-      self.canvas.create_line(
-        x_pos,
-        0,
-        x_pos,
-        self.height,
-        fill=grid_colour,
-        width=1,
-      )
-    for y_pos in range(-spacing + offset, self.height + spacing, spacing):
-      self.canvas.create_line(
-        0,
-        y_pos,
-        self.width,
-        y_pos,
-        fill=grid_colour,
-        width=1,
-      )
-
     for index, star in enumerate(self.stars):
       twinkle = self._star_twinkle(star=star, index=index, t=t)
       colour = _mix_colour("#091522", "#d9fbff", star.strength * twinkle)
       x_pos = star.x_ratio * self.width
       y_pos = star.y_ratio * self.height
-      r = star.radius * (0.90 + 0.15 * twinkle)
+      r = star.radius
       self.canvas.create_oval(
         x_pos - r,
         y_pos - r,
@@ -1563,17 +1541,12 @@ class OracAtomDisplay:
     )
 
   def _star_twinkle(self, star: Star, index: int, t: float) -> float:
-    """Return a twinkle factor with a tiny random sparkle component."""
-    base = 0.50 + 0.50 * math.sin(t * 0.8 + star.phase)
-    sparkle_seed = (
-      int(t * 7.0) * 1315423911
-      + index * 2654435761
-      + int(star.phase * 1000.0)
-    ) & 0xFFFFFFFF
-    sparkle_noise = ((sparkle_seed >> 11) ^ sparkle_seed) & 0xFFFF
-    sparkle_noise = sparkle_noise / 65535.0
-    sparkle = max(0.0, (sparkle_noise - 0.992) * 30.0)
-    return _clamp(base + sparkle, 0.18, 1.0)
+    """Return a barely perceptible brightness factor for a few stars."""
+    if (index * 37 + int(star.phase * 1000.0)) % 11 != 0:
+      return 1.0
+
+    drift = math.sin(t * 0.22 + star.phase)
+    return _clamp(1.0 + drift * 0.08, 0.92, 1.08)
 
   def _electron_colour(
     self,

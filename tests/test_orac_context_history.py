@@ -176,6 +176,19 @@ class _ProbeLLMShouldNotBeCalled:
         raise AssertionError("chat probe should not run for non-chat models")
 
 
+class _ProbeLLMBackendFailure:
+    """LLM stub that simulates a backend probe failure."""
+
+    def send_prompt_with_meta(
+        self,
+        prompt_type: str,
+        prompt: str,
+        stream: bool = False,
+    ) -> dict[str, int | str]:
+        del prompt_type, prompt, stream
+        raise RuntimeError("404 Client Error: Not Found for url")
+
+
 class _MemoryContextManager:
     """Small in-memory stand-in for Orac context persistence."""
 
@@ -183,6 +196,18 @@ class _MemoryContextManager:
         self.fail_role = fail_role
         self.messages_by_session: dict[str, list[dict[str, str]]] = {}
         self.conversation_ids: dict[str, int] = {}
+        self.conversation_llm_ids: dict[str, int | None] = {}
+        self.closed_sessions: list[str] = []
+        self.archived_sessions: list[str] = []
+        self.user_preferences: dict[tuple[str, str], str] = {}
+        self.llm_registry_entries: dict[int, dict[str, object]] = {
+            1: {
+                "LLM_ID": 1,
+                "PROVIDER": "ollama",
+                "MODEL": "test-model",
+                "IS_ENABLED": "Y",
+            }
+        }
         self.titles: dict[str, str] = {}
         self.ensure_calls: list[tuple[str, str, int]] = []
         self.saved_events: list[tuple[str, str, str]] = []
@@ -196,11 +221,12 @@ class _MemoryContextManager:
         llm_id: int | None,
         timeout_seconds: int,
     ) -> dict:
-        del llm_id, timeout_seconds
+        del timeout_seconds
         if session_id_base not in self.conversation_ids:
             self.conversation_ids[session_id_base] = self._next_conversation_id
             self._next_conversation_id += 1
             self.messages_by_session.setdefault(session_id_base, [])
+            self.conversation_llm_ids[session_id_base] = llm_id
         cid = self.conversation_ids[session_id_base]
         self.ensure_calls.append((user_name, session_id_base, cid))
         return {
@@ -213,11 +239,14 @@ class _MemoryContextManager:
         }
 
     def ensure_conversation(self, *, user_name: str, session_id: str, llm_id: int | None = None) -> int:
-        del user_name, llm_id
+        del user_name
         if session_id not in self.conversation_ids:
             self.conversation_ids[session_id] = self._next_conversation_id
             self._next_conversation_id += 1
             self.messages_by_session.setdefault(session_id, [])
+            self.conversation_llm_ids[session_id] = llm_id
+        elif llm_id is not None and session_id not in self.conversation_llm_ids:
+            self.conversation_llm_ids[session_id] = llm_id
         return self.conversation_ids[session_id]
 
     def _save(self, session_id: str, role: str, text: str) -> dict[str, int]:
@@ -277,8 +306,13 @@ class _MemoryContextManager:
         }
 
     def get_user_preference_value(self, *args, **kwargs) -> str | None:
-        del args, kwargs
-        return None
+        username = kwargs.get("username")
+        pref_key = kwargs.get("pref_key")
+        if username is None and args:
+            username = args[0]
+        if pref_key is None and len(args) > 1:
+            pref_key = args[1]
+        return self.user_preferences.get((str(username), str(pref_key)))
 
     def get_orac_personality(self, personality_code: str) -> dict[str, str] | None:
         del personality_code
@@ -297,12 +331,7 @@ class _MemoryContextManager:
         }
 
     def get_llm_registry_entry(self, llm_id: int | str) -> dict[str, object]:
-        return {
-            "LLM_ID": llm_id,
-            "PROVIDER": "ollama",
-            "MODEL": "test-model",
-            "IS_ENABLED": "Y",
-        }
+        return self.llm_registry_entries.get(int(llm_id), {})
 
     def prune_context(
         self,
@@ -326,18 +355,17 @@ class _MemoryContextManager:
         del session_id
         return "DEFAULT"
 
-    def get_conversation_llm_id(self, session_id: str) -> int:
-        del session_id
-        return 1
+    def get_conversation_llm_id(self, session_id: str) -> int | None:
+        return self.conversation_llm_ids.get(session_id)
 
     def set_conversation_title(self, session_id: str, title: str) -> None:
         self.titles[session_id] = title
 
     def archive_conversation(self, session_id: str) -> None:
-        del session_id
+        self.archived_sessions.append(session_id)
 
     def close_conversation(self, session_id: str) -> None:
-        del session_id
+        self.closed_sessions.append(session_id)
 
 
 class _AnonymousContextManager(_MemoryContextManager):
@@ -921,6 +949,43 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(context_manager.conversation_ids), 1)
         self.assertEqual(context_manager.ensure_calls[0][2], context_manager.ensure_calls[1][2])
 
+    async def test_default_llm_preference_change_starts_new_conversation(self) -> None:
+        context_manager = _MemoryContextManager()
+        context_manager.conversation_ids["clive"] = 1
+        context_manager.conversation_llm_ids["clive"] = 1
+        context_manager.messages_by_session["clive"] = []
+        context_manager.user_preferences[("clive", "default_llm_id")] = "2"
+        context_manager.llm_registry_entries[2] = {
+            "LLM_ID": 2,
+            "PROVIDER": "ollama",
+            "MODEL": "preferred-model",
+            "IS_ENABLED": "Y",
+        }
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Using preferred model."],
+            context_manager=context_manager,
+        )
+        orchestrator._available_backend_models = {"test-model", "preferred-model"}
+
+        wire = await orchestrator.handle_request(
+            self._request("Use my selected model.", req_id="req-llm-pref")
+        )
+        response = json.loads(wire)
+        user_turn_sessions = [
+            session_id
+            for session_id, role, _text in context_manager.saved_events
+            if role == "user"
+        ]
+
+        self.assertEqual(response["meta"]["model"], "preferred-model")
+        self.assertEqual(context_manager.closed_sessions, ["clive"])
+        self.assertEqual(len(user_turn_sessions), 1)
+        self.assertTrue(user_turn_sessions[0].startswith("clive#"))
+        self.assertEqual(
+            context_manager.conversation_llm_ids[user_turn_sessions[0]],
+            2,
+        )
+
     async def test_persistence_failures_are_recorded_and_logged(self) -> None:
         context_manager = _MemoryContextManager(fail_role="assistant")
         orchestrator = self._make_orac_stub(
@@ -1184,6 +1249,52 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(merged["size_mb"], 274)
         self.assertEqual(merged["parameter_size"], "7B")
         self.assertEqual(merged["quantization_level"], "Q4_K_M")
+
+    def test_failed_llm_probe_is_marked_model_to_avoid_retry_loop(self) -> None:
+        orchestrator = Orac.__new__(Orac)
+        orchestrator.llm_service_id = "ollama"
+        orchestrator.service_url = "http://localhost:11434"
+        orchestrator.llm = types.SimpleNamespace(
+            list_model_details=lambda: [
+                {
+                    "name": "deepseek-r1-14b-64k:latest",
+                    "size_bytes": 999,
+                    "parameter_size": "14B",
+                    "quantization_level": "Q4_K_M",
+                }
+            ]
+        )
+        probe_db = _ProbeDBSession(
+            rows=[
+                {
+                    "LLM_ID": 24,
+                    "NAME": "deepseek-r1-14b-64k:latest",
+                    "PROVIDER": "ollama",
+                    "MODEL": "deepseek-r1-14b-64k:latest",
+                    "CONTEXT_POLICY": "unresolved",
+                    "PROPERTIES": {
+                        "service_url": "http://localhost:11434",
+                    },
+                }
+            ]
+        )
+        orchestrator._get_llm_connector = lambda **kwargs: _ProbeLLMBackendFailure()
+
+        orchestrator._probe_single_llm_registry_row(probe_db, probe_db.rows[0])
+
+        self.assertTrue(probe_db.committed)
+        self.assertEqual(len(probe_db.cursor_obj.statements), 1)
+        sql, params = probe_db.cursor_obj.statements[0]
+        self.assertIn("update orac_api.llm_registry_v", sql.lower())
+        self.assertEqual(params["context_policy"], "model")
+        merged = json.loads(params["properties"])
+        self.assertEqual(merged["history_probe_status"], "failed")
+        self.assertEqual(merged["supports_provider_history"], "N")
+        self.assertEqual(merged["history_probe_suggested_context_policy"], "model")
+        self.assertEqual(merged["history_probe_responsiveness_class"], "failed")
+        self.assertIn("404 Client Error", merged["history_probe_error"])
+        self.assertEqual(merged["size_bytes"], 999)
+        self.assertEqual(merged["parameter_size"], "14B")
 
 
 class OracContextManagerLoadTests(unittest.TestCase):

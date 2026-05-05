@@ -10,6 +10,8 @@ from configparser import ConfigParser, ExtendedInterpolation
 from typing import Iterable, Tuple, Optional, Dict, Any, List
 import os
 
+from lib.fsutils import project_home
+
 def _expand_path(p: str) -> str:
     return os.path.expandvars(os.path.expanduser(p))
 
@@ -49,8 +51,15 @@ class ConfigManager:
             raise FileNotFoundError("No config file found in search paths.")
         self.config_file_path = Path(config_file_path)
 
-        # Load
-        self.config = ConfigParser(interpolation=ExtendedInterpolation())
+        # Load. Keep ORAC_HOME available for ExtendedInterpolation so
+        # config values such as ${ORAC_HOME}/var can still be expanded
+        # through ConfigParser before normal path expansion.
+        self.config = ConfigParser(
+            defaults={
+                "ORAC_HOME": os.environ.get("ORAC_HOME", str(project_home())),
+            },
+            interpolation=ExtendedInterpolation(),
+        )
         with open(self.config_file_path, encoding="utf-8") as f:
             self.config.read_file(f)
 
@@ -174,4 +183,3 @@ if __name__ == "__main__":
     cm = ConfigManager()
     cm.print_config()
     print(cm.banner())
-

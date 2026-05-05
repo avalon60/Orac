@@ -12,6 +12,12 @@ screenshots/*.png
 logs/*.log
 /lib/
 var/cache/
+var/tmp/*.wav
+var/tmp/piper_voice_samples/
+var/tmp/orac_voice/
+var/voices/piper/
+.venv-voice/
+src/view/.venv-voice/
 
 src/orac/lib/bdds_lib.py
 
