@@ -889,53 +889,124 @@ class OracAtomDisplay:
       outline="",
     )
 
-    housing_width = core_radius * 1.54
-    housing_height = core_radius * 0.80
-    iris_width = core_radius * 0.90
-    iris_height = core_radius * (0.31 + 0.41 * blink_open)
-    pupil_width = core_radius * 0.32
-    pupil_height = core_radius * (0.035 + 0.24 * blink_open)
+    lens_radius = core_radius * 1.20
+    outer_ring_radius = lens_radius * 0.96
+    inner_ring_radius = lens_radius * 0.66
+    aperture_radius = lens_radius * 0.30
+    pupil_radius = lens_radius * 0.12
+    pupil_height = pupil_radius * (0.18 + 0.82 * blink_open)
     iris_colour = _mix_colour(
       style.core,
       "#f8ffff",
-      0.18 + blink_boost * 0.10 + blink_flicker * 0.04,
+      0.20 + blink_boost * 0.10 + blink_flicker * 0.04,
     )
-    pupil_colour = _mix_colour("#03070d", style.accent, 0.72)
-    highlight_colour = _mix_colour("#ffffff", style.core, 0.68)
+    ring_colour = _mix_colour(style.core, "#f8ffff", 0.34)
+    dark_lens = _mix_colour("#03070d", style.accent, 0.36)
+    highlight_colour = _mix_colour("#ffffff", style.core, 0.72)
     pupil_offset_x, pupil_offset_y = self._pupil_focus_offset(
-      iris_width=iris_width,
-      iris_height=iris_height,
+      iris_width=inner_ring_radius,
+      iris_height=inner_ring_radius,
     )
+
     self.canvas.create_oval(
-      cx - housing_width,
-      cy - housing_height,
-      cx + housing_width,
-      cy + housing_height,
-      fill=_mix_colour("#03070d", style.core, 0.70),
+      cx - lens_radius,
+      cy - lens_radius,
+      cx + lens_radius,
+      cy + lens_radius,
+      fill=dark_lens,
+      outline=_mix_colour(style.core, "#f8ffff", 0.18),
+      width=max(1, int(1.1 * scale)),
+    )
+
+    for index, ratio in enumerate((0.94, 0.86, 0.76)):
+      radius = lens_radius * ratio
+      colour = _mix_colour("#07101a", style.core, 0.30 + index * 0.12)
+      self.canvas.create_oval(
+        cx - radius,
+        cy - radius,
+        cx + radius,
+        cy + radius,
+        outline=colour,
+        width=max(1, int((1.8 - index * 0.25) * scale)),
+      )
+
+    tick_count = 48
+    for index in range(tick_count):
+      angle = (index / tick_count) * math.tau + t * 0.04
+      tick_wave = 0.5 + 0.5 * math.sin(t * 2.0 + index * 0.37)
+      inner = lens_radius * (0.78 + tick_wave * 0.015)
+      outer = lens_radius * 0.91
+      x1 = cx + math.cos(angle) * inner
+      y1 = cy + math.sin(angle) * inner
+      x2 = cx + math.cos(angle) * outer
+      y2 = cy + math.sin(angle) * outer
+      tick_colour = _mix_colour("#07101a", style.core, 0.24 + tick_wave * 0.15)
+      self.canvas.create_line(
+        x1,
+        y1,
+        x2,
+        y2,
+        fill=tick_colour,
+        width=max(1, int(0.75 * scale)),
+      )
+
+    self.canvas.create_oval(
+      cx - outer_ring_radius,
+      cy - outer_ring_radius,
+      cx + outer_ring_radius,
+      cy + outer_ring_radius,
+      outline=ring_colour,
+      width=max(2, int(3.0 * scale)),
+    )
+
+    for ratio, mix in ((0.68, 0.46), (0.52, 0.38), (0.38, 0.30)):
+      radius = lens_radius * ratio
+      self.canvas.create_oval(
+        cx - radius,
+        cy - radius,
+        cx + radius,
+        cy + radius,
+        outline=_mix_colour("#07101a", iris_colour, mix),
+        width=max(1, int(1.35 * scale)),
+      )
+
+    self.canvas.create_oval(
+      cx - inner_ring_radius,
+      cy - inner_ring_radius,
+      cx + inner_ring_radius,
+      cy + inner_ring_radius,
+      fill=_mix_colour("#07101a", style.core, 0.33 + surface_shimmer * 0.08),
       outline="",
     )
+
     self.canvas.create_oval(
-      cx - iris_width,
-      cy - iris_height,
-      cx + iris_width,
-      cy + iris_height,
-      fill=iris_colour,
-      outline="",
-      width=0,
+      cx - aperture_radius,
+      cy - aperture_radius,
+      cx + aperture_radius,
+      cy + aperture_radius,
+      fill=_mix_colour(style.accent, style.core, 0.42 + pulse * 0.10),
+      outline=_mix_colour("#d9fbff", style.core, 0.34),
+      width=max(1, int(1.25 * scale)),
     )
+
+    focus_x = cx + pupil_offset_x * 0.34
+    focus_y = cy + pupil_offset_y * 0.34
+    for ratio, mix in ((2.8, 0.10), (2.0, 0.20), (1.35, 0.34)):
+      radius = pupil_radius * ratio
+      self.canvas.create_oval(
+        focus_x - radius,
+        focus_y - radius * (0.35 + 0.65 * blink_open),
+        focus_x + radius,
+        focus_y + radius * (0.35 + 0.65 * blink_open),
+        fill=_mix_colour("#07101a", style.core, mix + blink_boost * 0.06),
+        outline="",
+      )
+
     self.canvas.create_oval(
-      cx + pupil_offset_x - pupil_width,
-      cy + pupil_offset_y - pupil_height,
-      cx + pupil_offset_x + pupil_width,
-      cy + pupil_offset_y + pupil_height,
-      fill=pupil_colour,
-      outline="",
-    )
-    self.canvas.create_oval(
-      cx - iris_width * 0.28,
-      cy - iris_height * 0.18,
-      cx - iris_width * 0.08,
-      cy + iris_height * 0.02,
+      focus_x - pupil_radius,
+      focus_y - pupil_height,
+      focus_x + pupil_radius,
+      focus_y + pupil_height,
       fill=highlight_colour,
       outline="",
     )
@@ -944,9 +1015,9 @@ class OracAtomDisplay:
       reopen_colour = _mix_colour("#f8ffff", style.core, 0.42 + blink_boost * 0.18)
       reopen_height = core_radius * (0.05 + blink_boost * 0.06)
       self.canvas.create_oval(
-        cx - iris_width * 0.86,
+        cx - inner_ring_radius * 0.72,
         cy - reopen_height,
-        cx + iris_width * 0.86,
+        cx + inner_ring_radius * 0.72,
         cy + reopen_height,
         fill=reopen_colour,
         outline="",
