@@ -55,7 +55,7 @@ class _StubOllamaConnector(OllamaConnector):
         self,
         *,
         chat_results: list[dict[str, str]],
-        default_num_predict: int = 120,
+        default_num_predict: int = 2048,
         num_predict_incr_pct: int = 100,
         max_num_predict_retries: int = 2,
     ) -> None:

@@ -594,6 +594,19 @@ class _HealthCheckDBSession:
 class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
     """Tests runtime continuity for normal and plugin-handled turns."""
 
+    def test_clock_context_prioritises_user_facing_local_time(self) -> None:
+        """Clock context should tell the model to answer in local time."""
+        clock = orac_module.system_clock_line({"timezone": "Europe/London"})
+
+        local_index = clock.index("User-facing local time:")
+        utc_index = clock.index("Current UTC time for logs")
+
+        self.assertLess(local_index, utc_index)
+        self.assertIn(
+            "use the user-facing local time above, not UTC",
+            clock,
+        )
+
     def setUp(self) -> None:
         self._original_logger = orac_module.logger
         self._original_validate_frame = orac_module.validate_frame
@@ -663,6 +676,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             "memory": {
                 "rules": [
                     "The 'Recent exchange' below contains selected recent conversation history for this session.",
+                    "Use recent exchange as private context only. Do not mention, label, summarise, or quote the words 'Recent exchange' in the reply unless the user explicitly asks about Orac's prompt or context.",
                     "You MUST use information the user has voluntarily shared in this conversation to answer their questions.",
                     "When asked about personal details (name, location, preferences, etc.), check the conversation history first.",
                     "If the user previously mentioned a fact in this conversation, reference it directly.",
@@ -671,6 +685,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
                     "For personal or session-specific facts, only say you know them when they are present in authenticated context or the recent exchange.",
                     "When a user likely misspells or uses a variant of a well-known proper noun, state the likely interpretation and answer under that interpretation; ask for clarification only if multiple plausible meanings remain.",
                     "Treat elliptical follow-up prompts such as 'tell me more', 'go on', 'explain that', 'why?', and similar short continuations as referring to the immediately preceding assistant answer unless the user clearly changes topic.",
+                    "For short or ambiguous follow-up questions such as 'who won', 'which one', 'how many', 'what about that', or 'what happened next', resolve the question against the immediately preceding user/assistant exchange unless the user clearly names a different topic. Do not answer an older unrelated topic merely because it appears in recent history.",
                     "When the user asks for more detail about the previous answer, expand it with new information rather than restating the same summary.",
                     "Do not repeat the previous factual answer unless the user explicitly asks for repetition, clarification, or more detail.",
                     "Do not add corrective asides such as 'in reality' unless the user asks for fact verification or the earlier answer was materially wrong.",
@@ -752,6 +767,33 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             "'go on', 'explain that', 'why?', and similar short "
             "continuations as referring to the immediately preceding "
             "assistant answer unless the user clearly changes topic.",
+            follow_up_prompt,
+        )
+        self.assertIn(
+            "For short or ambiguous follow-up questions such as 'who won', "
+            "'which one', 'how many', 'what about that', or 'what happened "
+            "next', resolve the question against the immediately preceding "
+            "user/assistant exchange unless the user clearly names a "
+            "different topic.",
+            follow_up_prompt,
+        )
+        self.assertIn(
+            "If the current message is a short or ambiguous follow-up, "
+            "resolve it against the immediately preceding user/assistant "
+            "exchange rather than an older unrelated topic.",
+            follow_up_prompt,
+        )
+        self.assertIn(
+            "Use recent exchange as private context only. Do not mention, "
+            "label, summarise, or quote the words 'Recent exchange' in the "
+            "reply unless the user explicitly asks about Orac's prompt or "
+            "context.",
+            follow_up_prompt,
+        )
+        self.assertIn(
+            "Do not mention, label, summarise, or quote 'Recent exchange' "
+            "in the reply unless the user explicitly asks about Orac's "
+            "prompt or context.",
             follow_up_prompt,
         )
         self.assertIn(

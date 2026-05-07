@@ -227,7 +227,7 @@ class OllamaConnector(LLMConnector):
             self.config_mgr.int_config_value(
                 "service",
                 "default_num_predict",
-                default=120,
+                default=2048,
             ),
         )
         self.num_predict_incr_pct = max(

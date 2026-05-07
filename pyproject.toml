@@ -18,6 +18,18 @@ dependencies = [
   "cryptography (>=47.0.0,<48.0.0)"
 ]
 
+[project.optional-dependencies]
+voice-wake = [
+  "platypush-openwakeword (>=0.6.1,<0.7.0)"
+]
+voice-wake-openwakeword = [
+  "platypush-openwakeword (>=0.6.1,<0.7.0)"
+]
+voice-wake-porcupine = [
+  "pvporcupine (>=4.0.2,<5.0.0)",
+  "pvrecorder (>=1.2.7,<2.0.0)"
+]
+
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"

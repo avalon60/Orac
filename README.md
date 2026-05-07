@@ -167,6 +167,76 @@ To edit an existing connection:
 bin/dbconn-mgr.sh -e orac
 ```
 
+### Configure Local Wake Word Activation
+
+Local voice wake-word support uses openWakeWord as the recommended production
+backend. It runs locally, does not require a vendor account, and processes
+microphone PCM frames directly rather than using STT transcription.
+
+Install the optional openWakeWord wake packages:
+
+```bash
+poetry install --no-root -E voice-wake-openwakeword
+```
+
+On Linux, microphone capture uses the existing `sounddevice` dependency and
+may require system PortAudio packages such as `portaudio19-dev`.
+
+The default development configuration uses the built-in `hey_jarvis` model to
+prove the integration:
+
+```ini
+[voice]
+activation_mode = openwakeword
+wake_engine = openwakeword
+openwakeword_model_names = hey_jarvis
+openwakeword_threshold = 0.75
+openwakeword_inference_framework = auto
+wake_rearm_seconds = 7.0
+openwakeword_refractory_seconds = 2.0
+```
+
+To use a future custom Hey Orac model, place the model under the runtime tree
+and configure its path:
+
+```ini
+[voice]
+activation_mode = openwakeword
+wake_engine = openwakeword
+openwakeword_model_paths = ${ORAC_HOME}/var/models/wake/hey_orac.tflite
+openwakeword_model_names =
+```
+
+Run a local wake-word smoke test with:
+
+```bash
+PYTHONPATH=src poetry run python -m orac_voice.voice_loop_local --voice-session --activation-mode openwakeword
+```
+
+Set `activation_mode = enter` to disable wake-word detection and keep the
+manual press-Enter flow.
+
+If Orac hears its own spoken response and immediately wakes again, increase
+`wake_rearm_seconds`, `openwakeword_refractory_seconds`, or
+`openwakeword_threshold`. The `hey_jarvis` model is a proof model, not a
+trained Hey Orac model, so some false activation is expected until a real Orac
+wake model is supplied.
+
+`stt_phrase` remains available as a diagnostic fallback, but it is not a
+production wake-word detector because it records and transcribes each candidate
+phrase before activation.
+
+Porcupine remains optional/vendor-gated. It requires Picovoice credentials and
+the Porcupine extra:
+
+```bash
+poetry install --no-root -E voice-wake-porcupine
+PYTHONPATH=src poetry run python -m lib.api_key_store --set picovoice/access_key
+```
+
+Do not store the Picovoice AccessKey in `resources/config/orac.ini`; store it
+encrypted in `~/.Orac/api_keys.ini`.
+
 If the `orac` credential does not already exist, `bin/orac-db-deploy.sh` will attempt to initialize it for you by calling:
 
 ```bash

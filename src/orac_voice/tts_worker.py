@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import queue
+import re
 import threading
 
 from loguru import logger
@@ -30,6 +31,39 @@ from lib.config_mgr import ConfigManager
 
 
 EventHandler = Callable[[VoiceEvent], None]
+
+
+def speech_safe_text(text: str) -> str:
+  """Return text with lightweight Markdown markers removed for TTS.
+
+  Args:
+    text (str): Text intended for speech synthesis.
+
+  Returns:
+    str: Text cleaned for audible playback.
+  """
+  clean_text = str(text or "").strip()
+  if not clean_text:
+    return ""
+
+  clean_text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", clean_text)
+  clean_text = clean_text.replace("`", "")
+  clean_text = re.sub(r"(?<!\w)[*_]{1,3}([^*_]+)[*_]{1,3}(?!\w)", r"\1", clean_text)
+  clean_text = re.sub(r"[*_]{2,}", "", clean_text)
+  clean_text = re.sub(r"\s+", " ", clean_text)
+  return clean_text.strip()
+
+
+def _has_speakable_content(text: str) -> bool:
+  """Return whether text contains content worth sending to TTS.
+
+  Args:
+    text (str): Candidate speech text.
+
+  Returns:
+    bool: True when the text contains at least one letter or digit.
+  """
+  return any(char.isalnum() for char in text)
 
 
 def create_local_tts_worker_from_config(
@@ -163,8 +197,11 @@ class TtsWorker:
     Returns:
       bool: True when a non-empty chunk was queued.
     """
-    clean_text = text.strip()
+    clean_text = speech_safe_text(text)
     if not clean_text:
+      return False
+    if not _has_speakable_content(clean_text):
+      logger.debug("Skipping punctuation-only TTS chunk: {!r}", clean_text)
       return False
     if self._is_cancelled(session_id=session_id, turn_id=turn_id):
       logger.debug(

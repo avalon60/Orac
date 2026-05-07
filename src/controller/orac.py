@@ -32,6 +32,9 @@ from lib.logutil import Logger
 from model.orac_auth import FrameAuthChain, ZenFrameAuth
 from model.context_manager import OracContextManager
 from model.text_chunker import TextChunker
+from orac_voice.tts_coalescer import TtsChunkCoalescer
+from orac_voice.tts_coalescer import DEFAULT_TTS_COALESCE_MAX_CHARS
+from orac_voice.tts_coalescer import DEFAULT_TTS_COALESCE_MIN_CHUNKS
 from orac_voice.tts_worker import TtsWorker
 from orac_voice.tts_worker import create_local_tts_worker_from_config
 from orac_voice.voice_events import VoiceEvent
@@ -192,9 +195,11 @@ def system_clock_line(prefs: dict) -> str:
     dow = now_local.strftime("%A").upper()
 
     lines = [
-        f"Current UTC time: {utc_iso}.",
         f"Session timezone preference: {tz_name}.",
-        f"Time in that timezone: {local_str}; day: {dow}.",
+        f"User-facing local time: {local_str}; day: {dow}.",
+        "When answering questions about the current time or date, use the "
+        "user-facing local time above, not UTC.",
+        f"Current UTC time for logs and technical timestamps only: {utc_iso}.",
     ]
     if weather_location:
         lines.append(f"Assume your current location is {weather_location}.")
@@ -615,11 +620,40 @@ class Orac:
             )
             if self._tts_worker is None:
                 return
+            self._tts_coalescer = self._create_tts_coalescer()
             self._tts_worker.start()
             logger.log_info(f"{Icons.tick} Local Piper voice output ENABLED")
         except Exception as exc:
             self._tts_worker = None
+            self._tts_coalescer = None
             logger.log_error(f"{Icons.error} Local voice output unavailable: {exc}")
+
+    def _create_tts_coalescer(self) -> TtsChunkCoalescer:
+        """Create the local TTS chunk coalescer from configuration."""
+        enabled = self.config_mgr.bool_config_value(
+            "voice",
+            "tts_coalesce_enabled",
+            default=True,
+        )
+        max_chars = self.config_mgr.int_config_value(
+            "voice",
+            "tts_coalesce_max_chars",
+            default=DEFAULT_TTS_COALESCE_MAX_CHARS,
+        )
+        min_chunks = self.config_mgr.int_config_value(
+            "voice",
+            "tts_coalesce_min_chunks",
+            default=DEFAULT_TTS_COALESCE_MIN_CHUNKS,
+        )
+        logger.log_info(
+            f"{Icons.info} TTS coalescing enabled={enabled} "
+            f"max_chars={max_chars} min_chunks={min_chunks}"
+        )
+        return TtsChunkCoalescer(
+            enabled=enabled,
+            max_chars=max_chars,
+            min_chunks=min_chunks,
+        )
 
     def _handle_voice_event(self, event: VoiceEvent) -> None:
         """Log a safe summary of local voice worker events."""
@@ -634,16 +668,12 @@ class Orac:
         event_type: str,
         payload: dict[str, Any] | None,
     ) -> None:
-        """Queue speech for text_chunk stream events only."""
+        """Queue speech for stream text chunks, coalescing TTS only."""
         worker = getattr(self, "_tts_worker", None)
-        if worker is None or event_type != "text_chunk":
+        if worker is None:
             return
 
         event_payload = payload if isinstance(payload, dict) else {}
-        chunk_text = str(event_payload.get("chunk") or "").strip()
-        if not chunk_text:
-            return
-
         session_id = str(
             event_payload.get("voice_session_id")
             or (req_env.get("meta") or {}).get("session_id")
@@ -655,17 +685,52 @@ class Orac:
             or req_env.get("id")
             or "unknown-turn"
         )
-        worker.enqueue_text(
-            session_id=session_id,
-            turn_id=turn_id,
-            text=chunk_text,
-        )
+        coalescer = getattr(self, "_tts_coalescer", None)
+
+        if event_type == "text_chunk":
+            chunk_text = str(event_payload.get("chunk") or "").strip()
+            if not chunk_text:
+                return
+            if coalescer is None:
+                worker.enqueue_text(
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    text=chunk_text,
+                )
+                return
+            for speech_text in coalescer.add_chunk(
+                session_id=session_id,
+                turn_id=turn_id,
+                text=chunk_text,
+            ):
+                worker.enqueue_text(
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    text=speech_text,
+                )
+            return
+
+        if event_type in {"stream_end", "stream_error", "stream_cancelled"}:
+            if coalescer is not None:
+                final_text = coalescer.flush(
+                    session_id=session_id,
+                    turn_id=turn_id,
+                )
+                if final_text:
+                    worker.enqueue_text(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        text=final_text,
+                    )
 
     def cancel_voice_turn(self, *, session_id: str, turn_id: str) -> int:
         """Cancel local voice output for a client session turn."""
         worker = getattr(self, "_tts_worker", None)
         if worker is None:
             return 0
+        coalescer = getattr(self, "_tts_coalescer", None)
+        if coalescer is not None:
+            coalescer.cancel_turn(session_id=session_id, turn_id=turn_id)
         return worker.cancel_turn(session_id=session_id, turn_id=turn_id)
 
     def cancel_voice_session(self, *, session_id: str) -> int:
@@ -673,6 +738,9 @@ class Orac:
         worker = getattr(self, "_tts_worker", None)
         if worker is None:
             return 0
+        coalescer = getattr(self, "_tts_coalescer", None)
+        if coalescer is not None:
+            coalescer.cancel_session(session_id=session_id)
         return worker.cancel_session(session_id=session_id)
 
     def cancel_active_voice_turn(self, *, session_id: str) -> int:
@@ -687,6 +755,9 @@ class Orac:
         worker = getattr(self, "_tts_worker", None)
         if worker is None:
             return 0
+        coalescer = getattr(self, "_tts_coalescer", None)
+        if coalescer is not None:
+            coalescer.clear()
         return worker.cancel_all(reason="orac cancellation requested")
 
     def _consume_prompt_dump_request(self) -> bool:
@@ -819,6 +890,10 @@ class Orac:
             final_directive = (
                 f"\nFINAL DIRECTIVE: For the CURRENT user message below, respond in {lang} ONLY. "
                 "Use 'Recent exchange' to resolve references, follow-up wording, and user-provided session facts. "
+                "If the current message is a short or ambiguous follow-up, resolve it against the immediately "
+                "preceding user/assistant exchange rather than an older unrelated topic. "
+                "Do not mention, label, summarise, or quote 'Recent exchange' in the reply unless the user "
+                "explicitly asks about Orac's prompt or context. "
                 "For ordinary factual questions, use your general knowledge as well as relevant context. "
                 "Do not treat earlier assistant answers as authoritative if they conflict with reliable knowledge; "
                 "correct materially wrong earlier answers plainly. "

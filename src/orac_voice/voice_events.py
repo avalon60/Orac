@@ -127,3 +127,38 @@ class VoiceSttError(VoiceEvent):
 
   code: str = "STT_ERROR"
   message: str = ""
+
+
+@dataclass(frozen=True)
+class VoiceVadListeningStarted(VoiceEvent):
+  """Event emitted when VAD recording begins waiting for speech."""
+
+  initial_timeout_seconds: float = 0.0
+
+
+@dataclass(frozen=True)
+class VoiceVadSpeechStarted(VoiceEvent):
+  """Event emitted when VAD confirms speech has started."""
+
+
+@dataclass(frozen=True)
+class VoiceVadSpeechEnded(VoiceEvent):
+  """Event emitted when VAD endpoint detection stops recording."""
+
+  duration_seconds: float = 0.0
+  max_duration_reached: bool = False
+
+
+@dataclass(frozen=True)
+class VoiceVadTimeout(VoiceEvent):
+  """Event emitted when VAD hears no speech before timeout."""
+
+  initial_timeout_seconds: float = 0.0
+
+
+@dataclass(frozen=True)
+class VoiceVadError(VoiceEvent):
+  """Event emitted when VAD capture or endpoint detection fails."""
+
+  code: str = "VAD_ERROR"
+  message: str = ""
