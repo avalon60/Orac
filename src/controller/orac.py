@@ -60,6 +60,10 @@ class _VoicePlaybackSubscription:
         self.playback_terminal = False
 
 
+VOICE_PLAYBACK_START_TIMEOUT_SECONDS = 120.0
+VOICE_PLAYBACK_FINISH_TIMEOUT_SECONDS = 120.0
+
+
 # --- Paths / Config -----------------------------------------------------------
 LOG_DIR = project_home() / "logs"
 APP_HOME = project_home()
@@ -2849,7 +2853,9 @@ class Orac:
                     if playback_wait_started_at is None:
                         playback_wait_started_at = time.monotonic()
                     timeout_seconds = (
-                        60.0 if voice_subscription.playback_started else 5.0
+                        VOICE_PLAYBACK_FINISH_TIMEOUT_SECONDS
+                        if voice_subscription.playback_started
+                        else VOICE_PLAYBACK_START_TIMEOUT_SECONDS
                     )
                     if time.monotonic() - playback_wait_started_at > timeout_seconds:
                         logger.log_warning(

@@ -12,7 +12,9 @@ screenshots/*.png
 logs/*.log
 /lib/
 var/cache/
+var/run/
 var/tmp/*.wav
+var/tmp/orac_display_state.json
 var/tmp/piper_voice_samples/
 var/tmp/orac_voice/
 var/voices/piper/

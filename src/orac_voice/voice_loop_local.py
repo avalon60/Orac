@@ -51,6 +51,8 @@ from orac_voice.voice_events import (
   VoiceVadSpeechStarted,
   VoiceVadTimeout,
 )
+from view.display_event_pipe import DisplayEvent
+from view.display_event_pipe import DisplayEventSender
 
 
 DEFAULT_WAIT_SECONDS = 180.0
@@ -608,6 +610,7 @@ async def _send_orac_prompt(
   voice_session_id: str | None = None,
   cancel_host: str | None = None,
   cancel_port: int | None = None,
+  display_sender: DisplayEventSender | None = None,
 ) -> int:
   """Send one prompt on an existing Orac TCP connection."""
   from view import slave as slave_client
@@ -626,6 +629,13 @@ async def _send_orac_prompt(
   wire = json.dumps(req_env, ensure_ascii=False) + "\n"
   writer.write(wire.encode("utf-8"))
   await writer.drain()
+  if display_sender is not None:
+    display_sender.send_state(
+      "thinking",
+      message="Thinking...",
+      session_id=voice_session_id,
+      turn_id=req_id,
+    )
 
   stream_rendered = False
   stream_finished = False
@@ -662,6 +672,13 @@ async def _send_orac_prompt(
   async def _cancel_interrupted_voice() -> int:
     logger.info("Barge-in interruption received; cancelling active voice")
     _console_line("[interrupted]")
+    if display_sender is not None:
+      display_sender.send_state(
+        "interrupted",
+        message="Interrupted",
+        session_id=voice_session_id,
+        turn_id=req_id,
+      )
     await _send_voice_cancel_request(
       host=cancel_host or DEFAULT_HOST,
       port=cancel_port or DEFAULT_PORT,
@@ -700,6 +717,13 @@ async def _send_orac_prompt(
       read_status, resp_bytes = await _read_response_line()
       if read_status == "timeout":
         _console_line("Orac response timed out.")
+        if display_sender is not None:
+          display_sender.send_state(
+            "error",
+            message="Orac response timed out",
+            session_id=voice_session_id,
+            turn_id=req_id,
+          )
         return 1
       if read_status == "interrupted":
         return await _cancel_interrupted_voice()
@@ -734,6 +758,13 @@ async def _send_orac_prompt(
           if isinstance(err_obj, dict):
             msg = str(err_obj.get("message") or "")
           logger.warning("TTS playback error: {}", msg or "unknown")
+          if display_sender is not None:
+            display_sender.send_state(
+              "error",
+              message=msg or "TTS playback error",
+              session_id=voice_session_id,
+              turn_id=req_id,
+            )
           _stop_barge_in_monitor()
           continue
         err_obj = env.get("error")
@@ -773,6 +804,13 @@ async def _send_orac_prompt(
           playback_expected = True
           playback_terminal = False
           _console_line("TTS playback started.")
+          if display_sender is not None:
+            display_sender.send_state(
+              "speaking",
+              message="Speaking",
+              session_id=voice_session_id,
+              turn_id=req_id,
+            )
           if barge_in_controller is not None:
             logger.info("TTS playback started; enabling barge-in monitor")
             _start_barge_in_monitor()
@@ -786,6 +824,13 @@ async def _send_orac_prompt(
           playback_terminal = True
           _console_line(f"{frame_type} received.")
           logger.debug("{} received", frame_type)
+          if display_sender is not None:
+            display_sender.send_state(
+              "idle",
+              message="Idle",
+              session_id=voice_session_id,
+              turn_id=req_id,
+            )
           _stop_barge_in_monitor()
           if final_response_status is not None:
             return final_response_status
@@ -801,6 +846,13 @@ async def _send_orac_prompt(
           code = err_obj.get("code", "SERVER_ERROR")
           msg = err_obj.get("message", "Unknown error")
           _console_line(f"[server error] {code}: {msg}")
+          if display_sender is not None:
+            display_sender.send_state(
+              "error",
+              message=str(msg),
+              session_id=voice_session_id,
+              turn_id=req_id,
+            )
         return 1
 
       if stream_rendered or stream_finished:
@@ -811,11 +863,25 @@ async def _send_orac_prompt(
             "Final response received; waiting for TTS playback terminal event"
           )
           continue
+        if display_sender is not None and not playback_terminal:
+          display_sender.send_state(
+            "idle" if final_response_status == 0 else "error",
+            message="Idle" if final_response_status == 0 else "Response error",
+            session_id=voice_session_id,
+            turn_id=req_id,
+          )
         return final_response_status
 
       payload = env.get("payload")
       content = payload.get("content") if isinstance(payload, dict) else ""
       _console_line(f"Orac: {slave_client.strip_reasoning_tags(str(content))}")
+      if display_sender is not None:
+        display_sender.send_state(
+          "idle",
+          message="Idle",
+          session_id=voice_session_id,
+          turn_id=req_id,
+        )
       return 0
   finally:
     _stop_barge_in_monitor()
@@ -905,6 +971,12 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
   capture = SoundDeviceAudioCapture.from_config(record_seconds=args.record_seconds)
   stt_engine = FasterWhisperSttEngine.from_config()
   barge_in_controller = _create_barge_in_controller()
+  display_sender = DisplayEventSender.from_config()
+  display_sender.send_state(
+    "initialising",
+    message="Initialising voice session",
+    session_id=session_id,
+  )
   activation_listener = _create_activation_listener(
     args=args,
     exit_phrases=exit_phrases,
@@ -919,6 +991,11 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
     while True:
       try:
         if not capture_next_command:
+          display_sender.send_state(
+            "listening",
+            message="Listening for wake word",
+            session_id=session_id,
+          )
           activation = activation_listener.wait_for_activation(
             session_id=session_id
           )
@@ -930,6 +1007,11 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
         else:
           logger.info("Barge-in return mode: command_capture")
           capture_next_command = False
+        display_sender.send_state(
+          "listening",
+          message="Listening",
+          session_id=session_id,
+        )
         _session_id, _turn_id, recognised_text = _transcribe_once(
           args,
           capture=capture,
@@ -939,6 +1021,11 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
         )
       except NoSpeechDetectedError as exc:
         _console_line(str(exc))
+        display_sender.send_state(
+          "listening",
+          message="Listening for wake word",
+          session_id=session_id,
+        )
         continue
       except EOFError:
         _console_line("Voice session closed.")
@@ -963,6 +1050,7 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
         voice_session_id=session_id,
         cancel_host=args.host,
         cancel_port=args.port,
+        display_sender=display_sender,
       )
       if barge_in_controller is not None and barge_in_controller.interrupted:
         if writer is not None:
@@ -986,6 +1074,14 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
         )
         time.sleep(wake_rearm_seconds)
   finally:
+    display_sender.send(
+      DisplayEvent(
+        event="shutdown",
+        state="shutdown",
+        message="Voice session stopped",
+        session_id=session_id,
+      )
+    )
     capture.cancel()
     if barge_in_controller is not None:
       barge_in_controller.stop()

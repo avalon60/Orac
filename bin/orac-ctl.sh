@@ -28,6 +28,7 @@ ORAC_DEBUG_DIR="${PROJECT_DIR}/logs/_debug"
 ORAC_CACHE_DIR="${PROJECT_DIR}/var/cache"
 BUILD_LOG_FILE="${PROJECT_DIR}/build.log"
 DOCKER_LOG_FILE="${PROJECT_DIR}/docker.log"
+ORAC_DISPLAY_SH="${SCRIPT_DIR}/orac-display.sh"
 
 # AI server control script (owns PID, /run/orac, logs)
 ORAC_SH="${SCRIPT_DIR}/orac.sh"
@@ -273,6 +274,16 @@ logs_orac_stack() {
   esac
 }
 
+display_orac_stack() {
+  if [[ ! -x "$ORAC_DISPLAY_SH" ]]; then
+    echo "❌ Missing or non-executable: $ORAC_DISPLAY_SH"
+    echo "   Ensure it exists and run:  chmod +x \"$ORAC_DISPLAY_SH\""
+    exit 1
+  fi
+
+  "$ORAC_DISPLAY_SH" "$@"
+}
+
 dump_context_orac_stack() {
   mkdir -p "${PROJECT_DIR}/logs/_debug"
 
@@ -351,7 +362,7 @@ purge_orac_runtime() {
 
 print_usage() {
   echo "$PROG - Orac stack control (version: ${ORAC_VERSION})"
-  echo "Usage: $0 {start|stop|restart|status|logs [ai|db]|dump-context|clean [--dry-run|-n]|purge [--dry-run|-n] [--force|-f]}"
+  echo "Usage: $0 {start|stop|restart|status|logs [ai|db]|display [start|stop|status|restart|run]|dump-context|clean [--dry-run|-n]|purge [--dry-run|-n] [--force|-f]}"
   echo
   echo "Commands:"
   echo "  start"
@@ -373,6 +384,10 @@ print_usage() {
   echo "    ai   - follow the Orac AI engine log."
   echo "    db   - follow the Oracle DB/ORDS container log."
   echo "    If omitted, defaults to db."
+  echo
+  echo "  display [start|stop|status|restart|run]"
+  echo "    Manage the optional Orac atom display companion process."
+  echo "    It is not started automatically with the backend stack."
   echo
   echo "  dump-context"
   echo "    Arm a one-shot context dump for the next Orac request."
@@ -398,6 +413,7 @@ case "${1:-}" in
   restart) echo "🔄 Restarting Orac stack..."; stop_orac_stack; start_orac_stack ;;
   status)  status_orac_stack ;;
   logs)    shift || true; logs_orac_stack "${1:-}" ;;
+  display) shift || true; display_orac_stack "$@" ;;
   dump-context) dump_context_orac_stack ;;
   clean)   clean_orac_runtime "$@" ;;
   purge)   purge_orac_runtime "$@" ;;

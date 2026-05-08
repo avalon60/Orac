@@ -138,6 +138,24 @@ class _FakePlayback:
     self.cancel_calls += 1
 
 
+class _FakeDisplaySender:
+  """Fake display sender that records requested states."""
+
+  def __init__(self) -> None:
+    self.states: list[tuple[str, str | None, str | None, str | None]] = []
+
+  def send_state(
+    self,
+    state: str,
+    *,
+    message: str | None = None,
+    session_id: str | None = None,
+    turn_id: str | None = None,
+  ) -> None:
+    """Record a state change."""
+    self.states.append((state, message, session_id, turn_id))
+
+
 class _FakeVoiceWorker:
   """Fake voice worker used to verify stream routing."""
 
@@ -1887,6 +1905,75 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(status, 0)
     self.assertLess(elapsed, 0.5)
     self.assertIn("Orac: OK.", output.getvalue())
+
+  async def test_voice_prompt_emits_display_states_for_turn_lifecycle(
+    self,
+  ) -> None:
+    """Prompt handling emits thinking, speaking, and idle display states."""
+    reader = asyncio.StreamReader()
+    writer = _FakeStreamWriter()
+    frames = [
+      {
+        "v": 1,
+        "type": "stream_start",
+        "reply_to": "req_current",
+        "payload": {},
+      },
+      {
+        "v": 1,
+        "type": "text_delta",
+        "reply_to": "req_current",
+        "payload": {"delta": "OK."},
+      },
+      {
+        "v": 1,
+        "type": "stream_end",
+        "reply_to": "req_current",
+        "payload": {"stop_reason": "stop"},
+      },
+      {
+        "v": 1,
+        "type": "tts_playback_started",
+        "reply_to": "req_current",
+        "payload": {"turn_id": "req_current"},
+      },
+      {
+        "v": 1,
+        "type": "response",
+        "reply_to": "req_current",
+        "payload": {"content": "OK."},
+      },
+      {
+        "v": 1,
+        "type": "tts_playback_finished",
+        "reply_to": "req_current",
+        "payload": {"turn_id": "req_current"},
+      },
+    ]
+    for frame in frames:
+      reader.feed_data((json.dumps(frame) + "\n").encode("utf-8"))
+    reader.feed_eof()
+
+    sender = _FakeDisplaySender()
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+      status = await _send_orac_prompt(
+        reader=reader,
+        writer=writer,
+        prompt_text="current",
+        voice_session_id="voice-session",
+        display_sender=sender,
+      )
+
+    self.assertEqual(status, 0)
+    self.assertEqual(
+      [state[0] for state in sender.states],
+      ["thinking", "speaking", "idle"],
+    )
+    self.assertTrue(
+      all(state[2] == "voice-session" for state in sender.states)
+    )
+    self.assertTrue(all(state[3] == "req_current" for state in sender.states))
 
   async def test_voice_prompt_barge_in_cancels_active_turn(self) -> None:
     """Barge-in should stop consuming the current response stream."""

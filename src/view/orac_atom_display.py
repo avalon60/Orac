@@ -14,6 +14,8 @@ from __future__ import annotations
 import argparse
 import logging
 import math
+import os
+import queue
 import random
 import tkinter as tk
 from dataclasses import dataclass
@@ -21,6 +23,12 @@ from enum import Enum
 from pathlib import Path
 from tkinter import ttk
 from typing import Any
+
+from view.display_event_pipe import DEFAULT_DISPLAY_HOST
+from view.display_event_pipe import DEFAULT_DISPLAY_PORT
+from view.display_event_pipe import DEFAULT_DISPLAY_STATE_FILE
+from view.display_event_pipe import DisplayEventServer
+from view.display_event_pipe import load_latest_state_file
 
 ctk: Any | None = None
 HAS_CUSTOMTKINTER = False
@@ -36,7 +44,18 @@ DEFAULT_THEME_NAME = "Cobalt"
 DEFAULT_THEME_MODE = "dark"
 THEMES_DIR = Path(__file__).resolve().parents[2] / "themes"
 ANIMATION_INTERVAL_MS = 16
-VALID_STATES = {"idle", "listening", "cogitating", "speaking", "error"}
+VALID_STATES = {
+  "idle",
+  "initialising",
+  "listening",
+  "thinking",
+  "cogitating",
+  "speaking",
+  "interrupted",
+  "error",
+  "sleeping",
+  "shutdown",
+}
 VALID_MODES = {"kiosk", "dev", "compact"}
 ATOM_SYSTEM_SCALE = 1.30
 PARTICLE_SIZE_SCALE = 0.90
@@ -103,10 +122,15 @@ class AtomState(str, Enum):
   """Supported visual runtime states."""
 
   IDLE = "idle"
+  INITIALISING = "initialising"
   LISTENING = "listening"
+  THINKING = "thinking"
   COGITATING = "cogitating"
   SPEAKING = "speaking"
+  INTERRUPTED = "interrupted"
   ERROR = "error"
+  SLEEPING = "sleeping"
+  SHUTDOWN = "shutdown"
 
 
 class DisplayMode(str, Enum):
@@ -132,6 +156,21 @@ STATE_STYLES: dict[AtomState, AtomStateStyle] = {
     disruption=0.00,
     trail_segments=3,
     core_scale=0.80,
+  ),
+  AtomState.INITIALISING: AtomStateStyle(
+    core="#b8f2ff",
+    accent="#2dcdf8",
+    particle="#e6fdff",
+    orbit="#57c7ef",
+    speed=0.48,
+    pulse_rate=1.05,
+    pulse_depth=0.12,
+    orbit_alpha=0.38,
+    orbit_brightness=0.92,
+    particles=6,
+    disruption=0.02,
+    trail_segments=3,
+    core_scale=0.84,
   ),
   AtomState.LISTENING: AtomStateStyle(
     core="#7af7ff",
@@ -163,6 +202,21 @@ STATE_STYLES: dict[AtomState, AtomStateStyle] = {
     trail_segments=5,
     core_scale=0.90,
   ),
+  AtomState.THINKING: AtomStateStyle(
+    core="#b69cff",
+    accent="#31e6d0",
+    particle="#fff6bd",
+    orbit="#7dd3fc",
+    speed=1.18,
+    pulse_rate=2.35,
+    pulse_depth=0.30,
+    orbit_alpha=0.68,
+    orbit_brightness=1.20,
+    particles=11,
+    disruption=0.13,
+    trail_segments=5,
+    core_scale=0.90,
+  ),
   AtomState.SPEAKING: AtomStateStyle(
     core="#9be7ff",
     accent="#55d6be",
@@ -178,6 +232,21 @@ STATE_STYLES: dict[AtomState, AtomStateStyle] = {
     trail_segments=4,
     core_scale=0.88,
   ),
+  AtomState.INTERRUPTED: AtomStateStyle(
+    core="#ffb02e",
+    accent="#ff5b4f",
+    particle="#fff2a6",
+    orbit="#ff8c42",
+    speed=0.92,
+    pulse_rate=3.20,
+    pulse_depth=0.32,
+    orbit_alpha=0.62,
+    orbit_brightness=1.18,
+    particles=7,
+    disruption=0.24,
+    trail_segments=4,
+    core_scale=0.86,
+  ),
   AtomState.ERROR: AtomStateStyle(
     core="#ff5b4f",
     accent="#ffb02e",
@@ -192,6 +261,36 @@ STATE_STYLES: dict[AtomState, AtomStateStyle] = {
     disruption=0.34,
     trail_segments=4,
     core_scale=0.84,
+  ),
+  AtomState.SLEEPING: AtomStateStyle(
+    core="#456579",
+    accent="#1b3344",
+    particle="#8bb8c9",
+    orbit="#385e75",
+    speed=0.16,
+    pulse_rate=0.42,
+    pulse_depth=0.05,
+    orbit_alpha=0.18,
+    orbit_brightness=0.50,
+    particles=3,
+    disruption=0.00,
+    trail_segments=2,
+    core_scale=0.72,
+  ),
+  AtomState.SHUTDOWN: AtomStateStyle(
+    core="#6f7d86",
+    accent="#25313a",
+    particle="#a8b8c2",
+    orbit="#4d626f",
+    speed=0.08,
+    pulse_rate=0.25,
+    pulse_depth=0.04,
+    orbit_alpha=0.12,
+    orbit_brightness=0.38,
+    particles=2,
+    disruption=0.00,
+    trail_segments=1,
+    core_scale=0.64,
   ),
 }
 
@@ -261,6 +360,7 @@ class OracAtomDisplay:
     self.ripple_events: list[tuple[float, str]] = []
     self.error_flash_until = 0
     self.mute_overlay = False
+    self.status_message = ""
     self.blink_active = False
     self.blink_start_time = 0.0
     self.blink_duration = 0.18
@@ -306,17 +406,19 @@ class OracAtomDisplay:
       self.parent.after_cancel(self.after_id)
       self.after_id = None
 
-  def set_state(self, state: str) -> None:
+  def set_state(self, state: str, message: str | None = None) -> None:
     """Set the display state.
 
     Args:
-      state: One of ``idle``, ``listening``, ``cogitating``, ``speaking``,
-        or ``error``. Matching is case insensitive.
+      state: Supported display state. Matching is case insensitive.
+      message: Optional status text to display below the state label.
 
     Raises:
       ValueError: If the state is not supported.
     """
     normalised = state.strip().lower()
+    if normalised == "cogitating":
+      normalised = AtomState.THINKING.value
     if normalised not in VALID_STATES:
       raise ValueError(
         f"Unsupported Orac atom display state: {state!r}. "
@@ -324,6 +426,8 @@ class OracAtomDisplay:
       )
 
     next_state = AtomState(normalised)
+    if message is not None:
+      self.status_message = message.strip()
     if next_state == self.state:
       return
 
@@ -336,9 +440,9 @@ class OracAtomDisplay:
     now = self._time_seconds
     if next_state in {AtomState.LISTENING, AtomState.SPEAKING}:
       self.ripple_events.append((now, next_state.value))
-    if next_state == AtomState.ERROR:
+    if next_state in {AtomState.INTERRUPTED, AtomState.ERROR}:
       self.error_flash_until = self.frame_index + 32
-      self.ripple_events.append((now, "error"))
+      self.ripple_events.append((now, next_state.value))
 
   def destroy(self) -> None:
     """Stop animation and destroy the canvas."""
@@ -725,7 +829,7 @@ class OracAtomDisplay:
         halo=3.2 if front else 2.1,
       )
 
-      if self.state == AtomState.COGITATING and index % 3 == 0:
+      if self.state in {AtomState.COGITATING, AtomState.THINKING} and index % 3 == 0:
         trail_x, trail_y = self._project_orbit_point(
         orbit=orbit,
         angle=angle - 0.09 * orbit.speed,
@@ -1019,6 +1123,15 @@ class OracAtomDisplay:
       fill=state_colour,
       font=("TkDefaultFont", 10, "bold"),
     )
+    if self.status_message:
+      message = self.status_message[:96]
+      self.canvas.create_text(
+        self.width / 2.0,
+        self.height - 38,
+        text=message,
+        fill=_mix_colour("#536b7b", style.particle, 0.44),
+        font=("TkDefaultFont", 10),
+      )
 
   def _orbit_points(
     self,
@@ -1254,7 +1367,7 @@ class OracAtomDisplay:
     """Return the blink interval range for a state."""
     if state == AtomState.LISTENING:
       return (8.0, 14.0)
-    if state == AtomState.COGITATING:
+    if state in {AtomState.COGITATING, AtomState.THINKING}:
       return (10.0, 18.0)
     return (5.0, 8.0)
 
@@ -1262,7 +1375,7 @@ class OracAtomDisplay:
     """Return the blink duration range for a state."""
     if state == AtomState.LISTENING:
       return (0.15, 0.20)
-    if state == AtomState.COGITATING:
+    if state in {AtomState.COGITATING, AtomState.THINKING}:
       return (0.13, 0.17)
     return (0.16, 0.24)
 
@@ -1270,7 +1383,7 @@ class OracAtomDisplay:
     """Return the minimum aperture openness during a blink."""
     if state == AtomState.LISTENING:
       return 0.32
-    if state == AtomState.COGITATING:
+    if state in {AtomState.COGITATING, AtomState.THINKING}:
       return 0.24
     return 0.18
 
@@ -1349,7 +1462,7 @@ class OracAtomDisplay:
     """Return focus dwell timing for the current state."""
     if state == AtomState.LISTENING:
       return (2.8, 5.0)
-    if state == AtomState.COGITATING:
+    if state in {AtomState.COGITATING, AtomState.THINKING}:
       return (0.8, 1.6)
     if state == AtomState.SPEAKING:
       return (8.0, 15.0)
@@ -1361,7 +1474,7 @@ class OracAtomDisplay:
     """Return eased movement duration for the current state."""
     if state == AtomState.LISTENING:
       return (1.8, 3.0)
-    if state == AtomState.COGITATING:
+    if state in {AtomState.COGITATING, AtomState.THINKING}:
       return (0.45, 0.85)
     if state == AtomState.SPEAKING:
       return (1.2, 2.0)
@@ -1373,7 +1486,7 @@ class OracAtomDisplay:
     """Return hold duration after a focus drift."""
     if state == AtomState.LISTENING:
       return (1.4, 2.8)
-    if state == AtomState.COGITATING:
+    if state in {AtomState.COGITATING, AtomState.THINKING}:
       return (0.25, 0.7)
     if state == AtomState.SPEAKING:
       return (0.5, 1.0)
@@ -1391,7 +1504,7 @@ class OracAtomDisplay:
         self._focus_rng.uniform(0.18, 0.25),
         self._focus_rng.uniform(-0.08, 0.10),
       )
-    if state == AtomState.COGITATING:
+    if state in {AtomState.COGITATING, AtomState.THINKING}:
       return (
         self._focus_rng.uniform(-0.14, 0.14),
         self._focus_rng.uniform(-0.11, 0.11),
@@ -1415,7 +1528,7 @@ class OracAtomDisplay:
     """Return chance that the next focus target is exact centre."""
     if state == AtomState.LISTENING:
       return 0.12
-    if state == AtomState.COGITATING:
+    if state in {AtomState.COGITATING, AtomState.THINKING}:
       return 0.10
     if state == AtomState.SPEAKING:
       return 0.88
@@ -1703,9 +1816,12 @@ def build_controls(
   controls.pack(side=tk.BOTTOM, fill=tk.X, padx=6, pady=(0, 6))
   state_bindings = [
     ("Idle", "idle"),
+    ("Initialising", "initialising"),
     ("Listening", "listening"),
-    ("Cogitating", "cogitating"),
+    ("Thinking", "thinking"),
     ("Speaking", "speaking"),
+    ("Interrupted", "interrupted"),
+    ("Sleeping", "sleeping"),
     ("Error", "error"),
   ]
 
@@ -1728,8 +1844,9 @@ def bind_keyboard_shortcuts(root: tk.Misc, display: OracAtomDisplay) -> None:
   shortcuts = {
     "i": "idle",
     "l": "listening",
-    "c": "cogitating",
+    "t": "thinking",
     "s": "speaking",
+    "x": "interrupted",
     "e": "error",
   }
   for key, state in shortcuts.items():
@@ -1737,6 +1854,114 @@ def bind_keyboard_shortcuts(root: tk.Misc, display: OracAtomDisplay) -> None:
       key,
       lambda _event, selected=state: display.set_state(selected),
     )
+
+
+class DisplayEventReceiver:
+  """Bridge socket display events onto the Tk UI thread."""
+
+  def __init__(
+    self,
+    *,
+    root: tk.Misc,
+    display: OracAtomDisplay,
+    host: str,
+    port: int,
+  ) -> None:
+    """Initialise the receiver.
+
+    Args:
+      root: Tk root used for polling.
+      display: Display instance to update.
+      host: Local listener host.
+      port: Local listener TCP port.
+    """
+    self.root = root
+    self.display = display
+    self.events: queue.Queue[dict[str, Any]] = queue.Queue()
+    self.server = DisplayEventServer(
+      host=host,
+      port=port,
+      on_event=self.events.put,
+    )
+    self._after_id: str | None = None
+
+  def start(self) -> None:
+    """Start receiving events."""
+    self.server.start()
+    self._poll()
+
+  def stop(self) -> None:
+    """Stop receiving events."""
+    if self._after_id is not None:
+      try:
+        self.root.after_cancel(self._after_id)
+      except tk.TclError:
+        pass
+      self._after_id = None
+    self.server.stop()
+
+  def _poll(self) -> None:
+    """Apply any queued events on the Tk thread."""
+    while True:
+      try:
+        event = self.events.get_nowait()
+      except queue.Empty:
+        break
+      apply_display_event(
+        root=self.root,
+        display=self.display,
+        receiver=self,
+        event=event,
+      )
+    self._after_id = self.root.after(50, self._poll)
+
+
+def apply_display_event(
+  *,
+  root: tk.Misc,
+  display: OracAtomDisplay,
+  receiver: DisplayEventReceiver | None,
+  event: dict[str, Any],
+) -> None:
+  """Apply one decoded display event to the display."""
+  event_name = str(event.get("event") or "").strip()
+  message_value = event.get("message")
+  message = str(message_value) if message_value is not None else None
+
+  if event_name == "state_changed":
+    state = str(event.get("state") or "").strip()
+    if not state:
+      return
+    try:
+      display.set_state(state, message=message)
+    except ValueError as exc:
+      LOGGER.warning("Ignoring unsupported display state %r: %s", state, exc)
+    return
+
+  if event_name == "status_message":
+    display.status_message = message or ""
+    return
+
+  if event_name == "error":
+    display.set_state("error", message=message or "Error")
+    return
+
+  if event_name == "shutdown":
+    display.set_state("shutdown", message=message or "Shutting down")
+    if bool(event.get("close")):
+      root.after(900, lambda: _close_window(root, display, receiver))
+
+
+def _expand_cli_path(raw_path: str | None) -> Path | None:
+  """Expand a CLI path while preserving an empty value as disabled."""
+  if raw_path is None or not raw_path.strip():
+    return None
+  if "ORAC_HOME" not in os.environ:
+    raw_path = raw_path.replace(
+      "${ORAC_HOME}",
+      str(Path(__file__).resolve().parents[2]),
+    )
+  return Path(os.path.expandvars(raw_path)).expanduser()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1787,6 +2012,30 @@ def build_parser() -> argparse.ArgumentParser:
     "--mute-overlay",
     action="store_true",
     help="Draw a subtle mute icon overlay in the corner.",
+  )
+  parser.add_argument(
+    "--listen-display-events",
+    action="store_true",
+    help="Listen for Orac display state events over localhost.",
+  )
+  parser.add_argument(
+    "--display-host",
+    default=DEFAULT_DISPLAY_HOST,
+    help="Host/interface for the local display event listener.",
+  )
+  parser.add_argument(
+    "--display-port",
+    type=int,
+    default=DEFAULT_DISPLAY_PORT,
+    help="TCP port for the local display event listener.",
+  )
+  parser.add_argument(
+    "--state-file",
+    default=DEFAULT_DISPLAY_STATE_FILE,
+    help=(
+      "Latest-state JSON file to read at startup. Use an empty value to "
+      "disable startup state loading."
+    ),
   )
   return parser
 
@@ -1866,6 +2115,25 @@ def main() -> int:
 
   display = OracAtomDisplay(parent=root, width=width, height=height)
   display.mute_overlay = args.mute_overlay
+  event_receiver: DisplayEventReceiver | None = None
+
+  startup_event = load_latest_state_file(_expand_cli_path(args.state_file))
+  if startup_event is not None:
+    apply_display_event(
+      root=root,
+      display=display,
+      receiver=None,
+      event=startup_event,
+    )
+
+  if args.listen_display_events:
+    event_receiver = DisplayEventReceiver(
+      root=root,
+      display=display,
+      host=args.display_host,
+      port=args.display_port,
+    )
+    event_receiver.start()
 
   if mode == DisplayMode.DEV:
     build_controls(
@@ -1875,16 +2143,28 @@ def main() -> int:
     )
     bind_keyboard_shortcuts(root=root, display=display)
   elif mode == DisplayMode.KIOSK:
-    root.bind("<Escape>", lambda _event: _close_window(root, display))
+    root.bind(
+      "<Escape>",
+      lambda _event: _close_window(root, display, event_receiver),
+    )
 
-  root.protocol("WM_DELETE_WINDOW", lambda: _close_window(root, display))
+  root.protocol(
+    "WM_DELETE_WINDOW",
+    lambda: _close_window(root, display, event_receiver),
+  )
   display.start()
   root.mainloop()
   return 0
 
 
-def _close_window(root: tk.Misc, display: OracAtomDisplay) -> None:
+def _close_window(
+  root: tk.Misc,
+  display: OracAtomDisplay,
+  receiver: DisplayEventReceiver | None = None,
+) -> None:
   """Stop animation and close the demo window."""
+  if receiver is not None:
+    receiver.stop()
   display.destroy()
   root.destroy()
 
