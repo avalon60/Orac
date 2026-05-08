@@ -11,6 +11,7 @@ from collections.abc import Callable
 import queue
 import re
 import threading
+import uuid
 
 from loguru import logger
 
@@ -24,6 +25,10 @@ from orac_voice.voice_events import (
   VoiceEvent,
   VoiceTextChunk,
   VoiceTtsEnded,
+  VoiceTtsPlaybackCancelled,
+  VoiceTtsPlaybackError,
+  VoiceTtsPlaybackFinished,
+  VoiceTtsPlaybackStarted,
   VoiceTtsStarted,
   VoiceTurnCancelled,
 )
@@ -214,6 +219,7 @@ class TtsWorker:
       VoiceTextChunk(
         session_id=session_id,
         turn_id=turn_id,
+        utterance_id=f"utt-{uuid.uuid4().hex[:12]}",
         text=clean_text,
       )
     )
@@ -236,6 +242,16 @@ class TtsWorker:
     self._cancel_active_if_matches(session_id=session_id, turn_id=turn_id)
     logger.info("Discarded {} queued TTS chunk(s) for cancelled turn", removed)
     return removed
+
+  def clear_cancelled_turn(self, *, session_id: str, turn_id: str) -> None:
+    """Clear remembered cancellation state for a completed turn.
+
+    Args:
+      session_id (str): Session identifier.
+      turn_id (str): Turn identifier.
+    """
+    with self._state_lock:
+      self._cancelled_turns.discard((session_id, turn_id))
 
   def cancel_session(self, *, session_id: str) -> int:
     """Cancel queued and active speech for a session."""
@@ -364,6 +380,14 @@ class TtsWorker:
         reason="active speech cancelled",
       )
     )
+    self._emit(
+      VoiceTtsPlaybackCancelled(
+        session_id=active.session_id,
+        turn_id=active.turn_id,
+        utterance_id=active.utterance_id,
+        reason="active speech cancelled",
+      )
+    )
     self._cancel_active_processes()
 
   def _cancel_active_processes(self) -> None:
@@ -439,9 +463,25 @@ class TtsWorker:
       )
       if self._is_cancelled(session_id=chunk.session_id, turn_id=chunk.turn_id):
         return
+      self._emit(
+        VoiceTtsPlaybackStarted(
+          session_id=chunk.session_id,
+          turn_id=chunk.turn_id,
+          utterance_id=chunk.utterance_id,
+          wav_path=wav_path,
+        )
+      )
       self.audio_playback.play_wav(wav_path)
       if self._is_cancelled(session_id=chunk.session_id, turn_id=chunk.turn_id):
         return
+      self._emit(
+        VoiceTtsPlaybackFinished(
+          session_id=chunk.session_id,
+          turn_id=chunk.turn_id,
+          utterance_id=chunk.utterance_id,
+          wav_path=wav_path,
+        )
+      )
       self._emit(
         VoiceTtsEnded(
           session_id=chunk.session_id,
@@ -451,6 +491,14 @@ class TtsWorker:
       )
     except Exception as exc:
       if self._is_cancelled(session_id=chunk.session_id, turn_id=chunk.turn_id):
+        self._emit(
+          VoiceTtsPlaybackCancelled(
+            session_id=chunk.session_id,
+            turn_id=chunk.turn_id,
+            utterance_id=chunk.utterance_id,
+            reason="cancelled",
+          )
+        )
         logger.info(
           "Voice chunk stopped after cancellation for session={} turn={}",
           chunk.session_id,
@@ -459,6 +507,14 @@ class TtsWorker:
         return
       logger.warning("Voice chunk failed: {}", exc)
       self.error_count += 1
+      self._emit(
+        VoiceTtsPlaybackError(
+          session_id=chunk.session_id,
+          turn_id=chunk.turn_id,
+          utterance_id=chunk.utterance_id,
+          message=str(exc),
+        )
+      )
       self.last_error = VoiceError(
         session_id=chunk.session_id,
         turn_id=chunk.turn_id,

@@ -192,7 +192,8 @@ wake_engine = openwakeword
 openwakeword_model_names = hey_jarvis
 openwakeword_threshold = 0.75
 openwakeword_inference_framework = auto
-wake_rearm_seconds = 7.0
+wake_rearm_seconds = 1.0
+console_timestamps = true
 openwakeword_refractory_seconds = 2.0
 ```
 
@@ -221,6 +222,45 @@ If Orac hears its own spoken response and immediately wakes again, increase
 `openwakeword_threshold`. The `hey_jarvis` model is a proof model, not a
 trained Hey Orac model, so some false activation is expected until a real Orac
 wake model is supplied.
+
+Local voice sessions also support a first-pass barge-in mode. The server emits
+explicit `tts_playback_started`, `tts_playback_finished`,
+`tts_playback_cancelled`, and `tts_playback_error` events from the TTS worker.
+The voice client starts its barge-in monitor only after playback starts and
+stops it when playback finishes, is cancelled, or fails. The recommended mode
+is `openwakeword`, which requires the wake word again during TTS playback
+before it sends a voice-cancel request to the Orac server. This avoids Orac
+cancelling itself just because the microphone can hear the speaker output.
+
+```ini
+[voice]
+barge_in_enabled = false
+barge_in_mode = openwakeword
+barge_in_min_speech_ms = 250
+barge_in_grace_ms = 500
+barge_in_cooldown_ms = 1000
+barge_in_return_mode = wake_listening
+barge_in_ignore_during_tts_start_ms = 300
+barge_in_post_response_ms = 12000
+barge_in_post_response_cancel_enabled = false
+```
+
+Set `barge_in_enabled = true` only when testing barge-in. Use
+`barge_in_return_mode = wake_listening` when interruption should stop Orac
+and then wait for the wake word again. `command_capture` remains available for
+immediately recording a replacement command after interruption, but it is more
+sensitive to microphone/speaker timing.
+`barge_in_post_response_cancel_enabled` remains disabled by default; playback
+lifecycle events, not post-response timers, are the normal source of truth for
+when barge-in is active.
+
+`barge_in_mode = vad` remains available as a diagnostic mode, but it does not
+perform acoustic echo cancellation. If the microphone hears the speaker output,
+VAD may falsely interrupt. Prefer `barge_in_mode = openwakeword`; if you must
+test VAD-only barge-in, increase `barge_in_grace_ms`,
+`barge_in_ignore_during_tts_start_ms`, or `barge_in_min_speech_ms`, raise the
+normal `vad_speech_start_threshold`, lower speaker volume, or use
+headphones/echo-cancelling input hardware.
 
 `stt_phrase` remains available as a diagnostic fallback, but it is not a
 production wake-word detector because it records and transcribes each candidate

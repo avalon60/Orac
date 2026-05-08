@@ -48,6 +48,18 @@ from model.plugin_router import PluginRouter
 from lib.session_manager import DBSession
 from lib.user_security import UserSecurity
 
+
+class _VoicePlaybackSubscription:
+    """Thread-safe callback wrapper for one active voice prompt stream."""
+
+    def __init__(self, *, callback: Callable[[dict[str, Any]], None]) -> None:
+        """Initialise the subscription."""
+        self.callback = callback
+        self.playback_expected = False
+        self.playback_started = False
+        self.playback_terminal = False
+
+
 # --- Paths / Config -----------------------------------------------------------
 LOG_DIR = project_home() / "logs"
 APP_HOME = project_home()
@@ -416,6 +428,12 @@ class Orac:
     def __init__(self):
         logger.log_info("Instantiating Orac...")
         self._tts_worker: TtsWorker | None = None
+        self._voice_cancelled_turns: set[tuple[str, str]] = set()
+        self._voice_event_subscribers: dict[
+            tuple[str, str],
+            list[_VoicePlaybackSubscription],
+        ] = {}
+        self._voice_event_subscriber_lock = threading.Lock()
         try:
             self.config_mgr = ConfigManager(config_file_path=CONFIG_FILE_PATH)
             self.llm_service_id = self.config_mgr.config_value("service", "llm_service_id")
@@ -659,8 +677,165 @@ class Orac:
         """Log a safe summary of local voice worker events."""
         if event.event_type == "VoiceError":
             logger.log_warning(f"{Icons.warn} Voice error: {event.to_dict()}")
+            self._publish_voice_playback_event(event)
             return
         logger.log_debug(f"Voice event: {event.to_dict()}")
+        self._publish_voice_playback_event(event)
+
+    @staticmethod
+    def _voice_subscription_key(
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> tuple[str, str]:
+        """Return the subscriber map key for a voice session turn."""
+        return (str(session_id or ""), str(turn_id or ""))
+
+    def _register_voice_event_subscriber(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        subscription: _VoicePlaybackSubscription,
+    ) -> None:
+        """Register a stream subscriber for playback lifecycle events."""
+        if not hasattr(self, "_voice_event_subscriber_lock"):
+            self._voice_event_subscriber_lock = threading.Lock()
+        if not hasattr(self, "_voice_event_subscribers"):
+            self._voice_event_subscribers = {}
+        key = self._voice_subscription_key(
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        if not key[0] or not key[1]:
+            return
+        with self._voice_event_subscriber_lock:
+            self._voice_event_subscribers.setdefault(key, []).append(subscription)
+
+    def _unregister_voice_event_subscriber(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        subscription: _VoicePlaybackSubscription,
+    ) -> None:
+        """Unregister a playback lifecycle event subscriber."""
+        if not hasattr(self, "_voice_event_subscriber_lock"):
+            self._voice_event_subscriber_lock = threading.Lock()
+        if not hasattr(self, "_voice_event_subscribers"):
+            self._voice_event_subscribers = {}
+        key = self._voice_subscription_key(
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        with self._voice_event_subscriber_lock:
+            subscriptions = self._voice_event_subscribers.get(key)
+            if not subscriptions:
+                return
+            self._voice_event_subscribers[key] = [
+                item for item in subscriptions if item is not subscription
+            ]
+            if not self._voice_event_subscribers[key]:
+                self._voice_event_subscribers.pop(key, None)
+
+    def _mark_voice_playback_expected(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> None:
+        """Mark that a voice turn has queued audio expected to play."""
+        if not hasattr(self, "_voice_event_subscriber_lock"):
+            self._voice_event_subscriber_lock = threading.Lock()
+        if not hasattr(self, "_voice_event_subscribers"):
+            self._voice_event_subscribers = {}
+        key = self._voice_subscription_key(
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        with self._voice_event_subscriber_lock:
+            for subscription in self._voice_event_subscribers.get(key, []):
+                subscription.playback_expected = True
+
+    def _build_voice_playback_event_frame(
+        self,
+        event: VoiceEvent,
+        *,
+        frame_type: str,
+    ) -> dict[str, Any]:
+        """Build a protocol frame for a TTS playback lifecycle event."""
+        event_dict = event.to_dict()
+        payload: dict[str, Any] = {
+            "turn_id": event.turn_id,
+            "request_id": event.turn_id,
+            "timestamp": event_dict.get("created_on") or iso_now(),
+        }
+        utterance_id = str(event_dict.get("utterance_id") or "")
+        if utterance_id:
+            payload["utterance_id"] = utterance_id
+            payload["chunk_id"] = utterance_id
+        reason = str(
+            event_dict.get("reason")
+            or event_dict.get("message")
+            or ""
+        )
+        if reason:
+            payload["reason"] = reason
+        frame = {
+            "v": 1,
+            "type": frame_type,
+            "id": new_id("evt"),
+            "reply_to": event.turn_id,
+            "ts": iso_now(),
+            "route": "orac.prompt",
+            "meta": {
+                "status": "error" if frame_type == "tts_playback_error" else "ok",
+                "model": self.model_name,
+                "req_id": event.turn_id,
+            },
+            "payload": payload,
+            "error": None,
+        }
+        if frame_type == "tts_playback_error":
+            frame["error"] = {
+                "code": str(event_dict.get("code") or "TTS_PLAYBACK_ERROR"),
+                "message": str(event_dict.get("message") or "TTS playback failed"),
+            }
+        return frame
+
+    def _publish_voice_playback_event(self, event: VoiceEvent) -> None:
+        """Publish TTS playback lifecycle events to active stream clients."""
+        if not hasattr(self, "_voice_event_subscriber_lock"):
+            self._voice_event_subscriber_lock = threading.Lock()
+        if not hasattr(self, "_voice_event_subscribers"):
+            self._voice_event_subscribers = {}
+        event_type_map = {
+            "VoiceTtsPlaybackStarted": "tts_playback_started",
+            "VoiceTtsPlaybackFinished": "tts_playback_finished",
+            "VoiceTtsPlaybackCancelled": "tts_playback_cancelled",
+            "VoiceTtsPlaybackError": "tts_playback_error",
+            "VoiceTurnCancelled": "tts_playback_cancelled",
+            "VoiceError": "tts_playback_error",
+        }
+        frame_type = event_type_map.get(event.event_type)
+        if frame_type is None:
+            return
+
+        key = self._voice_subscription_key(
+            session_id=event.session_id,
+            turn_id=event.turn_id,
+        )
+        with self._voice_event_subscriber_lock:
+            subscriptions = list(self._voice_event_subscribers.get(key, []))
+        if not subscriptions:
+            return
+
+        frame = self._build_voice_playback_event_frame(
+            event,
+            frame_type=frame_type,
+        )
+        for subscription in subscriptions:
+            subscription.callback(frame)
 
     def _route_stream_event_to_voice(
         self,
@@ -692,22 +867,32 @@ class Orac:
             if not chunk_text:
                 return
             if coalescer is None:
-                worker.enqueue_text(
+                queued = worker.enqueue_text(
                     session_id=session_id,
                     turn_id=turn_id,
                     text=chunk_text,
                 )
+                if queued:
+                    self._mark_voice_playback_expected(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                    )
                 return
             for speech_text in coalescer.add_chunk(
                 session_id=session_id,
                 turn_id=turn_id,
                 text=chunk_text,
             ):
-                worker.enqueue_text(
+                queued = worker.enqueue_text(
                     session_id=session_id,
                     turn_id=turn_id,
                     text=speech_text,
                 )
+                if queued:
+                    self._mark_voice_playback_expected(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                    )
             return
 
         if event_type in {"stream_end", "stream_error", "stream_cancelled"}:
@@ -717,11 +902,16 @@ class Orac:
                     turn_id=turn_id,
                 )
                 if final_text:
-                    worker.enqueue_text(
+                    queued = worker.enqueue_text(
                         session_id=session_id,
                         turn_id=turn_id,
                         text=final_text,
                     )
+                    if queued:
+                        self._mark_voice_playback_expected(
+                            session_id=session_id,
+                            turn_id=turn_id,
+                        )
 
     def cancel_voice_turn(self, *, session_id: str, turn_id: str) -> int:
         """Cancel local voice output for a client session turn."""
@@ -759,6 +949,102 @@ class Orac:
         if coalescer is not None:
             coalescer.clear()
         return worker.cancel_all(reason="orac cancellation requested")
+
+    def _mark_voice_turn_cancelled(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> None:
+        """Mark a streamed voice turn as cancelled by local barge-in."""
+        if not session_id or not turn_id:
+            return
+        cancelled = getattr(self, "_voice_cancelled_turns", None)
+        if cancelled is None:
+            self._voice_cancelled_turns = set()
+            cancelled = self._voice_cancelled_turns
+        cancelled.add((session_id, turn_id))
+
+    def _is_voice_turn_cancelled(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> bool:
+        """Return whether a streamed voice turn should stop emitting."""
+        cancelled = getattr(self, "_voice_cancelled_turns", set())
+        return (session_id, turn_id) in cancelled
+
+    def _clear_voice_turn_cancelled(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> None:
+        """Clear cancellation state for a completed voice turn."""
+        cancelled = getattr(self, "_voice_cancelled_turns", None)
+        if cancelled is not None:
+            cancelled.discard((session_id, turn_id))
+        worker = getattr(self, "_tts_worker", None)
+        clear_cancelled_turn = getattr(worker, "clear_cancelled_turn", None)
+        if callable(clear_cancelled_turn):
+            clear_cancelled_turn(session_id=session_id, turn_id=turn_id)
+
+    def _handle_voice_cancel_request(self, req_env: dict) -> str:
+        """Handle a local voice cancellation control request."""
+        payload = req_env.get("payload") or {}
+        if not isinstance(payload, dict):
+            payload = {}
+        session_id = str(payload.get("session_id") or "").strip()
+        turn_id = str(payload.get("turn_id") or "").strip()
+        scope = str(payload.get("scope") or "active").strip().lower()
+        reason = str(payload.get("reason") or "voice cancellation")
+        discarded = 0
+
+        logger.log_info(
+            f"{Icons.info} Voice cancellation requested: "
+            f"session={session_id or '-'} turn={turn_id or '-'} "
+            f"scope={scope} reason={reason}"
+        )
+        if scope == "turn" and session_id and turn_id:
+            self._mark_voice_turn_cancelled(
+                session_id=session_id,
+                turn_id=turn_id,
+            )
+            discarded = self.cancel_voice_turn(
+                session_id=session_id,
+                turn_id=turn_id,
+            )
+        elif scope == "session" and session_id:
+            discarded = self.cancel_voice_session(session_id=session_id)
+        elif scope == "all":
+            discarded = self.cancel_all_voice()
+        elif session_id:
+            discarded = self.cancel_active_voice_turn(session_id=session_id)
+
+        resp = {
+            "v": 1,
+            "type": "response",
+            "id": new_id("res"),
+            "reply_to": req_env.get("id"),
+            "ts": iso_now(),
+            "route": "orac.voice.cancel",
+            "meta": {
+                "status": "ok",
+                "model": self.model_name,
+                "req_id": req_env.get("id"),
+            },
+            "payload": {
+                "cancelled": bool(session_id or scope == "all"),
+                "discarded": int(discarded),
+            },
+            "error": None,
+        }
+        try:
+            validate_frame(resp)
+        except Exception as e:
+            _log_exception("Voice cancel response failed validation", e)
+        return json.dumps(resp, ensure_ascii=False)
 
     def _consume_prompt_dump_request(self) -> bool:
         """Return True when a one-shot context dump has been requested."""
@@ -2499,23 +2785,100 @@ class Orac:
         same final response envelope used by the legacy path.
         """
         queue: asyncio.Queue[str] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+        voice_session_id = ""
+        voice_turn_id = ""
+        voice_subscription: _VoicePlaybackSubscription | None = None
+
+        try:
+            req_preview = json.loads(message)
+        except Exception:
+            req_preview = {}
+        if isinstance(req_preview, dict):
+            meta = req_preview.get("meta") or {}
+            if (
+                req_preview.get("route") == "orac.prompt"
+                and bool(meta.get("stream"))
+            ):
+                voice_session_id = str(meta.get("session_id") or "")
+                voice_turn_id = str(req_preview.get("id") or "")
 
         async def event_sink(event: dict[str, Any]) -> None:
             await queue.put(json.dumps(event, ensure_ascii=False))
+
+        def voice_event_sink(event: dict[str, Any]) -> None:
+            def _enqueue() -> None:
+                nonlocal voice_subscription
+                if voice_subscription is not None:
+                    frame_type = str(event.get("type") or "")
+                    if frame_type == "tts_playback_started":
+                        voice_subscription.playback_started = True
+                    elif frame_type in {
+                        "tts_playback_finished",
+                        "tts_playback_cancelled",
+                        "tts_playback_error",
+                    }:
+                        voice_subscription.playback_terminal = True
+                queue.put_nowait(json.dumps(event, ensure_ascii=False))
+
+            loop.call_soon_threadsafe(_enqueue)
+
+        if voice_session_id and voice_turn_id:
+            voice_subscription = _VoicePlaybackSubscription(
+                callback=voice_event_sink
+            )
+            self._register_voice_event_subscriber(
+                session_id=voice_session_id,
+                turn_id=voice_turn_id,
+                subscription=voice_subscription,
+            )
 
         response_task = asyncio.create_task(
             self.handle_request(message, event_sink=event_sink)
         )
 
-        while True:
-            if response_task.done() and queue.empty():
-                break
-            try:
-                yield await asyncio.wait_for(queue.get(), timeout=0.05)
-            except asyncio.TimeoutError:
-                continue
+        try:
+            playback_wait_started_at: float | None = None
+            while True:
+                playback_pending = (
+                    voice_subscription is not None
+                    and voice_subscription.playback_expected
+                    and not voice_subscription.playback_terminal
+                )
+                if response_task.done() and playback_pending:
+                    if playback_wait_started_at is None:
+                        playback_wait_started_at = time.monotonic()
+                    timeout_seconds = (
+                        60.0 if voice_subscription.playback_started else 5.0
+                    )
+                    if time.monotonic() - playback_wait_started_at > timeout_seconds:
+                        logger.log_warning(
+                            f"{Icons.warn} Timed out waiting for TTS playback "
+                            f"event: session={voice_session_id} turn={voice_turn_id} "
+                            f"started={voice_subscription.playback_started}"
+                        )
+                        voice_subscription.playback_terminal = True
+                        playback_pending = False
+                else:
+                    playback_wait_started_at = None
 
-        yield await response_task
+                if response_task.done() and queue.empty() and not playback_pending:
+                    break
+                try:
+                    yield await asyncio.wait_for(queue.get(), timeout=0.05)
+                except asyncio.TimeoutError:
+                    continue
+
+            yield await response_task
+        finally:
+            if voice_subscription is not None:
+                self._unregister_voice_event_subscriber(
+                    session_id=voice_session_id,
+                    turn_id=voice_turn_id,
+                    subscription=voice_subscription,
+                )
+            if not response_task.done():
+                response_task.cancel()
 
     async def handle_request(
         self,
@@ -2572,6 +2935,9 @@ class Orac:
                     "error": {"code": "INVALID_FRAME", "message": str(e)},
                 }
                 return json.dumps(err, ensure_ascii=False)
+
+            if req_env.get("route") == "orac.voice.cancel":
+                return self._handle_voice_cancel_request(req_env)
 
             if req_env.get("route") != "orac.prompt":
                 raise ValueError("Unsupported request type/route")
@@ -2933,6 +3299,9 @@ class Orac:
             completion_tokens = 0
             total_tokens = 0
             stream_emitted_delta = False
+            stream_cancelled = False
+            voice_session_id = str((req_env.get("meta") or {}).get("session_id") or "")
+            voice_turn_id = str(req_env.get("id") or "")
 
             if stream_requested:
                 await self._emit_stream_event(
@@ -2953,6 +3322,29 @@ class Orac:
                         prompt_type="U",
                         prompt=final_prompt,
                     ):
+                        if self._is_voice_turn_cancelled(
+                            session_id=voice_session_id,
+                            turn_id=voice_turn_id,
+                        ):
+                            stream_cancelled = True
+                            logger.log_info(
+                                f"{Icons.info} Stopping LLM stream consumption "
+                                f"after voice interruption: session={voice_session_id} "
+                                f"turn={voice_turn_id}"
+                            )
+                            await self._emit_stream_event(
+                                event_sink,
+                                req_env,
+                                "stream_cancelled",
+                                payload={"reason": "barge-in"},
+                                model_name=effective_model_name,
+                                user_registration=(
+                                    "anonymous"
+                                    if request_flags["anonymous_user"]
+                                    else "registered"
+                                ),
+                            )
+                            break
                         delta_text = str(delta)
                         if not delta_text:
                             continue
@@ -2978,8 +3370,8 @@ class Orac:
                                 payload={
                                     "chunk": chunk,
                                     "session_id": session_id,
-                                    "voice_session_id": (req_env.get("meta") or {}).get("session_id"),
-                                    "turn_id": str(req_env.get("id") or ""),
+                                    "voice_session_id": voice_session_id,
+                                    "turn_id": voice_turn_id,
                                 },
                                 model_name=effective_model_name,
                                 user_registration=(
@@ -3014,7 +3406,7 @@ class Orac:
                     }
                     return json.dumps(err, ensure_ascii=False)
 
-                final_chunk = chunker.flush()
+                final_chunk = "" if stream_cancelled else chunker.flush()
                 if final_chunk:
                     await self._emit_stream_event(
                         event_sink,
@@ -3023,8 +3415,8 @@ class Orac:
                         payload={
                             "chunk": final_chunk,
                             "session_id": session_id,
-                            "voice_session_id": (req_env.get("meta") or {}).get("session_id"),
-                            "turn_id": str(req_env.get("id") or ""),
+                            "voice_session_id": voice_session_id,
+                            "turn_id": voice_turn_id,
                         },
                         model_name=effective_model_name,
                         user_registration=(
@@ -3070,7 +3462,7 @@ class Orac:
                 logger.log_warning("Backend returned empty content after stripping; using friendly fallback.")
                 content = "Hello! 👋"
 
-            if stream_requested and not stream_emitted_delta and content:
+            if stream_requested and not stream_cancelled and not stream_emitted_delta and content:
                 await self._emit_stream_event(
                     event_sink,
                     req_env,
@@ -3088,8 +3480,8 @@ class Orac:
                     payload={
                         "chunk": content,
                         "session_id": session_id,
-                        "voice_session_id": (req_env.get("meta") or {}).get("session_id"),
-                        "turn_id": str(req_env.get("id") or ""),
+                        "voice_session_id": voice_session_id,
+                        "turn_id": voice_turn_id,
                     },
                     model_name=effective_model_name,
                     user_registration=(
@@ -3116,7 +3508,7 @@ class Orac:
             resp_env = self._build_response(
                 req_env,
                 content,
-                stop_reason="stop",
+                stop_reason="error" if stream_cancelled else "stop",
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 model_name=effective_model_name,
@@ -3125,7 +3517,7 @@ class Orac:
                 ),
             )
 
-            if stream_requested:
+            if stream_requested and not stream_cancelled:
                 await self._emit_stream_event(
                     event_sink,
                     req_env,
@@ -3146,6 +3538,11 @@ class Orac:
 
             wire = json.dumps(resp_env, ensure_ascii=False)
             logger.log_debug(f"Returning response frame: {wire[:300]}{'…' if len(wire) > 300 else ''}")
+            if stream_cancelled:
+                self._clear_voice_turn_cancelled(
+                    session_id=voice_session_id,
+                    turn_id=voice_turn_id,
+                )
             return wire
 
         except Exception as e:

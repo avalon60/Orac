@@ -14,6 +14,9 @@ from orac_voice.activation import VoiceActivationResult
 from orac_voice.activation import WakeWordActivationListener
 from orac_voice.audio_capture import AudioCapture, SoundDeviceAudioCapture
 from orac_voice.audio_playback import AudioPlayback, LocalAudioPlayback
+from orac_voice.barge_in import BargeInConfig
+from orac_voice.barge_in import BargeInController
+from orac_voice.barge_in import BargeInResult
 from orac_voice.stt_faster_whisper import FasterWhisperSttEngine, SttEngine
 from orac_voice.tts_coalescer import TtsChunkCoalescer
 from orac_voice.tts_piper import PiperTtsEngine
@@ -29,6 +32,10 @@ from orac_voice.voice_events import (
   VoiceSttStarted,
   VoiceTextChunk,
   VoiceTtsEnded,
+  VoiceTtsPlaybackCancelled,
+  VoiceTtsPlaybackError,
+  VoiceTtsPlaybackFinished,
+  VoiceTtsPlaybackStarted,
   VoiceTtsStarted,
   VoiceTurnCancelled,
   VoiceVadError,
@@ -41,6 +48,9 @@ from orac_voice.voice_events import (
 __all__ = [
   "AudioCapture",
   "AudioPlayback",
+  "BargeInConfig",
+  "BargeInController",
+  "BargeInResult",
   "EnterActivationListener",
   "FasterWhisperSttEngine",
   "LocalAudioPlayback",
@@ -62,6 +72,10 @@ __all__ = [
   "VoiceSttStarted",
   "VoiceTextChunk",
   "VoiceTtsEnded",
+  "VoiceTtsPlaybackCancelled",
+  "VoiceTtsPlaybackError",
+  "VoiceTtsPlaybackFinished",
+  "VoiceTtsPlaybackStarted",
   "VoiceTtsStarted",
   "VoiceTurnCancelled",
   "VoiceVadError",

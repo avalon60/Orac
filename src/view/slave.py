@@ -68,6 +68,10 @@ STREAM_EVENT_TYPES = {
     "stream_end",
     "stream_error",
     "stream_cancelled",
+    "tts_playback_started",
+    "tts_playback_finished",
+    "tts_playback_cancelled",
+    "tts_playback_error",
 }
 
 # Local preference for showing <think>…</think> blocks
@@ -244,7 +248,7 @@ SECRET = load_secret()
 CALLING_USER = os.getenv("ORAC_CALLING_USER") or getuser()  # allow override for service accounts
 CLIENT_SESSION_ID = f"slave-{CALLING_USER}-{uuid.uuid4().hex[:12]}"
 
-def build_prompt_request(message_text: str) -> dict:
+def build_prompt_request(message_text: str, *, session_id: str | None = None) -> dict:
     """
     Build a strict protocol-compliant 'request' envelope for route 'orac.prompt'.
     Streaming on; channel=text. Adds meta.auth (hmac-v1).
@@ -260,7 +264,7 @@ def build_prompt_request(message_text: str) -> dict:
     # Meta WITHOUT auth first (auth signs over route + payload)
     meta = {
         "client": "slave",
-        "session_id": CLIENT_SESSION_ID,
+        "session_id": session_id or CLIENT_SESSION_ID,
         "stream": True,
         "channel": "text",
         "show_reasoning": SHOW_REASONING,
@@ -283,6 +287,48 @@ def build_prompt_request(message_text: str) -> dict:
         validate_frame(env)
     except Exception as e:
         logger.log_critical(f"Client built an invalid protocol frame: {e}")
+    return env
+
+
+def build_voice_cancel_request(
+    *,
+    session_id: str,
+    turn_id: str | None = None,
+    scope: str = "active",
+    reason: str = "barge-in",
+) -> dict:
+    """Build an authenticated request to cancel local voice output."""
+    route = "orac.voice.cancel"
+    payload = {
+        "session_id": session_id,
+        "scope": scope,
+        "reason": reason,
+    }
+    if turn_id:
+        payload["turn_id"] = turn_id
+
+    meta = {
+        "client": "slave",
+        "session_id": session_id,
+        "stream": False,
+        "channel": "control",
+    }
+    meta["auth"] = sign_auth(SECRET, CALLING_USER, route, payload)
+
+    env = {
+        "v": 1,
+        "type": "request",
+        "id": new_id("req"),
+        "ts": iso_now(),
+        "route": route,
+        "meta": meta,
+        "payload": payload,
+        "error": None,
+    }
+    try:
+        validate_frame(env)
+    except Exception as e:
+        logger.log_critical(f"Client built an invalid voice cancel frame: {e}")
     return env
 
 

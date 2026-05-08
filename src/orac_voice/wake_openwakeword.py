@@ -145,6 +145,7 @@ class OpenWakeWordActivationListener:
     inference_framework: str = "auto",
     audio_source: OpenWakeWordAudioSource | None = None,
     model_factory: Callable[[], OpenWakeWordModel] | None = None,
+    status_callback: Callable[[str], None] | None = None,
     input_device: str | None = None,
     frame_ms: int = DEFAULT_OPENWAKEWORD_FRAME_MS,
     refractory_seconds: float = DEFAULT_OPENWAKEWORD_REFRACTORY_SECONDS,
@@ -158,6 +159,8 @@ class OpenWakeWordActivationListener:
       inference_framework (str): ``auto``, ``tflite``, or ``onnx``.
       audio_source (OpenWakeWordAudioSource | None): Test audio source.
       model_factory (Callable[[], OpenWakeWordModel] | None): Test factory.
+      status_callback (Callable[[str], None] | None): Optional console
+        status callback.
       input_device (str | None): Optional sounddevice input device.
       frame_ms (int): Microphone frame duration in milliseconds.
       refractory_seconds (float): Seconds to ignore detections after the
@@ -175,6 +178,7 @@ class OpenWakeWordActivationListener:
     )
     self.refractory_seconds = max(0.0, float(refractory_seconds))
     self.model_factory = model_factory
+    self.status_callback = status_callback or _default_status_callback
     self._model: OpenWakeWordModel | None = None
     self._closed = False
 
@@ -186,6 +190,7 @@ class OpenWakeWordActivationListener:
     model_names: str = ",".join(DEFAULT_OPENWAKEWORD_MODEL_NAMES),
     threshold: float = DEFAULT_OPENWAKEWORD_THRESHOLD,
     inference_framework: str = "auto",
+    status_callback: Callable[[str], None] | None = None,
     input_device: str | None = None,
     frame_ms: int = DEFAULT_OPENWAKEWORD_FRAME_MS,
     refractory_seconds: float = DEFAULT_OPENWAKEWORD_REFRACTORY_SECONDS,
@@ -198,6 +203,7 @@ class OpenWakeWordActivationListener:
       model_names=parsed_names,
       threshold=threshold,
       inference_framework=inference_framework,
+      status_callback=status_callback,
       input_device=input_device,
       frame_ms=frame_ms,
       refractory_seconds=refractory_seconds,
@@ -216,7 +222,7 @@ class OpenWakeWordActivationListener:
       )
 
     model = self._get_model()
-    print("Listening for wake word: openWakeWord", flush=True)
+    self.status_callback("Listening for wake word: openWakeWord")
     try:
       self.audio_source.start()
       started_at = time.monotonic()
@@ -240,7 +246,7 @@ class OpenWakeWordActivationListener:
             fired_model,
             score,
           )
-          print("Wake word detected.", flush=True)
+          self.status_callback("Wake word detected.")
           return VoiceActivationResult(
             activated=True,
             reason="openWakeWord wake word detected",
@@ -284,52 +290,81 @@ class OpenWakeWordActivationListener:
     if self.model_factory is not None:
       self._model = self.model_factory()
       return self._model
-    if not self.model_paths and not self.model_names:
-      raise VoiceActivationError(
-        "wake_engine=openwakeword requires openwakeword_model_paths or "
-        "openwakeword_model_names. Configure a pre-trained model such as "
-        "hey_jarvis or a custom .tflite/.onnx model path."
-      )
-
-    try:
-      import openwakeword
-      from openwakeword.model import Model
-      from openwakeword.utils import download_models
-    except ImportError as exc:
-      raise VoiceActivationError(
-        "wake_engine=openwakeword requires the openwakeword package. "
-        "Install the openWakeWord voice dependencies, then retry."
-      ) from exc
-
-    wakeword_models = [str(path) for path in self.model_paths]
-    if self.model_names:
-      logger.info(
-        "Ensuring openWakeWord pre-trained model(s) are available: {}",
-        ", ".join(self.model_names),
-      )
-      try:
-        download_models(model_names=self.model_names)
-      except Exception as exc:
-        raise VoiceActivationError(
-          "Unable to prepare openWakeWord pre-trained model(s). Check "
-          "network access or configure openwakeword_model_paths with local "
-          f"model files. Details: {exc}"
-        ) from exc
-      wakeword_models.extend(self.model_names)
-
-    try:
-      self._model = Model(
-        wakeword_models=wakeword_models,
-        inference_framework=self.inference_framework,
-      )
-    except Exception as exc:
-      available = ", ".join(sorted(getattr(openwakeword, "MODELS", {}).keys()))
-      suffix = f" Available built-in models: {available}." if available else ""
-      raise VoiceActivationError(
-        "Unable to initialise openWakeWord wake-word engine. Check model "
-        f"names, model paths, and inference framework.{suffix}"
-      ) from exc
+    self._model = create_openwakeword_model(
+      model_paths=self.model_paths,
+      model_names=self.model_names,
+      inference_framework=self.inference_framework,
+      error_context="wake_engine=openwakeword",
+    )
     return self._model
+
+
+def create_openwakeword_model(
+  *,
+  model_paths: list[Path],
+  model_names: list[str],
+  inference_framework: str,
+  error_context: str = "openWakeWord",
+) -> OpenWakeWordModel:
+  """Create an openWakeWord model from explicit paths or built-in names.
+
+  Args:
+    model_paths (list[Path]): User-supplied model files.
+    model_names (list[str]): Built-in openWakeWord model names.
+    inference_framework (str): ``tflite`` or ``onnx``.
+    error_context (str): Prefix used in dependency and model errors.
+
+  Returns:
+    OpenWakeWordModel: Initialised openWakeWord model.
+
+  Raises:
+    VoiceActivationError: If dependencies or configured models are not usable.
+  """
+  if not model_paths and not model_names:
+    raise VoiceActivationError(
+      f"{error_context} requires openwakeword_model_paths or "
+      "openwakeword_model_names. Configure a pre-trained model such as "
+      "hey_jarvis or a custom .tflite/.onnx model path."
+    )
+
+  try:
+    import openwakeword
+    from openwakeword.model import Model
+    from openwakeword.utils import download_models
+  except ImportError as exc:
+    raise VoiceActivationError(
+      f"{error_context} requires the openwakeword package. Install the "
+      "openWakeWord voice dependencies, then retry."
+    ) from exc
+
+  wakeword_models = [str(path) for path in model_paths]
+  if model_names:
+    logger.info(
+      "Ensuring openWakeWord pre-trained model(s) are available: {}",
+      ", ".join(model_names),
+    )
+    try:
+      download_models(model_names=model_names)
+    except Exception as exc:
+      raise VoiceActivationError(
+        "Unable to prepare openWakeWord pre-trained model(s). Check "
+        "network access or configure openwakeword_model_paths with local "
+        f"model files. Details: {exc}"
+      ) from exc
+    wakeword_models.extend(model_names)
+
+  try:
+    return Model(
+      wakeword_models=wakeword_models,
+      inference_framework=inference_framework,
+    )
+  except Exception as exc:
+    available = ", ".join(sorted(getattr(openwakeword, "MODELS", {}).keys()))
+    suffix = f" Available built-in models: {available}." if available else ""
+    raise VoiceActivationError(
+      "Unable to initialise openWakeWord wake-word engine. Check model "
+      f"names, model paths, and inference framework.{suffix}"
+    ) from exc
 
 
 def _normalise_inference_framework(value: str) -> str:
@@ -378,3 +413,8 @@ def _best_detection(
   if score >= threshold:
     return model_name, score
   return None, None
+
+
+def _default_status_callback(message: str) -> None:
+  """Print one wake-word status line."""
+  print(message, flush=True)

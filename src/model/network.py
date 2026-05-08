@@ -18,7 +18,7 @@ class OracListener:
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         addr = writer.get_extra_info("peername")
         print(f"🟢 Connection from {addr}")
-        voice_session_ids: set[str] = set()
+        voice_turns: set[tuple[str, str]] = set()
         try:
             while True:
                 data = await reader.readline()
@@ -26,7 +26,7 @@ class OracListener:
                     break
                 incoming = data.decode("utf-8", errors="replace").rstrip("\r\n")
                 print(f"📥 Received: {incoming}")
-                self._remember_voice_session(incoming, voice_session_ids)
+                self._remember_voice_turn(incoming, voice_turns)
 
                 streamer = getattr(self.orchestrator, "handle_request_events", None)
                 if callable(streamer):
@@ -42,49 +42,57 @@ class OracListener:
         except Exception as e:
             print(f"❌ Error: {e}")
         finally:
-            self._cancel_voice_sessions(voice_session_ids)
+            self._cancel_voice_turns(voice_turns)
             try:
                 writer.close()
                 await writer.wait_closed()
             finally:
                 print(f"🔴 Connection closed: {addr}")
 
-    def _remember_voice_session(
+    def _remember_voice_turn(
         self,
         incoming: str,
-        voice_session_ids: set[str],
+        voice_turns: set[tuple[str, str]],
     ) -> None:
-        """Remember the client voice session id from one request frame."""
+        """Remember a streamed voice prompt turn from one request frame."""
         try:
             env = json.loads(incoming)
         except Exception:
             return
         if not isinstance(env, dict):
             return
+        if env.get("route") != "orac.prompt":
+            return
         meta = env.get("meta")
         if not isinstance(meta, dict):
             return
+        if not bool(meta.get("stream")):
+            return
         session_id = str(meta.get("session_id") or "").strip()
-        if session_id:
-            voice_session_ids.add(session_id)
+        turn_id = str(env.get("id") or "").strip()
+        if session_id and turn_id:
+            voice_turns.add((session_id, turn_id))
 
-    def _cancel_voice_sessions(self, voice_session_ids: set[str]) -> None:
-        """Cancel voice output associated with a closed client connection."""
+    def _cancel_voice_turns(self, voice_turns: set[tuple[str, str]]) -> None:
+        """Cancel voice turns associated with a closed client connection."""
         # TODO: When Orac request execution has an upstream cancellation
         # token, connect this same client/session cancellation path to the
         # active LLM stream as well as downstream TTS/audio.
-        canceller = getattr(self.orchestrator, "cancel_voice_session", None)
+        canceller = getattr(self.orchestrator, "cancel_voice_turn", None)
         if not callable(canceller):
             return
-        for session_id in voice_session_ids:
+        for session_id, turn_id in voice_turns:
             try:
-                discarded = canceller(session_id=session_id)
+                discarded = canceller(session_id=session_id, turn_id=turn_id)
                 print(
-                    f"🔇 Cancelled voice session {session_id}; "
+                    f"🔇 Cancelled voice turn {session_id}/{turn_id}; "
                     f"discarded {discarded} queued chunk(s)"
                 )
             except Exception as exc:
-                print(f"⚠️ Voice cancellation failed for {session_id}: {exc}")
+                print(
+                    f"⚠️ Voice cancellation failed for "
+                    f"{session_id}/{turn_id}: {exc}"
+                )
 
     async def start_server(self):
         server = await asyncio.start_server(self.handle_client, self.host, self.port)

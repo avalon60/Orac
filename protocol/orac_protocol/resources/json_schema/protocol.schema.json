@@ -7,7 +7,21 @@
   "required": ["v", "type", "id", "ts", "route"],
   "properties": {
     "v": { "type": "integer", "const": 1 },
-    "type": { "type": "string", "enum": ["request", "response", "event"] },
+    "type": { "type": "string", "enum": [
+      "request",
+      "response",
+      "event",
+      "stream_start",
+      "text_delta",
+      "text_chunk",
+      "stream_end",
+      "stream_error",
+      "stream_cancelled",
+      "tts_playback_started",
+      "tts_playback_finished",
+      "tts_playback_cancelled",
+      "tts_playback_error"
+    ] },
     "id": { "type": "string", "minLength": 1, "maxLength": 128 },
     "reply_to": { "type": "string" },
     "ts": { "type": "string", "format": "date-time" },
@@ -20,6 +34,9 @@
       { "$ref": "#/$defs/streamStartPayload" },
       { "$ref": "#/$defs/streamDeltaPayload" },
       { "$ref": "#/$defs/streamEndPayload" },
+      { "$ref": "#/$defs/ttsPlaybackEventPayload" },
+      { "$ref": "#/$defs/voiceCancelRequestPayload" },
+      { "$ref": "#/$defs/voiceCancelResponsePayload" },
       { "$ref": "#/$defs/helloPayload" }
     ]},
     "error": { "oneOf": [
@@ -32,6 +49,14 @@
     {
       "if": { "properties": { "type": { "const": "request" }, "route": { "const": "orac.prompt" } }, "required": ["type", "route"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/promptRequestPayload" } }, "required": ["payload"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "request" }, "route": { "const": "orac.voice.cancel" } }, "required": ["type", "route"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/voiceCancelRequestPayload" } }, "required": ["payload"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "response" }, "route": { "const": "orac.voice.cancel" } }, "required": ["type", "route"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/voiceCancelResponsePayload" } }, "required": ["payload"] }
     },
     {
       "if": { "properties": { "type": { "const": "response" }, "route": { "const": "orac.prompt" } }, "required": ["type", "route"] },
@@ -144,6 +169,42 @@
       }
     },
 
+    "ttsPlaybackEventPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["turn_id", "timestamp"],
+      "properties": {
+        "turn_id": { "type": "string", "minLength": 1 },
+        "request_id": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "chunk_id": { "type": "string" },
+        "utterance_id": { "type": "string" },
+        "reason": { "type": "string" }
+      }
+    },
+
+    "voiceCancelRequestPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "scope", "reason"],
+      "properties": {
+        "session_id": { "type": "string", "minLength": 1 },
+        "turn_id": { "type": "string" },
+        "scope": { "type": "string", "enum": ["turn", "session", "active", "all"] },
+        "reason": { "type": "string" }
+      }
+    },
+
+    "voiceCancelResponsePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cancelled", "discarded"],
+      "properties": {
+        "cancelled": { "type": "boolean" },
+        "discarded": { "type": "integer", "minimum": 0 }
+      }
+    },
+
     "helloPayload": {
       "type": "object",
       "additionalProperties": false,
@@ -166,4 +227,3 @@
     }
   }
 }
-

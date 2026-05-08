@@ -65,9 +65,11 @@ class VoiceTextChunk(VoiceEvent):
   """Text chunk intended for speech synthesis.
 
   Args:
+    utterance_id (str): Unique queued utterance identifier.
     text (str): Speech-friendly text chunk.
   """
 
+  utterance_id: str = ""
   text: str = ""
 
 
@@ -83,6 +85,39 @@ class VoiceTtsEnded(VoiceEvent):
   """Event emitted when synthesis/playback ends for a chunk."""
 
   wav_path: Path | None = None
+
+
+@dataclass(frozen=True)
+class VoiceTtsPlaybackStarted(VoiceEvent):
+  """Event emitted when generated audio playback is starting."""
+
+  utterance_id: str = ""
+  wav_path: Path | None = None
+
+
+@dataclass(frozen=True)
+class VoiceTtsPlaybackFinished(VoiceEvent):
+  """Event emitted when generated audio playback finishes."""
+
+  utterance_id: str = ""
+  wav_path: Path | None = None
+
+
+@dataclass(frozen=True)
+class VoiceTtsPlaybackCancelled(VoiceEvent):
+  """Event emitted when generated audio playback is cancelled."""
+
+  utterance_id: str = ""
+  reason: str = "cancelled"
+
+
+@dataclass(frozen=True)
+class VoiceTtsPlaybackError(VoiceEvent):
+  """Event emitted when generated audio playback fails."""
+
+  utterance_id: str = ""
+  code: str = "TTS_PLAYBACK_ERROR"
+  message: str = ""
 
 
 @dataclass(frozen=True)
