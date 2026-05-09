@@ -28,7 +28,6 @@ from orac_voice.audio_capture import SoundDeviceAudioCapture
 from orac_voice.barge_in import BargeInController
 from orac_voice.barge_in import BargeInResult
 from orac_voice.barge_in import VAD_BARGE_IN_EXPERIMENTAL_WARNING
-from orac_voice.barge_in import VAD_BARGE_IN_REFUSAL_MESSAGE
 from orac_voice.barge_in import load_barge_in_config
 from orac_voice.interruption_policy import InterruptionAction
 from orac_voice.interruption_policy import InterruptionPolicy
@@ -281,19 +280,9 @@ def _create_barge_in_controller() -> BargeInController | None:
   """Create the configured barge-in controller, if enabled."""
   config_mgr = _voice_config_manager()
   config = load_barge_in_config(config_mgr)
-  if not config.enabled:
+  if not config.enable_experimental_barge_in:
     return None
-  if config.mode == "openwakeword":
-    logger.warning(
-      "openWakeWord barge-in is disabled because it can self-trigger on "
-      "assistant speech; use barge_in_mode=vad for live interruption."
-    )
-    return None
-  if config.mode == "vad" and not config.barge_in_acknowledge_self_trigger_risk:
-    logger.warning(VAD_BARGE_IN_REFUSAL_MESSAGE)
-    return None
-  if config.mode == "vad":
-    logger.warning(VAD_BARGE_IN_EXPERIMENTAL_WARNING)
+  logger.warning(VAD_BARGE_IN_EXPERIMENTAL_WARNING)
   return BargeInController(config=config)
 
 

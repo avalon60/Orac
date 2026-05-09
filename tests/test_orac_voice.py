@@ -69,7 +69,6 @@ from orac_voice.barge_in import BargeInController
 from orac_voice.barge_in import BargeInResult
 from orac_voice.barge_in import OpenWakeWordBargeInController
 from orac_voice.barge_in import VAD_BARGE_IN_EXPERIMENTAL_WARNING
-from orac_voice.barge_in import VAD_BARGE_IN_REFUSAL_MESSAGE
 from orac_voice.barge_in import load_barge_in_config
 from orac_voice.interruption_policy import InterruptionAction
 from orac_voice.interruption_policy import InterruptionPolicy
@@ -1000,6 +999,7 @@ class OracVoiceTests(unittest.TestCase):
     """Barge-in VAD should ignore speech during configured startup grace."""
     controller = BargeInController(
       config=BargeInConfig(
+        enable_experimental_barge_in=True,
         chunk_ms=100,
         min_speech_ms=200,
         grace_ms=500,
@@ -1019,6 +1019,7 @@ class OracVoiceTests(unittest.TestCase):
     """Barge-in VAD should interrupt after enough post-grace speech."""
     controller = BargeInController(
       config=BargeInConfig(
+        enable_experimental_barge_in=True,
         chunk_ms=100,
         min_speech_ms=200,
         grace_ms=100,
@@ -1041,7 +1042,7 @@ class OracVoiceTests(unittest.TestCase):
     """Disabled barge-in should leave microphone monitoring inactive."""
     source = _FakeBargeInSource()
     controller = BargeInController(
-      config=BargeInConfig(enabled=False),
+      config=BargeInConfig(enable_experimental_barge_in=False),
       audio_source=source,
       vad_engine=_FakeBargeInVad([1.0]),
     )
@@ -1055,7 +1056,7 @@ class OracVoiceTests(unittest.TestCase):
     """Wake-word barge-in should ignore predictions below threshold."""
     controller = OpenWakeWordBargeInController(
       config=BargeInConfig(
-        enabled=True,
+        enable_experimental_barge_in=True,
         mode="openwakeword",
         grace_ms=100,
         ignore_during_tts_start_ms=100,
@@ -1075,7 +1076,7 @@ class OracVoiceTests(unittest.TestCase):
     """Wake-word barge-in should interrupt when a model crosses threshold."""
     controller = OpenWakeWordBargeInController(
       config=BargeInConfig(
-        enabled=True,
+        enable_experimental_barge_in=True,
         mode="openwakeword",
         grace_ms=100,
         ignore_during_tts_start_ms=100,
@@ -1098,7 +1099,7 @@ class OracVoiceTests(unittest.TestCase):
     """Disabled barge-in config should not construct a controller."""
     with patch(
       "orac_voice.voice_loop_local.load_barge_in_config",
-      return_value=BargeInConfig(enabled=False),
+      return_value=BargeInConfig(enable_experimental_barge_in=False),
     ):
       with patch(
         "orac_voice.voice_loop_local.BargeInController"
@@ -1115,37 +1116,35 @@ class OracVoiceTests(unittest.TestCase):
     )
     config = load_barge_in_config(config_mgr)
 
-    self.assertFalse(config.enabled)
-    self.assertFalse(config.barge_in_acknowledge_self_trigger_risk)
+    self.assertFalse(config.enable_experimental_barge_in)
 
-  def test_barge_in_controller_refuses_vad_without_acknowledgement(self) -> None:
-    """Speaker playback without acknowledgement should refuse VAD barge-in."""
-    source = _FakeBargeInSource()
-    controller = BargeInController(
-      config=BargeInConfig(
-        enabled=True,
-        mode="vad",
-        barge_in_acknowledge_self_trigger_risk=False,
-      ),
-      audio_source=source,
-      vad_engine=_FakeBargeInVad([1.0]),
-    )
+  def test_legacy_barge_in_keys_map_to_experimental_flag(self) -> None:
+    """Legacy keys should still map onto the single experimental flag."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      config_path = Path(tmp_name) / "orac.ini"
+      config_path.write_text(
+        "\n".join(
+          [
+            "[voice]",
+            "barge_in_enabled = true",
+            "barge_in_mode = vad",
+            "barge_in_acknowledge_self_trigger_risk = true",
+          ]
+        ),
+        encoding="utf-8",
+      )
+      config_mgr = ConfigManager(config_file_path=config_path)
+      config = load_barge_in_config(config_mgr)
 
-    with patch("orac_voice.barge_in.logger.warning") as warning_mock:
-      controller.start()
-
-    self.assertEqual(source.start_calls, 0)
-    self.assertFalse(controller.interrupted)
-    warning_mock.assert_called_once_with(VAD_BARGE_IN_REFUSAL_MESSAGE)
+    self.assertTrue(config.enable_experimental_barge_in)
 
   def test_barge_in_controller_starts_vad_with_acknowledgement(self) -> None:
-    """Acknowledged VAD mode should start the monitoring thread."""
+    """Enabled experimental VAD mode should start the monitoring thread."""
     source = _FakeBargeInSource(chunks=1)
     controller = BargeInController(
       config=BargeInConfig(
-        enabled=True,
+        enable_experimental_barge_in=True,
         mode="vad",
-        barge_in_acknowledge_self_trigger_risk=True,
       ),
       audio_source=source,
       vad_engine=_FakeBargeInVad([0.0]),
@@ -1158,9 +1157,9 @@ class OracVoiceTests(unittest.TestCase):
     self.assertGreaterEqual(source.start_calls, 1)
     self.assertGreaterEqual(source.close_calls, 1)
 
-  def test_barge_in_factory_disables_openwakeword_controller(self) -> None:
-    """openWakeWord barge-in should stay disabled on local playback."""
-    config = BargeInConfig(enabled=True, mode="openwakeword")
+  def test_barge_in_factory_enables_experimental_controller(self) -> None:
+    """Enabled experimental barge-in should construct a controller."""
+    config = BargeInConfig(enable_experimental_barge_in=True, mode="vad")
     with patch(
       "orac_voice.voice_loop_local.load_barge_in_config",
       return_value=config,
@@ -1168,16 +1167,14 @@ class OracVoiceTests(unittest.TestCase):
       with patch("orac_voice.voice_loop_local.logger.warning") as warning_mock:
         controller = _create_barge_in_controller()
 
-    self.assertIsNone(controller)
-    warning_mock.assert_called_once()
-    self.assertIn("openWakeWord barge-in is disabled", warning_mock.call_args[0][0])
+    self.assertIsInstance(controller, BargeInController)
+    warning_mock.assert_called_once_with(VAD_BARGE_IN_EXPERIMENTAL_WARNING)
 
-  def test_barge_in_factory_refuses_vad_without_acknowledgement(self) -> None:
-    """VAD barge-in should be blocked until the risk is acknowledged."""
+  def test_barge_in_factory_keeps_disabled_barge_in_silent(self) -> None:
+    """Disabled experimental barge-in should not warn or construct."""
     config = BargeInConfig(
-      enabled=True,
+      enable_experimental_barge_in=False,
       mode="vad",
-      barge_in_acknowledge_self_trigger_risk=False,
     )
     with patch(
       "orac_voice.voice_loop_local.load_barge_in_config",
@@ -1191,30 +1188,7 @@ class OracVoiceTests(unittest.TestCase):
 
     self.assertIsNone(controller)
     controller_cls.assert_not_called()
-    warning_mock.assert_called_once_with(VAD_BARGE_IN_REFUSAL_MESSAGE)
-
-  def test_barge_in_factory_allows_acknowledged_vad_controller(self) -> None:
-    """Acknowledged VAD barge-in should still be constructible."""
-    config = BargeInConfig(
-      enabled=True,
-      mode="vad",
-      barge_in_acknowledge_self_trigger_risk=True,
-    )
-    with patch(
-      "orac_voice.voice_loop_local.load_barge_in_config",
-      return_value=config,
-    ):
-      with patch("orac_voice.voice_loop_local.logger.warning") as warning_mock:
-        with patch(
-          "orac_voice.voice_loop_local.BargeInController"
-        ) as controller_cls:
-          controller = _create_barge_in_controller()
-
-    self.assertIs(controller, controller_cls.return_value)
-    controller_cls.assert_called_once_with(config=config)
-    warning_mock.assert_called_once_with(
-      VAD_BARGE_IN_EXPERIMENTAL_WARNING
-    )
+    warning_mock.assert_not_called()
 
   def test_interruption_policy_ignores_vad_blip_during_speaking(self) -> None:
     """Short acoustic blips should not force an interruption."""

@@ -37,9 +37,8 @@ from orac_voice.wake_openwakeword import (
 )
 
 
-DEFAULT_BARGE_IN_ENABLED = False
-DEFAULT_BARGE_IN_MODE = "openwakeword"
-DEFAULT_BARGE_IN_ACKNOWLEDGE_SELF_TRIGGER_RISK = False
+DEFAULT_ENABLE_EXPERIMENTAL_BARGE_IN = False
+DEFAULT_BARGE_IN_MODE = "vad"
 DEFAULT_BARGE_IN_MIN_SPEECH_MS = 250
 DEFAULT_BARGE_IN_GRACE_MS = 500
 DEFAULT_BARGE_IN_COOLDOWN_MS = 1000
@@ -47,14 +46,7 @@ DEFAULT_BARGE_IN_RETURN_MODE = "command_capture"
 DEFAULT_BARGE_IN_IGNORE_DURING_TTS_START_MS = 300
 DEFAULT_BARGE_IN_POST_RESPONSE_MS = 12000
 DEFAULT_BARGE_IN_POST_RESPONSE_CANCEL_ENABLED = False
-SUPPORTED_BARGE_IN_MODES = {"openwakeword", "wake_word", "vad"}
 SUPPORTED_BARGE_IN_RETURN_MODES = {"command_capture", "wake_listening"}
-VAD_BARGE_IN_REFUSAL_MESSAGE = (
-  "VAD barge-in is disabled because speaker playback can self-trigger "
-  "without echo cancellation. Set "
-  "barge_in_acknowledge_self_trigger_risk=true to enable experimental "
-  "mode."
-)
 VAD_BARGE_IN_EXPERIMENTAL_WARNING = (
   "Experimental VAD barge-in is enabled; speaker playback may self-trigger "
   "without echo cancellation."
@@ -65,15 +57,12 @@ VAD_BARGE_IN_EXPERIMENTAL_WARNING = (
 class BargeInConfig:
   """Configuration for barge-in detection."""
 
-  enabled: bool = DEFAULT_BARGE_IN_ENABLED
+  enable_experimental_barge_in: bool = DEFAULT_ENABLE_EXPERIMENTAL_BARGE_IN
   mode: str = DEFAULT_BARGE_IN_MODE
   min_speech_ms: int = DEFAULT_BARGE_IN_MIN_SPEECH_MS
   grace_ms: int = DEFAULT_BARGE_IN_GRACE_MS
   cooldown_ms: int = DEFAULT_BARGE_IN_COOLDOWN_MS
   return_mode: str = DEFAULT_BARGE_IN_RETURN_MODE
-  barge_in_acknowledge_self_trigger_risk: bool = (
-    DEFAULT_BARGE_IN_ACKNOWLEDGE_SELF_TRIGGER_RISK
-  )
   ignore_during_tts_start_ms: int = DEFAULT_BARGE_IN_IGNORE_DURING_TTS_START_MS
   post_response_ms: int = DEFAULT_BARGE_IN_POST_RESPONSE_MS
   post_response_cancel_enabled: bool = DEFAULT_BARGE_IN_POST_RESPONSE_CANCEL_ENABLED
@@ -87,6 +76,11 @@ class BargeInConfig:
   openwakeword_threshold: float = DEFAULT_OPENWAKEWORD_THRESHOLD
   openwakeword_inference_framework: str = "auto"
   openwakeword_frame_ms: int = DEFAULT_OPENWAKEWORD_FRAME_MS
+
+  @property
+  def enabled(self) -> bool:
+    """Return whether experimental local barge-in is enabled."""
+    return self.enable_experimental_barge_in
 
   @property
   def chunk_frames(self) -> int:
@@ -231,14 +225,11 @@ class BargeInController:
     on_interrupt: Callable[[BargeInResult], None] | None = None,
   ) -> None:
     """Start background barge-in monitoring."""
-    if not self.config.enabled:
+    if not self.config.enable_experimental_barge_in:
       logger.debug("Barge-in disabled; not starting monitor")
       return
     if self.config.mode != "vad":
       raise RuntimeError(f"Unsupported barge-in mode: {self.config.mode}")
-    if not self.config.barge_in_acknowledge_self_trigger_risk:
-      logger.warning(VAD_BARGE_IN_REFUSAL_MESSAGE)
-      return
     if self._thread is not None and self._thread.is_alive():
       return
 
@@ -546,15 +537,8 @@ class OpenWakeWordBargeInController:
 
 def load_barge_in_config(config_mgr: ConfigManager) -> BargeInConfig:
   """Load and validate barge-in configuration from ``[voice]``."""
-  mode = config_mgr.config_value(
-    "voice",
-    "barge_in_mode",
-    default=DEFAULT_BARGE_IN_MODE,
-  ).strip().lower()
-  if mode == "wake_word":
-    mode = "openwakeword"
-  if mode not in SUPPORTED_BARGE_IN_MODES:
-    raise ValueError(f"Unsupported voice.barge_in_mode: {mode}")
+  enable_experimental_barge_in = _load_enable_experimental_barge_in(config_mgr)
+  mode = DEFAULT_BARGE_IN_MODE
 
   return_mode = config_mgr.config_value(
     "voice",
@@ -565,17 +549,8 @@ def load_barge_in_config(config_mgr: ConfigManager) -> BargeInConfig:
     raise ValueError(f"Unsupported voice.barge_in_return_mode: {return_mode}")
 
   return BargeInConfig(
-    enabled=config_mgr.bool_config_value(
-      "voice",
-      "barge_in_enabled",
-      default=DEFAULT_BARGE_IN_ENABLED,
-    ),
+    enable_experimental_barge_in=enable_experimental_barge_in,
     mode=mode,
-    barge_in_acknowledge_self_trigger_risk=config_mgr.bool_config_value(
-      "voice",
-      "barge_in_acknowledge_self_trigger_risk",
-      default=DEFAULT_BARGE_IN_ACKNOWLEDGE_SELF_TRIGGER_RISK,
-    ),
     min_speech_ms=config_mgr.int_config_value(
       "voice",
       "barge_in_min_speech_ms",
@@ -658,3 +633,36 @@ def load_barge_in_config(config_mgr: ConfigManager) -> BargeInConfig:
       default=DEFAULT_OPENWAKEWORD_FRAME_MS,
     ),
   )
+
+
+def _load_enable_experimental_barge_in(config_mgr: ConfigManager) -> bool:
+  """Load the stable experimental barge-in flag with legacy fallback."""
+  if config_mgr.config.has_section("voice") and config_mgr.config.has_option(
+    "voice",
+    "enable_experimental_barge_in",
+  ):
+    return config_mgr.bool_config_value(
+      "voice",
+      "enable_experimental_barge_in",
+      default=DEFAULT_ENABLE_EXPERIMENTAL_BARGE_IN,
+    )
+
+  legacy_enabled = config_mgr.bool_config_value(
+    "voice",
+    "barge_in_enabled",
+    default=DEFAULT_ENABLE_EXPERIMENTAL_BARGE_IN,
+  )
+  if not legacy_enabled:
+    return False
+
+  legacy_mode = config_mgr.config_value(
+    "voice",
+    "barge_in_mode",
+    default=DEFAULT_BARGE_IN_MODE,
+  ).strip().lower()
+  legacy_ack = config_mgr.bool_config_value(
+    "voice",
+    "barge_in_acknowledge_self_trigger_risk",
+    default=False,
+  )
+  return legacy_mode == "vad" and legacy_ack

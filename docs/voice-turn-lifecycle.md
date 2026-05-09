@@ -170,7 +170,8 @@ If the system needs a truly authoritative turn-complete signal, the emission poi
 The lifecycle contract and the acoustic reality are different problems.
 The lifecycle can be correct while the microphone still hears Orac's own
 TTS output as user speech. That is an acoustic reliability failure, not a
-turn-completion failure.
+turn-completion failure. The interruption policy protects the semantic
+turn state; it does not solve acoustic self-triggering.
 
 On ordinary speakers without echo cancellation, both `vad` barge-in and
 `openwakeword` barge-in are unsafe. They can self-trigger on assistant
@@ -178,12 +179,15 @@ speech.
 
 Supported modes:
 
-- Stable mode: `barge_in_enabled=false`
-- Experimental mode: `barge_in_enabled=true`,
-  `barge_in_mode=vad`,
-  `barge_in_acknowledge_self_trigger_risk=true`
+- Stable mode: `enable_experimental_barge_in=false`
+- Experimental mode: `enable_experimental_barge_in=true`
 - Reliable full-duplex mode: headphones, a directional mic, echo
   cancellation, or another physically separate audio path
+
+The local voice stack currently has one experimental barge-in path: VAD.
+It is intentionally not exposed as a production-safe speaker mode.
+The legacy multi-key gate is deprecated; the single controlling flag is
+`enable_experimental_barge_in`.
 
 ### When the monitor starts
 
@@ -220,15 +224,11 @@ Today, the system uses `tts_playback_cancelled` at the utterance level and then 
 
 If the implementation needs to distinguish natural completion from cancellation at the protocol level, the schema should grow a dedicated terminal cancel event. Until then, `voice_turn_complete` remains the only turn terminal.
 
-### Why `openwakeword` barge-in is disabled on speakers
+`openwakeword` barge-in remains disabled for the local desktop path. It
+is too easy to self-trigger on Orac's own speech without echo
+cancellation.
 
-`openwakeword` barge-in is unsafe on ordinary speakers because it listens for the wake word while Orac itself is speaking.
-
-Without strong echo cancellation or headphones, it will false-trigger on Orac's own output and cancel the active turn. That is a model-level property of the setup, not a cosmetic bug.
-
-For live interruption on speakers, `vad` barge-in is the safer mode because it detects generic user speech instead of wake-word identity.
-
-### How VAD barge-in should behave
+### How experimental VAD barge-in should behave
 
 - Listen only while Orac is speaking.
 - Ignore an initial grace window so the start of Orac's own speech is not treated as user speech.
