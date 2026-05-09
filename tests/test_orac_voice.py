@@ -20,6 +20,7 @@ import time
 import types
 import unittest
 from unittest.mock import patch
+import wave
 
 import numpy as np
 
@@ -64,11 +65,15 @@ from orac_voice.activation import EnterActivationListener
 from orac_voice.activation import VoiceActivationError
 from orac_voice.activation import WakeWordActivationListener
 from orac_voice.audio_capture import _normalise_input_device
+from orac_voice.audio_playback import LocalAudioPlayback
+from orac_voice.audio_playback import NativeAudioPlayback
+from orac_voice.playback_reference_resampler import PlaybackReferenceResampler
 from orac_voice.barge_in import BargeInConfig
 from orac_voice.barge_in import BargeInController
 from orac_voice.barge_in import BargeInResult
 from orac_voice.barge_in import OpenWakeWordBargeInController
 from orac_voice.barge_in import VAD_BARGE_IN_EXPERIMENTAL_WARNING
+from orac_voice.barge_in import WAKEWORD_BARGE_IN_EXPERIMENTAL_WARNING
 from orac_voice.barge_in import load_barge_in_config
 from orac_voice.interruption_policy import InterruptionAction
 from orac_voice.interruption_policy import InterruptionPolicy
@@ -82,6 +87,7 @@ from orac_voice.stt_faster_whisper import _normalise_device
 from orac_voice.tts_coalescer import TtsChunkCoalescer
 from orac_voice.tts_piper import PiperTtsEngine
 from orac_voice.tts_worker import TtsWorker
+import orac_voice.tts_worker as tts_worker_module
 from orac_voice.vad_silero import VadEndpointConfig, VadEndpointDetector
 from orac_voice.audio_capture import VadCaptureResult
 from orac_voice.voice_events import VoiceSttEnded, VoiceSttFinal
@@ -143,6 +149,45 @@ class _FakePlayback:
   def cancel(self) -> None:
     """Record cancellation."""
     self.cancel_calls += 1
+
+
+class _FakeRawOutputStream:
+  """Fake sounddevice raw output stream used by native playback tests."""
+
+  def __init__(self, state: dict, **kwargs) -> None:
+    self.state = state
+    self.kwargs = kwargs
+
+  def __enter__(self):
+    self.state["entered"] = True
+    return self
+
+  def __exit__(self, exc_type, exc, tb):
+    self.state["exited"] = True
+    return False
+
+  def write(self, data: bytes) -> None:
+    self.state["writes"].append(bytes(data))
+    self.state["write_started"].set()
+    if self.state["block_on_write"]:
+      self.state["release_write"].wait(timeout=2.0)
+      if self.state["abort_requested"]:
+        raise RuntimeError("aborted")
+
+  def abort(self) -> None:
+    self.state["abort_requested"] = True
+    self.state["release_write"].set()
+
+
+class _FakeSoundDeviceModule:
+  """Fake sounddevice module used to exercise native playback."""
+
+  def __init__(self, state: dict) -> None:
+    self.state = state
+
+  def RawOutputStream(self, **kwargs):
+    self.state["kwargs"] = kwargs
+    return _FakeRawOutputStream(self.state, **kwargs)
 
 
 class _FakeDisplaySender:
@@ -1057,7 +1102,7 @@ class OracVoiceTests(unittest.TestCase):
     controller = OpenWakeWordBargeInController(
       config=BargeInConfig(
         enable_experimental_barge_in=True,
-        mode="openwakeword",
+        mode="wakeword",
         grace_ms=100,
         ignore_during_tts_start_ms=100,
         openwakeword_threshold=0.75,
@@ -1077,7 +1122,7 @@ class OracVoiceTests(unittest.TestCase):
     controller = OpenWakeWordBargeInController(
       config=BargeInConfig(
         enable_experimental_barge_in=True,
-        mode="openwakeword",
+        mode="wakeword",
         grace_ms=100,
         ignore_during_tts_start_ms=100,
         openwakeword_threshold=0.75,
@@ -1110,11 +1155,21 @@ class OracVoiceTests(unittest.TestCase):
     controller_cls.assert_not_called()
 
   def test_default_voice_config_keeps_barge_in_disabled(self) -> None:
-    """The repository voice config should keep barge-in disabled by default."""
-    config_mgr = ConfigManager(
-      config_file_path=PROJECT_ROOT / "resources" / "config" / "orac.ini"
-    )
-    config = load_barge_in_config(config_mgr)
+    """A config without barge-in keys should keep barge-in disabled."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      config_path = Path(tmp_name) / "orac.ini"
+      config_path.write_text(
+        "\n".join(
+          [
+            "[voice]",
+            "enabled = true",
+            "mode = local",
+          ]
+        ),
+        encoding="utf-8",
+      )
+      config_mgr = ConfigManager(config_file_path=config_path)
+      config = load_barge_in_config(config_mgr)
 
     self.assertFalse(config.enable_experimental_barge_in)
 
@@ -1127,7 +1182,7 @@ class OracVoiceTests(unittest.TestCase):
           [
             "[voice]",
             "barge_in_enabled = true",
-            "barge_in_mode = vad",
+            "barge_in_mode = wakeword",
             "barge_in_acknowledge_self_trigger_risk = true",
           ]
         ),
@@ -1137,6 +1192,47 @@ class OracVoiceTests(unittest.TestCase):
       config = load_barge_in_config(config_mgr)
 
     self.assertTrue(config.enable_experimental_barge_in)
+    self.assertEqual(config.mode, "wakeword")
+
+  def test_barge_in_config_uses_explicit_wakeword_mode(self) -> None:
+    """Explicit wakeword mode should load as the canonical wakeword trigger."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      config_path = Path(tmp_name) / "orac.ini"
+      config_path.write_text(
+        "\n".join(
+          [
+            "[voice]",
+            "enable_experimental_barge_in = true",
+            "barge_in_mode = wakeword",
+          ]
+        ),
+        encoding="utf-8",
+      )
+      config_mgr = ConfigManager(config_file_path=config_path)
+      config = load_barge_in_config(config_mgr)
+
+    self.assertTrue(config.enable_experimental_barge_in)
+    self.assertEqual(config.mode, "wakeword")
+
+  def test_legacy_openwakeword_mode_alias_maps_to_wakeword(self) -> None:
+    """Legacy openWakeWord mode should normalise to wakeword."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      config_path = Path(tmp_name) / "orac.ini"
+      config_path.write_text(
+        "\n".join(
+          [
+            "[voice]",
+            "enable_experimental_barge_in = true",
+            "barge_in_mode = openwakeword",
+          ]
+        ),
+        encoding="utf-8",
+      )
+      config_mgr = ConfigManager(config_file_path=config_path)
+      config = load_barge_in_config(config_mgr)
+
+    self.assertTrue(config.enable_experimental_barge_in)
+    self.assertEqual(config.mode, "wakeword")
 
   def test_barge_in_controller_starts_vad_with_acknowledgement(self) -> None:
     """Enabled experimental VAD mode should start the monitoring thread."""
@@ -1156,6 +1252,43 @@ class OracVoiceTests(unittest.TestCase):
 
     self.assertGreaterEqual(source.start_calls, 1)
     self.assertGreaterEqual(source.close_calls, 1)
+
+  def test_barge_in_controller_starts_wakeword_monitor(self) -> None:
+    """Enabled experimental wakeword mode should start the monitoring thread."""
+    source = _FakeOpenWakeWordBargeInSource(frames=1)
+    controller = OpenWakeWordBargeInController(
+      config=BargeInConfig(
+        enable_experimental_barge_in=True,
+        mode="wakeword",
+      ),
+      audio_source=source,
+      model_factory=lambda: _FakeOpenWakeWordBargeInModel([]),
+    )
+
+    controller.start()
+    time.sleep(0.05)
+    controller.stop()
+
+    self.assertGreaterEqual(source.start_calls, 1)
+    self.assertGreaterEqual(source.close_calls, 1)
+
+  def test_barge_in_factory_enables_wakeword_controller(self) -> None:
+    """Enabled experimental wakeword mode should construct its controller."""
+    config = BargeInConfig(
+      enable_experimental_barge_in=True,
+      mode="wakeword",
+    )
+    with patch(
+      "orac_voice.voice_loop_local.load_barge_in_config",
+      return_value=config,
+    ):
+      with patch("orac_voice.voice_loop_local.logger.warning") as warning_mock:
+        controller = _create_barge_in_controller()
+
+    self.assertIsInstance(controller, OpenWakeWordBargeInController)
+    warning_mock.assert_called_once_with(
+      WAKEWORD_BARGE_IN_EXPERIMENTAL_WARNING
+    )
 
   def test_barge_in_factory_enables_experimental_controller(self) -> None:
     """Enabled experimental barge-in should construct a controller."""
@@ -1608,6 +1741,480 @@ class OracVoiceTests(unittest.TestCase):
       event_types.index("VoiceTtsPlaybackFinished"),
       event_types.index("VoiceTurnComplete"),
     )
+
+  def test_local_tts_worker_defaults_to_shell_playback_backend(self) -> None:
+    """Shell playback should remain the default local backend."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      orac_home = Path(tmp_name)
+      config_dir = orac_home / "resources" / "config"
+      config_dir.mkdir(parents=True, exist_ok=True)
+      (config_dir / "orac.ini").write_text(
+        "\n".join(
+          [
+            "[voice]",
+            "enabled = true",
+            "mode = local",
+            "tts_engine = piper",
+          ]
+        ),
+        encoding="utf-8",
+      )
+      with patch.object(
+        tts_worker_module,
+        "resolve_orac_home",
+        return_value=orac_home,
+      ), patch.object(
+        tts_worker_module.PiperTtsEngine,
+        "from_config",
+        return_value=object(),
+      ):
+        worker = tts_worker_module.create_local_tts_worker_from_config()
+
+    self.assertIsNotNone(worker)
+    self.assertIsInstance(worker.audio_playback, LocalAudioPlayback)
+
+  def test_local_tts_worker_can_select_native_playback_backend(self) -> None:
+    """Native playback should be selectable through config."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      orac_home = Path(tmp_name)
+      config_dir = orac_home / "resources" / "config"
+      config_dir.mkdir(parents=True, exist_ok=True)
+      (config_dir / "orac.ini").write_text(
+        "\n".join(
+          [
+            "[voice]",
+            "enabled = true",
+            "mode = local",
+            "tts_engine = piper",
+            "playback_backend = native",
+          ]
+        ),
+        encoding="utf-8",
+      )
+      with patch.object(
+        tts_worker_module,
+        "resolve_orac_home",
+        return_value=orac_home,
+      ), patch.object(
+        tts_worker_module.PiperTtsEngine,
+        "from_config",
+        return_value=object(),
+      ):
+        worker = tts_worker_module.create_local_tts_worker_from_config()
+
+    self.assertIsNotNone(worker)
+    self.assertIsInstance(worker.audio_playback, NativeAudioPlayback)
+    self.assertIsNotNone(worker._playback_reference_bridge)
+
+  def test_native_playback_invokes_pcm_frame_hook(self) -> None:
+    """Native playback should expose the PCM frames it sends to output."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      wav_path = Path(tmp_name) / "sample.wav"
+      sample_rate = 16000
+      channels = 1
+      sample_width = 2
+      pcm = np.arange(320, dtype=np.int16).tobytes()
+      with wave.open(str(wav_path), "wb") as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sample_width)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm)
+
+      state = {
+        "writes": [],
+        "block_on_write": False,
+        "release_write": threading.Event(),
+        "write_started": threading.Event(),
+        "abort_requested": False,
+        "entered": False,
+        "exited": False,
+      }
+      frames: list[tuple[bytes, int, int, int]] = []
+      playback = NativeAudioPlayback(
+        on_playback_frame=lambda frame, sr, ch, sw: frames.append(
+          (frame, sr, ch, sw)
+        ),
+        sounddevice_module=_FakeSoundDeviceModule(state),
+      )
+
+      playback.play_wav(wav_path)
+
+    self.assertTrue(state["entered"])
+    self.assertTrue(state["exited"])
+    self.assertGreaterEqual(len(frames), 1)
+    self.assertEqual(frames[0][1:], (sample_rate, channels, sample_width))
+    self.assertEqual(state["writes"], [pcm[i : i + 320] for i in range(0, 640, 320)])
+
+  def test_native_playback_cancel_stops_active_stream(self) -> None:
+    """Native playback cancellation should abort the active stream."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      wav_path = Path(tmp_name) / "sample.wav"
+      sample_rate = 16000
+      channels = 1
+      sample_width = 2
+      pcm = np.arange(320, dtype=np.int16).tobytes()
+      with wave.open(str(wav_path), "wb") as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sample_width)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm)
+
+      state = {
+        "writes": [],
+        "block_on_write": True,
+        "release_write": threading.Event(),
+        "write_started": threading.Event(),
+        "abort_requested": False,
+        "entered": False,
+        "exited": False,
+      }
+      playback = NativeAudioPlayback(
+        sounddevice_module=_FakeSoundDeviceModule(state),
+      )
+      errors: list[Exception] = []
+
+      def _play() -> None:
+        try:
+          playback.play_wav(wav_path)
+        except Exception as exc:  # pragma: no cover - exercised in test
+          errors.append(exc)
+
+      thread = threading.Thread(target=_play, daemon=True)
+      thread.start()
+      self.assertTrue(state["write_started"].wait(timeout=2.0))
+      playback.cancel()
+      thread.join(timeout=2.0)
+
+    self.assertFalse(thread.is_alive())
+    self.assertTrue(state["abort_requested"])
+    self.assertTrue(errors)
+    self.assertIsInstance(errors[0], RuntimeError)
+
+  def test_native_playback_reference_resampler_emits_turn_frames(self) -> None:
+    """Native playback should feed the resampler during a TTS turn."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      wav_path = Path(tmp_name) / "sample.wav"
+      sample_rate = 22050
+      channels = 1
+      sample_width = 2
+      pcm = np.arange(2205, dtype=np.int16).tobytes()
+      with wave.open(str(wav_path), "wb") as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sample_width)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm)
+
+      state = {
+        "writes": [],
+        "block_on_write": False,
+        "release_write": threading.Event(),
+        "write_started": threading.Event(),
+        "abort_requested": False,
+        "entered": False,
+        "exited": False,
+      }
+      worker = TtsWorker(
+        tts_engine=_FakeTtsEngine(wav_path=wav_path),
+        audio_playback=NativeAudioPlayback(
+          sounddevice_module=_FakeSoundDeviceModule(state),
+        ),
+      )
+      worker.enable_playback_reference_resampling()
+      worker.start()
+
+      worker.enqueue_text(session_id="s1", turn_id="t1", text="Hello there.")
+      worker.mark_turn_input_complete(session_id="s1", turn_id="t1")
+      self.assertTrue(worker.wait_until_idle(timeout=2.0))
+      worker.stop()
+
+    bridge = worker._playback_reference_bridge
+    self.assertIsNotNone(bridge)
+    assert bridge is not None
+    self.assertEqual(bridge.last_completed_turn_id, "t1")
+    self.assertEqual(bridge.last_completed_frames_emitted, 10)
+    self.assertIsNone(bridge.current_turn_id)
+    self.assertTrue(state["entered"])
+    self.assertTrue(state["exited"])
+
+  def test_playback_reference_state_resets_between_turns(self) -> None:
+    """Playback reference state should not bleed across turns."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      wav_path = Path(tmp_name) / "sample.wav"
+      sample_rate = 22050
+      channels = 1
+      sample_width = 2
+      pcm = np.arange(2205, dtype=np.int16).tobytes()
+      with wave.open(str(wav_path), "wb") as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sample_width)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm)
+
+      state = {
+        "writes": [],
+        "block_on_write": False,
+        "release_write": threading.Event(),
+        "write_started": threading.Event(),
+        "abort_requested": False,
+        "entered": False,
+        "exited": False,
+      }
+      worker = TtsWorker(
+        tts_engine=_FakeTtsEngine(wav_path=wav_path),
+        audio_playback=NativeAudioPlayback(
+          sounddevice_module=_FakeSoundDeviceModule(state),
+        ),
+      )
+      worker.enable_playback_reference_resampling()
+      worker.start()
+
+      worker.enqueue_text(session_id="s1", turn_id="t1", text="First.")
+      worker.mark_turn_input_complete(session_id="s1", turn_id="t1")
+      self.assertTrue(worker.wait_until_idle(timeout=2.0))
+
+      bridge = worker._playback_reference_bridge
+      self.assertIsNotNone(bridge)
+      assert bridge is not None
+      self.assertEqual(bridge.last_completed_turn_id, "t1")
+      self.assertEqual(bridge.last_completed_frames_emitted, 10)
+      self.assertIsNone(bridge.current_turn_id)
+
+      worker.enqueue_text(session_id="s1", turn_id="t2", text="Second.")
+      worker.mark_turn_input_complete(session_id="s1", turn_id="t2")
+      self.assertTrue(worker.wait_until_idle(timeout=2.0))
+      worker.stop()
+
+    self.assertEqual(bridge.last_completed_turn_id, "t2")
+    self.assertEqual(bridge.last_completed_frames_emitted, 10)
+    self.assertIsNone(bridge.current_turn_id)
+
+  def test_cancelled_playback_resets_reference_state(self) -> None:
+    """Cancelled playback should not leak reference state to the next turn."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      wav_path = Path(tmp_name) / "sample.wav"
+      sample_rate = 22050
+      channels = 1
+      sample_width = 2
+      pcm = np.arange(2205, dtype=np.int16).tobytes()
+      with wave.open(str(wav_path), "wb") as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sample_width)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm)
+
+      state = {
+        "writes": [],
+        "block_on_write": True,
+        "release_write": threading.Event(),
+        "write_started": threading.Event(),
+        "abort_requested": False,
+        "entered": False,
+        "exited": False,
+      }
+      worker = TtsWorker(
+        tts_engine=_FakeTtsEngine(wav_path=wav_path),
+        audio_playback=NativeAudioPlayback(
+          sounddevice_module=_FakeSoundDeviceModule(state),
+        ),
+      )
+      worker.enable_playback_reference_resampling()
+      worker.start()
+
+      worker.enqueue_text(session_id="s1", turn_id="t1", text="Cancel me.")
+      worker.mark_turn_input_complete(session_id="s1", turn_id="t1")
+      self.assertTrue(state["write_started"].wait(timeout=2.0))
+      worker.cancel_turn(session_id="s1", turn_id="t1")
+      self.assertTrue(worker.wait_until_idle(timeout=2.0))
+
+      bridge = worker._playback_reference_bridge
+      self.assertIsNotNone(bridge)
+      assert bridge is not None
+      self.assertEqual(bridge.last_cancelled_turn_id, "t1")
+      self.assertIsNone(bridge.current_turn_id)
+
+      state["block_on_write"] = False
+      state["release_write"].set()
+      worker.enqueue_text(session_id="s1", turn_id="t2", text="Next turn.")
+      worker.mark_turn_input_complete(session_id="s1", turn_id="t2")
+      self.assertTrue(worker.wait_until_idle(timeout=2.0))
+      worker.stop()
+
+    self.assertEqual(bridge.last_completed_turn_id, "t2")
+    self.assertEqual(bridge.last_completed_frames_emitted, 10)
+    self.assertIsNone(bridge.current_turn_id)
+
+  def test_playback_reference_resampler_passes_through_16khz_frames(self) -> None:
+    """16 kHz mono int16 input should reframe without resampling."""
+    frames: list[tuple[bytes, int, int, int]] = []
+    resampler = PlaybackReferenceResampler(
+      on_reference_frame=lambda frame, sr, ch, sw: frames.append(
+        (frame, sr, ch, sw)
+      )
+    )
+
+    first_chunk = np.arange(80, dtype=np.int16).tobytes()
+    second_chunk = np.arange(80, 160, dtype=np.int16).tobytes()
+
+    self.assertEqual(
+      resampler.handle_playback_frame(
+        first_chunk,
+        sample_rate=16000,
+        channels=1,
+        sample_width=2,
+      ),
+      0,
+    )
+    self.assertEqual(
+      resampler.handle_playback_frame(
+        second_chunk,
+        sample_rate=16000,
+        channels=1,
+        sample_width=2,
+      ),
+      1,
+    )
+
+    self.assertEqual(len(frames), 1)
+    self.assertEqual(frames[0][1:], (16000, 1, 2))
+    self.assertEqual(frames[0][0], np.arange(160, dtype=np.int16).tobytes())
+
+  def test_playback_reference_resampler_resamples_22050_hz_chunks(self) -> None:
+    """22,050 Hz input should emit exact 16 kHz reference frames."""
+    frames: list[tuple[bytes, int, int, int]] = []
+    resampler = PlaybackReferenceResampler(
+      on_reference_frame=lambda frame, sr, ch, sw: frames.append(
+        (frame, sr, ch, sw)
+      )
+    )
+
+    first_chunk = np.arange(1102, dtype=np.int16).tobytes()
+    second_chunk = np.arange(1102, 2205, dtype=np.int16).tobytes()
+
+    emitted_first = resampler.handle_playback_frame(
+      first_chunk,
+      sample_rate=22050,
+      channels=1,
+      sample_width=2,
+    )
+    emitted_second = resampler.handle_playback_frame(
+      second_chunk,
+      sample_rate=22050,
+      channels=1,
+      sample_width=2,
+    )
+
+    self.assertGreater(emitted_first, 0)
+    self.assertGreater(emitted_second, 0)
+    self.assertEqual(len(frames), 10)
+    self.assertTrue(
+      all(
+        len(frame) == 320 and sr == 16000 and ch == 1 and sw == 2
+        for frame, sr, ch, sw in frames
+      )
+    )
+
+  def test_playback_reference_resampler_buffers_partial_chunks(self) -> None:
+    """Partial playback chunks should not emit a frame early."""
+    frames: list[tuple[bytes, int, int, int]] = []
+    resampler = PlaybackReferenceResampler(
+      on_reference_frame=lambda frame, sr, ch, sw: frames.append(
+        (frame, sr, ch, sw)
+      )
+    )
+
+    self.assertEqual(
+      resampler.handle_playback_frame(
+        np.arange(80, dtype=np.int16).tobytes(),
+        sample_rate=16000,
+        channels=1,
+        sample_width=2,
+      ),
+      0,
+    )
+    self.assertEqual(
+      resampler.handle_playback_frame(
+        np.arange(80, 159, dtype=np.int16).tobytes(),
+        sample_rate=16000,
+        channels=1,
+        sample_width=2,
+      ),
+      0,
+    )
+    self.assertEqual(
+      resampler.handle_playback_frame(
+        np.arange(159, 160, dtype=np.int16).tobytes(),
+        sample_rate=16000,
+        channels=1,
+        sample_width=2,
+      ),
+      1,
+    )
+
+    self.assertEqual(len(frames), 1)
+    self.assertEqual(len(frames[0][0]), 320)
+
+  def test_native_playback_can_feed_reference_resampler_hook(self) -> None:
+    """Native playback should be able to drive the resampler hook."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      wav_path = Path(tmp_name) / "sample.wav"
+      sample_rate = 22050
+      channels = 1
+      sample_width = 2
+      pcm = np.arange(2205, dtype=np.int16).tobytes()
+      with wave.open(str(wav_path), "wb") as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sample_width)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm)
+
+      state = {
+        "writes": [],
+        "block_on_write": False,
+        "release_write": threading.Event(),
+        "write_started": threading.Event(),
+        "abort_requested": False,
+        "entered": False,
+        "exited": False,
+      }
+      frames: list[tuple[bytes, int, int, int]] = []
+      resampler = PlaybackReferenceResampler(
+        on_reference_frame=lambda frame, sr, ch, sw: frames.append(
+          (frame, sr, ch, sw)
+        )
+      )
+      playback = NativeAudioPlayback(
+        on_playback_frame=resampler.handle_playback_frame,
+        sounddevice_module=_FakeSoundDeviceModule(state),
+      )
+
+      playback.play_wav(wav_path)
+
+    self.assertTrue(state["entered"])
+    self.assertTrue(state["exited"])
+    self.assertTrue(frames)
+    self.assertTrue(
+      all(len(frame) == 320 and sr == 16000 and ch == 1 and sw == 2
+          for frame, sr, ch, sw in frames)
+    )
+
+  def test_playback_reference_resampler_rejects_unsupported_formats(self) -> None:
+    """Unsupported playback formats should fail clearly."""
+    resampler = PlaybackReferenceResampler()
+    with self.assertRaisesRegex(RuntimeError, "mono playback PCM"):
+      resampler.handle_playback_frame(
+        np.arange(160, dtype=np.int16).tobytes(),
+        sample_rate=16000,
+        channels=2,
+        sample_width=2,
+      )
+
+    with self.assertRaisesRegex(RuntimeError, "16-bit PCM"):
+      resampler.handle_playback_frame(
+        np.arange(160, dtype=np.int16).tobytes(),
+        sample_rate=16000,
+        channels=1,
+        sample_width=1,
+      )
 
   def test_orac_forwards_tts_playback_events_to_subscribers(self) -> None:
     """Orac should publish TTS playback events to active voice streams."""

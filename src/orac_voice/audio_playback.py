@@ -1,22 +1,28 @@
 """Local audio playback abstraction for Orac voice output.
 
 # Author: Clive Bostock
-# Date: 2026-05-04
-# Description: Provides local WAV playback behind a replaceable interface.
+# Date: 2026-05-09
+# Description: Provides shell and native local WAV playback behind a replaceable interface.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
+import importlib
 from pathlib import Path
 import shutil
 import subprocess
 import threading
+import time
+import wave
 from typing import Protocol
 
 from loguru import logger
 
 
 DEFAULT_PLAYBACK_TIMEOUT_SECONDS = 30
+DEFAULT_NATIVE_PLAYBACK_FRAME_MS = 10
+PlaybackFrameHandler = Callable[[bytes, int, int, int], None]
 
 
 class AudioPlayback(Protocol):
@@ -187,3 +193,169 @@ class LocalAudioPlayback:
     if len(cleaned) <= limit:
       return cleaned
     return cleaned[:limit].rstrip() + "..."
+
+
+class NativeAudioPlayback:
+  """Play WAV files through ``sounddevice`` while exposing PCM frames.
+
+  The native backend is experimental and exists so future AEC wiring can
+  receive the exact playback PCM frames before they are sent to the output
+  device.
+  """
+
+  def __init__(
+    self,
+    *,
+    on_playback_frame: PlaybackFrameHandler | None = None,
+    frame_ms: int = DEFAULT_NATIVE_PLAYBACK_FRAME_MS,
+    timeout_seconds: int = DEFAULT_PLAYBACK_TIMEOUT_SECONDS,
+    device: str | int | None = None,
+    sounddevice_module=None,
+  ) -> None:
+    """Initialise the experimental native playback backend.
+
+    Args:
+      on_playback_frame (PlaybackFrameHandler | None): Optional PCM hook.
+      frame_ms (int): Target frame duration in milliseconds.
+      timeout_seconds (int): Maximum playback time before cancellation.
+      device (str | int | None): Optional sounddevice output device.
+      sounddevice_module: Optional dependency injection hook for tests.
+    """
+    self.on_playback_frame = on_playback_frame
+    self.frame_ms = frame_ms
+    self.timeout_seconds = timeout_seconds
+    self.device = device
+    self._sounddevice = sounddevice_module
+    self._process_lock = threading.Lock()
+    self._active_stream = None
+    self._cancel_requested = threading.Event()
+
+  def set_playback_frame_handler(
+    self,
+    handler: PlaybackFrameHandler | None,
+  ) -> None:
+    """Set or clear the PCM hook used for playback frame inspection.
+
+    Args:
+      handler (PlaybackFrameHandler | None): Optional PCM hook.
+    """
+    self.on_playback_frame = handler
+
+  def _load_sounddevice(self):
+    """Return the ``sounddevice`` module or fail clearly.
+
+    Returns:
+      module: Imported ``sounddevice`` module.
+
+    Raises:
+      RuntimeError: If the dependency is missing.
+    """
+    if self._sounddevice is not None:
+      return self._sounddevice
+    try:
+      self._sounddevice = importlib.import_module("sounddevice")
+    except ImportError as exc:
+      raise RuntimeError(
+        "playback_backend=native requires the sounddevice package"
+      ) from exc
+    return self._sounddevice
+
+  def play_wav(self, wav_path: Path) -> None:
+    """Play a WAV file through the native PCM path.
+
+    Args:
+      wav_path (Path): Path to a WAV file.
+
+    Raises:
+      FileNotFoundError: If the WAV file does not exist.
+      RuntimeError: If playback fails or is cancelled.
+    """
+    if not wav_path.exists():
+      raise FileNotFoundError(f"WAV file does not exist: {wav_path}")
+
+    sd = self._load_sounddevice()
+    self._cancel_requested.clear()
+    logger.debug("Playing generated voice WAV with native sounddevice backend")
+
+    with wave.open(str(wav_path), "rb") as wav_file:
+      channels = wav_file.getnchannels()
+      sample_width = wav_file.getsampwidth()
+      sample_rate = wav_file.getframerate()
+      frame_samples = max(1, round(sample_rate * self.frame_ms / 1000))
+      frame_bytes = frame_samples * channels * sample_width
+      logger.info(
+        (
+          "Native playback backend selected: sample_rate={} channels={} "
+          "sample_width={} frame_samples={} frame_bytes={} device={}"
+        ),
+        sample_rate,
+        channels,
+        sample_width,
+        frame_samples,
+        frame_bytes,
+        self.device,
+      )
+      if self.on_playback_frame is not None:
+        logger.debug("Native playback frame hook configured")
+
+      stream = sd.RawOutputStream(
+        samplerate=sample_rate,
+        channels=channels,
+        dtype=self._dtype_for_sample_width(sample_width),
+        blocksize=frame_samples,
+        device=self.device,
+      )
+      deadline = time.monotonic() + self.timeout_seconds if self.timeout_seconds else None
+      with stream:
+        with self._process_lock:
+          self._active_stream = stream
+        try:
+          first_frame_logged = False
+          while not self._cancel_requested.is_set():
+            if deadline is not None and time.monotonic() > deadline:
+              raise RuntimeError("Audio playback timed out")
+            chunk = wav_file.readframes(frame_samples)
+            if not chunk:
+              break
+            if self.on_playback_frame is not None:
+              self.on_playback_frame(chunk, sample_rate, channels, sample_width)
+            if not first_frame_logged:
+              logger.debug(
+                "Native playback frame hook invoked: sample_rate={} channels={} sample_width={} frame_bytes={}",
+                sample_rate,
+                channels,
+                sample_width,
+                len(chunk),
+              )
+              first_frame_logged = True
+            stream.write(chunk)
+          if self._cancel_requested.is_set():
+            raise RuntimeError("Audio playback cancelled")
+        finally:
+          with self._process_lock:
+            if self._active_stream is stream:
+              self._active_stream = None
+
+  def cancel(self) -> None:
+    """Cancel native playback if a stream is active."""
+    self._cancel_requested.set()
+    with self._process_lock:
+      stream = self._active_stream
+    if stream is None:
+      return
+    logger.info("Terminating native audio playback stream: cancellation requested")
+    try:
+      stream.abort()
+    except Exception as exc:  # pragma: no cover - defensive cleanup
+      logger.debug("Native playback abort request failed: {}", exc)
+
+  @staticmethod
+  def _dtype_for_sample_width(sample_width: int) -> str:
+    """Return a ``sounddevice`` dtype for one PCM sample width."""
+    if sample_width == 1:
+      return "uint8"
+    if sample_width == 2:
+      return "int16"
+    if sample_width == 4:
+      return "int32"
+    raise RuntimeError(f"Unsupported PCM sample width for native playback: {sample_width}")

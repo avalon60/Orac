@@ -1,7 +1,7 @@
 """Local voice support package for Orac.
 
 # Author: Clive Bostock
-# Date: 2026-05-04
+# Date: 2026-05-09
 # Description: Provides local text-to-speech interfaces and workers.
 """
 
@@ -14,6 +14,10 @@ from orac_voice.activation import VoiceActivationResult
 from orac_voice.activation import WakeWordActivationListener
 from orac_voice.audio_capture import AudioCapture, SoundDeviceAudioCapture
 from orac_voice.audio_playback import AudioPlayback, LocalAudioPlayback
+from orac_voice.audio_playback import NativeAudioPlayback
+from orac_voice.audio_playback import PlaybackFrameHandler
+from orac_voice.playback_reference_resampler import PlaybackReferenceFrameHandler
+from orac_voice.playback_reference_resampler import PlaybackReferenceResampler
 from orac_voice.barge_in import BargeInConfig
 from orac_voice.barge_in import BargeInController
 from orac_voice.barge_in import BargeInResult
@@ -62,9 +66,13 @@ __all__ = [
   "EnterActivationListener",
   "FasterWhisperSttEngine",
   "LocalAudioPlayback",
+  "NativeAudioPlayback",
   "OpenWakeWordActivationListener",
   "PiperTtsEngine",
   "PorcupineActivationListener",
+  "PlaybackFrameHandler",
+  "PlaybackReferenceFrameHandler",
+  "PlaybackReferenceResampler",
   "SoundDeviceAudioCapture",
   "SttEngine",
   "SttPhraseWakeWordActivationListener",

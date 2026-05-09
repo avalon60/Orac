@@ -1,7 +1,7 @@
 """Queue-based text-to-speech worker for Orac.
 
 # Author: Clive Bostock
-# Date: 2026-05-04
+# Date: 2026-05-09
 # Description: Provides non-blocking queued local TTS processing.
 """
 
@@ -18,6 +18,9 @@ from loguru import logger
 
 from orac_voice.audio_playback import AudioPlayback
 from orac_voice.audio_playback import LocalAudioPlayback
+from orac_voice.audio_playback import NativeAudioPlayback
+from orac_voice.audio_playback import PlaybackFrameHandler
+from orac_voice.playback_reference_resampler import PlaybackReferenceResampler
 from orac_voice.tts_piper import TtsEngine
 from orac_voice.tts_piper import PiperTtsEngine
 from orac_voice.tts_piper import resolve_orac_home
@@ -48,6 +51,217 @@ class _TurnLifecycle:
   terminal: int = 0
   input_complete: bool = False
   complete_emitted: bool = False
+
+
+class _PlaybackReferenceBridge:
+  """Turn-scoped playback reference state for native local playback.
+
+  The bridge keeps the resampler isolated from stale playback turns and
+  records simple per-turn counters for future AEC wiring and diagnostics.
+  """
+
+  def __init__(self) -> None:
+    """Initialise the playback reference bridge."""
+    self._resampler = PlaybackReferenceResampler()
+    self.current_session_id: str | None = None
+    self.current_turn_id: str | None = None
+    self.current_turn_frames_emitted = 0
+    self.last_completed_session_id: str | None = None
+    self.last_completed_turn_id: str | None = None
+    self.last_completed_frames_emitted = 0
+    self.last_completed_reason: str | None = None
+    self.last_cancelled_session_id: str | None = None
+    self.last_cancelled_turn_id: str | None = None
+    self.last_cancelled_frames_emitted = 0
+    self.last_cancelled_reason: str | None = None
+
+  def begin_turn(self, *, session_id: str, turn_id: str) -> None:
+    """Start or switch to a new playback turn.
+
+    Args:
+      session_id (str): Session identifier.
+      turn_id (str): Turn identifier.
+    """
+    if not session_id or not turn_id:
+      return
+    if (
+      self.current_session_id == session_id
+      and self.current_turn_id == turn_id
+    ):
+      return
+    if self.current_turn_id is not None:
+      logger.warning(
+        (
+          "Resetting stale playback reference turn: session={} turn={} "
+          "next_session={} next_turn={}"
+        ),
+        self.current_session_id,
+        self.current_turn_id,
+        session_id,
+        turn_id,
+      )
+    self._resampler.reset()
+    self.current_session_id = session_id
+    self.current_turn_id = turn_id
+    self.current_turn_frames_emitted = 0
+    logger.debug(
+      "Playback reference turn started: session={} turn={}",
+      session_id,
+      turn_id,
+    )
+
+  def handle_playback_frame(
+    self,
+    frame_bytes: bytes,
+    sample_rate: int,
+    channels: int,
+    sample_width: int,
+  ) -> int:
+    """Resample one playback chunk for the active turn.
+
+    Args:
+      frame_bytes (bytes): Raw PCM bytes from native playback.
+      sample_rate (int): Input sample rate in hertz.
+      channels (int): Input channel count.
+      sample_width (int): Input sample width in bytes.
+
+    Returns:
+      int: Number of reference frames emitted.
+    """
+    if self.current_turn_id is None:
+      logger.debug(
+        (
+          "Discarding playback reference chunk without an active turn: "
+          "sample_rate={} channels={} sample_width={} frame_bytes={}"
+        ),
+        sample_rate,
+        channels,
+        sample_width,
+        len(frame_bytes),
+      )
+      return 0
+
+    emitted = self._resampler.handle_playback_frame(
+      frame_bytes,
+      sample_rate,
+      channels,
+      sample_width,
+    )
+    if emitted:
+      self.current_turn_frames_emitted += emitted
+      logger.debug(
+        (
+          "Playback reference frames emitted: session={} turn={} "
+          "emitted={} total={}"
+        ),
+        self.current_session_id,
+        self.current_turn_id,
+        emitted,
+        self.current_turn_frames_emitted,
+      )
+    return emitted
+
+  def complete_turn(
+    self,
+    *,
+    session_id: str,
+    turn_id: str,
+    reason: str = "completed",
+  ) -> int:
+    """Finish the active playback turn and emit any pending tail frame.
+
+    Args:
+      session_id (str): Session identifier.
+      turn_id (str): Turn identifier.
+      reason (str): Completion reason.
+
+    Returns:
+      int: Number of reference frames emitted during finalisation.
+    """
+    if not self._matches_active_turn(session_id=session_id, turn_id=turn_id):
+      return 0
+    emitted = self._resampler.flush(pad_final=True)
+    total = self.current_turn_frames_emitted + emitted
+    self.last_completed_session_id = session_id
+    self.last_completed_turn_id = turn_id
+    self.last_completed_frames_emitted = total
+    self.last_completed_reason = reason
+    logger.info(
+      (
+        "Playback reference turn completed: session={} turn={} "
+        "frames_emitted={} reason={}"
+      ),
+      session_id,
+      turn_id,
+      total,
+      reason,
+    )
+    self._clear_active_turn()
+    return emitted
+
+  def cancel_turn(
+    self,
+    *,
+    session_id: str,
+    turn_id: str,
+    reason: str = "cancelled",
+  ) -> int:
+    """Cancel the active playback turn and discard buffered reference PCM.
+
+    Args:
+      session_id (str): Session identifier.
+      turn_id (str): Turn identifier.
+      reason (str): Cancellation reason.
+
+    Returns:
+      int: Number of discarded reference frames.
+    """
+    if not self._matches_active_turn(session_id=session_id, turn_id=turn_id):
+      return 0
+    discarded = self.current_turn_frames_emitted
+    self.last_cancelled_session_id = session_id
+    self.last_cancelled_turn_id = turn_id
+    self.last_cancelled_frames_emitted = discarded
+    self.last_cancelled_reason = reason
+    logger.info(
+      (
+        "Playback reference turn cancelled: session={} turn={} "
+        "frames_emitted={} reason={}"
+      ),
+      session_id,
+      turn_id,
+      discarded,
+      reason,
+    )
+    self._resampler.reset()
+    self._clear_active_turn()
+    return discarded
+
+  def reset(self, *, reason: str = "reset") -> None:
+    """Discard any active playback turn without finalising it."""
+    if self.current_turn_id is None:
+      return
+    logger.debug(
+      "Playback reference turn reset: session={} turn={} reason={}",
+      self.current_session_id,
+      self.current_turn_id,
+      reason,
+    )
+    self._resampler.reset()
+    self._clear_active_turn()
+
+  def _matches_active_turn(self, *, session_id: str, turn_id: str) -> bool:
+    """Return whether the supplied turn matches the active playback turn."""
+    return (
+      self.current_session_id == session_id
+      and self.current_turn_id == turn_id
+    )
+
+  def _clear_active_turn(self) -> None:
+    """Clear the active turn bookkeeping."""
+    self.current_session_id = None
+    self.current_turn_id = None
+    self.current_turn_frames_emitted = 0
 
 
 def speech_safe_text(text: str) -> str:
@@ -88,6 +302,7 @@ def create_local_tts_worker_from_config(
   event_handler: EventHandler | None = None,
   voice_name: str | None = None,
   voice_dir: str | None = None,
+  playback_frame_handler: PlaybackFrameHandler | None = None,
 ) -> TtsWorker | None:
   """Create a local TTS worker from the existing Orac voice config.
 
@@ -95,6 +310,7 @@ def create_local_tts_worker_from_config(
     event_handler (EventHandler | None): Optional voice event callback.
     voice_name (str | None): Optional voice override.
     voice_dir (str | None): Optional voice directory override.
+    playback_frame_handler (PlaybackFrameHandler | None): Optional PCM hook.
 
   Returns:
     TtsWorker | None: Worker when voice is enabled, otherwise None.
@@ -122,15 +338,67 @@ def create_local_tts_worker_from_config(
   if engine != "piper":
     raise RuntimeError(f"Unsupported voice TTS engine: {engine}")
 
-  return TtsWorker(
+  playback_backend = config_mgr.config_value(
+    "voice",
+    "playback_backend",
+    default="shell",
+  ).strip().lower()
+  audio_playback = _create_audio_playback(
+    playback_backend=playback_backend,
+    playback_frame_handler=playback_frame_handler,
+    config_mgr=config_mgr,
+  )
+  logger.info("Local playback backend selected: {}", playback_backend)
+
+  worker = TtsWorker(
     tts_engine=PiperTtsEngine.from_config(
       config_file_path=config_path,
       voice_name=voice_name,
       voice_dir=voice_dir,
     ),
-    audio_playback=LocalAudioPlayback(),
+    audio_playback=audio_playback,
     event_handler=event_handler,
   )
+  if playback_backend == "native":
+    worker.enable_playback_reference_resampling()
+  return worker
+
+
+def _create_audio_playback(
+  *,
+  playback_backend: str,
+  playback_frame_handler: PlaybackFrameHandler | None,
+  config_mgr: ConfigManager,
+) -> AudioPlayback:
+  """Create the configured local playback backend.
+
+  Args:
+    playback_backend (str): Playback backend name.
+    playback_frame_handler (PlaybackFrameHandler | None): Optional PCM hook.
+    config_mgr (ConfigManager): Orac config manager.
+
+  Returns:
+    AudioPlayback: Configured playback implementation.
+
+  Raises:
+    RuntimeError: If the backend is unsupported.
+  """
+  cleaned = playback_backend.strip().lower()
+  if cleaned == "shell":
+    return LocalAudioPlayback()
+  if cleaned == "native":
+    frame_ms = int(
+      config_mgr.int_config_value(
+        "voice",
+        "playback_frame_ms",
+        default=10,
+      )
+    )
+    return NativeAudioPlayback(
+      on_playback_frame=playback_frame_handler,
+      frame_ms=frame_ms,
+    )
+  raise RuntimeError(f"Unsupported voice.playback_backend: {playback_backend}")
 
 
 class TtsWorker:
@@ -161,6 +429,7 @@ class TtsWorker:
     self._cancelled_turns: set[tuple[str, str]] = set()
     self._active_chunk: VoiceTextChunk | None = None
     self._turn_states: dict[tuple[str, str], _TurnLifecycle] = {}
+    self._playback_reference_bridge: _PlaybackReferenceBridge | None = None
     self.error_count = 0
     self.last_error: VoiceError | None = None
 
@@ -310,9 +579,77 @@ class TtsWorker:
   def cancel_all(self, *, reason: str = "cancelled") -> int:
     """Cancel all queued and active speech immediately."""
     logger.info("TTS cancellation requested for all sessions: {}", reason)
+    self._reset_playback_reference_turn(reason=reason)
     removed = self.clear(reason=reason)
     self._cancel_active_processes()
     return removed
+
+  def enable_playback_reference_resampling(self) -> None:
+    """Attach the playback reference resampler to native playback.
+
+    The resampler is used only for the experimental native playback path.
+    """
+    if self._playback_reference_bridge is None:
+      self._playback_reference_bridge = _PlaybackReferenceBridge()
+      if isinstance(self.audio_playback, NativeAudioPlayback):
+        self.audio_playback.set_playback_frame_handler(
+          self._playback_reference_bridge.handle_playback_frame,
+        )
+      logger.info(
+        "Playback reference resampling enabled for native playback"
+      )
+
+  def _begin_playback_reference_turn(
+    self,
+    *,
+    session_id: str,
+    turn_id: str,
+  ) -> None:
+    """Begin or reuse the playback reference turn for one chunk."""
+    if self._playback_reference_bridge is None:
+      return
+    self._playback_reference_bridge.begin_turn(
+      session_id=session_id,
+      turn_id=turn_id,
+    )
+
+  def _complete_playback_reference_turn(
+    self,
+    *,
+    session_id: str,
+    turn_id: str,
+    reason: str = "completed",
+  ) -> None:
+    """Complete the active playback reference turn."""
+    if self._playback_reference_bridge is None:
+      return
+    self._playback_reference_bridge.complete_turn(
+      session_id=session_id,
+      turn_id=turn_id,
+      reason=reason,
+    )
+
+  def _cancel_playback_reference_turn(
+    self,
+    *,
+    session_id: str,
+    turn_id: str,
+    reason: str = "cancelled",
+  ) -> None:
+    """Cancel the active playback reference turn."""
+    if self._playback_reference_bridge is None:
+      return
+    self._playback_reference_bridge.cancel_turn(
+      session_id=session_id,
+      turn_id=turn_id,
+      reason=reason,
+    )
+
+  def _reset_playback_reference_turn(self, *, reason: str = "reset") -> None:
+    """Reset the active playback reference turn without finalising it."""
+    if self._playback_reference_bridge is None:
+      return
+    self._playback_reference_bridge.reset(reason=reason)
 
   def clear(self, *, reason: str = "cancelled") -> int:
     """Clear queued chunks as a placeholder for future barge-in support.
@@ -422,6 +759,11 @@ class TtsWorker:
         reason="active speech cancelled",
       )
     )
+    self._cancel_playback_reference_turn(
+      session_id=active.session_id,
+      turn_id=active.turn_id,
+      reason="active speech cancelled",
+    )
     self._emit(
       VoiceTtsPlaybackCancelled(
         session_id=active.session_id,
@@ -486,7 +828,7 @@ class TtsWorker:
     session_id: str,
     turn_id: str,
     reason: str = "completed",
-  ) -> None:
+  ) -> bool:
     """Record that one utterance for the turn is terminal."""
     should_emit = False
     with self._state_lock:
@@ -511,13 +853,14 @@ class TtsWorker:
           reason=reason,
         )
       )
+    return should_emit
 
   def _maybe_emit_turn_complete(
     self,
     *,
     session_id: str,
     turn_id: str,
-  ) -> None:
+  ) -> bool:
     """Emit turn completion when the accepted chunks have all finished."""
     should_emit = False
     with self._state_lock:
@@ -538,6 +881,7 @@ class TtsWorker:
           turn_id=turn_id,
         )
       )
+    return should_emit
 
   def _run(self) -> None:
     """Process queued speech chunks until stopped."""
@@ -559,6 +903,10 @@ class TtsWorker:
 
   def _process_chunk(self, chunk: VoiceTextChunk) -> None:
     """Synthesise and play one text chunk."""
+    self._begin_playback_reference_turn(
+      session_id=chunk.session_id,
+      turn_id=chunk.turn_id,
+    )
     self._emit(
       VoiceTtsStarted(
         session_id=chunk.session_id,
@@ -577,6 +925,11 @@ class TtsWorker:
         turn_id=chunk.turn_id,
       )
       if self._is_cancelled(session_id=chunk.session_id, turn_id=chunk.turn_id):
+        self._cancel_playback_reference_turn(
+          session_id=chunk.session_id,
+          turn_id=chunk.turn_id,
+          reason="cancelled",
+        )
         return
       self._emit(
         VoiceTtsPlaybackStarted(
@@ -588,6 +941,11 @@ class TtsWorker:
       )
       self.audio_playback.play_wav(wav_path)
       if self._is_cancelled(session_id=chunk.session_id, turn_id=chunk.turn_id):
+        self._cancel_playback_reference_turn(
+          session_id=chunk.session_id,
+          turn_id=chunk.turn_id,
+          reason="cancelled",
+        )
         return
       self._emit(
         VoiceTtsPlaybackFinished(
@@ -597,10 +955,16 @@ class TtsWorker:
           wav_path=wav_path,
         )
       )
-      self._mark_turn_terminal(
+      turn_complete = self._mark_turn_terminal(
         session_id=chunk.session_id,
         turn_id=chunk.turn_id,
       )
+      if turn_complete:
+        self._complete_playback_reference_turn(
+          session_id=chunk.session_id,
+          turn_id=chunk.turn_id,
+          reason="completed",
+        )
       self._emit(
         VoiceTtsEnded(
           session_id=chunk.session_id,
@@ -617,6 +981,11 @@ class TtsWorker:
             utterance_id=chunk.utterance_id,
             reason="cancelled",
           )
+        )
+        self._cancel_playback_reference_turn(
+          session_id=chunk.session_id,
+          turn_id=chunk.turn_id,
+          reason="cancelled",
         )
         logger.info(
           "Voice chunk stopped after cancellation for session={} turn={}",
@@ -635,6 +1004,11 @@ class TtsWorker:
         )
       )
       self._mark_turn_terminal(
+        session_id=chunk.session_id,
+        turn_id=chunk.turn_id,
+        reason="error",
+      )
+      self._cancel_playback_reference_turn(
         session_id=chunk.session_id,
         turn_id=chunk.turn_id,
         reason="error",
