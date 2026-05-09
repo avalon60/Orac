@@ -16,6 +16,10 @@ import uuid
 
 from loguru import logger
 
+from orac_voice.aec import AcousticEchoCanceller
+from orac_voice.aec import NullAcousticEchoCanceller
+from orac_voice.aec import validate_aec_frame
+from orac_voice.aec import validate_aec_frame_format
 from orac_voice.audio_playback import AudioPlayback
 from orac_voice.audio_playback import LocalAudioPlayback
 from orac_voice.audio_playback import NativeAudioPlayback
@@ -60,9 +64,16 @@ class _PlaybackReferenceBridge:
   records simple per-turn counters for future AEC wiring and diagnostics.
   """
 
-  def __init__(self) -> None:
+  def __init__(
+    self,
+    *,
+    aec_adapter: AcousticEchoCanceller | None = None,
+  ) -> None:
     """Initialise the playback reference bridge."""
-    self._resampler = PlaybackReferenceResampler()
+    self._aec_adapter = aec_adapter or NullAcousticEchoCanceller()
+    self._resampler = PlaybackReferenceResampler(
+      on_reference_frame=self._handle_reference_frame,
+    )
     self.current_session_id: str | None = None
     self.current_turn_id: str | None = None
     self.current_turn_frames_emitted = 0
@@ -74,6 +85,30 @@ class _PlaybackReferenceBridge:
     self.last_cancelled_turn_id: str | None = None
     self.last_cancelled_frames_emitted = 0
     self.last_cancelled_reason: str | None = None
+
+  def _handle_reference_frame(
+    self,
+    frame: bytes,
+    sample_rate: int,
+    channels: int,
+    sample_width: int,
+  ) -> None:
+    """Forward one validated playback reference frame to the AEC adapter.
+
+    Args:
+      frame (bytes): Playback reference frame bytes.
+      sample_rate (int): Reference sample rate in hertz.
+      channels (int): Reference channel count.
+      sample_width (int): Reference sample width in bytes.
+    """
+    validate_aec_frame_format(
+      sample_rate=sample_rate,
+      channels=channels,
+      sample_width=sample_width,
+      label="Playback reference AEC frame",
+    )
+    validate_aec_frame(frame, label="Playback reference AEC frame")
+    self._aec_adapter.process_reverse_frame(frame)
 
   def begin_turn(self, *, session_id: str, turn_id: str) -> None:
     """Start or switch to a new playback turn.
@@ -101,6 +136,7 @@ class _PlaybackReferenceBridge:
         turn_id,
       )
     self._resampler.reset()
+    self._aec_adapter.reset()
     self.current_session_id = session_id
     self.current_turn_id = turn_id
     self.current_turn_frames_emitted = 0
@@ -196,6 +232,7 @@ class _PlaybackReferenceBridge:
       total,
       reason,
     )
+    self._aec_adapter.reset()
     self._clear_active_turn()
     return emitted
 
@@ -234,6 +271,7 @@ class _PlaybackReferenceBridge:
       reason,
     )
     self._resampler.reset()
+    self._aec_adapter.reset()
     self._clear_active_turn()
     return discarded
 
@@ -248,6 +286,7 @@ class _PlaybackReferenceBridge:
       reason,
     )
     self._resampler.reset()
+    self._aec_adapter.reset()
     self._clear_active_turn()
 
   def _matches_active_turn(self, *, session_id: str, turn_id: str) -> bool:
@@ -410,6 +449,7 @@ class TtsWorker:
     tts_engine: TtsEngine,
     audio_playback: AudioPlayback,
     event_handler: EventHandler | None = None,
+    aec_adapter: AcousticEchoCanceller | None = None,
   ) -> None:
     """Initialise the worker.
 
@@ -417,6 +457,8 @@ class TtsWorker:
       tts_engine (TtsEngine): TTS engine implementation.
       audio_playback (AudioPlayback): Audio playback implementation.
       event_handler (EventHandler | None): Optional event callback.
+      aec_adapter (AcousticEchoCanceller | None): Optional AEC adapter for
+        playback reference frames.
     """
     self.tts_engine = tts_engine
     self.audio_playback = audio_playback
@@ -430,6 +472,7 @@ class TtsWorker:
     self._active_chunk: VoiceTextChunk | None = None
     self._turn_states: dict[tuple[str, str], _TurnLifecycle] = {}
     self._playback_reference_bridge: _PlaybackReferenceBridge | None = None
+    self._aec_adapter = aec_adapter
     self.error_count = 0
     self.last_error: VoiceError | None = None
 
@@ -584,13 +627,23 @@ class TtsWorker:
     self._cancel_active_processes()
     return removed
 
-  def enable_playback_reference_resampling(self) -> None:
+  def enable_playback_reference_resampling(
+    self,
+    *,
+    aec_adapter: AcousticEchoCanceller | None = None,
+  ) -> None:
     """Attach the playback reference resampler to native playback.
 
     The resampler is used only for the experimental native playback path.
+
+    Args:
+      aec_adapter (AcousticEchoCanceller | None): Optional AEC adapter for
+        reverse playback reference frames.
     """
     if self._playback_reference_bridge is None:
-      self._playback_reference_bridge = _PlaybackReferenceBridge()
+      self._playback_reference_bridge = _PlaybackReferenceBridge(
+        aec_adapter=aec_adapter or self._aec_adapter,
+      )
       if isinstance(self.audio_playback, NativeAudioPlayback):
         self.audio_playback.set_playback_frame_handler(
           self._playback_reference_bridge.handle_playback_frame,

@@ -2179,6 +2179,76 @@ class OracVoiceTests(unittest.TestCase):
     self.assertTrue(state["entered"])
     self.assertTrue(state["exited"])
 
+  def test_null_aec_returns_capture_frames_unchanged(self) -> None:
+    """The null AEC adapter should pass capture frames through."""
+    adapter = NullAcousticEchoCanceller()
+    frame = bytes(range(256)) + bytes(range(64))
+
+    self.assertEqual(len(frame), AEC_BYTES_PER_FRAME)
+    self.assertIs(adapter.process_capture_frame(frame), frame)
+
+  def test_null_aec_accepts_reverse_frames_without_side_effects(self) -> None:
+    """The null AEC adapter should accept reverse frames as no-ops."""
+    adapter = NullAcousticEchoCanceller()
+    frame = bytes(AEC_BYTES_PER_FRAME)
+
+    self.assertIsNone(adapter.process_reverse_frame(frame))
+    self.assertIsNone(adapter.reset())
+
+  def test_null_aec_rejects_invalid_frame_sizes(self) -> None:
+    """AEC adapters should reject frames outside the fixed frame contract."""
+    adapter = NullAcousticEchoCanceller()
+
+    with self.assertRaisesRegex(ValueError, "320 bytes"):
+      adapter.process_reverse_frame(bytes(AEC_BYTES_PER_FRAME - 1))
+
+    with self.assertRaisesRegex(ValueError, "320 bytes"):
+      adapter.process_capture_frame(bytes(AEC_BYTES_PER_FRAME + 1))
+
+  def test_playback_reference_frames_forward_to_injected_aec(self) -> None:
+    """Playback reference frames should reach an injected AEC adapter."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      wav_path = Path(tmp_name) / "sample.wav"
+      sample_rate = 22050
+      channels = 1
+      sample_width = 2
+      pcm = np.arange(2205, dtype=np.int16).tobytes()
+      with wave.open(str(wav_path), "wb") as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sample_width)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm)
+
+      state = {
+        "writes": [],
+        "block_on_write": False,
+        "release_write": threading.Event(),
+        "write_started": threading.Event(),
+        "abort_requested": False,
+        "entered": False,
+        "exited": False,
+      }
+      aec_adapter = _FakeAecAdapter()
+      worker = TtsWorker(
+        tts_engine=_FakeTtsEngine(wav_path=wav_path),
+        audio_playback=NativeAudioPlayback(
+          sounddevice_module=_FakeSoundDeviceModule(state),
+        ),
+      )
+      worker.enable_playback_reference_resampling(aec_adapter=aec_adapter)
+      worker.start()
+
+      worker.enqueue_text(session_id="s1", turn_id="t1", text="Hello.")
+      worker.mark_turn_input_complete(session_id="s1", turn_id="t1")
+      self.assertTrue(worker.wait_until_idle(timeout=2.0))
+      worker.stop()
+
+    self.assertEqual(len(aec_adapter.reverse_frames), 10)
+    self.assertTrue(
+      all(len(frame) == AEC_BYTES_PER_FRAME
+          for frame in aec_adapter.reverse_frames)
+    )
+
   def test_playback_reference_state_resets_between_turns(self) -> None:
     """Playback reference state should not bleed across turns."""
     with tempfile.TemporaryDirectory() as tmp_name:
@@ -2230,6 +2300,52 @@ class OracVoiceTests(unittest.TestCase):
     self.assertEqual(bridge.last_completed_turn_id, "t2")
     self.assertEqual(bridge.last_completed_frames_emitted, 10)
     self.assertIsNone(bridge.current_turn_id)
+
+  def test_playback_reference_aec_resets_at_turn_boundaries(self) -> None:
+    """AEC adapter state should reset between playback reference turns."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      wav_path = Path(tmp_name) / "sample.wav"
+      sample_rate = 22050
+      channels = 1
+      sample_width = 2
+      pcm = np.arange(2205, dtype=np.int16).tobytes()
+      with wave.open(str(wav_path), "wb") as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sample_width)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm)
+
+      state = {
+        "writes": [],
+        "block_on_write": False,
+        "release_write": threading.Event(),
+        "write_started": threading.Event(),
+        "abort_requested": False,
+        "entered": False,
+        "exited": False,
+      }
+      aec_adapter = _FakeAecAdapter()
+      worker = TtsWorker(
+        tts_engine=_FakeTtsEngine(wav_path=wav_path),
+        audio_playback=NativeAudioPlayback(
+          sounddevice_module=_FakeSoundDeviceModule(state),
+        ),
+      )
+      worker.enable_playback_reference_resampling(aec_adapter=aec_adapter)
+      worker.start()
+
+      worker.enqueue_text(session_id="s1", turn_id="t1", text="First.")
+      worker.mark_turn_input_complete(session_id="s1", turn_id="t1")
+      self.assertTrue(worker.wait_until_idle(timeout=2.0))
+      resets_after_first = aec_adapter.reset_calls
+
+      worker.enqueue_text(session_id="s1", turn_id="t2", text="Second.")
+      worker.mark_turn_input_complete(session_id="s1", turn_id="t2")
+      self.assertTrue(worker.wait_until_idle(timeout=2.0))
+      worker.stop()
+
+    self.assertGreaterEqual(resets_after_first, 2)
+    self.assertGreater(aec_adapter.reset_calls, resets_after_first)
 
   def test_cancelled_playback_resets_reference_state(self) -> None:
     """Cancelled playback should not leak reference state to the next turn."""
@@ -2285,6 +2401,51 @@ class OracVoiceTests(unittest.TestCase):
     self.assertEqual(bridge.last_completed_turn_id, "t2")
     self.assertEqual(bridge.last_completed_frames_emitted, 10)
     self.assertIsNone(bridge.current_turn_id)
+
+  def test_playback_reference_aec_resets_on_cancel_path(self) -> None:
+    """AEC adapter state should reset when playback is cancelled."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      wav_path = Path(tmp_name) / "sample.wav"
+      sample_rate = 22050
+      channels = 1
+      sample_width = 2
+      pcm = np.arange(2205, dtype=np.int16).tobytes()
+      with wave.open(str(wav_path), "wb") as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sample_width)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm)
+
+      state = {
+        "writes": [],
+        "block_on_write": True,
+        "release_write": threading.Event(),
+        "write_started": threading.Event(),
+        "abort_requested": False,
+        "entered": False,
+        "exited": False,
+      }
+      aec_adapter = _FakeAecAdapter()
+      worker = TtsWorker(
+        tts_engine=_FakeTtsEngine(wav_path=wav_path),
+        audio_playback=NativeAudioPlayback(
+          sounddevice_module=_FakeSoundDeviceModule(state),
+        ),
+      )
+      worker.enable_playback_reference_resampling(aec_adapter=aec_adapter)
+      worker.start()
+
+      worker.enqueue_text(session_id="s1", turn_id="t1", text="Cancel me.")
+      worker.mark_turn_input_complete(session_id="s1", turn_id="t1")
+      self.assertTrue(state["write_started"].wait(timeout=2.0))
+      resets_before_cancel = aec_adapter.reset_calls
+      worker.cancel_turn(session_id="s1", turn_id="t1")
+      self.assertTrue(worker.wait_until_idle(timeout=2.0))
+      state["block_on_write"] = False
+      state["release_write"].set()
+      worker.stop()
+
+    self.assertGreater(aec_adapter.reset_calls, resets_before_cancel)
 
   def test_playback_reference_resampler_passes_through_16khz_frames(self) -> None:
     """16 kHz mono int16 input should reframe without resampling."""
