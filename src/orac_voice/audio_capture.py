@@ -19,6 +19,11 @@ from typing import Callable, Protocol
 from loguru import logger
 
 from lib.config_mgr import ConfigManager
+from orac_voice.aec import AEC_BYTES_PER_FRAME
+from orac_voice.aec import AEC_SAMPLE_RATE
+from orac_voice.aec import AcousticEchoCanceller
+from orac_voice.aec import NullAcousticEchoCanceller
+from orac_voice.aec import validate_aec_frame
 from orac_voice.tts_piper import expand_config_path, resolve_orac_home
 from orac_voice.vad_silero import (
   DEFAULT_STT_MAX_RECORD_SECONDS,
@@ -40,6 +45,7 @@ DEFAULT_RECORD_SECONDS = 5.0
 DEFAULT_SAMPLE_RATE = 16000
 DEFAULT_RECORD_MODE = "fixed"
 DEFAULT_VAD_ENGINE = "energy"
+INT16_MAX_FLOAT = 32767.0
 
 
 @dataclass(frozen=True)
@@ -100,6 +106,77 @@ def _normalise_input_device(value: str) -> int | str | None:
   return cleaned
 
 
+class _CaptureAecProcessor:
+  """Apply capture-side AEC processing to exact 10 ms PCM frames."""
+
+  def __init__(
+    self,
+    *,
+    aec_adapter: AcousticEchoCanceller | None,
+    sample_rate: int,
+  ) -> None:
+    """Initialise a capture-side AEC frame processor.
+
+    Args:
+      aec_adapter (AcousticEchoCanceller | None): Optional AEC adapter.
+      sample_rate (int): Capture sample rate in hertz.
+    """
+    self.aec_adapter = aec_adapter or NullAcousticEchoCanceller()
+    self.sample_rate = sample_rate
+    self.enabled = (
+      aec_adapter is not None
+      and not isinstance(aec_adapter, NullAcousticEchoCanceller)
+    )
+    self._pending = bytearray()
+
+  def reset(self) -> None:
+    """Reset buffered capture and adapter state."""
+    self._pending.clear()
+    self.aec_adapter.reset()
+
+  def process_int16_bytes(self, frame_bytes: bytes) -> bytes:
+    """Process int16 capture bytes through the configured AEC adapter.
+
+    Args:
+      frame_bytes (bytes): Mono int16 PCM bytes.
+
+    Returns:
+      bytes: AEC-processed mono int16 PCM bytes.
+
+    Raises:
+      RuntimeError: If capture format or adapter output is invalid.
+    """
+    if not self.enabled:
+      return frame_bytes
+    if self.sample_rate != AEC_SAMPLE_RATE:
+      raise RuntimeError(
+        f"Capture-side AEC requires {AEC_SAMPLE_RATE} Hz audio"
+      )
+
+    self._pending.extend(frame_bytes)
+    processed = bytearray()
+    while len(self._pending) >= AEC_BYTES_PER_FRAME:
+      frame = bytes(self._pending[:AEC_BYTES_PER_FRAME])
+      del self._pending[:AEC_BYTES_PER_FRAME]
+      validate_aec_frame(frame, label="AEC capture frame")
+      cleaned = self.aec_adapter.process_capture_frame(frame)
+      validate_aec_frame(cleaned, label="AEC processed capture frame")
+      processed.extend(cleaned)
+    return bytes(processed)
+
+  def flush(self) -> bytes:
+    """Flush any trailing capture bytes, processing only complete frames.
+
+    Returns:
+      bytes: Unprocessed trailing bytes that did not form a full AEC frame.
+    """
+    if not self.enabled:
+      return b""
+    remainder = bytes(self._pending)
+    self._pending.clear()
+    return remainder
+
+
 class SoundDeviceAudioCapture:
   """Capture mono WAV audio from a local microphone."""
 
@@ -111,6 +188,7 @@ class SoundDeviceAudioCapture:
     sample_rate: int | None = None,
     input_device: str | None = None,
     record_seconds: float | None = None,
+    aec_adapter: AcousticEchoCanceller | None = None,
   ) -> None:
     """Initialise local microphone capture.
 
@@ -120,6 +198,8 @@ class SoundDeviceAudioCapture:
       sample_rate (int | None): Optional sample rate override.
       input_device (str | None): Optional sounddevice input device.
       record_seconds (float | None): Optional default duration.
+      aec_adapter (AcousticEchoCanceller | None): Optional capture AEC
+        adapter. Defaults to the null adapter path.
     """
     self.orac_home = resolve_orac_home()
     config_path = config_file_path or (
@@ -234,6 +314,7 @@ class SoundDeviceAudioCapture:
     else:
       self.output_dir = expand_config_path(str(output_dir), orac_home=self.orac_home)
     self.output_dir.mkdir(parents=True, exist_ok=True)
+    self.aec_adapter = aec_adapter or NullAcousticEchoCanceller()
     self._cancel_requested = False
     self._recording_active = False
 
@@ -312,7 +393,8 @@ class SoundDeviceAudioCapture:
       raise RuntimeError("Microphone recording cancelled")
 
     int_audio = np.clip(audio.reshape(-1), -1.0, 1.0)
-    int_audio = (int_audio * 32767.0).astype(np.int16)
+    int_audio = (int_audio * INT16_MAX_FLOAT).astype(np.int16)
+    int_audio = self._process_capture_int16_samples(int_audio, np=np)
     self._write_wav(output_path=output_path, samples=int_audio)
     return output_path
 
@@ -380,6 +462,11 @@ class SoundDeviceAudioCapture:
     )
     _status("listening")
     self._recording_active = True
+    self._vad_aec_processor = _CaptureAecProcessor(
+      aec_adapter=self.aec_adapter,
+      sample_rate=self.sample_rate,
+    )
+    self._vad_aec_processor.reset()
     no_speech_timeout = False
     max_duration_reached = False
     try:
@@ -398,6 +485,7 @@ class SoundDeviceAudioCapture:
             raise RuntimeError("Timed out waiting for microphone audio") from exc
 
           samples = np.asarray(chunk, dtype=np.float32).reshape(-1)
+          samples = self._process_capture_float_samples(samples, np=np)
           probability = vad_engine.speech_probability(samples)
           result = detector.process_probability(probability)
 
@@ -428,6 +516,8 @@ class SoundDeviceAudioCapture:
       self.cancel()
       raise RuntimeError(f"Unable to record VAD microphone audio: {exc}") from exc
     finally:
+      self._vad_aec_processor.reset()
+      self._vad_aec_processor = None
       self._recording_active = False
 
     if self._cancel_requested:
@@ -445,7 +535,7 @@ class SoundDeviceAudioCapture:
       return VadCaptureResult(wav_path=None, duration_seconds=duration_seconds)
 
     int_audio = np.clip(audio, -1.0, 1.0)
-    int_audio = (int_audio * 32767.0).astype(np.int16)
+    int_audio = (int_audio * INT16_MAX_FLOAT).astype(np.int16)
     self._write_wav(output_path=output_path, samples=int_audio)
     return VadCaptureResult(
       wav_path=output_path,
@@ -472,6 +562,52 @@ class SoundDeviceAudioCapture:
       wav_file.setsampwidth(2)
       wav_file.setframerate(self.sample_rate)
       wav_file.writeframes(samples.tobytes())
+
+  def _process_capture_int16_samples(self, samples, *, np):
+    """Process fixed-recording samples through capture-side AEC.
+
+    Args:
+      samples: Mono int16 samples.
+      np: NumPy module.
+
+    Returns:
+      Processed mono int16 samples.
+    """
+    processor = _CaptureAecProcessor(
+      aec_adapter=self.aec_adapter,
+      sample_rate=self.sample_rate,
+    )
+    processor.reset()
+    try:
+      processed = bytearray()
+      processed.extend(processor.process_int16_bytes(samples.tobytes()))
+      processed.extend(processor.flush())
+      return np.frombuffer(bytes(processed), dtype=np.int16).copy()
+    finally:
+      processor.reset()
+
+  def _process_capture_float_samples(self, samples, *, np):
+    """Process one VAD capture chunk through capture-side AEC.
+
+    Args:
+      samples: Mono float32 samples in the range -1.0 to 1.0.
+      np: NumPy module.
+
+    Returns:
+      Processed mono float32 samples.
+    """
+    processor = getattr(self, "_vad_aec_processor", None)
+    if processor is None:
+      return samples
+    int_samples = np.clip(samples, -1.0, 1.0)
+    int_samples = (int_samples * INT16_MAX_FLOAT).astype(np.int16)
+    processed = processor.process_int16_bytes(int_samples.tobytes())
+    if not processed:
+      return np.empty(0, dtype=np.float32)
+    return (
+      np.frombuffer(processed, dtype=np.int16).astype(np.float32)
+      / INT16_MAX_FLOAT
+    )
 
   def _record_with_timeout(self, *, sd, frames: int, duration: float):
     """Record with a timeout safeguard around sounddevice calls."""

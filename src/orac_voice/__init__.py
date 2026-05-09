@@ -7,6 +7,16 @@
 
 from __future__ import annotations
 
+from orac_voice.aec import AEC_BYTES_PER_FRAME
+from orac_voice.aec import AEC_CHANNELS
+from orac_voice.aec import AEC_FRAME_DURATION_MS
+from orac_voice.aec import AEC_SAMPLE_RATE
+from orac_voice.aec import AEC_SAMPLE_WIDTH_BYTES
+from orac_voice.aec import AEC_SAMPLES_PER_FRAME
+from orac_voice.aec import AcousticEchoCanceller
+from orac_voice.aec import NullAcousticEchoCanceller
+from orac_voice.aec import validate_aec_frame
+from orac_voice.aec import validate_aec_frame_format
 from orac_voice.activation import EnterActivationListener
 from orac_voice.activation import VoiceActivationError
 from orac_voice.activation import VoiceActivationListener
@@ -54,6 +64,13 @@ from orac_voice.voice_events import (
 )
 
 __all__ = [
+  "AEC_BYTES_PER_FRAME",
+  "AEC_CHANNELS",
+  "AEC_FRAME_DURATION_MS",
+  "AEC_SAMPLE_RATE",
+  "AEC_SAMPLE_WIDTH_BYTES",
+  "AEC_SAMPLES_PER_FRAME",
+  "AcousticEchoCanceller",
   "AudioCapture",
   "AudioPlayback",
   "BargeInConfig",
@@ -67,6 +84,7 @@ __all__ = [
   "FasterWhisperSttEngine",
   "LocalAudioPlayback",
   "NativeAudioPlayback",
+  "NullAcousticEchoCanceller",
   "OpenWakeWordActivationListener",
   "PiperTtsEngine",
   "PorcupineActivationListener",
@@ -100,4 +118,6 @@ __all__ = [
   "VoiceVadSpeechStarted",
   "VoiceVadTimeout",
   "WakeWordActivationListener",
+  "validate_aec_frame",
+  "validate_aec_frame_format",
 ]

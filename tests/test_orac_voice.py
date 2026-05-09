@@ -61,10 +61,14 @@ from controller.orac import Orac
 from lib.api_key_store import ApiKeyStore
 from lib.config_mgr import ConfigManager
 from model.network import OracListener
+from orac_voice.aec import AEC_BYTES_PER_FRAME
+from orac_voice.aec import NullAcousticEchoCanceller
 from orac_voice.activation import EnterActivationListener
 from orac_voice.activation import VoiceActivationError
 from orac_voice.activation import WakeWordActivationListener
 from orac_voice.audio_capture import _normalise_input_device
+from orac_voice.audio_capture import SoundDeviceAudioCapture
+from orac_voice.audio_capture import VadCaptureResult
 from orac_voice.audio_playback import LocalAudioPlayback
 from orac_voice.audio_playback import NativeAudioPlayback
 from orac_voice.playback_reference_resampler import PlaybackReferenceResampler
@@ -89,7 +93,6 @@ from orac_voice.tts_piper import PiperTtsEngine
 from orac_voice.tts_worker import TtsWorker
 import orac_voice.tts_worker as tts_worker_module
 from orac_voice.vad_silero import VadEndpointConfig, VadEndpointDetector
-from orac_voice.audio_capture import VadCaptureResult
 from orac_voice.voice_events import VoiceSttEnded, VoiceSttFinal
 from orac_voice.voice_events import VoiceTurnComplete
 from orac_voice.voice_events import VoiceVadSpeechEnded, VoiceVadTimeout
@@ -151,6 +154,35 @@ class _FakePlayback:
     self.cancel_calls += 1
 
 
+class _FakeAecAdapter:
+  """Fake AEC adapter that records reverse frames and resets."""
+
+  def __init__(
+    self,
+    *,
+    capture_replacement: bytes | None = None,
+  ) -> None:
+    self.reverse_frames: list[bytes] = []
+    self.capture_frames: list[bytes] = []
+    self.capture_replacement = capture_replacement
+    self.reset_calls = 0
+
+  def process_reverse_frame(self, frame: bytes) -> None:
+    """Record one playback reference frame."""
+    self.reverse_frames.append(frame)
+
+  def process_capture_frame(self, frame: bytes) -> bytes:
+    """Record and pass through one capture frame."""
+    self.capture_frames.append(frame)
+    if self.capture_replacement is not None:
+      return self.capture_replacement
+    return frame
+
+  def reset(self) -> None:
+    """Record one reset call."""
+    self.reset_calls += 1
+
+
 class _FakeRawOutputStream:
   """Fake sounddevice raw output stream used by native playback tests."""
 
@@ -188,6 +220,63 @@ class _FakeSoundDeviceModule:
   def RawOutputStream(self, **kwargs):
     self.state["kwargs"] = kwargs
     return _FakeRawOutputStream(self.state, **kwargs)
+
+
+class _FakeCaptureInputStream:
+  """Fake sounddevice input stream for microphone capture tests."""
+
+  def __init__(self, state: dict, **kwargs) -> None:
+    self.state = state
+    self.kwargs = kwargs
+
+  def __enter__(self):
+    self.state["entered"] = True
+    callback = self.kwargs["callback"]
+    for chunk in self.state["input_chunks"]:
+      callback(chunk, len(chunk), None, None)
+    return self
+
+  def __exit__(self, exc_type, exc, tb):
+    self.state["exited"] = True
+    return False
+
+
+class _FakeCaptureSoundDeviceModule:
+  """Fake sounddevice module for microphone capture tests."""
+
+  def __init__(self, state: dict) -> None:
+    self.state = state
+    self.stopped = False
+
+  def rec(self, frames, **kwargs):
+    self.state["rec_args"] = (frames, kwargs)
+    return self.state["recording"]
+
+  def wait(self) -> None:
+    """Match sounddevice.wait."""
+
+  def stop(self) -> None:
+    """Record stop requests."""
+    self.stopped = True
+
+  def InputStream(self, **kwargs):
+    self.state["stream_args"] = kwargs
+    return _FakeCaptureInputStream(self.state, **kwargs)
+
+
+class _FakeVadEngine:
+  """Fake VAD engine that records samples and returns configured results."""
+
+  def __init__(self, probabilities: list[float]) -> None:
+    self.probabilities = probabilities
+    self.samples_seen: list = []
+
+  def speech_probability(self, samples) -> float:
+    """Record samples and return the next configured probability."""
+    self.samples_seen.append(samples.copy())
+    if self.probabilities:
+      return self.probabilities.pop(0)
+    return 0.0
 
 
 class _FakeDisplaySender:
@@ -596,6 +685,160 @@ class OracVoiceTests(unittest.TestCase):
     self.assertIsNone(_normalise_input_device("  "))
     self.assertEqual(_normalise_input_device("2"), 2)
     self.assertEqual(_normalise_input_device("USB Microphone"), "USB Microphone")
+
+  def test_audio_capture_null_aec_preserves_fixed_recording(self) -> None:
+    """Null capture-side AEC should leave fixed recordings unchanged."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      recording = np.array(
+        [[0.0], [0.25], [-0.25], [0.5], [-0.5]] * 32,
+        dtype=np.float32,
+      )
+      state = {"recording": recording}
+      fake_sd = _FakeCaptureSoundDeviceModule(state)
+      capture = SoundDeviceAudioCapture(
+        output_dir=tmp_name,
+        sample_rate=16000,
+        record_seconds=0.01,
+        aec_adapter=NullAcousticEchoCanceller(),
+      )
+
+      with patch.dict(sys.modules, {"sounddevice": fake_sd}):
+        wav_path = capture.record_to_wav(
+          session_id="s1",
+          turn_id="t1",
+          record_seconds=0.01,
+        )
+
+      with wave.open(str(wav_path), "rb") as wav_file:
+        self.assertEqual(wav_file.getframerate(), 16000)
+        self.assertEqual(wav_file.getnchannels(), 1)
+        self.assertEqual(wav_file.getsampwidth(), 2)
+        actual = wav_file.readframes(wav_file.getnframes())
+
+    expected = (
+      np.clip(recording.reshape(-1), -1.0, 1.0) * 32767.0
+    ).astype(np.int16).tobytes()
+    self.assertEqual(actual, expected)
+
+  def test_audio_capture_aec_can_modify_fixed_recording(self) -> None:
+    """Capture-side AEC output should be what the STT WAV receives."""
+    replacement = np.full(160, 1234, dtype=np.int16).tobytes()
+    aec_adapter = _FakeAecAdapter(capture_replacement=replacement)
+    with tempfile.TemporaryDirectory() as tmp_name:
+      recording = np.zeros((160, 1), dtype=np.float32)
+      state = {"recording": recording}
+      fake_sd = _FakeCaptureSoundDeviceModule(state)
+      capture = SoundDeviceAudioCapture(
+        output_dir=tmp_name,
+        sample_rate=16000,
+        record_seconds=0.01,
+        aec_adapter=aec_adapter,
+      )
+
+      with patch.dict(sys.modules, {"sounddevice": fake_sd}):
+        wav_path = capture.record_to_wav(
+          session_id="s1",
+          turn_id="t1",
+          record_seconds=0.01,
+        )
+
+      with wave.open(str(wav_path), "rb") as wav_file:
+        actual = wav_file.readframes(wav_file.getnframes())
+
+    self.assertEqual(actual, replacement)
+    self.assertEqual(len(aec_adapter.capture_frames), 1)
+
+  def test_audio_capture_aec_rejects_invalid_processed_frame_size(self) -> None:
+    """Capture-side AEC should fail clearly on invalid adapter output."""
+    aec_adapter = _FakeAecAdapter(capture_replacement=b"")
+    with tempfile.TemporaryDirectory() as tmp_name:
+      state = {"recording": np.zeros((160, 1), dtype=np.float32)}
+      fake_sd = _FakeCaptureSoundDeviceModule(state)
+      capture = SoundDeviceAudioCapture(
+        output_dir=tmp_name,
+        sample_rate=16000,
+        record_seconds=0.01,
+        aec_adapter=aec_adapter,
+      )
+
+      with patch.dict(sys.modules, {"sounddevice": fake_sd}):
+        with self.assertRaisesRegex(ValueError, "processed capture frame"):
+          capture.record_to_wav(
+            session_id="s1",
+            turn_id="t1",
+            record_seconds=0.01,
+          )
+
+  def test_vad_capture_uses_aec_processed_frames_for_vad_buffer(self) -> None:
+    """VAD and captured utterance buffering should see AEC-cleaned frames."""
+    replacement_samples = np.full(160, 10000, dtype=np.int16)
+    replacement = replacement_samples.tobytes()
+    aec_adapter = _FakeAecAdapter(capture_replacement=replacement)
+    fake_vad = _FakeVadEngine([1.0, 0.0])
+    with tempfile.TemporaryDirectory() as tmp_name:
+      state = {
+        "input_chunks": [
+          np.zeros((160, 1), dtype=np.float32),
+          np.zeros((160, 1), dtype=np.float32),
+        ]
+      }
+      fake_sd = _FakeCaptureSoundDeviceModule(state)
+      capture = SoundDeviceAudioCapture(
+        output_dir=tmp_name,
+        sample_rate=16000,
+        aec_adapter=aec_adapter,
+      )
+      capture.vad_config = VadEndpointConfig(
+        sample_rate=16000,
+        chunk_ms=10,
+        min_speech_ms=10,
+        min_silence_ms=10,
+        pre_speech_padding_ms=10,
+        initial_timeout_seconds=1.0,
+        max_record_seconds=1.0,
+        min_record_seconds=0.0,
+      )
+
+      with patch.dict(sys.modules, {"sounddevice": fake_sd}):
+        with patch(
+          "orac_voice.audio_capture.create_vad_engine",
+          return_value=fake_vad,
+        ):
+          result = capture.record_until_silence_to_wav(
+            session_id="s1",
+            turn_id="t1",
+          )
+
+      assert result.wav_path is not None
+      with wave.open(str(result.wav_path), "rb") as wav_file:
+        actual = wav_file.readframes(wav_file.getnframes())
+
+    expected_float = replacement_samples.astype(np.float32) / 32767.0
+    self.assertTrue(np.allclose(fake_vad.samples_seen[0], expected_float))
+    self.assertEqual(actual, replacement + replacement)
+    self.assertEqual(len(aec_adapter.capture_frames), 2)
+
+  def test_audio_capture_aec_resets_at_recording_boundaries(self) -> None:
+    """Capture-side AEC should reset around each recording attempt."""
+    aec_adapter = _FakeAecAdapter()
+    with tempfile.TemporaryDirectory() as tmp_name:
+      state = {"recording": np.zeros((160, 1), dtype=np.float32)}
+      fake_sd = _FakeCaptureSoundDeviceModule(state)
+      capture = SoundDeviceAudioCapture(
+        output_dir=tmp_name,
+        sample_rate=16000,
+        record_seconds=0.01,
+        aec_adapter=aec_adapter,
+      )
+
+      with patch.dict(sys.modules, {"sounddevice": fake_sd}):
+        capture.record_to_wav(
+          session_id="s1",
+          turn_id="t1",
+          record_seconds=0.01,
+        )
+
+    self.assertGreaterEqual(aec_adapter.reset_calls, 2)
 
   def test_stt_auto_settings_resolve_to_safe_cpu_defaults(self) -> None:
     """STT auto config should avoid accidental CUDA selection."""
