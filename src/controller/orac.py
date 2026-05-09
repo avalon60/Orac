@@ -57,6 +57,8 @@ class _VoicePlaybackSubscription:
         self.callback = callback
         self.playback_expected = False
         self.playback_started = False
+        self.playback_queued = 0
+        self.playback_finished = 0
         self.playback_terminal = False
 
 
@@ -761,6 +763,26 @@ class Orac:
             for subscription in self._voice_event_subscribers.get(key, []):
                 subscription.playback_expected = True
 
+    def _mark_voice_playback_queued(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> None:
+        """Mark that one more utterance has been queued for playback."""
+        if not hasattr(self, "_voice_event_subscriber_lock"):
+            self._voice_event_subscriber_lock = threading.Lock()
+        if not hasattr(self, "_voice_event_subscribers"):
+            self._voice_event_subscribers = {}
+        key = self._voice_subscription_key(
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        with self._voice_event_subscriber_lock:
+            for subscription in self._voice_event_subscribers.get(key, []):
+                subscription.playback_expected = True
+                subscription.playback_queued += 1
+
     def _build_voice_playback_event_frame(
         self,
         event: VoiceEvent,
@@ -819,6 +841,7 @@ class Orac:
             "VoiceTtsPlaybackCancelled": "tts_playback_cancelled",
             "VoiceTtsPlaybackError": "tts_playback_error",
             "VoiceTurnCancelled": "tts_playback_cancelled",
+            "VoiceTurnComplete": "voice_turn_complete",
             "VoiceError": "tts_playback_error",
         }
         frame_type = event_type_map.get(event.event_type)
@@ -877,6 +900,10 @@ class Orac:
                     text=chunk_text,
                 )
                 if queued:
+                    self._mark_voice_playback_queued(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                    )
                     self._mark_voice_playback_expected(
                         session_id=session_id,
                         turn_id=turn_id,
@@ -893,6 +920,10 @@ class Orac:
                     text=speech_text,
                 )
                 if queued:
+                    self._mark_voice_playback_queued(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                    )
                     self._mark_voice_playback_expected(
                         session_id=session_id,
                         turn_id=turn_id,
@@ -912,10 +943,18 @@ class Orac:
                         text=final_text,
                     )
                     if queued:
+                        self._mark_voice_playback_queued(
+                            session_id=session_id,
+                            turn_id=turn_id,
+                        )
                         self._mark_voice_playback_expected(
                             session_id=session_id,
                             turn_id=turn_id,
                         )
+            if worker is not None:
+                mark_complete = getattr(worker, "mark_turn_input_complete", None)
+                if callable(mark_complete):
+                    mark_complete(session_id=session_id, turn_id=turn_id)
 
     def cancel_voice_turn(self, *, session_id: str, turn_id: str) -> int:
         """Cancel local voice output for a client session turn."""
@@ -2810,19 +2849,28 @@ class Orac:
         async def event_sink(event: dict[str, Any]) -> None:
             await queue.put(json.dumps(event, ensure_ascii=False))
 
+        turn_complete_event: dict[str, Any] | None = None
+
         def voice_event_sink(event: dict[str, Any]) -> None:
             def _enqueue() -> None:
                 nonlocal voice_subscription
+                nonlocal turn_complete_event
                 if voice_subscription is not None:
                     frame_type = str(event.get("type") or "")
                     if frame_type == "tts_playback_started":
                         voice_subscription.playback_started = True
+                    elif frame_type == "tts_playback_finished":
+                        voice_subscription.playback_finished += 1
                     elif frame_type in {
-                        "tts_playback_finished",
                         "tts_playback_cancelled",
                         "tts_playback_error",
                     }:
                         voice_subscription.playback_terminal = True
+                    elif frame_type == "voice_turn_complete":
+                        voice_subscription.playback_terminal = True
+                        if turn_complete_event is None:
+                            turn_complete_event = event
+                        return
                 queue.put_nowait(json.dumps(event, ensure_ascii=False))
 
             loop.call_soon_threadsafe(_enqueue)
@@ -2847,7 +2895,8 @@ class Orac:
                 playback_pending = (
                     voice_subscription is not None
                     and voice_subscription.playback_expected
-                    and not voice_subscription.playback_terminal
+                    and voice_subscription.playback_finished
+                    < voice_subscription.playback_queued
                 )
                 if response_task.done() and playback_pending:
                     if playback_wait_started_at is None:
@@ -2869,13 +2918,19 @@ class Orac:
                     playback_wait_started_at = None
 
                 if response_task.done() and queue.empty() and not playback_pending:
-                    break
+                    if voice_subscription is None or turn_complete_event is not None:
+                        break
                 try:
                     yield await asyncio.wait_for(queue.get(), timeout=0.05)
                 except asyncio.TimeoutError:
                     continue
 
             yield await response_task
+            if turn_complete_event is not None:
+                yield json.dumps(
+                    turn_complete_event,
+                    ensure_ascii=False,
+                )
         finally:
             if voice_subscription is not None:
                 self._unregister_voice_event_subscriber(

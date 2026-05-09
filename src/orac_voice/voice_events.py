@@ -128,6 +128,13 @@ class VoiceTurnCancelled(VoiceEvent):
 
 
 @dataclass(frozen=True)
+class VoiceTurnComplete(VoiceEvent):
+  """Event emitted when the full turn audio lifecycle has completed."""
+
+  reason: str = "completed"
+
+
+@dataclass(frozen=True)
 class VoiceError(VoiceEvent):
   """Event emitted when voice synthesis or playback fails."""
 

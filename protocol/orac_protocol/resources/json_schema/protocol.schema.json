@@ -20,7 +20,8 @@
       "tts_playback_started",
       "tts_playback_finished",
       "tts_playback_cancelled",
-      "tts_playback_error"
+      "tts_playback_error",
+      "voice_turn_complete"
     ] },
     "id": { "type": "string", "minLength": 1, "maxLength": 128 },
     "reply_to": { "type": "string" },

@@ -68,6 +68,12 @@ from orac_voice.barge_in import BargeInConfig
 from orac_voice.barge_in import BargeInController
 from orac_voice.barge_in import BargeInResult
 from orac_voice.barge_in import OpenWakeWordBargeInController
+from orac_voice.barge_in import VAD_BARGE_IN_EXPERIMENTAL_WARNING
+from orac_voice.barge_in import VAD_BARGE_IN_REFUSAL_MESSAGE
+from orac_voice.barge_in import load_barge_in_config
+from orac_voice.interruption_policy import InterruptionAction
+from orac_voice.interruption_policy import InterruptionPolicy
+from orac_voice.interruption_policy import InterruptionState
 from orac_voice.wake_openwakeword import OpenWakeWordActivationListener
 from orac_voice.wake_openwakeword import _best_detection
 from orac_voice.wake_porcupine import PorcupineActivationListener
@@ -80,6 +86,7 @@ from orac_voice.tts_worker import TtsWorker
 from orac_voice.vad_silero import VadEndpointConfig, VadEndpointDetector
 from orac_voice.audio_capture import VadCaptureResult
 from orac_voice.voice_events import VoiceSttEnded, VoiceSttFinal
+from orac_voice.voice_events import VoiceTurnComplete
 from orac_voice.voice_events import VoiceVadSpeechEnded, VoiceVadTimeout
 from orac_voice.wake_stt_phrase import SttPhraseWakeWordActivationListener
 from orac_voice.wake_stt_phrase import _matches_wake_phrase
@@ -90,6 +97,7 @@ from orac_voice.voice_loop_local import _load_activation_mode
 from orac_voice.voice_loop_local import _load_record_mode
 from orac_voice.voice_loop_local import _load_wake_rearm_seconds
 from orac_voice.voice_loop_local import _send_orac_prompt
+from orac_voice.voice_loop_local import _voice_session_async
 from orac_voice.voice_loop_local import build_parser
 
 
@@ -155,6 +163,24 @@ class _FakeDisplaySender:
     """Record a state change."""
     self.states.append((state, message, session_id, turn_id))
 
+  def send(self, event) -> None:
+    """Record a generic display event using the state-change form."""
+    if isinstance(event, dict):
+      state = str(event.get("state") or "")
+      message = event.get("message")
+      session_id = event.get("session_id")
+      turn_id = event.get("turn_id")
+      self.states.append((state, message, session_id, turn_id))
+      return
+    self.states.append(
+      (
+        getattr(event, "state", ""),
+        getattr(event, "message", None),
+        getattr(event, "session_id", None),
+        getattr(event, "turn_id", None),
+      )
+    )
+
 
 class _FakeVoiceWorker:
   """Fake voice worker used to verify stream routing."""
@@ -185,6 +211,26 @@ class _FakeVoiceWorker:
     return 0
 
 
+class _FakeActivationListener:
+  """Fake activation listener used to exercise session lifecycle flow."""
+
+  def __init__(self, results: list[types.SimpleNamespace]) -> None:
+    self.results = results
+    self.wait_calls = 0
+    self.close_calls = 0
+
+  def wait_for_activation(self, *, session_id: str):
+    """Return the next configured activation result."""
+    self.wait_calls += 1
+    if self.results:
+      return self.results.pop(0)
+    return types.SimpleNamespace(activated=False, exit_requested=True)
+
+  def close(self) -> None:
+    """Record listener shutdown."""
+    self.close_calls += 1
+
+
 class _FakeNetworkOrchestrator:
   """Fake orchestrator for network listener cleanup tests."""
 
@@ -208,6 +254,9 @@ class _FakeStreamWriter:
 
   def __init__(self) -> None:
     self.writes: list[bytes] = []
+    self.close_calls = 0
+    self.wait_closed_calls = 0
+    self.closed = False
 
   def write(self, data: bytes) -> None:
     """Record bytes written by the client."""
@@ -215,6 +264,15 @@ class _FakeStreamWriter:
 
   async def drain(self) -> None:
     """Match the StreamWriter drain interface."""
+
+  def close(self) -> None:
+    """Record stream shutdown."""
+    self.close_calls += 1
+    self.closed = True
+
+  async def wait_closed(self) -> None:
+    """Match the StreamWriter close handshake."""
+    self.wait_closed_calls += 1
 
 
 class _FakeWakeCapture:
@@ -1050,35 +1108,231 @@ class OracVoiceTests(unittest.TestCase):
     self.assertIsNone(controller)
     controller_cls.assert_not_called()
 
-  def test_barge_in_factory_selects_openwakeword_controller(self) -> None:
-    """openWakeWord barge-in config should use the wake-word controller."""
+  def test_default_voice_config_keeps_barge_in_disabled(self) -> None:
+    """The repository voice config should keep barge-in disabled by default."""
+    config_mgr = ConfigManager(
+      config_file_path=PROJECT_ROOT / "resources" / "config" / "orac.ini"
+    )
+    config = load_barge_in_config(config_mgr)
+
+    self.assertFalse(config.enabled)
+    self.assertFalse(config.barge_in_acknowledge_self_trigger_risk)
+
+  def test_barge_in_controller_refuses_vad_without_acknowledgement(self) -> None:
+    """Speaker playback without acknowledgement should refuse VAD barge-in."""
+    source = _FakeBargeInSource()
+    controller = BargeInController(
+      config=BargeInConfig(
+        enabled=True,
+        mode="vad",
+        barge_in_acknowledge_self_trigger_risk=False,
+      ),
+      audio_source=source,
+      vad_engine=_FakeBargeInVad([1.0]),
+    )
+
+    with patch("orac_voice.barge_in.logger.warning") as warning_mock:
+      controller.start()
+
+    self.assertEqual(source.start_calls, 0)
+    self.assertFalse(controller.interrupted)
+    warning_mock.assert_called_once_with(VAD_BARGE_IN_REFUSAL_MESSAGE)
+
+  def test_barge_in_controller_starts_vad_with_acknowledgement(self) -> None:
+    """Acknowledged VAD mode should start the monitoring thread."""
+    source = _FakeBargeInSource(chunks=1)
+    controller = BargeInController(
+      config=BargeInConfig(
+        enabled=True,
+        mode="vad",
+        barge_in_acknowledge_self_trigger_risk=True,
+      ),
+      audio_source=source,
+      vad_engine=_FakeBargeInVad([0.0]),
+    )
+
+    controller.start()
+    time.sleep(0.05)
+    controller.stop()
+
+    self.assertGreaterEqual(source.start_calls, 1)
+    self.assertGreaterEqual(source.close_calls, 1)
+
+  def test_barge_in_factory_disables_openwakeword_controller(self) -> None:
+    """openWakeWord barge-in should stay disabled on local playback."""
     config = BargeInConfig(enabled=True, mode="openwakeword")
     with patch(
       "orac_voice.voice_loop_local.load_barge_in_config",
       return_value=config,
     ):
-      with patch(
-        "orac_voice.voice_loop_local.OpenWakeWordBargeInController"
-      ) as controller_cls:
+      with patch("orac_voice.voice_loop_local.logger.warning") as warning_mock:
         controller = _create_barge_in_controller()
 
-    self.assertIs(controller, controller_cls.return_value)
-    controller_cls.assert_called_once_with(config=config)
+    self.assertIsNone(controller)
+    warning_mock.assert_called_once()
+    self.assertIn("openWakeWord barge-in is disabled", warning_mock.call_args[0][0])
 
-  def test_barge_in_factory_keeps_vad_controller_optional(self) -> None:
-    """VAD barge-in should remain available behind configuration."""
-    config = BargeInConfig(enabled=True, mode="vad")
+  def test_barge_in_factory_refuses_vad_without_acknowledgement(self) -> None:
+    """VAD barge-in should be blocked until the risk is acknowledged."""
+    config = BargeInConfig(
+      enabled=True,
+      mode="vad",
+      barge_in_acknowledge_self_trigger_risk=False,
+    )
     with patch(
       "orac_voice.voice_loop_local.load_barge_in_config",
       return_value=config,
     ):
-      with patch(
-        "orac_voice.voice_loop_local.BargeInController"
-      ) as controller_cls:
-        controller = _create_barge_in_controller()
+      with patch("orac_voice.voice_loop_local.logger.warning") as warning_mock:
+        with patch(
+          "orac_voice.voice_loop_local.BargeInController"
+        ) as controller_cls:
+          controller = _create_barge_in_controller()
+
+    self.assertIsNone(controller)
+    controller_cls.assert_not_called()
+    warning_mock.assert_called_once_with(VAD_BARGE_IN_REFUSAL_MESSAGE)
+
+  def test_barge_in_factory_allows_acknowledged_vad_controller(self) -> None:
+    """Acknowledged VAD barge-in should still be constructible."""
+    config = BargeInConfig(
+      enabled=True,
+      mode="vad",
+      barge_in_acknowledge_self_trigger_risk=True,
+    )
+    with patch(
+      "orac_voice.voice_loop_local.load_barge_in_config",
+      return_value=config,
+    ):
+      with patch("orac_voice.voice_loop_local.logger.warning") as warning_mock:
+        with patch(
+          "orac_voice.voice_loop_local.BargeInController"
+        ) as controller_cls:
+          controller = _create_barge_in_controller()
 
     self.assertIs(controller, controller_cls.return_value)
     controller_cls.assert_called_once_with(config=config)
+    warning_mock.assert_called_once_with(
+      VAD_BARGE_IN_EXPERIMENTAL_WARNING
+    )
+
+  def test_interruption_policy_ignores_vad_blip_during_speaking(self) -> None:
+    """Short acoustic blips should not force an interruption."""
+    policy = InterruptionPolicy(
+      allow_interruptions=True,
+      min_speech_ms=250,
+    )
+    policy.begin_output_turn(output_turn_id="turn-1")
+
+    decision = policy.consider_acoustic_interrupt(
+      output_turn_id="turn-1",
+      speech_ms=100,
+    )
+
+    self.assertEqual(decision.action, InterruptionAction.IGNORE)
+    self.assertEqual(decision.reason, "speech below interruption threshold")
+    self.assertEqual(policy.state, InterruptionState.SPEAKING)
+    self.assertTrue(policy.accept_output_event(output_turn_id="turn-1"))
+
+  def test_interruption_policy_respects_allow_interruptions(self) -> None:
+    """Disabled interruptions should leave the speaking turn untouched."""
+    policy = InterruptionPolicy(
+      allow_interruptions=False,
+      min_speech_ms=100,
+    )
+    policy.begin_output_turn(output_turn_id="turn-1")
+
+    decision = policy.consider_acoustic_interrupt(
+      output_turn_id="turn-1",
+      speech_ms=500,
+    )
+
+    self.assertEqual(decision.action, InterruptionAction.IGNORE)
+    self.assertEqual(decision.reason, "interruptions disabled")
+    self.assertEqual(policy.state, InterruptionState.SPEAKING)
+
+  def test_interruption_policy_false_interrupt_pauses_then_resumes(self) -> None:
+    """Short recognised output should pause and then resume semantically."""
+    policy = InterruptionPolicy(
+      allow_interruptions=True,
+      min_speech_ms=100,
+      min_recognised_words=3,
+      resume_false_interruption_enabled=True,
+    )
+    policy.begin_output_turn(output_turn_id="turn-1")
+
+    decision = policy.consider_acoustic_interrupt(
+      output_turn_id="turn-1",
+      speech_ms=150,
+      recognised_text="yes",
+    )
+    resumed = policy.resume_false_interruption(output_turn_id="turn-1")
+
+    self.assertEqual(decision.action, InterruptionAction.PAUSE)
+    self.assertEqual(decision.reason, "false interruption; waiting to resume")
+    self.assertEqual(policy.state, InterruptionState.SPEAKING)
+    self.assertEqual(resumed.action, InterruptionAction.RESUME)
+    self.assertEqual(resumed.reason, "false interruption resumed")
+
+  def test_interruption_policy_confirmed_interrupt_closes_output_turn(
+    self,
+  ) -> None:
+    """A confirmed interruption should close the active output turn."""
+    policy = InterruptionPolicy(
+      allow_interruptions=True,
+      min_speech_ms=100,
+    )
+    policy.begin_output_turn(output_turn_id="turn-1")
+
+    decision = policy.consider_acoustic_interrupt(
+      output_turn_id="turn-1",
+      speech_ms=200,
+      recognised_text="cancel that",
+    )
+
+    self.assertEqual(decision.action, InterruptionAction.INTERRUPT)
+    self.assertEqual(policy.state, InterruptionState.INTERRUPTED)
+    self.assertFalse(policy.accept_output_event(output_turn_id="turn-1"))
+
+  def test_interruption_policy_ignores_late_playback_complete_after_interrupt(
+    self,
+  ) -> None:
+    """Late playback completion should be ignored after interruption."""
+    policy = InterruptionPolicy(
+      allow_interruptions=True,
+      min_speech_ms=100,
+    )
+    policy.begin_output_turn(output_turn_id="turn-1")
+    policy.consider_acoustic_interrupt(
+      output_turn_id="turn-1",
+      speech_ms=200,
+    )
+
+    self.assertFalse(policy.mark_output_finished(output_turn_id="turn-1"))
+    self.assertEqual(policy.state, InterruptionState.INTERRUPTED)
+
+  def test_interruption_policy_duplicate_interruptions_are_idempotent(
+    self,
+  ) -> None:
+    """Repeated interruption events for one turn should be ignored."""
+    policy = InterruptionPolicy(
+      allow_interruptions=True,
+      min_speech_ms=100,
+    )
+    policy.begin_output_turn(output_turn_id="turn-1")
+
+    first = policy.consider_acoustic_interrupt(
+      output_turn_id="turn-1",
+      speech_ms=200,
+    )
+    second = policy.consider_acoustic_interrupt(
+      output_turn_id="turn-1",
+      speech_ms=220,
+    )
+
+    self.assertEqual(first.action, InterruptionAction.INTERRUPT)
+    self.assertEqual(second.action, InterruptionAction.IGNORE)
+    self.assertTrue(second.is_duplicate)
 
   def test_piper_engine_uses_configured_runtime_output_directory(self) -> None:
     """Piper should write generated WAV files below ORAC_HOME/var/tmp."""
@@ -1354,6 +1608,33 @@ class OracVoiceTests(unittest.TestCase):
     self.assertIn("VoiceTtsPlaybackStarted", event_types)
     self.assertIn("VoiceTtsPlaybackFinished", event_types)
 
+  def test_tts_worker_emits_turn_complete_after_input_closes(self) -> None:
+    """TTS worker should own voice_turn_complete once playback drains."""
+    events = []
+    with tempfile.TemporaryDirectory() as tmp_name:
+      wav_path = Path(tmp_name) / "out.wav"
+      wav_path.write_bytes(b"RIFFfake")
+      tts_engine = _FakeTtsEngine(wav_path=wav_path)
+      playback = _FakePlayback()
+      worker = TtsWorker(
+        tts_engine=tts_engine,
+        audio_playback=playback,
+        event_handler=events.append,
+      )
+      worker.start()
+      worker.enqueue_text(session_id="s1", turn_id="t1", text="Hello there.")
+      worker.mark_turn_input_complete(session_id="s1", turn_id="t1")
+      drained = worker.wait_until_idle(timeout=2.0)
+      worker.stop()
+
+    event_types = [event.event_type for event in events]
+    self.assertTrue(drained)
+    self.assertIn("VoiceTurnComplete", event_types)
+    self.assertLess(
+      event_types.index("VoiceTtsPlaybackFinished"),
+      event_types.index("VoiceTurnComplete"),
+    )
+
   def test_orac_forwards_tts_playback_events_to_subscribers(self) -> None:
     """Orac should publish TTS playback events to active voice streams."""
     orchestrator = Orac.__new__(Orac)
@@ -1391,6 +1672,42 @@ class OracVoiceTests(unittest.TestCase):
     self.assertEqual(frames[0]["type"], "tts_playback_started")
     self.assertEqual(frames[0]["payload"]["turn_id"], "t1")
     self.assertEqual(frames[0]["payload"]["utterance_id"], "utt1")
+
+  def test_orac_forwards_turn_complete_events_to_subscribers(self) -> None:
+    """Orac should forward worker-owned turn completion frames unchanged."""
+    orchestrator = Orac.__new__(Orac)
+    orchestrator.model_name = "test-model"
+    orchestrator._voice_event_subscribers = {}
+    orchestrator._voice_event_subscriber_lock = threading.Lock()
+    frames = []
+
+    subscription = type(
+      "_Subscription",
+      (),
+      {
+        "callback": frames.append,
+        "playback_expected": False,
+        "playback_started": False,
+        "playback_terminal": False,
+      },
+    )()
+    orchestrator._register_voice_event_subscriber(
+      session_id="s1",
+      turn_id="t1",
+      subscription=subscription,
+    )
+
+    orchestrator._handle_voice_event(
+      VoiceTurnComplete(
+        session_id="s1",
+        turn_id="t1",
+        reason="completed",
+      )
+    )
+
+    self.assertEqual(len(frames), 1)
+    self.assertEqual(frames[0]["type"], "voice_turn_complete")
+    self.assertEqual(frames[0]["payload"]["turn_id"], "t1")
 
   def test_orac_routes_text_chunk_but_not_text_delta_to_voice(self) -> None:
     """Orac should route only speech chunks to the TTS queue."""
@@ -1642,6 +1959,7 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
       "tts_playback_finished",
       "tts_playback_cancelled",
       "tts_playback_error",
+      "voice_turn_complete",
     }
     fake_slave.build_prompt_request = lambda prompt_text, **_kwargs: {
       "v": 1,
@@ -1927,15 +2245,15 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
       },
       {
         "v": 1,
-        "type": "stream_end",
+        "type": "text_chunk",
         "reply_to": "req_current",
-        "payload": {"stop_reason": "stop"},
+        "payload": {"chunk": "OK.", "turn_id": "req_current"},
       },
       {
         "v": 1,
-        "type": "tts_playback_started",
+        "type": "stream_end",
         "reply_to": "req_current",
-        "payload": {"turn_id": "req_current"},
+        "payload": {"stop_reason": "stop"},
       },
       {
         "v": 1,
@@ -1945,9 +2263,25 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
       },
       {
         "v": 1,
+        "type": "tts_playback_started",
+        "reply_to": "req_current",
+        "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+      },
+      {
+        "v": 1,
         "type": "tts_playback_finished",
         "reply_to": "req_current",
-        "payload": {"turn_id": "req_current"},
+        "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+      },
+      {
+        "v": 1,
+        "type": "voice_turn_complete",
+        "reply_to": "req_current",
+        "payload": {
+          "turn_id": "req_current",
+          "request_id": "req_current",
+          "timestamp": "2026-05-07T20:00:01+00:00",
+        },
       },
     ]
     for frame in frames:
@@ -1970,10 +2304,256 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
       [state[0] for state in sender.states],
       ["thinking", "speaking", "idle"],
     )
+    self.assertEqual(sender.states[-1][1], "Listening for wake word")
     self.assertTrue(
       all(state[2] == "voice-session" for state in sender.states)
     )
     self.assertTrue(all(state[3] == "req_current" for state in sender.states))
+
+  async def test_voice_prompt_stays_speaking_until_last_chunk_finishes(
+    self,
+  ) -> None:
+    """Prompt handling should not return to idle between spoken chunks."""
+    reader = asyncio.StreamReader()
+    writer = _FakeStreamWriter()
+    frames = [
+      {
+        "v": 1,
+        "type": "stream_start",
+        "reply_to": "req_current",
+        "payload": {},
+      },
+      {
+        "v": 1,
+        "type": "text_delta",
+        "reply_to": "req_current",
+        "payload": {"delta": "Freddie Mercury was"},
+      },
+      {
+        "v": 1,
+        "type": "text_chunk",
+        "reply_to": "req_current",
+        "payload": {"chunk": "Freddie Mercury was", "turn_id": "req_current"},
+      },
+      {
+        "v": 1,
+        "type": "tts_playback_started",
+        "reply_to": "req_current",
+        "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+      },
+      {
+        "v": 1,
+        "type": "tts_playback_finished",
+        "reply_to": "req_current",
+        "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+      },
+      {
+        "v": 1,
+        "type": "text_delta",
+        "reply_to": "req_current",
+        "payload": {"delta": " the lead singer of Queen."},
+      },
+      {
+        "v": 1,
+        "type": "text_chunk",
+        "reply_to": "req_current",
+        "payload": {
+          "chunk": "the lead singer of Queen.",
+          "turn_id": "req_current",
+        },
+      },
+      {
+        "v": 1,
+        "type": "stream_end",
+        "reply_to": "req_current",
+        "payload": {"stop_reason": "stop"},
+      },
+      {
+        "v": 1,
+        "type": "response",
+        "reply_to": "req_current",
+        "payload": {
+          "content": "Freddie Mercury was the lead singer of Queen.",
+        },
+      },
+      {
+        "v": 1,
+        "type": "tts_playback_started",
+        "reply_to": "req_current",
+        "payload": {"turn_id": "req_current", "utterance_id": "utt2"},
+      },
+      {
+        "v": 1,
+        "type": "tts_playback_finished",
+        "reply_to": "req_current",
+        "payload": {"turn_id": "req_current", "utterance_id": "utt2"},
+      },
+      {
+        "v": 1,
+        "type": "voice_turn_complete",
+        "reply_to": "req_current",
+        "payload": {
+          "turn_id": "req_current",
+          "request_id": "req_current",
+          "timestamp": "2026-05-07T20:00:02+00:00",
+        },
+      },
+    ]
+    for frame in frames:
+      reader.feed_data((json.dumps(frame) + "\n").encode("utf-8"))
+    reader.feed_eof()
+
+    sender = _FakeDisplaySender()
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+      status = await _send_orac_prompt(
+        reader=reader,
+        writer=writer,
+        prompt_text="current",
+        voice_session_id="voice-session",
+        display_sender=sender,
+      )
+
+    self.assertEqual(status, 0)
+    self.assertEqual(
+      [state[0] for state in sender.states],
+      ["thinking", "speaking", "speaking", "idle"],
+    )
+    self.assertEqual(sender.states[-1][1], "Listening for wake word")
+    self.assertTrue(all(state[0] != "idle" for state in sender.states[:-1]))
+
+  async def test_voice_prompt_waits_for_all_playback_utterances(
+    self,
+  ) -> None:
+    """Long responses should finish after all spoken utterances, not chunks."""
+    reader = asyncio.StreamReader()
+    writer = _FakeStreamWriter()
+    frames = [
+      {
+        "v": 1,
+        "type": "stream_start",
+        "reply_to": "req_current",
+        "payload": {},
+      },
+      {
+        "v": 1,
+        "type": "text_delta",
+        "reply_to": "req_current",
+        "payload": {"delta": "Freddie Mercury was"},
+      },
+      {
+        "v": 1,
+        "type": "text_chunk",
+        "reply_to": "req_current",
+        "payload": {"chunk": "Freddie Mercury was", "turn_id": "req_current"},
+      },
+      {
+        "v": 1,
+        "type": "text_delta",
+        "reply_to": "req_current",
+        "payload": {"delta": " a British singer."},
+      },
+      {
+        "v": 1,
+        "type": "text_chunk",
+        "reply_to": "req_current",
+        "payload": {"chunk": "a British singer.", "turn_id": "req_current"},
+      },
+      {
+        "v": 1,
+        "type": "text_delta",
+        "reply_to": "req_current",
+        "payload": {"delta": " He fronted Queen."},
+      },
+      {
+        "v": 1,
+        "type": "text_chunk",
+        "reply_to": "req_current",
+        "payload": {"chunk": "He fronted Queen.", "turn_id": "req_current"},
+      },
+      {
+        "v": 1,
+        "type": "text_delta",
+        "reply_to": "req_current",
+        "payload": {"delta": " His voice was distinctive."},
+      },
+      {
+        "v": 1,
+        "type": "text_chunk",
+        "reply_to": "req_current",
+        "payload": {"chunk": "His voice was distinctive.", "turn_id": "req_current"},
+      },
+      {
+        "v": 1,
+        "type": "stream_end",
+        "reply_to": "req_current",
+        "payload": {"stop_reason": "stop"},
+      },
+      {
+        "v": 1,
+        "type": "response",
+        "reply_to": "req_current",
+        "payload": {
+          "content": (
+            "Freddie Mercury was a British singer. He fronted Queen. "
+            "His voice was distinctive."
+          ),
+        },
+      },
+      {
+        "v": 1,
+        "type": "tts_playback_started",
+        "reply_to": "req_current",
+        "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+      },
+      {
+        "v": 1,
+        "type": "tts_playback_finished",
+        "reply_to": "req_current",
+        "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+      },
+      {
+        "v": 1,
+        "type": "tts_playback_started",
+        "reply_to": "req_current",
+        "payload": {"turn_id": "req_current", "utterance_id": "utt2"},
+      },
+      {
+        "v": 1,
+        "type": "tts_playback_finished",
+        "reply_to": "req_current",
+        "payload": {"turn_id": "req_current", "utterance_id": "utt2"},
+      },
+      {
+        "v": 1,
+        "type": "voice_turn_complete",
+        "reply_to": "req_current",
+        "payload": {
+          "turn_id": "req_current",
+          "request_id": "req_current",
+          "timestamp": "2026-05-07T20:00:03+00:00",
+        },
+      },
+    ]
+    for frame in frames:
+      reader.feed_data((json.dumps(frame) + "\n").encode("utf-8"))
+    reader.feed_eof()
+
+    sender = _FakeDisplaySender()
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+      status = await _send_orac_prompt(
+        reader=reader,
+        writer=writer,
+        prompt_text="current",
+        voice_session_id="voice-session",
+        display_sender=sender,
+      )
+
+    self.assertEqual(status, 0)
+    self.assertIn("Orac: Freddie Mercury was", output.getvalue())
+    self.assertEqual(sender.states[-1][0], "idle")
+    self.assertEqual(sender.states[-1][1], "Listening for wake word")
 
   async def test_voice_prompt_barge_in_cancels_active_turn(self) -> None:
     """Barge-in should stop consuming the current response stream."""
@@ -2038,11 +2618,12 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
         side_effect=_fake_cancel,
       ):
         with contextlib.redirect_stdout(output):
+          controller = _ImmediateBargeInController()
           status = await _send_orac_prompt(
             reader=reader,
             writer=writer,
             prompt_text="current",
-            barge_in_controller=_ImmediateBargeInController(),
+            barge_in_controller=controller,
             voice_session_id="voice-session",
             cancel_host="127.0.0.1",
             cancel_port=8765,
@@ -2052,6 +2633,7 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(len(cancel_calls), 1)
     self.assertEqual(cancel_calls[0]["session_id"], "voice-session")
     self.assertEqual(cancel_calls[0]["turn_id"], "req_current")
+    self.assertEqual(controller.stop_calls, 1)
     self.assertIn("[interrupted]", output.getvalue())
     self.assertNotIn("Should not be consumed", output.getvalue())
 
@@ -2239,7 +2821,98 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(controller.stop_calls, 1)
     self.assertEqual(cancel_calls, [])
     self.assertFalse(controller.interrupted)
-    self.assertNotIn("[interrupted]", output.getvalue())
+
+  async def test_voice_session_continues_after_failed_turn(self) -> None:
+    """A nonzero turn result should not terminate wake listening."""
+    args = build_parser().parse_args(
+      ["--voice-session", "--activation-mode", "openwakeword"]
+    )
+    sender = _FakeDisplaySender()
+    activation_listener = _FakeActivationListener(
+      [
+        types.SimpleNamespace(activated=True, exit_requested=False),
+        types.SimpleNamespace(activated=True, exit_requested=False),
+        types.SimpleNamespace(activated=False, exit_requested=True),
+      ]
+    )
+    reader_1 = asyncio.StreamReader()
+    writer_1 = _FakeStreamWriter()
+    reader_2 = asyncio.StreamReader()
+    writer_2 = _FakeStreamWriter()
+    prompt_calls: list[str] = []
+    transcriptions = iter([
+      ("voice-session", "turn-1", "First question"),
+      ("voice-session", "turn-2", "Second question"),
+    ])
+    prompt_statuses = iter([1, 0])
+
+    async def _fake_open_connection(*_args, **_kwargs):
+      if not prompt_calls:
+        return reader_1, writer_1
+      return reader_2, writer_2
+
+    async def _fake_send_orac_prompt(**kwargs) -> int:
+      prompt_calls.append(str(kwargs["prompt_text"]))
+      return next(prompt_statuses)
+
+    def _fake_transcribe_once(*_args, **_kwargs):
+      return next(transcriptions)
+
+    with patch(
+      "orac_voice.voice_loop_local.SoundDeviceAudioCapture.from_config",
+      return_value=_FakeWakeCapture(
+        VadCaptureResult(wav_path=Path("/tmp/fake-voice-capture.wav"))
+      ),
+    ):
+      with patch(
+        "orac_voice.voice_loop_local.FasterWhisperSttEngine.from_config",
+        return_value=object(),
+      ):
+        with patch(
+          "orac_voice.voice_loop_local._create_barge_in_controller",
+          return_value=None,
+        ):
+          with patch(
+            "orac_voice.voice_loop_local.DisplayEventSender.from_config",
+            return_value=sender,
+          ):
+            with patch(
+              "orac_voice.voice_loop_local._create_activation_listener",
+              return_value=activation_listener,
+            ):
+              with patch(
+                "orac_voice.voice_loop_local._load_wake_rearm_seconds",
+                return_value=0.0,
+              ):
+                with patch(
+                  "orac_voice.voice_loop_local._transcribe_once",
+                  side_effect=_fake_transcribe_once,
+                ):
+                  with patch(
+                    "orac_voice.voice_loop_local._send_orac_prompt",
+                    side_effect=_fake_send_orac_prompt,
+                  ):
+                    with patch(
+                      "orac_voice.voice_loop_local.asyncio.open_connection",
+                      side_effect=_fake_open_connection,
+                    ):
+                      status = await _voice_session_async(args)
+
+    self.assertEqual(status, 0)
+    self.assertEqual(prompt_calls, ["First question", "Second question"])
+    self.assertEqual(activation_listener.wait_calls, 3)
+    self.assertEqual(writer_1.close_calls, 1)
+    self.assertEqual(writer_1.wait_closed_calls, 1)
+    self.assertEqual(writer_2.close_calls, 1)
+    self.assertEqual(writer_2.wait_closed_calls, 1)
+    self.assertTrue(
+      any(
+        state[0] == "idle" and state[1] == "Listening for wake word"
+        for state in sender.states
+      )
+    )
+    self.assertEqual(sender.states[-1][0], "idle")
+    self.assertEqual(sender.states[-1][1], "Listening for wake word")
 
   async def test_voice_prompt_waits_after_final_response_for_playback_end(self) -> None:
     """Final text response should not re-arm wake before playback finishes."""

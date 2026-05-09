@@ -17,6 +17,10 @@ from orac_voice.audio_playback import AudioPlayback, LocalAudioPlayback
 from orac_voice.barge_in import BargeInConfig
 from orac_voice.barge_in import BargeInController
 from orac_voice.barge_in import BargeInResult
+from orac_voice.interruption_policy import InterruptionAction
+from orac_voice.interruption_policy import InterruptionDecision
+from orac_voice.interruption_policy import InterruptionPolicy
+from orac_voice.interruption_policy import InterruptionState
 from orac_voice.stt_faster_whisper import FasterWhisperSttEngine, SttEngine
 from orac_voice.tts_coalescer import TtsChunkCoalescer
 from orac_voice.tts_piper import PiperTtsEngine
@@ -51,6 +55,10 @@ __all__ = [
   "BargeInConfig",
   "BargeInController",
   "BargeInResult",
+  "InterruptionAction",
+  "InterruptionDecision",
+  "InterruptionPolicy",
+  "InterruptionState",
   "EnterActivationListener",
   "FasterWhisperSttEngine",
   "LocalAudioPlayback",

@@ -39,6 +39,7 @@ from orac_voice.wake_openwakeword import (
 
 DEFAULT_BARGE_IN_ENABLED = False
 DEFAULT_BARGE_IN_MODE = "openwakeword"
+DEFAULT_BARGE_IN_ACKNOWLEDGE_SELF_TRIGGER_RISK = False
 DEFAULT_BARGE_IN_MIN_SPEECH_MS = 250
 DEFAULT_BARGE_IN_GRACE_MS = 500
 DEFAULT_BARGE_IN_COOLDOWN_MS = 1000
@@ -48,6 +49,16 @@ DEFAULT_BARGE_IN_POST_RESPONSE_MS = 12000
 DEFAULT_BARGE_IN_POST_RESPONSE_CANCEL_ENABLED = False
 SUPPORTED_BARGE_IN_MODES = {"openwakeword", "wake_word", "vad"}
 SUPPORTED_BARGE_IN_RETURN_MODES = {"command_capture", "wake_listening"}
+VAD_BARGE_IN_REFUSAL_MESSAGE = (
+  "VAD barge-in is disabled because speaker playback can self-trigger "
+  "without echo cancellation. Set "
+  "barge_in_acknowledge_self_trigger_risk=true to enable experimental "
+  "mode."
+)
+VAD_BARGE_IN_EXPERIMENTAL_WARNING = (
+  "Experimental VAD barge-in is enabled; speaker playback may self-trigger "
+  "without echo cancellation."
+)
 
 
 @dataclass(frozen=True)
@@ -60,6 +71,9 @@ class BargeInConfig:
   grace_ms: int = DEFAULT_BARGE_IN_GRACE_MS
   cooldown_ms: int = DEFAULT_BARGE_IN_COOLDOWN_MS
   return_mode: str = DEFAULT_BARGE_IN_RETURN_MODE
+  barge_in_acknowledge_self_trigger_risk: bool = (
+    DEFAULT_BARGE_IN_ACKNOWLEDGE_SELF_TRIGGER_RISK
+  )
   ignore_during_tts_start_ms: int = DEFAULT_BARGE_IN_IGNORE_DURING_TTS_START_MS
   post_response_ms: int = DEFAULT_BARGE_IN_POST_RESPONSE_MS
   post_response_cancel_enabled: bool = DEFAULT_BARGE_IN_POST_RESPONSE_CANCEL_ENABLED
@@ -222,6 +236,9 @@ class BargeInController:
       return
     if self.config.mode != "vad":
       raise RuntimeError(f"Unsupported barge-in mode: {self.config.mode}")
+    if not self.config.barge_in_acknowledge_self_trigger_risk:
+      logger.warning(VAD_BARGE_IN_REFUSAL_MESSAGE)
+      return
     if self._thread is not None and self._thread.is_alive():
       return
 
@@ -554,6 +571,11 @@ def load_barge_in_config(config_mgr: ConfigManager) -> BargeInConfig:
       default=DEFAULT_BARGE_IN_ENABLED,
     ),
     mode=mode,
+    barge_in_acknowledge_self_trigger_risk=config_mgr.bool_config_value(
+      "voice",
+      "barge_in_acknowledge_self_trigger_risk",
+      default=DEFAULT_BARGE_IN_ACKNOWLEDGE_SELF_TRIGGER_RISK,
+    ),
     min_speech_ms=config_mgr.int_config_value(
       "voice",
       "barge_in_min_speech_ms",

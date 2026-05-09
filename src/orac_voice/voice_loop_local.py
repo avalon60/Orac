@@ -27,8 +27,11 @@ from orac_voice.activation import WakeWordActivationListener
 from orac_voice.audio_capture import SoundDeviceAudioCapture
 from orac_voice.barge_in import BargeInController
 from orac_voice.barge_in import BargeInResult
-from orac_voice.barge_in import OpenWakeWordBargeInController
+from orac_voice.barge_in import VAD_BARGE_IN_EXPERIMENTAL_WARNING
+from orac_voice.barge_in import VAD_BARGE_IN_REFUSAL_MESSAGE
 from orac_voice.barge_in import load_barge_in_config
+from orac_voice.interruption_policy import InterruptionAction
+from orac_voice.interruption_policy import InterruptionPolicy
 from orac_voice.stt_faster_whisper import FasterWhisperSttEngine
 from orac_voice.tts_worker import create_local_tts_worker_from_config
 from orac_voice.tts_piper import resolve_orac_home
@@ -281,7 +284,16 @@ def _create_barge_in_controller() -> BargeInController | None:
   if not config.enabled:
     return None
   if config.mode == "openwakeword":
-    return OpenWakeWordBargeInController(config=config)
+    logger.warning(
+      "openWakeWord barge-in is disabled because it can self-trigger on "
+      "assistant speech; use barge_in_mode=vad for live interruption."
+    )
+    return None
+  if config.mode == "vad" and not config.barge_in_acknowledge_self_trigger_risk:
+    logger.warning(VAD_BARGE_IN_REFUSAL_MESSAGE)
+    return None
+  if config.mode == "vad":
+    logger.warning(VAD_BARGE_IN_EXPERIMENTAL_WARNING)
   return BargeInController(config=config)
 
 
@@ -642,14 +654,37 @@ async def _send_orac_prompt(
   stream_error_seen = False
   barge_active = False
   playback_expected = False
+  playback_started = False
+  playback_started_count = 0
+  playback_finished_count = 0
+  playback_cancelled = False
   playback_terminal = False
   final_response_status: int | None = None
+  interruption_policy = InterruptionPolicy(
+    allow_interruptions=barge_in_controller is not None,
+    min_speech_ms=(
+      getattr(barge_in_controller.config, "min_speech_ms", 0)
+      if barge_in_controller is not None
+      else 0
+    ),
+  )
   barge_event = asyncio.Event()
   barge_result: BargeInResult | None = None
   loop = asyncio.get_running_loop()
 
   def _on_barge_in(result: BargeInResult) -> None:
     nonlocal barge_result
+    decision = interruption_policy.consider_acoustic_interrupt(
+      output_turn_id=req_id,
+      speech_ms=result.speech_ms,
+    )
+    if decision.action is not InterruptionAction.INTERRUPT:
+      logger.debug(
+        "Ignoring acoustic interruption for turn {}: {}",
+        req_id,
+        decision.reason,
+      )
+      return
     barge_result = result
     loop.call_soon_threadsafe(barge_event.set)
 
@@ -669,6 +704,34 @@ async def _send_orac_prompt(
     barge_active = False
     barge_in_controller.stop()
 
+  def _maybe_finish_turn() -> int | None:
+    """Return the final status once the answer and playback are complete."""
+    if playback_cancelled:
+      interruption_policy.mark_turn_complete(output_turn_id=req_id)
+      if display_sender is not None:
+        display_sender.send_state(
+          "idle",
+          message="Listening for wake word",
+          session_id=voice_session_id,
+          turn_id=req_id,
+      )
+      _stop_barge_in_monitor()
+      return final_response_status if final_response_status is not None else 0
+    if final_response_status is None:
+      return None
+    if not stream_finished:
+      return None
+    interruption_policy.mark_turn_complete(output_turn_id=req_id)
+    if display_sender is not None:
+      display_sender.send_state(
+        "idle",
+        message="Listening for wake word",
+        session_id=voice_session_id,
+        turn_id=req_id,
+      )
+    _stop_barge_in_monitor()
+    return final_response_status
+
   async def _cancel_interrupted_voice() -> int:
     logger.info("Barge-in interruption received; cancelling active voice")
     _console_line("[interrupted]")
@@ -677,8 +740,10 @@ async def _send_orac_prompt(
         "interrupted",
         message="Interrupted",
         session_id=voice_session_id,
-        turn_id=req_id,
+      turn_id=req_id,
       )
+    _stop_barge_in_monitor()
+    interruption_policy.mark_output_cancelled(output_turn_id=req_id)
     await _send_voice_cancel_request(
       host=cancel_host or DEFAULT_HOST,
       port=cancel_port or DEFAULT_PORT,
@@ -697,7 +762,13 @@ async def _send_orac_prompt(
       wait_tasks.add(barge_task)
     done, pending = await asyncio.wait(
       wait_tasks,
-      timeout=(5.0 if final_response_status is not None else slave_client.LLM_TIMEOUT),
+      timeout=(
+        60.0
+        if final_response_status is not None and playback_expected
+        else 5.0
+        if final_response_status is not None
+        else slave_client.LLM_TIMEOUT
+      ),
       return_when=asyncio.FIRST_COMPLETED,
     )
     for task in pending:
@@ -730,6 +801,14 @@ async def _send_orac_prompt(
 
       if not resp_bytes:
         if final_response_status is not None:
+          if display_sender is not None:
+            display_sender.send_state(
+              "idle",
+              message="Listening for wake word",
+              session_id=voice_session_id,
+              turn_id=req_id,
+            )
+          _stop_barge_in_monitor()
           return final_response_status
         return 0
 
@@ -753,11 +832,19 @@ async def _send_orac_prompt(
       frame_type = env.get("type")
       if frame_type in slave_client.STREAM_EVENT_TYPES:
         if frame_type == "tts_playback_error":
+          if not interruption_policy.accept_output_event(output_turn_id=req_id):
+            logger.debug(
+              "Ignoring stale playback event {} for turn {}",
+              frame_type,
+              req_id,
+            )
+            continue
           err_obj = env.get("error")
           msg = ""
           if isinstance(err_obj, dict):
             msg = str(err_obj.get("message") or "")
           logger.warning("TTS playback error: {}", msg or "unknown")
+          interruption_policy.mark_output_cancelled(output_turn_id=req_id)
           if display_sender is not None:
             display_sender.send_state(
               "error",
@@ -794,6 +881,7 @@ async def _send_orac_prompt(
           )
         elif frame_type == "text_chunk":
           logger.debug("Speech text chunk received for existing TTS path")
+          playback_expected = True
         elif frame_type in {"stream_end", "stream_cancelled"}:
           stream_finished = True
           if stream_rendered:
@@ -801,8 +889,11 @@ async def _send_orac_prompt(
           if frame_type == "stream_cancelled":
             _console_line("[stream cancelled]")
         elif frame_type == "tts_playback_started":
+          playback_started = True
+          playback_started_count += 1
           playback_expected = True
           playback_terminal = False
+          interruption_policy.begin_output_turn(output_turn_id=req_id)
           _console_line("TTS playback started.")
           if display_sender is not None:
             display_sender.send_state(
@@ -816,24 +907,46 @@ async def _send_orac_prompt(
             _start_barge_in_monitor()
           else:
             logger.debug("TTS playback started")
+          continue
         elif frame_type in {
           "tts_playback_finished",
           "tts_playback_cancelled",
           "tts_playback_error",
         }:
+          if not interruption_policy.accept_output_event(output_turn_id=req_id):
+            logger.debug(
+              "Ignoring stale playback event {} for turn {}",
+              frame_type,
+              req_id,
+            )
+            continue
           playback_terminal = True
           _console_line(f"{frame_type} received.")
           logger.debug("{} received", frame_type)
+          if frame_type == "tts_playback_cancelled":
+            playback_cancelled = True
+            interruption_policy.mark_output_cancelled(output_turn_id=req_id)
+            maybe_status = _maybe_finish_turn()
+            _stop_barge_in_monitor()
+            if maybe_status is not None:
+              return maybe_status
+            continue
+          if frame_type == "tts_playback_finished":
+            playback_finished_count += 1
+            interruption_policy.mark_output_finished(output_turn_id=req_id)
+            continue
+        elif frame_type == "voice_turn_complete":
+          playback_terminal = True
+          interruption_policy.mark_turn_complete(output_turn_id=req_id)
           if display_sender is not None:
             display_sender.send_state(
               "idle",
-              message="Idle",
+              message="Listening for wake word",
               session_id=voice_session_id,
               turn_id=req_id,
             )
           _stop_barge_in_monitor()
-          if final_response_status is not None:
-            return final_response_status
+          return 1 if stream_error_seen else 0
         continue
 
       if frame_type != "response":
@@ -858,19 +971,20 @@ async def _send_orac_prompt(
       if stream_rendered or stream_finished:
         print()
         final_response_status = 1 if stream_error_seen else 0
-        if playback_expected and not playback_terminal:
+        if not stream_finished:
           logger.debug(
-            "Final response received; waiting for TTS playback terminal event"
+            "Final response received; waiting for stream_end event"
           )
           continue
-        if display_sender is not None and not playback_terminal:
-          display_sender.send_state(
-            "idle" if final_response_status == 0 else "error",
-            message="Idle" if final_response_status == 0 else "Response error",
-            session_id=voice_session_id,
-            turn_id=req_id,
+        if playback_expected:
+          logger.debug(
+            "Final response received; waiting for remaining playback events"
           )
-        return final_response_status
+          continue
+        maybe_status = _maybe_finish_turn()
+        if maybe_status is not None:
+          return maybe_status
+        continue
 
       payload = env.get("payload")
       content = payload.get("content") if isinstance(payload, dict) else ""
@@ -878,7 +992,7 @@ async def _send_orac_prompt(
       if display_sender is not None:
         display_sender.send_state(
           "idle",
-          message="Idle",
+          message="Listening for wake word",
           session_id=voice_session_id,
           turn_id=req_id,
         )
@@ -992,7 +1106,7 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
       try:
         if not capture_next_command:
           display_sender.send_state(
-            "listening",
+            "idle",
             message="Listening for wake word",
             session_id=session_id,
           )
@@ -1022,7 +1136,7 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
       except NoSpeechDetectedError as exc:
         _console_line(str(exc))
         display_sender.send_state(
-          "listening",
+          "idle",
           message="Listening for wake word",
           session_id=session_id,
         )
@@ -1063,7 +1177,23 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
           capture_next_command = True
         continue
       if status != 0:
-        return status
+        logger.warning(
+          "Voice turn ended with status {}; returning to wake listening",
+          status,
+        )
+        _console_line("Voice turn failed; returning to wake listening.")
+        if display_sender is not None:
+          display_sender.send_state(
+            "idle",
+            message="Listening for wake word",
+            session_id=session_id,
+          )
+        if writer is not None:
+          writer.close()
+          await writer.wait_closed()
+        reader = None
+        writer = None
+        continue
       if wake_rearm_seconds > 0:
         logger.debug(
           "Waiting {:.1f}s before re-arming wake-word detection",
@@ -1076,9 +1206,9 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
   finally:
     display_sender.send(
       DisplayEvent(
-        event="shutdown",
-        state="shutdown",
-        message="Voice session stopped",
+        event="state_changed",
+        state="idle",
+        message="Listening for wake word",
         session_id=session_id,
       )
     )

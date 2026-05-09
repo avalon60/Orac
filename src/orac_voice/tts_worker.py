@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 import queue
 import re
 import threading
@@ -31,11 +32,22 @@ from orac_voice.voice_events import (
   VoiceTtsPlaybackStarted,
   VoiceTtsStarted,
   VoiceTurnCancelled,
+  VoiceTurnComplete,
 )
 from lib.config_mgr import ConfigManager
 
 
 EventHandler = Callable[[VoiceEvent], None]
+
+
+@dataclass
+class _TurnLifecycle:
+  """Playback lifecycle counters for one session turn."""
+
+  queued: int = 0
+  terminal: int = 0
+  input_complete: bool = False
+  complete_emitted: bool = False
 
 
 def speech_safe_text(text: str) -> str:
@@ -148,6 +160,7 @@ class TtsWorker:
     self._cancelled_sessions: set[str] = set()
     self._cancelled_turns: set[tuple[str, str]] = set()
     self._active_chunk: VoiceTextChunk | None = None
+    self._turn_states: dict[tuple[str, str], _TurnLifecycle] = {}
     self.error_count = 0
     self.last_error: VoiceError | None = None
 
@@ -223,7 +236,18 @@ class TtsWorker:
         text=clean_text,
       )
     )
+    self._mark_turn_queued(session_id=session_id, turn_id=turn_id)
     return True
+
+  def mark_turn_input_complete(self, *, session_id: str, turn_id: str) -> None:
+    """Mark that no more speech chunks will be queued for this turn."""
+    with self._state_lock:
+      state = self._turn_states.setdefault(
+        (session_id, turn_id),
+        _TurnLifecycle(),
+      )
+      state.input_complete = True
+    self._maybe_emit_turn_complete(session_id=session_id, turn_id=turn_id)
 
   def cancel_turn(self, *, session_id: str, turn_id: str) -> int:
     """Cancel queued and active speech for a specific turn."""
@@ -234,6 +258,11 @@ class TtsWorker:
     )
     with self._state_lock:
       self._cancelled_turns.add((session_id, turn_id))
+      state = self._turn_states.setdefault(
+        (session_id, turn_id),
+        _TurnLifecycle(),
+      )
+      state.input_complete = True
     removed = self._discard_queued(
       session_id=session_id,
       turn_id=turn_id,
@@ -258,6 +287,9 @@ class TtsWorker:
     logger.info("TTS cancellation requested for session={}", session_id)
     with self._state_lock:
       self._cancelled_sessions.add(session_id)
+      for (state_session_id, _turn_id), state in self._turn_states.items():
+        if state_session_id == session_id:
+          state.input_complete = True
     removed = self._discard_queued(
       session_id=session_id,
       turn_id=None,
@@ -306,6 +338,11 @@ class TtsWorker:
             reason=reason,
           )
         )
+        self._mark_turn_terminal(
+          session_id=item.session_id,
+          turn_id=item.turn_id,
+          reason=reason,
+        )
       self._queue.task_done()
     return removed
 
@@ -340,6 +377,11 @@ class TtsWorker:
             turn_id=item.turn_id,
             reason=reason,
           )
+        )
+        self._mark_turn_terminal(
+          session_id=item.session_id,
+          turn_id=item.turn_id,
+          reason=reason,
         )
         self._queue.task_done()
       else:
@@ -388,6 +430,11 @@ class TtsWorker:
         reason="active speech cancelled",
       )
     )
+    self._mark_turn_terminal(
+      session_id=active.session_id,
+      turn_id=active.turn_id,
+      reason="cancelled",
+    )
     self._cancel_active_processes()
 
   def _cancel_active_processes(self) -> None:
@@ -423,6 +470,74 @@ class TtsWorker:
     if self.event_handler is None:
       return
     self.event_handler(event)
+
+  def _mark_turn_queued(self, *, session_id: str, turn_id: str) -> None:
+    """Record that one more utterance was accepted for a turn."""
+    with self._state_lock:
+      state = self._turn_states.setdefault(
+        (session_id, turn_id),
+        _TurnLifecycle(),
+      )
+      state.queued += 1
+
+  def _mark_turn_terminal(
+    self,
+    *,
+    session_id: str,
+    turn_id: str,
+    reason: str = "completed",
+  ) -> None:
+    """Record that one utterance for the turn is terminal."""
+    should_emit = False
+    with self._state_lock:
+      state = self._turn_states.setdefault(
+        (session_id, turn_id),
+        _TurnLifecycle(),
+      )
+      state.terminal += 1
+      if (
+        state.input_complete
+        and not state.complete_emitted
+        and state.terminal >= state.queued
+      ):
+        state.complete_emitted = True
+        should_emit = True
+        self._turn_states.pop((session_id, turn_id), None)
+    if should_emit:
+      self._emit(
+        VoiceTurnComplete(
+          session_id=session_id,
+          turn_id=turn_id,
+          reason=reason,
+        )
+      )
+
+  def _maybe_emit_turn_complete(
+    self,
+    *,
+    session_id: str,
+    turn_id: str,
+  ) -> None:
+    """Emit turn completion when the accepted chunks have all finished."""
+    should_emit = False
+    with self._state_lock:
+      state = self._turn_states.get((session_id, turn_id))
+      if (
+        state is not None
+        and state.input_complete
+        and not state.complete_emitted
+        and state.terminal >= state.queued
+      ):
+        state.complete_emitted = True
+        should_emit = True
+        self._turn_states.pop((session_id, turn_id), None)
+    if should_emit:
+      self._emit(
+        VoiceTurnComplete(
+          session_id=session_id,
+          turn_id=turn_id,
+        )
+      )
 
   def _run(self) -> None:
     """Process queued speech chunks until stopped."""
@@ -482,6 +597,10 @@ class TtsWorker:
           wav_path=wav_path,
         )
       )
+      self._mark_turn_terminal(
+        session_id=chunk.session_id,
+        turn_id=chunk.turn_id,
+      )
       self._emit(
         VoiceTtsEnded(
           session_id=chunk.session_id,
@@ -514,6 +633,11 @@ class TtsWorker:
           utterance_id=chunk.utterance_id,
           message=str(exc),
         )
+      )
+      self._mark_turn_terminal(
+        session_id=chunk.session_id,
+        turn_id=chunk.turn_id,
+        reason="error",
       )
       self.last_error = VoiceError(
         session_id=chunk.session_id,

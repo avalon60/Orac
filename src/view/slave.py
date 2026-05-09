@@ -72,6 +72,7 @@ STREAM_EVENT_TYPES = {
     "tts_playback_finished",
     "tts_playback_cancelled",
     "tts_playback_error",
+    "voice_turn_complete",
 }
 
 # Local preference for showing <think>…</think> blocks
@@ -463,6 +464,10 @@ async def tcp_client(host=DEFAULT_HOST, port=DEFAULT_PORT):
                         if stream_rendered:
                             print()
                         print(f"{ts_prefix()}{Icons.warn} [stream cancelled]\n")
+                    elif frame_type == "voice_turn_complete":
+                        stream_finished = True
+                        if stream_rendered:
+                            print()
                     continue
 
                 if frame_type != "response":
