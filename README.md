@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/images/orac-logo.png" alt="Orac Logo" width="300" height="250">
+  <img src="./assets/images/OracLogo.png" alt="Orac Logo" width="300">
 </p>
 
 <h1 align="center">Orac - Version 0.1.0</h1>
