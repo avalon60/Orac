@@ -137,7 +137,7 @@ create table orac_core.llm_registry
 
 alter table orac_core.llm_registry
   add constraint llm_reg_cc1
-  check (context_policy in ('app', 'external', 'hybrid', 'model'))
+  check (context_policy in ('app', 'external', 'hybrid', 'model', 'unresolved'))
 ;
 
 alter table orac_core.llm_registry

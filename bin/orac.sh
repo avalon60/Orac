@@ -91,6 +91,11 @@ is_running() {
 }
 
 find_python() {
+  if command -v poetry >/dev/null 2>&1; then
+    local poetry_python
+    poetry_python="$(cd "$PROJECT_DIR" && poetry run python -c 'import sys; print(sys.executable)' 2>/dev/null || true)"
+    if [[ -n "$poetry_python" ]]; then echo "$poetry_python"; return; fi
+  fi
   if command -v python >/dev/null 2>&1; then echo python; return; fi
   if command -v python3 >/dev/null 2>&1; then echo python3; return; fi
   if command -v py >/dev/null 2>&1; then echo py; return; fi
@@ -139,7 +144,7 @@ start_orac() {
     exit 1
   fi
 
-  export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
+  export PYTHONPATH="${PROJECT_DIR}/src:${PROJECT_DIR}:${PYTHONPATH:-}"
   export ORAC_RUN_DIR="$RUN_DIR"
   export ORAC_HMAC_SECRET_FILE="$SECRET_FILE"
 
@@ -231,4 +236,3 @@ case "${1:-}" in
   logs)    logs_orac ;;
   *)       print_usage ;;
 esac
-

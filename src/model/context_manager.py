@@ -61,6 +61,30 @@ class OracContextManager:
         )
         return int(rows[0][0]) if rows else 1
 
+    def _set_conversation_llm_id_if_null(
+        self,
+        conversation_id: int,
+        llm_id: Optional[int],
+    ) -> None:
+        """Persist an LLM id for a conversation only when the row is currently null."""
+        if not conversation_id or llm_id is None:
+            return
+
+        with self.db.cursor() as cur:
+            cur.execute(
+                f"""
+                update {self.conversations_object}
+                   set llm_id = :llm_id
+                 where conversation_id = :conversation_id
+                   and llm_id is null
+                """,
+                {
+                    "llm_id": llm_id,
+                    "conversation_id": conversation_id,
+                },
+            )
+            self.db.commit()
+
     # --- user helpers ---------------------------------------------------------
 
     def _find_user_id(self, username: str) -> Optional[int]:
@@ -307,11 +331,18 @@ class OracContextManager:
 
     def _get_or_create_conversation(self, user_id: int, session_id: str, llm_id: Optional[int]) -> int:
         rows = self.db.dict_sql_dataset(
-            f"select conversation_id from {self.conversations_object} where user_id = :u and session_id = :s",
+            (
+                f"select conversation_id, llm_id "
+                f"from {self.conversations_object} "
+                f"where user_id = :u and session_id = :s"
+            ),
             {"u": user_id, "s": session_id}
         )
         if rows:
-            return int(rows[0]["CONVERSATION_ID"])
+            conversation_id = int(rows[0]["CONVERSATION_ID"])
+            if rows[0].get("LLM_ID") is None and llm_id is not None:
+                self._set_conversation_llm_id_if_null(conversation_id, llm_id)
+            return conversation_id
 
         with self.db.cursor() as cur:
             out_id = cur.var(oracledb.NUMBER)
@@ -360,11 +391,13 @@ class OracContextManager:
             f"""
             select conv_id,
                    session_id,
+                   llm_id,
                    last_ts
             from (
               select
                 c.conversation_id as conv_id,
                 c.session_id      as session_id,
+                c.llm_id          as llm_id,
                 coalesce(
                   max(m.created_on),
                   c.updated_on,
@@ -375,7 +408,7 @@ class OracContextManager:
                 on m.conversation_id = c.conversation_id
               where c.user_id = :user_id
                 and c.state   = 'open'
-              group by c.conversation_id, c.session_id, c.created_on, c.updated_on
+              group by c.conversation_id, c.session_id, c.llm_id, c.created_on, c.updated_on
             )
             order by last_ts desc
             fetch first 1 row only
@@ -389,6 +422,8 @@ class OracContextManager:
             age_sec = self._age_seconds(rows[0].get("LAST_TS"))
 
             if timeout_seconds <= 0 or age_sec < float(timeout_seconds):
+                if rows[0].get("LLM_ID") is None and llm_id is not None:
+                    self._set_conversation_llm_id_if_null(conv_id, llm_id)
                 return {
                     "conversation_id": conv_id,
                     "session_id": sid,

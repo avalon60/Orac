@@ -10,6 +10,7 @@
     "media.volume_control",
     "media.source_selection"
   ],
+  "entitlements": [],
   "entities": [
     "tv",
     "speaker",

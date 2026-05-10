@@ -12,6 +12,14 @@ screenshots/*.png
 logs/*.log
 /lib/
 var/cache/
+var/run/
+var/tmp/*.wav
+var/tmp/orac_display_state.json
+var/tmp/piper_voice_samples/
+var/tmp/orac_voice/
+var/voices/piper/
+.venv-voice/
+src/view/.venv-voice/
 
 src/orac/lib/bdds_lib.py
 
@@ -29,3 +37,6 @@ docs/agent-guardrails/Untitled Document
 resources/db/schema/orac_core/orac_ws/*.sqlx
 resources/logger_3.1.1.zip
 resources/logger_3.1.1/
+
+# User-supplied Oracle APEX patch bundles. Do not commit or redistribute.
+resources/downloads/apex/*.zip

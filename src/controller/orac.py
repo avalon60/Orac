@@ -9,11 +9,14 @@ import asyncio
 import subprocess
 import re
 import json
+import threading
 import uuid
 import os
 import time
 import sys
 import traceback
+from collections.abc import AsyncIterator, Awaitable, Callable
+from decimal import Decimal
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
@@ -28,6 +31,13 @@ from lib.icons import Icons
 from lib.logutil import Logger
 from model.orac_auth import FrameAuthChain, ZenFrameAuth
 from model.context_manager import OracContextManager
+from model.text_chunker import TextChunker
+from orac_voice.tts_coalescer import TtsChunkCoalescer
+from orac_voice.tts_coalescer import DEFAULT_TTS_COALESCE_MAX_CHARS
+from orac_voice.tts_coalescer import DEFAULT_TTS_COALESCE_MIN_CHUNKS
+from orac_voice.tts_worker import TtsWorker
+from orac_voice.tts_worker import create_local_tts_worker_from_config
+from orac_voice.voice_events import VoiceEvent
 from model.plugin_routing import (
     HashEmbeddingProvider,
     PluginManager,
@@ -37,6 +47,24 @@ from model.plugin_routing import (
 from model.plugin_router import PluginRouter
 from lib.session_manager import DBSession
 from lib.user_security import UserSecurity
+
+
+class _VoicePlaybackSubscription:
+    """Thread-safe callback wrapper for one active voice prompt stream."""
+
+    def __init__(self, *, callback: Callable[[dict[str, Any]], None]) -> None:
+        """Initialise the subscription."""
+        self.callback = callback
+        self.playback_expected = False
+        self.playback_started = False
+        self.playback_queued = 0
+        self.playback_finished = 0
+        self.playback_terminal = False
+
+
+VOICE_PLAYBACK_START_TIMEOUT_SECONDS = 120.0
+VOICE_PLAYBACK_FINISH_TIMEOUT_SECONDS = 120.0
+
 
 # --- Paths / Config -----------------------------------------------------------
 LOG_DIR = project_home() / "logs"
@@ -52,6 +80,8 @@ conf_manager = ConfigManager(config_file_path=CONFIG_FILE_PATH)
 LOG_LEVEL = conf_manager.config_value(section="logging", key="log_level", default="INFO")
 logger = Logger(log_file=LOG_DIR / "orac.log", log_level=LOG_LEVEL)
 logger.log_info(f"TNS_ADMIN={TNS_ADMIN}")
+
+StreamEventSink = Callable[[dict[str, Any]], Awaitable[None]]
 
 # --- Protocol validator (prefer package, fallback to local schema) -----------
 try:
@@ -117,6 +147,32 @@ def iso_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+def _json_default(value: Any) -> Any:
+    """Serialize Oracle-native numeric values into JSON-compatible scalars."""
+    if isinstance(value, Decimal):
+        normalized = value.normalize()
+        if normalized == normalized.to_integral():
+            return int(normalized)
+        return float(normalized)
+    raise TypeError(f"Object of type {value.__class__.__name__} is not JSON serializable")
+
+
+def _close_db_session_quietly(db_session: DBSession | None) -> None:
+    """Close a DB session without surfacing shutdown noise."""
+    if db_session is None:
+        return
+
+    try:
+        db_session.close()
+    except Exception:
+        pass
+    finally:
+        try:
+            db_session.connection_succeeded = False
+        except Exception:
+            pass
+
+
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
@@ -132,8 +188,18 @@ def _log_exception(prefix: str, exc: BaseException):
     logger.log_error(f"{prefix}: {exc}\n{tb}")
 
 
+def _timezone_location_label(tz_name: str) -> str:
+    """Return a human-readable fallback location label from an IANA timezone."""
+    parts = [part for part in str(tz_name or "").split("/") if part]
+    if not parts:
+        return "UTC"
+    return parts[-1].replace("_", " ")
+
+
 def system_clock_line(prefs: dict) -> str:
+    """Render time and location context for the current session."""
     tz_name = (prefs or {}).get("timezone", "Europe/London")
+    weather_location = str((prefs or {}).get("weather_location") or "").strip()
     now_utc = datetime.now(timezone.utc)
     try:
         tz = ZoneInfo(tz_name)
@@ -147,9 +213,19 @@ def system_clock_line(prefs: dict) -> str:
     dow = now_local.strftime("%A").upper()
 
     lines = [
-        f"Current time: {utc_iso} (UTC).",
-        f"Local time: {local_str} ({tz_name}); day: {dow}.",
+        f"Session timezone preference: {tz_name}.",
+        f"User-facing local time: {local_str}; day: {dow}.",
+        "When answering questions about the current time or date, use the "
+        "user-facing local time above, not UTC.",
+        f"Current UTC time for logs and technical timestamps only: {utc_iso}.",
     ]
+    if weather_location:
+        lines.append(f"Assume your current location is {weather_location}.")
+    else:
+        lines.append(
+            f"No explicit weather location is set. Assume your current location is "
+            f"{_timezone_location_label(tz_name)} based on the session timezone."
+        )
     if "date_format" in (prefs or {}):
         lines.append(f"Use date format {prefs['date_format']}.")
     if (prefs or {}).get("force_concise") is True:
@@ -357,6 +433,13 @@ class Orac:
     """
     def __init__(self):
         logger.log_info("Instantiating Orac...")
+        self._tts_worker: TtsWorker | None = None
+        self._voice_cancelled_turns: set[tuple[str, str]] = set()
+        self._voice_event_subscribers: dict[
+            tuple[str, str],
+            list[_VoicePlaybackSubscription],
+        ] = {}
+        self._voice_event_subscriber_lock = threading.Lock()
         try:
             self.config_mgr = ConfigManager(config_file_path=CONFIG_FILE_PATH)
             self.llm_service_id = self.config_mgr.config_value("service", "llm_service_id")
@@ -463,6 +546,7 @@ class Orac:
                 (self.llm_service_id.strip().lower(), self.service_url.strip(), self.model_name.strip()): self.llm,
             }
             self._available_backend_models: set[str] = {self.model_name.strip()}
+            self._available_backend_model_details: dict[str, dict[str, Any]] = {}
 
             # --- Auth setup: load secret, nonce store, auth chain -----------------
             secret_path = Path(os.environ.get("ORAC_HMAC_SECRET_FILE", "/run/orac/slave.secret"))
@@ -490,8 +574,15 @@ class Orac:
             ])
 
             project_id = conf_manager.config_value(section="global", key="project_identifier", default="Orac")
+            db_connection_name = self.config_mgr.config_value(
+                section="database",
+                key="connection_name",
+                default="orac-service",
+            )
             user_sec = UserSecurity(project_identifier=project_id, resource_type="dsn")
-            self._user, self._password, self._dsn = user_sec.named_connection_creds(connection_name="orac-service")
+            self._user, self._password, self._dsn = user_sec.named_connection_creds(
+                connection_name=db_connection_name
+            )
 
             # Initialize the database session
             self.db_session = DBSession(
@@ -506,6 +597,16 @@ class Orac:
             # Context manager + pruning policy
             self.ctx = OracContextManager(self.db_session, logger=logger)
             self._sync_llm_registry()
+            self._llm_probe_stop = threading.Event()
+            self._llm_probe_thread: threading.Thread | None = None
+            self._llm_probe_interval_secs = int(
+                self.config_mgr.config_value(
+                    "context",
+                    "llm_probe_interval_secs",
+                    default="30",
+                )
+            )
+            self._start_llm_probe_worker()
             self._keep_messages = int(self.config_mgr.config_value("context", "keep_messages", default="200"))
             self._prune_after_turns = int(self.config_mgr.config_value("context", "prune_every_n_turns", default="50"))
             self._plugin_routing_enabled = self.config_mgr.bool_config_value(
@@ -525,6 +626,7 @@ class Orac:
             self.plugin_router: PluginRouter | None = None
             self._plugin_routing_ready = False
             self._init_plugin_routing()
+            self._init_voice_output()
 
             logger.log_info(f"{Icons.robot} Orac orchestrator initialized with model: {self.model_name}")
             logger.log_info(f"{Icons.settings} Reasoning tags stripped by default: {self.strip_reasoning_tags}")
@@ -533,6 +635,459 @@ class Orac:
         except Exception as e:
             _log_exception("Fatal error during Orac initialization", e)
             raise
+
+    def _init_voice_output(self) -> None:
+        """Initialise optional local voice output from Orac configuration."""
+        try:
+            self._tts_worker = create_local_tts_worker_from_config(
+                event_handler=self._handle_voice_event,
+            )
+            if self._tts_worker is None:
+                return
+            self._tts_coalescer = self._create_tts_coalescer()
+            self._tts_worker.start()
+            logger.log_info(f"{Icons.tick} Local Piper voice output ENABLED")
+        except Exception as exc:
+            self._tts_worker = None
+            self._tts_coalescer = None
+            logger.log_error(f"{Icons.error} Local voice output unavailable: {exc}")
+
+    def _create_tts_coalescer(self) -> TtsChunkCoalescer:
+        """Create the local TTS chunk coalescer from configuration."""
+        enabled = self.config_mgr.bool_config_value(
+            "voice",
+            "tts_coalesce_enabled",
+            default=True,
+        )
+        max_chars = self.config_mgr.int_config_value(
+            "voice",
+            "tts_coalesce_max_chars",
+            default=DEFAULT_TTS_COALESCE_MAX_CHARS,
+        )
+        min_chunks = self.config_mgr.int_config_value(
+            "voice",
+            "tts_coalesce_min_chunks",
+            default=DEFAULT_TTS_COALESCE_MIN_CHUNKS,
+        )
+        logger.log_info(
+            f"{Icons.info} TTS coalescing enabled={enabled} "
+            f"max_chars={max_chars} min_chunks={min_chunks}"
+        )
+        return TtsChunkCoalescer(
+            enabled=enabled,
+            max_chars=max_chars,
+            min_chunks=min_chunks,
+        )
+
+    def _handle_voice_event(self, event: VoiceEvent) -> None:
+        """Log a safe summary of local voice worker events."""
+        if event.event_type == "VoiceError":
+            logger.log_warning(f"{Icons.warn} Voice error: {event.to_dict()}")
+            self._publish_voice_playback_event(event)
+            return
+        logger.log_debug(f"Voice event: {event.to_dict()}")
+        self._publish_voice_playback_event(event)
+
+    @staticmethod
+    def _voice_subscription_key(
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> tuple[str, str]:
+        """Return the subscriber map key for a voice session turn."""
+        return (str(session_id or ""), str(turn_id or ""))
+
+    def _register_voice_event_subscriber(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        subscription: _VoicePlaybackSubscription,
+    ) -> None:
+        """Register a stream subscriber for playback lifecycle events."""
+        if not hasattr(self, "_voice_event_subscriber_lock"):
+            self._voice_event_subscriber_lock = threading.Lock()
+        if not hasattr(self, "_voice_event_subscribers"):
+            self._voice_event_subscribers = {}
+        key = self._voice_subscription_key(
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        if not key[0] or not key[1]:
+            return
+        with self._voice_event_subscriber_lock:
+            self._voice_event_subscribers.setdefault(key, []).append(subscription)
+
+    def _unregister_voice_event_subscriber(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        subscription: _VoicePlaybackSubscription,
+    ) -> None:
+        """Unregister a playback lifecycle event subscriber."""
+        if not hasattr(self, "_voice_event_subscriber_lock"):
+            self._voice_event_subscriber_lock = threading.Lock()
+        if not hasattr(self, "_voice_event_subscribers"):
+            self._voice_event_subscribers = {}
+        key = self._voice_subscription_key(
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        with self._voice_event_subscriber_lock:
+            subscriptions = self._voice_event_subscribers.get(key)
+            if not subscriptions:
+                return
+            self._voice_event_subscribers[key] = [
+                item for item in subscriptions if item is not subscription
+            ]
+            if not self._voice_event_subscribers[key]:
+                self._voice_event_subscribers.pop(key, None)
+
+    def _mark_voice_playback_expected(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> None:
+        """Mark that a voice turn has queued audio expected to play."""
+        if not hasattr(self, "_voice_event_subscriber_lock"):
+            self._voice_event_subscriber_lock = threading.Lock()
+        if not hasattr(self, "_voice_event_subscribers"):
+            self._voice_event_subscribers = {}
+        key = self._voice_subscription_key(
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        with self._voice_event_subscriber_lock:
+            for subscription in self._voice_event_subscribers.get(key, []):
+                subscription.playback_expected = True
+
+    def _mark_voice_playback_queued(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> None:
+        """Mark that one more utterance has been queued for playback."""
+        if not hasattr(self, "_voice_event_subscriber_lock"):
+            self._voice_event_subscriber_lock = threading.Lock()
+        if not hasattr(self, "_voice_event_subscribers"):
+            self._voice_event_subscribers = {}
+        key = self._voice_subscription_key(
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        with self._voice_event_subscriber_lock:
+            for subscription in self._voice_event_subscribers.get(key, []):
+                subscription.playback_expected = True
+                subscription.playback_queued += 1
+
+    def _build_voice_playback_event_frame(
+        self,
+        event: VoiceEvent,
+        *,
+        frame_type: str,
+    ) -> dict[str, Any]:
+        """Build a protocol frame for a TTS playback lifecycle event."""
+        event_dict = event.to_dict()
+        payload: dict[str, Any] = {
+            "turn_id": event.turn_id,
+            "request_id": event.turn_id,
+            "timestamp": event_dict.get("created_on") or iso_now(),
+        }
+        utterance_id = str(event_dict.get("utterance_id") or "")
+        if utterance_id:
+            payload["utterance_id"] = utterance_id
+            payload["chunk_id"] = utterance_id
+        reason = str(
+            event_dict.get("reason")
+            or event_dict.get("message")
+            or ""
+        )
+        if reason:
+            payload["reason"] = reason
+        frame = {
+            "v": 1,
+            "type": frame_type,
+            "id": new_id("evt"),
+            "reply_to": event.turn_id,
+            "ts": iso_now(),
+            "route": "orac.prompt",
+            "meta": {
+                "status": "error" if frame_type == "tts_playback_error" else "ok",
+                "model": self.model_name,
+                "req_id": event.turn_id,
+            },
+            "payload": payload,
+            "error": None,
+        }
+        if frame_type == "tts_playback_error":
+            frame["error"] = {
+                "code": str(event_dict.get("code") or "TTS_PLAYBACK_ERROR"),
+                "message": str(event_dict.get("message") or "TTS playback failed"),
+            }
+        return frame
+
+    def _publish_voice_playback_event(self, event: VoiceEvent) -> None:
+        """Publish TTS playback lifecycle events to active stream clients."""
+        if not hasattr(self, "_voice_event_subscriber_lock"):
+            self._voice_event_subscriber_lock = threading.Lock()
+        if not hasattr(self, "_voice_event_subscribers"):
+            self._voice_event_subscribers = {}
+        event_type_map = {
+            "VoiceTtsPlaybackStarted": "tts_playback_started",
+            "VoiceTtsPlaybackFinished": "tts_playback_finished",
+            "VoiceTtsPlaybackCancelled": "tts_playback_cancelled",
+            "VoiceTtsPlaybackError": "tts_playback_error",
+            "VoiceTurnCancelled": "tts_playback_cancelled",
+            "VoiceTurnComplete": "voice_turn_complete",
+            "VoiceError": "tts_playback_error",
+        }
+        frame_type = event_type_map.get(event.event_type)
+        if frame_type is None:
+            return
+
+        key = self._voice_subscription_key(
+            session_id=event.session_id,
+            turn_id=event.turn_id,
+        )
+        with self._voice_event_subscriber_lock:
+            subscriptions = list(self._voice_event_subscribers.get(key, []))
+        if not subscriptions:
+            return
+
+        frame = self._build_voice_playback_event_frame(
+            event,
+            frame_type=frame_type,
+        )
+        for subscription in subscriptions:
+            subscription.callback(frame)
+
+    def _route_stream_event_to_voice(
+        self,
+        req_env: dict,
+        event_type: str,
+        payload: dict[str, Any] | None,
+    ) -> None:
+        """Queue speech for stream text chunks, coalescing TTS only."""
+        worker = getattr(self, "_tts_worker", None)
+        if worker is None:
+            return
+
+        event_payload = payload if isinstance(payload, dict) else {}
+        session_id = str(
+            event_payload.get("voice_session_id")
+            or (req_env.get("meta") or {}).get("session_id")
+            or event_payload.get("session_id")
+            or "unknown-session"
+        )
+        turn_id = str(
+            event_payload.get("turn_id")
+            or req_env.get("id")
+            or "unknown-turn"
+        )
+        coalescer = getattr(self, "_tts_coalescer", None)
+
+        if event_type == "text_chunk":
+            chunk_text = str(event_payload.get("chunk") or "").strip()
+            if not chunk_text:
+                return
+            if coalescer is None:
+                queued = worker.enqueue_text(
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    text=chunk_text,
+                )
+                if queued:
+                    self._mark_voice_playback_queued(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                    )
+                    self._mark_voice_playback_expected(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                    )
+                return
+            for speech_text in coalescer.add_chunk(
+                session_id=session_id,
+                turn_id=turn_id,
+                text=chunk_text,
+            ):
+                queued = worker.enqueue_text(
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    text=speech_text,
+                )
+                if queued:
+                    self._mark_voice_playback_queued(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                    )
+                    self._mark_voice_playback_expected(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                    )
+            return
+
+        if event_type in {"stream_end", "stream_error", "stream_cancelled"}:
+            if coalescer is not None:
+                final_text = coalescer.flush(
+                    session_id=session_id,
+                    turn_id=turn_id,
+                )
+                if final_text:
+                    queued = worker.enqueue_text(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        text=final_text,
+                    )
+                    if queued:
+                        self._mark_voice_playback_queued(
+                            session_id=session_id,
+                            turn_id=turn_id,
+                        )
+                        self._mark_voice_playback_expected(
+                            session_id=session_id,
+                            turn_id=turn_id,
+                        )
+            if worker is not None:
+                mark_complete = getattr(worker, "mark_turn_input_complete", None)
+                if callable(mark_complete):
+                    mark_complete(session_id=session_id, turn_id=turn_id)
+
+    def cancel_voice_turn(self, *, session_id: str, turn_id: str) -> int:
+        """Cancel local voice output for a client session turn."""
+        worker = getattr(self, "_tts_worker", None)
+        if worker is None:
+            return 0
+        coalescer = getattr(self, "_tts_coalescer", None)
+        if coalescer is not None:
+            coalescer.cancel_turn(session_id=session_id, turn_id=turn_id)
+        return worker.cancel_turn(session_id=session_id, turn_id=turn_id)
+
+    def cancel_voice_session(self, *, session_id: str) -> int:
+        """Cancel local voice output for a client session."""
+        worker = getattr(self, "_tts_worker", None)
+        if worker is None:
+            return 0
+        coalescer = getattr(self, "_tts_coalescer", None)
+        if coalescer is not None:
+            coalescer.cancel_session(session_id=session_id)
+        return worker.cancel_session(session_id=session_id)
+
+    def cancel_active_voice_turn(self, *, session_id: str) -> int:
+        """Cancel the active local voice turn for a client session."""
+        worker = getattr(self, "_tts_worker", None)
+        if worker is None:
+            return 0
+        return worker.cancel_active_turn(session_id=session_id)
+
+    def cancel_all_voice(self) -> int:
+        """Cancel all local voice output immediately."""
+        worker = getattr(self, "_tts_worker", None)
+        if worker is None:
+            return 0
+        coalescer = getattr(self, "_tts_coalescer", None)
+        if coalescer is not None:
+            coalescer.clear()
+        return worker.cancel_all(reason="orac cancellation requested")
+
+    def _mark_voice_turn_cancelled(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> None:
+        """Mark a streamed voice turn as cancelled by local barge-in."""
+        if not session_id or not turn_id:
+            return
+        cancelled = getattr(self, "_voice_cancelled_turns", None)
+        if cancelled is None:
+            self._voice_cancelled_turns = set()
+            cancelled = self._voice_cancelled_turns
+        cancelled.add((session_id, turn_id))
+
+    def _is_voice_turn_cancelled(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> bool:
+        """Return whether a streamed voice turn should stop emitting."""
+        cancelled = getattr(self, "_voice_cancelled_turns", set())
+        return (session_id, turn_id) in cancelled
+
+    def _clear_voice_turn_cancelled(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+    ) -> None:
+        """Clear cancellation state for a completed voice turn."""
+        cancelled = getattr(self, "_voice_cancelled_turns", None)
+        if cancelled is not None:
+            cancelled.discard((session_id, turn_id))
+        worker = getattr(self, "_tts_worker", None)
+        clear_cancelled_turn = getattr(worker, "clear_cancelled_turn", None)
+        if callable(clear_cancelled_turn):
+            clear_cancelled_turn(session_id=session_id, turn_id=turn_id)
+
+    def _handle_voice_cancel_request(self, req_env: dict) -> str:
+        """Handle a local voice cancellation control request."""
+        payload = req_env.get("payload") or {}
+        if not isinstance(payload, dict):
+            payload = {}
+        session_id = str(payload.get("session_id") or "").strip()
+        turn_id = str(payload.get("turn_id") or "").strip()
+        scope = str(payload.get("scope") or "active").strip().lower()
+        reason = str(payload.get("reason") or "voice cancellation")
+        discarded = 0
+
+        logger.log_info(
+            f"{Icons.info} Voice cancellation requested: "
+            f"session={session_id or '-'} turn={turn_id or '-'} "
+            f"scope={scope} reason={reason}"
+        )
+        if scope == "turn" and session_id and turn_id:
+            self._mark_voice_turn_cancelled(
+                session_id=session_id,
+                turn_id=turn_id,
+            )
+            discarded = self.cancel_voice_turn(
+                session_id=session_id,
+                turn_id=turn_id,
+            )
+        elif scope == "session" and session_id:
+            discarded = self.cancel_voice_session(session_id=session_id)
+        elif scope == "all":
+            discarded = self.cancel_all_voice()
+        elif session_id:
+            discarded = self.cancel_active_voice_turn(session_id=session_id)
+
+        resp = {
+            "v": 1,
+            "type": "response",
+            "id": new_id("res"),
+            "reply_to": req_env.get("id"),
+            "ts": iso_now(),
+            "route": "orac.voice.cancel",
+            "meta": {
+                "status": "ok",
+                "model": self.model_name,
+                "req_id": req_env.get("id"),
+            },
+            "payload": {
+                "cancelled": bool(session_id or scope == "all"),
+                "discarded": int(discarded),
+            },
+            "error": None,
+        }
+        try:
+            validate_frame(resp)
+        except Exception as e:
+            _log_exception("Voice cancel response failed validation", e)
+        return json.dumps(resp, ensure_ascii=False)
 
     def _consume_prompt_dump_request(self) -> bool:
         """Return True when a one-shot context dump has been requested."""
@@ -570,6 +1125,7 @@ class Orac:
             dump_prompt = self._should_dump_prompt()
             prefs = {
                 "timezone": meta.get("timezone", "Europe/London"),
+                "weather_location": meta.get("weather_location"),
                 "force_concise": meta.get("force_concise"),
             }
             clock = system_clock_line(prefs)
@@ -662,9 +1218,17 @@ class Orac:
             lang = meta.get("reply_language", self._reply_language) or "English"
             final_directive = (
                 f"\nFINAL DIRECTIVE: For the CURRENT user message below, respond in {lang} ONLY. "
-                "Use 'Recent exchange' as session memory for THIS conversation. "
-                "If it contains explicit facts that answer the question, use the most recent consistent fact. "
-                "If not present or ambiguous, say you don't know and optionally ask the user to clarify. "
+                "Use 'Recent exchange' to resolve references, follow-up wording, and user-provided session facts. "
+                "If the current message is a short or ambiguous follow-up, resolve it against the immediately "
+                "preceding user/assistant exchange rather than an older unrelated topic. "
+                "Do not mention, label, summarise, or quote 'Recent exchange' in the reply unless the user "
+                "explicitly asks about Orac's prompt or context. "
+                "For ordinary factual questions, use your general knowledge as well as relevant context. "
+                "Do not treat earlier assistant answers as authoritative if they conflict with reliable knowledge; "
+                "correct materially wrong earlier answers plainly. "
+                "If a proper noun appears misspelled or variant, state the likely interpretation and answer under "
+                "that interpretation; ask for clarification only when multiple plausible meanings remain. "
+                "For personal/session facts, only claim facts present in authenticated context or recent exchange. "
                 "Keep the reply concise.\n"
             )
 
@@ -707,6 +1271,8 @@ class Orac:
             )
             return
 
+        self._refresh_backend_model_inventory()
+
         if not discovered:
             self._available_backend_models = {self.model_name.strip()}
             logger.log_warning(
@@ -717,7 +1283,6 @@ class Orac:
         self._available_backend_models = set(discovered)
 
         provider = self.llm_service_id.strip().lower()
-        context_policy = "app"
         synced = 0
         inserted = 0
         updated = 0
@@ -731,7 +1296,8 @@ class Orac:
                        model,
                        context_policy,
                        max_context_tokens,
-                       is_enabled
+                       is_enabled,
+                       properties
                   from orac_api.llm_registry_v
                 """
             )
@@ -747,17 +1313,27 @@ class Orac:
                 for model_name in discovered:
                     key = (provider, model_name)
                     existing = existing_by_key.get(key)
-                    properties = json.dumps(
-                        {
-                            "discovered_by": "startup_sync",
-                            "service_url": self.service_url,
-                            "provider": provider,
-                            "model": model_name,
-                            "is_default_runtime_model": (
-                                model_name == self.model_name
-                            ),
-                        },
-                        ensure_ascii=False,
+                    existing_properties = (
+                        existing.get("PROPERTIES")
+                        if existing
+                        else None
+                    )
+                    model_metadata = self._lookup_backend_model_metadata(model_name)
+                    existing_context_policy = (
+                        str(existing.get("CONTEXT_POLICY") or "").strip()
+                        if existing
+                        else ""
+                    )
+                    context_policy = existing_context_policy or "unresolved"
+                    properties = self._build_llm_registry_properties(
+                        existing_properties,
+                        provider=provider,
+                        service_url=self.service_url,
+                        model_name=model_name,
+                        is_default_runtime_model=(
+                            model_name == self.model_name
+                        ),
+                        model_metadata=model_metadata,
                     )
 
                     if existing:
@@ -818,6 +1394,481 @@ class Orac:
             f"inserted={inserted} updated={updated}"
         )
 
+    @staticmethod
+    def _build_llm_registry_properties(
+        existing_properties: Any,
+        *,
+        provider: str,
+        service_url: str,
+        model_name: str,
+        is_default_runtime_model: bool,
+        model_metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Merge startup sync metadata into existing registry properties.
+
+        Args:
+            existing_properties (Any): Existing JSON properties payload.
+            provider (str): LLM provider name.
+            service_url (str): Backend service URL.
+            model_name (str): Model name being synchronised.
+            is_default_runtime_model (bool): Whether this is the configured model.
+
+        Returns:
+            str: JSON document suitable for persistence in the registry.
+        """
+        merged: dict[str, Any] = {}
+
+        if isinstance(existing_properties, dict):
+            merged.update(existing_properties)
+        elif isinstance(existing_properties, str) and existing_properties.strip():
+            try:
+                parsed = json.loads(existing_properties)
+            except Exception:
+                parsed = {}
+            if isinstance(parsed, dict):
+                merged.update(parsed)
+
+        merged.update(
+            {
+                "discovered_by": "startup_sync",
+                "service_url": service_url,
+                "provider": provider,
+                "model": model_name,
+                "is_default_runtime_model": is_default_runtime_model,
+            }
+        )
+        if model_metadata:
+            merged.update(model_metadata)
+        return json.dumps(merged, ensure_ascii=False, default=_json_default)
+
+    def _refresh_backend_model_inventory(self) -> dict[str, dict[str, Any]]:
+        """Refresh cached backend model metadata used for registry updates."""
+        inventory: dict[str, dict[str, Any]] = {}
+        details_getter = getattr(self.llm, "list_model_details", None)
+        if not callable(details_getter):
+            self._available_backend_model_details = inventory
+            return inventory
+
+        try:
+            discovered_details = details_getter()
+        except Exception as e:
+            _log_exception("Backend model metadata discovery failed", e)
+            self._available_backend_model_details = inventory
+            return inventory
+
+        for item in discovered_details or []:
+            model_metadata = self._normalise_backend_model_details(item)
+            model_name = str(model_metadata.get("name") or "").strip()
+            if not model_name:
+                continue
+            inventory[model_name] = model_metadata
+            inventory[model_name.lower()] = model_metadata
+
+        self._available_backend_model_details = inventory
+        return inventory
+
+    def _lookup_backend_model_metadata(self, model_name: str) -> dict[str, Any]:
+        """Look up cached backend metadata for a discovered model name."""
+        normalized = (model_name or "").strip()
+        if not normalized:
+            return {}
+
+        backend_model_details = getattr(self, "_available_backend_model_details", {})
+        if not backend_model_details:
+            self._refresh_backend_model_inventory()
+            backend_model_details = getattr(self, "_available_backend_model_details", {})
+
+        return backend_model_details.get(normalized) or backend_model_details.get(normalized.lower()) or {}
+
+    @staticmethod
+    def _normalise_backend_model_details(model_details: Any) -> dict[str, Any]:
+        """Convert backend model metadata into a JSON-safe mapping."""
+        if isinstance(model_details, str):
+            name = model_details.strip()
+            return {"name": name} if name else {}
+
+        if not isinstance(model_details, dict):
+            return {}
+
+        name = str(model_details.get("name") or model_details.get("id") or "").strip()
+        if not name:
+            return {}
+
+        normalized: dict[str, Any] = {"name": name}
+        details = model_details.get("details")
+        details_map = details if isinstance(details, dict) else {}
+
+        size_bytes = model_details.get("size_bytes", model_details.get("size"))
+        if size_bytes in (None, ""):
+            size_bytes = details_map.get("size_bytes")
+        if size_bytes not in (None, ""):
+            try:
+                normalized_size_bytes = int(size_bytes)
+                if normalized_size_bytes >= 0:
+                    normalized["size_bytes"] = normalized_size_bytes
+                    normalized["size_mb"] = int(round(normalized_size_bytes / (1024 * 1024)))
+            except Exception:
+                pass
+
+        size_mb = model_details.get("size_mb")
+        if size_mb in (None, ""):
+            size_mb = details_map.get("size_mb")
+        if size_mb not in (None, ""):
+            try:
+                normalized["size_mb"] = int(round(float(size_mb)))
+            except Exception:
+                pass
+
+        parameter_size = model_details.get("parameter_size") or details_map.get("parameter_size")
+        if parameter_size not in (None, ""):
+            normalized["parameter_size"] = str(parameter_size)
+
+        quantization_level = model_details.get("quantization_level") or details_map.get("quantization_level")
+        if quantization_level not in (None, ""):
+            normalized["quantization_level"] = str(quantization_level)
+
+        return normalized
+
+    def _start_llm_probe_worker(self) -> None:
+        """Start a background worker that probes unresolved LLM rows."""
+        if self._llm_probe_thread and self._llm_probe_thread.is_alive():
+            return
+
+        thread = threading.Thread(
+            target=self._llm_probe_worker_loop,
+            name="orac-llm-probe",
+            daemon=True,
+        )
+        self._llm_probe_thread = thread
+        thread.start()
+        logger.log_info(
+            f"{Icons.info} Started LLM registry probe worker for provider "
+            f"'{self.llm_service_id}' every {self._llm_probe_interval_secs}s."
+        )
+
+    def _llm_probe_worker_loop(self) -> None:
+        """Continuously probe unresolved registry entries on a background loop."""
+        while not self._llm_probe_stop.is_set():
+            try:
+                self._probe_unresolved_llm_registry()
+            except Exception as e:
+                _log_exception("LLM registry probe worker failed", e)
+
+            if self._llm_probe_stop.wait(max(1, self._llm_probe_interval_secs)):
+                break
+
+    def _probe_unresolved_llm_registry(self) -> None:
+        """Probe unresolved registry entries and persist the derived metadata."""
+        probe_db = None
+        probe_rows = []
+        try:
+            probe_db = DBSession(
+                wallet_zip_path="",
+                verbose=False,
+                user=self._user,
+                password=self._password,
+                dsn=self._dsn,
+                config_dir=TNS_ADMIN,
+            )
+            probe_rows = probe_db.dict_sql_dataset(
+                """
+                select llm_id,
+                       name,
+                       provider,
+                       model,
+                       context_policy,
+                       properties
+                  from orac_api.llm_registry_v
+                 where lower(context_policy) = 'unresolved'
+                   and upper(is_enabled) = 'Y'
+                 order by llm_id
+                """
+            )
+            logger.log_info(
+                f"{Icons.info} LLM probe worker discovered {len(probe_rows)} unresolved row(s)."
+            )
+        except Exception as e:
+            _log_exception("Failed to load unresolved LLM registry rows", e)
+            _close_db_session_quietly(probe_db)
+            return
+
+        for row in probe_rows:
+            try:
+                self._probe_single_llm_registry_row(probe_db, row)
+            except Exception as e:
+                _log_exception(
+                    f"Failed to probe LLM registry row {row.get('LLM_ID')}",
+                    e,
+                )
+
+        _close_db_session_quietly(probe_db)
+        logger.log_info(
+            f"{Icons.info} LLM registry probe pass complete: rows={len(probe_rows)}."
+        )
+
+    def _probe_single_llm_registry_row(
+        self,
+        db_session: DBSession,
+        row: dict[str, Any],
+    ) -> None:
+        """Probe one unresolved registry row and persist the results."""
+        llm_id = row.get("LLM_ID")
+        provider = str(row.get("PROVIDER") or self.llm_service_id or "").strip().lower()
+        model_name = str(row.get("MODEL") or "").strip()
+        if llm_id in (None, "") or not provider or not model_name:
+            return
+
+        properties = row.get("PROPERTIES")
+        service_url = self.service_url
+        if isinstance(properties, dict):
+            service_url = str(properties.get("service_url") or service_url).strip() or service_url
+        elif isinstance(properties, str) and properties.strip():
+            try:
+                parsed_props = json.loads(properties)
+            except Exception:
+                parsed_props = {}
+            if isinstance(parsed_props, dict):
+                service_url = str(parsed_props.get("service_url") or service_url).strip() or service_url
+
+        model_metadata = self._lookup_backend_model_metadata(model_name)
+
+        if not self._is_chat_capable_llm_model(model_name):
+            checked_on = iso_now()
+            merged_properties = self._build_llm_registry_probe_properties(
+                properties,
+                history_probe_status="skipped_non_chat_model",
+                supports_provider_history="N",
+                suggested_context_policy="model",
+                history_probe_checked_on=checked_on,
+                first_response_ms=None,
+                second_response_ms=None,
+                total_response_ms=None,
+                responsiveness_class="skipped",
+                first_reply=None,
+                second_reply=None,
+                model_metadata=model_metadata,
+            )
+
+            with db_session.cursor() as cursor:
+                cursor.execute(
+                    """
+                    update orac_api.llm_registry_v
+                       set context_policy = :context_policy,
+                           properties = json(:properties)
+                     where llm_id = :llm_id
+                    """,
+                    {
+                        "context_policy": "model",
+                        "properties": merged_properties,
+                        "llm_id": llm_id,
+                    },
+                )
+                db_session.commit()
+            return
+
+        connector = self._get_llm_connector(
+            service_id=provider,
+            service_url=service_url,
+            model_name=model_name,
+        )
+
+        probe_token = f"ORAC-PROBE-{llm_id}-{uuid.uuid4().hex[:8]}"
+        first_prompt = (
+            "Reply with the exact token "
+            f"`{probe_token}` and nothing else."
+        )
+        second_prompt = (
+            "Recent exchange (most recent at bottom):\n"
+            f"USER: Reply with the exact token `{probe_token}` and nothing else.\n"
+            f"ASSISTANT: {probe_token}\n\n"
+            "USER (new message):\n"
+            "What exact token did I ask you to repeat? Reply with the exact token only."
+        )
+
+        try:
+            first_started = time.perf_counter()
+            first_result = connector.send_prompt_with_meta(
+                prompt_type="U",
+                prompt=first_prompt,
+                stream=False,
+            )
+            first_response_ms = int((time.perf_counter() - first_started) * 1000)
+            first_reply = str(first_result.get("text") or "").strip()
+
+            second_started = time.perf_counter()
+            second_result = connector.send_prompt_with_meta(
+                prompt_type="U",
+                prompt=second_prompt,
+                stream=False,
+            )
+            second_response_ms = int((time.perf_counter() - second_started) * 1000)
+            second_reply = str(second_result.get("text") or "").strip()
+        except Exception as exc:
+            self._mark_llm_registry_probe_failed(
+                db_session=db_session,
+                llm_id=llm_id,
+                existing_properties=properties,
+                model_metadata=model_metadata,
+                reason=str(exc),
+            )
+            logger.log_warning(
+                f"{Icons.warn} LLM registry probe failed for row {llm_id}; "
+                "marked as model-managed context."
+            )
+            return
+
+        total_response_ms = first_response_ms + second_response_ms
+        responsiveness_class = self._classify_probe_responsiveness(total_response_ms)
+        supports_provider_history = "Y" if probe_token in second_reply else "N"
+        suggested_context_policy = "app"
+        history_probe_status = "complete"
+        checked_on = iso_now()
+
+        merged_properties = self._build_llm_registry_probe_properties(
+            properties,
+            history_probe_status=history_probe_status,
+            supports_provider_history=supports_provider_history,
+            suggested_context_policy=suggested_context_policy,
+            history_probe_checked_on=checked_on,
+            first_response_ms=first_response_ms,
+            second_response_ms=second_response_ms,
+            total_response_ms=total_response_ms,
+            responsiveness_class=responsiveness_class,
+            first_reply=first_reply,
+            second_reply=second_reply,
+            model_metadata=model_metadata,
+        )
+
+        with db_session.cursor() as cursor:
+            cursor.execute(
+                """
+                update orac_api.llm_registry_v
+                   set context_policy = :context_policy,
+                       properties = json(:properties)
+                 where llm_id = :llm_id
+                """,
+                {
+                    "context_policy": suggested_context_policy,
+                    "properties": merged_properties,
+                    "llm_id": llm_id,
+                },
+            )
+            db_session.commit()
+
+    def _mark_llm_registry_probe_failed(
+        self,
+        *,
+        db_session: DBSession,
+        llm_id: Any,
+        existing_properties: Any,
+        model_metadata: dict[str, Any] | None,
+        reason: str,
+    ) -> None:
+        """Persist a non-retryable failed probe result for one registry row."""
+        merged_properties = self._build_llm_registry_probe_properties(
+            existing_properties,
+            history_probe_status="failed",
+            supports_provider_history="N",
+            suggested_context_policy="model",
+            history_probe_checked_on=iso_now(),
+            first_response_ms=None,
+            second_response_ms=None,
+            total_response_ms=None,
+            responsiveness_class="failed",
+            first_reply=None,
+            second_reply=None,
+            model_metadata=model_metadata,
+        )
+        parsed = json.loads(merged_properties)
+        parsed["history_probe_error"] = reason[:500]
+        merged_properties = json.dumps(
+            parsed,
+            ensure_ascii=False,
+            default=_json_default,
+        )
+
+        with db_session.cursor() as cursor:
+            cursor.execute(
+                """
+                update orac_api.llm_registry_v
+                   set context_policy = :context_policy,
+                       properties = json(:properties)
+                 where llm_id = :llm_id
+                """,
+                {
+                    "context_policy": "model",
+                    "properties": merged_properties,
+                    "llm_id": llm_id,
+                },
+            )
+            db_session.commit()
+
+    @staticmethod
+    def _classify_probe_responsiveness(total_response_ms: int) -> str:
+        """Classify probe responsiveness into the existing APEX LOV values."""
+        if total_response_ms <= 0:
+            return "fast"
+        if total_response_ms < 2500:
+            return "fast"
+        if total_response_ms < 10000:
+            return "normal"
+        return "slow"
+
+    @staticmethod
+    def _is_chat_capable_llm_model(model_name: str) -> bool:
+        """Return True for models that can participate in chat probes."""
+        normalized = model_name.strip().lower()
+        if not normalized:
+            return False
+        return "embed" not in normalized and "embedding" not in normalized
+
+    @staticmethod
+    def _build_llm_registry_probe_properties(
+        existing_properties: Any,
+        *,
+        history_probe_status: str,
+        supports_provider_history: str,
+        suggested_context_policy: str,
+        history_probe_checked_on: str,
+        first_response_ms: int | None,
+        second_response_ms: int | None,
+        total_response_ms: int | None,
+        responsiveness_class: str,
+        first_reply: str | None,
+        second_reply: str | None,
+        model_metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Merge probe metadata into the registry properties JSON payload."""
+        merged: dict[str, Any] = {}
+
+        if isinstance(existing_properties, dict):
+            merged.update(existing_properties)
+        elif isinstance(existing_properties, str) and existing_properties.strip():
+            try:
+                parsed = json.loads(existing_properties)
+            except Exception:
+                parsed = {}
+            if isinstance(parsed, dict):
+                merged.update(parsed)
+
+        merged.update(
+            {
+                "history_probe_status": history_probe_status,
+                "supports_provider_history": supports_provider_history,
+                "history_probe_suggested_context_policy": suggested_context_policy,
+                "history_probe_checked_on": history_probe_checked_on,
+                "history_probe_first_response_ms": first_response_ms,
+                "history_probe_second_response_ms": second_response_ms,
+                "history_probe_total_response_ms": total_response_ms,
+                "history_probe_responsiveness_class": responsiveness_class,
+                "history_probe_first_reply": first_reply,
+                "history_probe_second_reply": second_reply,
+            }
+        )
+        if model_metadata:
+            merged.update(model_metadata)
+        return json.dumps(merged, ensure_ascii=False, default=_json_default)
+
     def _init_plugin_routing(self) -> None:
         """Initialises plugin routing and performs normal startup bootstrap when enabled."""
         if not self._plugin_routing_enabled:
@@ -840,6 +1891,7 @@ class Orac:
                 plugin_manager=self.plugin_manager,
                 logger=logger,
                 config_mgr=self.config_mgr,
+                context_manager=self.ctx,
             )
             logger.log_info(f"{Icons.info} Plugin routing bootstrap starting.")
             logger.log_info(
@@ -1060,6 +2112,45 @@ class Orac:
             return True
         return model_norm == self.model_name.strip()
 
+    def _configured_model_lookup_candidates(self) -> list[str]:
+        """Return model-name candidates for resolving the configured fallback row."""
+        configured_model = str(self.model_name or "").strip()
+        if not configured_model:
+            return []
+
+        candidates: list[str] = [configured_model]
+        provider = self.llm_service_id.strip().lower()
+
+        if provider == "ollama":
+            if ":" not in configured_model:
+                candidates.append(f"{configured_model}:latest")
+            elif configured_model.endswith(":latest"):
+                candidates.append(configured_model[: -len(":latest")])
+
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            if candidate and candidate not in seen:
+                seen.add(candidate)
+                deduped.append(candidate)
+        return deduped
+
+    def _configured_fallback_registry_row(self) -> dict[str, Any]:
+        """Resolve the registry row for the configured fallback model, tolerating aliases."""
+        for candidate in self._configured_model_lookup_candidates():
+            row = self.ctx.get_llm_registry_entry_by_provider_model(
+                self.llm_service_id,
+                candidate,
+            )
+            if row:
+                if candidate != str(self.model_name or "").strip():
+                    logger.log_info(
+                        f"{Icons.info} Resolved configured model '{self.model_name}' "
+                        f"to registry entry '{candidate}'."
+                    )
+                return row
+        return {}
+
     def _configured_fallback_selection(
         self,
         *,
@@ -1069,14 +2160,16 @@ class Orac:
         if warning_message:
             logger.log_warning(warning_message)
 
-        fallback_row = self.ctx.get_llm_registry_entry_by_provider_model(
-            self.llm_service_id,
-            self.model_name,
+        fallback_row = self._configured_fallback_registry_row()
+        resolved_model_name = (
+            str(fallback_row.get("MODEL") or "").strip()
+            if fallback_row
+            else self.model_name
         )
         selection = {
             "llm_id": fallback_row.get("LLM_ID") if fallback_row else None,
             "provider": self.llm_service_id,
-            "model_name": self.model_name,
+            "model_name": resolved_model_name,
             "service_url": self.service_url,
             "source": "configured_fallback",
             "registry_row": fallback_row,
@@ -1479,6 +2572,7 @@ class Orac:
         req_id: str | None,
         show_reasoning: bool,
         llm_id: int | None = None,
+        tokens_used: int | None = None,
         request_flags: dict[str, bool] | None = None,
     ) -> int:
         """Persists an assistant turn and returns the new turn index if available."""
@@ -1496,6 +2590,7 @@ class Orac:
                 content,
                 meta=asst_meta,
                 llm_id=llm_id,
+                tokens_used=tokens_used,
             )
             logger.log_debug(f"Saved assistant msg: {save_res_a}")
             return int(save_res_a.get("turn_index", 0))
@@ -1543,6 +2638,121 @@ class Orac:
         except Exception as e:
             _log_exception("Response failed protocol validation (returning anyway)", e)
         return resp
+
+    def _build_stream_event(
+        self,
+        req_env: dict,
+        event_type: str,
+        *,
+        payload: dict[str, Any] | None = None,
+        model_name: str | None = None,
+        user_registration: str = "registered",
+        error: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Build a streamed response event envelope.
+
+        Stream events intentionally use the same NDJSON transport as normal
+        responses. The final ``response`` frame remains the compatibility
+        terminator for clients that still need a complete answer.
+        """
+        return {
+            "v": 1,
+            "type": event_type,
+            "id": new_id("evt"),
+            "reply_to": req_env.get("id"),
+            "ts": iso_now(),
+            "route": req_env.get("route", "orac.prompt"),
+            "meta": {
+                "status": "error" if error else "ok",
+                "model": str(model_name or self.model_name),
+                "req_id": req_env.get("id"),
+                "user_registration": user_registration,
+            },
+            "payload": payload or {},
+            "error": error,
+        }
+
+    async def _emit_stream_event(
+        self,
+        event_sink: StreamEventSink | None,
+        req_env: dict,
+        event_type: str,
+        *,
+        payload: dict[str, Any] | None = None,
+        model_name: str | None = None,
+        user_registration: str = "registered",
+        error: dict[str, Any] | None = None,
+    ) -> None:
+        """Emit one stream event when a sink is available."""
+        self._route_stream_event_to_voice(req_env, event_type, payload)
+        if event_sink is None:
+            return
+        await event_sink(
+            self._build_stream_event(
+                req_env,
+                event_type,
+                payload=payload,
+                model_name=model_name,
+                user_registration=user_registration,
+                error=error,
+            )
+        )
+
+    async def _emit_complete_text_as_stream(
+        self,
+        event_sink: StreamEventSink | None,
+        req_env: dict,
+        content: str,
+        *,
+        model_name: str,
+        user_registration: str,
+        session_id: str | None = None,
+        turn_id: str | None = None,
+        stop_reason: str = "stop",
+    ) -> None:
+        """Emit a completed text response as stream-compatible events."""
+        await self._emit_stream_event(
+            event_sink,
+            req_env,
+            "stream_start",
+            payload={"content_type": "text"},
+            model_name=model_name,
+            user_registration=user_registration,
+        )
+        if content:
+            await self._emit_stream_event(
+                event_sink,
+                req_env,
+                "text_delta",
+                payload={"delta": content},
+                model_name=model_name,
+                user_registration=user_registration,
+            )
+            chunker = TextChunker()
+            chunks = chunker.add_delta(content)
+            remainder = chunker.flush()
+            for chunk in chunks + ([remainder] if remainder else []):
+                await self._emit_stream_event(
+                    event_sink,
+                    req_env,
+                    "text_chunk",
+                    payload={
+                        "chunk": chunk,
+                        "session_id": session_id,
+                        "voice_session_id": (req_env.get("meta") or {}).get("session_id"),
+                        "turn_id": turn_id or req_env.get("id"),
+                    },
+                    model_name=model_name,
+                    user_registration=user_registration,
+                )
+        await self._emit_stream_event(
+            event_sink,
+            req_env,
+            "stream_end",
+            payload={"stop_reason": stop_reason},
+            model_name=model_name,
+            user_registration=user_registration,
+        )
 
     # --- Auto-title helpers ---------------------------------------------------
     def _sanitize_title(self, text: str) -> str:
@@ -1610,7 +2820,132 @@ class Orac:
             _log_exception("Auto-title failed (non-fatal)", e)
 
     # --- Main request handler -------------------------------------------------
-    async def handle_request(self, message: str) -> str:
+    async def handle_request_events(self, message: str) -> AsyncIterator[str]:
+        """Yield NDJSON response frames for a request.
+
+        Non-streaming requests yield exactly one final response frame.
+        Streaming requests yield zero or more stream events followed by the
+        same final response envelope used by the legacy path.
+        """
+        queue: asyncio.Queue[str] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+        voice_session_id = ""
+        voice_turn_id = ""
+        voice_subscription: _VoicePlaybackSubscription | None = None
+
+        try:
+            req_preview = json.loads(message)
+        except Exception:
+            req_preview = {}
+        if isinstance(req_preview, dict):
+            meta = req_preview.get("meta") or {}
+            if (
+                req_preview.get("route") == "orac.prompt"
+                and bool(meta.get("stream"))
+            ):
+                voice_session_id = str(meta.get("session_id") or "")
+                voice_turn_id = str(req_preview.get("id") or "")
+
+        async def event_sink(event: dict[str, Any]) -> None:
+            await queue.put(json.dumps(event, ensure_ascii=False))
+
+        turn_complete_event: dict[str, Any] | None = None
+
+        def voice_event_sink(event: dict[str, Any]) -> None:
+            def _enqueue() -> None:
+                nonlocal voice_subscription
+                nonlocal turn_complete_event
+                if voice_subscription is not None:
+                    frame_type = str(event.get("type") or "")
+                    if frame_type == "tts_playback_started":
+                        voice_subscription.playback_started = True
+                    elif frame_type == "tts_playback_finished":
+                        voice_subscription.playback_finished += 1
+                    elif frame_type in {
+                        "tts_playback_cancelled",
+                        "tts_playback_error",
+                    }:
+                        voice_subscription.playback_terminal = True
+                    elif frame_type == "voice_turn_complete":
+                        voice_subscription.playback_terminal = True
+                        if turn_complete_event is None:
+                            turn_complete_event = event
+                        return
+                queue.put_nowait(json.dumps(event, ensure_ascii=False))
+
+            loop.call_soon_threadsafe(_enqueue)
+
+        if voice_session_id and voice_turn_id:
+            voice_subscription = _VoicePlaybackSubscription(
+                callback=voice_event_sink
+            )
+            self._register_voice_event_subscriber(
+                session_id=voice_session_id,
+                turn_id=voice_turn_id,
+                subscription=voice_subscription,
+            )
+
+        response_task = asyncio.create_task(
+            self.handle_request(message, event_sink=event_sink)
+        )
+
+        try:
+            playback_wait_started_at: float | None = None
+            while True:
+                playback_pending = (
+                    voice_subscription is not None
+                    and voice_subscription.playback_expected
+                    and voice_subscription.playback_finished
+                    < voice_subscription.playback_queued
+                )
+                if response_task.done() and playback_pending:
+                    if playback_wait_started_at is None:
+                        playback_wait_started_at = time.monotonic()
+                    timeout_seconds = (
+                        VOICE_PLAYBACK_FINISH_TIMEOUT_SECONDS
+                        if voice_subscription.playback_started
+                        else VOICE_PLAYBACK_START_TIMEOUT_SECONDS
+                    )
+                    if time.monotonic() - playback_wait_started_at > timeout_seconds:
+                        logger.log_warning(
+                            f"{Icons.warn} Timed out waiting for TTS playback "
+                            f"event: session={voice_session_id} turn={voice_turn_id} "
+                            f"started={voice_subscription.playback_started}"
+                        )
+                        voice_subscription.playback_terminal = True
+                        playback_pending = False
+                else:
+                    playback_wait_started_at = None
+
+                if response_task.done() and queue.empty() and not playback_pending:
+                    if voice_subscription is None or turn_complete_event is not None:
+                        break
+                try:
+                    yield await asyncio.wait_for(queue.get(), timeout=0.05)
+                except asyncio.TimeoutError:
+                    continue
+
+            yield await response_task
+            if turn_complete_event is not None:
+                yield json.dumps(
+                    turn_complete_event,
+                    ensure_ascii=False,
+                )
+        finally:
+            if voice_subscription is not None:
+                self._unregister_voice_event_subscriber(
+                    session_id=voice_session_id,
+                    turn_id=voice_turn_id,
+                    subscription=voice_subscription,
+                )
+            if not response_task.done():
+                response_task.cancel()
+
+    async def handle_request(
+        self,
+        message: str,
+        event_sink: StreamEventSink | None = None,
+    ) -> str:
         try:
             req_env = json.loads(message)  # strict JSON
         except Exception as e:
@@ -1662,6 +2997,9 @@ class Orac:
                 }
                 return json.dumps(err, ensure_ascii=False)
 
+            if req_env.get("route") == "orac.voice.cancel":
+                return self._handle_voice_cancel_request(req_env)
+
             if req_env.get("route") != "orac.prompt":
                 raise ValueError("Unsupported request type/route")
 
@@ -1680,6 +3018,7 @@ class Orac:
             show_reasoning = bool(meta.get("show_reasoning", not self.strip_reasoning_tags))
             client = meta.get("client", "unknown")
             auth_user = getattr(auth_res, "user", "unknown")
+            stream_requested = bool(meta.get("stream")) and event_sink is not None
 
             try:
                 self._ensure_db_session_ready()
@@ -1788,6 +3127,54 @@ class Orac:
                     if self._is_unregistered_user_error(e2):
                         request_flags["anonymous_user"] = True
                     _log_exception("ensure_conversation fallback failed (non-fatal)", e2)
+
+            selected_default_llm_id = new_conversation_selection.get("llm_id")
+            if (
+                not created_new_conversation
+                and new_conversation_selection.get("source") == "user_preference"
+                and selected_default_llm_id is not None
+            ):
+                try:
+                    conversation_llm_id = self.ctx.get_conversation_llm_id(session_id)
+                except Exception as e:
+                    _log_exception(
+                        "Failed to read conversation LLM for reuse check",
+                        e,
+                    )
+                    conversation_llm_id = None
+
+                if (
+                    conversation_llm_id is not None
+                    and _as_int(conversation_llm_id, -1)
+                    != _as_int(selected_default_llm_id, -2)
+                ):
+                    logger.log_info(
+                        f"{Icons.info} Default LLM change detected for session '{session_id}': "
+                        f"stored={conversation_llm_id}, selected={selected_default_llm_id}. "
+                        "Starting a new conversation."
+                    )
+                    try:
+                        if getattr(self, "_archive_on_rollover", False):
+                            self.ctx.archive_conversation(session_id)
+                            logger.log_info(f"{Icons.box} Archived prior conversation: {session_id}")
+                        elif getattr(self, "_close_on_rollover", True):
+                            self.ctx.close_conversation(session_id)
+                            logger.log_info(f"{Icons.stop} Closed prior conversation: {session_id}")
+                        else:
+                            logger.log_debug(f"{Icons.info} Prior conversation left 'open': {session_id}")
+                    except Exception as e_state:
+                        _log_exception(
+                            "Failed to transition prior conversation during LLM rollover",
+                            e_state,
+                        )
+
+                    session_id = new_session_id(session_id_base)
+                    self.ctx.ensure_conversation(
+                        user_name=auth_user,
+                        session_id=session_id,
+                        llm_id=selected_default_llm_id,
+                    )
+                    created_new_conversation = True
 
             selected_personality_code = str(
                 meta.get("personality_code") or "DEFAULT"
@@ -1905,7 +3292,12 @@ class Orac:
             plugin_routing_handoff = self._collect_plugin_routing_handoff(prompt, meta)
             plugin_execution_result = None
             if self.plugin_router is not None:
-                plugin_execution_result = self.plugin_router.route(prompt, meta, plugin_routing_handoff)
+                plugin_execution_result = self.plugin_router.route(
+                    prompt,
+                    meta,
+                    plugin_routing_handoff,
+                    auth_user,
+                )
 
             if plugin_execution_result is not None and plugin_execution_result.handled:
                 content = plugin_execution_result.content
@@ -1934,6 +3326,21 @@ class Orac:
                         "anonymous" if request_flags["anonymous_user"] else "registered"
                     ),
                 )
+                if stream_requested:
+                    await self._emit_complete_text_as_stream(
+                        event_sink,
+                        req_env,
+                        content,
+                        model_name=effective_model_name,
+                        user_registration=(
+                            "anonymous"
+                            if request_flags["anonymous_user"]
+                            else "registered"
+                        ),
+                        session_id=session_id,
+                        turn_id=str(req_env.get("id") or ""),
+                        stop_reason=plugin_execution_result.stop_reason,
+                    )
                 return json.dumps(resp_env, ensure_ascii=False)
 
             # --- Build context-primed prompt -----------------------------------
@@ -1949,26 +3356,161 @@ class Orac:
             if self.enable_prompt_dump:
                 _dump_debug_blob("final-prompt", final_prompt)
 
-            # === Call backend (non-streaming path) ===
-            try:
-                raw = llm_connector.send_prompt(prompt_type="U", prompt=final_prompt, stream=False)
-            except Exception as e:
-                _log_exception("LLM backend call failed", e)
-                err = {
-                    "v": 1, "type": "response", "id": new_id("res"),
-                    "reply_to": req_env.get("id"), "ts": iso_now(), "route": "orac.prompt",
-                    "meta": {"status": "error", "model": effective_model_name, "req_id": req_env.get("id")},
-                    "payload": None,
-                    "error": {"code": "LLM_BACKEND_ERROR", "message": str(e)},
-                }
-                return json.dumps(err, ensure_ascii=False)
+            prompt_tokens = 0
+            completion_tokens = 0
+            total_tokens = 0
+            stream_emitted_delta = False
+            stream_cancelled = False
+            voice_session_id = str((req_env.get("meta") or {}).get("session_id") or "")
+            voice_turn_id = str(req_env.get("id") or "")
 
-            # Normalise: ensure string
-            if hasattr(raw, "content"):
-                raw = raw.content
-            if not isinstance(raw, str):
-                raw = str(raw)
-            raw = raw.strip()
+            if stream_requested:
+                await self._emit_stream_event(
+                    event_sink,
+                    req_env,
+                    "stream_start",
+                    payload={"content_type": "text"},
+                    model_name=effective_model_name,
+                    user_registration=(
+                        "anonymous" if request_flags["anonymous_user"] else "registered"
+                    ),
+                )
+                chunker = TextChunker()
+                raw_parts: list[str] = []
+
+                try:
+                    for delta in llm_connector.stream_prompt_deltas(
+                        prompt_type="U",
+                        prompt=final_prompt,
+                    ):
+                        if self._is_voice_turn_cancelled(
+                            session_id=voice_session_id,
+                            turn_id=voice_turn_id,
+                        ):
+                            stream_cancelled = True
+                            logger.log_info(
+                                f"{Icons.info} Stopping LLM stream consumption "
+                                f"after voice interruption: session={voice_session_id} "
+                                f"turn={voice_turn_id}"
+                            )
+                            await self._emit_stream_event(
+                                event_sink,
+                                req_env,
+                                "stream_cancelled",
+                                payload={"reason": "barge-in"},
+                                model_name=effective_model_name,
+                                user_registration=(
+                                    "anonymous"
+                                    if request_flags["anonymous_user"]
+                                    else "registered"
+                                ),
+                            )
+                            break
+                        delta_text = str(delta)
+                        if not delta_text:
+                            continue
+                        raw_parts.append(delta_text)
+                        stream_emitted_delta = True
+                        await self._emit_stream_event(
+                            event_sink,
+                            req_env,
+                            "text_delta",
+                            payload={"delta": delta_text},
+                            model_name=effective_model_name,
+                            user_registration=(
+                                "anonymous"
+                                if request_flags["anonymous_user"]
+                                else "registered"
+                            ),
+                        )
+                        for chunk in chunker.add_delta(delta_text):
+                            await self._emit_stream_event(
+                                event_sink,
+                                req_env,
+                                "text_chunk",
+                                payload={
+                                    "chunk": chunk,
+                                    "session_id": session_id,
+                                    "voice_session_id": voice_session_id,
+                                    "turn_id": voice_turn_id,
+                                },
+                                model_name=effective_model_name,
+                                user_registration=(
+                                    "anonymous"
+                                    if request_flags["anonymous_user"]
+                                    else "registered"
+                                ),
+                            )
+                except Exception as e:
+                    _log_exception("LLM backend stream failed", e)
+                    await self._emit_stream_event(
+                        event_sink,
+                        req_env,
+                        "stream_error",
+                        model_name=effective_model_name,
+                        user_registration=(
+                            "anonymous"
+                            if request_flags["anonymous_user"]
+                            else "registered"
+                        ),
+                        error={
+                            "code": "LLM_BACKEND_ERROR",
+                            "message": str(e),
+                        },
+                    )
+                    err = {
+                        "v": 1, "type": "response", "id": new_id("res"),
+                        "reply_to": req_env.get("id"), "ts": iso_now(), "route": "orac.prompt",
+                        "meta": {"status": "error", "model": effective_model_name, "req_id": req_env.get("id")},
+                        "payload": None,
+                        "error": {"code": "LLM_BACKEND_ERROR", "message": str(e)},
+                    }
+                    return json.dumps(err, ensure_ascii=False)
+
+                final_chunk = "" if stream_cancelled else chunker.flush()
+                if final_chunk:
+                    await self._emit_stream_event(
+                        event_sink,
+                        req_env,
+                        "text_chunk",
+                        payload={
+                            "chunk": final_chunk,
+                            "session_id": session_id,
+                            "voice_session_id": voice_session_id,
+                            "turn_id": voice_turn_id,
+                        },
+                        model_name=effective_model_name,
+                        user_registration=(
+                            "anonymous"
+                            if request_flags["anonymous_user"]
+                            else "registered"
+                        ),
+                    )
+                raw = "".join(raw_parts).strip()
+            else:
+                # === Call backend (non-streaming path) ===
+                try:
+                    prompt_result = llm_connector.send_prompt_with_meta(
+                        prompt_type="U",
+                        prompt=final_prompt,
+                        stream=False,
+                    )
+                except Exception as e:
+                    _log_exception("LLM backend call failed", e)
+                    err = {
+                        "v": 1, "type": "response", "id": new_id("res"),
+                        "reply_to": req_env.get("id"), "ts": iso_now(), "route": "orac.prompt",
+                        "meta": {"status": "error", "model": effective_model_name, "req_id": req_env.get("id")},
+                        "payload": None,
+                        "error": {"code": "LLM_BACKEND_ERROR", "message": str(e)},
+                    }
+                    return json.dumps(err, ensure_ascii=False)
+
+                # Normalise: ensure string
+                raw = str(prompt_result.get("text") or "").strip()
+                prompt_tokens = int(prompt_result.get("prompt_tokens") or 0)
+                completion_tokens = int(prompt_result.get("completion_tokens") or 0)
+                total_tokens = int(prompt_result.get("total_tokens") or 0)
 
             # Apply local reasoning-strip unless explicitly requested
             if show_reasoning:
@@ -1981,6 +3523,33 @@ class Orac:
                 logger.log_warning("Backend returned empty content after stripping; using friendly fallback.")
                 content = "Hello! 👋"
 
+            if stream_requested and not stream_cancelled and not stream_emitted_delta and content:
+                await self._emit_stream_event(
+                    event_sink,
+                    req_env,
+                    "text_delta",
+                    payload={"delta": content},
+                    model_name=effective_model_name,
+                    user_registration=(
+                        "anonymous" if request_flags["anonymous_user"] else "registered"
+                    ),
+                )
+                await self._emit_stream_event(
+                    event_sink,
+                    req_env,
+                    "text_chunk",
+                    payload={
+                        "chunk": content,
+                        "session_id": session_id,
+                        "voice_session_id": voice_session_id,
+                        "turn_id": voice_turn_id,
+                    },
+                    model_name=effective_model_name,
+                    user_registration=(
+                        "anonymous" if request_flags["anonymous_user"] else "registered"
+                    ),
+                )
+
             # --- Save ASSISTANT turn -------------------------------------------
             last_ti = self._save_assistant_turn(
                 session_id,
@@ -1990,6 +3559,7 @@ class Orac:
                 req_id=req_env.get("id"),
                 show_reasoning=show_reasoning,
                 llm_id=effective_llm_id,
+                tokens_used=total_tokens or None,
                 request_flags=request_flags,
             )
 
@@ -1999,17 +3569,41 @@ class Orac:
             resp_env = self._build_response(
                 req_env,
                 content,
-                stop_reason="stop",
-                prompt_tokens=0,
-                completion_tokens=0,
+                stop_reason="error" if stream_cancelled else "stop",
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
                 model_name=effective_model_name,
                 user_registration=(
                     "anonymous" if request_flags["anonymous_user"] else "registered"
                 ),
             )
 
+            if stream_requested and not stream_cancelled:
+                await self._emit_stream_event(
+                    event_sink,
+                    req_env,
+                    "stream_end",
+                    payload={
+                        "stop_reason": "stop",
+                        "usage": {
+                            "prompt_tokens": prompt_tokens,
+                            "completion_tokens": completion_tokens,
+                            "total_tokens": prompt_tokens + completion_tokens,
+                        },
+                    },
+                    model_name=effective_model_name,
+                    user_registration=(
+                        "anonymous" if request_flags["anonymous_user"] else "registered"
+                    ),
+                )
+
             wire = json.dumps(resp_env, ensure_ascii=False)
             logger.log_debug(f"Returning response frame: {wire[:300]}{'…' if len(wire) > 300 else ''}")
+            if stream_cancelled:
+                self._clear_voice_turn_cancelled(
+                    session_id=voice_session_id,
+                    turn_id=voice_turn_id,
+                )
             return wire
 
         except Exception as e:

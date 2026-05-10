@@ -220,7 +220,7 @@ create table orac.llm_registry (
   provider           varchar2(100),
   model              varchar2(200) not null,
   context_policy     varchar2(20) not null
-                      check (context_policy in ('model','app','hybrid','external')),
+                      check (context_policy in ('model','app','hybrid','external','unresolved')),
   max_context_tokens number,
   is_enabled         char(1) default 'y' not null
                       check (is_enabled in ('y','n')),

@@ -114,7 +114,12 @@ Used by the application when calling the provider API.]]></comment>
 Values: 'model', 'app', 'hybrid', 'external'.
 ‘model’ = provider handles threading/context; ‘app’ = application builds/truncates context; ‘hybrid’ = mix; ‘external’ = context managed in an external service (e.g., memory store/vector DB).
 Drives prompting/assembly logic at runtime.]]></comment>
-<commentInRDBMS><![CDATA[How conversation state is managed for this model.]]></commentInRDBMS>
+<commentInRDBMS><![CDATA[How conversation state is managed for this model.
+
+app      -> Orac builds contextual prompt from conversation history
+model    -> Orac sends prompt using provider/model conversation state
+external -> Orac treats incoming prompt as already context-aware
+hybrid   -> Orac adds curated local context but avoids full replay duplication]]></commentInRDBMS>
 <ownerDesignName>orac2</ownerDesignName>
 <importedID>24C6191C-07AA-B030-391C-290B441D0766</importedID>
 <constraintName>LLM_REG_CK1</constraintName>
@@ -127,6 +132,7 @@ Drives prompting/assembly logic at runtime.]]></comment>
 <valueDef value="&apos;external&apos;" description=""/>
 <valueDef value="&apos;hybrid&apos;" description=""/>
 <valueDef value="&apos;model&apos;" description=""/>
+<valueDef value="&apos;unresolved&apos;" description=""/>
 </listOfValues>
 <ownDataTypeParameters>20 BYTE,,</ownDataTypeParameters>
 <autoIncrementCycle>false</autoIncrementCycle>

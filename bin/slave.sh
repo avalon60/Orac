@@ -16,6 +16,11 @@ PROJECT_DIR=$(dirname "${SCRIPT_DIR}")
 VIEW_DIR="${PROJECT_DIR}/src/view"
 E="-e"
 
+# Prefer Poetry's active environment when available.
+if command -v poetry >/dev/null 2>&1; then
+  POETRY_PYTHON="$(cd "$PROJECT_DIR" && poetry run python -c 'import sys; print(sys.executable)' 2>/dev/null || true)"
+fi
+
 # Virtual environment activation (adjust based on your setup)
 VENV_DIR="$PROJECT_DIR/.venv"  # Assuming venv directory is in the parent folder
 
@@ -39,8 +44,10 @@ fi
 OS="$(uname -s)"
 
 # Choose Python interpreter based on user's PATH
-PYTHON_INTERPRETER=""
-if command -v python >/dev/null 2>&1; then
+PYTHON_INTERPRETER="${POETRY_PYTHON:-}"
+if [[ -n "$PYTHON_INTERPRETER" ]]; then
+  :
+elif command -v python >/dev/null 2>&1; then
   PYTHON_INTERPRETER="python"
 elif command -v py >/dev/null 2>&1; then
   PYTHON_INTERPRETER="py"
@@ -54,6 +61,6 @@ if [[ -z "$PYTHON_INTERPRETER" ]]; then
   exit 1
 fi
 
-export PYTHONPATH=${PROJECT_DIR}:${PYTHONPATH}
+export PYTHONPATH=${PROJECT_DIR}/src:${PROJECT_DIR}:${PYTHONPATH}
 # Execute the Python program
 "$PYTHON_INTERPRETER" "${VIEW_DIR}/${ENTRY_POINT}" "$@"

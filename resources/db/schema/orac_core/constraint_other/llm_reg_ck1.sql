@@ -5,5 +5,5 @@
 
 alter table orac_core.llm_registry
   add constraint llm_reg_ck1
-  check (context_policy in ('app', 'external', 'hybrid', 'model'))
+  check (context_policy in ('app', 'external', 'hybrid', 'model', 'unresolved'))
 ;
