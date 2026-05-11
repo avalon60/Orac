@@ -47,9 +47,18 @@ DEFAULT_BARGE_IN_IGNORE_DURING_TTS_START_MS = 300
 DEFAULT_BARGE_IN_POST_RESPONSE_MS = 12000
 DEFAULT_BARGE_IN_POST_RESPONSE_CANCEL_ENABLED = False
 SUPPORTED_BARGE_IN_RETURN_MODES = {"command_capture", "wake_listening"}
+SUPPORTED_BARGE_IN_MODES = {"vad", "wakeword"}
+BARGE_IN_MODE_ALIASES = {
+  "openwakeword": "wakeword",
+  "wake_word": "wakeword",
+}
 VAD_BARGE_IN_EXPERIMENTAL_WARNING = (
   "Experimental VAD barge-in is enabled; speaker playback may self-trigger "
   "without echo cancellation."
+)
+WAKEWORD_BARGE_IN_EXPERIMENTAL_WARNING = (
+  "Experimental wake-word barge-in is enabled; speaker playback may "
+  "self-trigger without echo cancellation."
 )
 
 
@@ -228,8 +237,9 @@ class BargeInController:
     if not self.config.enable_experimental_barge_in:
       logger.debug("Barge-in disabled; not starting monitor")
       return
-    if self.config.mode != "vad":
-      raise RuntimeError(f"Unsupported barge-in mode: {self.config.mode}")
+    mode = _normalise_barge_in_mode(self.config.mode)
+    if mode != "vad":
+      raise RuntimeError(f"Unsupported VAD barge-in mode: {self.config.mode}")
     if self._thread is not None and self._thread.is_alive():
       return
 
@@ -393,8 +403,11 @@ class OpenWakeWordBargeInController:
     if not self.config.enabled:
       logger.debug("Barge-in disabled; not starting monitor")
       return
-    if self.config.mode != "openwakeword":
-      raise RuntimeError(f"Unsupported openWakeWord barge-in mode: {self.config.mode}")
+    mode = _normalise_barge_in_mode(self.config.mode)
+    if mode != "wakeword":
+      raise RuntimeError(
+        f"Unsupported wake-word barge-in mode: {self.config.mode}"
+      )
     if self._thread is not None and self._thread.is_alive():
       return
 
@@ -498,7 +511,7 @@ class OpenWakeWordBargeInController:
       model_paths=model_paths,
       model_names=model_names,
       inference_framework=inference_framework,
-      error_context="barge_in_mode=openwakeword",
+      error_context="barge_in_mode=wakeword",
     )
     return self._model
 
@@ -538,7 +551,13 @@ class OpenWakeWordBargeInController:
 def load_barge_in_config(config_mgr: ConfigManager) -> BargeInConfig:
   """Load and validate barge-in configuration from ``[voice]``."""
   enable_experimental_barge_in = _load_enable_experimental_barge_in(config_mgr)
-  mode = DEFAULT_BARGE_IN_MODE
+  mode = _normalise_barge_in_mode(
+    config_mgr.config_value(
+      "voice",
+      "barge_in_mode",
+      default=DEFAULT_BARGE_IN_MODE,
+    )
+  )
 
   return_mode = config_mgr.config_value(
     "voice",
@@ -655,14 +674,25 @@ def _load_enable_experimental_barge_in(config_mgr: ConfigManager) -> bool:
   if not legacy_enabled:
     return False
 
-  legacy_mode = config_mgr.config_value(
-    "voice",
-    "barge_in_mode",
-    default=DEFAULT_BARGE_IN_MODE,
-  ).strip().lower()
+  _normalise_barge_in_mode(
+    config_mgr.config_value(
+      "voice",
+      "barge_in_mode",
+      default=DEFAULT_BARGE_IN_MODE,
+    )
+  )
   legacy_ack = config_mgr.bool_config_value(
     "voice",
     "barge_in_acknowledge_self_trigger_risk",
     default=False,
   )
-  return legacy_mode == "vad" and legacy_ack
+  return legacy_ack
+
+
+def _normalise_barge_in_mode(mode: str) -> str:
+  """Return the canonical local barge-in mode name."""
+  cleaned = mode.strip().lower()
+  cleaned = BARGE_IN_MODE_ALIASES.get(cleaned, cleaned)
+  if cleaned not in SUPPORTED_BARGE_IN_MODES:
+    raise ValueError(f"Unsupported voice.barge_in_mode: {mode}")
+  return cleaned

@@ -62,7 +62,14 @@ from lib.api_key_store import ApiKeyStore
 from lib.config_mgr import ConfigManager
 from model.network import OracListener
 from orac_voice.aec import AEC_BYTES_PER_FRAME
+from orac_voice.aec import AEC_CHANNELS
+from orac_voice.aec import AEC_FRAME_DURATION_MS
+from orac_voice.aec import AEC_SAMPLE_RATE
+from orac_voice.aec import AEC_SAMPLE_WIDTH_BYTES
+from orac_voice.aec import AEC_SAMPLES_PER_FRAME
 from orac_voice.aec import NullAcousticEchoCanceller
+from orac_voice.aec import create_aec_adapter_from_config
+from orac_voice.aec import create_aec_backend
 from orac_voice.activation import EnterActivationListener
 from orac_voice.activation import VoiceActivationError
 from orac_voice.activation import WakeWordActivationListener
@@ -2204,6 +2211,54 @@ class OracVoiceTests(unittest.TestCase):
 
     with self.assertRaisesRegex(ValueError, "320 bytes"):
       adapter.process_capture_frame(bytes(AEC_BYTES_PER_FRAME + 1))
+
+  def test_aec_frame_constants_match_contract(self) -> None:
+    """AEC frame constants should pin the backend-neutral PCM contract."""
+    self.assertEqual(AEC_SAMPLE_RATE, 16000)
+    self.assertEqual(AEC_FRAME_DURATION_MS, 10)
+    self.assertEqual(AEC_CHANNELS, 1)
+    self.assertEqual(AEC_SAMPLE_WIDTH_BYTES, 2)
+    self.assertEqual(AEC_SAMPLES_PER_FRAME, 160)
+    self.assertEqual(AEC_BYTES_PER_FRAME, 320)
+
+  def test_aec_backend_null_creates_null_adapter(self) -> None:
+    """Configured null AEC should create the pass-through adapter."""
+    adapter = create_aec_backend(backend_name="null")
+
+    self.assertIsInstance(adapter, NullAcousticEchoCanceller)
+
+  def test_aec_backend_from_config_uses_null_adapter(self) -> None:
+    """voice.aec_backend=null should load the null adapter from config."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      config_path = Path(tmp_name) / "orac.ini"
+      config_path.write_text(
+        "\n".join(
+          [
+            "[voice]",
+            "aec_backend = null",
+            "aec_stream_delay_ms = 0",
+          ]
+        ),
+        encoding="utf-8",
+      )
+      config_mgr = ConfigManager(config_file_path=config_path)
+
+      adapter = create_aec_adapter_from_config(config_mgr)
+
+    self.assertIsInstance(adapter, NullAcousticEchoCanceller)
+
+  def test_aec_backend_livekit_fails_until_implemented(self) -> None:
+    """Reserved LiveKit AEC backend should fail clearly for now."""
+    with self.assertRaisesRegex(
+      NotImplementedError,
+      "LiveKit AEC backend is not implemented yet",
+    ):
+      create_aec_backend(backend_name="livekit")
+
+  def test_aec_backend_unknown_value_fails_clearly(self) -> None:
+    """Unsupported AEC backend config should not silently fall back."""
+    with self.assertRaisesRegex(ValueError, "Unsupported voice.aec_backend"):
+      create_aec_backend(backend_name="speex")
 
   def test_playback_reference_frames_forward_to_injected_aec(self) -> None:
     """Playback reference frames should reach an injected AEC adapter."""

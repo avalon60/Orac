@@ -23,6 +23,7 @@ from orac_voice.aec import AEC_BYTES_PER_FRAME
 from orac_voice.aec import AEC_SAMPLE_RATE
 from orac_voice.aec import AcousticEchoCanceller
 from orac_voice.aec import NullAcousticEchoCanceller
+from orac_voice.aec import create_aec_adapter_from_config
 from orac_voice.aec import validate_aec_frame
 from orac_voice.tts_piper import expand_config_path, resolve_orac_home
 from orac_voice.vad_silero import (
@@ -314,7 +315,11 @@ class SoundDeviceAudioCapture:
     else:
       self.output_dir = expand_config_path(str(output_dir), orac_home=self.orac_home)
     self.output_dir.mkdir(parents=True, exist_ok=True)
-    self.aec_adapter = aec_adapter or NullAcousticEchoCanceller()
+    self.aec_adapter = (
+      aec_adapter
+      if aec_adapter is not None
+      else create_aec_adapter_from_config(self.config_mgr)
+    )
     self._cancel_requested = False
     self._recording_active = False
 
