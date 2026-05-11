@@ -172,22 +172,29 @@ The lifecycle can be correct while the microphone still hears Orac's own
 TTS output as user speech. That is an acoustic reliability failure, not a
 turn-completion failure. The interruption policy protects the semantic
 turn state; it does not solve acoustic self-triggering.
+See `docs/aec-design.md` for the backend-neutral AEC contract. Lifecycle
+correctness is necessary but not sufficient for production speaker
+barge-in; raw VAD remains diagnostic until AEC or equivalent echo
+suppression is active.
 
 On ordinary speakers without echo cancellation, both `vad` barge-in and
-`openwakeword` barge-in are unsafe. They can self-trigger on assistant
+`wakeword` barge-in are unsafe. They can self-trigger on assistant
 speech.
 
 Supported modes:
 
 - Stable mode: `enable_experimental_barge_in=false`
-- Experimental mode: `enable_experimental_barge_in=true`
+- Experimental mode: `enable_experimental_barge_in=true`,
+  `barge_in_mode=vad|wakeword`
 - Reliable full-duplex mode: headphones, a directional mic, echo
   cancellation, or another physically separate audio path
 
-The local voice stack currently has one experimental barge-in path: VAD.
-It is intentionally not exposed as a production-safe speaker mode.
+The local voice stack currently has two experimental barge-in paths:
+VAD and wake-word-confirmed interruption. Both are intentionally not
+exposed as production-safe speaker modes.
 The legacy multi-key gate is deprecated; the single controlling flag is
-`enable_experimental_barge_in`.
+`enable_experimental_barge_in`, and `barge_in_mode` selects the
+experimental trigger source.
 
 ### When the monitor starts
 
@@ -224,9 +231,9 @@ Today, the system uses `tts_playback_cancelled` at the utterance level and then 
 
 If the implementation needs to distinguish natural completion from cancellation at the protocol level, the schema should grow a dedicated terminal cancel event. Until then, `voice_turn_complete` remains the only turn terminal.
 
-`openwakeword` barge-in remains disabled for the local desktop path. It
-is too easy to self-trigger on Orac's own speech without echo
-cancellation.
+`wakeword` barge-in is the explicit wake-word-confirmed path. It still
+can self-trigger on Orac's own speech without echo cancellation, so it
+remains experimental.
 
 ### How experimental VAD barge-in should behave
 
@@ -256,7 +263,7 @@ These are the rules the implementation must preserve.
 These races have already been seen in the current implementation history and must be treated as design constraints, not anecdotes.
 
 - The client returned on a nonzero status with no traceback.
-- `openwakeword` self-triggered on Orac's own speech.
+- `wakeword` self-triggered on Orac's own speech.
 - The final response arrived before all playback events.
 - `tts_playback_finished` was mistaken for turn completion.
 - `voice_turn_complete` fired before later queued speech.
@@ -296,8 +303,8 @@ The following are places where the current code appears to violate or only appro
 
 ### `src/orac_voice/barge_in.py`
 
-- The module supports both `vad` and `openwakeword`, but the local voice
-  client intentionally disables `openwakeword` barge-in on speakers.
+- The module supports both `vad` and `wakeword`, but both remain
+  experimental on speakers without echo cancellation.
 - VAD barge-in is also unsafe on ordinary speakers unless the audio path
   can suppress echo or isolate Orac's own voice from the microphone.
 - The barge-in contract is therefore partly policy-driven, not purely

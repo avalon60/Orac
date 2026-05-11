@@ -18,6 +18,7 @@ from loguru import logger
 
 from orac_voice.aec import AcousticEchoCanceller
 from orac_voice.aec import NullAcousticEchoCanceller
+from orac_voice.aec import create_aec_adapter_from_config
 from orac_voice.aec import validate_aec_frame
 from orac_voice.aec import validate_aec_frame_format
 from orac_voice.audio_playback import AudioPlayback
@@ -388,6 +389,7 @@ def create_local_tts_worker_from_config(
     config_mgr=config_mgr,
   )
   logger.info("Local playback backend selected: {}", playback_backend)
+  aec_adapter = create_aec_adapter_from_config(config_mgr)
 
   worker = TtsWorker(
     tts_engine=PiperTtsEngine.from_config(
@@ -397,9 +399,10 @@ def create_local_tts_worker_from_config(
     ),
     audio_playback=audio_playback,
     event_handler=event_handler,
+    aec_adapter=aec_adapter,
   )
   if playback_backend == "native":
-    worker.enable_playback_reference_resampling()
+    worker.enable_playback_reference_resampling(aec_adapter=aec_adapter)
   return worker
 
 

@@ -7,6 +7,10 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from loguru import logger
+
+from lib.config_mgr import ConfigManager
+
 
 AEC_SAMPLE_RATE = 16000
 AEC_FRAME_DURATION_MS = 10
@@ -14,6 +18,10 @@ AEC_CHANNELS = 1
 AEC_SAMPLE_WIDTH_BYTES = 2
 AEC_SAMPLES_PER_FRAME = 160
 AEC_BYTES_PER_FRAME = 320
+DEFAULT_AEC_BACKEND = "null"
+DEFAULT_AEC_STREAM_DELAY_MS = 0
+LIVEKIT_AEC_BACKEND = "livekit"
+SUPPORTED_AEC_BACKENDS = frozenset({DEFAULT_AEC_BACKEND})
 
 
 class AcousticEchoCanceller(Protocol):
@@ -116,3 +124,63 @@ class NullAcousticEchoCanceller:
 
   def reset(self) -> None:
     """Reset the no-op adapter state."""
+
+
+def create_aec_backend(
+  *,
+  backend_name: str = DEFAULT_AEC_BACKEND,
+) -> AcousticEchoCanceller:
+  """Create an Orac AEC backend by name.
+
+  Args:
+    backend_name (str): Configured backend name.
+
+  Returns:
+    AcousticEchoCanceller: Configured AEC adapter.
+
+  Raises:
+    ValueError: If the backend name is unsupported.
+  """
+  cleaned = backend_name.strip().lower()
+  if cleaned == DEFAULT_AEC_BACKEND:
+    return NullAcousticEchoCanceller()
+  if cleaned == LIVEKIT_AEC_BACKEND:
+    raise NotImplementedError("LiveKit AEC backend is not implemented yet.")
+  raise ValueError(
+    "Unsupported voice.aec_backend: "
+    f"{backend_name}. Supported values: "
+    f"{', '.join(sorted(SUPPORTED_AEC_BACKENDS))}"
+  )
+
+
+def create_aec_adapter_from_config(
+  config_mgr: ConfigManager,
+) -> AcousticEchoCanceller:
+  """Create the configured backend-neutral AEC adapter.
+
+  Args:
+    config_mgr (ConfigManager): Orac configuration manager.
+
+  Returns:
+    AcousticEchoCanceller: Configured AEC adapter.
+
+  Raises:
+    ValueError: If the backend config is unsupported.
+  """
+  backend_name = config_mgr.config_value(
+    "voice",
+    "aec_backend",
+    default=DEFAULT_AEC_BACKEND,
+  ).strip().lower()
+  stream_delay_ms = config_mgr.int_config_value(
+    "voice",
+    "aec_stream_delay_ms",
+    default=DEFAULT_AEC_STREAM_DELAY_MS,
+  )
+  backend = create_aec_backend(backend_name=backend_name)
+  logger.info(
+    "AEC backend selected: {} stream_delay_ms={}",
+    backend_name,
+    stream_delay_ms,
+  )
+  return backend

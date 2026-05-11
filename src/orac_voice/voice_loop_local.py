@@ -27,7 +27,9 @@ from orac_voice.activation import WakeWordActivationListener
 from orac_voice.audio_capture import SoundDeviceAudioCapture
 from orac_voice.barge_in import BargeInController
 from orac_voice.barge_in import BargeInResult
+from orac_voice.barge_in import OpenWakeWordBargeInController
 from orac_voice.barge_in import VAD_BARGE_IN_EXPERIMENTAL_WARNING
+from orac_voice.barge_in import WAKEWORD_BARGE_IN_EXPERIMENTAL_WARNING
 from orac_voice.barge_in import load_barge_in_config
 from orac_voice.interruption_policy import InterruptionAction
 from orac_voice.interruption_policy import InterruptionPolicy
@@ -276,14 +278,22 @@ def _load_wake_rearm_seconds() -> float:
   )
 
 
-def _create_barge_in_controller() -> BargeInController | None:
+def _create_barge_in_controller() -> BargeInController | OpenWakeWordBargeInController | None:
   """Create the configured barge-in controller, if enabled."""
   config_mgr = _voice_config_manager()
-  config = load_barge_in_config(config_mgr)
+  try:
+    config = load_barge_in_config(config_mgr)
+  except ValueError as exc:
+    raise VoiceActivationError(str(exc)) from exc
   if not config.enable_experimental_barge_in:
     return None
-  logger.warning(VAD_BARGE_IN_EXPERIMENTAL_WARNING)
-  return BargeInController(config=config)
+  if config.mode == "vad":
+    logger.warning(VAD_BARGE_IN_EXPERIMENTAL_WARNING)
+    return BargeInController(config=config)
+  if config.mode == "wakeword":
+    logger.warning(WAKEWORD_BARGE_IN_EXPERIMENTAL_WARNING)
+    return OpenWakeWordBargeInController(config=config)
+  raise VoiceActivationError(f"Unsupported voice.barge_in_mode: {config.mode}")
 
 
 def _create_activation_listener(
@@ -649,13 +659,19 @@ async def _send_orac_prompt(
   playback_cancelled = False
   playback_terminal = False
   final_response_status: int | None = None
+  barge_in_min_speech_ms = 0
+  if (
+    barge_in_controller is not None
+    and not isinstance(barge_in_controller, OpenWakeWordBargeInController)
+  ):
+    barge_in_min_speech_ms = getattr(
+      barge_in_controller.config,
+      "min_speech_ms",
+      0,
+    )
   interruption_policy = InterruptionPolicy(
     allow_interruptions=barge_in_controller is not None,
-    min_speech_ms=(
-      getattr(barge_in_controller.config, "min_speech_ms", 0)
-      if barge_in_controller is not None
-      else 0
-    ),
+    min_speech_ms=barge_in_min_speech_ms,
   )
   barge_event = asyncio.Event()
   barge_result: BargeInResult | None = None

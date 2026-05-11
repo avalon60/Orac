@@ -15,6 +15,8 @@ from orac_voice.aec import AEC_SAMPLE_WIDTH_BYTES
 from orac_voice.aec import AEC_SAMPLES_PER_FRAME
 from orac_voice.aec import AcousticEchoCanceller
 from orac_voice.aec import NullAcousticEchoCanceller
+from orac_voice.aec import create_aec_adapter_from_config
+from orac_voice.aec import create_aec_backend
 from orac_voice.aec import validate_aec_frame
 from orac_voice.aec import validate_aec_frame_format
 from orac_voice.activation import EnterActivationListener
@@ -118,6 +120,8 @@ __all__ = [
   "VoiceVadSpeechStarted",
   "VoiceVadTimeout",
   "WakeWordActivationListener",
+  "create_aec_adapter_from_config",
+  "create_aec_backend",
   "validate_aec_frame",
   "validate_aec_frame_format",
 ]

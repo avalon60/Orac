@@ -6,8 +6,10 @@
 from __future__ import annotations
 
 import argparse
+import os
 import py_compile
 import sys
+from getpass import getuser
 from pathlib import Path
 
 
@@ -100,7 +102,28 @@ def build_parser() -> argparse.ArgumentParser:
     action="store_true",
     help="Compile-check the key local voice modules and exit.",
   )
+  parser.add_argument(
+    "--logon",
+    action="store_true",
+    help=(
+      "Seed ORAC_CALLING_USER from the current login before starting "
+      "the voice session."
+    ),
+  )
   return parser
+
+
+def _enable_logon_session() -> None:
+  """Populate the caller identity for voice sessions.
+
+  The voice stack reuses the same prompt builder as ``slave.py``. Setting
+  ``ORAC_CALLING_USER`` before that module is imported ensures the same
+  user-scoped preferences are applied.
+  """
+  if os.environ.get("ORAC_CALLING_USER"):
+    return
+
+  os.environ["ORAC_CALLING_USER"] = getuser()
 
 
 def _compile_check() -> int:
@@ -163,6 +186,8 @@ def main() -> int:
 
   if args.check:
     return _compile_check()
+  if args.logon:
+    _enable_logon_session()
 
   from orac_voice import voice_loop_local
 
