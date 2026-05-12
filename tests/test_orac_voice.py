@@ -58,6 +58,7 @@ if "oracledb" not in sys.modules:
   sys.modules["oracledb"] = stub_oracledb
 
 from controller.orac import Orac
+import controller.orac as controller_orac_module
 from lib.api_key_store import ApiKeyStore
 from lib.config_mgr import ConfigManager
 from model.network import OracListener
@@ -102,6 +103,8 @@ import orac_voice.tts_worker as tts_worker_module
 from orac_voice.vad_silero import VadEndpointConfig, VadEndpointDetector
 from orac_voice.voice_events import VoiceSttEnded, VoiceSttFinal
 from orac_voice.voice_events import VoiceTurnComplete
+from orac_voice.voice_events import VoiceTtsPlaybackStarted
+from orac_voice.voice_events import VoiceTtsPlaybackFinished
 from orac_voice.voice_events import VoiceVadSpeechEnded, VoiceVadTimeout
 from orac_voice.wake_stt_phrase import SttPhraseWakeWordActivationListener
 from orac_voice.wake_stt_phrase import _matches_wake_phrase
@@ -1942,6 +1945,31 @@ class OracVoiceTests(unittest.TestCase):
     self.assertEqual(tts_engine.cancel_calls, 1)
     self.assertEqual(playback.cancel_calls, 1)
 
+  def test_tts_worker_cancel_turn_emits_single_turn_complete_after_discard(
+    self,
+  ) -> None:
+    """Discarded queued chunks should still resolve the turn exactly once."""
+    events = []
+    with tempfile.TemporaryDirectory() as tmp_name:
+      wav_path = Path(tmp_name) / "out.wav"
+      wav_path.write_bytes(b"RIFFfake")
+      worker = TtsWorker(
+        tts_engine=_FakeTtsEngine(wav_path=wav_path),
+        audio_playback=_FakePlayback(),
+        event_handler=events.append,
+      )
+      worker.enqueue_text(session_id="s1", turn_id="t1", text="First.")
+      worker.enqueue_text(session_id="s1", turn_id="t1", text="Second.")
+      removed = worker.cancel_turn(session_id="s1", turn_id="t1")
+      drained = worker.wait_until_idle(timeout=2.0)
+      worker.stop()
+
+    event_types = [event.event_type for event in events]
+    self.assertEqual(removed, 2)
+    self.assertTrue(drained)
+    self.assertEqual(event_types.count("VoiceTurnComplete"), 1)
+    self.assertIn("VoiceTurnCancelled", event_types)
+
   def test_tts_worker_emits_playback_lifecycle_events(self) -> None:
     """TTS worker should emit explicit playback start and finish events."""
     events = []
@@ -1987,6 +2015,7 @@ class OracVoiceTests(unittest.TestCase):
     event_types = [event.event_type for event in events]
     self.assertTrue(drained)
     self.assertIn("VoiceTurnComplete", event_types)
+    self.assertEqual(event_types.count("VoiceTurnComplete"), 1)
     self.assertLess(
       event_types.index("VoiceTtsPlaybackFinished"),
       event_types.index("VoiceTurnComplete"),
@@ -3053,7 +3082,150 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(second_status, 0)
     self.assertIn("Orac: First", output.getvalue())
     self.assertIn("Orac: Second", output.getvalue())
-    self.assertNotIn("Orac: First final", output.getvalue())
+
+  async def test_voice_stream_timeout_logs_only_once(self) -> None:
+    """Stalled voice playback should log the timeout once per turn."""
+    orchestrator = Orac.__new__(Orac)
+    orchestrator.model_name = "test-model"
+    orchestrator._tts_worker = _FakeVoiceWorker()
+    orchestrator._tts_coalescer = None
+    orchestrator._voice_event_subscribers = {}
+    orchestrator._voice_event_subscriber_lock = threading.Lock()
+
+    message = json.dumps(
+      {
+        "v": 1,
+        "type": "request",
+        "id": "req-timeout",
+        "route": "orac.prompt",
+        "meta": {
+          "client": "slave",
+          "session_id": "session-timeout",
+          "stream": True,
+        },
+        "payload": {
+          "messages": [
+            {"role": "system", "content": "you are orac."},
+            {"role": "user", "content": "Say hello."},
+          ]
+        },
+      }
+    )
+
+    async def fake_handle_request(message: str, event_sink=None) -> str:
+      """Emit a stalled streamed turn without finishing playback immediately."""
+      req_env = json.loads(message)
+      await orchestrator._emit_stream_event(
+        event_sink,
+        req_env,
+        "stream_start",
+        payload={"content_type": "text"},
+        model_name=orchestrator.model_name,
+        user_registration="registered",
+      )
+      await orchestrator._emit_stream_event(
+        event_sink,
+        req_env,
+        "text_chunk",
+        payload={
+          "chunk": "Hello there.",
+          "session_id": "session-timeout",
+          "voice_session_id": "session-timeout",
+          "turn_id": "req-timeout",
+        },
+        model_name=orchestrator.model_name,
+        user_registration="registered",
+      )
+      orchestrator._publish_voice_playback_event(
+        VoiceTtsPlaybackStarted(
+          session_id="session-timeout",
+          turn_id="req-timeout",
+          utterance_id="utt-timeout",
+        )
+      )
+      await orchestrator._emit_stream_event(
+        event_sink,
+        req_env,
+        "stream_end",
+        payload={"stop_reason": "stop"},
+        model_name=orchestrator.model_name,
+        user_registration="registered",
+      )
+      return json.dumps(
+        {
+          "v": 1,
+          "type": "response",
+          "id": "res-timeout",
+          "reply_to": "req-timeout",
+          "ts": "2026-05-11T00:00:00Z",
+          "route": "orac.prompt",
+          "meta": {
+            "status": "ok",
+            "model": orchestrator.model_name,
+            "req_id": "req-timeout",
+            "user_registration": "registered",
+          },
+          "payload": {
+            "content": "Hello there.",
+            "stop_reason": "stop",
+            "usage": {
+              "prompt_tokens": 0,
+              "completion_tokens": 0,
+              "total_tokens": 0,
+            },
+          },
+          "error": None,
+        },
+        ensure_ascii=False,
+      )
+
+    async def complete_later() -> None:
+      """Finish the stalled turn after the timeout warning has fired."""
+      await asyncio.sleep(0.12)
+      orchestrator._publish_voice_playback_event(
+        VoiceTtsPlaybackFinished(
+          session_id="session-timeout",
+          turn_id="req-timeout",
+          utterance_id="utt-timeout",
+        )
+      )
+      orchestrator._publish_voice_playback_event(
+        VoiceTurnComplete(
+          session_id="session-timeout",
+          turn_id="req-timeout",
+          reason="completed",
+        )
+      )
+
+    with (
+      patch.object(
+        controller_orac_module,
+        "VOICE_PLAYBACK_START_TIMEOUT_SECONDS",
+        0.05,
+      ),
+      patch.object(
+        controller_orac_module,
+        "VOICE_PLAYBACK_FINISH_TIMEOUT_SECONDS",
+        0.05,
+      ),
+      patch.object(controller_orac_module.logger, "log_warning") as mock_warning,
+      patch.object(orchestrator, "handle_request", new=fake_handle_request),
+    ):
+      completion_task = asyncio.create_task(complete_later())
+      frames: list[dict[str, object]] = []
+      async for frame in orchestrator.handle_request_events(message):
+        frames.append(json.loads(frame))
+      await completion_task
+
+    timeout_warnings = [
+      call.args[0]
+      for call in mock_warning.call_args_list
+      if "Timed out waiting for TTS playback event" in str(call.args[0])
+    ]
+    self.assertEqual(len(timeout_warnings), 1)
+    self.assertTrue(
+      any(frame.get("type") == "voice_turn_complete" for frame in frames),
+    )
 
   async def test_voice_prompt_skips_stale_reply_frame(self) -> None:
     """Voice session should ignore frames for an earlier request id."""

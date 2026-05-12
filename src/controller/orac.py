@@ -2891,6 +2891,7 @@ class Orac:
 
         try:
             playback_wait_started_at: float | None = None
+            playback_timeout_logged = False
             while True:
                 playback_pending = (
                     voice_subscription is not None
@@ -2906,14 +2907,17 @@ class Orac:
                         if voice_subscription.playback_started
                         else VOICE_PLAYBACK_START_TIMEOUT_SECONDS
                     )
-                    if time.monotonic() - playback_wait_started_at > timeout_seconds:
+                    if (
+                        not playback_timeout_logged
+                        and time.monotonic() - playback_wait_started_at > timeout_seconds
+                    ):
                         logger.log_warning(
                             f"{Icons.warn} Timed out waiting for TTS playback "
                             f"event: session={voice_session_id} turn={voice_turn_id} "
                             f"started={voice_subscription.playback_started}"
                         )
+                        playback_timeout_logged = True
                         voice_subscription.playback_terminal = True
-                        playback_pending = False
                 else:
                     playback_wait_started_at = None
 
