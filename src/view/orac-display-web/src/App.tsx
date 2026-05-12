@@ -1,0 +1,298 @@
+import { useEffect, useState } from 'react';
+
+import { OracDisplay } from './components/OracDisplay';
+import { OracStateControls } from './components/OracStateControls';
+import type { OracState } from './types/oracState';
+
+
+const DEFAULT_DISPLAY_WS_URL = 'ws://127.0.0.1:8767';
+const DISPLAY_WS_URL =
+  import.meta.env.VITE_ORAC_DISPLAY_WS_URL?.trim() || DEFAULT_DISPLAY_WS_URL;
+const RECONNECT_INITIAL_DELAY_MS = 500;
+const RECONNECT_MAX_DELAY_MS = 10_000;
+
+type ConnectionState = 'connecting' | 'connected' | 'disconnected';
+type BrowserUiConfig = {
+  buttons_visible?: boolean;
+};
+
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.matchMedia(query).matches : false,
+  );
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(query);
+    const updateMatches = (event: MediaQueryListEvent) => {
+      setMatches(event.matches);
+    };
+
+    setMatches(mediaQuery.matches);
+    mediaQuery.addEventListener('change', updateMatches);
+    return () => mediaQuery.removeEventListener('change', updateMatches);
+  }, [query]);
+
+  return matches;
+}
+
+const STATE_MESSAGES: Record<OracState, string> = {
+  idle: 'Awaiting directive.',
+  wake_detected: 'I am listening.',
+  listening: 'Processing ambient audio...',
+  transcribing: 'Converting speech to intent...',
+  thinking: 'Synthesizing response...',
+  tool_calling: 'Executing specialised sub-routine...',
+  speaking: 'Relaying synthesised output.',
+  interrupted: 'Operation suspended.',
+  complete: 'Task finalised.',
+  error: 'Critical system anomaly detected.',
+};
+
+function App() {
+  const [state, setState] = useState<OracState>('idle');
+  const [message, setMessage] = useState<string>(STATE_MESSAGES.idle);
+  const [connectionState, setConnectionState] =
+    useState<ConnectionState>('connecting');
+  const [showButtons, setShowButtons] = useState(false);
+  const [railExpanded, setRailExpanded] = useState(false);
+  const isWideScreen = useMediaQuery('(min-width: 1280px)');
+
+  useEffect(() => {
+    if (!showButtons || isWideScreen) {
+      setRailExpanded(false);
+    }
+  }, [showButtons, isWideScreen]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let socket: WebSocket | null = null;
+    let reconnectTimerId: number | null = null;
+    let retryDelay = RECONNECT_INITIAL_DELAY_MS;
+
+    const clearReconnectTimer = () => {
+      if (reconnectTimerId !== null) {
+        window.clearTimeout(reconnectTimerId);
+        reconnectTimerId = null;
+      }
+    };
+
+    const scheduleReconnect = () => {
+      if (cancelled) {
+        return;
+      }
+
+      clearReconnectTimer();
+      setConnectionState('disconnected');
+      reconnectTimerId = window.setTimeout(() => {
+        reconnectTimerId = null;
+        connect();
+      }, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, RECONNECT_MAX_DELAY_MS);
+    };
+
+    const connect = () => {
+      if (cancelled) {
+        return;
+      }
+
+      clearReconnectTimer();
+      setConnectionState((current) =>
+        current === 'connected' ? 'connected' : 'connecting',
+      );
+
+      try {
+        socket = new WebSocket(DISPLAY_WS_URL);
+      } catch (error) {
+        console.error('⚠️ Failed to open Orac display WebSocket:', error);
+        scheduleReconnect();
+        return;
+      }
+
+      socket.onopen = () => {
+        if (cancelled) {
+          return;
+        }
+        retryDelay = RECONNECT_INITIAL_DELAY_MS;
+        setConnectionState('connected');
+      };
+
+      socket.onmessage = (event) => {
+        if (cancelled) {
+          return;
+        }
+
+        try {
+          const data = JSON.parse(String(event.data)) as {
+            event?: string;
+            message?: string;
+            state?: string;
+            buttons_visible?: boolean;
+          };
+
+          if (data.event === 'state_changed' && data.state) {
+            const newState = data.state.toLowerCase() as OracState;
+            setState(newState);
+            if (data.message) {
+              setMessage(data.message);
+            } else {
+              setMessage(STATE_MESSAGES[newState] || '');
+            }
+            setConnectionState('connected');
+          } else if (data.event === 'status_message' && data.message) {
+            setMessage(data.message);
+            setConnectionState('connected');
+          } else if (data.event === 'ui_config') {
+            const uiConfig = data as BrowserUiConfig;
+            if (typeof uiConfig.buttons_visible === 'boolean') {
+              setShowButtons(uiConfig.buttons_visible);
+            }
+            setConnectionState('connected');
+          }
+        } catch (error) {
+          console.warn('⚠️ Failed to parse display payload:', error);
+        }
+      };
+
+      socket.onclose = () => {
+        socket = null;
+        if (!cancelled) {
+          scheduleReconnect();
+        }
+      };
+
+      socket.onerror = () => {
+        // The close handler owns reconnect scheduling.
+      };
+    };
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      clearReconnectTimer();
+      socket?.close();
+      socket = null;
+    };
+  }, []);
+
+  const handleManualStateChange = (newState: OracState) => {
+    setState(newState);
+    setMessage(STATE_MESSAGES[newState]);
+  };
+
+  const connectionLabel =
+    connectionState === 'connected'
+      ? 'Live'
+      : connectionState === 'connecting'
+        ? 'Connecting'
+        : 'Offline';
+
+  return (
+    <div className="relative flex h-screen w-screen overflow-hidden bg-[#03070d] text-white">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(79,195,247,0.16),_transparent_42%),linear-gradient(180deg,_rgba(3,7,13,0.45),_rgba(3,7,13,0.9))]" />
+
+      <div className="pointer-events-none absolute inset-x-4 top-4 z-20 flex items-start justify-between gap-4 sm:inset-x-6">
+        <div className="rounded-full border border-[#4fc3f7]/20 bg-[#06131d]/80 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.45em] text-[#8fdcff] shadow-[0_0_20px_rgba(79,195,247,0.14)] backdrop-blur-md">
+          Orac Display
+        </div>
+        <div
+          className={`rounded-full border px-4 py-2 text-[10px] font-bold uppercase tracking-[0.35em] backdrop-blur-md ${
+            connectionState === 'connected'
+              ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200'
+              : connectionState === 'connecting'
+                ? 'border-amber-300/30 bg-amber-300/10 text-amber-100'
+                : 'border-red-400/30 bg-red-400/10 text-red-100'
+          }`}
+        >
+          {connectionLabel}
+        </div>
+      </div>
+
+      {connectionState !== 'connected' && (
+        <div className="pointer-events-none absolute inset-x-4 top-20 z-20 flex justify-center sm:inset-x-6">
+          <div className="max-w-2xl rounded-3xl border border-[#4fc3f7]/15 bg-[#06131d]/80 px-6 py-4 text-center shadow-[0_0_40px_rgba(3,7,13,0.65)] backdrop-blur-xl">
+            <div className="text-[10px] font-bold uppercase tracking-[0.45em] text-[#8fdcff]">
+              {connectionState === 'connecting'
+                ? 'Connecting to display stream'
+                : 'Display offline'}
+            </div>
+            <div className="mt-2 text-[12px] tracking-[0.18em] text-[#b8d9ee]">
+              Waiting for {DISPLAY_WS_URL}. The UI will reconnect automatically.
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="relative z-10 flex h-full w-full flex-col p-3 pt-16 sm:p-4 sm:pt-20">
+        <div
+          className={`mx-auto grid h-full w-full items-stretch gap-4 ${
+            showButtons && isWideScreen
+              ? 'xl:grid-cols-[minmax(0,1fr)_19rem]'
+              : 'grid-cols-1'
+          }`}
+        >
+          <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[2rem] border border-[#1b5f91]/20 bg-[#03070d]/90 shadow-[0_30px_120px_rgba(0,0,0,0.75)] backdrop-blur-xl">
+            <div className="relative min-h-0 flex-1">
+              <OracDisplay state={state} message={message} />
+              {connectionState !== 'connected' && (
+                <div className="pointer-events-none absolute inset-0 bg-[#03070d]/35" />
+              )}
+            </div>
+          </div>
+          {showButtons && isWideScreen && (
+            <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-[2rem] border border-[#1b5f91]/25 bg-[#04101a]/92 shadow-[0_30px_100px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+              <div className="border-b border-[#1b5f91]/20 px-5 py-4">
+                <div className="text-[10px] font-bold uppercase tracking-[0.45em] text-[#8fdcff]">
+                  DEBUG STATE CONTROLS
+                </div>
+                <div className="mt-2 text-[11px] tracking-[0.2em] text-[#9bbad0]">
+                  Optional control rail
+                </div>
+              </div>
+              <OracStateControls
+                currentState={state}
+                onStateChange={handleManualStateChange}
+                className="flex-1 px-4 py-4"
+              />
+            </aside>
+          )}
+        </div>
+
+        {showButtons && !isWideScreen && (
+          <div className="absolute inset-x-3 bottom-3 z-30 sm:inset-x-4">
+            <div className="rounded-[1.75rem] border border-[#1b5f91]/25 bg-[#04101a]/96 shadow-[0_24px_80px_rgba(0,0,0,0.7)] backdrop-blur-xl">
+              <button
+                type="button"
+                onClick={() => setRailExpanded((value) => !value)}
+                className="flex w-full items-center justify-between gap-4 rounded-[1.75rem] px-5 py-4 text-left"
+              >
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-[0.45em] text-[#8fdcff]">
+                    DEBUG STATE CONTROLS
+                  </div>
+                  <div className="mt-1 text-[11px] tracking-[0.2em] text-[#9bbad0]">
+                    {railExpanded ? 'Tap to collapse' : 'Tap to expand'}
+                  </div>
+                </div>
+                <div className="rounded-full border border-[#4fc3f7]/20 bg-[#03070d] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.35em] text-[#8fdcff]">
+                  {railExpanded ? 'Hide' : 'Show'}
+                </div>
+              </button>
+              {railExpanded && (
+                <div className="max-h-[42vh] border-t border-[#1b5f91]/20">
+                  <OracStateControls
+                    currentState={state}
+                    onStateChange={handleManualStateChange}
+                    className="max-h-[42vh] px-4 py-4"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default App;

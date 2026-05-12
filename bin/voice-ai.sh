@@ -32,6 +32,17 @@ PROJECT_PYTHON="$PROJECT_ROOT/.venv/bin/python"
 RUN_DIR="$PROJECT_ROOT/var/run"
 PID_FILE="$RUN_DIR/voice-ai.pid"
 
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  if [[ -x "$PROJECT_PYTHON" ]]; then
+    exec "$PROJECT_PYTHON" "$VOICE_AI_PY" "$@"
+  fi
+  if command -v poetry >/dev/null 2>&1; then
+    cd "$PROJECT_ROOT"
+    exec poetry run python "$VOICE_AI_PY" "$@"
+  fi
+  exec python3 "$VOICE_AI_PY" "$@"
+fi
+
 if [[ ! -f "$VOICE_AI_PY" ]]; then
   echo "voice_ai.py not found: $VOICE_AI_PY" >&2
   exit 1

@@ -57,6 +57,10 @@ from orac_voice.voice_events import (
 )
 from view.display_event_pipe import DisplayEvent
 from view.display_event_pipe import DisplayEventSender
+from view.display_event_pipe import load_display_event_config
+from view.display_browser_transport import DEFAULT_BROWSER_HOST
+from view.display_browser_transport import DEFAULT_BROWSER_PORT
+from view.display_browser_transport import DisplayBrowserTransport
 
 
 DEFAULT_WAIT_SECONDS = 180.0
@@ -159,6 +163,34 @@ def build_parser() -> argparse.ArgumentParser:
     type=float,
     default=DEFAULT_WAIT_SECONDS,
     help="Maximum seconds to wait for queued speech. Default: %(default)s.",
+  )
+  parser.add_argument(
+    "--browser-mode",
+    action="store_true",
+    help=(
+      "Start the built-in browser WebSocket transport for display events."
+    ),
+  )
+  parser.add_argument(
+    "--buttons",
+    action="store_true",
+    help="Show the browser UI state buttons in the side panel.",
+  )
+  parser.add_argument(
+    "--display-browser",
+    action="store_true",
+    help=argparse.SUPPRESS,
+  )
+  parser.add_argument(
+    "--display-browser-host",
+    default=DEFAULT_BROWSER_HOST,
+    help="Host/interface for the browser WebSocket transport.",
+  )
+  parser.add_argument(
+    "--display-browser-port",
+    type=int,
+    default=DEFAULT_BROWSER_PORT,
+    help="TCP port for the browser WebSocket transport.",
   )
   parser.add_argument(
     "--record-seconds",
@@ -478,6 +510,7 @@ def _transcribe_once(
   stt_engine: FasterWhisperSttEngine | None = None,
   session_id: str | None = None,
   prompt: str | None = "Press Enter to record speech.",
+  display_sender: DisplayEventSender | None = None,
 ) -> tuple[str, str, str]:
   """Capture and transcribe one local microphone sample.
 
@@ -487,6 +520,7 @@ def _transcribe_once(
     stt_engine (FasterWhisperSttEngine | None): Optional reusable STT engine.
     session_id (str | None): Optional stable voice session id.
     prompt (str): Prompt shown before recording.
+    display_sender (DisplayEventSender | None): Optional display event sender.
 
   Returns:
     tuple[str, str, str]: Session id, turn id, and recognised text.
@@ -503,6 +537,15 @@ def _transcribe_once(
     entered = input(prompt)
     if _is_exit_phrase(entered, _load_exit_phrases()):
       raise EOFError
+  
+  if display_sender:
+    display_sender.send_state(
+      "listening",
+      message="Listening...",
+      session_id=session_id,
+      turn_id=turn_id
+    )
+
   _emit(
     VoiceSttStarted(
       session_id=session_id,
@@ -532,6 +575,15 @@ def _transcribe_once(
         wav_path=wav_path,
       )
     )
+
+    if display_sender:
+      display_sender.send_state(
+        "transcribing",
+        message="Transcribing...",
+        session_id=session_id,
+        turn_id=turn_id
+      )
+
     recognised_text = stt_engine.transcribe_wav(wav_path)
     _emit(
       VoiceSttFinal(
@@ -1123,20 +1175,25 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
             return 0
           if not activation.activated:
             continue
+          
+          display_sender.send_state(
+            "wake_detected",
+            message="Wake word detected",
+            session_id=session_id,
+          )
+          # Brief delay to allow the "wake_detected" animation to play
+          time.sleep(0.4)
         else:
           logger.info("Barge-in return mode: command_capture")
           capture_next_command = False
-        display_sender.send_state(
-          "listening",
-          message="Listening",
-          session_id=session_id,
-        )
+
         _session_id, _turn_id, recognised_text = _transcribe_once(
           args,
           capture=capture,
           stt_engine=stt_engine,
           session_id=session_id,
           prompt=None,
+          display_sender=display_sender,
         )
       except NoSpeechDetectedError as exc:
         _console_line(str(exc))
@@ -1252,13 +1309,19 @@ def _voice_session(args: argparse.Namespace) -> int:
 
 def _voice_turn(args: argparse.Namespace) -> int:
   """Record speech, transcribe it, and submit it to Orac."""
+  display_sender = DisplayEventSender.from_config()
   try:
-    _session_id, _turn_id, recognised_text = _transcribe_once(args)
+    _session_id, _turn_id, recognised_text = _transcribe_once(
+      args,
+      display_sender=display_sender
+    )
   except NoSpeechDetectedError as exc:
     _console_line(str(exc))
+    display_sender.send_state("idle", message=str(exc))
     return 0
   except KeyboardInterrupt:
     _console_line("Voice turn cancelled.")
+    display_sender.send_state("idle", message="Turn cancelled")
     return 130
   except EOFError:
     _console_line("Voice turn closed before recording.")
@@ -1266,10 +1329,12 @@ def _voice_turn(args: argparse.Namespace) -> int:
   except Exception as exc:
     logger.error("Local voice turn failed before Orac submission: {}", exc)
     _console_line(f"Local voice turn failed: {exc}")
+    display_sender.send_state("error", message=f"Turn failed: {exc}")
     return 1
 
   if not recognised_text.strip():
     _console_line("No speech recognised.")
+    display_sender.send_state("idle", message="No speech recognised")
     return 2
 
   _console_line(f"You: {recognised_text}")
@@ -1279,6 +1344,7 @@ def _voice_turn(args: argparse.Namespace) -> int:
         host=args.host,
         port=args.port,
         prompt_text=recognised_text,
+        display_sender=display_sender,
       )
     )
   except ConnectionRefusedError:
@@ -1295,6 +1361,24 @@ def _voice_turn(args: argparse.Namespace) -> int:
     return 1
 
 
+def _start_display_browser_transport(
+  args: argparse.Namespace,
+) -> DisplayBrowserTransport | None:
+  """Start the optional browser WebSocket transport."""
+  if not args.browser_mode and not args.display_browser and not args.buttons:
+    return None
+
+  display_config = load_display_event_config(_voice_config_manager())
+  transport = DisplayBrowserTransport(
+    host=args.display_browser_host,
+    port=args.display_browser_port,
+    state_file=display_config.state_file,
+    buttons_visible=bool(args.buttons),
+  )
+  transport.start()
+  return transport
+
+
 def main() -> int:
   """Run the local voice CLI.
 
@@ -1303,17 +1387,22 @@ def main() -> int:
   """
   parser = build_parser()
   args = parser.parse_args()
+  display_browser_transport = _start_display_browser_transport(args)
 
-  if args.tts_test is not None:
-    return _run_tts_test(args)
-  if args.listen_once:
-    return _listen_once(args)
-  if args.voice_turn:
-    return _voice_turn(args)
-  if args.voice_session:
-    return _voice_session(args)
-  parser.print_help()
-  return 2
+  try:
+    if args.tts_test is not None:
+      return _run_tts_test(args)
+    if args.listen_once:
+      return _listen_once(args)
+    if args.voice_turn:
+      return _voice_turn(args)
+    if args.voice_session:
+      return _voice_session(args)
+    parser.print_help()
+    return 2
+  finally:
+    if display_browser_transport is not None:
+      display_browser_transport.stop()
 
 
 if __name__ == "__main__":
