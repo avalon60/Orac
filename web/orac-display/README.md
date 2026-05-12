@@ -35,11 +35,10 @@ python bin/voice_ai.py --browser-mode --buttons
 2. Start the React dev server:
 
 ```bash
-cd src/view/orac-display-web
-npm run dev
+bin/orac-display-web.sh
 ```
 
-3. Open the app in a browser:
+3. If you want browser-only mode without the auto-open helper, open:
 
 ```text
 http://localhost:5173
@@ -53,7 +52,7 @@ deprecated and should be treated as temporary.
 1. Start the bridge:
 
 ```bash
-cd src/view/orac-display-web
+cd web/orac-display
 node bridge.js
 ```
 
@@ -66,7 +65,7 @@ python bin/voice_ai.py
 3. Start the React dev server:
 
 ```bash
-npm run dev
+bin/orac-display-web.sh
 ```
 
 4. Open the app:
@@ -79,15 +78,19 @@ http://localhost:5173
 
 ### Normal development tab
 
+Run:
+
 ```bash
-npm run dev
+bin/orac-display-web.sh
 ```
 
-Open `http://localhost:5173` in a regular browser tab.
+The launcher starts the dev server and opens the browser app window. If you
+prefer a plain tab, open `http://localhost:5173` manually.
 
 ### App-style window
 
-Use Chromium or Chrome app mode:
+Use Chromium or Chrome app mode if you want to open an already-running Vite
+server manually:
 
 ```bash
 chromium --app=http://localhost:5173
