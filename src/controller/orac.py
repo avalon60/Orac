@@ -1166,13 +1166,11 @@ class Orac:
                 )
                 preamble = (
                     f"{primer_inline}\n"
-                    "ROLE: assistant\n"
-                    "INSTRUCTIONS: Prior conversation is DISABLED for this reply; use ONLY the new user message.\n\n"
+                    "Prior conversation is disabled for this reply; use only the new user message.\n\n"
                     f"{clock}\n\n"
                     f"{user_facts_block}"
                     f"{routing_block}"
-                    "Recent exchange: (context disabled)\n\n"
-                    "USER (new message):"
+                    "Current user message:\n"
                 )
                 full = f"{preamble}\n{prompt}\n{final_directive}"
                 if dump_prompt:
@@ -1218,10 +1216,10 @@ class Orac:
             lang = meta.get("reply_language", self._reply_language) or "English"
             final_directive = (
                 f"\nFINAL DIRECTIVE: For the CURRENT user message below, respond in {lang} ONLY. "
-                "Use 'Recent exchange' to resolve references, follow-up wording, and user-provided session facts. "
+                "Use the conversation context to resolve references, follow-up wording, and user-provided session facts. "
                 "If the current message is a short or ambiguous follow-up, resolve it against the immediately "
                 "preceding user/assistant exchange rather than an older unrelated topic. "
-                "Do not mention, label, summarise, or quote 'Recent exchange' in the reply unless the user "
+                "Do not mention, label, summarise, or quote the conversation context in the reply unless the user "
                 "explicitly asks about Orac's prompt or context. "
                 "For ordinary factual questions, use your general knowledge as well as relevant context. "
                 "Do not treat earlier assistant answers as authoritative if they conflict with reliable knowledge; "
@@ -1234,14 +1232,13 @@ class Orac:
 
             preamble = (
                     f"{primer_inline}\n"
-                    "ROLE: assistant\n"
-                    "INSTRUCTIONS: Use the recent context only if relevant.\n\n"
+                    "Use recent context only if relevant.\n\n"
                     f"{clock}\n\n"
                     f"{user_facts_block}"
                     f"{routing_block}"
-                    "Recent exchange (most recent at bottom):\n"
-                    + ("\n".join(history_lines) if history_lines else "(no prior context)")
-                    + "\n\nUSER (new message):"
+                    "Recent conversation context:\n"
+                    + ("\n".join(history_lines) if history_lines else "")
+                    + "\n\nCurrent user message:\n"
             )
 
             full = f"{preamble}\n{prompt}\n{final_directive}"
@@ -1678,10 +1675,10 @@ class Orac:
             f"`{probe_token}` and nothing else."
         )
         second_prompt = (
-            "Recent exchange (most recent at bottom):\n"
+            "Conversation context:\n"
             f"USER: Reply with the exact token `{probe_token}` and nothing else.\n"
             f"ASSISTANT: {probe_token}\n\n"
-            "USER (new message):\n"
+            "Current user message:\n"
             "What exact token did I ask you to repeat? Reply with the exact token only."
         )
 
