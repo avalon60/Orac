@@ -98,6 +98,30 @@ def build_parser() -> argparse.ArgumentParser:
     help="Maximum seconds to wait for queued TTS in tts-test mode.",
   )
   parser.add_argument(
+    "--browser-mode",
+    action="store_true",
+    help="Enable the built-in browser WebSocket transport for display events.",
+  )
+  parser.add_argument(
+    "--buttons",
+    action="store_true",
+    help="Show the browser UI state buttons in the side panel.",
+  )
+  parser.add_argument(
+    "--display-browser",
+    action="store_true",
+    help=argparse.SUPPRESS,
+  )
+  parser.add_argument(
+    "--display-browser-host",
+    help="Host/interface for the browser WebSocket transport.",
+  )
+  parser.add_argument(
+    "--display-browser-port",
+    type=int,
+    help="TCP port for the browser WebSocket transport.",
+  )
+  parser.add_argument(
     "--check",
     action="store_true",
     help="Compile-check the key local voice modules and exit.",
@@ -165,6 +189,14 @@ def _build_voice_loop_args(args: argparse.Namespace) -> list[str]:
 
   if args.record_seconds is not None:
     voice_args.extend(["--record-seconds", str(args.record_seconds)])
+  if args.browser_mode or args.display_browser or args.buttons:
+    voice_args.append("--browser-mode")
+  if args.buttons:
+    voice_args.append("--buttons")
+  if args.display_browser_host:
+    voice_args.extend(["--display-browser-host", args.display_browser_host])
+  if args.display_browser_port is not None:
+    voice_args.extend(["--display-browser-port", str(args.display_browser_port)])
   if args.voice:
     voice_args.extend(["--voice", args.voice])
   if args.voice_dir:
