@@ -31,6 +31,8 @@ WEB_ROOT="$PROJECT_ROOT/web/orac-display"
 HOST="${ORAC_DISPLAY_WEB_HOST:-127.0.0.1}"
 PORT="${ORAC_DISPLAY_WEB_PORT:-5173}"
 APP_URL="http://${HOST}:${PORT}"
+LAUNCHED_BROWSER_PID=""
+BROWSER_PROFILE_DIR=""
 
 if [[ ! -d "$WEB_ROOT" ]]; then
   echo "Orac display web tree not found: $WEB_ROOT" >&2
@@ -38,23 +40,29 @@ if [[ ! -d "$WEB_ROOT" ]]; then
 fi
 
 open_browser() {
+  BROWSER_PROFILE_DIR="$(mktemp -d -t orac-display-web-browser.XXXXXX)"
+
   if command -v google-chrome >/dev/null 2>&1; then
-    google-chrome \
+    setsid google-chrome \
+      --user-data-dir="$BROWSER_PROFILE_DIR" \
       --app="$APP_URL" \
       --new-window \
       --no-first-run \
       --disable-infobars \
       --disable-session-crashed-bubble >/dev/null 2>&1 &
+    LAUNCHED_BROWSER_PID="$!"
     return 0
   fi
 
   if command -v chromium >/dev/null 2>&1; then
-    chromium \
+    setsid chromium \
+      --user-data-dir="$BROWSER_PROFILE_DIR" \
       --app="$APP_URL" \
       --new-window \
       --no-first-run \
       --disable-infobars \
       --disable-session-crashed-bubble >/dev/null 2>&1 &
+    LAUNCHED_BROWSER_PID="$!"
     return 0
   fi
 
@@ -90,6 +98,21 @@ cleanup() {
   if kill -0 "$VITE_PID" 2>/dev/null; then
     kill "$VITE_PID" 2>/dev/null || true
     wait "$VITE_PID" 2>/dev/null || true
+  fi
+
+  if [[ -n "$LAUNCHED_BROWSER_PID" ]] && kill -0 "$LAUNCHED_BROWSER_PID" 2>/dev/null; then
+    kill "$LAUNCHED_BROWSER_PID" 2>/dev/null || true
+    wait "$LAUNCHED_BROWSER_PID" 2>/dev/null || true
+  fi
+
+  if [[ -n "$BROWSER_PROFILE_DIR" ]]; then
+    if command -v pkill >/dev/null 2>&1; then
+      pkill -TERM -f -- "--user-data-dir=$BROWSER_PROFILE_DIR" >/dev/null 2>&1 || true
+      sleep 0.2
+      pkill -KILL -f -- "--user-data-dir=$BROWSER_PROFILE_DIR" >/dev/null 2>&1 || true
+    fi
+
+    rm -rf "$BROWSER_PROFILE_DIR" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT INT TERM
