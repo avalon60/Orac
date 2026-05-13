@@ -32,6 +32,7 @@ DISPLAY_PROTOCOL_VERSION = 1
 
 
 DisplayEventHandler = Callable[[dict[str, Any]], None]
+BrowserEventBroadcaster = Callable[[dict[str, Any]], None]
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,9 @@ class DisplayEvent:
 class DisplayEventSender:
   """Best-effort local display event sender."""
 
+  _browser_broadcaster_lock = threading.Lock()
+  _browser_broadcaster: BrowserEventBroadcaster | None = None
+
   def __init__(self, config: DisplayEventConfig) -> None:
     """Initialise the sender.
 
@@ -148,6 +152,44 @@ class DisplayEventSender:
     payload.setdefault("v", DISPLAY_PROTOCOL_VERSION)
     self._write_state_file(payload)
     self._send_socket_event(payload)
+    self._send_browser_event(payload)
+
+  @classmethod
+  def set_browser_broadcaster(
+    cls,
+    broadcaster: BrowserEventBroadcaster | None,
+  ) -> None:
+    """Register or clear a browser broadcast hook.
+
+    Args:
+      broadcaster: Callback used to forward display events to browsers.
+    """
+    with cls._browser_broadcaster_lock:
+      cls._browser_broadcaster = broadcaster
+
+  @classmethod
+  def clear_browser_broadcaster(cls) -> None:
+    """Remove the active browser broadcast hook."""
+    cls.set_browser_broadcaster(None)
+
+  @classmethod
+  def _get_browser_broadcaster(cls) -> BrowserEventBroadcaster | None:
+    """Return the active browser broadcast hook, if any."""
+    with cls._browser_broadcaster_lock:
+      return cls._browser_broadcaster
+
+  def _send_browser_event(self, payload: dict[str, Any]) -> None:
+    """Best-effort send to any active browser transport."""
+    broadcaster = self._get_browser_broadcaster()
+    if broadcaster is None:
+      return
+    try:
+      broadcaster(dict(payload))
+    except Exception as exc:
+      logger.debug(
+        "Unable to broadcast display event to browser transport: {}",
+        exc,
+      )
 
   def _write_state_file(self, payload: dict[str, Any]) -> None:
     """Write the latest display state for display startup recovery."""
