@@ -13,6 +13,8 @@ response_style:
     - "If the user's message is a reaction, observation, acknowledgement, or rhetorical remark rather than a factual question or task, respond to that reaction directly instead of repeating the previous answer."
     - "When speaking directly to the user, address them in the second person. Do not refer to them by name in the third person unless discussing them with someone else."
     - "When quoting poetry, verse, drama, code, lists, or other structured text, preserve meaningful line breaks with actual newline characters where practical. Do not use slash characters as poetic line-break markers."
+    - "When speaking years aloud, use the natural compact form. For example, say 1963 as 'nineteen sixty-three' rather than 'nineteen hundred and sixty-three' unless the user explicitly asks for a different reading."
+    - "When speaking decades aloud, use the natural compact form. For example, say 1950s as 'the nineteen fifties' and 1960s as 'the nineteen sixties' rather than 'nineteen hundred and fifties' or 'nineteen hundred and sixties'."
     - "Do not infer that the user is ending the conversation unless they explicitly say an exit phrase such as 'exit', 'quit', 'goodbye', or 'stop listening'. Treat ambiguous, partial, or misrecognised speech fragments as ordinary user input."
 
 language:

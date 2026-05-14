@@ -31,6 +31,19 @@ interface CorePalette {
   highlightColor: string;
 }
 
+interface OracDisplayProps {
+  state: OracState;
+  message?: string;
+  showTranscriptPanels?: boolean;
+  userTranscript?: string;
+  oracTranscript?: string;
+}
+
+const SHOW_TRANSCRIPT_PANELS =
+  (import.meta.env.VITE_ORAC_SHOW_TRANSCRIPT_PANELS || '')
+    .trim()
+    .toLowerCase() === 'true';
+
 const STATE_CONFIGS: Record<OracState, StateConfig> = {
   idle: { color: '#4fc3f7', bloomIntensity: 0.5, rotationSpeed: 0.15, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
   wake_detected: { color: '#ffffff', bloomIntensity: 3.0, rotationSpeed: 1.5, distortion: 0.5, pulseRate: 10, scale: 1.25, transmission: 0.5 },
@@ -160,6 +173,83 @@ const WaveHalo = ({ state }: { state: OracState }) => {
         </mesh>
       ))}
     </group>
+  );
+};
+
+const TranscriptPanel = ({
+  title,
+  text,
+  placeholder,
+  accentColor,
+  emphasis = 1,
+  muted = false,
+  bodyClassName = '',
+  fadeStop = 82,
+}: {
+  title: string;
+  text: string;
+  placeholder: string;
+  accentColor: string;
+  emphasis?: number;
+  muted?: boolean;
+  bodyClassName?: string;
+  fadeStop?: number;
+}) => {
+  const body = text.trim() || placeholder;
+  const panelOpacity = muted ? 0.5 : 0.82;
+  const borderOpacity = muted ? 0.12 : 0.2;
+  const glowOpacity = muted ? 0.08 : 0.14;
+  const bodyOpacity = muted ? 0.82 : 0.94;
+
+  return (
+    <div
+      className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[1.5rem] border bg-[#04131d]/68 px-5 py-4 backdrop-blur-xl"
+      style={{
+        borderColor: `rgba(27, 95, 145, ${borderOpacity})`,
+        boxShadow: `0 0 26px ${accentColor}${muted ? '14' : '22'}`,
+        opacity: panelOpacity,
+        transform: `scale(${emphasis})`,
+        transformOrigin: 'center',
+      }}
+    >
+      <div
+        className="pointer-events-none absolute inset-0 rounded-[1.5rem]"
+        style={{
+          background:
+            'linear-gradient(180deg, rgba(255,255,255,0.02), transparent 28%, rgba(0,0,0,0.06))',
+          boxShadow: `inset 0 0 0 1px rgba(79, 195, 247, ${glowOpacity})`,
+        }}
+      />
+      <div className="flex items-center justify-between gap-3 border-b border-[#1b5f91]/14 pb-3">
+        <div
+          className="text-[10px] font-bold uppercase tracking-[0.45em]"
+          style={{
+            color: accentColor,
+            textShadow: `0 0 16px ${accentColor}55`,
+          }}
+        >
+          {title}
+        </div>
+        <div className="h-px flex-1 bg-gradient-to-r from-[#1b5f91]/20 to-transparent" />
+      </div>
+      <div className={`mt-4 flex-1 overflow-hidden ${bodyClassName}`}>
+        <div
+          className="max-h-full overflow-y-auto whitespace-pre-wrap break-words pr-1 text-[#d5e7f1]"
+          style={{
+            opacity: bodyOpacity,
+            fontSize: emphasis > 1 ? '12px' : '13px',
+            lineHeight: emphasis > 1 ? 1.75 : 1.8,
+            letterSpacing: '0.085em',
+            maskImage:
+              `linear-gradient(180deg, black 0%, black ${fadeStop}%, transparent 100%)`,
+            WebkitMaskImage:
+              `linear-gradient(180deg, black 0%, black ${fadeStop}%, transparent 100%)`,
+          }}
+        >
+          {body}
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -525,6 +615,14 @@ const Tesseract = ({ state }: { state: OracState }) => {
 
 const Scene = ({ state }: { state: OracState }) => {
   const config = STATE_CONFIGS[state];
+  const isIdle = state === 'idle';
+  const isThinking = state === 'thinking';
+  const isSpeaking = state === 'speaking';
+  const isError = state === 'error' || state === 'interrupted';
+  const sparkleCount = isThinking ? 52 : 28;
+  const sparkleSize = isThinking ? 1.8 : 1.55;
+  const sparkleSpeed = config.pulseRate * (isIdle ? 0.14 : isThinking ? 0.24 : 0.18);
+  const sparkleOpacity = isError ? 0.14 : isIdle ? 0.28 : isSpeaking ? 0.5 : isThinking ? 0.58 : 0.42;
 
   const glitchDelay = useMemo(() => new THREE.Vector2(0.1, 0.3), []);
   const glitchDuration = useMemo(() => new THREE.Vector2(0.1, 0.2), []);
@@ -546,12 +644,12 @@ const Scene = ({ state }: { state: OracState }) => {
           <Tesseract state={state} />
           
           <Sparkles 
-            count={state === 'thinking' ? 40 : 20} 
-            scale={2.5} 
-            size={2} 
-            speed={config.pulseRate * 0.2} 
+            count={sparkleCount} 
+            scale={2.6} 
+            size={sparkleSize} 
+            speed={sparkleSpeed} 
             color={config.color} 
-            opacity={0.6}
+            opacity={sparkleOpacity}
           />
         </group>
       </Float>
@@ -581,8 +679,28 @@ const Scene = ({ state }: { state: OracState }) => {
   );
 };
 
-export const OracDisplay: React.FC<{ state: OracState; message?: string }> = ({ state, message }) => {
+export const OracDisplay: React.FC<OracDisplayProps> = ({
+  state,
+  message,
+  showTranscriptPanels = SHOW_TRANSCRIPT_PANELS,
+  userTranscript = '',
+  oracTranscript = '',
+}) => {
   const config = STATE_CONFIGS[state];
+  const isIdle = state === 'idle';
+  const isTurnActive =
+    state === 'wake_detected' ||
+    state === 'listening' ||
+    state === 'transcribing' ||
+    state === 'thinking' ||
+    state === 'tool_calling' ||
+    state === 'speaking';
+  const leftTranscript =
+    userTranscript.trim() || 'No recent utterance';
+  const rightTranscript =
+    oracTranscript.trim() || 'Waiting for response';
+  const leftPanelEmphasis = isIdle ? 0.98 : isTurnActive ? 1.01 : 1;
+  const rightPanelEmphasis = isIdle ? 0.98 : state === 'speaking' ? 1.03 : 1.01;
 
   return (
     <div className="relative flex flex-col items-center justify-center w-full h-full bg-[#03070d] overflow-hidden rounded-2xl border border-[#1b5f91]/10">
@@ -605,10 +723,46 @@ export const OracDisplay: React.FC<{ state: OracState; message?: string }> = ({ 
         <div className="mt-3 h-px w-40 bg-gradient-to-r from-transparent via-[#4fc3f7] to-transparent sm:w-56" />
       </div>
 
-      <div className="w-full h-full relative">
-        <Canvas gl={{ antialias: false }} dpr={[1, 1.5]}>
-          <Scene state={state} />
-        </Canvas>
+      <div
+        className={`relative z-10 grid h-full w-full min-h-0 gap-4 ${
+          showTranscriptPanels
+            ? 'px-3 sm:px-4 xl:grid-cols-[minmax(15.5rem,17rem)_minmax(0,1fr)_minmax(18rem,22rem)]'
+            : 'grid-cols-1'
+        }`}
+      >
+        {showTranscriptPanels && (
+          <div className="hidden min-h-0 xl:flex">
+            <TranscriptPanel
+              title="You"
+              text={leftTranscript}
+              placeholder="Listening for wake word"
+              accentColor="#8fdcff"
+              emphasis={leftPanelEmphasis}
+              muted={isIdle}
+            />
+          </div>
+        )}
+
+        <div className="w-full h-full min-h-0 relative">
+          <Canvas gl={{ antialias: false }} dpr={[1, 1.5]}>
+            <Scene state={state} />
+          </Canvas>
+        </div>
+
+        {showTranscriptPanels && (
+          <div className="hidden min-h-0 xl:flex">
+            <TranscriptPanel
+              title="Orac"
+              text={rightTranscript}
+              placeholder="Waiting for response"
+              accentColor={config.color}
+              emphasis={rightPanelEmphasis}
+              muted={isIdle}
+              bodyClassName="pb-8"
+              fadeStop={98}
+            />
+          </div>
+        )}
       </div>
 
       <AnimatePresence mode="wait">

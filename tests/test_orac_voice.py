@@ -92,6 +92,7 @@ from orac_voice.interruption_policy import InterruptionPolicy
 from orac_voice.interruption_policy import InterruptionState
 from orac_voice.wake_openwakeword import OpenWakeWordActivationListener
 from orac_voice.wake_openwakeword import _best_detection
+from orac_voice.wake_openwakeword import create_openwakeword_model
 from orac_voice.wake_porcupine import PorcupineActivationListener
 from orac_voice.stt_faster_whisper import FasterWhisperSttEngine
 from orac_voice.stt_faster_whisper import _normalise_compute_type
@@ -115,6 +116,7 @@ from orac_voice.voice_loop_local import _load_activation_mode
 from orac_voice.voice_loop_local import _load_record_mode
 from orac_voice.voice_loop_local import _load_wake_rearm_seconds
 from orac_voice.voice_loop_local import _send_orac_prompt
+from orac_voice.voice_loop_local import _transcribe_once
 from orac_voice.voice_loop_local import _voice_session_async
 from orac_voice.voice_loop_local import build_parser
 
@@ -294,6 +296,7 @@ class _FakeDisplaySender:
 
   def __init__(self) -> None:
     self.states: list[tuple[str, str | None, str | None, str | None]] = []
+    self.events: list[dict[str, object]] = []
 
   def send_state(
     self,
@@ -305,16 +308,32 @@ class _FakeDisplaySender:
   ) -> None:
     """Record a state change."""
     self.states.append((state, message, session_id, turn_id))
+    event: dict[str, object] = {"event": "state_changed", "state": state}
+    if message is not None:
+      event["message"] = message
+    if session_id is not None:
+      event["session_id"] = session_id
+    if turn_id is not None:
+      event["turn_id"] = turn_id
+    self.events.append(event)
 
   def send(self, event) -> None:
     """Record a generic display event using the state-change form."""
     if isinstance(event, dict):
-      state = str(event.get("state") or "")
-      message = event.get("message")
-      session_id = event.get("session_id")
-      turn_id = event.get("turn_id")
-      self.states.append((state, message, session_id, turn_id))
+      self.events.append(dict(event))
+      if "state" in event or "message" in event:
+        state = str(event.get("state") or "")
+        message = event.get("message")
+        session_id = event.get("session_id")
+        turn_id = event.get("turn_id")
+        self.states.append((state, message, session_id, turn_id))
       return
+    event_dict = {
+      key: value
+      for key, value in vars(event).items()
+      if value is not None
+    }
+    self.events.append(event_dict)
     self.states.append(
       (
         getattr(event, "state", ""),
@@ -485,6 +504,56 @@ class _FakeOpenWakeWordAudioSource:
   def close(self) -> None:
     """Record audio source cleanup."""
     self.close_calls += 1
+
+
+class _FakeOpenWakeWordRuntime:
+  """Fake openWakeWord runtime used by model-resolution tests."""
+
+  def __init__(self, *, model_error: Exception | None = None) -> None:
+    self.download_calls: list[dict[str, object]] = []
+    self.model_calls: list[dict[str, object]] = []
+    self.model_error = model_error
+
+    self.openwakeword_module = types.ModuleType("openwakeword")
+    self.openwakeword_module.MODELS = {
+      "alexa": object(),
+      "hey_jarvis": object(),
+      "hey_mycroft": object(),
+      "hey_rhasspy": object(),
+      "timer": object(),
+      "weather": object(),
+    }
+    self.openwakeword_module.__file__ = str(
+      Path(tempfile.gettempdir()) / "fake_openwakeword" / "__init__.py"
+    )
+
+    self.model_module = types.ModuleType("openwakeword.model")
+    runtime = self
+
+    class Model:  # pragma: no cover - simple capture shim
+      def __init__(self, **kwargs) -> None:
+        runtime.model_calls.append(kwargs)
+        if runtime.model_error is not None:
+          raise runtime.model_error
+        self.kwargs = kwargs
+
+    self.model_module.Model = Model
+
+    self.utils_module = types.ModuleType("openwakeword.utils")
+
+    def download_models(**kwargs) -> None:
+      runtime.download_calls.append(kwargs)
+
+    self.utils_module.download_models = download_models
+
+  @property
+  def modules(self) -> dict[str, types.ModuleType]:
+    """Return the module patches required for an isolated runtime."""
+    return {
+      "openwakeword": self.openwakeword_module,
+      "openwakeword.model": self.model_module,
+      "openwakeword.utils": self.utils_module,
+    }
 
 
 class _FakeApiKeyStore:
@@ -866,6 +935,55 @@ class OracVoiceTests(unittest.TestCase):
     self.assertTrue(args.voice_session)
     self.assertEqual(args.record_seconds, 10)
 
+  def test_transcribe_once_emits_current_turn_transcript_events(self) -> None:
+    """Transcription should emit turn-clear and final user transcript events."""
+    class _FixedCapture:
+      def __init__(self) -> None:
+        self.record_seconds = 1.5
+        self.calls: list[tuple[str, str, float | None]] = []
+        self.cancelled = False
+
+      def record_to_wav(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        record_seconds: float | None,
+      ) -> Path:
+        self.calls.append((session_id, turn_id, record_seconds))
+        return Path("/tmp/fake-stt.wav")
+
+      def cancel(self) -> None:
+        self.cancelled = True
+
+    args = build_parser().parse_args(["--listen-once"])
+    sender = _FakeDisplaySender()
+    capture = _FixedCapture()
+    stt_engine = _FakeWakeStt("Turn the lights on")
+
+    with patch(
+      "orac_voice.voice_loop_local._load_record_mode",
+      return_value="fixed",
+    ):
+      session_id, turn_id, recognised_text = _transcribe_once(
+        args,
+        capture=capture,
+        stt_engine=stt_engine,
+        prompt=None,
+        display_sender=sender,
+      )
+
+    self.assertEqual(recognised_text, "Turn the lights on")
+    self.assertEqual(capture.calls, [(session_id, turn_id, None)])
+    transcript_events = [
+      event for event in sender.events if str(event.get("event", "")).startswith("transcript.")
+    ]
+    self.assertEqual(
+      [event["event"] for event in transcript_events],
+      ["transcript.turn.clear", "transcript.user.final"],
+    )
+    self.assertEqual(transcript_events[-1]["text"], "Turn the lights on")
+
   def test_voice_cli_accepts_record_mode_override(self) -> None:
     """Voice CLI should expose fixed and VAD recording modes."""
     fixed_args = build_parser().parse_args(
@@ -1042,6 +1160,166 @@ class OracVoiceTests(unittest.TestCase):
 
     self.assertTrue(result.activated)
     self.assertEqual(stt_engine.calls, [])
+
+  def test_openwakeword_builtin_model_name_remains_builtin(self) -> None:
+    """Built-in openWakeWord names should continue to resolve as names."""
+    runtime = _FakeOpenWakeWordRuntime()
+
+    with patch.dict(sys.modules, runtime.modules):
+      create_openwakeword_model(
+        model_paths=[],
+        model_names=["hey_jarvis"],
+        model_dirs=[],
+        inference_framework="auto",
+        error_context="openWakeWord",
+      )
+
+    self.assertEqual(runtime.download_calls, [{"model_names": ["hey_jarvis"]}])
+    self.assertEqual(runtime.model_calls[0]["wakeword_models"], ["hey_jarvis"])
+    self.assertEqual(runtime.model_calls[0]["inference_framework"], "tflite")
+
+  def test_openwakeword_explicit_model_path_resolves(self) -> None:
+    """Explicit wake-word model paths should still be passed through."""
+    runtime = _FakeOpenWakeWordRuntime()
+
+    with tempfile.TemporaryDirectory() as tmp_name:
+      model_path = Path(tmp_name) / "hey_orac.onnx"
+      model_path.write_text("fake", encoding="utf-8")
+
+      with patch.dict(sys.modules, runtime.modules):
+        create_openwakeword_model(
+          model_paths=[model_path],
+          model_names=[],
+          model_dirs=[],
+          inference_framework="auto",
+          error_context="openWakeWord",
+        )
+
+    self.assertEqual(runtime.download_calls, [])
+    self.assertEqual(runtime.model_calls[0]["wakeword_models"], [str(model_path)])
+    self.assertEqual(runtime.model_calls[0]["inference_framework"], "onnx")
+
+  def test_openwakeword_bare_model_name_resolves_locally(self) -> None:
+    """Bare local model names should resolve to nearby ONNX files."""
+    runtime = _FakeOpenWakeWordRuntime()
+
+    with tempfile.TemporaryDirectory() as tmp_name:
+      model_dir = Path(tmp_name)
+      model_path = model_dir / "hey_orac.onnx"
+      model_path.write_text("fake", encoding="utf-8")
+
+      with patch.dict(sys.modules, runtime.modules):
+        create_openwakeword_model(
+          model_paths=[],
+          model_names=["hey_orac"],
+          model_dirs=[model_dir],
+          inference_framework="auto",
+          error_context="openWakeWord",
+        )
+
+    self.assertEqual(runtime.download_calls, [])
+    self.assertEqual(runtime.model_calls[0]["wakeword_models"], [str(model_path)])
+    self.assertEqual(runtime.model_calls[0]["inference_framework"], "onnx")
+
+  def test_openwakeword_local_model_directory_wins_over_package_copy(self) -> None:
+    """Local Orac wake-word directories should beat package-installed copies."""
+    runtime = _FakeOpenWakeWordRuntime()
+
+    with tempfile.TemporaryDirectory() as tmp_name:
+      model_dir = Path(tmp_name)
+      model_path = model_dir / "hey_orac.onnx"
+      model_path.write_text("fake", encoding="utf-8")
+
+      with patch.dict(sys.modules, runtime.modules):
+        create_openwakeword_model(
+          model_paths=[],
+          model_names=["hey_orac"],
+          model_dirs=[model_dir],
+          inference_framework="auto",
+          error_context="openWakeWord",
+        )
+
+    self.assertEqual(runtime.model_calls[0]["wakeword_models"], [str(model_path)])
+    self.assertEqual(runtime.model_calls[0]["inference_framework"], "onnx")
+
+  def test_openwakeword_unresolved_bare_name_reports_helpful_context(self) -> None:
+    """Unresolved bare names should explain how to fix the configuration."""
+    runtime = _FakeOpenWakeWordRuntime()
+
+    with tempfile.TemporaryDirectory() as tmp_name:
+      model_dir = Path(tmp_name)
+      with patch.dict(sys.modules, runtime.modules):
+        with self.assertRaises(VoiceActivationError) as raised:
+          create_openwakeword_model(
+            model_paths=[],
+            model_names=["hey_orac"],
+            model_dirs=[model_dir],
+            inference_framework="auto",
+            error_context="openWakeWord",
+          )
+
+    message = str(raised.exception)
+    self.assertIn("hey_orac", message)
+    self.assertIn("Available built-in models", message)
+    self.assertIn("Explicit model paths configured", message)
+    self.assertIn("Local directories searched", message)
+    self.assertIn(".onnx", message)
+    self.assertIn(".tflite", message)
+    self.assertIn("openwakeword_model_paths", message)
+
+  def test_openwakeword_ambiguous_local_files_fail_clearly(self) -> None:
+    """Conflicting local model files should require an explicit path."""
+    runtime = _FakeOpenWakeWordRuntime()
+
+    with tempfile.TemporaryDirectory() as tmp_name:
+      model_dir = Path(tmp_name)
+      (model_dir / "hey_orac.onnx").write_text("fake", encoding="utf-8")
+      (model_dir / "hey_orac.tflite").write_text("fake", encoding="utf-8")
+
+      with patch.dict(sys.modules, runtime.modules):
+        with self.assertRaises(VoiceActivationError) as raised:
+          create_openwakeword_model(
+            model_paths=[],
+            model_names=["hey_orac"],
+            model_dirs=[model_dir],
+            inference_framework="auto",
+            error_context="openWakeWord",
+          )
+
+    self.assertIn("multiple local files matched", str(raised.exception))
+    self.assertIn("openwakeword_model_paths", str(raised.exception))
+
+  def test_openwakeword_external_data_sidecar_missing_is_actionable(self) -> None:
+    """Missing ONNX sidecars should fail with a clear copy-both-files message."""
+    runtime = _FakeOpenWakeWordRuntime(
+      model_error=RuntimeError(
+        "[ONNXRuntimeError] : 1 : FAIL : External data path validation failed "
+        'for initializer: layer1.weight. Error: tensorprotoutils.cc:431 '
+        'ValidateExternalDataPath External data path does not exist: '
+        '"/tmp/hey_orac.onnx.data"'
+      )
+    )
+
+    with tempfile.TemporaryDirectory() as tmp_name:
+      model_dir = Path(tmp_name)
+      model_path = model_dir / "hey_orac.onnx"
+      model_path.write_text("fake", encoding="utf-8")
+
+      with patch.dict(sys.modules, runtime.modules):
+        with self.assertRaises(VoiceActivationError) as raised:
+          create_openwakeword_model(
+            model_paths=[],
+            model_names=["hey_orac"],
+            model_dirs=[model_dir],
+            inference_framework="auto",
+            error_context="openWakeWord",
+          )
+
+    message = str(raised.exception)
+    self.assertIn("external-data ONNX model", message)
+    self.assertIn("hey_orac.onnx.data", message)
+    self.assertIn("same local model directory", message)
+    self.assertIn("Directories searched", message)
 
   def test_wake_rearm_delay_uses_configured_default(self) -> None:
     """Voice sessions should pause briefly before listening again."""
@@ -1486,6 +1764,25 @@ class OracVoiceTests(unittest.TestCase):
 
     self.assertTrue(config.enable_experimental_barge_in)
     self.assertEqual(config.mode, "wakeword")
+
+  def test_openwakeword_model_dirs_load_from_config(self) -> None:
+    """openWakeWord model directories should load from the voice config."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      config_path = Path(tmp_name) / "orac.ini"
+      config_path.write_text(
+        "\n".join(
+          [
+            "[voice]",
+            "enable_experimental_barge_in = true",
+            "openwakeword_model_dirs = /tmp/one,/tmp/two",
+          ]
+        ),
+        encoding="utf-8",
+      )
+      config_mgr = ConfigManager(config_file_path=config_path)
+      config = load_barge_in_config(config_mgr)
+
+    self.assertEqual(config.openwakeword_model_dirs, "/tmp/one,/tmp/two")
 
   def test_barge_in_controller_starts_vad_with_acknowledgement(self) -> None:
     """Enabled experimental VAD mode should start the monitoring thread."""
@@ -3051,6 +3348,7 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     """Voice session should not leave stale final frames for the next turn."""
     reader = asyncio.StreamReader()
     writer = _FakeStreamWriter()
+    sender = _FakeDisplaySender()
     frames = [
       {"v": 1, "type": "stream_start", "payload": {}},
       {"v": 1, "type": "text_delta", "payload": {"delta": "First"}},
@@ -3071,17 +3369,39 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
         reader=reader,
         writer=writer,
         prompt_text="first",
+        display_sender=sender,
       )
       second_status = await _send_orac_prompt(
         reader=reader,
         writer=writer,
         prompt_text="second",
+        display_sender=sender,
       )
 
     self.assertEqual(first_status, 0)
     self.assertEqual(second_status, 0)
     self.assertIn("Orac: First", output.getvalue())
     self.assertIn("Orac: Second", output.getvalue())
+    transcript_events = [
+      event
+      for event in sender.events
+      if str(event.get("event", "")).startswith("transcript.")
+    ]
+    self.assertEqual(
+      [event["event"] for event in transcript_events],
+      [
+        "transcript.orac.start",
+        "transcript.orac.delta",
+        "transcript.orac.final",
+        "transcript.orac.start",
+        "transcript.orac.delta",
+        "transcript.orac.final",
+      ],
+    )
+    self.assertEqual(transcript_events[1]["text"], "First")
+    self.assertEqual(transcript_events[2]["text"], "First final")
+    self.assertEqual(transcript_events[4]["text"], "Second")
+    self.assertEqual(transcript_events[5]["text"], "Second final")
 
   async def test_voice_stream_timeout_logs_only_once(self) -> None:
     """Stalled voice playback should log the timeout once per turn."""

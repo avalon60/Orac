@@ -31,6 +31,7 @@ from orac_voice.wake_openwakeword import (
   SoundDeviceOpenWakeWordAudioSource,
   _best_detection,
   _normalise_inference_framework,
+  _parse_model_dirs,
   _parse_model_names,
   _parse_model_paths,
   create_openwakeword_model,
@@ -82,6 +83,7 @@ class BargeInConfig:
   input_device: str | None = None
   openwakeword_model_paths: str = ""
   openwakeword_model_names: str = ",".join(DEFAULT_OPENWAKEWORD_MODEL_NAMES)
+  openwakeword_model_dirs: str = ""
   openwakeword_threshold: float = DEFAULT_OPENWAKEWORD_THRESHOLD
   openwakeword_inference_framework: str = "auto"
   openwakeword_frame_ms: int = DEFAULT_OPENWAKEWORD_FRAME_MS
@@ -510,6 +512,7 @@ class OpenWakeWordBargeInController:
     self._model = create_openwakeword_model(
       model_paths=model_paths,
       model_names=model_names,
+      model_dirs=_parse_model_dirs(self.config.openwakeword_model_dirs),
       inference_framework=inference_framework,
       error_context="barge_in_mode=wakeword",
     )
@@ -635,6 +638,11 @@ def load_barge_in_config(config_mgr: ConfigManager) -> BargeInConfig:
       "voice",
       "openwakeword_model_names",
       default=",".join(DEFAULT_OPENWAKEWORD_MODEL_NAMES),
+    ),
+    openwakeword_model_dirs=config_mgr.config_value(
+      "voice",
+      "openwakeword_model_dirs",
+      default="",
     ),
     openwakeword_threshold=config_mgr.float_config_value(
       "voice",

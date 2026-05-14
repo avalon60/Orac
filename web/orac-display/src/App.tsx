@@ -8,13 +8,32 @@ import type { OracState } from './types/oracState';
 const DEFAULT_DISPLAY_WS_URL = 'ws://127.0.0.1:8767';
 const DISPLAY_WS_URL =
   import.meta.env.VITE_ORAC_DISPLAY_WS_URL?.trim() || DEFAULT_DISPLAY_WS_URL;
+const SHOW_TRANSCRIPT_PANELS =
+  (import.meta.env.VITE_ORAC_SHOW_TRANSCRIPT_PANELS || '')
+    .trim()
+    .toLowerCase() === 'true';
 const RECONNECT_INITIAL_DELAY_MS = 500;
 const RECONNECT_MAX_DELAY_MS = 10_000;
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected';
 type BrowserUiConfig = {
   buttons_visible?: boolean;
+  show_transcript_panels?: boolean;
 };
+
+function getTranscriptText(
+  data: Record<string, unknown>,
+  options: { preserveWhitespace?: boolean } = {},
+): string {
+  const candidate =
+    data.text ?? data.message ?? data.delta ?? data.chunk ?? data.content;
+
+  if (typeof candidate !== 'string') {
+    return '';
+  }
+
+  return options.preserveWhitespace ? candidate : candidate.trim();
+}
 
 function useMediaQuery(query: string) {
   const [matches, setMatches] = useState<boolean>(() =>
@@ -54,6 +73,11 @@ function App() {
   const [connectionState, setConnectionState] =
     useState<ConnectionState>('connecting');
   const [showButtons, setShowButtons] = useState(false);
+  const [showTranscriptPanels, setShowTranscriptPanels] = useState(
+    SHOW_TRANSCRIPT_PANELS,
+  );
+  const [userTranscript, setUserTranscript] = useState('');
+  const [oracTranscript, setOracTranscript] = useState('');
   const [railExpanded, setRailExpanded] = useState(false);
   const isWideScreen = useMediaQuery('(min-width: 1280px)');
 
@@ -127,7 +151,15 @@ function App() {
             message?: string;
             state?: string;
             buttons_visible?: boolean;
+            show_transcript_panels?: boolean;
+            text?: string;
+            delta?: string;
+            chunk?: string;
+            content?: string;
           };
+          const transcriptText = getTranscriptText(
+            data as Record<string, unknown>,
+          );
 
           if (data.event === 'state_changed' && data.state) {
             const newState = data.state.toLowerCase() as OracState;
@@ -145,6 +177,50 @@ function App() {
             const uiConfig = data as BrowserUiConfig;
             if (typeof uiConfig.buttons_visible === 'boolean') {
               setShowButtons(uiConfig.buttons_visible);
+            }
+            if (typeof uiConfig.show_transcript_panels === 'boolean') {
+              setShowTranscriptPanels(uiConfig.show_transcript_panels);
+            }
+            setConnectionState('connected');
+          } else if (
+            data.event === 'transcript.turn.clear'
+          ) {
+            setUserTranscript('');
+            setOracTranscript('');
+            setConnectionState('connected');
+          } else if (
+            data.event === 'transcript.user.final' ||
+            data.event === 'voice_stt_final' ||
+            data.event === 'stt_final'
+          ) {
+            setUserTranscript(transcriptText);
+            setOracTranscript('');
+            setConnectionState('connected');
+          } else if (
+            data.event === 'transcript.orac.start' ||
+            data.event === 'stream_start'
+          ) {
+            setOracTranscript(transcriptText);
+            setConnectionState('connected');
+          } else if (
+            data.event === 'transcript.orac.delta' ||
+            data.event === 'text_delta'
+          ) {
+            const deltaText = getTranscriptText(
+              data as Record<string, unknown>,
+              { preserveWhitespace: true },
+            );
+            if (deltaText) {
+              setOracTranscript((current) => `${current}${deltaText}`);
+            }
+            setConnectionState('connected');
+          } else if (
+            data.event === 'transcript.orac.final' ||
+            data.event === 'stream_end' ||
+            data.event === 'response'
+          ) {
+            if (transcriptText) {
+              setOracTranscript(transcriptText);
             }
             setConnectionState('connected');
           }
@@ -233,7 +309,13 @@ function App() {
         >
           <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[2rem] border border-[#1b5f91]/20 bg-[#03070d]/90 shadow-[0_30px_120px_rgba(0,0,0,0.75)] backdrop-blur-xl">
             <div className="relative min-h-0 flex-1">
-              <OracDisplay state={state} message={message} />
+              <OracDisplay
+                state={state}
+                message={message}
+                showTranscriptPanels={showTranscriptPanels}
+                userTranscript={userTranscript}
+                oracTranscript={oracTranscript}
+              />
               {connectionState !== 'connected' && (
                 <div className="pointer-events-none absolute inset-0 bg-[#03070d]/35" />
               )}

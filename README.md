@@ -208,6 +208,18 @@ openwakeword_model_paths = ${ORAC_HOME}/var/models/wake/hey_orac.tflite
 openwakeword_model_names =
 ```
 
+Piper voice models follow the same runtime-tree convention. By default Orac
+looks for Piper voices under:
+
+```ini
+[voice]
+tts_engine = piper
+tts_voice_dir = ${ORAC_HOME}/var/voices/piper
+```
+
+Put the Piper voice assets in that directory, or override `tts_voice_dir` if
+you keep voices elsewhere.
+
 Run a local wake-word smoke test with:
 
 ```bash
