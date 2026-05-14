@@ -45,13 +45,13 @@ const SHOW_TRANSCRIPT_PANELS =
     .toLowerCase() === 'true';
 
 const STATE_CONFIGS: Record<OracState, StateConfig> = {
-  idle: { color: '#4fc3f7', bloomIntensity: 0.5, rotationSpeed: 0.15, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
-  wake_detected: { color: '#ffffff', bloomIntensity: 3.0, rotationSpeed: 1.5, distortion: 0.5, pulseRate: 10, scale: 1.25, transmission: 0.5 },
-  listening: { color: '#7af7ff', bloomIntensity: 1.5, rotationSpeed: 0.4, distortion: 0.2, pulseRate: 2, scale: 1.1, transmission: 0.8 },
-  transcribing: { color: '#b8f2ff', bloomIntensity: 1.2, rotationSpeed: 1.2, distortion: 0.4, pulseRate: 4, scale: 1.05, transmission: 0.8 },
-  thinking: { color: '#b69cff', bloomIntensity: 2.0, rotationSpeed: 0.8, distortion: 0.6, pulseRate: 1, scale: 1.15, transmission: 0.7 },
-  tool_calling: { color: '#31e6d0', bloomIntensity: 2.5, rotationSpeed: 1.8, distortion: 0.3, pulseRate: 6, scale: 1.2, transmission: 0.6 },
-  speaking: { color: '#9be7ff', bloomIntensity: 2.0, rotationSpeed: 0.6, distortion: 0.2, pulseRate: 3, scale: 1.15, transmission: 0.8 },
+  idle: { color: '#4fc3f7', bloomIntensity: 0.45, rotationSpeed: 0.15, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
+  wake_detected: { color: '#ffffff', bloomIntensity: 2.8, rotationSpeed: 1.5, distortion: 0.5, pulseRate: 10, scale: 1.25, transmission: 0.5 },
+  listening: { color: '#7af7ff', bloomIntensity: 1.3, rotationSpeed: 0.4, distortion: 0.2, pulseRate: 2, scale: 1.1, transmission: 0.8 },
+  transcribing: { color: '#b8f2ff', bloomIntensity: 1.1, rotationSpeed: 1.2, distortion: 0.4, pulseRate: 4, scale: 1.05, transmission: 0.8 },
+  thinking: { color: '#b69cff', bloomIntensity: 1.7, rotationSpeed: 0.8, distortion: 0.6, pulseRate: 1, scale: 1.15, transmission: 0.7 },
+  tool_calling: { color: '#31e6d0', bloomIntensity: 2.1, rotationSpeed: 1.8, distortion: 0.3, pulseRate: 6, scale: 1.2, transmission: 0.6 },
+  speaking: { color: '#9be7ff', bloomIntensity: 1.6, rotationSpeed: 0.6, distortion: 0.2, pulseRate: 3, scale: 1.15, transmission: 0.8 },
   interrupted: { color: '#ffb02e', bloomIntensity: 2.5, rotationSpeed: 2.0, distortion: 1.0, pulseRate: 8, scale: 0.95, transmission: 0.4, glitchIntensity: 1 },
   complete: { color: '#4fc3f7', bloomIntensity: 1.0, rotationSpeed: 0.15, distortion: 0.1, pulseRate: 0.2, scale: 1.05, transmission: 0.95 },
   error: { color: '#ff5b4f', bloomIntensity: 1.5, rotationSpeed: 0.05, distortion: 0.5, pulseRate: 12, scale: 1.0, transmission: 0.5 },
@@ -126,6 +126,47 @@ const createCoreBodyTexture = () => {
   return texture;
 };
 
+const WAVE_SEGMENTS = 72;
+
+const createWavePoints = (radius: number, seed: number, timeOffset: number) => {
+  const points: THREE.Vector2[] = [];
+  const lobePhase = seed * 0.77 + timeOffset * 0.4;
+
+  for (let i = 0; i <= WAVE_SEGMENTS; i += 1) {
+    const theta = (i / WAVE_SEGMENTS) * Math.PI * 2;
+    const ripple =
+      Math.sin(theta * 3.0 + lobePhase) * 0.008 +
+      Math.sin(theta * 7.0 - lobePhase * 0.6) * 0.003 +
+      Math.sin(theta * 11.0 + lobePhase * 0.25) * 0.0015;
+
+    points.push(
+      new THREE.Vector2(
+        Math.cos(theta) * radius * (1 + ripple),
+        Math.sin(theta) * radius * (1 + ripple),
+      ),
+    );
+  }
+
+  return points;
+};
+
+const createWaveGeometry = (radius: number, seed: number) => {
+  const points = createWavePoints(radius, seed, 0);
+  const geometry = new THREE.BufferGeometry();
+  const vertices = new Float32Array(points.length * 3);
+
+  points.forEach((point, index) => {
+    const offset = index * 3;
+    vertices[offset] = point.x;
+    vertices[offset + 1] = point.y;
+    vertices[offset + 2] = 0;
+  });
+
+  geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+  geometry.computeBoundingSphere();
+  return geometry;
+};
+
 const ScanLine = ({ state }: { state: OracState }) => {
   const ref = useRef<THREE.Mesh>(null);
   const config = STATE_CONFIGS[state];
@@ -149,28 +190,72 @@ const ScanLine = ({ state }: { state: OracState }) => {
 const WaveHalo = ({ state }: { state: OracState }) => {
   const ref = useRef<THREE.Group>(null);
   const config = STATE_CONFIGS[state];
+  const isListening = state === 'listening' || state === 'wake_detected';
+  const isSpeaking = state === 'speaking';
+  const waveCount = isSpeaking ? 3 : 2;
+  const waveGeometries = useMemo(
+    () =>
+      Array.from({ length: waveCount }, (_, index) =>
+        createWaveGeometry(1 + index * 0.12, index + (isSpeaking ? 2.4 : 1.2)),
+      ),
+    [isSpeaking, waveCount],
+  );
+
+  useEffect(() => {
+    return () => {
+      waveGeometries.forEach((geometry) => geometry.dispose());
+    };
+  }, [waveGeometries]);
 
   useFrame((sceneState) => {
-    if (ref.current && state === 'speaking') {
-      const t = sceneState.clock.elapsedTime * 2;
-      ref.current.children.forEach((child, i) => {
-        const s = 1 + Math.sin(t - i * 0.5) * 0.2;
-        child.scale.set(s, s, s);
-        const material = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
-        material.opacity = (1 - (s - 0.8) / 0.4) * 0.3;
-      });
+    if (!ref.current) {
+      return;
     }
+
+    const t = sceneState.clock.elapsedTime;
+    const rings = ref.current.children as THREE.Group[];
+
+    rings.forEach((child, index) => {
+      if (isSpeaking) {
+        const progress = ((t * 0.18) + index * 0.24) % 1;
+        const eased = progress * progress * (3 - 2 * progress);
+        const scale = 0.92 + index * 0.08 + eased * (0.62 + index * 0.05);
+        child.scale.setScalar(scale);
+        child.rotation.z = Math.sin(t * 0.12 + index * 0.7) * 0.006;
+        const line = child.children[0] as THREE.LineLoop;
+        const material = line.material as THREE.LineBasicMaterial;
+        material.opacity = (1 - eased) * (0.055 - index * 0.008);
+      } else if (isListening) {
+        const progress = ((t * 0.12) + index * 0.26) % 1;
+        const eased = progress * progress * (3 - 2 * progress);
+        const scale = 1.975 - eased * (0.78 + index * 0.04);
+        child.scale.setScalar(scale);
+        child.rotation.z = Math.sin(t * 0.1 + index * 0.55) * 0.005;
+        const line = child.children[0] as THREE.LineLoop;
+        const material = line.material as THREE.LineBasicMaterial;
+        material.opacity = (1 - eased) * (0.022 - index * 0.0035);
+      }
+    });
   });
 
-  if (state !== 'speaking') return null;
+  if (!isListening && !isSpeaking) return null;
 
   return (
-    <group ref={ref}>
-      {[0, 1, 2].map((i) => (
-        <mesh key={i}>
-          <ringGeometry args={[2.2 + i * 0.2, 2.25 + i * 0.2, 64]} />
-          <meshBasicMaterial color={config.color} transparent opacity={0} side={THREE.DoubleSide} toneMapped={false} />
-        </mesh>
+    <group ref={ref} renderOrder={1}>
+      {waveGeometries.map((geometry, i) => (
+        <group key={i}>
+          <lineLoop geometry={geometry}>
+            <lineBasicMaterial
+              color={config.color}
+              transparent
+              opacity={0}
+              depthWrite={false}
+              depthTest={false}
+              blending={THREE.AdditiveBlending}
+              toneMapped={false}
+            />
+          </lineLoop>
+        </group>
       ))}
     </group>
   );
