@@ -46,12 +46,12 @@ const SHOW_TRANSCRIPT_PANELS =
 
 const STATE_CONFIGS: Record<OracState, StateConfig> = {
   idle: { color: '#4fc3f7', bloomIntensity: 0.45, rotationSpeed: 0.15, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
-  wake_detected: { color: '#ffffff', bloomIntensity: 2.8, rotationSpeed: 1.5, distortion: 0.5, pulseRate: 10, scale: 1.25, transmission: 0.5 },
-  listening: { color: '#7af7ff', bloomIntensity: 1.3, rotationSpeed: 0.4, distortion: 0.2, pulseRate: 2, scale: 1.1, transmission: 0.8 },
+  wake_detected: { color: '#8fdcff', bloomIntensity: 0.62, rotationSpeed: 1.5, distortion: 0.5, pulseRate: 10, scale: 1.25, transmission: 0.28 },
+  listening: { color: '#7af7ff', bloomIntensity: 0.22, rotationSpeed: 0.4, distortion: 0.2, pulseRate: 2, scale: 1.1, transmission: 0.34 },
   transcribing: { color: '#b8f2ff', bloomIntensity: 1.1, rotationSpeed: 1.2, distortion: 0.4, pulseRate: 4, scale: 1.05, transmission: 0.8 },
   thinking: { color: '#b69cff', bloomIntensity: 1.7, rotationSpeed: 0.8, distortion: 0.6, pulseRate: 1, scale: 1.15, transmission: 0.7 },
   tool_calling: { color: '#31e6d0', bloomIntensity: 2.1, rotationSpeed: 1.8, distortion: 0.3, pulseRate: 6, scale: 1.2, transmission: 0.6 },
-  speaking: { color: '#9be7ff', bloomIntensity: 1.6, rotationSpeed: 0.6, distortion: 0.2, pulseRate: 3, scale: 1.15, transmission: 0.8 },
+  speaking: { color: '#9be7ff', bloomIntensity: 1.6, rotationSpeed: 0.54, distortion: 0.2, pulseRate: 3, scale: 1.15, transmission: 0.8 },
   interrupted: { color: '#ffb02e', bloomIntensity: 2.5, rotationSpeed: 2.0, distortion: 1.0, pulseRate: 8, scale: 0.95, transmission: 0.4, glitchIntensity: 1 },
   complete: { color: '#4fc3f7', bloomIntensity: 1.0, rotationSpeed: 0.15, distortion: 0.1, pulseRate: 0.2, scale: 1.05, transmission: 0.95 },
   error: { color: '#ff5b4f', bloomIntensity: 1.5, rotationSpeed: 0.05, distortion: 0.5, pulseRate: 12, scale: 1.0, transmission: 0.5 },
@@ -68,6 +68,16 @@ const CORE_PALETTES: Record<OracState, CorePalette> = {
   interrupted: { color: '#ffe0ab', glowColor: '#ffd186', highlightColor: '#fff3d4' },
   complete: { color: '#effaff', glowColor: '#d9efff', highlightColor: '#ffffff' },
   error: { color: '#d3deea', glowColor: '#b9cadf', highlightColor: '#edf4fb' },
+};
+
+const OUTER_CUBE_SURFACE = {
+  color: '#4fc3f7',
+  clearcoat: 0.55,
+  distortion: 0.1,
+  distortionScale: 0.18,
+  opacity: 0.58,
+  roughness: 0.12,
+  thickness: 1.8,
 };
 
 const createCoreGlowTexture = () => {
@@ -356,7 +366,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
 
   // Base sizes
   const outerBaseSize = 2;
-  const innerBaseSize = 1.12;
+  const innerBaseSize = 1.3;
   const coreBaseRadius = 0.16;
 
   useEffect(() => {
@@ -387,7 +397,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
     let innerScale = innerBaseSize * config.scale;
     const outerScale = outerBaseSize;
     let connectorOpacity = 0.45;
-    let coreScale = coreBaseRadius;
+    let coreScale = coreBaseRadius * (state === 'idle' ? 1 : 2);
     let coreOpacity = 0.12;
     let coreGlow = 0.45;
     let coreHaloOpacity = 0.14;
@@ -416,7 +426,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
         // Expanded + gentle pulse
         innerScale *= (1.1 + Math.sin(t * 4) * 0.05);
         connectorOpacity = 0.55;
-        coreScale *= (1.02 + Math.sin(t * 2.5) * 0.04);
+        coreScale *= (1 + Math.sin(t * 2.5) * 0.04);
         coreOpacity = 0.16;
         coreGlow = 0.65;
         coreHaloOpacity = 0.18;
@@ -428,7 +438,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
         innerScale *= (1.1 + Math.sin(thinkT) * 0.1);
         // Shimmering connectors
         connectorOpacity = 0.5 + Math.sin(t * 10) * 0.15;
-        coreScale *= (1.03 + Math.sin(t * 2.2) * 0.05);
+        coreScale *= (1.03 + Math.sin(t * 2.2) * 0.04);
         coreOpacity = 0.18;
         coreGlow = 0.78;
         coreHaloOpacity = 0.2;
@@ -436,10 +446,10 @@ const Tesseract = ({ state }: { state: OracState }) => {
         break;
       case 'speaking':
         // Rhythmic pulse
-        innerScale *= (1.1 + Math.sin(t * 10) * 0.15);
-        connectorOpacity = 0.6;
+        innerScale *= (1.03 + Math.sin(t * 3.92) * 0.08);
         {
-          const pulsar = Math.pow((Math.sin(t * 10) + 1) * 0.5, 1.8);
+          const pulsar = Math.pow((Math.sin(t * 3.12375) + 1) * 0.5, 1.8);
+          connectorOpacity = 0.56 + pulsar * 0.08;
           const peakColor = new THREE.Color(corePalette.color).lerp(
             new THREE.Color('#fffdf6'),
             0.25 + pulsar * 0.7,
@@ -452,7 +462,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
             new THREE.Color('#ffffff'),
             0.3 + pulsar * 0.6,
           );
-          coreScale *= 1.04 + pulsar * 0.07;
+          coreScale *= (1 + pulsar * 0.06);
           coreOpacity = 0.18 + pulsar * 0.2;
           coreGlow = 0.95 + pulsar * 3.0;
           coreHaloOpacity = 0.12 + pulsar * 0.36;
@@ -467,7 +477,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
         innerScale *= 1.4;
         connectorOpacity = 0.85;
         const wakePulse = Math.max(0, 1 - stateAge * 1.6);
-        coreScale *= 1.12 + wakePulse * 0.08;
+        coreScale *= 1 + wakePulse * 0.06;
         coreOpacity = 0.18 + wakePulse * 0.12;
         coreGlow = 0.95 + wakePulse * 0.35;
         coreHaloOpacity = 0.18 + wakePulse * 0.12;
@@ -477,7 +487,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
         // Reduced scale and dimmed connectors
         innerScale *= 0.8;
         connectorOpacity = 0.25;
-        coreScale *= 0.92;
+        coreScale *= 1;
         coreOpacity = 0.04;
         coreGlow = 0.2;
         coreHaloOpacity = 0.04;
@@ -485,7 +495,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
         break;
       case 'transcribing':
         innerScale *= (1.05 + Math.sin(t * 6) * 0.05);
-        coreScale *= (1.01 + Math.sin(t * 3) * 0.03);
+        coreScale *= (1 + Math.sin(t * 3) * 0.03);
         coreOpacity = 0.14;
         coreGlow = 0.58;
         coreHaloOpacity = 0.16;
@@ -494,7 +504,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
       case 'tool_calling':
         innerScale *= (1.2 + Math.sin(t * 8) * 0.1);
         connectorOpacity = 0.7;
-        coreScale *= (1.08 + Math.sin(t * 8) * 0.06);
+        coreScale *= (1.04 + Math.sin(t * 8) * 0.05);
         coreOpacity = 0.2;
         coreGlow = 0.9;
         coreHaloOpacity = 0.2;
@@ -512,21 +522,21 @@ const Tesseract = ({ state }: { state: OracState }) => {
     coreMaterial.emissiveIntensity = coreGlow;
 
     if (coreHaloRef.current) {
-      coreHaloRef.current.scale.setScalar((coreScale / coreBaseRadius) * 2.3);
+      coreHaloRef.current.scale.setScalar((coreScale / coreBaseRadius) * 2.6);
       const haloMaterial = coreHaloRef.current.material as THREE.MeshBasicMaterial;
       haloMaterial.color.set(coreGlowColor);
       haloMaterial.opacity = coreHaloOpacity * 0.9;
     }
 
     if (coreGlowRef.current) {
-      coreGlowRef.current.scale.setScalar((coreScale / coreBaseRadius) * 1.45);
+      coreGlowRef.current.scale.setScalar((coreScale / coreBaseRadius) * 1.65);
       const glowMaterial = coreGlowRef.current.material as THREE.MeshBasicMaterial;
       glowMaterial.color.set(coreGlowColor);
       glowMaterial.opacity = coreHaloOpacity;
     }
 
     if (coreHighlightRef.current) {
-      coreHighlightRef.current.scale.setScalar((coreScale / coreBaseRadius) * 0.55);
+      coreHighlightRef.current.scale.setScalar((coreScale / coreBaseRadius) * 0.6);
       const highlightMaterial = coreHighlightRef.current.material as THREE.MeshBasicMaterial;
       highlightMaterial.color.set(coreHighlightColor);
       highlightMaterial.opacity = coreHighlightOpacity;
@@ -569,19 +579,19 @@ const Tesseract = ({ state }: { state: OracState }) => {
         <MeshTransmissionMaterial
           backside
           backsideThickness={1.5}
-          thickness={2.5}
+          thickness={OUTER_CUBE_SURFACE.thickness}
           chromaticAberration={0.15}
           anisotropy={0.2}
-          distortion={config.distortion}
-          distortionScale={0.4}
-          temporalDistortion={0.1}
-          clearcoat={1}
-          attenuationDistance={1}
-          attenuationColor={config.color}
-          color={config.color}
+          distortion={OUTER_CUBE_SURFACE.distortion}
+          distortionScale={OUTER_CUBE_SURFACE.distortionScale}
+          temporalDistortion={0}
+          clearcoat={OUTER_CUBE_SURFACE.clearcoat}
+          attenuationDistance={1.2}
+          attenuationColor={OUTER_CUBE_SURFACE.color}
+          color={OUTER_CUBE_SURFACE.color}
           transparent
-          opacity={config.transmission}
-          roughness={0.05}
+          opacity={OUTER_CUBE_SURFACE.opacity}
+          roughness={OUTER_CUBE_SURFACE.roughness}
           ior={1.45}
         />
         <Edges threshold={15} color={edgeColor}>
@@ -704,10 +714,13 @@ const Scene = ({ state }: { state: OracState }) => {
   const isThinking = state === 'thinking';
   const isSpeaking = state === 'speaking';
   const isError = state === 'error' || state === 'interrupted';
+  const isListening = state === 'listening' || state === 'wake_detected';
   const sparkleCount = isThinking ? 52 : 28;
   const sparkleSize = isThinking ? 1.8 : 1.55;
   const sparkleSpeed = config.pulseRate * (isIdle ? 0.14 : isThinking ? 0.24 : 0.18);
   const sparkleOpacity = isError ? 0.14 : isIdle ? 0.28 : isSpeaking ? 0.5 : isThinking ? 0.58 : 0.42;
+  const pointLightIntensity = isListening ? 0.08 : 1.5;
+  const spotLightIntensity = isListening ? 0.12 : 2.5;
 
   const glitchDelay = useMemo(() => new THREE.Vector2(0.1, 0.3), []);
   const glitchDuration = useMemo(() => new THREE.Vector2(0.1, 0.2), []);
@@ -717,8 +730,8 @@ const Scene = ({ state }: { state: OracState }) => {
     <>
       <PerspectiveCamera makeDefault position={[0, 0, 9]} fov={35} />
       <ambientLight intensity={0.4} />
-      <pointLight position={[10, 10, 10]} intensity={1.5} color={config.color} />
-      <spotLight position={[-10, 10, 10]} angle={0.2} penumbra={1} intensity={2.5} color={config.color} />
+      <pointLight position={[10, 10, 10]} intensity={pointLightIntensity} color={config.color} />
+      <spotLight position={[-10, 10, 10]} angle={0.2} penumbra={1} intensity={spotLightIntensity} color={config.color} />
       
       <Float
         speed={1.5 * config.pulseRate} 
@@ -749,7 +762,7 @@ const Scene = ({ state }: { state: OracState }) => {
           luminanceThreshold={0.8} 
           mipmapBlur 
           intensity={config.bloomIntensity} 
-          radius={0.4} 
+          radius={isListening ? 0.24 : 0.4} 
         />
         <Noise opacity={0.05} />
         {state === 'interrupted' ? (
@@ -773,6 +786,7 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
 }) => {
   const config = STATE_CONFIGS[state];
   const isIdle = state === 'idle';
+  const isListening = state === 'listening' || state === 'wake_detected';
   const isTurnActive =
     state === 'wake_detected' ||
     state === 'listening' ||
@@ -791,14 +805,13 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
     <div className="relative flex flex-col items-center justify-center w-full h-full bg-[#03070d] overflow-hidden rounded-2xl border border-[#1b5f91]/10">
       <motion.div 
         className="absolute inset-0 transition-colors duration-1000 pointer-events-none"
-        animate={{
-          background: [
-            `radial-gradient(circle at center, ${config.color}22 0%, transparent 80%)`,
-            `radial-gradient(circle at center, ${config.color}33 5%, transparent 85%)`,
-            `radial-gradient(circle at center, ${config.color}22 0%, transparent 80%)`,
-          ]
+        style={{
+          background: `radial-gradient(circle at center, ${config.color}${isListening ? '28' : '18'} 0%, transparent ${isListening ? '66%' : '72%'})`,
         }}
-        transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+        animate={{
+          opacity: isListening ? [0.42, 0.62, 0.42] : [0.18, 0.26, 0.18],
+        }}
+        transition={{ duration: isListening ? 8.5 : 5, repeat: Infinity, ease: "easeInOut" }}
       />
 
       <div className="absolute top-8 z-10 flex flex-col items-center opacity-85">
