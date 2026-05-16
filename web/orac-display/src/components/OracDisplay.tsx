@@ -7,6 +7,7 @@ import {
   Edges, 
   Float, 
   Lightformer,
+  Line,
   MeshTransmissionMaterial,
   Sparkles,
 } from '@react-three/drei';
@@ -109,7 +110,7 @@ const STATE_CONFIGS: Record<OracState, StateConfig> = {
   wake_detected: { color: '#8fdcff', bloomIntensity: 0.62, rotationSpeed: 1.5, distortion: 0.5, pulseRate: 10, scale: 1.25, transmission: 0.28 },
   listening: { color: '#7af7ff', bloomIntensity: 0.22, rotationSpeed: 0.4, distortion: 0.2, pulseRate: 2, scale: 1.1, transmission: 0.34 },
   transcribing: { color: '#b8f2ff', bloomIntensity: 1.1, rotationSpeed: 1.2, distortion: 0.4, pulseRate: 4, scale: 1.05, transmission: 0.8 },
-  thinking: { color: '#b69cff', bloomIntensity: 1.7, rotationSpeed: 0.8, distortion: 0.6, pulseRate: 1, scale: 1.15, transmission: 0.7 },
+  thinking: { color: '#8ed3e8', bloomIntensity: 1.45, rotationSpeed: 0.8, distortion: 0.42, pulseRate: 1, scale: 1.15, transmission: 0.7 },
   tool_calling: { color: '#31e6d0', bloomIntensity: 2.1, rotationSpeed: 1.8, distortion: 0.3, pulseRate: 6, scale: 1.2, transmission: 0.6 },
   speaking: { color: '#9be7ff', bloomIntensity: 1.6, rotationSpeed: 0.54, distortion: 0.2, pulseRate: 3, scale: 1.15, transmission: 0.8 },
   interrupted: { color: '#ffb02e', bloomIntensity: 2.5, rotationSpeed: 2.0, distortion: 1.0, pulseRate: 8, scale: 0.95, transmission: 0.4, glitchIntensity: 1 },
@@ -122,7 +123,7 @@ const CORE_PALETTES: Record<OracState, CorePalette> = {
   wake_detected: { color: '#fff3d3', glowColor: '#ffe2a8', highlightColor: '#fff9ec' },
   listening: { color: '#eefcff', glowColor: '#dff7ff', highlightColor: '#ffffff' },
   transcribing: { color: '#eefaff', glowColor: '#d7f3ff', highlightColor: '#ffffff' },
-  thinking: { color: '#f3f7ff', glowColor: '#d7e4ff', highlightColor: '#ffffff' },
+  thinking: { color: '#f4fbff', glowColor: '#d8edf7', highlightColor: '#ffffff' },
   tool_calling: { color: '#f8f1dd', glowColor: '#f0deaf', highlightColor: '#fff8e8' },
   speaking: { color: '#f1cd82', glowColor: '#ffdea0', highlightColor: '#fff2cf' },
   interrupted: { color: '#ffe0ab', glowColor: '#ffd186', highlightColor: '#fff3d4' },
@@ -150,11 +151,11 @@ const createCoreGlowTexture = () => {
     return null;
   }
 
-  const gradient = context.createRadialGradient(46, 42, 6, 64, 64, 58);
-  gradient.addColorStop(0, 'rgba(255,255,255,0.96)');
-  gradient.addColorStop(0.16, 'rgba(255,255,255,0.7)');
-  gradient.addColorStop(0.38, 'rgba(255,255,255,0.26)');
-  gradient.addColorStop(0.62, 'rgba(255,255,255,0.08)');
+  const gradient = context.createRadialGradient(48, 40, 5, 64, 64, 46);
+  gradient.addColorStop(0, 'rgba(255,255,255,0.74)');
+  gradient.addColorStop(0.18, 'rgba(255,255,255,0.36)');
+  gradient.addColorStop(0.42, 'rgba(255,255,255,0.14)');
+  gradient.addColorStop(0.66, 'rgba(255,255,255,0.04)');
   gradient.addColorStop(1, 'rgba(255,255,255,0)');
 
   context.fillStyle = gradient;
@@ -175,18 +176,18 @@ const createCoreBodyTexture = () => {
     return null;
   }
 
-  const bodyGradient = context.createRadialGradient(44, 40, 8, 64, 64, 58);
+  const bodyGradient = context.createRadialGradient(42, 38, 7, 64, 64, 52);
   bodyGradient.addColorStop(0, 'rgba(255,255,255,0.98)');
-  bodyGradient.addColorStop(0.14, 'rgba(255,248,225,0.96)');
-  bodyGradient.addColorStop(0.34, 'rgba(247,212,130,0.74)');
-  bodyGradient.addColorStop(0.62, 'rgba(198,139,55,0.42)');
+  bodyGradient.addColorStop(0.12, 'rgba(255,250,236,0.95)');
+  bodyGradient.addColorStop(0.3, 'rgba(244,216,146,0.72)');
+  bodyGradient.addColorStop(0.58, 'rgba(194,136,56,0.38)');
   bodyGradient.addColorStop(1, 'rgba(78,48,18,0.02)');
 
   context.fillStyle = bodyGradient;
   context.fillRect(0, 0, canvas.width, canvas.height);
 
-  const shadow = context.createRadialGradient(78, 82, 2, 64, 64, 58);
-  shadow.addColorStop(0, 'rgba(57,34,10,0.24)');
+  const shadow = context.createRadialGradient(82, 82, 2, 64, 64, 48);
+  shadow.addColorStop(0, 'rgba(57,34,10,0.12)');
   shadow.addColorStop(1, 'rgba(57,34,10,0)');
   context.fillStyle = shadow;
   context.fillRect(0, 0, canvas.width, canvas.height);
@@ -235,6 +236,30 @@ const createWaveGeometry = (radius: number, seed: number) => {
   geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
   geometry.computeBoundingSphere();
   return geometry;
+};
+
+const ORBITAL_RING_SEGMENTS = 96;
+const ORBITAL_RING_MAJOR_RATIO = 1;
+const ORBITAL_RING_MINOR_RATIO = 0.88;
+const ORBITAL_RING_BASE_MULTIPLIER = 1.78;
+
+const createOrbitalArcPoints = (
+  startAngle: number,
+  endAngle: number,
+  radiusX = ORBITAL_RING_MAJOR_RATIO,
+  radiusY = ORBITAL_RING_MINOR_RATIO,
+) => {
+  const points = Array.from({ length: ORBITAL_RING_SEGMENTS + 1 }, (_, index) => {
+    const t = index / ORBITAL_RING_SEGMENTS;
+    const theta = startAngle + (endAngle - startAngle) * t;
+    const wobble = Math.sin(theta * 4.0) * 0.008 + Math.sin(theta * 9.0) * 0.003;
+    return new THREE.Vector3(
+      Math.cos(theta) * radiusX * (1 + wobble),
+      Math.sin(theta) * radiusY * (1 + wobble * 0.85),
+      0,
+    );
+  });
+  return points;
 };
 
 const ScanLine = ({ state }: { state: OracState }) => {
@@ -403,6 +428,137 @@ const WaveHalo = ({ state }: { state: OracState }) => {
   );
 };
 
+const OrbitalRings = ({
+  state,
+  coreRadiusRef,
+}: {
+  state: OracState;
+  coreRadiusRef: React.MutableRefObject<number>;
+}) => {
+  const rootRef = useRef<THREE.Group>(null);
+  const ringGroupsRef = useRef<Array<THREE.Group | null>>([]);
+
+  const ringFrontPoints = useMemo(
+    () => createOrbitalArcPoints(-Math.PI * 0.48, Math.PI * 0.52),
+    [],
+  );
+  const ringBackPoints = useMemo(
+    () => createOrbitalArcPoints(Math.PI * 0.52, Math.PI * 1.52),
+    [],
+  );
+
+  useFrame((sceneState, delta) => {
+    if (!rootRef.current) {
+      return;
+    }
+
+    const t = sceneState.clock.elapsedTime;
+    const isIdle = state === 'idle';
+    const isListening = state === 'listening' || state === 'wake_detected';
+    const isSpeaking = state === 'speaking';
+    const coreRadius = coreRadiusRef.current;
+    const ringRadius = coreRadius * ORBITAL_RING_BASE_MULTIPLIER;
+    const driftSpeed = isIdle ? 0.01 : isListening ? 0.024 : isSpeaking ? 0.032 : 0.018;
+
+    rootRef.current.scale.setScalar(ringRadius);
+    rootRef.current.rotation.z += delta * driftSpeed;
+    rootRef.current.rotation.x = Math.sin(t * 0.06) * (isSpeaking ? 0.08 : 0.05);
+    rootRef.current.rotation.y = Math.cos(t * 0.05) * (isListening ? 0.08 : 0.05);
+
+    ringGroupsRef.current.forEach((ringGroup, index) => {
+      if (!ringGroup) {
+        return;
+      }
+
+      const phase = index * Math.PI * 0.5;
+      ringGroup.rotation.z = Math.sin(t * 0.12 + phase) * (isIdle ? 0.018 : isListening ? 0.03 : 0.04);
+      ringGroup.rotation.x = Math.sin(t * 0.09 + phase * 0.5) * 0.02;
+
+      const ringChildren = ringGroup.children as THREE.Line[];
+      const frontLine = ringChildren[0];
+      const backLine = ringChildren[1];
+      const frontMaterial = frontLine.material as THREE.LineBasicMaterial;
+      const backMaterial = backLine.material as THREE.LineBasicMaterial;
+      const shimmer = (Math.sin(t * (isSpeaking ? 0.9 : 0.45) + phase) + 1) * 0.5;
+      const frontBaseOpacity = isIdle ? 0.07 : isListening ? 0.095 : isSpeaking ? 0.105 : 0.085;
+      const backBaseOpacity = isIdle ? 0.028 : isListening ? 0.04 : isSpeaking ? 0.045 : 0.036;
+
+      frontMaterial.color.set(STATE_CONFIGS[state].color);
+      backMaterial.color.set(STATE_CONFIGS[state].color);
+      frontMaterial.opacity = frontBaseOpacity + shimmer * (isSpeaking ? 0.012 : 0.008);
+      backMaterial.opacity = backBaseOpacity + shimmer * (isSpeaking ? 0.01 : 0.006);
+    });
+  });
+
+  if (state === 'error') {
+    return null;
+  }
+
+  return (
+    <group ref={rootRef} renderOrder={3}>
+      <group
+        ref={(node) => {
+          ringGroupsRef.current[0] = node;
+        }}
+        rotation={[0.74, 0.18, 0.14]}
+        scale={[1, 0.92, 1]}
+        renderOrder={3}
+      >
+        <Line
+          points={ringBackPoints}
+          color={STATE_CONFIGS[state].color}
+          transparent
+          opacity={0}
+          depthWrite={false}
+          depthTest={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+        <Line
+          points={ringFrontPoints}
+          color={STATE_CONFIGS[state].color}
+          transparent
+          opacity={0}
+          depthWrite={false}
+          depthTest={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </group>
+
+      <group
+        ref={(node) => {
+          ringGroupsRef.current[1] = node;
+        }}
+        rotation={[0.74, Math.PI / 2 + 0.18, -0.14]}
+        scale={[0.92, 1, 1]}
+        renderOrder={3}
+      >
+        <Line
+          points={ringBackPoints}
+          color={STATE_CONFIGS[state].color}
+          transparent
+          opacity={0}
+          depthWrite={false}
+          depthTest={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+        <Line
+          points={ringFrontPoints}
+          color={STATE_CONFIGS[state].color}
+          transparent
+          opacity={0}
+          depthWrite={false}
+          depthTest={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </group>
+    </group>
+  );
+};
+
 const TranscriptPanel = ({
   title,
   text,
@@ -481,6 +637,11 @@ const TranscriptPanel = ({
 };
 
 const Tesseract = ({ state }: { state: OracState }) => {
+  // Base sizes
+  const outerBaseSize = 2;
+  const innerBaseSize = 1.3;
+  const coreBaseRadius = 0.16;
+
   const groupRef = useRef<THREE.Group>(null);
   const innerRef = useRef<THREE.Mesh>(null);
   const outerRef = useRef<THREE.Mesh>(null);
@@ -489,17 +650,13 @@ const Tesseract = ({ state }: { state: OracState }) => {
   const coreGlowRef = useRef<THREE.Mesh>(null);
   const coreHighlightRef = useRef<THREE.Mesh>(null);
   const connectorRef = useRef<THREE.LineSegments>(null);
+  const orbitalCoreRadiusRef = useRef<number>(coreBaseRadius);
   const stateEnteredAtRef = useRef<number>(performance.now() * 0.001);
   
   const config = STATE_CONFIGS[state];
   const corePalette = CORE_PALETTES[state];
   const coreGlowTexture = useMemo(() => createCoreGlowTexture(), []);
   const coreBodyTexture = useMemo(() => createCoreBodyTexture(), []);
-
-  // Base sizes
-  const outerBaseSize = 2;
-  const innerBaseSize = 1.3;
-  const coreBaseRadius = 0.16;
 
   useEffect(() => {
     stateEnteredAtRef.current = performance.now() * 0.001;
@@ -534,8 +691,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
     let coreScale = coreBaseRadius * (state === 'idle' ? 1 : 2);
     let coreOpacity = 0.12;
     let coreGlow = 0.45;
-    let coreHaloOpacity = 0.14;
-    let coreHighlightOpacity = 0.35;
+    let coreHighlightOpacity = 0.2;
     let coreColor: THREE.ColorRepresentation = corePalette.color;
     let coreGlowColor: THREE.ColorRepresentation = corePalette.glowColor;
     let coreHighlightColor: THREE.ColorRepresentation = corePalette.highlightColor;
@@ -551,8 +707,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
           coreScale *= 1 + idlePulse * 0.02;
           coreOpacity = 0.12 + idlePulse * 0.03;
           coreGlow = 1.5 + idlePulse * 0.12;
-          coreHaloOpacity = 0.14 + idlePulse * 0.05;
-          coreHighlightOpacity = 0.18 + idlePulse * 0.05;
+          coreHighlightOpacity = 0.12 + idlePulse * 0.025;
           coreColor = new THREE.Color(corePalette.color).lerp(new THREE.Color('#f7fcff'), 0.3 + idlePulse * 0.25);
           coreGlowColor = new THREE.Color(corePalette.glowColor).lerp(new THREE.Color('#f9fdff'), 0.35 + idlePulse * 0.2);
           coreHighlightColor = new THREE.Color(corePalette.highlightColor).lerp(new THREE.Color('#ffffff'), 0.22 + idlePulse * 0.2);
@@ -567,8 +722,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
         coreScale *= (1 + Math.sin(t * 2.5) * 0.04);
         coreOpacity = 0.16;
         coreGlow = 0.65;
-        coreHaloOpacity = 0.18;
-        coreHighlightOpacity = 0.24;
+        coreHighlightOpacity = 0.14;
         break;
       case 'thinking':
         // Out of phase breathing
@@ -581,8 +735,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
         coreScale *= (1.03 + Math.sin(t * 2.2) * 0.04);
         coreOpacity = 0.18;
         coreGlow = 0.78;
-        coreHaloOpacity = 0.2;
-        coreHighlightOpacity = 0.26;
+        coreHighlightOpacity = 0.15;
         break;
       case 'speaking':
         // Rhythmic pulse
@@ -607,8 +760,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
           coreScale *= (1 + pulsar * 0.06);
           coreOpacity = 0.18 + pulsar * 0.2;
           coreGlow = 0.95 + pulsar * 3.0;
-          coreHaloOpacity = 0.12 + pulsar * 0.36;
-          coreHighlightOpacity = 0.24 + pulsar * 0.28;
+          coreHighlightOpacity = 0.16 + pulsar * 0.12;
           coreColor = peakColor;
           coreGlowColor = peakGlowColor;
           coreHighlightColor = peakHighlightColor;
@@ -624,8 +776,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
         coreScale *= 1 + wakePulse * 0.06;
         coreOpacity = 0.18 + wakePulse * 0.12;
         coreGlow = 0.95 + wakePulse * 0.35;
-        coreHaloOpacity = 0.18 + wakePulse * 0.12;
-        coreHighlightOpacity = 0.3 + wakePulse * 0.14;
+        coreHighlightOpacity = 0.16 + wakePulse * 0.06;
         break;
       case 'error':
         // Reduced scale and dimmed connectors
@@ -636,8 +787,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
         coreScale *= 1;
         coreOpacity = 0.04;
         coreGlow = 0.2;
-        coreHaloOpacity = 0.04;
-        coreHighlightOpacity = 0.1;
+        coreHighlightOpacity = 0.05;
         break;
       case 'transcribing':
         innerScale *= (1.05 + Math.sin(t * 6) * 0.05);
@@ -646,8 +796,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
         coreScale *= (1 + Math.sin(t * 3) * 0.03);
         coreOpacity = 0.14;
         coreGlow = 0.58;
-        coreHaloOpacity = 0.16;
-        coreHighlightOpacity = 0.22;
+        coreHighlightOpacity = 0.12;
         break;
       case 'tool_calling':
         innerScale *= (1.2 + Math.sin(t * 8) * 0.1);
@@ -657,14 +806,14 @@ const Tesseract = ({ state }: { state: OracState }) => {
         coreScale *= (1.04 + Math.sin(t * 8) * 0.05);
         coreOpacity = 0.2;
         coreGlow = 0.9;
-        coreHaloOpacity = 0.2;
-        coreHighlightOpacity = 0.24;
+        coreHighlightOpacity = 0.13;
         break;
     }
 
     innerRef.current.scale.setScalar(innerScale / innerBaseSize);
     outerRef.current.scale.setScalar(outerScale / outerBaseSize);
     coreRef.current.scale.setScalar(coreScale / coreBaseRadius);
+    orbitalCoreRadiusRef.current = coreScale;
     const outerMaterial = outerRef.current.material as THREE.MeshPhysicalMaterial;
     outerMaterial.opacity = outerOpacity;
     const innerMaterial = innerRef.current.material as THREE.MeshPhysicalMaterial;
@@ -679,18 +828,18 @@ const Tesseract = ({ state }: { state: OracState }) => {
       coreHaloRef.current.scale.setScalar((coreScale / coreBaseRadius) * 2.6);
       const haloMaterial = coreHaloRef.current.material as THREE.MeshBasicMaterial;
       haloMaterial.color.set(coreGlowColor);
-      haloMaterial.opacity = coreHaloOpacity * 0.9;
+      haloMaterial.opacity = 0;
     }
 
     if (coreGlowRef.current) {
       coreGlowRef.current.scale.setScalar((coreScale / coreBaseRadius) * 1.65);
       const glowMaterial = coreGlowRef.current.material as THREE.MeshBasicMaterial;
       glowMaterial.color.set(coreGlowColor);
-      glowMaterial.opacity = coreHaloOpacity;
+      glowMaterial.opacity = 0;
     }
 
     if (coreHighlightRef.current) {
-      coreHighlightRef.current.scale.setScalar((coreScale / coreBaseRadius) * 0.6);
+      coreHighlightRef.current.scale.setScalar((coreScale / coreBaseRadius) * 0.42);
       const highlightMaterial = coreHighlightRef.current.material as THREE.MeshBasicMaterial;
       highlightMaterial.color.set(coreHighlightColor);
       highlightMaterial.opacity = coreHighlightOpacity;
@@ -781,26 +930,28 @@ const Tesseract = ({ state }: { state: OracState }) => {
 
       {/* Central Core Sphere */}
       <group renderOrder={4}>
-        <mesh ref={coreHaloRef}>
+        <OrbitalRings state={state} coreRadiusRef={orbitalCoreRadiusRef} />
+
+        <mesh ref={coreHaloRef} position={[0.018, 0.028, -0.016]} visible={false}>
           <sphereGeometry args={[coreBaseRadius, 32, 32]} />
           <meshBasicMaterial
             map={coreGlowTexture || undefined}
             color={corePalette.glowColor}
             transparent
-            opacity={0.08}
+            opacity={0}
             blending={THREE.AdditiveBlending}
             depthWrite={false}
             toneMapped={false}
           />
         </mesh>
 
-        <mesh ref={coreGlowRef}>
+        <mesh ref={coreGlowRef} position={[0.03, 0.04, -0.006]} visible={false}>
           <sphereGeometry args={[coreBaseRadius, 32, 32]} />
           <meshBasicMaterial
             map={coreGlowTexture || undefined}
             color={corePalette.glowColor}
             transparent
-            opacity={0.14}
+            opacity={0}
             blending={THREE.AdditiveBlending}
             depthWrite={false}
             toneMapped={false}
@@ -828,12 +979,12 @@ const Tesseract = ({ state }: { state: OracState }) => {
           />
         </mesh>
 
-        <mesh ref={coreHighlightRef} position={[-0.035, 0.035, 0.055]}>
+        <mesh ref={coreHighlightRef} position={[-0.04, 0.05, 0.08]}>
           <sphereGeometry args={[coreBaseRadius, 24, 24]} />
           <meshBasicMaterial
             color={corePalette.highlightColor}
             transparent
-            opacity={0.3}
+            opacity={0.14}
             blending={THREE.AdditiveBlending}
             depthWrite={false}
             toneMapped={false}
