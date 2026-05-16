@@ -28,6 +28,8 @@ SCRIPT_PATH="$(resolve_path "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WEB_ROOT="$PROJECT_ROOT/web/orac-display"
+LOG_DIR="$PROJECT_ROOT/logs"
+LOG_FILE="$LOG_DIR/orac-display-web.log"
 HOST="${ORAC_DISPLAY_WEB_HOST:-127.0.0.1}"
 PORT="${ORAC_DISPLAY_WEB_PORT:-5173}"
 APP_URL="http://${HOST}:${PORT}"
@@ -35,10 +37,17 @@ export VITE_ORAC_SHOW_TRANSCRIPT_PANELS="${VITE_ORAC_SHOW_TRANSCRIPT_PANELS:-tru
 LAUNCHED_BROWSER_PID=""
 BROWSER_PROFILE_DIR=""
 
+mkdir -p "$LOG_DIR"
+touch "$LOG_FILE"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
 if [[ ! -d "$WEB_ROOT" ]]; then
   echo "Orac display web tree not found: $WEB_ROOT" >&2
   exit 1
 fi
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Orac React display at $APP_URL"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Writing display launcher log to $LOG_FILE"
 
 open_browser() {
   BROWSER_PROFILE_DIR="$(mktemp -d -t orac-display-web-browser.XXXXXX)"
@@ -49,9 +58,12 @@ open_browser() {
       --app="$APP_URL" \
       --new-window \
       --no-first-run \
+      --enable-logging=stderr \
+      --v=0 \
       --disable-infobars \
-      --disable-session-crashed-bubble >/dev/null 2>&1 &
+      --disable-session-crashed-bubble >>"$LOG_FILE" 2>&1 &
     LAUNCHED_BROWSER_PID="$!"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Launched google-chrome PID $LAUNCHED_BROWSER_PID"
     return 0
   fi
 
@@ -61,14 +73,18 @@ open_browser() {
       --app="$APP_URL" \
       --new-window \
       --no-first-run \
+      --enable-logging=stderr \
+      --v=0 \
       --disable-infobars \
-      --disable-session-crashed-bubble >/dev/null 2>&1 &
+      --disable-session-crashed-bubble >>"$LOG_FILE" 2>&1 &
     LAUNCHED_BROWSER_PID="$!"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Launched chromium PID $LAUNCHED_BROWSER_PID"
     return 0
   fi
 
   if command -v xdg-open >/dev/null 2>&1; then
-    xdg-open "$APP_URL" >/dev/null 2>&1 &
+    xdg-open "$APP_URL" >>"$LOG_FILE" 2>&1 &
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Opened display URL via xdg-open"
     return 0
   fi
 
@@ -94,8 +110,11 @@ wait_for_http_port() {
 cd "$WEB_ROOT"
 npm run dev -- --host "$HOST" --port "$PORT" &
 VITE_PID="$!"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Started Vite PID $VITE_PID"
 
 cleanup() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Stopping Orac React display"
+
   if kill -0 "$VITE_PID" 2>/dev/null; then
     kill "$VITE_PID" 2>/dev/null || true
     wait "$VITE_PID" 2>/dev/null || true

@@ -2013,6 +2013,31 @@ class OracVoiceTests(unittest.TestCase):
 
     self.assertEqual(engine.output_dir, tmp_root / "var" / "tmp" / "orac_voice")
 
+  def test_piper_engine_resolves_project_venv_piper(self) -> None:
+    """Piper should resolve the project-local virtualenv executable."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      tmp_root = Path(tmp_name)
+      voice_dir = tmp_root / "voices"
+      voice_dir.mkdir()
+      (voice_dir / "test_voice.onnx").write_bytes(b"fake model")
+      piper_bin = tmp_root / ".venv" / "bin" / "piper"
+      piper_bin.parent.mkdir(parents=True)
+      piper_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+      piper_bin.chmod(0o755)
+
+      with patch.dict(
+        os.environ,
+        {"ORAC_HOME": str(tmp_root), "PATH": ""},
+        clear=False,
+      ):
+        engine = PiperTtsEngine(
+          config_file_path=PROJECT_ROOT / "resources" / "config" / "orac.ini",
+          voice_name="test_voice",
+          voice_dir=voice_dir,
+        )
+
+    self.assertEqual(engine.piper_bin, piper_bin)
+
   def test_piper_synthesis_returns_generated_wav_path(self) -> None:
     """Piper wrapper should return the WAV path created by subprocess."""
     with tempfile.TemporaryDirectory() as tmp_name:

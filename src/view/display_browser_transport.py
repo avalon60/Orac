@@ -33,9 +33,11 @@ WEBSOCKET_MAGIC_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 CLIENT_CLOSE_OPCODE = 0x8
 CLIENT_PING_OPCODE = 0x9
 CLIENT_PONG_OPCODE = 0xA
+CLIENT_TEXT_OPCODE = 0x1
 SERVER_TEXT_OPCODE = 0x1
 SERVER_PONG_OPCODE = 0xA
 SERVER_CLOSE_OPCODE = 0x8
+MAX_CLIENT_DIAGNOSTIC_LENGTH = 2000
 
 
 class DisplayBrowserTransport:
@@ -314,6 +316,8 @@ class DisplayBrowserTransport:
         await self._send_frame(writer, SERVER_PONG_OPCODE, payload)
       elif opcode == CLIENT_PONG_OPCODE:
         continue
+      elif opcode == CLIENT_TEXT_OPCODE:
+        self._log_client_diagnostic(payload)
 
   async def _read_frame(self, reader: asyncio.StreamReader) -> tuple[int, bytes]:
     """Read one masked WebSocket frame from a browser client."""
@@ -339,6 +343,34 @@ class DisplayBrowserTransport:
         for index, byte in enumerate(payload)
       )
     return opcode, payload
+
+  @staticmethod
+  def _log_client_diagnostic(payload: bytes) -> None:
+    """Log safe browser diagnostic messages sent by the display UI.
+
+    Args:
+      payload: Raw WebSocket text frame payload from the browser.
+    """
+    try:
+      data = json.loads(payload.decode("utf-8", errors="replace"))
+    except json.JSONDecodeError:
+      return
+
+    if not isinstance(data, dict) or data.get("event") != "browser.diagnostic":
+      return
+
+    message = str(data.get("message") or "browser diagnostic").strip()
+    timestamp = str(data.get("timestamp") or "").strip()
+    detail = str(data.get("detail") or "").strip()
+    if len(detail) > MAX_CLIENT_DIAGNOSTIC_LENGTH:
+      detail = f"{detail[:MAX_CLIENT_DIAGNOSTIC_LENGTH]}..."
+
+    logger.debug(
+      "Browser display diagnostic: timestamp={} message={} detail={}",
+      timestamp or "unknown",
+      message,
+      detail or "none",
+    )
 
   async def _send_text(self, writer: asyncio.StreamWriter, text: str) -> None:
     """Send a text frame to one browser client."""

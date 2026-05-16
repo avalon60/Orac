@@ -1,17 +1,23 @@
 
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { 
   PerspectiveCamera, 
-  Environment, 
+  Environment,
   Edges, 
   Float, 
+  Lightformer,
   MeshTransmissionMaterial,
   Sparkles,
 } from '@react-three/drei';
 import { EffectComposer, Bloom, Noise, Glitch } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  attachCanvasDiagnostics,
+  logDisplayDiagnostic,
+  type DisplayRecoveryReason,
+} from '../displayDiagnostics';
 import type { OracState } from '../types/oracState';
 
 interface StateConfig {
@@ -37,6 +43,60 @@ interface OracDisplayProps {
   showTranscriptPanels?: boolean;
   userTranscript?: string;
   oracTranscript?: string;
+  renderResetKey?: number;
+  onRenderRecovery?: (reason: DisplayRecoveryReason) => void;
+}
+
+interface CanvasErrorBoundaryProps {
+  children: React.ReactNode;
+  resetKey: number;
+}
+
+interface CanvasErrorBoundaryState {
+  error: Error | null;
+}
+
+class CanvasErrorBoundary extends React.Component<
+  CanvasErrorBoundaryProps,
+  CanvasErrorBoundaryState
+> {
+  constructor(props: CanvasErrorBoundaryProps) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): CanvasErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error) {
+    logDisplayDiagnostic('canvas error boundary caught error', error);
+  }
+
+  componentDidUpdate(prevProps: CanvasErrorBoundaryProps) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.error) {
+      this.setState({ error: null });
+    }
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex h-full w-full items-center justify-center bg-[#03070d] px-6">
+          <div className="max-w-xl rounded-[1.5rem] border border-[#4fc3f7]/20 bg-[#06131d]/92 px-6 py-5 text-center shadow-[0_0_40px_rgba(3,7,13,0.75)]">
+            <div className="text-[10px] font-bold uppercase tracking-[0.45em] text-[#8fdcff]">
+              Display renderer fault
+            </div>
+            <div className="mt-3 text-[11px] tracking-[0.18em] text-[#b8d9ee]">
+              The WebGL canvas failed and will retry automatically.
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
 }
 
 const SHOW_TRANSCRIPT_PANELS =
@@ -71,13 +131,13 @@ const CORE_PALETTES: Record<OracState, CorePalette> = {
 };
 
 const OUTER_CUBE_SURFACE = {
-  color: '#4fc3f7',
-  clearcoat: 0.55,
-  distortion: 0.1,
-  distortionScale: 0.18,
-  opacity: 0.58,
-  roughness: 0.12,
-  thickness: 1.8,
+  color: '#d7f4ff',
+  clearcoat: 0.95,
+  distortion: 0.02,
+  distortionScale: 0.05,
+  opacity: 0.24,
+  roughness: 0.04,
+  thickness: 0.65,
 };
 
 const createCoreGlowTexture = () => {
@@ -196,6 +256,78 @@ const ScanLine = ({ state }: { state: OracState }) => {
     </mesh>
   );
 };
+
+const CanvasDiagnostics = ({
+  onRecovery,
+}: {
+  onRecovery?: (reason: DisplayRecoveryReason) => void;
+}) => {
+  const { gl } = useThree();
+  const recoveryRef = useRef(onRecovery);
+
+  useEffect(() => {
+    recoveryRef.current = onRecovery;
+  }, [onRecovery]);
+
+  useEffect(
+    () =>
+      attachCanvasDiagnostics(gl.domElement, (reason) => {
+        recoveryRef.current?.(reason);
+      }),
+    [gl],
+  );
+
+  return null;
+};
+
+const GlassEnvironment = () => (
+  <Environment background={false} resolution={48} blur={0.9}>
+    <group rotation={[0, Math.PI / 4, 0]}>
+      <Lightformer
+        form="rect"
+        intensity={0.46}
+        color="#8fdcff"
+        scale={[12, 1.1, 1]}
+        position={[0, 4, -7]}
+      />
+      <Lightformer
+        form="rect"
+        intensity={0.18}
+        color="#0f2233"
+        scale={[12, 1.1, 1]}
+        position={[0, -4, 7]}
+      />
+      <Lightformer
+        form="rect"
+        intensity={0.24}
+        color="#4ca9ff"
+        scale={[1.2, 12, 1]}
+        position={[-7, 0, 1]}
+      />
+      <Lightformer
+        form="rect"
+        intensity={0.18}
+        color="#2f5f99"
+        scale={[1.2, 12, 1]}
+        position={[7, 0, -1]}
+      />
+      <Lightformer
+        form="rect"
+        intensity={0.2}
+        color="#ffffff"
+        scale={[2.5, 2.5, 1]}
+        position={[0, 0, 8]}
+      />
+      <Lightformer
+        form="rect"
+        intensity={0.14}
+        color="#14324d"
+        scale={[2.5, 2.5, 1]}
+        position={[0, 0, -8]}
+      />
+    </group>
+  </Environment>
+);
 
 const WaveHalo = ({ state }: { state: OracState }) => {
   const ref = useRef<THREE.Group>(null);
@@ -396,6 +528,8 @@ const Tesseract = ({ state }: { state: OracState }) => {
     // 2. State-driven animations for the inner core, central sphere, and connectors
     let innerScale = innerBaseSize * config.scale;
     const outerScale = outerBaseSize;
+    let outerOpacity = OUTER_CUBE_SURFACE.opacity;
+    let innerOpacity = 0.16;
     let connectorOpacity = 0.45;
     let coreScale = coreBaseRadius * (state === 'idle' ? 1 : 2);
     let coreOpacity = 0.12;
@@ -410,6 +544,8 @@ const Tesseract = ({ state }: { state: OracState }) => {
       case 'idle':
         // 3% breathing for inner cube
         innerScale *= (1 + Math.sin(t * 1.5) * 0.03);
+        outerOpacity = 0.16;
+        innerOpacity = 0.14;
         {
           const idlePulse = (Math.sin(t * 0.8) + 1) * 0.5;
           coreScale *= 1 + idlePulse * 0.02;
@@ -425,6 +561,8 @@ const Tesseract = ({ state }: { state: OracState }) => {
       case 'listening':
         // Expanded + gentle pulse
         innerScale *= (1.1 + Math.sin(t * 4) * 0.05);
+        outerOpacity = 0.21;
+        innerOpacity = 0.16;
         connectorOpacity = 0.55;
         coreScale *= (1 + Math.sin(t * 2.5) * 0.04);
         coreOpacity = 0.16;
@@ -436,6 +574,8 @@ const Tesseract = ({ state }: { state: OracState }) => {
         // Out of phase breathing
         const thinkT = t * 3;
         innerScale *= (1.1 + Math.sin(thinkT) * 0.1);
+        outerOpacity = 0.22;
+        innerOpacity = 0.17;
         // Shimmering connectors
         connectorOpacity = 0.5 + Math.sin(t * 10) * 0.15;
         coreScale *= (1.03 + Math.sin(t * 2.2) * 0.04);
@@ -447,6 +587,8 @@ const Tesseract = ({ state }: { state: OracState }) => {
       case 'speaking':
         // Rhythmic pulse
         innerScale *= (1.03 + Math.sin(t * 3.92) * 0.08);
+        outerOpacity = 0.23;
+        innerOpacity = 0.18;
         {
           const pulsar = Math.pow((Math.sin(t * 3.12375) + 1) * 0.5, 1.8);
           connectorOpacity = 0.56 + pulsar * 0.08;
@@ -475,6 +617,8 @@ const Tesseract = ({ state }: { state: OracState }) => {
       case 'wake_detected':
         // Sharp expansion
         innerScale *= 1.4;
+        outerOpacity = 0.2;
+        innerOpacity = 0.16;
         connectorOpacity = 0.85;
         const wakePulse = Math.max(0, 1 - stateAge * 1.6);
         coreScale *= 1 + wakePulse * 0.06;
@@ -486,6 +630,8 @@ const Tesseract = ({ state }: { state: OracState }) => {
       case 'error':
         // Reduced scale and dimmed connectors
         innerScale *= 0.8;
+        outerOpacity = 0.1;
+        innerOpacity = 0.1;
         connectorOpacity = 0.25;
         coreScale *= 1;
         coreOpacity = 0.04;
@@ -495,6 +641,8 @@ const Tesseract = ({ state }: { state: OracState }) => {
         break;
       case 'transcribing':
         innerScale *= (1.05 + Math.sin(t * 6) * 0.05);
+        outerOpacity = 0.2;
+        innerOpacity = 0.17;
         coreScale *= (1 + Math.sin(t * 3) * 0.03);
         coreOpacity = 0.14;
         coreGlow = 0.58;
@@ -503,6 +651,8 @@ const Tesseract = ({ state }: { state: OracState }) => {
         break;
       case 'tool_calling':
         innerScale *= (1.2 + Math.sin(t * 8) * 0.1);
+        outerOpacity = 0.24;
+        innerOpacity = 0.17;
         connectorOpacity = 0.7;
         coreScale *= (1.04 + Math.sin(t * 8) * 0.05);
         coreOpacity = 0.2;
@@ -515,6 +665,10 @@ const Tesseract = ({ state }: { state: OracState }) => {
     innerRef.current.scale.setScalar(innerScale / innerBaseSize);
     outerRef.current.scale.setScalar(outerScale / outerBaseSize);
     coreRef.current.scale.setScalar(coreScale / coreBaseRadius);
+    const outerMaterial = outerRef.current.material as THREE.MeshPhysicalMaterial;
+    outerMaterial.opacity = outerOpacity;
+    const innerMaterial = innerRef.current.material as THREE.MeshPhysicalMaterial;
+    innerMaterial.opacity = innerOpacity;
     const coreMaterial = coreRef.current.material as THREE.MeshPhysicalMaterial;
     coreMaterial.color.set(coreColor);
     coreMaterial.emissive.set(coreColor);
@@ -604,20 +758,20 @@ const Tesseract = ({ state }: { state: OracState }) => {
         <boxGeometry args={[innerBaseSize, innerBaseSize, innerBaseSize]} />
         <MeshTransmissionMaterial
           backside
-          backsideThickness={1.5}
-          thickness={0.8}
-          chromaticAberration={0.15}
-          anisotropy={0.2}
-          distortion={config.distortion}
-          distortionScale={0.4}
-          temporalDistortion={0.1}
+          backsideThickness={0.75}
+          thickness={0.28}
+          chromaticAberration={0.04}
+          anisotropy={0.05}
+          distortion={config.distortion * 0.35}
+          distortionScale={0.08}
+          temporalDistortion={0.04}
           clearcoat={1}
-          attenuationDistance={1}
+          attenuationDistance={4}
           attenuationColor={config.color}
           color={config.color}
           transparent
-          opacity={config.transmission}
-          roughness={0.05}
+          opacity={0.16}
+          roughness={0.03}
           ior={1.45}
         />
         <Edges threshold={15} color={edgeColor}>
@@ -719,8 +873,8 @@ const Scene = ({ state }: { state: OracState }) => {
   const sparkleSize = isThinking ? 1.8 : 1.55;
   const sparkleSpeed = config.pulseRate * (isIdle ? 0.14 : isThinking ? 0.24 : 0.18);
   const sparkleOpacity = isError ? 0.14 : isIdle ? 0.28 : isSpeaking ? 0.5 : isThinking ? 0.58 : 0.42;
-  const pointLightIntensity = isListening ? 0.08 : 1.5;
-  const spotLightIntensity = isListening ? 0.12 : 2.5;
+  const pointLightIntensity = isListening ? 0.04 : isSpeaking ? 0.22 : isThinking ? 0.18 : 0.1;
+  const spotLightIntensity = isListening ? 0.08 : isSpeaking ? 0.42 : isThinking ? 0.34 : 0.18;
 
   const glitchDelay = useMemo(() => new THREE.Vector2(0.1, 0.3), []);
   const glitchDuration = useMemo(() => new THREE.Vector2(0.1, 0.2), []);
@@ -729,7 +883,7 @@ const Scene = ({ state }: { state: OracState }) => {
   return (
     <>
       <PerspectiveCamera makeDefault position={[0, 0, 9]} fov={35} />
-      <ambientLight intensity={0.4} />
+      <ambientLight intensity={0.28} />
       <pointLight position={[10, 10, 10]} intensity={pointLightIntensity} color={config.color} />
       <spotLight position={[-10, 10, 10]} angle={0.2} penumbra={1} intensity={spotLightIntensity} color={config.color} />
       
@@ -755,7 +909,7 @@ const Scene = ({ state }: { state: OracState }) => {
       <ScanLine state={state} />
       <WaveHalo state={state} />
 
-      <Environment preset="night" />
+      <GlassEnvironment />
 
       <EffectComposer>
         <Bloom 
@@ -783,6 +937,8 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
   showTranscriptPanels = SHOW_TRANSCRIPT_PANELS,
   userTranscript = '',
   oracTranscript = '',
+  renderResetKey = 0,
+  onRenderRecovery,
 }) => {
   const config = STATE_CONFIGS[state];
   const isIdle = state === 'idle';
@@ -842,9 +998,12 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
         )}
 
         <div className="w-full h-full min-h-0 relative">
-          <Canvas gl={{ antialias: false }} dpr={[1, 1.5]}>
-            <Scene state={state} />
-          </Canvas>
+          <CanvasErrorBoundary resetKey={renderResetKey}>
+            <Canvas key={renderResetKey} gl={{ antialias: false }} dpr={[1, 1.5]}>
+              <CanvasDiagnostics onRecovery={onRenderRecovery} />
+              <Scene state={state} />
+            </Canvas>
+          </CanvasErrorBoundary>
         </div>
 
         {showTranscriptPanels && (
