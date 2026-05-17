@@ -25,7 +25,7 @@
 ## ✨ Features (currently a roadmap)
 
 - 🎤 **Voice-Driven AI**: Natural language interaction via satellite Raspberry Pi units.  
-- 🧠 **Conversational Intelligence**: Integrated with LM Studio for cutting-edge AI responses.  
+- 🧠 **Conversational Intelligence**: Integrates with Ollama or LM Studio for cutting-edge AI responses.  
 - 🏠 **Smart Hub Control**: Manage lights, media, and IoT devices seamlessly.  
 - 🧩 **Home Assistant Integrations**: Works hand-in-hand with Home Assistant for extensive smart home control.  
 - 💬 **Client Chatbot**: Interact with Orac through a web or desktop chatbot interface.  
