@@ -10,7 +10,10 @@ import argparse
 import asyncio
 from datetime import datetime
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
 import time
 import uuid
 
@@ -57,10 +60,6 @@ from orac_voice.voice_events import (
 )
 from view.display_event_pipe import DisplayEvent
 from view.display_event_pipe import DisplayEventSender
-from view.display_event_pipe import load_display_event_config
-from view.display_browser_transport import DEFAULT_BROWSER_HOST
-from view.display_browser_transport import DEFAULT_BROWSER_PORT
-from view.display_browser_transport import DisplayBrowserTransport
 
 
 DEFAULT_WAIT_SECONDS = 180.0
@@ -70,6 +69,7 @@ DEFAULT_SESSION_EXIT_PHRASES = ("exit", "quit", "stop listening", "goodbye")
 DEFAULT_RECORD_MODE = "fixed"
 DEFAULT_WAKE_REARM_SECONDS = 1.0
 DEFAULT_CONSOLE_TIMESTAMPS = True
+DEFAULT_DISPLAY_BRIDGE_SCRIPT = "web/orac-display/bridge.js"
 
 
 class NoSpeechDetectedError(RuntimeError):
@@ -192,9 +192,7 @@ def build_parser() -> argparse.ArgumentParser:
   parser.add_argument(
     "--browser-mode",
     action="store_true",
-    help=(
-      "Start the built-in browser WebSocket transport for display events."
-    ),
+    help="Start the Node browser display bridge for display events.",
   )
   parser.add_argument(
     "--buttons",
@@ -208,14 +206,12 @@ def build_parser() -> argparse.ArgumentParser:
   )
   parser.add_argument(
     "--display-browser-host",
-    default=DEFAULT_BROWSER_HOST,
-    help="Host/interface for the browser WebSocket transport.",
+    help=argparse.SUPPRESS,
   )
   parser.add_argument(
     "--display-browser-port",
     type=int,
-    default=DEFAULT_BROWSER_PORT,
-    help="TCP port for the browser WebSocket transport.",
+    help=argparse.SUPPRESS,
   )
   parser.add_argument(
     "--record-seconds",
@@ -1433,22 +1429,47 @@ def _voice_turn(args: argparse.Namespace) -> int:
     return 1
 
 
-def _start_display_browser_transport(
+def _start_display_bridge(
   args: argparse.Namespace,
-) -> DisplayBrowserTransport | None:
-  """Start the optional browser WebSocket transport."""
+) -> subprocess.Popen[bytes] | None:
+  """Start the browser display bridge when browser mode is requested."""
   if not args.browser_mode and not args.display_browser and not args.buttons:
     return None
 
-  display_config = load_display_event_config(_voice_config_manager())
-  transport = DisplayBrowserTransport(
-    host=args.display_browser_host,
-    port=args.display_browser_port,
-    state_file=display_config.state_file,
-    buttons_visible=bool(args.buttons),
+  node_path = shutil.which("node")
+  if node_path is None:
+    raise RuntimeError("node is required for --browser-mode display bridge")
+
+  bridge_script = resolve_orac_home() / DEFAULT_DISPLAY_BRIDGE_SCRIPT
+  if not bridge_script.is_file():
+    raise FileNotFoundError(f"Display bridge not found: {bridge_script}")
+
+  environment = os.environ.copy()
+  environment["ORAC_DISPLAY_BUTTONS_VISIBLE"] = (
+    "true" if args.buttons else "false"
   )
-  transport.start()
-  return transport
+  environment.setdefault("ORAC_DISPLAY_SHOW_TRANSCRIPT_PANELS", "true")
+
+  process = subprocess.Popen(
+    [node_path, str(bridge_script)],
+    cwd=str(bridge_script.parent),
+    env=environment,
+  )
+  logger.info("Started Orac display bridge with PID {}", process.pid)
+  return process
+
+
+def _stop_display_bridge(process: subprocess.Popen[bytes] | None) -> None:
+  """Stop a browser display bridge process started by this command."""
+  if process is None or process.poll() is not None:
+    return
+
+  process.terminate()
+  try:
+    process.wait(timeout=3.0)
+  except subprocess.TimeoutExpired:
+    process.kill()
+    process.wait(timeout=3.0)
 
 
 def main() -> int:
@@ -1459,9 +1480,9 @@ def main() -> int:
   """
   parser = build_parser()
   args = parser.parse_args()
-  display_browser_transport = _start_display_browser_transport(args)
-
+  display_bridge = None
   try:
+    display_bridge = _start_display_bridge(args)
     if args.tts_test is not None:
       return _run_tts_test(args)
     if args.listen_once:
@@ -1472,9 +1493,12 @@ def main() -> int:
       return _voice_session(args)
     parser.print_help()
     return 2
+  except Exception as exc:
+    logger.error("Unable to start local voice mode: {}", exc)
+    _console_line(f"Unable to start local voice mode: {exc}")
+    return 1
   finally:
-    if display_browser_transport is not None:
-      display_browser_transport.stop()
+    _stop_display_bridge(display_bridge)
 
 
 if __name__ == "__main__":

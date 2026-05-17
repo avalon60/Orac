@@ -95,27 +95,6 @@ class DisplayEventPipeTests(unittest.TestCase):
       self.assertEqual(payload["message"], "Thinking")
       self.assertEqual(payload["turn_id"], "turn-1")
 
-  def test_sender_broadcasts_to_registered_browser_hook(self) -> None:
-    """DisplayEventSender mirrors payloads to the browser hook when present."""
-    received: list[dict[str, object]] = []
-
-    def broadcaster(payload: dict[str, object]) -> None:
-      received.append(payload)
-
-    DisplayEventSender.set_browser_broadcaster(broadcaster)
-    try:
-      sender = DisplayEventSender(
-        DisplayEventConfig(enabled=True, state_file=None)
-      )
-
-      with patch("socket.create_connection", side_effect=OSError("closed")):
-        sender.send_state("listening", message="Listening")
-    finally:
-      DisplayEventSender.clear_browser_broadcaster()
-
-    self.assertEqual(received[0]["state"], "listening")
-    self.assertEqual(received[0]["message"], "Listening")
-
   def test_socket_server_receives_ndjson_event(self) -> None:
     """The sender can deliver one event to the local display server."""
     received: list[dict[str, object]] = []
