@@ -98,8 +98,11 @@ from orac_voice.stt_faster_whisper import FasterWhisperSttEngine
 from orac_voice.stt_faster_whisper import _normalise_compute_type
 from orac_voice.stt_faster_whisper import _normalise_device
 from orac_voice.tts_coalescer import TtsChunkCoalescer
+from orac_voice.tts_kokoro import build_kokoro_speech_url
+from orac_voice.tts_kokoro import KokoroTtsEngine
 from orac_voice.tts_piper import PiperTtsEngine
 from orac_voice.tts_worker import TtsWorker
+import orac_voice.tts_kokoro as tts_kokoro_module
 import orac_voice.tts_worker as tts_worker_module
 from orac_voice.vad_silero import VadEndpointConfig, VadEndpointDetector
 from orac_voice.voice_events import VoiceSttEnded, VoiceSttFinal
@@ -148,6 +151,60 @@ class _FakeTtsEngine:
     self.cancel_calls += 1
     if self.block_event is not None:
       self.block_event.set()
+
+
+class _FailingTtsEngine:
+  """Fake TTS engine that always fails synthesis."""
+
+  def __init__(self, message: str = "primary failed") -> None:
+    self.message = message
+    self.cancel_calls = 0
+
+  def synthesise_to_wav(
+    self,
+    text: str,
+    *,
+    session_id: str,
+    turn_id: str,
+  ) -> Path:
+    """Raise a configured synthesis error."""
+    del text, session_id, turn_id
+    raise RuntimeError(self.message)
+
+  def cancel(self) -> None:
+    """Record cancellation."""
+    self.cancel_calls += 1
+
+
+class _FakeHttpResponse:
+  """Fake HTTP response for Kokoro synthesis tests."""
+
+  def __init__(self, content: bytes, status_error: Exception | None = None) -> None:
+    self.content = content
+    self.status_error = status_error
+
+  def raise_for_status(self) -> None:
+    """Raise the configured HTTP status error if present."""
+    if self.status_error is not None:
+      raise self.status_error
+
+
+class _FakeHttpSession:
+  """Fake HTTP session that records POST requests."""
+
+  def __init__(self, response: _FakeHttpResponse) -> None:
+    self.response = response
+    self.posts: list[dict[str, object]] = []
+    self.close_calls = 0
+
+  def post(self, url: str, **kwargs) -> _FakeHttpResponse:
+    """Record a POST request and return the configured response."""
+    self.posts.append({"url": url, **kwargs})
+    return self.response
+
+  def close(self) -> None:
+    """Record session closure."""
+    self.close_calls += 1
 
 
 class _FakePlayback:
@@ -1205,13 +1262,13 @@ class OracVoiceTests(unittest.TestCase):
 
     with tempfile.TemporaryDirectory() as tmp_name:
       model_dir = Path(tmp_name)
-      model_path = model_dir / "hey_orac.onnx"
+      model_path = model_dir / "unit_orac_wake.onnx"
       model_path.write_text("fake", encoding="utf-8")
 
       with patch.dict(sys.modules, runtime.modules):
         create_openwakeword_model(
           model_paths=[],
-          model_names=["hey_orac"],
+          model_names=["unit_orac_wake"],
           model_dirs=[model_dir],
           inference_framework="auto",
           error_context="openWakeWord",
@@ -1227,13 +1284,13 @@ class OracVoiceTests(unittest.TestCase):
 
     with tempfile.TemporaryDirectory() as tmp_name:
       model_dir = Path(tmp_name)
-      model_path = model_dir / "hey_orac.onnx"
+      model_path = model_dir / "unit_orac_local.onnx"
       model_path.write_text("fake", encoding="utf-8")
 
       with patch.dict(sys.modules, runtime.modules):
         create_openwakeword_model(
           model_paths=[],
-          model_names=["hey_orac"],
+          model_names=["unit_orac_local"],
           model_dirs=[model_dir],
           inference_framework="auto",
           error_context="openWakeWord",
@@ -1245,6 +1302,7 @@ class OracVoiceTests(unittest.TestCase):
   def test_openwakeword_unresolved_bare_name_reports_helpful_context(self) -> None:
     """Unresolved bare names should explain how to fix the configuration."""
     runtime = _FakeOpenWakeWordRuntime()
+    model_name = "unit_orac_missing"
 
     with tempfile.TemporaryDirectory() as tmp_name:
       model_dir = Path(tmp_name)
@@ -1252,14 +1310,14 @@ class OracVoiceTests(unittest.TestCase):
         with self.assertRaises(VoiceActivationError) as raised:
           create_openwakeword_model(
             model_paths=[],
-            model_names=["hey_orac"],
+            model_names=[model_name],
             model_dirs=[model_dir],
             inference_framework="auto",
             error_context="openWakeWord",
           )
 
     message = str(raised.exception)
-    self.assertIn("hey_orac", message)
+    self.assertIn(model_name, message)
     self.assertIn("Available built-in models", message)
     self.assertIn("Explicit model paths configured", message)
     self.assertIn("Local directories searched", message)
@@ -1302,14 +1360,14 @@ class OracVoiceTests(unittest.TestCase):
 
     with tempfile.TemporaryDirectory() as tmp_name:
       model_dir = Path(tmp_name)
-      model_path = model_dir / "hey_orac.onnx"
+      model_path = model_dir / "unit_orac_sidecar.onnx"
       model_path.write_text("fake", encoding="utf-8")
 
       with patch.dict(sys.modules, runtime.modules):
         with self.assertRaises(VoiceActivationError) as raised:
           create_openwakeword_model(
             model_paths=[],
-            model_names=["hey_orac"],
+            model_names=["unit_orac_sidecar"],
             model_dirs=[model_dir],
             inference_framework="auto",
             error_context="openWakeWord",
@@ -1317,7 +1375,7 @@ class OracVoiceTests(unittest.TestCase):
 
     message = str(raised.exception)
     self.assertIn("external-data ONNX model", message)
-    self.assertIn("hey_orac.onnx.data", message)
+    self.assertIn("unit_orac_sidecar.onnx.data", message)
     self.assertIn("same local model directory", message)
     self.assertIn("Directories searched", message)
 
@@ -2406,6 +2464,208 @@ class OracVoiceTests(unittest.TestCase):
     self.assertIsNotNone(worker)
     self.assertIsInstance(worker.audio_playback, NativeAudioPlayback)
     self.assertIsNotNone(worker._playback_reference_bridge)
+
+  def test_kokoro_tts_engine_posts_speech_request(self) -> None:
+    """Kokoro engine should call the OpenAI-compatible speech endpoint."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      orac_home = Path(tmp_name)
+      output_dir = orac_home / "var" / "tmp" / "orac_voice"
+      session = _FakeHttpSession(_FakeHttpResponse(b"RIFFfake-wav"))
+      with patch.object(
+        tts_kokoro_module,
+        "resolve_orac_home",
+        return_value=orac_home,
+      ):
+        engine = KokoroTtsEngine(
+          base_url="http://127.0.0.1:8880/v1",
+          voice_name="af_heart",
+          model="kokoro",
+          output_dir=output_dir,
+          timeout_seconds=12,
+        )
+      engine._session = session
+
+      wav_path = engine.synthesise_to_wav(
+        "Testing Kokoro.",
+        session_id="s1",
+        turn_id="t1",
+      )
+
+      self.assertTrue(wav_path.name.endswith("-kokoro.wav"))
+      self.assertEqual(wav_path.read_bytes(), b"RIFFfake-wav")
+      self.assertEqual(
+        session.posts[0]["url"],
+        "http://127.0.0.1:8880/v1/audio/speech",
+      )
+      self.assertEqual(session.posts[0]["timeout"], 12)
+      self.assertEqual(
+        session.posts[0]["json"],
+        {
+          "model": "kokoro",
+          "voice": "af_heart",
+          "input": "Testing Kokoro.",
+          "response_format": "wav",
+        },
+      )
+
+  def test_kokoro_tts_engine_accepts_voice_blend(self) -> None:
+    """Kokoro voice blends should be passed through to the endpoint."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      orac_home = Path(tmp_name)
+      session = _FakeHttpSession(_FakeHttpResponse(b"RIFFfake-wav"))
+      with patch.object(
+        tts_kokoro_module,
+        "resolve_orac_home",
+        return_value=orac_home,
+      ):
+        engine = KokoroTtsEngine(
+          voice_name="af_bella(2)+af_heart(1)",
+          output_dir=orac_home / "var" / "tmp",
+        )
+      engine._session = session
+
+      engine.synthesise_to_wav("Testing blend.", session_id="s1", turn_id="t1")
+
+    self.assertEqual(
+      session.posts[0]["json"]["voice"],
+      "af_bella(2)+af_heart(1)",
+    )
+
+  def test_kokoro_speech_url_accepts_base_url_variants(self) -> None:
+    """Kokoro speech URL builder should avoid duplicate v1 paths."""
+    expected_url = "http://127.0.0.1:8880/v1/audio/speech"
+
+    self.assertEqual(
+      build_kokoro_speech_url("http://127.0.0.1:8880"),
+      expected_url,
+    )
+    self.assertEqual(
+      build_kokoro_speech_url("http://127.0.0.1:8880/"),
+      expected_url,
+    )
+    self.assertEqual(
+      build_kokoro_speech_url("http://127.0.0.1:8880/v1"),
+      expected_url,
+    )
+    self.assertEqual(
+      build_kokoro_speech_url("http://127.0.0.1:8880/v1/"),
+      expected_url,
+    )
+
+  def test_kokoro_tts_engine_rejects_non_wav_response(self) -> None:
+    """Kokoro engine should fail clearly if endpoint does not return WAV."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      orac_home = Path(tmp_name)
+      session = _FakeHttpSession(_FakeHttpResponse(b"not wav"))
+      with patch.object(
+        tts_kokoro_module,
+        "resolve_orac_home",
+        return_value=orac_home,
+      ):
+        engine = KokoroTtsEngine(output_dir=orac_home / "var" / "tmp")
+      engine._session = session
+
+      with self.assertRaisesRegex(RuntimeError, "did not return WAV audio"):
+        engine.synthesise_to_wav("Hello.", session_id="s1", turn_id="t1")
+
+  def test_local_tts_worker_can_select_kokoro_backend(self) -> None:
+    """Kokoro backend should be selectable without Piper fallback."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      orac_home = Path(tmp_name)
+      config_dir = orac_home / "resources" / "config"
+      config_dir.mkdir(parents=True, exist_ok=True)
+      (config_dir / "orac.ini").write_text(
+        "\n".join(
+          [
+            "[voice]",
+            "enabled = true",
+            "mode = local",
+            "tts_engine = kokoro",
+            "tts_fallback_engine = none",
+          ]
+        ),
+        encoding="utf-8",
+      )
+      kokoro_engine = object()
+      with patch.object(
+        tts_worker_module,
+        "resolve_orac_home",
+        return_value=orac_home,
+      ), patch.object(
+        tts_worker_module.KokoroTtsEngine,
+        "from_config",
+        return_value=kokoro_engine,
+      ), patch.object(
+        tts_worker_module.PiperTtsEngine,
+        "from_config",
+      ) as piper_from_config:
+        worker = tts_worker_module.create_local_tts_worker_from_config()
+
+    self.assertIsNotNone(worker)
+    self.assertIs(worker.tts_engine, kokoro_engine)
+    piper_from_config.assert_not_called()
+
+  def test_local_tts_worker_wraps_kokoro_with_piper_fallback(self) -> None:
+    """Kokoro backend should default to Piper fallback when configured."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      orac_home = Path(tmp_name)
+      config_dir = orac_home / "resources" / "config"
+      config_dir.mkdir(parents=True, exist_ok=True)
+      (config_dir / "orac.ini").write_text(
+        "\n".join(
+          [
+            "[voice]",
+            "enabled = true",
+            "mode = local",
+            "tts_engine = kokoro",
+            "tts_fallback_engine = piper",
+          ]
+        ),
+        encoding="utf-8",
+      )
+      kokoro_engine = object()
+      piper_engine = object()
+      with patch.object(
+        tts_worker_module,
+        "resolve_orac_home",
+        return_value=orac_home,
+      ), patch.object(
+        tts_worker_module.KokoroTtsEngine,
+        "from_config",
+        return_value=kokoro_engine,
+      ), patch.object(
+        tts_worker_module.PiperTtsEngine,
+        "from_config",
+        return_value=piper_engine,
+      ):
+        worker = tts_worker_module.create_local_tts_worker_from_config()
+
+    self.assertIsNotNone(worker)
+    self.assertIsInstance(worker.tts_engine, tts_worker_module.FallbackTtsEngine)
+    self.assertIs(worker.tts_engine.primary, kokoro_engine)
+    self.assertIs(worker.tts_engine.fallback, piper_engine)
+
+  def test_fallback_tts_engine_uses_piper_when_primary_fails(self) -> None:
+    """Fallback wrapper should synthesise with Piper after Kokoro failure."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      wav_path = Path(tmp_name) / "fallback.wav"
+      wav_path.write_bytes(b"RIFFfallback")
+      fallback = _FakeTtsEngine(wav_path=wav_path)
+      engine = tts_worker_module.FallbackTtsEngine(
+        primary=_FailingTtsEngine("kokoro unavailable"),
+        fallback=fallback,
+        primary_name="kokoro",
+        fallback_name="piper",
+      )
+
+      result = engine.synthesise_to_wav(
+        "Use the fallback.",
+        session_id="s1",
+        turn_id="t1",
+      )
+
+    self.assertEqual(result, wav_path)
+    self.assertEqual(fallback.calls, [("s1", "t1", "Use the fallback.")])
 
   def test_native_playback_invokes_pcm_frame_hook(self) -> None:
     """Native playback should expose the PCM frames it sends to output."""
