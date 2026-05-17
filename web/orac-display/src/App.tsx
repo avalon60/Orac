@@ -1,20 +1,49 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { OracDisplay } from './components/OracDisplay';
 import { OracStateControls } from './components/OracStateControls';
+import {
+  installGlobalDisplayDiagnostics,
+  logDisplayDiagnostic,
+  type DisplayRecoveryReason,
+} from './displayDiagnostics';
 import type { OracState } from './types/oracState';
 
 
 const DEFAULT_DISPLAY_WS_URL = 'ws://127.0.0.1:8767';
 const DISPLAY_WS_URL =
   import.meta.env.VITE_ORAC_DISPLAY_WS_URL?.trim() || DEFAULT_DISPLAY_WS_URL;
+const SHOW_TRANSCRIPT_PANELS =
+  (import.meta.env.VITE_ORAC_SHOW_TRANSCRIPT_PANELS || '')
+    .trim()
+    .toLowerCase() === 'true';
 const RECONNECT_INITIAL_DELAY_MS = 500;
 const RECONNECT_MAX_DELAY_MS = 10_000;
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected';
 type BrowserUiConfig = {
   buttons_visible?: boolean;
+  show_transcript_panels?: boolean;
 };
+type BrowserDiagnosticEvent = CustomEvent<{
+  timestamp: string;
+  message: string;
+  detail?: string;
+}>;
+
+function getTranscriptText(
+  data: Record<string, unknown>,
+  options: { preserveWhitespace?: boolean } = {},
+): string {
+  const candidate =
+    data.text ?? data.message ?? data.delta ?? data.chunk ?? data.content;
+
+  if (typeof candidate !== 'string') {
+    return '';
+  }
+
+  return options.preserveWhitespace ? candidate : candidate.trim();
+}
 
 function useMediaQuery(query: string) {
   const [matches, setMatches] = useState<boolean>(() =>
@@ -54,14 +83,65 @@ function App() {
   const [connectionState, setConnectionState] =
     useState<ConnectionState>('connecting');
   const [showButtons, setShowButtons] = useState(false);
+  const [showTranscriptPanels, setShowTranscriptPanels] = useState(
+    SHOW_TRANSCRIPT_PANELS,
+  );
+  const [userTranscript, setUserTranscript] = useState('');
+  const [oracTranscript, setOracTranscript] = useState('');
   const [railExpanded, setRailExpanded] = useState(false);
+  const [reconnectNonce, setReconnectNonce] = useState(0);
+  const [renderResetNonce, setRenderResetNonce] = useState(0);
+  const socketRef = useRef<WebSocket | null>(null);
+  const diagnosticQueueRef = useRef<string[]>([]);
   const isWideScreen = useMediaQuery('(min-width: 1280px)');
+
+  const requestDisplayRecovery = (reason: DisplayRecoveryReason) => {
+    logDisplayDiagnostic('display recovery requested', { reason });
+    setConnectionState('connecting');
+    setReconnectNonce((value) => value + 1);
+    setRenderResetNonce((value) => value + 1);
+  };
 
   useEffect(() => {
     if (!showButtons || isWideScreen) {
       setRailExpanded(false);
     }
   }, [showButtons, isWideScreen]);
+
+  useEffect(() => {
+    const sendDiagnostic = (payload: string) => {
+      const socket = socketRef.current;
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(payload);
+        return;
+      }
+
+      diagnosticQueueRef.current = [
+        ...diagnosticQueueRef.current.slice(-49),
+        payload,
+      ];
+    };
+
+    const handleDiagnostic = (event: Event) => {
+      const diagnostic = event as BrowserDiagnosticEvent;
+      sendDiagnostic(
+        JSON.stringify({
+          v: 1,
+          event: 'browser.diagnostic',
+          ...diagnostic.detail,
+        }),
+      );
+    };
+
+    window.addEventListener('orac-display-diagnostic', handleDiagnostic);
+    return () =>
+      window.removeEventListener('orac-display-diagnostic', handleDiagnostic);
+  }, []);
+
+  useEffect(
+    () => installGlobalDisplayDiagnostics(requestDisplayRecovery),
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +181,12 @@ function App() {
       );
 
       try {
+        logDisplayDiagnostic('opening display WebSocket', {
+          url: DISPLAY_WS_URL,
+          reconnectNonce,
+        });
         socket = new WebSocket(DISPLAY_WS_URL);
+        socketRef.current = socket;
       } catch (error) {
         console.error('⚠️ Failed to open Orac display WebSocket:', error);
         scheduleReconnect();
@@ -113,7 +198,11 @@ function App() {
           return;
         }
         retryDelay = RECONNECT_INITIAL_DELAY_MS;
+        logDisplayDiagnostic('display WebSocket connected');
         setConnectionState('connected');
+
+        diagnosticQueueRef.current.forEach((payload) => socket?.send(payload));
+        diagnosticQueueRef.current = [];
       };
 
       socket.onmessage = (event) => {
@@ -127,7 +216,15 @@ function App() {
             message?: string;
             state?: string;
             buttons_visible?: boolean;
+            show_transcript_panels?: boolean;
+            text?: string;
+            delta?: string;
+            chunk?: string;
+            content?: string;
           };
+          const transcriptText = getTranscriptText(
+            data as Record<string, unknown>,
+          );
 
           if (data.event === 'state_changed' && data.state) {
             const newState = data.state.toLowerCase() as OracState;
@@ -146,6 +243,50 @@ function App() {
             if (typeof uiConfig.buttons_visible === 'boolean') {
               setShowButtons(uiConfig.buttons_visible);
             }
+            if (typeof uiConfig.show_transcript_panels === 'boolean') {
+              setShowTranscriptPanels(uiConfig.show_transcript_panels);
+            }
+            setConnectionState('connected');
+          } else if (
+            data.event === 'transcript.turn.clear'
+          ) {
+            setUserTranscript('');
+            setOracTranscript('');
+            setConnectionState('connected');
+          } else if (
+            data.event === 'transcript.user.final' ||
+            data.event === 'voice_stt_final' ||
+            data.event === 'stt_final'
+          ) {
+            setUserTranscript(transcriptText);
+            setOracTranscript('');
+            setConnectionState('connected');
+          } else if (
+            data.event === 'transcript.orac.start' ||
+            data.event === 'stream_start'
+          ) {
+            setOracTranscript(transcriptText);
+            setConnectionState('connected');
+          } else if (
+            data.event === 'transcript.orac.delta' ||
+            data.event === 'text_delta'
+          ) {
+            const deltaText = getTranscriptText(
+              data as Record<string, unknown>,
+              { preserveWhitespace: true },
+            );
+            if (deltaText) {
+              setOracTranscript((current) => `${current}${deltaText}`);
+            }
+            setConnectionState('connected');
+          } else if (
+            data.event === 'transcript.orac.final' ||
+            data.event === 'stream_end' ||
+            data.event === 'response'
+          ) {
+            if (transcriptText) {
+              setOracTranscript(transcriptText);
+            }
             setConnectionState('connected');
           }
         } catch (error) {
@@ -154,13 +295,18 @@ function App() {
       };
 
       socket.onclose = () => {
+        logDisplayDiagnostic('display WebSocket closed');
+        if (socketRef.current === socket) {
+          socketRef.current = null;
+        }
         socket = null;
         if (!cancelled) {
           scheduleReconnect();
         }
       };
 
-      socket.onerror = () => {
+      socket.onerror = (event) => {
+        console.warn('⚠️ Orac display WebSocket error:', event);
         // The close handler owns reconnect scheduling.
       };
     };
@@ -171,9 +317,12 @@ function App() {
       cancelled = true;
       clearReconnectTimer();
       socket?.close();
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
       socket = null;
     };
-  }, []);
+  }, [reconnectNonce]);
 
   const handleManualStateChange = (newState: OracState) => {
     setState(newState);
@@ -233,7 +382,15 @@ function App() {
         >
           <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[2rem] border border-[#1b5f91]/20 bg-[#03070d]/90 shadow-[0_30px_120px_rgba(0,0,0,0.75)] backdrop-blur-xl">
             <div className="relative min-h-0 flex-1">
-              <OracDisplay state={state} message={message} />
+              <OracDisplay
+                state={state}
+                message={message}
+                showTranscriptPanels={showTranscriptPanels}
+                userTranscript={userTranscript}
+                oracTranscript={oracTranscript}
+                renderResetKey={renderResetNonce}
+                onRenderRecovery={requestDisplayRecovery}
+              />
               {connectionState !== 'connected' && (
                 <div className="pointer-events-none absolute inset-0 bg-[#03070d]/35" />
               )}

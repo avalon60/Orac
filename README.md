@@ -208,6 +208,134 @@ openwakeword_model_paths = ${ORAC_HOME}/var/models/wake/hey_orac.tflite
 openwakeword_model_names =
 ```
 
+Piper voice models follow the same runtime-tree convention. By default Orac
+looks for Piper voices under:
+
+```ini
+[voice]
+tts_engine = piper
+tts_voice_dir = ${ORAC_HOME}/var/voices/piper
+```
+
+Put the Piper voice assets in that directory, or override `tts_voice_dir` if
+you keep voices elsewhere.
+
+Kokoro can be used as a higher-quality optional TTS backend when a local
+Kokoro-FastAPI or compatible OpenAI speech API service is running. Orac does
+not bundle Kokoro and does not require it for normal operation. Either run the
+Kokoro speech server yourself and point Orac at its local HTTP endpoint, or set
+`tts_kokoro_autostart = true` and let `bin/orac-ctl.sh` manage a local Docker
+sidecar. The service must expose an OpenAI-compatible speech route and return
+WAV audio.
+
+The tested integration target is
+[remsky/Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI), which
+provides Docker images and a local OpenAI-compatible speech API. Follow the
+upstream project for current installation details. If you use
+`tts_kokoro_runtime = docker-cpu`, Orac uses the CPU image internally and you
+do not need to put the image name in `orac.ini`. A manual local CPU start using
+the published container image is:
+
+```bash
+docker run -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:latest
+```
+
+For NVIDIA GPU support, use the upstream GPU image instead:
+
+```bash
+docker run --gpus all -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-gpu:latest
+```
+
+The upstream project also supports Docker Compose and direct `uv` startup.
+Use those paths if you want a pinned checkout, local UI, custom model storage,
+or non-Docker development.
+
+After starting Kokoro-FastAPI, verify the endpoint from another terminal:
+
+```bash
+curl -sS \
+  -H 'Content-Type: application/json' \
+  -o /tmp/orac-kokoro-test.wav \
+  -X POST http://127.0.0.1:8880/v1/audio/speech \
+  -d '{
+    "model": "kokoro",
+    "voice": "af_heart",
+    "input": "Kokoro is available for Orac.",
+    "response_format": "wav"
+  }'
+file /tmp/orac-kokoro-test.wav
+```
+
+The `file` command should report a WAV/RIFF audio file. If the curl command
+fails, fix the Kokoro service before enabling `tts_engine = kokoro` in Orac.
+
+Example Kokoro configuration:
+
+```ini
+[voice]
+tts_engine = kokoro
+tts_fallback_engine = piper
+tts_kokoro_autostart = false
+tts_kokoro_runtime = docker-cpu
+tts_kokoro_container_name = orac-kokoro
+tts_kokoro_host = 127.0.0.1
+tts_kokoro_port = 8880
+tts_kokoro_base_url = http://127.0.0.1:8880/v1
+tts_kokoro_image =
+tts_kokoro_model = kokoro
+tts_kokoro_voice = af_heart
+tts_kokoro_response_format = wav
+tts_kokoro_timeout_seconds = 60
+tts_kokoro_api_key_env =
+```
+
+`tts_kokoro_autostart = true` allows `bin/orac-ctl.sh start` and
+`bin/orac-ctl.sh restart` to manage a local Kokoro sidecar service when
+`tts_engine = kokoro`. It first checks the readiness endpoint and does not
+restart a healthy service.
+
+`tts_kokoro_runtime` selects how Kokoro is provided:
+
+- `docker-cpu`: Orac manages a CPU Kokoro container using an internal default
+  image. This is the documented default.
+- `docker-gpu`: Orac manages a GPU Kokoro container using an internal default
+  image. This is advanced and may require compatible NVIDIA drivers, CUDA,
+  Docker GPU support, and a PyTorch build compatible with the installed GPU.
+- `external`: Orac does not start or stop a Kokoro container. It only uses
+  `tts_kokoro_base_url` and assumes the service is already running.
+
+`tts_kokoro_image` is optional. Leave it blank for the internal image selected
+by `tts_kokoro_runtime`; set it only as an advanced override.
+
+Kokoro-FastAPI supports weighted voice blends. Orac passes the configured
+voice string through unchanged, so blends can be configured like this:
+
+```ini
+[voice]
+tts_kokoro_voice = af_bella(2)+af_heart(1)
+```
+
+`tts_kokoro_base_url` may be configured with or without `/v1`, and with or
+without a trailing slash. These forms are equivalent:
+
+```ini
+tts_kokoro_base_url = http://127.0.0.1:8880
+tts_kokoro_base_url = http://127.0.0.1:8880/
+tts_kokoro_base_url = http://127.0.0.1:8880/v1
+tts_kokoro_base_url = http://127.0.0.1:8880/v1/
+```
+
+All resolve internally to:
+
+```text
+http://127.0.0.1:8880/v1/audio/speech
+```
+
+Use `tts_kokoro_voice` to select the Kokoro voice. Leave
+`tts_fallback_engine = piper` if Piper should speak a chunk when Kokoro is
+unavailable or returns an error. Set `tts_engine = piper` to return to the
+lightweight local backend.
+
 Run a local wake-word smoke test with:
 
 ```bash

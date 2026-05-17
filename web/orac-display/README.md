@@ -86,6 +86,7 @@ bin/orac-display-web.sh
 
 The launcher starts the dev server and opens the browser app window. If you
 prefer a plain tab, open `http://localhost:5173` manually.
+The launcher also enables the optional transcript panels by default.
 
 ### App-style window
 
@@ -113,6 +114,38 @@ VITE_ORAC_DISPLAY_WS_URL=ws://127.0.0.1:8767
 ```
 
 The default already targets `ws://127.0.0.1:8767`.
+
+### Optional transcript panels
+
+The `bin/orac-display-web.sh` launcher enables the current-turn transcript
+panels automatically.
+
+If you run Vite manually, set:
+
+```bash
+VITE_ORAC_SHOW_TRANSCRIPT_PANELS=true npm run dev
+```
+
+The panels are off by default in production-style builds. When enabled, the
+display shows the latest recognised user utterance on the left and Orac's
+current response on the right.
+
+Supported transcript events:
+
+- `transcript.turn.clear`
+- `transcript.user.final`
+- `transcript.orac.start`
+- `transcript.orac.delta`
+- `transcript.orac.final`
+
+The display also accepts the current compatibility aliases used by the local
+voice path:
+
+- `voice_stt_final`
+- `stt_final`
+- `stream_start`
+- `text_delta`
+- `stream_end`
 
 ## Notes
 

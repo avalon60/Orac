@@ -90,6 +90,31 @@ def _emit(event: VoiceEvent) -> None:
   _log_voice_event(event)
 
 
+def _send_display_event(
+  display_sender: DisplayEventSender | None,
+  event: str,
+  *,
+  session_id: str | None = None,
+  turn_id: str | None = None,
+  **payload: object,
+) -> None:
+  """Emit one lightweight display event if the display pipe is enabled."""
+  if display_sender is None:
+    return
+
+  event_payload: dict[str, object] = {
+    "event": event,
+  }
+  if session_id is not None:
+    event_payload["session_id"] = session_id
+  if turn_id is not None:
+    event_payload["turn_id"] = turn_id
+  for key, value in payload.items():
+    if value is not None:
+      event_payload[key] = value
+  display_sender.send(event_payload)
+
+
 def _load_console_timestamps() -> bool:
   """Return whether local voice console lines include timestamps."""
   config_mgr = _voice_config_manager()
@@ -376,6 +401,11 @@ def _create_activation_listener(
         "openwakeword_model_names",
         default=",".join(DEFAULT_OPENWAKEWORD_MODEL_NAMES),
       ),
+      model_dirs=config_mgr.config_value(
+        "voice",
+        "openwakeword_model_dirs",
+        default="",
+      ),
       threshold=float(
         config_mgr.config_value(
           "voice",
@@ -539,6 +569,12 @@ def _transcribe_once(
       raise EOFError
   
   if display_sender:
+    _send_display_event(
+      display_sender,
+      "transcript.turn.clear",
+      session_id=session_id,
+      turn_id=turn_id,
+    )
     display_sender.send_state(
       "listening",
       message="Listening...",
@@ -591,6 +627,13 @@ def _transcribe_once(
         turn_id=turn_id,
         text=recognised_text,
       )
+    )
+    _send_display_event(
+      display_sender,
+      "transcript.user.final",
+      session_id=session_id,
+      turn_id=turn_id,
+      text=recognised_text,
     )
     return session_id, turn_id, recognised_text
   except KeyboardInterrupt:
@@ -692,6 +735,12 @@ async def _send_orac_prompt(
   wire = json.dumps(req_env, ensure_ascii=False) + "\n"
   writer.write(wire.encode("utf-8"))
   await writer.drain()
+  _send_display_event(
+    display_sender,
+    "transcript.orac.start",
+    session_id=voice_session_id,
+    turn_id=req_id,
+  )
   if display_sender is not None:
     display_sender.send_state(
       "thinking",
@@ -711,6 +760,7 @@ async def _send_orac_prompt(
   playback_cancelled = False
   playback_terminal = False
   final_response_status: int | None = None
+  orac_transcript_parts: list[str] = []
   barge_in_min_speech_ms = 0
   if (
     barge_in_controller is not None
@@ -931,8 +981,20 @@ async def _send_orac_prompt(
             _console_start("Orac: ")
             stream_rendered = True
           delta = payload.get("delta", "")
+          delta_text = slave_client.strip_reasoning_tags_from_delta(
+            str(delta)
+          )
+          if delta_text:
+            orac_transcript_parts.append(delta_text)
+            _send_display_event(
+              display_sender,
+              "transcript.orac.delta",
+              session_id=voice_session_id,
+              turn_id=req_id,
+              text=delta_text,
+            )
           print(
-            slave_client.strip_reasoning_tags_from_delta(str(delta)),
+            delta_text,
             end="",
             flush=True,
           )
@@ -1025,6 +1087,18 @@ async def _send_orac_prompt(
             )
         return 1
 
+      payload = env.get("payload")
+      content = payload.get("content") if isinstance(payload, dict) else ""
+      final_text = slave_client.strip_reasoning_tags(str(content))
+      if not final_text:
+        final_text = "".join(orac_transcript_parts).strip()
+      _send_display_event(
+        display_sender,
+        "transcript.orac.final",
+        session_id=voice_session_id,
+        turn_id=req_id,
+        text=final_text,
+      )
       if stream_rendered or stream_finished:
         print()
         final_response_status = 1 if stream_error_seen else 0
@@ -1043,9 +1117,7 @@ async def _send_orac_prompt(
           return maybe_status
         continue
 
-      payload = env.get("payload")
-      content = payload.get("content") if isinstance(payload, dict) else ""
-      _console_line(f"Orac: {slave_client.strip_reasoning_tags(str(content))}")
+      _console_line(f"Orac: {final_text}")
       if display_sender is not None:
         display_sender.send_state(
           "idle",

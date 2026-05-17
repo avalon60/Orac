@@ -212,6 +212,7 @@ class PiperTtsEngine:
 
     candidates.extend(
       [
+        self.orac_home / ".venv" / "bin" / "piper",
         self.orac_home / ".venv-voice" / "bin" / "piper",
         self.orac_home / "src" / "view" / ".venv-voice" / "bin" / "piper",
       ]

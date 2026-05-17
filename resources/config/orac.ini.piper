@@ -137,11 +137,11 @@ porcupine_access_key_resource = picovoice/access_key
 stt_phrase_enabled = false
 # Text-to-speech backend. "piper" is the lightweight local fallback.
 # "kokoro" calls a local OpenAI-compatible Kokoro speech endpoint.
-tts_engine = kokoro
+tts_engine = piper
 tts_fallback_engine = piper
 tts_voice = en_GB-alba-medium
 tts_voice_dir = ${ORAC_HOME}/var/voices/piper
-tts_kokoro_autostart = true
+tts_kokoro_autostart = false
 tts_kokoro_runtime = docker-cpu
 tts_kokoro_container_name = orac-kokoro
 tts_kokoro_host = 127.0.0.1
@@ -149,7 +149,7 @@ tts_kokoro_port = 8880
 tts_kokoro_base_url = http://127.0.0.1:8880/v1
 tts_kokoro_image =
 tts_kokoro_model = kokoro
-tts_kokoro_voice = bm_george
+tts_kokoro_voice = af_heart
 tts_kokoro_response_format = wav
 tts_kokoro_timeout_seconds = 60
 tts_kokoro_api_key_env =

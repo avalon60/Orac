@@ -607,6 +607,41 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             clock,
         )
 
+    def test_clock_context_uses_weather_location_for_where_are_you(self) -> None:
+        """Clock context should disambiguate location questions."""
+        clock = orac_module.system_clock_line(
+            {
+                "timezone": "Europe/London",
+                "weather_location": "Thornton Dale, England, United Kingdom",
+            }
+        )
+
+        self.assertIn(
+            "Assume your current location is Thornton Dale, England, United Kingdom.",
+            clock,
+        )
+        self.assertIn(
+            "If asked where you are, where you are located, or similar, answer "
+            "with this configured operational/home location.",
+            clock,
+        )
+        self.assertIn("physical embodiment", clock)
+
+    def test_clock_context_disambiguates_inferred_location(self) -> None:
+        """Clock context should also disambiguate timezone-derived location."""
+        clock = orac_module.system_clock_line({"timezone": "Europe/London"})
+
+        self.assertIn(
+            "No explicit weather location is set. Assume your current location is London",
+            clock,
+        )
+        self.assertIn(
+            "If asked where you are, where you are located, or similar, answer "
+            "with this inferred operational/home location.",
+            clock,
+        )
+        self.assertIn("physical embodiment", clock)
+
     def setUp(self) -> None:
         self._original_logger = orac_module.logger
         self._original_validate_frame = orac_module.validate_frame

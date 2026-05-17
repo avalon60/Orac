@@ -39,6 +39,7 @@ from orac_voice.interruption_policy import InterruptionPolicy
 from orac_voice.interruption_policy import InterruptionState
 from orac_voice.stt_faster_whisper import FasterWhisperSttEngine, SttEngine
 from orac_voice.tts_coalescer import TtsChunkCoalescer
+from orac_voice.tts_kokoro import KokoroTtsEngine
 from orac_voice.tts_piper import PiperTtsEngine
 from orac_voice.tts_worker import TtsWorker
 from orac_voice.wake_openwakeword import OpenWakeWordActivationListener
@@ -84,6 +85,7 @@ __all__ = [
   "InterruptionState",
   "EnterActivationListener",
   "FasterWhisperSttEngine",
+  "KokoroTtsEngine",
   "LocalAudioPlayback",
   "NativeAudioPlayback",
   "NullAcousticEchoCanceller",
