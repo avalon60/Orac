@@ -1,0 +1,195 @@
+[global]
+project_identifier = Orac
+[service]
+# Define which LLM service we are running against (e.g. lmstudio, ollama, openai)
+llm_service_id = ollama
+# Default model (LM Studio) - loaded at startup
+# default_model_name = meta-llama-3.1-8b-instruct
+# Default model (Ollama) - loaded at startup
+# default_model_name = deepseek-r1:14b
+# default_model_name = qwen3.5-64K:latest
+default_model_name = llama3.1-64K
+# LM Studio - port 1234
+# service_url = http://localhost:1234
+# Ollama - port 11434
+service_url = http://localhost:11434 
+# Default token budget for Ollama completions. If Ollama reports
+# done_reason=length, Orac increases the budget and retries.
+default_num_predict = 2048
+# Percentage increase applied to num_predict after a truncated response.
+num_predict_incr_pct = 100
+
+[database]
+connection_name = orac-service
+
+[client]
+llm_timeout = 120
+show_timestamp = false
+
+[settings]
+# Unless overridden by show_reasoning in the API JSON payload, we define whether or 
+# not to strip reasoning narrative here.
+strip_reasoning_tags = false
+
+[context]
+enable_context_history = true
+keep_messages = 200
+prune_every_n_turns = 50
+
+# The enable_prompt_dump is for debug purposes and causes the context window prompt 
+# data to be dumped to logs/_debug
+enable_prompt_dump = false
+
+# compress_old_sessions: summarise old turns (retention policy)
+compress_old_sessions = yes 
+# history_turn_pairs: number of (user+assistant) pairs to keep in context
+history_turn_pairs = 24    
+
+reply_language = English
+system_prompt_policy_file = resources/config/orac_system_prompt.yaml
+
+economy = normal            ; thrifty|normal|lavish
+history_budget_tokens =     ; if set, overrides the per-mode default
+history_budget_reserve = 300
+
+# session_scope; user | user+client
+session_scope = user
+# normalize_client; strip ports/PIDs/UUIDs from client id
+normalize_client = true
+
+allow_external_session_id = false
+
+# If the time between turns exceeds conversation_timeout, we start a new conversation.
+# 0 disables rollover (e.g. set to 60 for 60  mins)
+conversation_timeout = 60
+# When a conversation times out and rolls over to a new one...
+# archive_on_rollover; if true -> archive old conversation
+archive_on_rollover = false 
+# close_on_rollover; if true (and archive_on_rollover=false) -> close old conversation
+close_on_rollover = true     
+
+
+[vector_db]
+# granularity:  e.g., none|chunk_2|chunk_3|sliding_3
+granularity = chunk_3                
+min_tokens = 10
+skip_trivial = yes
+max_size_gb = 250
+
+
+
+[logging]
+# Enable or disable log stamping (adds a timestamp-based ID to logs)
+log_stamping = true
+
+# Whether to include stderr output (true/false)
+inc_stderr = true
+
+# Default log level (TRACE, DEBUG, INFO, WARNING, ERROR, CRITICAL)
+log_level = DEBUG
+
+# Optional custom colours for log levels (if you use them)
+supplementary = light-green
+feature = cyan
+
+[openai_gateway]
+enabled = false
+host = 127.0.0.1
+port = 11435
+require_api_key = true
+api_key_env = ORAC_OPENAI_GATEWAY_API_KEY
+
+[display]
+enabled = true
+auto_start = false
+host = 127.0.0.1
+port = 8766
+state_file = ${ORAC_HOME}/var/tmp/orac_display_state.json
+connect_timeout_seconds = 0.05
+
+
+[voice]
+enabled = true
+mode = local
+activation_mode = openwakeword
+wake_engine = openwakeword
+wake_phrase = Hey Orac
+wake_model =
+wake_threshold = 0.75
+wake_listen_sample_rate = 16000
+wake_chunk_ms = 80
+wake_rearm_seconds = 1.0
+console_timestamps = true
+openwakeword_model_paths =
+openwakeword_model_names = hey_orac
+# Optional local wake-word directories searched for bare tokens such as
+# "hey_orac". Comma-separated list. Defaults also include
+# ${ORAC_HOME}/resources/wakewords, ${ORAC_HOME}/resources/models/openwakeword,
+# and ${HOME}/.Orac/wakewords.
+openwakeword_model_dirs =
+openwakeword_threshold = 0.75
+openwakeword_inference_framework = auto
+openwakeword_refractory_seconds = 2.0
+porcupine_keyword_path =
+porcupine_builtin_keyword = porcupine
+porcupine_sensitivity = 0.6
+porcupine_access_key_resource = picovoice/access_key
+stt_phrase_enabled = false
+# Text-to-speech backend. "piper" is the lightweight local fallback.
+# "kokoro" calls a local OpenAI-compatible Kokoro speech endpoint.
+tts_engine = kokoro
+tts_fallback_engine = piper
+tts_voice = en_GB-alba-medium
+tts_voice_dir = ${ORAC_HOME}/var/voices/piper
+tts_kokoro_base_url = http://127.0.0.1:8880/v1
+tts_kokoro_model = kokoro
+tts_kokoro_voice = bm_george
+tts_kokoro_response_format = wav
+tts_kokoro_timeout_seconds = 60
+tts_kokoro_api_key_env =
+# Playback backend. "shell" keeps the existing paplay/aplay/ffplay path.
+# "native" is experimental and exposes real PCM frames for future AEC work.
+playback_backend = shell
+# Optional frame size for the native playback backend, in milliseconds.
+playback_frame_ms = 10
+# Acoustic echo cancellation backend. "null" is pass-through only.
+aec_backend = null
+aec_stream_delay_ms = 0
+tts_coalesce_enabled = true
+tts_coalesce_max_chars = 320
+tts_coalesce_min_chunks = 4
+# Experimental local barge-in. Leave false for the stable half-duplex
+# default. When true, Orac will listen for either VAD or wake-word
+# interruption while speaking and may self-trigger on ordinary speakers
+# unless echo cancellation or audio isolation is present.
+enable_experimental_barge_in = false
+barge_in_mode = wakeword
+# Set to wakeword for the experimental wake-word interruption path.
+# barge_in_mode = wakeword
+barge_in_min_speech_ms = 250
+barge_in_grace_ms = 500
+barge_in_cooldown_ms = 1000
+barge_in_return_mode = wake_listening
+barge_in_ignore_during_tts_start_ms = 300
+barge_in_post_response_ms = 12000
+barge_in_post_response_cancel_enabled = false
+stt_engine = faster_whisper
+stt_model = small.en
+stt_device = cpu
+stt_compute_type = int8
+stt_record_mode = vad
+stt_record_seconds = 5
+stt_max_record_seconds = 20
+stt_min_record_seconds = 0.8
+stt_sample_rate = 16000
+stt_input_device = default
+vad_engine = energy
+vad_sample_rate = 16000
+vad_chunk_ms = 30
+vad_speech_start_threshold = 0.55
+vad_speech_end_threshold = 0.35
+vad_min_speech_ms = 250
+vad_min_silence_ms = 900
+vad_pre_speech_padding_ms = 900
+vad_initial_timeout_seconds = 10
+session_exit_phrases = exit,quit,stop listening,goodbye
