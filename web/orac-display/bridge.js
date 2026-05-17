@@ -2,9 +2,30 @@
 import net from 'net';
 import { WebSocketServer, WebSocket } from 'ws';
 
-// Temporary compatibility bridge. Python now owns the browser transport.
+// Bridge display pipe events to browser WebSocket clients.
 const TCP_PORT = 8766;
 const WS_PORT = 8767;
+let latestMessage = null;
+
+function envBoolean(name, defaultValue = false) {
+  const value = (process.env[name] || '').trim().toLowerCase();
+  if (!value) {
+    return defaultValue;
+  }
+  return ['1', 'true', 'yes', 'on'].includes(value);
+}
+
+function uiConfigMessage() {
+  return JSON.stringify({
+    v: 1,
+    event: 'ui_config',
+    buttons_visible: envBoolean('ORAC_DISPLAY_BUTTONS_VISIBLE', false),
+    show_transcript_panels: envBoolean(
+      'ORAC_DISPLAY_SHOW_TRANSCRIPT_PANELS',
+      true,
+    ),
+  });
+}
 
 // WebSocket Server
 const wss = new WebSocketServer({ port: WS_PORT });
@@ -12,11 +33,16 @@ console.log(`🚀 WebSocket Bridge: Listening for browser connections on ws://lo
 
 wss.on('connection', (ws) => {
   console.log('💻 Browser connected to bridge');
+  ws.send(uiConfigMessage());
+  if (latestMessage) {
+    ws.send(latestMessage);
+  }
   ws.on('close', () => console.log('❌ Browser disconnected'));
 });
 
 function broadcast(data) {
   const message = data.toString();
+  latestMessage = message;
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(message);

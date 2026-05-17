@@ -32,6 +32,54 @@ LOG_DIR="$PROJECT_ROOT/logs"
 LOG_FILE="$LOG_DIR/orac-display-web.log"
 HOST="${ORAC_DISPLAY_WEB_HOST:-127.0.0.1}"
 PORT="${ORAC_DISPLAY_WEB_PORT:-5173}"
+FULLSCREEN=false
+MAXIMIZED=false
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [options]
+
+Options:
+  --fullscreen   Launch in kiosk mode (full screen, no browser UI).
+  --maximized    Launch the window maximized.
+  --host <host>  Override the Vite/Browser host (default: 127.0.0.1).
+  --port <port>  Override the Vite/Browser port (default: 5173).
+  --help         Show this help message.
+
+Environment Variables:
+  ORAC_DISPLAY_WEB_HOST  Default host.
+  ORAC_DISPLAY_WEB_PORT  Default port.
+EOF
+  exit 0
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --fullscreen)
+      FULLSCREEN=true
+      shift
+      ;;
+    --maximized)
+      MAXIMIZED=true
+      shift
+      ;;
+    --host)
+      HOST="$2"
+      shift 2
+      ;;
+    --port)
+      PORT="$2"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
 APP_URL="http://${HOST}:${PORT}"
 export VITE_ORAC_SHOW_TRANSCRIPT_PANELS="${VITE_ORAC_SHOW_TRANSCRIPT_PANELS:-true}"
 LAUNCHED_BROWSER_PID=""
@@ -55,8 +103,16 @@ open_browser() {
   BROWSER_PROFILE_DIR="$(mktemp -d -t orac-display-web-browser.XXXXXX)"
   BROWSER_CMD_PATTERN="--user-data-dir=$BROWSER_PROFILE_DIR"
 
+  local extra_flags=()
+  if [[ "$FULLSCREEN" == "true" ]]; then
+    extra_flags+=("--kiosk")
+  elif [[ "$MAXIMIZED" == "true" ]]; then
+    extra_flags+=("--start-maximized")
+  fi
+
   if command -v google-chrome >/dev/null 2>&1; then
     setsid google-chrome \
+      "${extra_flags[@]}" \
       --user-data-dir="$BROWSER_PROFILE_DIR" \
       --app="$APP_URL" \
       --new-window \
@@ -72,6 +128,7 @@ open_browser() {
 
   if command -v chromium >/dev/null 2>&1; then
     setsid chromium \
+      "${extra_flags[@]}" \
       --user-data-dir="$BROWSER_PROFILE_DIR" \
       --app="$APP_URL" \
       --new-window \

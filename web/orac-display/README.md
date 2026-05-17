@@ -10,15 +10,10 @@ The app is designed to behave like an appliance UI:
 - offline / disconnected state
 - optional vertical state-button rail
 
-## Transport Options
+## Transport
 
-The display payload schema stays the same in both modes.
 The existing `[display].enabled` setting in `resources/config/orac.ini`
-must remain `true` for either mode to emit live events.
-
-### Preferred Python mode
-
-The Python Orac runtime now owns the browser WebSocket transport.
+must remain `true` to emit live events.
 
 1. Start the Orac voice runtime with browser mode enabled:
 
@@ -39,36 +34,6 @@ bin/orac-display-web.sh
 ```
 
 3. If you want browser-only mode without the auto-open helper, open:
-
-```text
-http://localhost:5173
-```
-
-### Temporary bridge mode
-
-The old Node bridge is still available for compatibility, but it is
-deprecated and should be treated as temporary.
-
-1. Start the bridge:
-
-```bash
-cd web/orac-display
-node bridge.js
-```
-
-2. Start the Orac voice runtime:
-
-```bash
-python bin/voice_ai.py
-```
-
-3. Start the React dev server:
-
-```bash
-bin/orac-display-web.sh
-```
-
-4. Open the app:
 
 ```text
 http://localhost:5173
@@ -150,5 +115,5 @@ voice path:
 ## Notes
 
 - The React UI remains a thin display/control surface.
-- Browser mode is owned by Python and mirrors the existing display payloads.
-- The Node bridge remains for transition only.
+- Browser mode starts the Node bridge and mirrors the existing display
+  payloads to the browser.

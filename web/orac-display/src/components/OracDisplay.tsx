@@ -107,7 +107,7 @@ const SHOW_TRANSCRIPT_PANELS =
 
 const STATE_CONFIGS: Record<OracState, StateConfig> = {
   idle: { color: '#4fc3f7', bloomIntensity: 0.45, rotationSpeed: 0.15, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
-  wake_detected: { color: '#8fdcff', bloomIntensity: 0.62, rotationSpeed: 1.5, distortion: 0.5, pulseRate: 10, scale: 1.25, transmission: 0.28 },
+  wake_detected: { color: '#8fdcff', bloomIntensity: 0.15, rotationSpeed: 1.5, distortion: 0.1, pulseRate: 10, scale: 1.25, transmission: 0.28 },
   listening: { color: '#7af7ff', bloomIntensity: 0.22, rotationSpeed: 0.4, distortion: 0.2, pulseRate: 2, scale: 1.1, transmission: 0.34 },
   transcribing: { color: '#b8f2ff', bloomIntensity: 1.1, rotationSpeed: 1.2, distortion: 0.4, pulseRate: 4, scale: 1.05, transmission: 0.8 },
   thinking: { color: '#8ed3e8', bloomIntensity: 1.45, rotationSpeed: 0.8, distortion: 0.42, pulseRate: 1, scale: 1.15, transmission: 0.7 },
@@ -1022,7 +1022,7 @@ const Scene = ({ state }: { state: OracState }) => {
   const isListening = state === 'listening' || state === 'wake_detected';
   const sparkleCount = isThinking ? 52 : 28;
   const sparkleSize = isThinking ? 1.8 : 1.55;
-  const sparkleSpeed = config.pulseRate * (isIdle ? 0.14 : isThinking ? 0.24 : 0.18);
+  const sparkleSpeed = config.pulseRate * (isIdle ? 0.28 : isThinking ? 0.24 : 0.18);
   const sparkleOpacity = isError ? 0.14 : isIdle ? 0.28 : isSpeaking ? 0.5 : isThinking ? 0.58 : 0.42;
   const pointLightIntensity = isListening ? 0.04 : isSpeaking ? 0.22 : isThinking ? 0.18 : 0.1;
   const spotLightIntensity = isListening ? 0.08 : isSpeaking ? 0.42 : isThinking ? 0.34 : 0.18;

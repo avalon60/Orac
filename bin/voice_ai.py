@@ -100,7 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
   parser.add_argument(
     "--browser-mode",
     action="store_true",
-    help="Enable the built-in browser WebSocket transport for display events.",
+    help="Start the Node browser display bridge for display events.",
   )
   parser.add_argument(
     "--buttons",
@@ -114,12 +114,12 @@ def build_parser() -> argparse.ArgumentParser:
   )
   parser.add_argument(
     "--display-browser-host",
-    help="Host/interface for the browser WebSocket transport.",
+    help=argparse.SUPPRESS,
   )
   parser.add_argument(
     "--display-browser-port",
     type=int,
-    help="TCP port for the browser WebSocket transport.",
+    help=argparse.SUPPRESS,
   )
   parser.add_argument(
     "--check",
