@@ -25,6 +25,34 @@ DEFAULT_OPENWAKEWORD_FRAME_MS = 80
 DEFAULT_OPENWAKEWORD_REFRACTORY_SECONDS = 2.0
 DEFAULT_OPENWAKEWORD_SAMPLE_RATE = 16000
 SUPPORTED_OPENWAKEWORD_FRAMEWORKS = {"auto", "tflite", "onnx"}
+LOCAL_OPENWAKEWORD_MODEL_SUFFIXES = (".onnx", ".tflite")
+OPENWAKEWORD_EXTERNAL_DATA_ERROR_MARKERS = (
+  "external data path validation failed",
+  "external data path does not exist",
+  "external data",
+)
+
+
+class ResolvedOpenWakeWordModel:
+  """Resolved openWakeWord model metadata."""
+
+  def __init__(
+    self,
+    *,
+    token: str,
+    resolution_type: str,
+    resolved_path: Path,
+    search_dirs: list[Path],
+    sidecar_path: Path | None = None,
+    sidecar_present: bool | None = None,
+  ) -> None:
+    """Store model resolution details for diagnostics."""
+    self.token = token
+    self.resolution_type = resolution_type
+    self.resolved_path = resolved_path
+    self.search_dirs = search_dirs
+    self.sidecar_path = sidecar_path
+    self.sidecar_present = sidecar_present
 
 
 class OpenWakeWordModel(Protocol):
@@ -141,6 +169,7 @@ class OpenWakeWordActivationListener:
     *,
     model_paths: list[Path] | None = None,
     model_names: list[str] | None = None,
+    model_dirs: list[Path] | None = None,
     threshold: float = DEFAULT_OPENWAKEWORD_THRESHOLD,
     inference_framework: str = "auto",
     audio_source: OpenWakeWordAudioSource | None = None,
@@ -155,6 +184,7 @@ class OpenWakeWordActivationListener:
     Args:
       model_paths (list[Path] | None): User-supplied model files.
       model_names (list[str] | None): Built-in pre-trained model names.
+      model_dirs (list[Path] | None): Optional local model directories.
       threshold (float): Score threshold for activation.
       inference_framework (str): ``auto``, ``tflite``, or ``onnx``.
       audio_source (OpenWakeWordAudioSource | None): Test audio source.
@@ -168,6 +198,7 @@ class OpenWakeWordActivationListener:
     """
     self.model_paths = model_paths or []
     self.model_names = model_names or []
+    self.model_dirs = model_dirs or []
     self.threshold = float(threshold)
     self.inference_framework = _normalise_inference_framework(
       inference_framework
@@ -188,6 +219,7 @@ class OpenWakeWordActivationListener:
     *,
     model_paths: str = "",
     model_names: str = ",".join(DEFAULT_OPENWAKEWORD_MODEL_NAMES),
+    model_dirs: str = "",
     threshold: float = DEFAULT_OPENWAKEWORD_THRESHOLD,
     inference_framework: str = "auto",
     status_callback: Callable[[str], None] | None = None,
@@ -198,9 +230,11 @@ class OpenWakeWordActivationListener:
     """Build a listener from raw config values."""
     resolved_paths = _parse_model_paths(model_paths)
     parsed_names = _parse_model_names(model_names)
+    parsed_dirs = _parse_model_dirs(model_dirs)
     return cls(
       model_paths=resolved_paths,
       model_names=parsed_names,
+      model_dirs=parsed_dirs,
       threshold=threshold,
       inference_framework=inference_framework,
       status_callback=status_callback,
@@ -293,6 +327,7 @@ class OpenWakeWordActivationListener:
     self._model = create_openwakeword_model(
       model_paths=self.model_paths,
       model_names=self.model_names,
+      model_dirs=self.model_dirs,
       inference_framework=self.inference_framework,
       error_context="wake_engine=openwakeword",
     )
@@ -303,6 +338,7 @@ def create_openwakeword_model(
   *,
   model_paths: list[Path],
   model_names: list[str],
+  model_dirs: list[Path] | None = None,
   inference_framework: str,
   error_context: str = "openWakeWord",
 ) -> OpenWakeWordModel:
@@ -311,7 +347,8 @@ def create_openwakeword_model(
   Args:
     model_paths (list[Path]): User-supplied model files.
     model_names (list[str]): Built-in openWakeWord model names.
-    inference_framework (str): ``tflite`` or ``onnx``.
+    model_dirs (list[Path] | None): Optional local model directories.
+    inference_framework (str): ``auto``, ``tflite``, or ``onnx``.
     error_context (str): Prefix used in dependency and model errors.
 
   Returns:
@@ -337,28 +374,134 @@ def create_openwakeword_model(
       "openWakeWord voice dependencies, then retry."
     ) from exc
 
+  orac_home = resolve_orac_home()
+  configured_model_dirs = list(model_dirs or [])
+  search_dirs = _resolve_openwakeword_model_dirs(
+    configured_model_dirs,
+    orac_home=orac_home,
+  )
+  resolved_models: list[ResolvedOpenWakeWordModel] = []
+  for path in model_paths:
+    sidecar_path = _onnx_sidecar_path(path)
+    if path.suffix.lower() == ".onnx" and not sidecar_path.exists():
+      logger.warning(
+        "openWakeWord explicit ONNX model {} is missing sidecar {}",
+        path,
+        sidecar_path,
+      )
+    resolved_models.append(
+      ResolvedOpenWakeWordModel(
+        token=path.name,
+        resolution_type="explicit path",
+        resolved_path=path,
+        search_dirs=[],
+        sidecar_path=sidecar_path if path.suffix.lower() == ".onnx" else None,
+        sidecar_present=sidecar_path.exists()
+        if path.suffix.lower() == ".onnx"
+        else None,
+      )
+    )
+    _log_openwakeword_resolution(resolved_models[-1])
+
   wakeword_models = [str(path) for path in model_paths]
-  if model_names:
+  local_model_paths: list[Path] = list(model_paths)
+  builtin_model_names: list[str] = []
+
+  for model_name in model_names:
+    if model_name in getattr(openwakeword, "MODELS", {}):
+      builtin_model_names.append(model_name)
+      wakeword_models.append(model_name)
+      resolved_models.append(
+        ResolvedOpenWakeWordModel(
+          token=model_name,
+          resolution_type="built-in",
+          resolved_path=Path(f"built-in:{model_name}"),
+          search_dirs=[],
+        )
+      )
+      _log_openwakeword_resolution(resolved_models[-1])
+      continue
+
+    if any(sep in model_name for sep in ("/", "\\")):
+      explicit_path = expand_config_path(model_name, orac_home=orac_home)
+      if explicit_path.exists():
+        sidecar_path = _onnx_sidecar_path(explicit_path)
+        if explicit_path.suffix.lower() == ".onnx" and not sidecar_path.exists():
+          logger.warning(
+            "openWakeWord explicit ONNX model {} is missing sidecar {}",
+            explicit_path,
+            sidecar_path,
+          )
+        wakeword_models.append(str(explicit_path))
+        local_model_paths.append(explicit_path)
+        resolved_models.append(
+          ResolvedOpenWakeWordModel(
+            token=model_name,
+            resolution_type="explicit path",
+            resolved_path=explicit_path,
+            search_dirs=[],
+            sidecar_path=sidecar_path
+            if explicit_path.suffix.lower() == ".onnx"
+            else None,
+            sidecar_present=sidecar_path.exists()
+            if explicit_path.suffix.lower() == ".onnx"
+            else None,
+          )
+        )
+        _log_openwakeword_resolution(resolved_models[-1])
+        continue
+
+    resolved_model = _resolve_local_openwakeword_model_path(
+      model_name=model_name,
+      search_dirs=search_dirs,
+      orac_home=orac_home,
+      available_builtin_models=sorted(
+        getattr(openwakeword, "MODELS", {}).keys()
+      ),
+      explicit_model_paths=model_paths,
+    )
+    wakeword_models.append(str(resolved_model.resolved_path))
+    local_model_paths.append(resolved_model.resolved_path)
+    resolved_models.append(resolved_model)
+    _log_openwakeword_resolution(resolved_model)
+
+  if builtin_model_names:
     logger.info(
       "Ensuring openWakeWord pre-trained model(s) are available: {}",
-      ", ".join(model_names),
+      ", ".join(builtin_model_names),
     )
     try:
-      download_models(model_names=model_names)
+      download_models(model_names=builtin_model_names)
     except Exception as exc:
       raise VoiceActivationError(
         "Unable to prepare openWakeWord pre-trained model(s). Check "
         "network access or configure openwakeword_model_paths with local "
         f"model files. Details: {exc}"
       ) from exc
-    wakeword_models.extend(model_names)
+
+  wakeword_models = list(dict.fromkeys(wakeword_models))
+  effective_framework = _resolve_openwakeword_inference_framework(
+    inference_framework=inference_framework,
+    local_model_paths=local_model_paths,
+  )
+  logger.info(
+    "openWakeWord inference framework resolved to {}",
+    effective_framework,
+  )
 
   try:
     return Model(
       wakeword_models=wakeword_models,
-      inference_framework=inference_framework,
+      inference_framework=effective_framework,
     )
   except Exception as exc:
+    external_data_error = _format_openwakeword_external_data_error(
+      exc,
+      resolved_models=resolved_models,
+      search_dirs=search_dirs,
+    )
+    if external_data_error is not None:
+      raise VoiceActivationError(external_data_error) from exc
     available = ", ".join(sorted(getattr(openwakeword, "MODELS", {}).keys()))
     suffix = f" Available built-in models: {available}." if available else ""
     raise VoiceActivationError(
@@ -368,20 +511,30 @@ def create_openwakeword_model(
 
 
 def _normalise_inference_framework(value: str) -> str:
-  """Normalise the configured openWakeWord inference framework."""
+  """Validate and normalise the configured openWakeWord framework name."""
   cleaned = value.strip().lower() or "auto"
   if cleaned not in SUPPORTED_OPENWAKEWORD_FRAMEWORKS:
     raise VoiceActivationError(
       "openwakeword_inference_framework must be auto, tflite, or onnx."
     )
-  if cleaned == "auto":
-    return "tflite"
   return cleaned
 
 
 def _parse_model_names(value: str) -> list[str]:
   """Parse comma-separated openWakeWord built-in model names."""
   return [name.strip() for name in value.split(",") if name.strip()]
+
+
+def _parse_model_dirs(value: str) -> list[Path]:
+  """Parse comma-separated openWakeWord model directories."""
+  dirs: list[Path] = []
+  orac_home = resolve_orac_home()
+  for raw_dir in value.split(","):
+    cleaned = raw_dir.strip()
+    if not cleaned:
+      continue
+    dirs.append(expand_config_path(cleaned, orac_home=orac_home))
+  return dirs
 
 
 def _parse_model_paths(value: str) -> list[Path]:
@@ -399,6 +552,224 @@ def _parse_model_paths(value: str) -> list[Path]:
       )
     paths.append(path)
   return paths
+
+
+def _resolve_openwakeword_model_dirs(
+  configured_model_dirs: list[Path],
+  *,
+  orac_home: Path,
+) -> list[Path]:
+  """Return the ordered set of directories to search for local models."""
+  resolved_dirs: list[Path] = []
+
+  def add_directory(directory: Path) -> None:
+    resolved = directory.resolve()
+    if resolved not in resolved_dirs:
+      resolved_dirs.append(resolved)
+
+  for directory in configured_model_dirs:
+    add_directory(directory)
+
+  # Orac-controlled directories take precedence over any package resources.
+  add_directory(orac_home / "resources" / "models" / "openwakeword")
+  add_directory(orac_home / "resources" / "wakewords")
+  add_directory(Path.home() / ".Orac" / "wakewords")
+
+  return resolved_dirs
+
+
+def _resolve_local_openwakeword_model_path(
+  *,
+  model_name: str,
+  search_dirs: list[Path],
+  orac_home: Path,
+  available_builtin_models: list[str],
+  explicit_model_paths: list[Path],
+) -> ResolvedOpenWakeWordModel:
+  """Resolve a bare model token to a local ONNX or TFLite file."""
+  basename = Path(model_name.strip()).name
+  if not basename:
+    raise VoiceActivationError(
+      "openWakeWord model names must not be empty."
+    )
+
+  for suffix in LOCAL_OPENWAKEWORD_MODEL_SUFFIXES:
+    if basename.lower().endswith(suffix):
+      basename = basename[: -len(suffix)]
+      break
+
+  suffix_candidates = list(LOCAL_OPENWAKEWORD_MODEL_SUFFIXES)
+  candidates: list[Path] = []
+  for search_dir in search_dirs:
+    for suffix in suffix_candidates:
+      candidate = (search_dir / f"{basename}{suffix}").resolve()
+      if candidate.exists():
+        candidates.append(candidate)
+
+  resolved_candidates: list[Path] = []
+  for candidate in candidates:
+    if candidate not in resolved_candidates:
+      resolved_candidates.append(candidate)
+
+  if len(resolved_candidates) == 1:
+    resolved_path = resolved_candidates[0]
+    sidecar_path = _onnx_sidecar_path(resolved_path)
+    sidecar_present = (
+      sidecar_path.exists() if resolved_path.suffix.lower() == ".onnx" else None
+    )
+    if resolved_path.suffix.lower() == ".onnx" and not sidecar_present:
+      logger.warning(
+        "openWakeWord local ONNX model {} is missing sidecar {}. "
+        "Copy both files into the same directory or use a self-contained "
+        "model.",
+        resolved_path,
+        sidecar_path,
+      )
+    return ResolvedOpenWakeWordModel(
+      token=basename,
+      resolution_type="local basename",
+      resolved_path=resolved_path,
+      search_dirs=search_dirs,
+      sidecar_path=sidecar_path
+      if resolved_path.suffix.lower() == ".onnx"
+      else None,
+      sidecar_present=sidecar_present,
+    )
+
+  explicit_paths_text = (
+    ", ".join(str(path) for path in explicit_model_paths)
+    if explicit_model_paths
+    else "none"
+  )
+  searched_dirs_text = ", ".join(str(path) for path in search_dirs)
+  suffixes_text = ", ".join(suffix_candidates)
+  builtins_text = ", ".join(available_builtin_models)
+
+  if not resolved_candidates:
+    raise VoiceActivationError(
+      "Unable to resolve openWakeWord model token "
+      f"'{basename}'. Available built-in models: {builtins_text or 'none'}. "
+      f"Explicit model paths configured: {explicit_paths_text}. "
+      f"Local directories searched: {searched_dirs_text or 'none'}. "
+      f"Suffixes tried: {suffixes_text}. "
+      "Example fix: openwakeword_model_paths = /full/path/to/hey_orac.onnx"
+    )
+
+  raise VoiceActivationError(
+    "Unable to resolve openWakeWord model token "
+    f"'{basename}' because multiple local files matched: "
+    f"{', '.join(str(path) for path in resolved_candidates)}. "
+    "Set openwakeword_model_paths to the exact file you want."
+  )
+
+
+def _onnx_sidecar_path(path: Path) -> Path:
+  """Return the sidecar path used by ONNX external-data models."""
+  return Path(f"{path}.data")
+
+
+def _format_openwakeword_external_data_error(
+  exc: Exception,
+  *,
+  resolved_models: list[ResolvedOpenWakeWordModel],
+  search_dirs: list[Path],
+) -> str | None:
+  """Build a clearer error message for ONNX external-data failures."""
+  message = str(exc).lower()
+  if not any(marker in message for marker in OPENWAKEWORD_EXTERNAL_DATA_ERROR_MARKERS):
+    return None
+
+  for resolved_model in resolved_models:
+    if resolved_model.resolved_path.suffix.lower() != ".onnx":
+      continue
+    sidecar_path = resolved_model.sidecar_path or _onnx_sidecar_path(
+      resolved_model.resolved_path
+    )
+    if resolved_model.sidecar_present:
+      continue
+
+    searched_dirs = ", ".join(str(path) for path in search_dirs) or "none"
+    return (
+      "openWakeWord resolved an external-data ONNX model but the matching "
+      f"sidecar file was not found: {sidecar_path}. Copy both "
+      f"{resolved_model.resolved_path.name} and "
+      f"{sidecar_path.name} into the same local model directory, or use a "
+      "self-contained .onnx or .tflite model. "
+      f"Requested token: {resolved_model.token}. "
+      f"Resolution type: {resolved_model.resolution_type}. "
+      f"Resolved path: {resolved_model.resolved_path}. "
+      f"Directories searched: {searched_dirs}."
+    )
+
+  return (
+    "openWakeWord initialisation failed with an ONNX external-data error. "
+    "If the selected model uses external tensors, copy both the .onnx file "
+    "and the matching .onnx.data sidecar into the same local directory, or "
+    "use a self-contained .onnx or .tflite model."
+  )
+
+
+def _log_openwakeword_resolution(resolved_model: ResolvedOpenWakeWordModel) -> None:
+  """Log a compact, uniform openWakeWord resolution summary."""
+  if resolved_model.resolution_type == "built-in":
+    sidecar_text = "n/a"
+  elif resolved_model.sidecar_present is True:
+    sidecar_text = "found"
+  elif resolved_model.sidecar_present is False:
+    sidecar_text = "missing"
+  else:
+    sidecar_text = "n/a"
+
+  logger.info(
+    "openWakeWord model resolution: token='{}' type={} path={} sidecar={}",
+    resolved_model.token,
+    resolved_model.resolution_type,
+    resolved_model.resolved_path,
+    sidecar_text,
+  )
+
+
+def _resolve_openwakeword_inference_framework(
+  *,
+  inference_framework: str,
+  local_model_paths: list[Path],
+) -> str:
+  """Resolve the concrete openWakeWord runtime framework for the models."""
+  cleaned = _normalise_inference_framework(inference_framework)
+  if not local_model_paths:
+    return "tflite" if cleaned == "auto" else cleaned
+
+  suffixes = {path.suffix.lower() for path in local_model_paths}
+  if len(suffixes) != 1:
+    raise VoiceActivationError(
+      "Resolved openWakeWord model files use mixed formats. "
+      f"Framework inference requires a single file type, but found: "
+      f"{', '.join(sorted(suffixes))}. Set openwakeword_model_paths or "
+      "openwakeword_model_dirs to a single .onnx or .tflite family."
+    )
+
+  suffix = next(iter(suffixes))
+  if suffix == ".onnx":
+    resolved_framework = "onnx"
+  elif suffix == ".tflite":
+    resolved_framework = "tflite"
+  else:
+    raise VoiceActivationError(
+      "Resolved openWakeWord model files must use .onnx or .tflite."
+    )
+
+  if cleaned not in {"auto", resolved_framework}:
+    raise VoiceActivationError(
+      "openwakeword_inference_framework={configured} does not match the "
+      "resolved local model format {resolved}. Set "
+      "openwakeword_inference_framework={resolved} or use an explicit path "
+      "with a matching file type.".format(
+        configured=cleaned,
+        resolved=resolved_framework,
+      )
+    )
+
+  return resolved_framework
 
 
 def _best_detection(

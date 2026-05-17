@@ -221,10 +221,22 @@ def system_clock_line(prefs: dict) -> str:
     ]
     if weather_location:
         lines.append(f"Assume your current location is {weather_location}.")
+        lines.append(
+            "If asked where you are, where you are located, or similar, answer "
+            "with this configured operational/home location. Do not answer that "
+            "you lack a physical location unless the user explicitly asks about "
+            "physical embodiment."
+        )
     else:
         lines.append(
             f"No explicit weather location is set. Assume your current location is "
             f"{_timezone_location_label(tz_name)} based on the session timezone."
+        )
+        lines.append(
+            "If asked where you are, where you are located, or similar, answer "
+            "with this inferred operational/home location. Do not answer that "
+            "you lack a physical location unless the user explicitly asks about "
+            "physical embodiment."
         )
     if "date_format" in (prefs or {}):
         lines.append(f"Use date format {prefs['date_format']}.")
@@ -646,7 +658,7 @@ class Orac:
                 return
             self._tts_coalescer = self._create_tts_coalescer()
             self._tts_worker.start()
-            logger.log_info(f"{Icons.tick} Local Piper voice output ENABLED")
+            logger.log_info(f"{Icons.tick} Local voice output ENABLED")
         except Exception as exc:
             self._tts_worker = None
             self._tts_coalescer = None

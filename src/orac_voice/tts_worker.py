@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 import queue
 import re
 import threading
@@ -26,6 +27,7 @@ from orac_voice.audio_playback import LocalAudioPlayback
 from orac_voice.audio_playback import NativeAudioPlayback
 from orac_voice.audio_playback import PlaybackFrameHandler
 from orac_voice.playback_reference_resampler import PlaybackReferenceResampler
+from orac_voice.tts_kokoro import KokoroTtsEngine
 from orac_voice.tts_piper import TtsEngine
 from orac_voice.tts_piper import PiperTtsEngine
 from orac_voice.tts_piper import resolve_orac_home
@@ -56,6 +58,65 @@ class _TurnLifecycle:
   terminal: int = 0
   input_complete: bool = False
   complete_emitted: bool = False
+
+
+class FallbackTtsEngine:
+  """TTS engine wrapper that falls back when the primary engine fails."""
+
+  def __init__(
+    self,
+    *,
+    primary: TtsEngine,
+    fallback: TtsEngine,
+    primary_name: str,
+    fallback_name: str,
+  ) -> None:
+    """Initialise fallback synthesis.
+
+    Args:
+      primary (TtsEngine): Preferred synthesis backend.
+      fallback (TtsEngine): Backup synthesis backend.
+      primary_name (str): Human-readable primary backend name.
+      fallback_name (str): Human-readable fallback backend name.
+    """
+    self.primary = primary
+    self.fallback = fallback
+    self.primary_name = primary_name
+    self.fallback_name = fallback_name
+
+  def synthesise_to_wav(
+    self,
+    text: str,
+    *,
+    session_id: str,
+    turn_id: str,
+  ) -> Path:
+    """Synthesise with the primary engine, then fallback on failure."""
+    try:
+      return self.primary.synthesise_to_wav(
+        text,
+        session_id=session_id,
+        turn_id=turn_id,
+      )
+    except Exception as exc:
+      logger.warning(
+        "TTS backend '{}' failed; falling back to '{}': {}",
+        self.primary_name,
+        self.fallback_name,
+        exc,
+      )
+      return self.fallback.synthesise_to_wav(
+        text,
+        session_id=session_id,
+        turn_id=turn_id,
+      )
+
+  def cancel(self) -> None:
+    """Cancel active synthesis in both engines where supported."""
+    for engine in (self.primary, self.fallback):
+      cancel = getattr(engine, "cancel", None)
+      if callable(cancel):
+        cancel()
 
 
 class _PlaybackReferenceBridge:
@@ -337,6 +398,92 @@ def _has_speakable_content(text: str) -> bool:
   return any(char.isalnum() for char in text)
 
 
+def _create_piper_engine(
+  *,
+  config_path,
+  voice_name: str | None,
+  voice_dir: str | None,
+) -> PiperTtsEngine:
+  """Create the configured Piper engine."""
+  return PiperTtsEngine.from_config(
+    config_file_path=config_path,
+    voice_name=voice_name,
+    voice_dir=voice_dir,
+  )
+
+
+def _create_kokoro_engine(
+  *,
+  config_path,
+  voice_name: str | None,
+) -> KokoroTtsEngine:
+  """Create the configured Kokoro engine."""
+  return KokoroTtsEngine.from_config(
+    config_file_path=config_path,
+    voice_name=voice_name,
+  )
+
+
+def _create_tts_engine_from_config(
+  *,
+  engine: str,
+  config_mgr: ConfigManager,
+  config_path,
+  voice_name: str | None,
+  voice_dir: str | None,
+) -> TtsEngine:
+  """Create a TTS engine from Orac voice configuration."""
+  if engine == "piper":
+    logger.info("Local TTS backend selected: piper")
+    return _create_piper_engine(
+      config_path=config_path,
+      voice_name=voice_name,
+      voice_dir=voice_dir,
+    )
+
+  if engine == "kokoro":
+    primary = _create_kokoro_engine(
+      config_path=config_path,
+      voice_name=voice_name,
+    )
+    fallback_name = config_mgr.config_value(
+      "voice",
+      "tts_fallback_engine",
+      default="piper",
+    ).strip().lower()
+    if fallback_name in {"", "none", "disabled"}:
+      logger.info("Local TTS backend selected: kokoro")
+      return primary
+    if fallback_name != "piper":
+      raise RuntimeError(
+        f"Unsupported voice.tts_fallback_engine: {fallback_name}"
+      )
+
+    try:
+      fallback = _create_piper_engine(
+        config_path=config_path,
+        voice_name=None,
+        voice_dir=voice_dir,
+      )
+    except Exception as exc:
+      logger.warning(
+        "Kokoro selected but Piper fallback could not be initialised: {}",
+        exc,
+      )
+      logger.info("Local TTS backend selected: kokoro")
+      return primary
+
+    logger.info("Local TTS backend selected: kokoro with piper fallback")
+    return FallbackTtsEngine(
+      primary=primary,
+      fallback=fallback,
+      primary_name="kokoro",
+      fallback_name="piper",
+    )
+
+  raise RuntimeError(f"Unsupported voice TTS engine: {engine}")
+
+
 def create_local_tts_worker_from_config(
   *,
   event_handler: EventHandler | None = None,
@@ -375,8 +522,6 @@ def create_local_tts_worker_from_config(
     "tts_engine",
     default="piper",
   ).strip().lower()
-  if engine != "piper":
-    raise RuntimeError(f"Unsupported voice TTS engine: {engine}")
 
   playback_backend = config_mgr.config_value(
     "voice",
@@ -392,8 +537,10 @@ def create_local_tts_worker_from_config(
   aec_adapter = create_aec_adapter_from_config(config_mgr)
 
   worker = TtsWorker(
-    tts_engine=PiperTtsEngine.from_config(
-      config_file_path=config_path,
+    tts_engine=_create_tts_engine_from_config(
+      engine=engine,
+      config_mgr=config_mgr,
+      config_path=config_path,
       voice_name=voice_name,
       voice_dir=voice_dir,
     ),

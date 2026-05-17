@@ -16,6 +16,7 @@ realpath() { [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"; }
 SCRIPT_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
 PROJECT_DIR=$(dirname "$SCRIPT_DIR")
 CONFIG_DIR=${PROJECT_DIR}/resources/config
+CONFIG_FILE="${CONFIG_DIR}/orac.ini"
 CTL_DIR=${PROJECT_DIR}/src/controller
 DEFAULTS_FILE="${CONFIG_DIR}/init-defaults.ini"
 ORA_DOCKER_DIR=${PROJECT_DIR}/resources/docker/oracle
@@ -29,6 +30,8 @@ ORAC_CACHE_DIR="${PROJECT_DIR}/var/cache"
 BUILD_LOG_FILE="${PROJECT_DIR}/build.log"
 DOCKER_LOG_FILE="${PROJECT_DIR}/docker.log"
 ORAC_DISPLAY_SH="${SCRIPT_DIR}/orac-display.sh"
+KOKORO_CPU_IMAGE="ghcr.io/remsky/kokoro-fastapi-cpu:latest"
+KOKORO_GPU_IMAGE="ghcr.io/remsky/kokoro-fastapi-gpu:latest"
 
 # AI server control script (owns PID, /run/orac, logs)
 ORAC_SH="${SCRIPT_DIR}/orac.sh"
@@ -73,6 +76,234 @@ ensure_env() {
   export PORT_SQLNET="${PORT_SQLNET}"
   export PORT_HTTP="${PORT_HTTP}"
   export PORT_EM="${PORT_EM}"
+}
+
+read_ini_value() {
+  local section="$1"
+  local key="$2"
+  local default_value="$3"
+  local value=""
+
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    printf '%s\n' "$default_value"
+    return 0
+  fi
+
+  value="$(
+    awk -v target_section="$section" -v target_key="$key" '
+      function trim(value) {
+        sub(/^[[:space:]]+/, "", value)
+        sub(/[[:space:]]+$/, "", value)
+        return value
+      }
+      /^[[:space:]]*[#;]/ { next }
+      /^[[:space:]]*$/ { next }
+      /^\[[^]]+\]/ {
+        current = $0
+        gsub(/^[[:space:]]*\[/, "", current)
+        gsub(/\][[:space:]]*$/, "", current)
+        current = trim(current)
+        next
+      }
+      current == target_section {
+        split($0, parts, "=")
+        candidate = trim(parts[1])
+        if (candidate == target_key) {
+          sub(/^[^=]*=/, "", $0)
+          print trim($0)
+          exit
+        }
+      }
+    ' "$CONFIG_FILE"
+  )"
+
+  if [[ -z "$value" ]]; then
+    printf '%s\n' "$default_value"
+  else
+    printf '%s\n' "$value"
+  fi
+}
+
+is_truthy() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|y|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+kokoro_readiness_url() {
+  local host="$1"
+  local port="$2"
+
+  printf 'http://%s:%s/v1/audio/voices\n' "$host" "$port"
+}
+
+kokoro_readiness_url_from_base_url() {
+  local base_url="$1"
+
+  base_url="${base_url%/}"
+  if [[ -z "$base_url" ]]; then
+    printf '%s\n' "http://127.0.0.1:8880/v1/audio/voices"
+    return 0
+  fi
+  if [[ "$base_url" == */v1 ]]; then
+    printf '%s/audio/voices\n' "$base_url"
+  else
+    printf '%s/v1/audio/voices\n' "$base_url"
+  fi
+}
+
+kokoro_image_for_runtime() {
+  local runtime="$1"
+  local override_image="$2"
+
+  if [[ -n "$override_image" ]]; then
+    printf '%s\n' "$override_image"
+    return 0
+  fi
+
+  case "$runtime" in
+    docker-cpu) printf '%s\n' "$KOKORO_CPU_IMAGE" ;;
+    docker-gpu) printf '%s\n' "$KOKORO_GPU_IMAGE" ;;
+    *) return 1 ;;
+  esac
+}
+
+kokoro_endpoint_ready() {
+  local url="$1"
+
+  command -v curl >/dev/null 2>&1 || return 1
+  curl -fsS --max-time 2 "$url" >/dev/null 2>&1
+}
+
+wait_for_kokoro_ready() {
+  local url="$1"
+  local timeout_seconds="$2"
+  local deadline
+
+  deadline=$((SECONDS + timeout_seconds))
+  while (( SECONDS < deadline )); do
+    if kokoro_endpoint_ready "$url"; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  kokoro_endpoint_ready "$url"
+}
+
+ensure_kokoro_sidecar() {
+  local tts_engine
+  local autostart
+  local runtime
+  local container_name
+  local image
+  local image_override
+  local host
+  local port
+  local base_url
+  local readiness_url
+  local wait_timeout_seconds=45
+  local container_state=""
+
+  tts_engine="$(read_ini_value "voice" "tts_engine" "piper" | tr '[:upper:]' '[:lower:]')"
+  autostart="$(read_ini_value "voice" "tts_kokoro_autostart" "false")"
+  runtime="$(read_ini_value "voice" "tts_kokoro_runtime" "docker-cpu" | tr '[:upper:]' '[:lower:]')"
+
+  if [[ "$tts_engine" != "kokoro" ]] || ! is_truthy "$autostart"; then
+    echo "ℹ️  Kokoro autostart disabled (tts_engine=${tts_engine}, tts_kokoro_autostart=${autostart})."
+    return 0
+  fi
+
+  container_name="$(read_ini_value "voice" "tts_kokoro_container_name" "orac-kokoro")"
+  image_override="$(read_ini_value "voice" "tts_kokoro_image" "")"
+  host="$(read_ini_value "voice" "tts_kokoro_host" "127.0.0.1")"
+  port="$(read_ini_value "voice" "tts_kokoro_port" "8880")"
+  base_url="$(read_ini_value "voice" "tts_kokoro_base_url" "http://127.0.0.1:8880/v1")"
+  readiness_url="$(kokoro_readiness_url "$host" "$port")"
+
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "⚠️  curl is unavailable; cannot check Kokoro readiness. Piper fallback expected."
+    return 0
+  fi
+
+  if [[ "$runtime" == "external" ]]; then
+    readiness_url="$(kokoro_readiness_url_from_base_url "$base_url")"
+    if kokoro_endpoint_ready "$readiness_url"; then
+      echo "✅ Kokoro external runtime already healthy at ${readiness_url}."
+    else
+      echo "⚠️  Kokoro runtime is external but ${readiness_url} is not ready."
+      echo "⚠️  Orac will not manage an external Kokoro service. Piper fallback expected."
+    fi
+    return 0
+  fi
+
+  if [[ "$runtime" != "docker-cpu" && "$runtime" != "docker-gpu" ]]; then
+    echo "⚠️  Unsupported tts_kokoro_runtime='${runtime}'. Supported values: docker-cpu, docker-gpu, external."
+    echo "⚠️  Kokoro will not be autostarted. Piper fallback expected."
+    return 0
+  fi
+
+  if ! image="$(kokoro_image_for_runtime "$runtime" "$image_override")"; then
+    echo "⚠️  Unable to resolve Kokoro image for runtime '${runtime}'. Piper fallback expected."
+    return 0
+  fi
+
+  if kokoro_endpoint_ready "$readiness_url"; then
+    echo "✅ Kokoro already healthy at ${readiness_url} (${runtime})."
+    return 0
+  fi
+
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "⚠️  Docker is unavailable; cannot autostart Kokoro. Piper fallback expected."
+    return 0
+  fi
+
+  if docker ps -a --format '{{.Names}}' | grep -Fxq "$container_name"; then
+    container_state="$(docker inspect -f '{{.State.Status}}' "$container_name" 2>/dev/null || true)"
+    if [[ "$container_state" == "running" ]]; then
+      echo "⚠️  Kokoro container '${container_name}' is running but ${readiness_url} is not ready."
+      echo "⚠️  Kokoro failed to become ready. Piper fallback expected."
+      return 0
+    fi
+
+    echo "▶️  Starting Kokoro container '${container_name}'..."
+    if docker start "$container_name" >/dev/null; then
+      echo "✅ Kokoro container started."
+    else
+      echo "⚠️  Failed to start Kokoro container '${container_name}'. Piper fallback expected."
+      return 0
+    fi
+  else
+    echo "▶️  Creating Kokoro container '${container_name}' from ${image} (${runtime})..."
+    if [[ "$runtime" == "docker-gpu" ]]; then
+      if docker run -d \
+        --gpus all \
+        --name "$container_name" \
+        -p "${host}:${port}:8880" \
+        "$image" >/dev/null; then
+        echo "✅ Kokoro container created."
+      else
+        echo "⚠️  Failed to create Kokoro GPU container '${container_name}'. Piper fallback expected."
+        return 0
+      fi
+    elif docker run -d \
+      --name "$container_name" \
+      -p "${host}:${port}:8880" \
+      "$image" >/dev/null; then
+      echo "✅ Kokoro container created."
+    else
+      echo "⚠️  Failed to create Kokoro container '${container_name}'. Piper fallback expected."
+      return 0
+    fi
+  fi
+
+  if wait_for_kokoro_ready "$readiness_url" "$wait_timeout_seconds"; then
+    echo "✅ Kokoro ready at ${readiness_url}."
+  else
+    echo "⚠️  Kokoro failed to become ready at ${readiness_url} within ${wait_timeout_seconds}s."
+    echo "⚠️  Piper fallback expected."
+  fi
 }
 
 declare -a CLEANUP_TARGETS=()
@@ -233,6 +464,7 @@ start_orac_stack() {
     exit 1
   fi
   $SCRIPT_DIR/dbwait.sh
+  ensure_kokoro_sidecar
   echo "🤖 Starting Orac AI engine..."
   "$ORAC_SH" start
 }
