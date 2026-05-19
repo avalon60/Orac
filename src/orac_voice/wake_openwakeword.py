@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import os
 from pathlib import Path
 import time
 from typing import Callable, Protocol
@@ -24,6 +25,8 @@ DEFAULT_OPENWAKEWORD_THRESHOLD = 0.75
 DEFAULT_OPENWAKEWORD_FRAME_MS = 80
 DEFAULT_OPENWAKEWORD_REFRACTORY_SECONDS = 2.0
 DEFAULT_OPENWAKEWORD_SAMPLE_RATE = 16000
+OPENWAKEWORD_SCORE_LOG_INTERVAL_SECONDS = 5.0
+OPENWAKEWORD_SCORE_LOG_MINIMUM = 0.2
 SUPPORTED_OPENWAKEWORD_FRAMEWORKS = {"auto", "tflite", "onnx"}
 LOCAL_OPENWAKEWORD_MODEL_SUFFIXES = (".onnx", ".tflite")
 OPENWAKEWORD_EXTERNAL_DATA_ERROR_MARKERS = (
@@ -118,6 +121,13 @@ class SoundDeviceOpenWakeWordAudioSource:
       ) from exc
 
     try:
+      logger.info(
+        "Opening openWakeWord microphone stream at {} Hz "
+        "input_device={} pulse_source={}",
+        self.sample_rate,
+        self.input_device if self.input_device is not None else "default",
+        os.environ.get("PULSE_SOURCE") or "default",
+      )
       self._stream = sd.InputStream(
         samplerate=self.sample_rate,
         blocksize=self.frame_samples,
@@ -260,12 +270,35 @@ class OpenWakeWordActivationListener:
     try:
       self.audio_source.start()
       started_at = time.monotonic()
+      next_score_log_at = started_at + OPENWAKEWORD_SCORE_LOG_INTERVAL_SECONDS
+      best_recent_model = ""
+      best_recent_score = 0.0
       while not self._closed:
         frame = self.audio_source.read_frame()
         predictions = model.predict(frame)
+        predicted_model, predicted_score = _best_prediction(predictions)
+        if (
+          predicted_model is not None
+          and predicted_score is not None
+          and predicted_score > best_recent_score
+        ):
+          best_recent_model = predicted_model
+          best_recent_score = predicted_score
+        now = time.monotonic()
+        if now >= next_score_log_at:
+          if best_recent_score >= OPENWAKEWORD_SCORE_LOG_MINIMUM:
+            logger.debug(
+              "openWakeWord best recent score {} {:.3f} threshold {:.3f}",
+              best_recent_model,
+              best_recent_score,
+              self.threshold,
+            )
+          next_score_log_at = now + OPENWAKEWORD_SCORE_LOG_INTERVAL_SECONDS
+          best_recent_model = ""
+          best_recent_score = 0.0
         fired_model, score = _best_detection(predictions, self.threshold)
         if fired_model is not None:
-          elapsed = time.monotonic() - started_at
+          elapsed = now - started_at
           if elapsed < self.refractory_seconds:
             logger.debug(
               "Ignoring openWakeWord detection during {:.2f}s re-arm guard: "
@@ -570,7 +603,12 @@ def _resolve_openwakeword_model_dirs(
   for directory in configured_model_dirs:
     add_directory(directory)
 
-  # Orac-controlled directories take precedence over any package resources.
+  # Runtime model directories take precedence over packaged resources.
+  add_directory(orac_home / "var" / "models" / "wakeword" / "openwakeword")
+  add_directory(orac_home / "resources" / "models" / "wakeword" / "openwakeword")
+
+  # Legacy paths retained for existing local installations.
+  add_directory(orac_home / "var" / "models" / "wake")
   add_directory(orac_home / "resources" / "models" / "openwakeword")
   add_directory(orac_home / "resources" / "wakewords")
   add_directory(Path.home() / ".Orac" / "wakewords")
@@ -599,17 +637,18 @@ def _resolve_local_openwakeword_model_path(
       break
 
   suffix_candidates = list(LOCAL_OPENWAKEWORD_MODEL_SUFFIXES)
-  candidates: list[Path] = []
+  resolved_candidates: list[Path] = []
   for search_dir in search_dirs:
+    directory_candidates: list[Path] = []
     for suffix in suffix_candidates:
       candidate = (search_dir / f"{basename}{suffix}").resolve()
       if candidate.exists():
-        candidates.append(candidate)
-
-  resolved_candidates: list[Path] = []
-  for candidate in candidates:
-    if candidate not in resolved_candidates:
-      resolved_candidates.append(candidate)
+        directory_candidates.append(candidate)
+    for candidate in directory_candidates:
+      if candidate not in resolved_candidates:
+        resolved_candidates.append(candidate)
+    if resolved_candidates:
+      break
 
   if len(resolved_candidates) == 1:
     resolved_path = resolved_candidates[0]
@@ -777,13 +816,20 @@ def _best_detection(
   threshold: float,
 ) -> tuple[str | None, float | None]:
   """Return the highest scoring wake word above threshold."""
+  model_name, score = _best_prediction(predictions)
+  if score is not None and score >= threshold:
+    return model_name, score
+  return None, None
+
+
+def _best_prediction(
+  predictions: dict[str, float],
+) -> tuple[str | None, float | None]:
+  """Return the highest scoring wake word prediction."""
   if not predictions:
     return None, None
   model_name, score = max(predictions.items(), key=lambda item: float(item[1]))
-  score = float(score)
-  if score >= threshold:
-    return model_name, score
-  return None, None
+  return model_name, float(score)
 
 
 def _default_status_callback(message: str) -> None:

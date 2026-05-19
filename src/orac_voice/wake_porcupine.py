@@ -142,7 +142,7 @@ class PorcupineActivationListener:
         "Porcupine wake-word mode requires porcupine_keyword_path or "
         "porcupine_builtin_keyword. For 'Hey Orac' or 'Orac', create a "
         "custom .ppn in Picovoice Console and store it under "
-        "${ORAC_HOME}/var/models/wake."
+        "${ORAC_HOME}/var/models/wakeword/porcupine."
       )
 
     try:

@@ -1055,6 +1055,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         ]
 
         self.assertEqual(response["meta"]["model"], "preferred-model")
+        self.assertEqual(response["meta"]["personality_code"], "DEFAULT")
         self.assertEqual(context_manager.closed_sessions, ["clive"])
         self.assertEqual(len(user_turn_sessions), 1)
         self.assertTrue(user_turn_sessions[0].startswith("clive#"))

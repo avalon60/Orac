@@ -24,6 +24,9 @@ from lib.fsutils import project_home
 
 VOICE_SECTION = "voice"
 DEFAULT_SYNTHESIS_TIMEOUT_SECONDS = 120
+DEFAULT_PIPER_VOICE_DIR = "var/models/piper"
+PACKAGED_PIPER_VOICE_DIR = "resources/models/piper"
+LEGACY_PIPER_VOICE_DIR = "var/voices/piper"
 SAFE_VOICE_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
@@ -148,8 +151,18 @@ class PiperTtsEngine:
     if voice_dir is None:
       raw_voice_dir = self.config_mgr.config_value(VOICE_SECTION, "tts_voice_dir")
       self.voice_dir = expand_config_path(raw_voice_dir, orac_home=self.orac_home)
+      default_voice_dir = self.orac_home / DEFAULT_PIPER_VOICE_DIR
+      self._legacy_voice_dirs = (
+        [
+          self.orac_home / PACKAGED_PIPER_VOICE_DIR,
+          self.orac_home / LEGACY_PIPER_VOICE_DIR,
+        ]
+        if self.voice_dir == default_voice_dir
+        else []
+      )
     else:
       self.voice_dir = expand_config_path(str(voice_dir), orac_home=self.orac_home)
+      self._legacy_voice_dirs = []
 
     if output_dir is None:
       self.output_dir = self.orac_home / "var" / "tmp" / "orac_voice"
@@ -236,19 +249,41 @@ class PiperTtsEngine:
     Raises:
       RuntimeError: If the voice model is not available.
     """
-    if not self.voice_dir.exists():
-      raise RuntimeError(f"Piper voice directory does not exist: {self.voice_dir}")
+    searched_dirs: list[Path] = []
+    candidate_dirs = [self.voice_dir, *self._legacy_voice_dirs]
 
-    direct = self.voice_dir / f"{self.voice_name}.onnx"
-    if direct.exists():
-      return direct
+    for voice_dir in candidate_dirs:
+      if voice_dir in searched_dirs:
+        continue
+      searched_dirs.append(voice_dir)
 
-    matches = list(self.voice_dir.rglob(f"{self.voice_name}.onnx"))
-    if matches:
-      return matches[0]
+      if not voice_dir.exists():
+        continue
+
+      direct = voice_dir / f"{self.voice_name}.onnx"
+      if direct.exists():
+        if voice_dir != self.voice_dir:
+          logger.warning(
+            "Piper voice {} resolved from fallback directory {}.",
+            self.voice_name,
+            voice_dir,
+          )
+        return direct
+
+      matches = list(voice_dir.rglob(f"{self.voice_name}.onnx"))
+      if matches:
+        if voice_dir != self.voice_dir:
+          logger.warning(
+            "Piper voice {} resolved from fallback directory {}.",
+            self.voice_name,
+            voice_dir,
+          )
+        return matches[0]
+
+    searched_text = ", ".join(str(path) for path in searched_dirs)
 
     raise RuntimeError(
-      f"Piper voice '{self.voice_name}' was not found under {self.voice_dir}"
+      f"Piper voice '{self.voice_name}' was not found under {searched_text}"
     )
 
   def _output_path(self, *, session_id: str, turn_id: str) -> Path:

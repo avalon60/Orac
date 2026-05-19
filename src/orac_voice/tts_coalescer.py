@@ -112,6 +112,28 @@ class TtsChunkCoalescer:
       return None
     return pending.text or None
 
+  def flush_session(self, *, session_id: str) -> list[tuple[str, str]]:
+    """Flush pending speech for every turn in one session.
+
+    Args:
+      session_id (str): Voice session identifier.
+
+    Returns:
+      list[tuple[str, str]]: ``(turn_id, text)`` pairs with pending text.
+    """
+    flushed: list[tuple[str, str]] = []
+    for key in list(self._pending):
+      key_session_id, key_turn_id = key
+      if key_session_id != session_id:
+        continue
+      pending = self._pending.pop(key, None)
+      if pending is None:
+        continue
+      text = pending.text
+      if text:
+        flushed.append((key_turn_id, text))
+    return flushed
+
   def cancel_turn(self, *, session_id: str, turn_id: str) -> None:
     """Discard pending speech for one turn."""
     self._pending.pop((session_id, turn_id), None)

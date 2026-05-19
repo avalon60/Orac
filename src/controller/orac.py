@@ -943,30 +943,45 @@ class Orac:
             return
 
         if event_type in {"stream_end", "stream_error", "stream_cancelled"}:
+            terminal_texts: list[tuple[str, str]] = []
             if coalescer is not None:
                 final_text = coalescer.flush(
                     session_id=session_id,
                     turn_id=turn_id,
                 )
                 if final_text:
+                    terminal_texts.append((turn_id, final_text))
+                if not final_text and "turn_id" not in event_payload:
+                    terminal_texts.extend(
+                        coalescer.flush_session(session_id=session_id)
+                    )
+                for terminal_turn_id, speech_text in terminal_texts:
                     queued = worker.enqueue_text(
                         session_id=session_id,
-                        turn_id=turn_id,
-                        text=final_text,
+                        turn_id=terminal_turn_id,
+                        text=speech_text,
                     )
                     if queued:
                         self._mark_voice_playback_queued(
                             session_id=session_id,
-                            turn_id=turn_id,
+                            turn_id=terminal_turn_id,
                         )
                         self._mark_voice_playback_expected(
                             session_id=session_id,
-                            turn_id=turn_id,
+                            turn_id=terminal_turn_id,
                         )
             if worker is not None:
                 mark_complete = getattr(worker, "mark_turn_input_complete", None)
                 if callable(mark_complete):
-                    mark_complete(session_id=session_id, turn_id=turn_id)
+                    completed_turn_ids = {
+                        terminal_turn_id
+                        for terminal_turn_id, _text in terminal_texts
+                    } or {turn_id}
+                    for completed_turn_id in completed_turn_ids:
+                        mark_complete(
+                            session_id=session_id,
+                            turn_id=completed_turn_id,
+                        )
 
     def cancel_voice_turn(self, *, session_id: str, turn_id: str) -> int:
         """Cancel local voice output for a client session turn."""
@@ -2041,6 +2056,8 @@ class Orac:
                 .upper()
             )
             enriched_meta["orac_personality"] = personality
+        else:
+            enriched_meta["personality_code"] = personality_code or "DEFAULT"
 
         if meta.get("weather_location"):
             return enriched_meta
@@ -2610,6 +2627,40 @@ class Orac:
             return 0
 
     # --- Response builder -----------------------------------------------------
+    def _runtime_response_meta(
+        self,
+        req_env: dict,
+        *,
+        model_name: str | None = None,
+        user_registration: str = "registered",
+        error: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Build response metadata including current runtime identity."""
+        request_meta = req_env.get("meta")
+        request_meta = request_meta if isinstance(request_meta, dict) else {}
+        personality = request_meta.get("orac_personality")
+        personality = personality if isinstance(personality, dict) else {}
+        personality_code = str(
+            request_meta.get("personality_code")
+            or personality.get("PERSONALITY_CODE")
+            or ""
+        ).strip().upper()
+        personality_name = str(
+            personality.get("PERSONALITY_NAME") or personality_code
+        ).strip()
+
+        response_meta: dict[str, Any] = {
+            "status": "error" if error else "ok",
+            "model": str(model_name or self.model_name),
+            "req_id": req_env.get("id"),
+            "user_registration": user_registration,
+        }
+        if personality_code:
+            response_meta["personality_code"] = personality_code
+        if personality_name:
+            response_meta["personality_name"] = personality_name
+        return response_meta
+
     def _build_response(self, req_env: dict, content: str, *,
                         stop_reason: str = "stop",
                         prompt_tokens: int = 0,
@@ -2625,12 +2676,11 @@ class Orac:
             "reply_to": req_env.get("id"),
             "ts": iso_now(),
             "route": req_env.get("route", "orac.prompt"),
-            "meta": {
-                "status": "ok",
-                "model": response_model,
-                "req_id": req_env.get("id"),
-                "user_registration": user_registration,
-            },
+            "meta": self._runtime_response_meta(
+                req_env,
+                model_name=response_model,
+                user_registration=user_registration,
+            ),
             "payload": {
                 "content": content,
                 "stop_reason": stop_reason,
@@ -2671,12 +2721,12 @@ class Orac:
             "reply_to": req_env.get("id"),
             "ts": iso_now(),
             "route": req_env.get("route", "orac.prompt"),
-            "meta": {
-                "status": "error" if error else "ok",
-                "model": str(model_name or self.model_name),
-                "req_id": req_env.get("id"),
-                "user_registration": user_registration,
-            },
+            "meta": self._runtime_response_meta(
+                req_env,
+                model_name=model_name,
+                user_registration=user_registration,
+                error=error,
+            ),
             "payload": payload or {},
             "error": error,
         }
@@ -2707,6 +2757,29 @@ class Orac:
             )
         )
 
+    def _missing_stream_speech_suffix(
+        self,
+        *,
+        content: str,
+        speech_chunks: list[str],
+    ) -> str | None:
+        """Return final answer text not already routed to speech chunks."""
+        final_text = content.strip()
+        if not final_text:
+            return None
+
+        spoken_text = " ".join(
+            chunk.strip() for chunk in speech_chunks if chunk.strip()
+        ).strip()
+        if not spoken_text:
+            return final_text
+        if final_text == spoken_text:
+            return None
+        if final_text.startswith(spoken_text):
+            suffix = final_text[len(spoken_text):].strip()
+            return suffix or None
+        return None
+
     async def _emit_complete_text_as_stream(
         self,
         event_sink: StreamEventSink | None,
@@ -2724,7 +2797,11 @@ class Orac:
             event_sink,
             req_env,
             "stream_start",
-            payload={"content_type": "text"},
+            payload={
+                "content_type": "text",
+                "voice_session_id": session_id,
+                "turn_id": turn_id or req_env.get("id"),
+            },
             model_name=model_name,
             user_registration=user_registration,
         )
@@ -2758,7 +2835,11 @@ class Orac:
             event_sink,
             req_env,
             "stream_end",
-            payload={"stop_reason": stop_reason},
+            payload={
+                "stop_reason": stop_reason,
+                "voice_session_id": session_id,
+                "turn_id": turn_id or req_env.get("id"),
+            },
             model_name=model_name,
             user_registration=user_registration,
         )
@@ -3020,6 +3101,7 @@ class Orac:
             messages = (req_env.get("payload") or {}).get("messages") or []
             prompt = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "").strip()
             meta = req_env.get("meta") or {}
+            incoming_voice_session_id = str(meta.get("session_id") or "")
             # Guard against drifting session ids from the caller
             if not self._allow_external_session_id and "session_id" in meta:
                 dropped = meta.get("session_id")
@@ -3039,6 +3121,7 @@ class Orac:
                 _log_exception("Oracle session validation failed (non-fatal)", e)
 
             meta = self._apply_user_preference_meta(meta, auth_user)
+            req_env["meta"] = meta
 
             logger.log_info(f"{Icons.info} [{client}] user={auth_user} Prompt received")
             logger.log_debug(f"Prompt text: {prompt}")
@@ -3374,7 +3457,7 @@ class Orac:
             total_tokens = 0
             stream_emitted_delta = False
             stream_cancelled = False
-            voice_session_id = str((req_env.get("meta") or {}).get("session_id") or "")
+            voice_session_id = incoming_voice_session_id
             voice_turn_id = str(req_env.get("id") or "")
 
             if stream_requested:
@@ -3382,7 +3465,11 @@ class Orac:
                     event_sink,
                     req_env,
                     "stream_start",
-                    payload={"content_type": "text"},
+                    payload={
+                        "content_type": "text",
+                        "voice_session_id": voice_session_id,
+                        "turn_id": voice_turn_id,
+                    },
                     model_name=effective_model_name,
                     user_registration=(
                         "anonymous" if request_flags["anonymous_user"] else "registered"
@@ -3390,6 +3477,7 @@ class Orac:
                 )
                 chunker = TextChunker()
                 raw_parts: list[str] = []
+                speech_chunks: list[str] = []
 
                 try:
                     for delta in llm_connector.stream_prompt_deltas(
@@ -3410,7 +3498,11 @@ class Orac:
                                 event_sink,
                                 req_env,
                                 "stream_cancelled",
-                                payload={"reason": "barge-in"},
+                                payload={
+                                    "reason": "barge-in",
+                                    "voice_session_id": voice_session_id,
+                                    "turn_id": voice_turn_id,
+                                },
                                 model_name=effective_model_name,
                                 user_registration=(
                                     "anonymous"
@@ -3437,6 +3529,7 @@ class Orac:
                             ),
                         )
                         for chunk in chunker.add_delta(delta_text):
+                            speech_chunks.append(chunk)
                             await self._emit_stream_event(
                                 event_sink,
                                 req_env,
@@ -3460,6 +3553,10 @@ class Orac:
                         event_sink,
                         req_env,
                         "stream_error",
+                        payload={
+                            "voice_session_id": voice_session_id,
+                            "turn_id": voice_turn_id,
+                        },
                         model_name=effective_model_name,
                         user_registration=(
                             "anonymous"
@@ -3482,6 +3579,7 @@ class Orac:
 
                 final_chunk = "" if stream_cancelled else chunker.flush()
                 if final_chunk:
+                    speech_chunks.append(final_chunk)
                     await self._emit_stream_event(
                         event_sink,
                         req_env,
@@ -3535,6 +3633,35 @@ class Orac:
             if not content:
                 logger.log_warning("Backend returned empty content after stripping; using friendly fallback.")
                 content = "Hello! 👋"
+
+            if stream_requested and not stream_cancelled and stream_emitted_delta:
+                missing_speech = self._missing_stream_speech_suffix(
+                    content=content,
+                    speech_chunks=speech_chunks,
+                )
+                if missing_speech:
+                    logger.log_warning(
+                        "Streaming speech chunks missed final response suffix; "
+                        "queuing fallback speech chunk."
+                    )
+                    await self._emit_stream_event(
+                        event_sink,
+                        req_env,
+                        "text_chunk",
+                        payload={
+                            "chunk": missing_speech,
+                            "session_id": session_id,
+                            "voice_session_id": voice_session_id,
+                            "turn_id": voice_turn_id,
+                        },
+                        model_name=effective_model_name,
+                        user_registration=(
+                            "anonymous"
+                            if request_flags["anonymous_user"]
+                            else "registered"
+                        ),
+                    )
+                    speech_chunks.append(missing_speech)
 
             if stream_requested and not stream_cancelled and not stream_emitted_delta and content:
                 await self._emit_stream_event(
@@ -3598,6 +3725,8 @@ class Orac:
                     "stream_end",
                     payload={
                         "stop_reason": "stop",
+                        "voice_session_id": voice_session_id,
+                        "turn_id": voice_turn_id,
                         "usage": {
                             "prompt_tokens": prompt_tokens,
                             "completion_tokens": completion_tokens,

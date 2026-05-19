@@ -651,16 +651,13 @@ const Tesseract = ({ state }: { state: OracState }) => {
   const coreHighlightRef = useRef<THREE.Mesh>(null);
   const connectorRef = useRef<THREE.LineSegments>(null);
   const orbitalCoreRadiusRef = useRef<number>(coreBaseRadius);
-  const stateEnteredAtRef = useRef<number>(performance.now() * 0.001);
+  const stateEnteredAtRef = useRef<number>(0);
+  const previousStateRef = useRef<OracState>(state);
   
   const config = STATE_CONFIGS[state];
   const corePalette = CORE_PALETTES[state];
   const coreGlowTexture = useMemo(() => createCoreGlowTexture(), []);
   const coreBodyTexture = useMemo(() => createCoreBodyTexture(), []);
-
-  useEffect(() => {
-    stateEnteredAtRef.current = performance.now() * 0.001;
-  }, [state]);
 
   useFrame((sceneState, delta) => {
     if (
@@ -674,7 +671,11 @@ const Tesseract = ({ state }: { state: OracState }) => {
     }
 
     const t = sceneState.clock.elapsedTime;
-    const stateAge = t - stateEnteredAtRef.current;
+    if (previousStateRef.current !== state) {
+      previousStateRef.current = state;
+      stateEnteredAtRef.current = t;
+    }
+    const stateAge = Math.max(0, t - stateEnteredAtRef.current);
     
     // 1. Shared rotation for the whole tesseract
     const rotSpeed = config.rotationSpeed;
@@ -772,7 +773,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
         outerOpacity = 0.2;
         innerOpacity = 0.16;
         connectorOpacity = 0.85;
-        const wakePulse = Math.max(0, 1 - stateAge * 1.6);
+        const wakePulse = Math.max(0, Math.min(1, 1 - stateAge * 1.6));
         coreScale *= 1 + wakePulse * 0.06;
         coreOpacity = 0.18 + wakePulse * 0.12;
         coreGlow = 0.95 + wakePulse * 0.35;
@@ -911,9 +912,9 @@ const Tesseract = ({ state }: { state: OracState }) => {
           thickness={0.28}
           chromaticAberration={0.04}
           anisotropy={0.05}
-          distortion={config.distortion * 0.35}
-          distortionScale={0.08}
-          temporalDistortion={0.04}
+          distortion={Math.min(config.distortion * 0.2, 0.08)}
+          distortionScale={0.04}
+          temporalDistortion={0}
           clearcoat={1}
           attenuationDistance={4}
           attenuationColor={config.color}

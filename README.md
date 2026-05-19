@@ -204,9 +204,14 @@ and configure its path:
 [voice]
 activation_mode = openwakeword
 wake_engine = openwakeword
-openwakeword_model_paths = ${ORAC_HOME}/var/models/wake/hey_orac.tflite
+openwakeword_model_paths = ${ORAC_HOME}/var/models/wakeword/openwakeword/hey_orac.tflite
 openwakeword_model_names =
 ```
+
+Packaged Orac wake-word models live under
+`${ORAC_HOME}/resources/models/wakeword/openwakeword`. Local or custom
+wake-word models should live under
+`${ORAC_HOME}/var/models/wakeword/openwakeword`.
 
 Piper voice models follow the same runtime-tree convention. By default Orac
 looks for Piper voices under:
@@ -214,11 +219,13 @@ looks for Piper voices under:
 ```ini
 [voice]
 tts_engine = piper
-tts_voice_dir = ${ORAC_HOME}/var/voices/piper
+tts_voice_dir = ${ORAC_HOME}/var/models/piper
 ```
 
 Put the Piper voice assets in that directory, or override `tts_voice_dir` if
-you keep voices elsewhere.
+you keep voices elsewhere. Orac also packages `en_GB-alba-medium` under
+`${ORAC_HOME}/resources/models/piper` so the default Piper fallback can work
+without downloading a voice first.
 
 Kokoro can be used as a higher-quality optional TTS backend when a local
 Kokoro-FastAPI or compatible OpenAI speech API service is running. Orac does

@@ -30,7 +30,7 @@ python bin/voice_ai.py --browser-mode --buttons
 2. Start the React dev server:
 
 ```bash
-bin/orac-display-web.sh
+bin/orac-web-display.sh
 ```
 
 3. If you want browser-only mode without the auto-open helper, open:
@@ -46,7 +46,7 @@ http://localhost:5173
 Run:
 
 ```bash
-bin/orac-display-web.sh
+bin/orac-web-display.sh
 ```
 
 The launcher starts the dev server and opens the browser app window. If you
@@ -82,7 +82,7 @@ The default already targets `ws://127.0.0.1:8767`.
 
 ### Optional transcript panels
 
-The `bin/orac-display-web.sh` launcher enables the current-turn transcript
+The `bin/orac-web-display.sh` launcher enables the current-turn transcript
 panels automatically.
 
 If you run Vite manually, set:
@@ -97,6 +97,7 @@ current response on the right.
 
 Supported transcript events:
 
+- `runtime.identity`
 - `transcript.turn.clear`
 - `transcript.user.final`
 - `transcript.orac.start`

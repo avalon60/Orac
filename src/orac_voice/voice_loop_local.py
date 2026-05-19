@@ -115,6 +115,53 @@ def _send_display_event(
   display_sender.send(event_payload)
 
 
+def _display_runtime_identity_from_frame(
+  frame: dict[str, object],
+) -> tuple[str, str, str, str] | None:
+  """Extract the current LLM/persona identity from an Orac frame."""
+  meta = frame.get("meta")
+  if not isinstance(meta, dict):
+    return None
+
+  model = str(meta.get("model") or "").strip()
+  personality_code = str(meta.get("personality_code") or "").strip().upper()
+  personality_name = str(meta.get("personality_name") or "").strip()
+  persona = personality_name or personality_code
+  if model and not persona:
+    personality_code = "DEFAULT"
+    persona = personality_code
+  if not model and not persona:
+    return None
+  return model, persona, personality_code, personality_name
+
+
+def _send_configured_runtime_identity(
+  display_sender: DisplayEventSender | None,
+  *,
+  session_id: str | None = None,
+) -> None:
+  """Emit the configured model/persona before the first Orac response."""
+  if display_sender is None:
+    return
+
+  config_mgr = _voice_config_manager()
+  model = config_mgr.config_value(
+    "service",
+    "default_model_name",
+    default="",
+  ).strip()
+  persona = "DEFAULT"
+  _send_display_event(
+    display_sender,
+    "runtime.identity",
+    session_id=session_id,
+    model=model,
+    persona=persona,
+    personality_code=persona,
+    personality_name=persona,
+  )
+
+
 def _load_console_timestamps() -> bool:
   """Return whether local voice console lines include timestamps."""
   config_mgr = _voice_config_manager()
@@ -558,6 +605,11 @@ def _transcribe_once(
   )
   stt_engine = stt_engine or FasterWhisperSttEngine.from_config()
   record_mode = _load_record_mode(args)
+  timing_started_at = time.perf_counter()
+  record_started_at: float | None = None
+  record_finished_at: float | None = None
+  transcribe_started_at: float | None = None
+  transcribe_finished_at: float | None = None
 
   if prompt is not None:
     entered = input(prompt)
@@ -588,6 +640,7 @@ def _transcribe_once(
     )
   )
   try:
+    record_started_at = time.perf_counter()
     if record_mode == "vad":
       wav_path = _record_vad_sample(
         capture=capture,
@@ -600,6 +653,7 @@ def _transcribe_once(
         turn_id=turn_id,
         record_seconds=args.record_seconds,
       )
+    record_finished_at = time.perf_counter()
     _emit(
       VoiceSttEnded(
         session_id=session_id,
@@ -616,13 +670,38 @@ def _transcribe_once(
         turn_id=turn_id
       )
 
+    transcribe_started_at = time.perf_counter()
     recognised_text = stt_engine.transcribe_wav(wav_path)
+    transcribe_finished_at = time.perf_counter()
     _emit(
       VoiceSttFinal(
         session_id=session_id,
         turn_id=turn_id,
         text=recognised_text,
       )
+    )
+    logger.info(
+      (
+        "Voice STT timing: session={} turn={} mode={} record={:.2f}s "
+        "transcribe={:.2f}s total={:.2f}s"
+      ),
+      session_id,
+      turn_id,
+      record_mode,
+      (
+        record_finished_at - record_started_at
+        if record_started_at is not None and record_finished_at is not None
+        else 0.0
+      ),
+      (
+        transcribe_finished_at - transcribe_started_at
+        if (
+          transcribe_started_at is not None
+          and transcribe_finished_at is not None
+        )
+        else 0.0
+      ),
+      transcribe_finished_at - timing_started_at,
     )
     _send_display_event(
       display_sender,
@@ -731,6 +810,7 @@ async def _send_orac_prompt(
   wire = json.dumps(req_env, ensure_ascii=False) + "\n"
   writer.write(wire.encode("utf-8"))
   await writer.drain()
+  request_sent_at = time.perf_counter()
   _send_display_event(
     display_sender,
     "transcript.orac.start",
@@ -757,7 +837,15 @@ async def _send_orac_prompt(
   playback_terminal = False
   final_response_status: int | None = None
   orac_transcript_parts: list[str] = []
+  stream_start_at: float | None = None
+  first_text_delta_at: float | None = None
+  first_text_chunk_at: float | None = None
+  stream_end_at: float | None = None
+  first_tts_started_at: float | None = None
+  last_tts_finished_at: float | None = None
+  timing_logged = False
   barge_in_min_speech_ms = 0
+  last_runtime_identity: tuple[str, str, str, str] | None = None
   if (
     barge_in_controller is not None
     and not isinstance(barge_in_controller, OpenWakeWordBargeInController)
@@ -807,6 +895,44 @@ async def _send_orac_prompt(
     barge_active = False
     barge_in_controller.stop()
 
+  def _elapsed_since_request(value: float | None) -> float | None:
+    """Return elapsed seconds from the prompt send point."""
+    if value is None:
+      return None
+    return value - request_sent_at
+
+  def _format_timing(value: float | None) -> str:
+    """Format an optional elapsed duration for logs."""
+    if value is None:
+      return "n/a"
+    return f"{value:.2f}s"
+
+  def _log_response_timing(reason: str) -> None:
+    """Log one compact response timing summary for this turn."""
+    nonlocal timing_logged
+    if timing_logged:
+      return
+    timing_logged = True
+    logger.info(
+      (
+        "Voice response timing: session={} turn={} reason={} "
+        "stream_start={} first_text={} first_speech_chunk={} "
+        "stream_end={} first_audio={} playback_done={} total={} "
+        "tts_parts={}"
+      ),
+      voice_session_id or "",
+      req_id,
+      reason,
+      _format_timing(_elapsed_since_request(stream_start_at)),
+      _format_timing(_elapsed_since_request(first_text_delta_at)),
+      _format_timing(_elapsed_since_request(first_text_chunk_at)),
+      _format_timing(_elapsed_since_request(stream_end_at)),
+      _format_timing(_elapsed_since_request(first_tts_started_at)),
+      _format_timing(_elapsed_since_request(last_tts_finished_at)),
+      _format_timing(time.perf_counter() - request_sent_at),
+      playback_started_count,
+    )
+
   def _maybe_finish_turn() -> int | None:
     """Return the final status once the answer and playback are complete."""
     if playback_cancelled:
@@ -819,6 +945,7 @@ async def _send_orac_prompt(
           turn_id=req_id,
       )
       _stop_barge_in_monitor()
+      _log_response_timing("cancelled")
       return final_response_status if final_response_status is not None else 0
     if final_response_status is None:
       return None
@@ -833,6 +960,7 @@ async def _send_orac_prompt(
         turn_id=req_id,
       )
     _stop_barge_in_monitor()
+    _log_response_timing("response")
     return final_response_status
 
   async def _cancel_interrupted_voice() -> int:
@@ -854,6 +982,7 @@ async def _send_orac_prompt(
       turn_id=req_id,
       reason=(barge_result.reason if barge_result else "barge-in"),
     )
+    _log_response_timing("interrupted")
     return 0
 
   async def _read_response_line():
@@ -891,6 +1020,7 @@ async def _send_orac_prompt(
       read_status, resp_bytes = await _read_response_line()
       if read_status == "timeout":
         _console_line("Orac response timed out.")
+        _log_response_timing("timeout")
         if display_sender is not None:
           display_sender.send_state(
             "error",
@@ -912,6 +1042,7 @@ async def _send_orac_prompt(
               turn_id=req_id,
             )
           _stop_barge_in_monitor()
+          _log_response_timing("connection-closed")
           return final_response_status
         return 0
 
@@ -921,6 +1052,7 @@ async def _send_orac_prompt(
       except json.JSONDecodeError as exc:
         logger.error("Invalid JSON from Orac: {}", exc)
         _console_line("Invalid protocol frame from Orac.")
+        _log_response_timing("invalid-json")
         return 1
 
       frame_reply_to = env.get("reply_to")
@@ -931,6 +1063,25 @@ async def _send_orac_prompt(
           req_id,
         )
         continue
+
+      runtime_identity = _display_runtime_identity_from_frame(env)
+      if (
+        display_sender is not None
+        and runtime_identity is not None
+        and runtime_identity != last_runtime_identity
+      ):
+        model, persona, personality_code, personality_name = runtime_identity
+        _send_display_event(
+          display_sender,
+          "runtime.identity",
+          session_id=voice_session_id,
+          turn_id=req_id,
+          model=model,
+          persona=persona,
+          personality_code=personality_code,
+          personality_name=personality_name,
+        )
+        last_runtime_identity = runtime_identity
 
       frame_type = env.get("type")
       if frame_type in slave_client.STREAM_EVENT_TYPES:
@@ -970,9 +1121,13 @@ async def _send_orac_prompt(
         payload = env.get("payload")
         payload = payload if isinstance(payload, dict) else {}
         if frame_type == "stream_start":
+          if stream_start_at is None:
+            stream_start_at = time.perf_counter()
           _console_start("Orac: ")
           stream_rendered = True
         elif frame_type == "text_delta":
+          if first_text_delta_at is None:
+            first_text_delta_at = time.perf_counter()
           if not stream_rendered:
             _console_start("Orac: ")
             stream_rendered = True
@@ -995,9 +1150,12 @@ async def _send_orac_prompt(
             flush=True,
           )
         elif frame_type == "text_chunk":
+          if first_text_chunk_at is None:
+            first_text_chunk_at = time.perf_counter()
           logger.debug("Speech text chunk received for existing TTS path")
           playback_expected = True
         elif frame_type in {"stream_end", "stream_cancelled"}:
+          stream_end_at = time.perf_counter()
           stream_finished = True
           if stream_rendered:
             print()
@@ -1006,6 +1164,8 @@ async def _send_orac_prompt(
         elif frame_type == "tts_playback_started":
           playback_started = True
           playback_started_count += 1
+          if first_tts_started_at is None:
+            first_tts_started_at = time.perf_counter()
           playback_expected = True
           playback_terminal = False
           interruption_policy.begin_output_turn(output_turn_id=req_id)
@@ -1048,11 +1208,14 @@ async def _send_orac_prompt(
             continue
           if frame_type == "tts_playback_finished":
             playback_finished_count += 1
+            last_tts_finished_at = time.perf_counter()
             interruption_policy.mark_output_finished(output_turn_id=req_id)
             continue
         elif frame_type == "voice_turn_complete":
           playback_terminal = True
           interruption_policy.mark_turn_complete(output_turn_id=req_id)
+          if last_tts_finished_at is None:
+            last_tts_finished_at = time.perf_counter()
           if display_sender is not None:
             display_sender.send_state(
               "idle",
@@ -1061,15 +1224,18 @@ async def _send_orac_prompt(
               turn_id=req_id,
             )
           _stop_barge_in_monitor()
+          _log_response_timing("voice-complete")
           return 1 if stream_error_seen else 0
         continue
 
       if frame_type != "response":
         _console_line("Unexpected protocol frame from Orac.")
+        _log_response_timing("unexpected-frame")
         return 1
 
       err_obj = env.get("error")
       if isinstance(err_obj, dict) and err_obj:
+        _log_response_timing("server-error")
         if not stream_error_seen:
           code = err_obj.get("code", "SERVER_ERROR")
           msg = err_obj.get("message", "Unknown error")
@@ -1088,6 +1254,8 @@ async def _send_orac_prompt(
       final_text = slave_client.strip_reasoning_tags(str(content))
       if not final_text:
         final_text = "".join(orac_transcript_parts).strip()
+      if stream_end_at is None and not stream_rendered:
+        stream_end_at = time.perf_counter()
       _send_display_event(
         display_sender,
         "transcript.orac.final",
@@ -1121,6 +1289,7 @@ async def _send_orac_prompt(
           session_id=voice_session_id,
           turn_id=req_id,
         )
+      _log_response_timing("response")
       return 0
   finally:
     _stop_barge_in_monitor()
@@ -1211,6 +1380,10 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
   stt_engine = FasterWhisperSttEngine.from_config()
   barge_in_controller = _create_barge_in_controller()
   display_sender = DisplayEventSender.from_config()
+  _send_configured_runtime_identity(
+    display_sender,
+    session_id=session_id,
+  )
   display_sender.send_state(
     "initialising",
     message="Initialising voice session",
@@ -1378,6 +1551,7 @@ def _voice_session(args: argparse.Namespace) -> int:
 def _voice_turn(args: argparse.Namespace) -> int:
   """Record speech, transcribe it, and submit it to Orac."""
   display_sender = DisplayEventSender.from_config()
+  _send_configured_runtime_identity(display_sender)
   try:
     _session_id, _turn_id, recognised_text = _transcribe_once(
       args,

@@ -43,13 +43,24 @@ run_voice_ai() {
 
   if [[ "$inhibit_sleep" == "true" ]]; then
     if command -v systemd-inhibit >/dev/null 2>&1; then
-      systemd-inhibit \
+      if systemd-inhibit \
         --what=sleep \
         --mode=block \
         --who="Orac voice-ai" \
         --why="Orac voice assistant is using microphone/audio devices" \
-        "$@"
+        true 2>/dev/null; then
+        systemd-inhibit \
+          --what=sleep \
+          --mode=block \
+          --who="Orac voice-ai" \
+          --why="Orac voice assistant is using microphone/audio devices" \
+          "$@"
 
+        return $?
+      fi
+
+      echo "Warning: systemd-inhibit failed; system sleep will not be inhibited." >&2
+      "$@"
       return $?
     fi
 
@@ -58,7 +69,6 @@ run_voice_ai() {
 
   "$@"
 }
-
 SCRIPT_PATH="$(resolve_path "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
