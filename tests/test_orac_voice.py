@@ -2782,6 +2782,36 @@ class OracVoiceTests(unittest.TestCase):
         rendered = wav_file.readframes(wav_file.getnframes())
       self.assertEqual(rendered, pcm)
 
+  def test_kokoro_tts_engine_applies_gain(self) -> None:
+    """Kokoro engine should apply configured post-synthesis gain."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      orac_home = Path(tmp_name)
+      pcm = np.array([1000, -1000, 20000, -20000], dtype=np.int16).tobytes()
+      session = _FakeHttpSession(_FakeHttpResponse(_wav_bytes(pcm)))
+      with patch.object(
+        tts_kokoro_module,
+        "resolve_orac_home",
+        return_value=orac_home,
+      ):
+        engine = KokoroTtsEngine(
+          output_dir=orac_home / "var" / "tmp",
+          final_fade_ms=0,
+          gain_db=6.0,
+        )
+      engine._session = session
+
+      wav_path = engine.synthesise_to_wav("Hello.", session_id="s1", turn_id="t1")
+
+      with wave.open(str(wav_path), "rb") as wav_file:
+        rendered = np.frombuffer(
+          wav_file.readframes(wav_file.getnframes()),
+          dtype=np.int16,
+        )
+      self.assertEqual(rendered[0], 1995)
+      self.assertEqual(rendered[1], -1995)
+      self.assertEqual(rendered[2], 32767)
+      self.assertEqual(rendered[3], -32768)
+
   def test_kokoro_tts_engine_applies_final_fade_and_retains_debug(self) -> None:
     """Kokoro engine should suppress terminal discontinuities in output WAV."""
     with tempfile.TemporaryDirectory() as tmp_name:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import io
+import math
 from pathlib import Path
 import os
 import re
@@ -31,6 +32,7 @@ DEFAULT_KOKORO_VOICE = "af_heart"
 DEFAULT_KOKORO_RESPONSE_FORMAT = "wav"
 DEFAULT_KOKORO_TIMEOUT_SECONDS = 60
 DEFAULT_KOKORO_FINAL_FADE_MS = 8
+DEFAULT_KOKORO_GAIN_DB = 0.0
 STREAMED_WAV_FRAME_SENTINEL = 0x3FFFFFFF
 SAFE_KOKORO_TOKEN = re.compile(r"^[A-Za-z0-9_.:-]+$")
 SAFE_KOKORO_VOICE = re.compile(r"^[A-Za-z0-9_.:+()-]+$")
@@ -109,6 +111,26 @@ def _optional_int_config_value(
   except Exception:
     logger.warning(
       "Invalid integer for {}.{}; using default {}",
+      section,
+      key,
+      default,
+    )
+    return default
+
+
+def _optional_float_config_value(
+  config_mgr: ConfigManager,
+  section: str,
+  key: str,
+  *,
+  default: float,
+) -> float:
+  """Read an optional float config value."""
+  try:
+    return float(config_mgr.float_config_value(section, key, default=default))
+  except Exception:
+    logger.warning(
+      "Invalid float for {}.{}; using default {}",
       section,
       key,
       default,
@@ -245,6 +267,32 @@ def _scale_sample(sample: bytes, *, sample_width: int, scale: float) -> bytes:
   return _encode_sample(round(value * scale), sample_width=sample_width)
 
 
+def _apply_gain(audio: WavAudio, *, gain_db: float) -> bytes:
+  """Apply linear gain to PCM frames."""
+  if abs(gain_db) < 0.001 or not audio.pcm:
+    return audio.pcm
+
+  gain = math.pow(10.0, gain_db / 20.0)
+  frame_size = audio.channels * audio.sample_width
+  amplified = bytearray(audio.pcm)
+
+  for frame_index in range(audio.frame_count):
+    frame_offset = frame_index * frame_size
+    for channel in range(audio.channels):
+      sample_offset = frame_offset + (channel * audio.sample_width)
+      sample = bytes(
+        amplified[sample_offset : sample_offset + audio.sample_width]
+      )
+      amplified[sample_offset : sample_offset + audio.sample_width] = (
+        _scale_sample(
+          sample,
+          sample_width=audio.sample_width,
+          scale=gain,
+        )
+      )
+  return bytes(amplified)
+
+
 def _apply_final_fade(audio: WavAudio, *, fade_ms: int) -> bytes:
   """Apply a short fade-out to the final PCM frames."""
   if fade_ms <= 0 or not audio.pcm:
@@ -319,6 +367,7 @@ class KokoroTtsEngine:
     timeout_seconds: int = DEFAULT_KOKORO_TIMEOUT_SECONDS,
     api_key_env: str | None = None,
     final_fade_ms: int = DEFAULT_KOKORO_FINAL_FADE_MS,
+    gain_db: float = DEFAULT_KOKORO_GAIN_DB,
     debug_audio: bool = False,
     retain_raw_response: bool = False,
   ) -> None:
@@ -335,6 +384,7 @@ class KokoroTtsEngine:
       api_key_env (str | None): Optional environment variable containing a
         bearer token for protected local endpoints.
       final_fade_ms (int): Fade-out duration applied to the generated WAV.
+      gain_db (float): Post-synthesis gain in decibels.
       debug_audio (bool): Whether to retain diagnostic audio files.
       retain_raw_response (bool): Whether to retain raw Kokoro responses.
 
@@ -351,6 +401,7 @@ class KokoroTtsEngine:
     self.timeout_seconds = int(timeout_seconds or DEFAULT_KOKORO_TIMEOUT_SECONDS)
     self.api_key_env = (api_key_env or "").strip()
     self.final_fade_ms = max(0, int(final_fade_ms))
+    self.gain_db = float(gain_db)
     self.debug_audio = bool(debug_audio)
     self.retain_raw_response = bool(retain_raw_response)
 
@@ -438,6 +489,12 @@ class KokoroTtsEngine:
         VOICE_SECTION,
         "tts_kokoro_final_fade_ms",
         default=DEFAULT_KOKORO_FINAL_FADE_MS,
+      ),
+      gain_db=_optional_float_config_value(
+        config_mgr,
+        VOICE_SECTION,
+        "tts_kokoro_gain_db",
+        default=DEFAULT_KOKORO_GAIN_DB,
       ),
       debug_audio=_optional_bool_config_value(
         config_mgr,
@@ -528,7 +585,7 @@ class KokoroTtsEngine:
       (
         "Kokoro WAV segment: path={} duration={:.3f}s sample_rate={} "
         "channels={} sample_width={} frames={} bytes={} "
-        "start_peak={} end_peak={} final_fade_ms={}"
+        "start_peak={} end_peak={} gain_db={} final_fade_ms={}"
       ),
       output_path,
       wav_audio.duration_seconds,
@@ -539,10 +596,19 @@ class KokoroTtsEngine:
       len(wav_audio.pcm),
       _frame_peak(wav_audio, frame_index=0),
       _frame_peak(wav_audio, frame_index=wav_audio.frame_count - 1),
+      self.gain_db,
       self.final_fade_ms,
     )
 
-    faded_pcm = _apply_final_fade(wav_audio, fade_ms=self.final_fade_ms)
+    gained_pcm = _apply_gain(wav_audio, gain_db=self.gain_db)
+    gained_audio = WavAudio(
+      channels=wav_audio.channels,
+      sample_width=wav_audio.sample_width,
+      sample_rate=wav_audio.sample_rate,
+      frame_count=wav_audio.frame_count,
+      pcm=gained_pcm,
+    )
+    faded_pcm = _apply_final_fade(gained_audio, fade_ms=self.final_fade_ms)
     _write_wav_file(output_path=output_path, audio=wav_audio, pcm=faded_pcm)
     if self.debug_audio:
       shutil.copy2(output_path, self.debug_dir / f"{output_path.stem}-final.wav")
