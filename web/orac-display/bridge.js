@@ -6,6 +6,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 const TCP_PORT = 8766;
 const WS_PORT = 8767;
 let latestMessage = null;
+let latestRuntimeIdentity = null;
 
 function envBoolean(name, defaultValue = false) {
   const value = (process.env[name] || '').trim().toLowerCase();
@@ -34,6 +35,9 @@ console.log(`🚀 WebSocket Bridge: Listening for browser connections on ws://lo
 wss.on('connection', (ws) => {
   console.log('💻 Browser connected to bridge');
   ws.send(uiConfigMessage());
+  if (latestRuntimeIdentity) {
+    ws.send(latestRuntimeIdentity);
+  }
   if (latestMessage) {
     ws.send(latestMessage);
   }
@@ -42,6 +46,14 @@ wss.on('connection', (ws) => {
 
 function broadcast(data) {
   const message = data.toString();
+  try {
+    const payload = JSON.parse(message);
+    if (payload?.event === 'runtime.identity') {
+      latestRuntimeIdentity = message;
+    }
+  } catch {
+    // Keep forwarding malformed payloads for diagnostic parity.
+  }
   latestMessage = message;
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {

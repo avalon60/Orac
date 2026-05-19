@@ -34,6 +34,7 @@ using (
              to_char(llm_id) r
         from orac_api.llm_registry_v
        where is_enabled = 'Y'
+          or llm_id = to_number(:P_CURRENT_VALUE default null on conversion error)
        order by provider, name]',
     cast(null as varchar2(100 byte)),
     json('0'),

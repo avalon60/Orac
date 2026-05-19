@@ -118,6 +118,7 @@ from orac_voice.voice_loop_local import _create_barge_in_controller
 from orac_voice.voice_loop_local import _load_activation_mode
 from orac_voice.voice_loop_local import _load_record_mode
 from orac_voice.voice_loop_local import _load_wake_rearm_seconds
+from orac_voice.voice_loop_local import _send_configured_runtime_identity
 from orac_voice.voice_loop_local import _send_orac_prompt
 from orac_voice.voice_loop_local import _transcribe_once
 from orac_voice.voice_loop_local import _voice_session_async
@@ -205,6 +206,37 @@ class _FakeHttpSession:
   def close(self) -> None:
     """Record session closure."""
     self.close_calls += 1
+
+
+def _wav_bytes(
+  pcm: bytes,
+  *,
+  sample_rate: int = 16000,
+  channels: int = 1,
+  sample_width: int = 2,
+) -> bytes:
+  """Build a small PCM WAV payload for tests."""
+  buffer = io.BytesIO()
+  with wave.open(buffer, "wb") as wav_file:
+    wav_file.setnchannels(channels)
+    wav_file.setsampwidth(sample_width)
+    wav_file.setframerate(sample_rate)
+    wav_file.writeframes(pcm)
+  return buffer.getvalue()
+
+
+def _streamed_wav_bytes(pcm: bytes) -> bytes:
+  """Build a WAV payload with unknown-length streaming headers."""
+  audio = bytearray(_wav_bytes(pcm))
+  audio[4:8] = (0xFFFFFFFF).to_bytes(4, byteorder="little")
+  data_offset = audio.find(b"data")
+  if data_offset < 0:
+    raise AssertionError("test WAV did not contain a data chunk")
+  audio[data_offset + 4 : data_offset + 8] = (0xFFFFFFFF).to_bytes(
+    4,
+    byteorder="little",
+  )
+  return bytes(audio)
 
 
 class _FakePlayback:
@@ -406,6 +438,7 @@ class _FakeVoiceWorker:
 
   def __init__(self) -> None:
     self.enqueued: list[tuple[str, str, str]] = []
+    self.completed_turns: list[tuple[str, str]] = []
     self.cancelled_sessions: list[str] = []
     self.cancelled_turns: list[tuple[str, str]] = []
     self.cleared_turns: list[tuple[str, str]] = []
@@ -414,6 +447,10 @@ class _FakeVoiceWorker:
     """Record queued text."""
     self.enqueued.append((session_id, turn_id, text))
     return True
+
+  def mark_turn_input_complete(self, *, session_id: str, turn_id: str) -> None:
+    """Record completed turn input."""
+    self.completed_turns.append((session_id, turn_id))
 
   def cancel_turn(self, *, session_id: str, turn_id: str) -> int:
     """Record turn cancellation."""
@@ -813,7 +850,7 @@ class OracVoiceTests(unittest.TestCase):
         suppress_warnings=True,
       )
 
-    self.assertEqual(voice_dir, PROJECT_ROOT / "var" / "voices" / "piper")
+    self.assertEqual(voice_dir, PROJECT_ROOT / "var" / "models" / "piper")
 
   def test_audio_capture_normalises_configured_input_device(self) -> None:
     """Input device config should support default, numeric, and named devices."""
@@ -821,6 +858,17 @@ class OracVoiceTests(unittest.TestCase):
     self.assertIsNone(_normalise_input_device("  "))
     self.assertEqual(_normalise_input_device("2"), 2)
     self.assertEqual(_normalise_input_device("USB Microphone"), "USB Microphone")
+
+  def test_audio_capture_can_pin_pulse_source(self) -> None:
+    """Input device config should support explicit Pulse/PipeWire sources."""
+    source_name = (
+      "alsa_input.usb-0b0e_Jabra_SPEAK_410_USB_305075ACFF26x011200-00."
+      "mono-fallback"
+    )
+
+    with patch.dict(os.environ, {}, clear=True):
+      self.assertIsNone(_normalise_input_device(f"pulse:{source_name}"))
+      self.assertEqual(os.environ["PULSE_SOURCE"], source_name)
 
   def test_audio_capture_null_aec_preserves_fixed_recording(self) -> None:
     """Null capture-side AEC should leave fixed recordings unchanged."""
@@ -1277,6 +1325,60 @@ class OracVoiceTests(unittest.TestCase):
     self.assertEqual(runtime.download_calls, [])
     self.assertEqual(runtime.model_calls[0]["wakeword_models"], [str(model_path)])
     self.assertEqual(runtime.model_calls[0]["inference_framework"], "onnx")
+
+  def test_openwakeword_bare_model_name_searches_runtime_models(self) -> None:
+    """Bare wake-word names should resolve from var/models by default."""
+    runtime = _FakeOpenWakeWordRuntime()
+
+    with tempfile.TemporaryDirectory() as tmp_name:
+      tmp_root = Path(tmp_name)
+      model_dir = tmp_root / "var" / "models" / "wakeword" / "openwakeword"
+      model_dir.mkdir(parents=True)
+      model_path = model_dir / "unit_runtime_wake.onnx"
+      model_path.write_text("fake", encoding="utf-8")
+
+      with patch.dict(os.environ, {"ORAC_HOME": str(tmp_root)}, clear=False):
+        with patch.dict(sys.modules, runtime.modules):
+          create_openwakeword_model(
+            model_paths=[],
+            model_names=["unit_runtime_wake"],
+            model_dirs=[],
+            inference_framework="auto",
+            error_context="openWakeWord",
+          )
+
+    self.assertEqual(runtime.download_calls, [])
+    self.assertEqual(runtime.model_calls[0]["wakeword_models"], [str(model_path)])
+    self.assertEqual(runtime.model_calls[0]["inference_framework"], "onnx")
+
+  def test_openwakeword_runtime_model_shadows_packaged_model(self) -> None:
+    """Runtime wake-word models should beat packaged models by precedence."""
+    runtime = _FakeOpenWakeWordRuntime()
+
+    with tempfile.TemporaryDirectory() as tmp_name:
+      tmp_root = Path(tmp_name)
+      runtime_dir = tmp_root / "var" / "models" / "wakeword" / "openwakeword"
+      packaged_dir = (
+        tmp_root / "resources" / "models" / "wakeword" / "openwakeword"
+      )
+      runtime_dir.mkdir(parents=True)
+      packaged_dir.mkdir(parents=True)
+      runtime_path = runtime_dir / "hey_orac.onnx"
+      packaged_path = packaged_dir / "hey_orac.onnx"
+      runtime_path.write_text("runtime", encoding="utf-8")
+      packaged_path.write_text("packaged", encoding="utf-8")
+
+      with patch.dict(os.environ, {"ORAC_HOME": str(tmp_root)}, clear=False):
+        with patch.dict(sys.modules, runtime.modules):
+          create_openwakeword_model(
+            model_paths=[],
+            model_names=["hey_orac"],
+            model_dirs=[],
+            inference_framework="auto",
+            error_context="openWakeWord",
+          )
+
+    self.assertEqual(runtime.model_calls[0]["wakeword_models"], [str(runtime_path)])
 
   def test_openwakeword_local_model_directory_wins_over_package_copy(self) -> None:
     """Local Orac wake-word directories should beat package-installed copies."""
@@ -2096,6 +2198,68 @@ class OracVoiceTests(unittest.TestCase):
 
     self.assertEqual(engine.piper_bin, piper_bin)
 
+  def test_piper_engine_falls_back_to_legacy_voice_directory(self) -> None:
+    """Piper should read old var/voices assets while users migrate."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      tmp_root = Path(tmp_name)
+      config_path = tmp_root / "orac.ini"
+      config_path.write_text(
+        "\n".join(
+          [
+            "[voice]",
+            "tts_voice = legacy_voice",
+            "tts_voice_dir = ${ORAC_HOME}/var/models/piper",
+          ]
+        ),
+        encoding="utf-8",
+      )
+      legacy_voice_dir = tmp_root / "var" / "voices" / "piper"
+      legacy_voice_dir.mkdir(parents=True)
+      model_path = legacy_voice_dir / "legacy_voice.onnx"
+      model_path.write_bytes(b"fake model")
+      piper_bin = tmp_root / "piper"
+      piper_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+      piper_bin.chmod(0o755)
+
+      with patch.dict(os.environ, {"ORAC_HOME": str(tmp_root)}, clear=False):
+        engine = PiperTtsEngine(
+          config_file_path=config_path,
+          piper_bin=piper_bin,
+        )
+
+    self.assertEqual(engine.voice_model_path, model_path)
+
+  def test_piper_engine_falls_back_to_packaged_voice_directory(self) -> None:
+    """Piper should read bundled voices when runtime voices are absent."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      tmp_root = Path(tmp_name)
+      config_path = tmp_root / "orac.ini"
+      config_path.write_text(
+        "\n".join(
+          [
+            "[voice]",
+            "tts_voice = packaged_voice",
+            "tts_voice_dir = ${ORAC_HOME}/var/models/piper",
+          ]
+        ),
+        encoding="utf-8",
+      )
+      packaged_voice_dir = tmp_root / "resources" / "models" / "piper"
+      packaged_voice_dir.mkdir(parents=True)
+      model_path = packaged_voice_dir / "packaged_voice.onnx"
+      model_path.write_bytes(b"fake model")
+      piper_bin = tmp_root / "piper"
+      piper_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+      piper_bin.chmod(0o755)
+
+      with patch.dict(os.environ, {"ORAC_HOME": str(tmp_root)}, clear=False):
+        engine = PiperTtsEngine(
+          config_file_path=config_path,
+          piper_bin=piper_bin,
+        )
+
+    self.assertEqual(engine.voice_model_path, model_path)
+
   def test_piper_synthesis_returns_generated_wav_path(self) -> None:
     """Piper wrapper should return the WAV path created by subprocess."""
     with tempfile.TemporaryDirectory() as tmp_name:
@@ -2470,7 +2634,9 @@ class OracVoiceTests(unittest.TestCase):
     with tempfile.TemporaryDirectory() as tmp_name:
       orac_home = Path(tmp_name)
       output_dir = orac_home / "var" / "tmp" / "orac_voice"
-      session = _FakeHttpSession(_FakeHttpResponse(b"RIFFfake-wav"))
+      pcm = np.array([1000, -1000, 500, -500], dtype=np.int16).tobytes()
+      wav_response = _wav_bytes(pcm)
+      session = _FakeHttpSession(_FakeHttpResponse(wav_response))
       with patch.object(
         tts_kokoro_module,
         "resolve_orac_home",
@@ -2492,7 +2658,11 @@ class OracVoiceTests(unittest.TestCase):
       )
 
       self.assertTrue(wav_path.name.endswith("-kokoro.wav"))
-      self.assertEqual(wav_path.read_bytes(), b"RIFFfake-wav")
+      self.assertEqual(wav_path.read_bytes().count(b"RIFF"), 1)
+      with wave.open(str(wav_path), "rb") as wav_file:
+        self.assertEqual(wav_file.getframerate(), 16000)
+        self.assertEqual(wav_file.getnchannels(), 1)
+        self.assertEqual(wav_file.getsampwidth(), 2)
       self.assertEqual(
         session.posts[0]["url"],
         "http://127.0.0.1:8880/v1/audio/speech",
@@ -2512,7 +2682,9 @@ class OracVoiceTests(unittest.TestCase):
     """Kokoro voice blends should be passed through to the endpoint."""
     with tempfile.TemporaryDirectory() as tmp_name:
       orac_home = Path(tmp_name)
-      session = _FakeHttpSession(_FakeHttpResponse(b"RIFFfake-wav"))
+      session = _FakeHttpSession(
+        _FakeHttpResponse(_wav_bytes(np.array([0], dtype=np.int16).tobytes()))
+      )
       with patch.object(
         tts_kokoro_module,
         "resolve_orac_home",
@@ -2567,6 +2739,113 @@ class OracVoiceTests(unittest.TestCase):
 
       with self.assertRaisesRegex(RuntimeError, "did not return WAV audio"):
         engine.synthesise_to_wav("Hello.", session_id="s1", turn_id="t1")
+
+  def test_kokoro_tts_engine_rejects_embedded_riff_header(self) -> None:
+    """Kokoro engine should reject byte-concatenated WAV responses."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      orac_home = Path(tmp_name)
+      first = _wav_bytes(np.array([0, 100], dtype=np.int16).tobytes())
+      second = _wav_bytes(np.array([200, 0], dtype=np.int16).tobytes())
+      session = _FakeHttpSession(_FakeHttpResponse(first + second))
+      with patch.object(
+        tts_kokoro_module,
+        "resolve_orac_home",
+        return_value=orac_home,
+      ):
+        engine = KokoroTtsEngine(output_dir=orac_home / "var" / "tmp")
+      engine._session = session
+
+      with self.assertRaisesRegex(RuntimeError, "embedded RIFF headers"):
+        engine.synthesise_to_wav("Hello.", session_id="s1", turn_id="t1")
+
+  def test_kokoro_tts_engine_accepts_streamed_unknown_length_wav(self) -> None:
+    """Kokoro engine should rewrite streamed WAV responses safely."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      orac_home = Path(tmp_name)
+      pcm = np.array([1000, -1000, 500, -500], dtype=np.int16).tobytes()
+      session = _FakeHttpSession(_FakeHttpResponse(_streamed_wav_bytes(pcm)))
+      with patch.object(
+        tts_kokoro_module,
+        "resolve_orac_home",
+        return_value=orac_home,
+      ):
+        engine = KokoroTtsEngine(
+          output_dir=orac_home / "var" / "tmp",
+          final_fade_ms=0,
+        )
+      engine._session = session
+
+      wav_path = engine.synthesise_to_wav("Hello.", session_id="s1", turn_id="t1")
+
+      with wave.open(str(wav_path), "rb") as wav_file:
+        self.assertEqual(wav_file.getnframes(), 4)
+        rendered = wav_file.readframes(wav_file.getnframes())
+      self.assertEqual(rendered, pcm)
+
+  def test_kokoro_tts_engine_applies_gain(self) -> None:
+    """Kokoro engine should apply configured post-synthesis gain."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      orac_home = Path(tmp_name)
+      pcm = np.array([1000, -1000, 20000, -20000], dtype=np.int16).tobytes()
+      session = _FakeHttpSession(_FakeHttpResponse(_wav_bytes(pcm)))
+      with patch.object(
+        tts_kokoro_module,
+        "resolve_orac_home",
+        return_value=orac_home,
+      ):
+        engine = KokoroTtsEngine(
+          output_dir=orac_home / "var" / "tmp",
+          final_fade_ms=0,
+          gain_db=6.0,
+        )
+      engine._session = session
+
+      wav_path = engine.synthesise_to_wav("Hello.", session_id="s1", turn_id="t1")
+
+      with wave.open(str(wav_path), "rb") as wav_file:
+        rendered = np.frombuffer(
+          wav_file.readframes(wav_file.getnframes()),
+          dtype=np.int16,
+        )
+      self.assertEqual(rendered[0], 1995)
+      self.assertEqual(rendered[1], -1995)
+      self.assertEqual(rendered[2], 32767)
+      self.assertEqual(rendered[3], -32768)
+
+  def test_kokoro_tts_engine_applies_final_fade_and_retains_debug(self) -> None:
+    """Kokoro engine should suppress terminal discontinuities in output WAV."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      orac_home = Path(tmp_name)
+      pcm = np.full(320, 12000, dtype=np.int16).tobytes()
+      raw_wav = _wav_bytes(pcm)
+      session = _FakeHttpSession(_FakeHttpResponse(raw_wav))
+      with patch.object(
+        tts_kokoro_module,
+        "resolve_orac_home",
+        return_value=orac_home,
+      ):
+        engine = KokoroTtsEngine(
+          output_dir=orac_home / "var" / "tmp",
+          final_fade_ms=10,
+          debug_audio=True,
+          retain_raw_response=True,
+        )
+      engine._session = session
+
+      wav_path = engine.synthesise_to_wav("Hello.", session_id="s1", turn_id="t1")
+
+      self.assertEqual(wav_path.read_bytes().count(b"RIFF"), 1)
+      with wave.open(str(wav_path), "rb") as wav_file:
+        rendered = np.frombuffer(
+          wav_file.readframes(wav_file.getnframes()),
+          dtype=np.int16,
+        )
+      self.assertEqual(rendered[-1], 0)
+      self.assertLess(abs(int(rendered[-2])), 12000)
+      debug_files = sorted(
+        (orac_home / "var" / "tmp" / "kokoro_debug").glob("*.wav")
+      )
+      self.assertEqual(len(debug_files), 2)
 
   def test_local_tts_worker_can_select_kokoro_backend(self) -> None:
     """Kokoro backend should be selectable without Piper fallback."""
@@ -3380,6 +3659,41 @@ class OracVoiceTests(unittest.TestCase):
 
     self.assertEqual(worker.enqueued, [("session1", "turn1", "Speak this.")])
 
+  def test_orac_routes_voice_stream_using_explicit_voice_session(self) -> None:
+    """Voice stream routing should survive conversation session sanitising."""
+    orchestrator = Orac.__new__(Orac)
+    worker = _FakeVoiceWorker()
+    orchestrator._tts_worker = worker
+    orchestrator._tts_coalescer = TtsChunkCoalescer(
+      enabled=True,
+      max_chars=220,
+      min_chunks=2,
+    )
+    req_env = {"id": "turn1", "meta": {"client": "slave"}}
+
+    orchestrator._route_stream_event_to_voice(
+      req_env,
+      "text_chunk",
+      {
+        "chunk": "Speak this.",
+        "session_id": "conversation-session",
+        "voice_session_id": "voice-session",
+        "turn_id": "turn1",
+      },
+    )
+    orchestrator._route_stream_event_to_voice(
+      req_env,
+      "stream_end",
+      {
+        "voice_session_id": "voice-session",
+        "turn_id": "turn1",
+        "stop_reason": "stop",
+      },
+    )
+
+    self.assertEqual(worker.enqueued, [("voice-session", "turn1", "Speak this.")])
+    self.assertEqual(worker.completed_turns, [("voice-session", "turn1")])
+
   def test_tts_coalescer_merges_short_complete_chunks(self) -> None:
     """TTS coalescer should merge short chunks for one turn."""
     coalescer = TtsChunkCoalescer(enabled=True, max_chars=220, min_chunks=2)
@@ -3482,6 +3796,36 @@ class OracVoiceTests(unittest.TestCase):
 
     self.assertEqual(worker.enqueued, [])
     self.assertFalse(subscription.playback_expected)
+
+  def test_orac_detects_missing_stream_speech_suffix(self) -> None:
+    """Final response suffixes missing from speech chunks should be recoverable."""
+    orchestrator = Orac.__new__(Orac)
+    content = (
+      "M25 is an open cluster in the constellation Sagittarius. "
+      "It's also known as the \"Northern Jewel Box\" and contains about "
+      "100 stars visible to amateur telescopes. Located approximately "
+      "2,000 light-years away, it spans roughly 30 arcminutes across our sky."
+    )
+    spoken_chunks = [
+      "M25 is an open cluster in the constellation Sagittarius.",
+      (
+        "It's also known as the \"Northern Jewel Box\" and contains about "
+        "100 stars visible to amateur telescopes."
+      ),
+    ]
+
+    missing = orchestrator._missing_stream_speech_suffix(
+      content=content,
+      speech_chunks=spoken_chunks,
+    )
+
+    self.assertEqual(
+      missing,
+      (
+        "Located approximately 2,000 light-years away, it spans roughly "
+        "30 arcminutes across our sky."
+      ),
+    )
 
   def test_orac_cancel_voice_session_delegates_to_worker(self) -> None:
     """Orac should expose general session cancellation for clients."""
@@ -3628,6 +3972,18 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     )
     self._slave_patch.start()
     self.addCleanup(self._slave_patch.stop)
+
+  def test_configured_runtime_identity_uses_default_model(self) -> None:
+    """Startup identity should populate the display before the first turn."""
+    sender = _FakeDisplaySender()
+
+    _send_configured_runtime_identity(sender, session_id="voice-session")
+
+    self.assertEqual(len(sender.events), 1)
+    self.assertEqual(sender.events[0]["event"], "runtime.identity")
+    self.assertEqual(sender.events[0]["model"], "llama3.1-64K")
+    self.assertEqual(sender.events[0]["persona"], "DEFAULT")
+    self.assertEqual(sender.events[0]["session_id"], "voice-session")
 
   async def test_voice_prompt_consumes_stream_final_response_frame(self) -> None:
     """Voice session should not leave stale final frames for the next turn."""
@@ -4126,6 +4482,68 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
       all(state[2] == "voice-session" for state in sender.states)
     )
     self.assertTrue(all(state[3] == "req_current" for state in sender.states))
+
+  async def test_voice_prompt_forwards_runtime_identity_to_display(self) -> None:
+    """Prompt handling should expose the current model and persona."""
+    reader = asyncio.StreamReader()
+    writer = _FakeStreamWriter()
+    frames = [
+      {
+        "v": 1,
+        "type": "stream_start",
+        "reply_to": "req_current",
+        "meta": {
+          "model": "test-model",
+          "personality_code": "DEFAULT",
+          "personality_name": "Standard Orac",
+        },
+        "payload": {},
+      },
+      {
+        "v": 1,
+        "type": "stream_end",
+        "reply_to": "req_current",
+        "meta": {
+          "model": "test-model",
+          "personality_code": "DEFAULT",
+          "personality_name": "Standard Orac",
+        },
+        "payload": {"stop_reason": "stop"},
+      },
+      {
+        "v": 1,
+        "type": "response",
+        "reply_to": "req_current",
+        "meta": {
+          "model": "test-model",
+          "personality_code": "DEFAULT",
+          "personality_name": "Standard Orac",
+        },
+        "payload": {"content": "OK."},
+      },
+    ]
+    for frame in frames:
+      reader.feed_data((json.dumps(frame) + "\n").encode("utf-8"))
+    reader.feed_eof()
+
+    sender = _FakeDisplaySender()
+    with contextlib.redirect_stdout(io.StringIO()):
+      status = await _send_orac_prompt(
+        reader=reader,
+        writer=writer,
+        prompt_text="current",
+        voice_session_id="voice-session",
+        display_sender=sender,
+      )
+
+    runtime_events = [
+      event for event in sender.events
+      if event.get("event") == "runtime.identity"
+    ]
+    self.assertEqual(status, 0)
+    self.assertEqual(len(runtime_events), 1)
+    self.assertEqual(runtime_events[0]["model"], "test-model")
+    self.assertEqual(runtime_events[0]["persona"], "Standard Orac")
 
   async def test_voice_prompt_stays_speaking_until_last_chunk_finishes(
     self,

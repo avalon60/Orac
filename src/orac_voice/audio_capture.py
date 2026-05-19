@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import queue
 import threading
@@ -47,6 +48,7 @@ DEFAULT_SAMPLE_RATE = 16000
 DEFAULT_RECORD_MODE = "fixed"
 DEFAULT_VAD_ENGINE = "energy"
 INT16_MAX_FLOAT = 32767.0
+PULSE_SOURCE_DEVICE_PREFIX = "pulse:"
 
 
 @dataclass(frozen=True)
@@ -101,6 +103,13 @@ def _normalise_input_device(value: str) -> int | str | None:
   """Normalise configured sounddevice input device value."""
   cleaned = value.strip()
   if not cleaned or cleaned.lower() == "default":
+    return None
+  if cleaned.lower().startswith(PULSE_SOURCE_DEVICE_PREFIX):
+    pulse_source = cleaned[len(PULSE_SOURCE_DEVICE_PREFIX):].strip()
+    if not pulse_source:
+      return None
+    os.environ["PULSE_SOURCE"] = pulse_source
+    logger.info("Pinned PulseAudio/PipeWire input source to {}", pulse_source)
     return None
   if cleaned.isdigit():
     return int(cleaned)
@@ -461,9 +470,12 @@ class SoundDeviceAudioCapture:
         status_callback(label)
 
     logger.info(
-      "Recording local microphone audio with {} VAD at {} Hz",
+      "Recording local microphone audio with {} VAD at {} Hz "
+      "input_device={} pulse_source={}",
       self.vad_engine_name,
       self.sample_rate,
+      self.input_device if self.input_device is not None else "default",
+      os.environ.get("PULSE_SOURCE") or "default",
     )
     _status("listening")
     self._recording_active = True

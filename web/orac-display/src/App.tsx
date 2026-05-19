@@ -25,6 +25,10 @@ type BrowserUiConfig = {
   buttons_visible?: boolean;
   show_transcript_panels?: boolean;
 };
+type RuntimeIdentity = {
+  model: string;
+  persona: string;
+};
 type BrowserDiagnosticEvent = CustomEvent<{
   timestamp: string;
   message: string;
@@ -43,6 +47,27 @@ function getTranscriptText(
   }
 
   return options.preserveWhitespace ? candidate : candidate.trim();
+}
+
+function getRuntimeIdentity(data: Record<string, unknown>): RuntimeIdentity | null {
+  const model = typeof data.model === 'string' ? data.model.trim() : '';
+  const persona = typeof data.persona === 'string' ? data.persona.trim() : '';
+  const personalityName =
+    typeof data.personality_name === 'string' ? data.personality_name.trim() : '';
+  const personalityCode =
+    typeof data.personality_code === 'string' ? data.personality_code.trim() : '';
+  const resolvedPersona = persona || personalityName || personalityCode || (
+    model ? 'DEFAULT' : ''
+  );
+
+  if (!model && !resolvedPersona) {
+    return null;
+  }
+
+  return {
+    model,
+    persona: resolvedPersona,
+  };
 }
 
 function useMediaQuery(query: string) {
@@ -86,6 +111,8 @@ function App() {
   const [showTranscriptPanels, setShowTranscriptPanels] = useState(
     SHOW_TRANSCRIPT_PANELS,
   );
+  const [runtimeIdentity, setRuntimeIdentity] =
+    useState<RuntimeIdentity | null>(null);
   const [userTranscript, setUserTranscript] = useState('');
   const [oracTranscript, setOracTranscript] = useState('');
   const [railExpanded, setRailExpanded] = useState(false);
@@ -221,6 +248,10 @@ function App() {
             delta?: string;
             chunk?: string;
             content?: string;
+            model?: string;
+            persona?: string;
+            personality_code?: string;
+            personality_name?: string;
           };
           const transcriptText = getTranscriptText(
             data as Record<string, unknown>,
@@ -245,6 +276,12 @@ function App() {
             }
             if (typeof uiConfig.show_transcript_panels === 'boolean') {
               setShowTranscriptPanels(uiConfig.show_transcript_panels);
+            }
+            setConnectionState('connected');
+          } else if (data.event === 'runtime.identity') {
+            const identity = getRuntimeIdentity(data as Record<string, unknown>);
+            if (identity) {
+              setRuntimeIdentity(identity);
             }
             setConnectionState('connected');
           } else if (
@@ -335,26 +372,38 @@ function App() {
       : connectionState === 'connecting'
         ? 'Connecting'
         : 'Offline';
+  const runtimeIdentityLabel = runtimeIdentity
+    ? [runtimeIdentity.model, runtimeIdentity.persona]
+        .filter(Boolean)
+        .join('/')
+    : '';
 
   return (
     <div className="relative flex h-screen w-screen overflow-hidden bg-[#03070d] text-white">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(79,195,247,0.16),_transparent_42%),linear-gradient(180deg,_rgba(3,7,13,0.45),_rgba(3,7,13,0.9))]" />
 
-      <div className="pointer-events-none absolute inset-x-4 top-4 z-20 flex items-start justify-between gap-4 sm:inset-x-6">
-        <div className="rounded-full border border-[#4fc3f7]/20 bg-[#06131d]/80 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.45em] text-[#8fdcff] shadow-[0_0_20px_rgba(79,195,247,0.14)] backdrop-blur-md">
-          Orac Display
+      <div className="pointer-events-none absolute inset-x-4 top-4 z-20 sm:inset-x-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="rounded-full border border-[#4fc3f7]/20 bg-[#06131d]/80 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.45em] text-[#8fdcff] shadow-[0_0_20px_rgba(79,195,247,0.14)] backdrop-blur-md">
+            Orac Display
+          </div>
+          <div
+            className={`rounded-full border px-4 py-2 text-[10px] font-bold uppercase tracking-[0.35em] backdrop-blur-md ${
+              connectionState === 'connected'
+                ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200'
+                : connectionState === 'connecting'
+                  ? 'border-amber-300/30 bg-amber-300/10 text-amber-100'
+                  : 'border-red-400/30 bg-red-400/10 text-red-100'
+            }`}
+          >
+            {connectionLabel}
+          </div>
         </div>
-        <div
-          className={`rounded-full border px-4 py-2 text-[10px] font-bold uppercase tracking-[0.35em] backdrop-blur-md ${
-            connectionState === 'connected'
-              ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200'
-              : connectionState === 'connecting'
-                ? 'border-amber-300/30 bg-amber-300/10 text-amber-100'
-                : 'border-red-400/30 bg-red-400/10 text-red-100'
-          }`}
-        >
-          {connectionLabel}
-        </div>
+        {runtimeIdentityLabel && (
+          <div className="absolute left-1/2 top-12 max-w-[calc(100vw-2rem)] -translate-x-1/2 truncate rounded-full border border-[#4fc3f7]/20 bg-[#06131d]/72 px-4 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.28em] text-[#8fdcff]/80 shadow-[0_0_20px_rgba(79,195,247,0.12)] backdrop-blur-md sm:top-0 sm:max-w-[min(34rem,calc(100vw-21rem))] sm:px-5">
+            {runtimeIdentityLabel}
+          </div>
+        )}
       </div>
 
       {connectionState !== 'connected' && (

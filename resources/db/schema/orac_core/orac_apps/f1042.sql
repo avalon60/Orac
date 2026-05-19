@@ -4394,7 +4394,7 @@ wwv_flow_imp_page.create_page_item(
 '       ) jt'))
 ,p_lov_display_null=>'YES'
 ,p_lov_cascade_parent_items=>'P6_PREF_KEY'
-,p_ajax_items_to_submit=>'P6_PREF_KEY,P6_PREF_VALUE_TEXT,P6_PREF_VALUE_POPUP_LOV'
+,p_ajax_items_to_submit=>'P6_PREF_KEY,P6_PREF_VALUE_TEXT,P6_PREF_VALUE_NUMBER,P6_PREF_VALUE_SELECT_LIST,P6_PREF_VALUE_POPUP_LOV'
 ,p_field_template=>1609121967514267634
 ,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
@@ -4778,9 +4778,15 @@ wwv_flow_imp_page.create_page_process(
 '           , case',
 '               when :P6_PREF_KEY = ''weather_location'' then',
 '                 json_serialize(p.pref_value returning varchar2(4000) null on error)',
-'               when :P6_CONTROL_TYPE in (''popup_lov'', ''select_one'')',
-'                and json_value(p.pref_value, ''$.name'' returning varchar2(4000) null on error) is not null then',
-'                 json_serialize(p.pref_value returning varchar2(4000) null on error)',
+'               when :P6_CONTROL_TYPE in (''popup_lov'', ''select_one'') then',
+'                 case :P6_VALUE_TYPE',
+'                   when ''number'' then',
+'                     to_char(json_value(p.pref_value, ''$'' returning number null on error))',
+'                   when ''string'' then',
+'                     json_value(p.pref_value, ''$'' returning varchar2(4000) null on error)',
+'                   when ''json'' then',
+'                     json_serialize(p.pref_value returning varchar2(4000) null on error)',
+'                 end',
 '             end as pref_value_popup_lov',
 '        into :P6_PREF_VALUE_TEXT',
 '           , :P6_PREF_VALUE_SEARCH_TERM',
