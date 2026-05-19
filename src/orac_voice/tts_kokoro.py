@@ -6,11 +6,15 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+import io
 from pathlib import Path
 import os
 import re
+import shutil
 import threading
 import uuid
+import wave
 
 from loguru import logger
 import requests
@@ -26,8 +30,28 @@ DEFAULT_KOKORO_MODEL = "kokoro"
 DEFAULT_KOKORO_VOICE = "af_heart"
 DEFAULT_KOKORO_RESPONSE_FORMAT = "wav"
 DEFAULT_KOKORO_TIMEOUT_SECONDS = 60
+DEFAULT_KOKORO_FINAL_FADE_MS = 8
+STREAMED_WAV_FRAME_SENTINEL = 0x3FFFFFFF
 SAFE_KOKORO_TOKEN = re.compile(r"^[A-Za-z0-9_.:-]+$")
 SAFE_KOKORO_VOICE = re.compile(r"^[A-Za-z0-9_.:+()-]+$")
+
+
+@dataclass(frozen=True)
+class WavAudio:
+  """Decoded WAV audio plus stable format metadata."""
+
+  channels: int
+  sample_width: int
+  sample_rate: int
+  frame_count: int
+  pcm: bytes
+
+  @property
+  def duration_seconds(self) -> float:
+    """Return the decoded audio duration in seconds."""
+    if self.sample_rate <= 0:
+      return 0.0
+    return float(self.frame_count) / float(self.sample_rate)
 
 
 def build_kokoro_speech_url(base_url: str) -> str:
@@ -92,6 +116,194 @@ def _optional_int_config_value(
     return default
 
 
+def _optional_bool_config_value(
+  config_mgr: ConfigManager,
+  section: str,
+  key: str,
+  *,
+  default: bool,
+) -> bool:
+  """Read an optional boolean config value."""
+  try:
+    return bool(config_mgr.bool_config_value(section, key, default=default))
+  except Exception:
+    logger.warning(
+      "Invalid boolean for {}.{}; using default {}",
+      section,
+      key,
+      default,
+    )
+    return default
+
+
+def _find_embedded_riff_offsets(audio: bytes) -> list[int]:
+  """Return offsets of extra RIFF headers after the first byte."""
+  offsets: list[int] = []
+  start = 1
+  while True:
+    offset = audio.find(b"RIFF", start)
+    if offset < 0:
+      return offsets
+    offsets.append(offset)
+    start = offset + 4
+
+
+def _read_wav_audio(audio: bytes) -> WavAudio:
+  """Decode a single WAV payload into PCM frames.
+
+  Args:
+    audio (bytes): Raw WAV file bytes.
+
+  Returns:
+    WavAudio: Decoded audio and format metadata.
+
+  Raises:
+    RuntimeError: If the payload is not one complete PCM WAV file.
+  """
+  embedded_riffs = _find_embedded_riff_offsets(audio)
+  if embedded_riffs:
+    raise RuntimeError(
+      "Kokoro synthesis returned WAV audio with embedded RIFF headers at "
+      f"offsets {embedded_riffs}; refusing byte-concatenated audio."
+    )
+
+  try:
+    with wave.open(io.BytesIO(audio), "rb") as wav_file:
+      if wav_file.getcomptype() != "NONE":
+        raise RuntimeError(
+          f"Unsupported compressed Kokoro WAV type: {wav_file.getcomptype()}"
+        )
+      channels = wav_file.getnchannels()
+      sample_width = wav_file.getsampwidth()
+      sample_rate = wav_file.getframerate()
+      frame_count = wav_file.getnframes()
+      pcm = wav_file.readframes(frame_count)
+  except wave.Error as exc:
+    raise RuntimeError(
+      f"Kokoro synthesis returned invalid WAV audio: {exc}"
+    ) from exc
+
+  if channels <= 0 or sample_width <= 0 or sample_rate <= 0:
+    raise RuntimeError(
+      "Kokoro synthesis returned WAV audio with invalid format metadata"
+    )
+  frame_size = channels * sample_width
+  expected_len = frame_count * frame_size
+  if len(pcm) != expected_len and frame_count >= STREAMED_WAV_FRAME_SENTINEL:
+    if len(pcm) % frame_size != 0:
+      raise RuntimeError(
+        "Kokoro synthesis returned streamed WAV PCM with a partial frame: "
+        f"{len(pcm)} bytes is not divisible by frame size {frame_size}"
+      )
+    logger.debug(
+      (
+        "Kokoro streamed WAV used unknown-length frame sentinel {}; "
+        "using actual decoded frame count {}."
+      ),
+      frame_count,
+      len(pcm) // frame_size,
+    )
+    frame_count = len(pcm) // frame_size
+    expected_len = len(pcm)
+
+  if len(pcm) != expected_len:
+    raise RuntimeError(
+      "Kokoro synthesis returned truncated WAV PCM: "
+      f"expected {expected_len} bytes, got {len(pcm)}"
+    )
+  return WavAudio(
+    channels=channels,
+    sample_width=sample_width,
+    sample_rate=sample_rate,
+    frame_count=frame_count,
+    pcm=pcm,
+  )
+
+
+def _sample_value(sample: bytes, *, sample_width: int) -> int:
+  """Return a PCM sample value normalised around zero."""
+  if sample_width == 1:
+    return int(sample[0]) - 128
+  return int.from_bytes(sample, byteorder="little", signed=True)
+
+
+def _encode_sample(value: int, *, sample_width: int) -> bytes:
+  """Encode one PCM sample value."""
+  if sample_width == 1:
+    return bytes([max(0, min(255, value + 128))])
+
+  bits = sample_width * 8
+  minimum = -(1 << (bits - 1))
+  maximum = (1 << (bits - 1)) - 1
+  clipped = max(minimum, min(maximum, int(value)))
+  return clipped.to_bytes(sample_width, byteorder="little", signed=True)
+
+
+def _scale_sample(sample: bytes, *, sample_width: int, scale: float) -> bytes:
+  """Scale one PCM sample toward silence."""
+  value = _sample_value(sample, sample_width=sample_width)
+  return _encode_sample(round(value * scale), sample_width=sample_width)
+
+
+def _apply_final_fade(audio: WavAudio, *, fade_ms: int) -> bytes:
+  """Apply a short fade-out to the final PCM frames."""
+  if fade_ms <= 0 or not audio.pcm:
+    return audio.pcm
+
+  frame_size = audio.channels * audio.sample_width
+  fade_frames = min(
+    audio.frame_count,
+    max(1, round(audio.sample_rate * fade_ms / 1000)),
+  )
+  fade_start = max(0, audio.frame_count - fade_frames)
+  faded = bytearray(audio.pcm)
+
+  for frame_index in range(fade_start, audio.frame_count):
+    remaining = audio.frame_count - frame_index - 1
+    scale = float(remaining) / float(fade_frames)
+    frame_offset = frame_index * frame_size
+    for channel in range(audio.channels):
+      sample_offset = frame_offset + (channel * audio.sample_width)
+      sample = bytes(faded[sample_offset : sample_offset + audio.sample_width])
+      faded[sample_offset : sample_offset + audio.sample_width] = _scale_sample(
+        sample,
+        sample_width=audio.sample_width,
+        scale=scale,
+      )
+  return bytes(faded)
+
+
+def _frame_peak(audio: WavAudio, *, frame_index: int) -> int:
+  """Return the absolute peak sample value for one frame."""
+  if audio.frame_count <= 0:
+    return 0
+  bounded_index = max(0, min(audio.frame_count - 1, frame_index))
+  frame_size = audio.channels * audio.sample_width
+  frame_offset = bounded_index * frame_size
+  peak = 0
+  for channel in range(audio.channels):
+    sample_offset = frame_offset + (channel * audio.sample_width)
+    sample = audio.pcm[sample_offset : sample_offset + audio.sample_width]
+    peak = max(peak, abs(_sample_value(sample, sample_width=audio.sample_width)))
+  return peak
+
+
+def _write_wav_file(
+  *,
+  output_path: Path,
+  audio: WavAudio,
+  pcm: bytes,
+) -> None:
+  """Write PCM frames with a fresh single WAV header."""
+  tmp_path = output_path.with_suffix(f"{output_path.suffix}.tmp")
+  with wave.open(str(tmp_path), "wb") as wav_file:
+    wav_file.setnchannels(audio.channels)
+    wav_file.setsampwidth(audio.sample_width)
+    wav_file.setframerate(audio.sample_rate)
+    wav_file.writeframes(pcm)
+  tmp_path.replace(output_path)
+
+
 class KokoroTtsEngine:
   """Synthesis wrapper for a local Kokoro speech HTTP service."""
 
@@ -106,6 +318,9 @@ class KokoroTtsEngine:
     output_dir: Path | str | None = None,
     timeout_seconds: int = DEFAULT_KOKORO_TIMEOUT_SECONDS,
     api_key_env: str | None = None,
+    final_fade_ms: int = DEFAULT_KOKORO_FINAL_FADE_MS,
+    debug_audio: bool = False,
+    retain_raw_response: bool = False,
   ) -> None:
     """Initialise Kokoro synthesis.
 
@@ -119,6 +334,9 @@ class KokoroTtsEngine:
       timeout_seconds (int): HTTP request timeout in seconds.
       api_key_env (str | None): Optional environment variable containing a
         bearer token for protected local endpoints.
+      final_fade_ms (int): Fade-out duration applied to the generated WAV.
+      debug_audio (bool): Whether to retain diagnostic audio files.
+      retain_raw_response (bool): Whether to retain raw Kokoro responses.
 
     Raises:
       RuntimeError: If configuration is invalid.
@@ -132,6 +350,9 @@ class KokoroTtsEngine:
     self.response_format = response_format.strip().lower()
     self.timeout_seconds = int(timeout_seconds or DEFAULT_KOKORO_TIMEOUT_SECONDS)
     self.api_key_env = (api_key_env or "").strip()
+    self.final_fade_ms = max(0, int(final_fade_ms))
+    self.debug_audio = bool(debug_audio)
+    self.retain_raw_response = bool(retain_raw_response)
 
     if not self.base_url:
       raise RuntimeError("Kokoro base URL is empty")
@@ -147,8 +368,14 @@ class KokoroTtsEngine:
     if output_dir is None:
       self.output_dir = self.orac_home / "var" / "tmp" / "orac_voice"
     else:
-      self.output_dir = expand_config_path(str(output_dir), orac_home=self.orac_home)
+      self.output_dir = expand_config_path(
+        str(output_dir),
+        orac_home=self.orac_home,
+      )
     self.output_dir.mkdir(parents=True, exist_ok=True)
+    self.debug_dir = self.output_dir / "kokoro_debug"
+    if self.debug_audio or self.retain_raw_response:
+      self.debug_dir.mkdir(parents=True, exist_ok=True)
 
     self._session_lock = threading.Lock()
     self._session = requests.Session()
@@ -205,6 +432,24 @@ class KokoroTtsEngine:
         VOICE_SECTION,
         "tts_kokoro_api_key_env",
         default="",
+      ),
+      final_fade_ms=_optional_int_config_value(
+        config_mgr,
+        VOICE_SECTION,
+        "tts_kokoro_final_fade_ms",
+        default=DEFAULT_KOKORO_FINAL_FADE_MS,
+      ),
+      debug_audio=_optional_bool_config_value(
+        config_mgr,
+        VOICE_SECTION,
+        "tts_kokoro_debug_audio",
+        default=False,
+      ),
+      retain_raw_response=_optional_bool_config_value(
+        config_mgr,
+        VOICE_SECTION,
+        "tts_kokoro_retain_raw_response",
+        default=False,
       ),
     )
 
@@ -274,7 +519,40 @@ class KokoroTtsEngine:
         "tts_kokoro_response_format and the local Kokoro endpoint."
       )
 
-    output_path.write_bytes(audio)
+    raw_path = self.debug_dir / f"{output_path.stem}-raw.wav"
+    if self.retain_raw_response:
+      raw_path.write_bytes(audio)
+
+    wav_audio = _read_wav_audio(audio)
+    logger.info(
+      (
+        "Kokoro WAV segment: path={} duration={:.3f}s sample_rate={} "
+        "channels={} sample_width={} frames={} bytes={} "
+        "start_peak={} end_peak={} final_fade_ms={}"
+      ),
+      output_path,
+      wav_audio.duration_seconds,
+      wav_audio.sample_rate,
+      wav_audio.channels,
+      wav_audio.sample_width,
+      wav_audio.frame_count,
+      len(wav_audio.pcm),
+      _frame_peak(wav_audio, frame_index=0),
+      _frame_peak(wav_audio, frame_index=wav_audio.frame_count - 1),
+      self.final_fade_ms,
+    )
+
+    faded_pcm = _apply_final_fade(wav_audio, fade_ms=self.final_fade_ms)
+    _write_wav_file(output_path=output_path, audio=wav_audio, pcm=faded_pcm)
+    if self.debug_audio:
+      shutil.copy2(output_path, self.debug_dir / f"{output_path.stem}-final.wav")
+
+    final_riffs = _find_embedded_riff_offsets(output_path.read_bytes())
+    if final_riffs:
+      raise RuntimeError(
+        "Final Kokoro WAV contains embedded RIFF headers at offsets "
+        f"{final_riffs}"
+      )
     return output_path
 
   def cancel(self) -> None:

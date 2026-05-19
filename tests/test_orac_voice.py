@@ -208,6 +208,37 @@ class _FakeHttpSession:
     self.close_calls += 1
 
 
+def _wav_bytes(
+  pcm: bytes,
+  *,
+  sample_rate: int = 16000,
+  channels: int = 1,
+  sample_width: int = 2,
+) -> bytes:
+  """Build a small PCM WAV payload for tests."""
+  buffer = io.BytesIO()
+  with wave.open(buffer, "wb") as wav_file:
+    wav_file.setnchannels(channels)
+    wav_file.setsampwidth(sample_width)
+    wav_file.setframerate(sample_rate)
+    wav_file.writeframes(pcm)
+  return buffer.getvalue()
+
+
+def _streamed_wav_bytes(pcm: bytes) -> bytes:
+  """Build a WAV payload with unknown-length streaming headers."""
+  audio = bytearray(_wav_bytes(pcm))
+  audio[4:8] = (0xFFFFFFFF).to_bytes(4, byteorder="little")
+  data_offset = audio.find(b"data")
+  if data_offset < 0:
+    raise AssertionError("test WAV did not contain a data chunk")
+  audio[data_offset + 4 : data_offset + 8] = (0xFFFFFFFF).to_bytes(
+    4,
+    byteorder="little",
+  )
+  return bytes(audio)
+
+
 class _FakePlayback:
   """Fake audio playback that records WAV paths."""
 
@@ -2603,7 +2634,9 @@ class OracVoiceTests(unittest.TestCase):
     with tempfile.TemporaryDirectory() as tmp_name:
       orac_home = Path(tmp_name)
       output_dir = orac_home / "var" / "tmp" / "orac_voice"
-      session = _FakeHttpSession(_FakeHttpResponse(b"RIFFfake-wav"))
+      pcm = np.array([1000, -1000, 500, -500], dtype=np.int16).tobytes()
+      wav_response = _wav_bytes(pcm)
+      session = _FakeHttpSession(_FakeHttpResponse(wav_response))
       with patch.object(
         tts_kokoro_module,
         "resolve_orac_home",
@@ -2625,7 +2658,11 @@ class OracVoiceTests(unittest.TestCase):
       )
 
       self.assertTrue(wav_path.name.endswith("-kokoro.wav"))
-      self.assertEqual(wav_path.read_bytes(), b"RIFFfake-wav")
+      self.assertEqual(wav_path.read_bytes().count(b"RIFF"), 1)
+      with wave.open(str(wav_path), "rb") as wav_file:
+        self.assertEqual(wav_file.getframerate(), 16000)
+        self.assertEqual(wav_file.getnchannels(), 1)
+        self.assertEqual(wav_file.getsampwidth(), 2)
       self.assertEqual(
         session.posts[0]["url"],
         "http://127.0.0.1:8880/v1/audio/speech",
@@ -2645,7 +2682,9 @@ class OracVoiceTests(unittest.TestCase):
     """Kokoro voice blends should be passed through to the endpoint."""
     with tempfile.TemporaryDirectory() as tmp_name:
       orac_home = Path(tmp_name)
-      session = _FakeHttpSession(_FakeHttpResponse(b"RIFFfake-wav"))
+      session = _FakeHttpSession(
+        _FakeHttpResponse(_wav_bytes(np.array([0], dtype=np.int16).tobytes()))
+      )
       with patch.object(
         tts_kokoro_module,
         "resolve_orac_home",
@@ -2700,6 +2739,83 @@ class OracVoiceTests(unittest.TestCase):
 
       with self.assertRaisesRegex(RuntimeError, "did not return WAV audio"):
         engine.synthesise_to_wav("Hello.", session_id="s1", turn_id="t1")
+
+  def test_kokoro_tts_engine_rejects_embedded_riff_header(self) -> None:
+    """Kokoro engine should reject byte-concatenated WAV responses."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      orac_home = Path(tmp_name)
+      first = _wav_bytes(np.array([0, 100], dtype=np.int16).tobytes())
+      second = _wav_bytes(np.array([200, 0], dtype=np.int16).tobytes())
+      session = _FakeHttpSession(_FakeHttpResponse(first + second))
+      with patch.object(
+        tts_kokoro_module,
+        "resolve_orac_home",
+        return_value=orac_home,
+      ):
+        engine = KokoroTtsEngine(output_dir=orac_home / "var" / "tmp")
+      engine._session = session
+
+      with self.assertRaisesRegex(RuntimeError, "embedded RIFF headers"):
+        engine.synthesise_to_wav("Hello.", session_id="s1", turn_id="t1")
+
+  def test_kokoro_tts_engine_accepts_streamed_unknown_length_wav(self) -> None:
+    """Kokoro engine should rewrite streamed WAV responses safely."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      orac_home = Path(tmp_name)
+      pcm = np.array([1000, -1000, 500, -500], dtype=np.int16).tobytes()
+      session = _FakeHttpSession(_FakeHttpResponse(_streamed_wav_bytes(pcm)))
+      with patch.object(
+        tts_kokoro_module,
+        "resolve_orac_home",
+        return_value=orac_home,
+      ):
+        engine = KokoroTtsEngine(
+          output_dir=orac_home / "var" / "tmp",
+          final_fade_ms=0,
+        )
+      engine._session = session
+
+      wav_path = engine.synthesise_to_wav("Hello.", session_id="s1", turn_id="t1")
+
+      with wave.open(str(wav_path), "rb") as wav_file:
+        self.assertEqual(wav_file.getnframes(), 4)
+        rendered = wav_file.readframes(wav_file.getnframes())
+      self.assertEqual(rendered, pcm)
+
+  def test_kokoro_tts_engine_applies_final_fade_and_retains_debug(self) -> None:
+    """Kokoro engine should suppress terminal discontinuities in output WAV."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      orac_home = Path(tmp_name)
+      pcm = np.full(320, 12000, dtype=np.int16).tobytes()
+      raw_wav = _wav_bytes(pcm)
+      session = _FakeHttpSession(_FakeHttpResponse(raw_wav))
+      with patch.object(
+        tts_kokoro_module,
+        "resolve_orac_home",
+        return_value=orac_home,
+      ):
+        engine = KokoroTtsEngine(
+          output_dir=orac_home / "var" / "tmp",
+          final_fade_ms=10,
+          debug_audio=True,
+          retain_raw_response=True,
+        )
+      engine._session = session
+
+      wav_path = engine.synthesise_to_wav("Hello.", session_id="s1", turn_id="t1")
+
+      self.assertEqual(wav_path.read_bytes().count(b"RIFF"), 1)
+      with wave.open(str(wav_path), "rb") as wav_file:
+        rendered = np.frombuffer(
+          wav_file.readframes(wav_file.getnframes()),
+          dtype=np.int16,
+        )
+      self.assertEqual(rendered[-1], 0)
+      self.assertLess(abs(int(rendered[-2])), 12000)
+      debug_files = sorted(
+        (orac_home / "var" / "tmp" / "kokoro_debug").glob("*.wav")
+      )
+      self.assertEqual(len(debug_files), 2)
 
   def test_local_tts_worker_can_select_kokoro_backend(self) -> None:
     """Kokoro backend should be selectable without Piper fallback."""

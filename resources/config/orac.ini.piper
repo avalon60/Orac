@@ -154,6 +154,9 @@ tts_kokoro_voice = af_heart
 tts_kokoro_response_format = wav
 tts_kokoro_timeout_seconds = 60
 tts_kokoro_api_key_env =
+tts_kokoro_final_fade_ms = 8
+tts_kokoro_debug_audio = false
+tts_kokoro_retain_raw_response = false
 # Playback backend. "shell" keeps the existing paplay/aplay/ffplay path.
 # "native" is experimental and exposes real PCM frames for future AEC work.
 playback_backend = shell
