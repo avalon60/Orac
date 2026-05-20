@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "plugin_id": "media_control",
   "name": "Media Control",
   "description": "Handles playback control for TVs, speakers, and media scenes across the home.",
@@ -23,5 +23,17 @@
     "Turn the volume down in the kitchen.",
     "Play jazz in the study."
   ],
-  "entry_point": "plugin:MediaControlPlugin"
+  "entry_point": "plugin:MediaControlPlugin",
+  "runtime": {
+    "mode": "on_demand"
+  },
+  "configuration": {
+    "required": [],
+    "optional": []
+  },
+  "database": {
+    "required": false,
+    "on_missing": "warn_disable",
+    "schemas": []
+  }
 }

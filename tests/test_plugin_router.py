@@ -54,24 +54,27 @@ class PluginRouterTests(unittest.TestCase):
     def test_router_returns_first_handled_result(self) -> None:
         logger = _FakeLogger()
         manifest = PluginManifest(
-            schema_version=1,
+            schema_version=2,
             plugin_id="weather",
             name="Weather",
             description="Weather plugin",
             version="1.0.0",
             enabled=True,
             capabilities=("weather.current_conditions",),
+            entitlements=(),
             entities=(),
             examples=(),
             entry_point="plugin:WeatherPlugin",
             manifest_path=Path("plugins/weather.json"),
             plugin_dir=Path("plugins/weather"),
             manifest_hash="abc123",
+            runtime_mode="on_demand",
         )
         router = PluginRouter(
             plugin_manager=_FakePluginManager(manifest),
             logger=logger,
             config_mgr=object(),
+            context_manager=object(),
         )
 
         class _HandlingPlugin:
@@ -95,6 +98,7 @@ class PluginRouterTests(unittest.TestCase):
                     candidates=(PluginCandidate(plugin_id="weather", score=0.91),),
                     refreshed=False,
                 ),
+                auth_user="unit_user",
             )
         finally:
             plugin_router_module.load_plugin_class = original_loader
@@ -109,6 +113,7 @@ class PluginRouterTests(unittest.TestCase):
             plugin_manager=_FakePluginManager(None),
             logger=logger,
             config_mgr=object(),
+            context_manager=object(),
         )
 
         result = router.route(
@@ -118,6 +123,7 @@ class PluginRouterTests(unittest.TestCase):
                 candidates=(PluginCandidate(plugin_id="weather", score=0.80),),
                 refreshed=False,
             ),
+            auth_user="unit_user",
         )
 
         self.assertIsNone(result)

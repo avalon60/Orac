@@ -6,14 +6,29 @@
 from model.plugin_routing.embeddings import EmbeddingProvider, HashEmbeddingProvider
 from model.plugin_routing.handoff import PluginRoutingHandoff, render_plugin_routing_hints
 from model.plugin_routing.manager import PluginManager
-from model.plugin_routing.models import PluginCandidate, PluginManifest
+from model.plugin_routing.models import (
+    PluginCandidate,
+    PluginConfigKey,
+    PluginDatabaseBackup,
+    PluginDatabaseSchema,
+    PluginDatabaseVersionCheck,
+    PluginHealthCheck,
+    PluginManifest,
+    PluginServiceRuntime,
+)
 
 __all__ = [
     "EmbeddingProvider",
     "HashEmbeddingProvider",
     "PluginCandidate",
+    "PluginConfigKey",
+    "PluginDatabaseBackup",
+    "PluginDatabaseSchema",
+    "PluginDatabaseVersionCheck",
+    "PluginHealthCheck",
     "PluginManager",
     "PluginManifest",
     "PluginRoutingHandoff",
+    "PluginServiceRuntime",
     "render_plugin_routing_hints",
 ]

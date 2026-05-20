@@ -7,6 +7,73 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
+
+PluginRuntimeMode = Literal["on_demand", "service", "hybrid"]
+PluginConfigValueType = Literal["string", "bool", "int", "float", "path", "list"]
+PluginServiceStartPolicy = Literal["auto", "manual"]
+PluginServiceRestartPolicy = Literal["never", "on_failure"]
+PluginDatabaseOnMissing = Literal["warn_disable", "warn_only", "fail_refresh"]
+PluginDatabaseManagedBy = Literal["orac"]
+
+
+@dataclass(frozen=True)
+class PluginConfigKey:
+    """Represents a plugin configuration key declared by a manifest."""
+
+    section: str
+    key: str
+    value_type: PluginConfigValueType
+    description: str
+
+
+@dataclass(frozen=True)
+class PluginHealthCheck:
+    """Represents service health-check metadata declared by a manifest."""
+
+    enabled: bool = False
+    method: str | None = None
+    interval_seconds: int | None = None
+    timeout_seconds: int | None = None
+    failure_threshold: int | None = None
+
+
+@dataclass(frozen=True)
+class PluginServiceRuntime:
+    """Represents background service metadata declared by a manifest."""
+
+    entry_point: str
+    start_policy: PluginServiceStartPolicy
+    restart_policy: PluginServiceRestartPolicy
+    shutdown_timeout_seconds: int
+    health_check: PluginHealthCheck
+
+
+@dataclass(frozen=True)
+class PluginDatabaseVersionCheck:
+    """Represents plugin database version-check metadata."""
+
+    enabled: bool
+
+
+@dataclass(frozen=True)
+class PluginDatabaseBackup:
+    """Represents plugin database backup/export metadata."""
+
+    include: bool
+    export_mode: str | None = None
+
+
+@dataclass(frozen=True)
+class PluginDatabaseSchema:
+    """Represents a plugin-owned database schema declaration."""
+
+    schema_name: str
+    purpose: str
+    managed_by: PluginDatabaseManagedBy
+    minimum_version: str
+    version_check: PluginDatabaseVersionCheck
+    backup: PluginDatabaseBackup | None = None
 
 
 @dataclass(frozen=True)
@@ -27,6 +94,13 @@ class PluginManifest:
     manifest_path: Path
     plugin_dir: Path
     manifest_hash: str
+    runtime_mode: PluginRuntimeMode = "on_demand"
+    service_runtime: PluginServiceRuntime | None = None
+    configuration_required: tuple[PluginConfigKey, ...] = ()
+    configuration_optional: tuple[PluginConfigKey, ...] = ()
+    database_required: bool = False
+    database_on_missing: PluginDatabaseOnMissing = "warn_disable"
+    database_schemas: tuple[PluginDatabaseSchema, ...] = ()
 
 
 @dataclass(frozen=True)

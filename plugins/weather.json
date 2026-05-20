@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "plugin_id": "weather",
   "name": "Weather",
   "description": "Answers current weather and short forecast questions for the user's configured or supported locations.",
@@ -29,5 +29,24 @@
     "Will it be windy tomorrow morning?",
     "What's the temperature outside?"
   ],
-  "entry_point": "plugin:WeatherPlugin"
+  "entry_point": "plugin:WeatherPlugin",
+  "runtime": {
+    "mode": "on_demand"
+  },
+  "configuration": {
+    "required": [],
+    "optional": [
+      {
+        "section": "weather",
+        "key": "default_location",
+        "type": "string",
+        "description": "Fallback weather location used when no user preference or explicit location is available."
+      }
+    ]
+  },
+  "database": {
+    "required": false,
+    "on_missing": "warn_disable",
+    "schemas": []
+  }
 }

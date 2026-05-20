@@ -26,9 +26,15 @@ class PluginManager:
         plugins_dir: Path | None = None,
         cache_dir: Path | None = None,
         logger=None,
+        database_schema_root: Path | None = None,
     ):
         self._project_root = project_home()
         self._plugins_dir = Path(plugins_dir) if plugins_dir else self._project_root / "plugins"
+        self._database_schema_root = (
+            Path(database_schema_root)
+            if database_schema_root
+            else self._project_root / "resources" / "db" / "schema"
+        )
         self._cache = PluginEmbeddingCache(
             cache_dir or PluginEmbeddingCache.default_cache_dir(self._project_root),
             logger=logger,
@@ -49,10 +55,22 @@ class PluginManager:
         invalid_count = len(errors)
         enabled_manifests = [manifest for manifest in manifests if manifest.enabled]
         disabled_count = valid_count - len(enabled_manifests)
+        runtime_manifests, dependency_disabled_manifests = self._runtime_eligible_manifests(
+            enabled_manifests
+        )
         for error in errors:
             self._log_warning(f"Plugin routing invalid manifest skipped: {error}")
         if disabled_count:
             self._log_info(f"Plugin routing skipped {disabled_count} disabled plugin manifest(s).")
+        for manifest in dependency_disabled_manifests:
+            schema_names = ", ".join(
+                schema.schema_name for schema in manifest.database_schemas
+            )
+            self._log_warning(
+                "Plugin routing skipped enabled plugin "
+                f"'{manifest.plugin_id}' because required database schema "
+                f"metadata is unavailable: {schema_names}"
+            )
 
         cached_entries = self._cache.load(
             embedding_model_id=self._embedding_provider.model_id,
@@ -65,7 +83,7 @@ class PluginManager:
         cache_misses = 0
         re_embedded = 0
 
-        for manifest in enabled_manifests:
+        for manifest in runtime_manifests:
             canonical_text = build_canonical_intent_text(manifest)
             cached_entry = cached_entries.get(manifest.plugin_id)
 
@@ -103,7 +121,7 @@ class PluginManager:
         )
 
         self._index.build(vectors_for_index)
-        self._manifests = {manifest.plugin_id: manifest for manifest in enabled_manifests}
+        self._manifests = {manifest.plugin_id: manifest for manifest in runtime_manifests}
         self._last_refresh_report = {
             "plugin_root": str(self._plugins_dir),
             "cache_dir": str(self._cache.cache_dir),
@@ -112,6 +130,7 @@ class PluginManager:
             "invalid": invalid_count,
             "enabled": len(enabled_manifests),
             "disabled": disabled_count,
+            "dependency_disabled": len(dependency_disabled_manifests),
             "indexed_plugin_count": self._index.size(),
             "cache_hits": cache_hits,
             "cache_misses": cache_misses,
@@ -124,6 +143,7 @@ class PluginManager:
             "Plugin routing refresh complete: "
             f"discovered={discovered_count} valid={valid_count} invalid={invalid_count} "
             f"enabled={len(enabled_manifests)} disabled={disabled_count} "
+            f"dependency_disabled={len(dependency_disabled_manifests)} "
             f"cache_hits={cache_hits} cache_misses={cache_misses} re_embedded={re_embedded}"
         )
         return dict(self._last_refresh_report)
@@ -161,6 +181,41 @@ class PluginManager:
             cached_entry.get("manifest_hash") == manifest.manifest_hash
             and cached_entry.get("canonical_text") == canonical_text
         )
+
+    def _runtime_eligible_manifests(
+        self,
+        manifests: list[PluginManifest],
+    ) -> tuple[list[PluginManifest], list[PluginManifest]]:
+        """Return manifests eligible for on-demand routing and dependency-disabled manifests."""
+        eligible: list[PluginManifest] = []
+        dependency_disabled: list[PluginManifest] = []
+
+        for manifest in manifests:
+            if manifest.runtime_mode == "service":
+                continue
+            if manifest.database_required and self._has_missing_database_schema(manifest):
+                if manifest.database_on_missing == "fail_refresh":
+                    schema_names = ", ".join(
+                        schema.schema_name for schema in manifest.database_schemas
+                    )
+                    raise RuntimeError(
+                        "Plugin routing refresh failed because plugin "
+                        f"'{manifest.plugin_id}' is missing required database "
+                        f"schema metadata: {schema_names}"
+                    )
+                if manifest.database_on_missing == "warn_disable":
+                    dependency_disabled.append(manifest)
+                    continue
+            eligible.append(manifest)
+
+        return eligible, dependency_disabled
+
+    def _has_missing_database_schema(self, manifest: PluginManifest) -> bool:
+        """Return whether a manifest declares a required schema with no local bundle."""
+        for schema in manifest.database_schemas:
+            if not (self._database_schema_root / schema.schema_name).is_dir():
+                return True
+        return False
 
     def _log_debug(self, message: str) -> None:
         if self._logger is not None:

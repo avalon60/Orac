@@ -50,13 +50,15 @@ class PluginRoutingTests(unittest.TestCase):
             (plugins_dir / "alpha.json").write_text(
                 json.dumps(
                     {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "plugin_id": "beta",
                         "name": "Alpha",
                         "description": "Test plugin",
                         "version": "1.0.0",
                         "enabled": True,
                         "capabilities": ["test.capability"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
                     }
                 ),
                 encoding="utf-8",
@@ -76,15 +78,17 @@ class PluginRoutingTests(unittest.TestCase):
             manifest_path.write_text(
                 json.dumps(
                     {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "plugin_id": "alpha",
                         "name": "Alpha Plugin",
                         "description": "Routes alpha tasks.",
                         "version": "1.0.0",
                         "enabled": True,
                         "capabilities": ["alpha.control", "alpha.query"],
+                        "entitlements": [],
                         "examples": ["Do the alpha thing."],
                         "entry_point": "plugin:AlphaPlugin",
+                        "runtime": {"mode": "on_demand"},
                     }
                 ),
                 encoding="utf-8",
@@ -107,6 +111,9 @@ class PluginRoutingTests(unittest.TestCase):
             self.assertEqual(text, expected)
             self.assertNotIn("version:", text)
             self.assertNotIn("entry_point:", text)
+            self.assertNotIn("runtime:", text)
+            self.assertNotIn("configuration:", text)
+            self.assertNotIn("database:", text)
 
     def test_discovery_rejects_unknown_field(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -115,13 +122,15 @@ class PluginRoutingTests(unittest.TestCase):
             (plugins_dir / "alpha.json").write_text(
                 json.dumps(
                     {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "plugin_id": "alpha",
                         "name": "Alpha",
                         "description": "Test plugin",
                         "version": "1.0.0",
                         "enabled": True,
                         "capabilities": ["test.capability"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
                         "unexpected": "value",
                     }
                 ),
@@ -141,12 +150,14 @@ class PluginRoutingTests(unittest.TestCase):
             (plugins_dir / "alpha.json").write_text(
                 json.dumps(
                     {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "plugin_id": "alpha",
                         "name": "Alpha",
                         "description": "Test plugin",
                         "enabled": True,
                         "capabilities": ["test.capability"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
                     }
                 ),
                 encoding="utf-8",
@@ -158,6 +169,202 @@ class PluginRoutingTests(unittest.TestCase):
             self.assertEqual(len(errors), 1)
             self.assertIn("Missing required field(s): version", errors[0])
 
+    def test_discovery_rejects_missing_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Test plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["test.capability"],
+                        "entitlements": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(manifests, [])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("Missing required field(s): runtime", errors[0])
+
+    def test_discovery_rejects_unknown_runtime_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Test plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["test.capability"],
+                        "entitlements": [],
+                        "runtime": {"mode": "sometimes"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(manifests, [])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("runtime.mode must be one of", errors[0])
+
+    def test_discovery_loads_hybrid_runtime_and_database_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Hybrid plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.control"],
+                        "entitlements": ["network.local_http"],
+                        "runtime": {
+                            "mode": "hybrid",
+                            "service": {
+                                "entry_point": "plugin:AlphaService",
+                                "start_policy": "auto",
+                                "restart_policy": "on_failure",
+                                "shutdown_timeout_seconds": 10,
+                                "health_check": {
+                                    "enabled": True,
+                                    "method": "health",
+                                    "interval_seconds": 30,
+                                    "timeout_seconds": 5,
+                                    "failure_threshold": 3,
+                                },
+                            },
+                        },
+                        "configuration": {
+                            "required": [
+                                {
+                                    "section": "alpha",
+                                    "key": "host",
+                                    "type": "string",
+                                    "description": "Alpha host.",
+                                }
+                            ],
+                            "optional": [],
+                        },
+                        "database": {
+                            "required": True,
+                            "on_missing": "warn_disable",
+                            "schemas": [
+                                {
+                                    "schema_name": "orac_alpha",
+                                    "purpose": "Alpha plugin storage.",
+                                    "managed_by": "orac",
+                                    "minimum_version": "1.0.0",
+                                    "version_check": {"enabled": False},
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(errors, [])
+            self.assertEqual(manifests[0].runtime_mode, "hybrid")
+            self.assertEqual(manifests[0].service_runtime.entry_point, "plugin:AlphaService")
+            self.assertEqual(manifests[0].configuration_required[0].key, "host")
+            self.assertEqual(manifests[0].database_schemas[0].schema_name, "orac_alpha")
+
+    def test_discovery_rejects_malformed_configuration_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Test plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.control"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
+                        "configuration": {
+                            "required": [
+                                {
+                                    "section": "alpha",
+                                    "key": "host",
+                                    "type": "secret",
+                                    "description": "Alpha host.",
+                                }
+                            ]
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(manifests, [])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("configuration.required[0].type must be one of", errors[0])
+
+    def test_discovery_rejects_invalid_database_manager(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Database plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.query"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
+                        "database": {
+                            "required": True,
+                            "schemas": [
+                                {
+                                    "schema_name": "orac_alpha",
+                                    "purpose": "Alpha plugin storage.",
+                                    "managed_by": "external",
+                                    "minimum_version": "1.0.0",
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(manifests, [])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("database.schemas[0].managed_by must be one of: orac", errors[0])
+
     def test_disabled_plugin_is_not_indexed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins_dir, tempfile.TemporaryDirectory() as temp_cache_dir:
             plugins_dir = Path(temp_plugins_dir)
@@ -166,13 +373,15 @@ class PluginRoutingTests(unittest.TestCase):
                 (plugins_dir / f"{plugin_id}.json").write_text(
                     json.dumps(
                         {
-                            "schema_version": 1,
+                            "schema_version": 2,
                             "plugin_id": plugin_id,
                             "name": plugin_id.title(),
                             "description": f"{plugin_id} plugin",
                             "version": "1.0.0",
                             "enabled": enabled,
                             "capabilities": [f"{plugin_id}.capability"],
+                            "entitlements": [],
+                            "runtime": {"mode": "on_demand"},
                         }
                     ),
                     encoding="utf-8",
@@ -218,12 +427,14 @@ class PluginRoutingTests(unittest.TestCase):
             (plugins_dir / "alpha.json").write_text(
                 json.dumps(
                     {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "plugin_id": "alpha",
                         "name": "Alpha",
                         "description": "Bad manifest missing version",
                         "enabled": True,
                         "capabilities": ["alpha.control"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
                     }
                 ),
                 encoding="utf-8",
@@ -261,10 +472,98 @@ class PluginRoutingTests(unittest.TestCase):
         self.assertEqual(report["invalid"], 0)
         self.assertEqual(report["enabled"], 3)
         self.assertEqual(report["disabled"], 0)
-        self.assertGreaterEqual(report["indexed_plugin_count"], 3)
+        self.assertEqual(report["dependency_disabled"], 1)
+        self.assertEqual(report["indexed_plugin_count"], 2)
+        self.assertIsNone(manager.get_manifest("home_assistant"))
         self.assertEqual(len(candidates), 2)
         self.assertGreaterEqual(candidates[0].score, candidates[1].score)
         self.assertTrue(all(candidate.score <= 1.0 for candidate in candidates))
+
+    def test_service_only_plugin_is_not_indexed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins_dir, tempfile.TemporaryDirectory() as temp_cache_dir:
+            plugins_dir = Path(temp_plugins_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Background service",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.service"],
+                        "entitlements": [],
+                        "runtime": {
+                            "mode": "service",
+                            "service": {
+                                "entry_point": "plugin:AlphaService",
+                                "start_policy": "manual",
+                                "restart_policy": "never",
+                                "shutdown_timeout_seconds": 10,
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            manager = PluginManager(
+                embedding_provider=HashEmbeddingProvider(),
+                plugins_dir=plugins_dir,
+                cache_dir=Path(temp_cache_dir),
+            )
+
+            report = manager.refresh()
+
+            self.assertEqual(report["valid"], 1)
+            self.assertEqual(report["enabled"], 1)
+            self.assertEqual(report["indexed_plugin_count"], 0)
+            self.assertIsNone(manager.get_manifest("alpha"))
+
+    def test_missing_required_database_schema_disables_plugin_from_routing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins_dir, tempfile.TemporaryDirectory() as temp_cache_dir:
+            plugins_dir = Path(temp_plugins_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Database-backed plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.query"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
+                        "database": {
+                            "required": True,
+                            "on_missing": "warn_disable",
+                            "schemas": [
+                                {
+                                    "schema_name": "orac_alpha",
+                                    "purpose": "Alpha plugin storage.",
+                                    "managed_by": "orac",
+                                    "minimum_version": "1.0.0",
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            manager = PluginManager(
+                embedding_provider=HashEmbeddingProvider(),
+                plugins_dir=plugins_dir,
+                cache_dir=Path(temp_cache_dir),
+                database_schema_root=Path(temp_cache_dir) / "schema",
+            )
+
+            report = manager.refresh()
+
+            self.assertEqual(report["dependency_disabled"], 1)
+            self.assertEqual(report["indexed_plugin_count"], 0)
+            self.assertIsNone(manager.get_manifest("alpha"))
 
     def test_cache_invalidation_uses_manifest_hash(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins_dir, tempfile.TemporaryDirectory() as temp_cache_dir:
@@ -274,13 +573,15 @@ class PluginRoutingTests(unittest.TestCase):
             manifest_path.write_text(
                 json.dumps(
                     {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "plugin_id": "alpha",
                         "name": "Alpha",
                         "description": "Initial description",
                         "version": "1.0.0",
                         "enabled": True,
                         "capabilities": ["alpha.control"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
                     }
                 ),
                 encoding="utf-8",
@@ -297,13 +598,15 @@ class PluginRoutingTests(unittest.TestCase):
             manifest_path.write_text(
                 json.dumps(
                     {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "plugin_id": "alpha",
                         "name": "Alpha",
                         "description": "Updated description",
                         "version": "1.0.0",
                         "enabled": True,
                         "capabilities": ["alpha.control"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
                     }
                 ),
                 encoding="utf-8",
@@ -325,13 +628,15 @@ class PluginRoutingTests(unittest.TestCase):
             (plugins_dir / "alpha.json").write_text(
                 json.dumps(
                     {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "plugin_id": "alpha",
                         "name": "Alpha",
                         "description": "Test plugin",
                         "version": "1.0.0",
                         "enabled": True,
                         "capabilities": ["alpha.control"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
                     }
                 ),
                 encoding="utf-8",
@@ -359,13 +664,15 @@ class PluginRoutingTests(unittest.TestCase):
             (plugins_dir / "alpha.json").write_text(
                 json.dumps(
                     {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "plugin_id": "alpha",
                         "name": "Alpha",
                         "description": "Test plugin",
                         "version": "1.0.0",
                         "enabled": True,
                         "capabilities": ["alpha.control"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
                     }
                 ),
                 encoding="utf-8",
@@ -395,13 +702,15 @@ class PluginRoutingTests(unittest.TestCase):
             (plugins_dir / "alpha.json").write_text(
                 json.dumps(
                     {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "plugin_id": "alpha",
                         "name": "Alpha",
                         "description": "Stable description",
                         "version": "1.0.0",
                         "enabled": True,
                         "capabilities": ["alpha.control"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
                     }
                 ),
                 encoding="utf-8",

@@ -1,7 +1,7 @@
 """Manifest discovery and validation for plugin routing."""
 # Author: Clive Bostock
 # Date: 2026-04-30
-# Description: Scans manifest files, validates schema v1, and constructs manifest models.
+# Description: Scans manifest files, validates schema v2, and constructs manifest models.
 
 from __future__ import annotations
 
@@ -11,10 +11,25 @@ import re
 from pathlib import Path
 from typing import Any
 
-from model.plugin_routing.models import PluginManifest
+from model.plugin_routing.models import (
+    PluginConfigKey,
+    PluginDatabaseBackup,
+    PluginDatabaseSchema,
+    PluginDatabaseVersionCheck,
+    PluginHealthCheck,
+    PluginManifest,
+    PluginServiceRuntime,
+)
 
 PLUGIN_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
-MANIFEST_SCHEMA_VERSION = 1
+DATABASE_SCHEMA_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+MANIFEST_SCHEMA_VERSION = 2
+RUNTIME_MODES = {"on_demand", "service", "hybrid"}
+CONFIG_VALUE_TYPES = {"string", "bool", "int", "float", "path", "list"}
+SERVICE_START_POLICIES = {"auto", "manual"}
+SERVICE_RESTART_POLICIES = {"never", "on_failure"}
+DATABASE_ON_MISSING_POLICIES = {"warn_disable", "warn_only", "fail_refresh"}
+DATABASE_MANAGERS = {"orac"}
 REQUIRED_FIELDS = {
     "schema_version",
     "plugin_id",
@@ -24,11 +39,14 @@ REQUIRED_FIELDS = {
     "enabled",
     "capabilities",
     "entitlements",
+    "runtime",
 }
 OPTIONAL_FIELDS = {
     "entities",
     "examples",
     "entry_point",
+    "configuration",
+    "database",
 }
 ALLOWED_FIELDS = REQUIRED_FIELDS | OPTIONAL_FIELDS
 
@@ -125,6 +143,13 @@ class PluginDiscovery:
         entities = self._require_string_list(data.get("entities", []), "entities")
         examples = self._require_string_list(data.get("examples", []), "examples")
         entry_point = self._require_optional_string(data.get("entry_point"), "entry_point")
+        runtime_mode, service_runtime = self._load_runtime(data["runtime"])
+        configuration_required, configuration_optional = self._load_configuration(
+            data.get("configuration", {})
+        )
+        database_required, database_on_missing, database_schemas = self._load_database(
+            data.get("database", {})
+        )
 
         manifest_hash = hashlib.sha256(manifest_text.encode("utf-8")).hexdigest()
 
@@ -143,7 +168,258 @@ class PluginDiscovery:
             manifest_path=manifest_path,
             plugin_dir=plugin_dir,
             manifest_hash=manifest_hash,
+            runtime_mode=runtime_mode,
+            service_runtime=service_runtime,
+            configuration_required=tuple(configuration_required),
+            configuration_optional=tuple(configuration_optional),
+            database_required=database_required,
+            database_on_missing=database_on_missing,
+            database_schemas=tuple(database_schemas),
         )
+
+    def _load_runtime(self, value: Any) -> tuple[str, PluginServiceRuntime | None]:
+        if not isinstance(value, dict):
+            raise PluginManifestError("runtime must be an object")
+
+        unknown_fields = sorted(set(value.keys()) - {"mode", "service"})
+        if unknown_fields:
+            raise PluginManifestError(
+                f"runtime has unknown field(s): {', '.join(unknown_fields)}"
+            )
+
+        mode = self._require_enum(value.get("mode"), "runtime.mode", RUNTIME_MODES)
+        service_value = value.get("service")
+        if mode in {"service", "hybrid"}:
+            if service_value is None:
+                raise PluginManifestError(
+                    "runtime.service is required when runtime.mode is service or hybrid"
+                )
+            service_runtime = self._load_service_runtime(service_value)
+        elif service_value is not None:
+            raise PluginManifestError(
+                "runtime.service is only allowed when runtime.mode is service or hybrid"
+            )
+        else:
+            service_runtime = None
+
+        return mode, service_runtime
+
+    def _load_service_runtime(self, value: Any) -> PluginServiceRuntime:
+        if not isinstance(value, dict):
+            raise PluginManifestError("runtime.service must be an object")
+
+        required_fields = {
+            "entry_point",
+            "start_policy",
+            "restart_policy",
+            "shutdown_timeout_seconds",
+        }
+        optional_fields = {"health_check"}
+        self._reject_unknown_fields(value, required_fields | optional_fields, "runtime.service")
+        self._require_fields(value, required_fields, "runtime.service")
+
+        health_check = self._load_health_check(value.get("health_check", {"enabled": False}))
+        return PluginServiceRuntime(
+            entry_point=self._require_non_empty_string(
+                value["entry_point"],
+                "runtime.service.entry_point",
+            ),
+            start_policy=self._require_enum(
+                value["start_policy"],
+                "runtime.service.start_policy",
+                SERVICE_START_POLICIES,
+            ),
+            restart_policy=self._require_enum(
+                value["restart_policy"],
+                "runtime.service.restart_policy",
+                SERVICE_RESTART_POLICIES,
+            ),
+            shutdown_timeout_seconds=self._require_positive_int(
+                value["shutdown_timeout_seconds"],
+                "runtime.service.shutdown_timeout_seconds",
+            ),
+            health_check=health_check,
+        )
+
+    def _load_health_check(self, value: Any) -> PluginHealthCheck:
+        if not isinstance(value, dict):
+            raise PluginManifestError("runtime.service.health_check must be an object")
+
+        allowed_fields = {
+            "enabled",
+            "method",
+            "interval_seconds",
+            "timeout_seconds",
+            "failure_threshold",
+        }
+        self._reject_unknown_fields(value, allowed_fields, "runtime.service.health_check")
+        enabled = self._require_bool(value.get("enabled", False), "runtime.service.health_check.enabled")
+
+        if not enabled:
+            return PluginHealthCheck(enabled=False)
+
+        required_fields = {
+            "method",
+            "interval_seconds",
+            "timeout_seconds",
+            "failure_threshold",
+        }
+        self._require_fields(value, required_fields, "runtime.service.health_check")
+        return PluginHealthCheck(
+            enabled=True,
+            method=self._require_non_empty_string(
+                value["method"],
+                "runtime.service.health_check.method",
+            ),
+            interval_seconds=self._require_positive_int(
+                value["interval_seconds"],
+                "runtime.service.health_check.interval_seconds",
+            ),
+            timeout_seconds=self._require_positive_int(
+                value["timeout_seconds"],
+                "runtime.service.health_check.timeout_seconds",
+            ),
+            failure_threshold=self._require_positive_int(
+                value["failure_threshold"],
+                "runtime.service.health_check.failure_threshold",
+            ),
+        )
+
+    def _load_configuration(
+        self,
+        value: Any,
+    ) -> tuple[list[PluginConfigKey], list[PluginConfigKey]]:
+        if not isinstance(value, dict):
+            raise PluginManifestError("configuration must be an object")
+
+        allowed_fields = {"required", "optional"}
+        self._reject_unknown_fields(value, allowed_fields, "configuration")
+        return (
+            self._load_config_keys(value.get("required", []), "configuration.required"),
+            self._load_config_keys(value.get("optional", []), "configuration.optional"),
+        )
+
+    def _load_config_keys(self, value: Any, field_name: str) -> list[PluginConfigKey]:
+        if not isinstance(value, list):
+            raise PluginManifestError(f"{field_name} must be a list")
+
+        result: list[PluginConfigKey] = []
+        for index, item in enumerate(value):
+            item_name = f"{field_name}[{index}]"
+            if not isinstance(item, dict):
+                raise PluginManifestError(f"{item_name} must be an object")
+            required_fields = {"section", "key", "type", "description"}
+            self._reject_unknown_fields(item, required_fields, item_name)
+            self._require_fields(item, required_fields, item_name)
+            result.append(
+                PluginConfigKey(
+                    section=self._require_non_empty_string(item["section"], f"{item_name}.section"),
+                    key=self._require_non_empty_string(item["key"], f"{item_name}.key"),
+                    value_type=self._require_enum(
+                        item["type"],
+                        f"{item_name}.type",
+                        CONFIG_VALUE_TYPES,
+                    ),
+                    description=self._require_non_empty_string(
+                        item["description"],
+                        f"{item_name}.description",
+                    ),
+                )
+            )
+        return result
+
+    def _load_database(self, value: Any) -> tuple[bool, str, list[PluginDatabaseSchema]]:
+        if not isinstance(value, dict):
+            raise PluginManifestError("database must be an object")
+
+        allowed_fields = {"required", "on_missing", "schemas"}
+        self._reject_unknown_fields(value, allowed_fields, "database")
+
+        required = self._require_bool(value.get("required", False), "database.required")
+        on_missing = self._require_enum(
+            value.get("on_missing", "warn_disable"),
+            "database.on_missing",
+            DATABASE_ON_MISSING_POLICIES,
+        )
+        schemas = self._load_database_schemas(value.get("schemas", []))
+
+        if required and not schemas:
+            raise PluginManifestError("database.schemas must contain at least one value when database.required is true")
+
+        return required, on_missing, schemas
+
+    def _load_database_schemas(self, value: Any) -> list[PluginDatabaseSchema]:
+        if not isinstance(value, list):
+            raise PluginManifestError("database.schemas must be a list")
+
+        result: list[PluginDatabaseSchema] = []
+        for index, item in enumerate(value):
+            item_name = f"database.schemas[{index}]"
+            if not isinstance(item, dict):
+                raise PluginManifestError(f"{item_name} must be an object")
+            required_fields = {
+                "schema_name",
+                "purpose",
+                "managed_by",
+                "minimum_version",
+            }
+            optional_fields = {"version_check", "backup"}
+            self._reject_unknown_fields(item, required_fields | optional_fields, item_name)
+            self._require_fields(item, required_fields, item_name)
+
+            schema_name = self._require_non_empty_string(item["schema_name"], f"{item_name}.schema_name")
+            if not DATABASE_SCHEMA_PATTERN.fullmatch(schema_name):
+                raise PluginManifestError(
+                    f"{item_name}.schema_name must match ^[a-z][a-z0-9_]*$"
+                )
+
+            result.append(
+                PluginDatabaseSchema(
+                    schema_name=schema_name,
+                    purpose=self._require_non_empty_string(item["purpose"], f"{item_name}.purpose"),
+                    managed_by=self._require_enum(
+                        item["managed_by"],
+                        f"{item_name}.managed_by",
+                        DATABASE_MANAGERS,
+                    ),
+                    minimum_version=self._require_non_empty_string(
+                        item["minimum_version"],
+                        f"{item_name}.minimum_version",
+                    ),
+                    version_check=self._load_database_version_check(
+                        item.get("version_check", {"enabled": False}),
+                        f"{item_name}.version_check",
+                    ),
+                    backup=self._load_database_backup(item.get("backup"), f"{item_name}.backup"),
+                )
+            )
+        return result
+
+    def _load_database_version_check(
+        self,
+        value: Any,
+        field_name: str,
+    ) -> PluginDatabaseVersionCheck:
+        if not isinstance(value, dict):
+            raise PluginManifestError(f"{field_name} must be an object")
+        self._reject_unknown_fields(value, {"enabled"}, field_name)
+        return PluginDatabaseVersionCheck(
+            enabled=self._require_bool(value.get("enabled", False), f"{field_name}.enabled")
+        )
+
+    def _load_database_backup(
+        self,
+        value: Any,
+        field_name: str,
+    ) -> PluginDatabaseBackup | None:
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise PluginManifestError(f"{field_name} must be an object")
+        self._reject_unknown_fields(value, {"include", "export_mode"}, field_name)
+        include = self._require_bool(value.get("include", False), f"{field_name}.include")
+        export_mode = self._require_optional_string(value.get("export_mode"), f"{field_name}.export_mode")
+        return PluginDatabaseBackup(include=include, export_mode=export_mode)
 
     @staticmethod
     def _require_non_empty_string(value: Any, field_name: str) -> str:
@@ -165,6 +441,48 @@ class PluginDiscovery:
         if not isinstance(value, bool):
             raise PluginManifestError(f"{field_name} must be a boolean")
         return value
+
+    @staticmethod
+    def _require_positive_int(value: Any, field_name: str) -> int:
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise PluginManifestError(f"{field_name} must be an integer")
+        if value <= 0:
+            raise PluginManifestError(f"{field_name} must be greater than zero")
+        return value
+
+    @staticmethod
+    def _require_enum(value: Any, field_name: str, allowed_values: set[str]) -> str:
+        if not isinstance(value, str):
+            raise PluginManifestError(f"{field_name} must be a string")
+        cleaned = value.strip()
+        if cleaned not in allowed_values:
+            allowed = ", ".join(sorted(allowed_values))
+            raise PluginManifestError(f"{field_name} must be one of: {allowed}")
+        return cleaned
+
+    @staticmethod
+    def _reject_unknown_fields(
+        value: dict[str, Any],
+        allowed_fields: set[str],
+        field_name: str,
+    ) -> None:
+        unknown_fields = sorted(set(value.keys()) - allowed_fields)
+        if unknown_fields:
+            raise PluginManifestError(
+                f"{field_name} has unknown field(s): {', '.join(unknown_fields)}"
+            )
+
+    @staticmethod
+    def _require_fields(
+        value: dict[str, Any],
+        required_fields: set[str],
+        field_name: str,
+    ) -> None:
+        missing_fields = sorted(required_fields - set(value.keys()))
+        if missing_fields:
+            raise PluginManifestError(
+                f"{field_name} missing required field(s): {', '.join(missing_fields)}"
+            )
 
     @staticmethod
     def _require_string_list(

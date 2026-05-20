@@ -58,7 +58,7 @@ Orac must be able to discover, index, and route plugins using the manifest alone
 
 ## What The Manifest Is Used For
 
-The current manifest schema is aligned with the plugin-routing v1 subsystem.
+The current manifest schema is aligned with the plugin-routing v2 subsystem.
 
 Required fields:
 
@@ -69,17 +69,22 @@ Required fields:
 - `version`
 - `enabled`
 - `capabilities`
+- `entitlements`
+- `runtime`
 
 Optional fields:
 
 - `entities`
 - `examples`
 - `entry_point`
+- `configuration`
+- `database`
 
 Important distinctions:
 
 - `description`, `capabilities`, `entities`, and `examples` are routing-semantic fields
 - `entry_point` is execution metadata, not routing metadata
+- `runtime`, `configuration`, and `database` are runtime/dependency metadata, not routing text
 - `version` is plugin/package metadata, not part of canonical routing text
 
 The `entry_point` value is expected to reference a Python module and class within the matching plugin directory, for example `plugin:WeatherPlugin`. The exact loading and execution mechanism is intentionally deferred.
@@ -97,8 +102,11 @@ The current canonical routing text does not include:
 
 - `version`
 - `entry_point`
+- `runtime`
+- `configuration`
+- `database`
 
-Only plugins with `"enabled": true` are included in the routing index.
+Only plugins with `"enabled": true`, `runtime.mode` of `on_demand` or `hybrid`, and satisfied runtime dependencies are included in the routing index.
 
 ## Required Vs Optional Files
 
@@ -209,7 +217,7 @@ Some existing plugin-related files in this repository predate the current manife
 - `plugins/home_assistant.ini`
 - `plugins/home_assistant/manifest.ini`
 
-These should be treated as legacy or transitional artefacts unless and until Orac explicitly adopts them for another purpose. They are not the source of truth for routing discovery in the current plugin-routing v1 design.
+These should be treated as legacy or transitional artefacts unless and until Orac explicitly adopts them for another purpose. They are not the source of truth for routing discovery in the current plugin-routing design.
 
 ## Illustrative Template
 
