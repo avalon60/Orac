@@ -37,6 +37,7 @@ RUN mkdir -p \
     ${ORAC_HOME}/setup/sqlcl \
     ${ORAC_HOME}/app \
     ${ORAC_HOME}/schema \
+    ${ORAC_HOME}/datapump \
     ${ORAC_HOME}/logs
 
 # Make oracle the owner of all locations it will write to during build/runtime.
@@ -48,6 +49,7 @@ RUN chown -R 54321:54321 \
     ${ORAC_HOME}/ords \
     ${ORAC_HOME}/app \
     ${ORAC_HOME}/schema \
+    ${ORAC_HOME}/datapump \
     ${ORAC_HOME}/logs
 
 # --------------------------------------------------------------------
@@ -128,9 +130,11 @@ RUN find ${ORAC_HOME}/setup/apex -type d -exec chmod 755 {} + \
 #  && find ${ORAC_HOME}/app -type f -name "*.sql" -exec chmod 644 {} +
 
 # Ensure we can read/write logs
-RUN chmod 755 ${ORAC_HOME}/logs
+RUN chmod 750 ${ORAC_HOME}/datapump \
+ && chmod 755 ${ORAC_HOME}/logs
 
 # Make startup scripts executable
+RUN chmod +x  ${ORACLE_BASE}/scripts/setup/*.sh
 RUN chmod +x  ${ORACLE_BASE}/scripts/startup/*.sh
 RUN chmod +x  ${ORAC_HOME}/bin/*.sh
 RUN chmod 644 ${ORACLE_BASE}/scripts/setup/*.sql

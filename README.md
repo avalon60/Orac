@@ -42,6 +42,7 @@
 - [Prerequisites](#-prerequisites)
 - [Oracle Free Setup](#-oracle-free-setup)
 - [APEX Administration](#-apex-administration)
+- [Backup and Restore](#-backup-and-restore)
 - [Usage](#-usage)
 - [License](#-license)
 
@@ -569,6 +570,158 @@ If you cannot access the Orac Admin application:
    ```
 
 > 🧠 *Tip: If the APEX listener doesn’t respond, restart the ORDS service or your container — it usually resolves transient startup timing issues.*
+
+---
+
+## 💾 Backup and Restore
+
+Orac provides host-level backup and restore commands for the local
+`db-local` deployment:
+
+```bash
+bin/orac-backup.sh /path/to/backup-directory
+bin/orac-restore.sh /path/to/orac-backup-YYYYMMDD-HHMMSS.tar.gz
+```
+
+The backup command creates an archive named like:
+
+```text
+orac-backup-YYYYMMDD-HHMMSS.tar.gz
+```
+
+By default, `bin/orac-backup.sh` backs up non-secret operational state:
+
+- Oracle Data Pump export for `orac_core`, `orac_api`, `orac_code`, and
+  plugin-declared database schemas.
+- Host configuration from `resources/config/*.ini`.
+- Plugin metadata and plugin versions.
+- Requested, exported, and missing schema lists.
+- Enabled foreign key metadata.
+- `backup_manifest.json`.
+
+The script reads plugin database schemas from `plugins/*.json`. If a
+manifest-declared schema is not present in the database, the backup records it
+as missing and continues exporting the schemas that do exist.
+
+Useful options:
+
+```bash
+bin/orac-backup.sh --dry-run /tmp/orac-backups
+bin/orac-backup.sh --skip-db /tmp/orac-backups
+bin/orac-backup.sh --container orac-db --pdb FREEPDB1 /tmp/orac-backups
+```
+
+`--skip-db` skips the Data Pump export and creates a metadata/config archive.
+
+### Vaults
+
+Vault files are not included by default. This keeps the default backup
+non-secret.
+
+To include the existing encrypted vault files as-is:
+
+```bash
+bin/orac-backup.sh --include-vaults /tmp/orac-backups
+```
+
+This copies only these allow-listed files, if they exist:
+
+- `dsn_credentials.ini`
+- `api_keys.ini`
+
+They are stored in the archive under:
+
+```text
+vaults/machine_bound/
+```
+
+These files remain encrypted with the original machine's local key material
+and may not be decryptable on another host.
+
+To create a portable vault export protected by a recovery passphrase:
+
+```bash
+bin/orac-backup.sh --export-vaults /tmp/orac-backups
+```
+
+The command prompts silently for:
+
+```text
+Vault export passphrase:
+Confirm vault export passphrase:
+```
+
+For automation, put the passphrase in a secure file and set the
+`ORAC_VAULT_EXPORT_PASSPHRASE_FILE` variable to the file path:
+
+```bash
+export ORAC_VAULT_EXPORT_PASSPHRASE_FILE=/secure/path/orac-vault-passphrase
+bin/orac-backup.sh --export-vaults /tmp/orac-backups
+```
+
+Do not pass the passphrase itself as a command-line argument or environment
+variable. The backup script only accepts a file path via
+`ORAC_VAULT_EXPORT_PASSPHRASE_FILE`.
+
+Portable vault exports are stored under:
+
+```text
+vaults/portable/
+  vault_export.json.enc
+  vault_export_manifest.json
+```
+
+The default vault directory is `~/.Orac`. Override it with:
+
+```bash
+export ORAC_VAULT_DIR=/path/to/vault-directory
+```
+
+`--include-vaults` and `--export-vaults` are mutually exclusive.
+
+### Restore
+
+Restore requires explicit confirmation:
+
+```bash
+bin/orac-restore.sh /tmp/orac-backups/orac-backup-YYYYMMDD-HHMMSS.tar.gz
+```
+
+The restore command:
+
+- Extracts and reads `backup_manifest.json`.
+- Warns if the backup Orac version or plugin versions differ from the current
+  checkout.
+- Requires you to type `RECOVER` before any Data Pump import starts.
+- Disables currently enabled foreign key constraints for the imported schemas.
+- Runs `impdp`.
+- Re-enables the foreign key constraints it disabled before import.
+
+The default Data Pump table handling is:
+
+```bash
+ORAC_RESTORE_TABLE_EXISTS_ACTION=replace
+```
+
+This passes `table_exists_action=replace` to `impdp`. Existing target tables
+are dropped and recreated from the dump before data is loaded, which avoids
+duplicate primary or unique key collisions after reinstalling Orac and
+restoring from backup.
+
+Advanced restore mode override:
+
+```bash
+ORAC_RESTORE_TABLE_EXISTS_ACTION=truncate \
+  bin/orac-restore.sh /tmp/orac-backups/orac-backup-YYYYMMDD-HHMMSS.tar.gz
+```
+
+Supported values are the Oracle Data Pump modes `skip`, `append`, `truncate`,
+and `replace`. Use `append` only with care because it can hit duplicate key
+errors when seed data already exists.
+
+Current limitation: `bin/orac-restore.sh` imports the database dump but does
+not yet restore `vaults/portable/vault_export.json.enc` back into `~/.Orac`.
+Keep the recovery passphrase safe for the future vault restore command.
 
 ---
 
