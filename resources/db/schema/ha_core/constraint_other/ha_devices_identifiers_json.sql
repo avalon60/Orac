@@ -1,4 +1,0 @@
-alter table ha_core.ha_devices
-  add constraint ha_devices_identifiers_json
-  check (identifiers is json)
-;

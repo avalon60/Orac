@@ -1,0 +1,20 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<FKIndexAssociation class="oracle.dbtools.crest.model.design.relational.FKIndexAssociation" directorySegmentName="seg_0" id="29455520-0C7A-F53E-62D6-880BDB7EECE5" containerWithKeyObject="7C4FC652-29AF-5955-B635-10754C3E2ADD" localFKIndex="1236B41D-6D97-D8BF-5BDF-D55AC8CCD2F9" name="HA_DEVICES_AREAS_FK">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>HA_DEVICES_AREAS_FK</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-03-21 11:13:32 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+<importedID>D6F07555-99AE-D455-FA39-9F3440BF0E87</importedID>
+<referredTableLongName>orac_ha.HA_AREAS</referredTableLongName>
+<deleteRule>NO ACTION</deleteRule>
+<referredTableID>EE60C05D-E43B-F531-DCBB-BCC7A08BF0FA</referredTableID>
+<keyObject>BAD705F4-62D4-53CB-7EFA-4789253FE452</keyObject>
+<referredKeyID>BAD705F4-62D4-53CB-7EFA-4789253FE452</referredKeyID>
+<mandatory>false</mandatory>
+<refColNames>AREA_ID</refColNames>
+<transferable>true</transferable>
+<rely>false</rely>
+<columnDependencyConstraintGenerateInDDL>true</columnDependencyConstraintGenerateInDDL>
+</FKIndexAssociation>

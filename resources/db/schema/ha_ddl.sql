@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- ha_areas
 --------------------------------------------------------------------------------
-create table orac.ha_areas (
+create table orac_ha.ha_areas (
   area_id                 varchar2(64 char) not null,
   name                    varchar2(255 char) not null,
   floor_id                varchar2(64 char),
@@ -18,25 +18,25 @@ create table orac.ha_areas (
   updated_on              timestamp with time zone not null
 );
 
-create unique index orac.ha_areas_pk_idx
-  on orac.ha_areas (area_id);
+create unique index orac_ha.ha_areas_pk_idx
+  on orac_ha.ha_areas (area_id);
 
-alter table orac.ha_areas
+alter table orac_ha.ha_areas
   add constraint ha_areas_pk
   primary key (area_id);
 
-alter table orac.ha_areas
+alter table orac_ha.ha_areas
   add constraint ha_areas_aliases_json
   check (aliases is json);
 
-alter table orac.ha_areas
+alter table orac_ha.ha_areas
   add constraint ha_areas_labels_json
   check (labels is json);
 
 --------------------------------------------------------------------------------
 -- ha_devices
 --------------------------------------------------------------------------------
-create table orac.ha_devices (
+create table orac_ha.ha_devices (
   device_id                   varchar2(64 char) not null,
   name                        varchar2(255 char),
   name_by_user                varchar2(255 char),
@@ -64,45 +64,45 @@ create table orac.ha_devices (
   updated_on                  timestamp with time zone not null
 );
 
-create unique index orac.ha_devices_pk_idx
-  on orac.ha_devices (device_id);
+create unique index orac_ha.ha_devices_pk_idx
+  on orac_ha.ha_devices (device_id);
 
-create index orac.ha_devices_area_id_idx
-  on orac.ha_devices (area_id);
+create index orac_ha.ha_devices_area_id_idx
+  on orac_ha.ha_devices (area_id);
 
-alter table orac.ha_devices
+alter table orac_ha.ha_devices
   add constraint ha_devices_pk
   primary key (device_id);
 
-alter table orac.ha_devices
+alter table orac_ha.ha_devices
   add constraint ha_devices_connections_json
   check (connections is json);
 
-alter table orac.ha_devices
+alter table orac_ha.ha_devices
   add constraint ha_devices_identifiers_json
   check (identifiers is json);
 
-alter table orac.ha_devices
+alter table orac_ha.ha_devices
   add constraint ha_devices_config_entries_json
   check (config_entries is json);
 
-alter table orac.ha_devices
+alter table orac_ha.ha_devices
   add constraint ha_devices_cfg_subentries_json
   check (config_entries_subentries is json);
 
-alter table orac.ha_devices
+alter table orac_ha.ha_devices
   add constraint ha_devices_labels_json
   check (labels is json);
 
-alter table orac.ha_devices
+alter table orac_ha.ha_devices
   add constraint ha_devices_areas_fk
   foreign key (area_id)
-  references orac.ha_areas (area_id);
+  references orac_ha.ha_areas (area_id);
 
 --------------------------------------------------------------------------------
 -- ha_entities
 --------------------------------------------------------------------------------
-create table orac.ha_entities (
+create table orac_ha.ha_entities (
   entity_id            varchar2(255 char) not null,
   ha_entity_id         varchar2(64 char) not null,
   unique_id            varchar2(255 char),
@@ -129,44 +129,44 @@ create table orac.ha_entities (
   updated_on           timestamp with time zone not null
 );
 
-create unique index orac.ha_entities_pk_idx
-  on orac.ha_entities (entity_id);
+create unique index orac_ha.ha_entities_pk_idx
+  on orac_ha.ha_entities (entity_id);
 
-create unique index orac.ha_entities_uk1_idx
-  on orac.ha_entities (ha_entity_id);
+create unique index orac_ha.ha_entities_uk1_idx
+  on orac_ha.ha_entities (ha_entity_id);
 
-create index orac.ha_entities_device_id_idx
-  on orac.ha_entities (device_id);
+create index orac_ha.ha_entities_device_id_idx
+  on orac_ha.ha_entities (device_id);
 
-alter table orac.ha_entities
+alter table orac_ha.ha_entities
   add constraint ha_entities_pk
   primary key (entity_id);
 
-alter table orac.ha_entities
+alter table orac_ha.ha_entities
   add constraint ha_entities_uk1
   unique (ha_entity_id);
 
-alter table orac.ha_entities
+alter table orac_ha.ha_entities
   add constraint ha_entities_devices_fk
   foreign key (device_id)
-  references orac.ha_devices (device_id);
+  references orac_ha.ha_devices (device_id);
 
-alter table orac.ha_entities
+alter table orac_ha.ha_entities
   add constraint ha_entities_options_json
   check (options is json);
 
-alter table orac.ha_entities
+alter table orac_ha.ha_entities
   add constraint ha_entities_categories_json
   check (categories is json);
 
-alter table orac.ha_entities
+alter table orac_ha.ha_entities
   add constraint ha_entities_labels_json
   check (labels is json);
 
 --------------------------------------------------------------------------------
 -- ha_states_current
 --------------------------------------------------------------------------------
-create table orac.ha_states_current (
+create table orac_ha.ha_states_current (
   entity_id           varchar2(255 char) not null,
   state               varchar2(255 char),
   attributes          clob,
@@ -181,21 +181,21 @@ create table orac.ha_states_current (
   updated_on          timestamp with time zone not null
 );
 
-create unique index orac.ha_states_current_pk_idx
-  on orac.ha_states_current (entity_id);
+create unique index orac_ha.ha_states_current_pk_idx
+  on orac_ha.ha_states_current (entity_id);
 
-create index orac.ha_states_current_state_idx
-  on orac.ha_states_current (state);
+create index orac_ha.ha_states_current_state_idx
+  on orac_ha.ha_states_current (state);
 
-alter table orac.ha_states_current
+alter table orac_ha.ha_states_current
   add constraint ha_states_current_pk
   primary key (entity_id);
 
-alter table orac.ha_states_current
+alter table orac_ha.ha_states_current
   add constraint ha_states_current_attributes_json
   check (attributes is json);
 
-alter table orac.ha_states_current
+alter table orac_ha.ha_states_current
   add constraint ha_states_current_entities_fk
   foreign key (entity_id)
-  references orac.ha_entities (entity_id);
+  references orac_ha.ha_entities (entity_id);
