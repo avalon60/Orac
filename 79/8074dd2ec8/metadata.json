@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "798074dd2ec8",
+  "strategy": "manual-commit",
+  "branch": "develop",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "src/controller/orac.py",
+    "src/model/plugin_routing/manager.py",
+    "src/model/plugin_service_manager.py",
+    "tests/test_orac_plugin_integration.py",
+    "tests/test_plugin_service_manager.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/79/8074dd2ec8/0/metadata.json",
+      "transcript": "/79/8074dd2ec8/0/full.jsonl",
+      "content_hash": "/79/8074dd2ec8/0/content_hash.txt",
+      "prompt": "/79/8074dd2ec8/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1534501,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 22259200,
+    "output_tokens": 70103,
+    "api_call_count": 180
+  }
+}
