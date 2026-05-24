@@ -58,6 +58,7 @@ as
             , enforce_precision
             , admit_uncertainty
             , packaged_persona
+            , model_preset_id
             , system_prompt
             , style_prompt
             , is_active
@@ -75,6 +76,7 @@ as
             , p_row.enforce_precision
             , p_row.admit_uncertainty
             , p_row.packaged_persona
+            , p_row.model_preset_id
             , p_row.system_prompt
             , p_row.style_prompt
             , p_row.is_active
@@ -104,6 +106,7 @@ as
       , p_enforce_precision        in       orac_api.orac_personalities_v.enforce_precision%type                := true
       , p_admit_uncertainty        in       orac_api.orac_personalities_v.admit_uncertainty%type                := true
       , p_packaged_persona         in       orac_api.orac_personalities_v.packaged_persona%type                 := false
+      , p_model_preset_id          in       orac_api.orac_personalities_v.model_preset_id%type
       , p_system_prompt            in       orac_api.orac_personalities_v.system_prompt%type
       , p_style_prompt             in       orac_api.orac_personalities_v.style_prompt%type
       , p_is_active                in       orac_api.orac_personalities_v.is_active%type                        := true
@@ -125,6 +128,7 @@ as
             , enforce_precision
             , admit_uncertainty
             , packaged_persona
+            , model_preset_id
             , system_prompt
             , style_prompt
             , is_active
@@ -142,6 +146,7 @@ as
             , p_enforce_precision
             , p_admit_uncertainty
             , p_packaged_persona
+            , p_model_preset_id
             , p_system_prompt
             , p_style_prompt
             , p_is_active
@@ -179,6 +184,7 @@ as
          , enforce_precision
          , admit_uncertainty
          , packaged_persona
+         , model_preset_id
          , system_prompt
          , style_prompt
          , is_active
@@ -200,6 +206,7 @@ as
          , p_row.enforce_precision
          , p_row.admit_uncertainty
          , p_row.packaged_persona
+         , p_row.model_preset_id
          , p_row.system_prompt
          , p_row.style_prompt
          , p_row.is_active
@@ -231,6 +238,7 @@ as
       , p_enforce_precision           out   orac_api.orac_personalities_v.enforce_precision%type
       , p_admit_uncertainty           out   orac_api.orac_personalities_v.admit_uncertainty%type
       , p_packaged_persona            out   orac_api.orac_personalities_v.packaged_persona%type
+      , p_model_preset_id             out   orac_api.orac_personalities_v.model_preset_id%type
       , p_system_prompt               out   orac_api.orac_personalities_v.system_prompt%type
       , p_style_prompt                out   orac_api.orac_personalities_v.style_prompt%type
       , p_is_active                   out   orac_api.orac_personalities_v.is_active%type
@@ -256,6 +264,7 @@ as
          , enforce_precision
          , admit_uncertainty
          , packaged_persona
+         , model_preset_id
          , system_prompt
          , style_prompt
          , is_active
@@ -277,6 +286,7 @@ as
          , p_enforce_precision
          , p_admit_uncertainty
          , p_packaged_persona
+         , p_model_preset_id
          , p_system_prompt
          , p_style_prompt
          , p_is_active
@@ -315,6 +325,7 @@ as
          , enforce_precision              = p_row.enforce_precision
          , admit_uncertainty              = p_row.admit_uncertainty
          , packaged_persona               = p_row.packaged_persona
+         , model_preset_id                = p_row.model_preset_id
          , system_prompt                  = p_row.system_prompt
          , style_prompt                   = p_row.style_prompt
          , is_active                      = p_row.is_active
@@ -346,6 +357,7 @@ as
       , p_enforce_precision        in       orac_api.orac_personalities_v.enforce_precision%type
       , p_admit_uncertainty        in       orac_api.orac_personalities_v.admit_uncertainty%type
       , p_packaged_persona         in       orac_api.orac_personalities_v.packaged_persona%type
+      , p_model_preset_id          in       orac_api.orac_personalities_v.model_preset_id%type
       , p_system_prompt            in       orac_api.orac_personalities_v.system_prompt%type
       , p_style_prompt             in       orac_api.orac_personalities_v.style_prompt%type
       , p_is_active                in       orac_api.orac_personalities_v.is_active%type
@@ -367,6 +379,7 @@ as
          , enforce_precision              = p_enforce_precision
          , admit_uncertainty              = p_admit_uncertainty
          , packaged_persona               = p_packaged_persona
+         , model_preset_id                = p_model_preset_id
          , system_prompt                  = p_system_prompt
          , style_prompt                   = p_style_prompt
          , is_active                      = p_is_active

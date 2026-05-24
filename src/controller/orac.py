@@ -369,6 +369,34 @@ def _personality_rule_lines(personality: dict[str, Any]) -> list[str]:
     return lines
 
 
+SYSTEM_GENERATION_DEFAULTS: dict[str, Any] = {
+    "temperature": 0.2,
+    "repeat_penalty": 1.1,
+}
+
+GENERATION_PRESET_FIELDS = (
+    "TEMPERATURE",
+    "TOP_P",
+    "TOP_K",
+    "REPEAT_PENALTY",
+    "NUM_PREDICT",
+    "SEED",
+)
+
+
+def _generation_options_from_preset(preset: dict[str, Any]) -> dict[str, Any]:
+    """Extract provider-neutral generation options from a preset row."""
+    if not isinstance(preset, dict):
+        return {}
+
+    options: dict[str, Any] = {}
+    for field in GENERATION_PRESET_FIELDS:
+        value = preset.get(field)
+        if value is not None:
+            options[field.lower()] = value
+    return options
+
+
 def _normalise_discovered_model_names(models: list[Any]) -> list[str]:
     """Return a stable, de-duplicated list of discovered model names."""
     seen: set[str] = set()
@@ -2090,6 +2118,75 @@ class Orac:
         enriched_meta["weather_location_pref"] = weather_pref
         return enriched_meta
 
+    def _load_model_generation_preset(
+        self,
+        *,
+        model_preset_id: Any = None,
+        model_preset_code: Any = None,
+    ) -> dict[str, Any]:
+        """Load an active model generation preset from the context layer."""
+        try:
+            return self.ctx.get_model_generation_preset(
+                model_preset_id=model_preset_id,
+                model_preset_code=(
+                    str(model_preset_code).strip().upper()
+                    if model_preset_code not in (None, "")
+                    else None
+                ),
+            )
+        except Exception as e:
+            _log_exception("Failed to load model generation preset", e)
+            return {}
+
+    def _resolve_generation_options(
+        self,
+        *,
+        meta: dict[str, Any],
+        provider: str,
+    ) -> dict[str, Any]:
+        """Resolve provider-neutral generation options for one request.
+
+        Personas reference a default preset, but do not own raw generation
+        fields. A request-supplied preset is treated as a selected/default
+        preset underneath the persona default. Provider adapters omit
+        unsupported fields.
+        """
+        del provider
+        resolved = dict(SYSTEM_GENERATION_DEFAULTS)
+        request_meta = meta if isinstance(meta, dict) else {}
+        personality = request_meta.get("orac_personality")
+        personality = personality if isinstance(personality, dict) else {}
+
+        selected_preset = {}
+        if request_meta.get("model_preset_id") not in (None, ""):
+            selected_preset = self._load_model_generation_preset(
+                model_preset_id=request_meta.get("model_preset_id"),
+            )
+        elif request_meta.get("model_preset_code") not in (None, ""):
+            selected_preset = self._load_model_generation_preset(
+                model_preset_code=request_meta.get("model_preset_code"),
+            )
+        resolved.update(_generation_options_from_preset(selected_preset))
+
+        persona_preset = {}
+        if personality.get("MODEL_PRESET_ID") not in (None, ""):
+            persona_preset = self._load_model_generation_preset(
+                model_preset_id=personality.get("MODEL_PRESET_ID"),
+            )
+        resolved.update(_generation_options_from_preset(persona_preset))
+
+        override = request_meta.get("generation_options_override")
+        if (
+            _as_bool(request_meta.get("admin_debug_generation_override")) is True
+            and isinstance(override, dict)
+        ):
+            for key in GENERATION_PRESET_FIELDS:
+                option_key = key.lower()
+                if option_key in override:
+                    resolved[option_key] = override[option_key]
+
+        return resolved
+
     def _get_llm_connector(
         self,
         *,
@@ -3337,6 +3434,10 @@ class Orac:
                 f"model='{effective_model_name}', provider='{effective_llm.get('provider')}', "
                 f"llm_id={effective_llm_id}, source='{effective_llm.get('source')}'"
             )
+            generation_options = self._resolve_generation_options(
+                meta=meta,
+                provider=str(effective_llm.get("provider") or self.llm_service_id),
+            )
 
             # --- Ensure a system primer is stored once per conversation ---------
             try:
@@ -3483,6 +3584,7 @@ class Orac:
                     for delta in llm_connector.stream_prompt_deltas(
                         prompt_type="U",
                         prompt=final_prompt,
+                        generation_options=generation_options,
                     ):
                         if self._is_voice_turn_cancelled(
                             session_id=voice_session_id,
@@ -3605,6 +3707,7 @@ class Orac:
                         prompt_type="U",
                         prompt=final_prompt,
                         stream=False,
+                        generation_options=generation_options,
                     )
                 except Exception as e:
                     _log_exception("LLM backend call failed", e)

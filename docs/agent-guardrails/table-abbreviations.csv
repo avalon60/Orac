@@ -6,6 +6,7 @@ orac_core,devices,device
 orac_core,llm_registry,llm_reg
 orac_core,message_embeddings,mesg_emb
 orac_core,messages,mesgs
+orac_core,model_generation_presets,model_generation_presets
 orac_core,orac_personalities,orpers
 orac_core,user_preferences,user_pref
 orac_core,user_prompt_elements,user_pe

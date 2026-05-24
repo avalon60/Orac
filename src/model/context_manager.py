@@ -34,6 +34,7 @@ class OracContextManager:
         self.messages_object = self._qualify("messages_v")
         self.user_preferences_object = self._qualify("user_preferences_v")
         self.orac_personalities_object = "orac_api.orac_personalities_v"
+        self.model_generation_presets_object = "orac_api.model_generation_presets_v"
         self.llm_registry_object = "orac_api.llm_registry_v"
 
     def _qualify(self, object_name: str) -> str:
@@ -180,6 +181,7 @@ class OracContextManager:
                 f"       enforce_precision,"
                 f"       admit_uncertainty,"
                 f"       packaged_persona,"
+                f"       model_preset_id,"
                 f"       system_prompt,"
                 f"       style_prompt,"
                 f"       is_active "
@@ -188,6 +190,52 @@ class OracContextManager:
                 f"  and is_active = true"
             ),
             {"code": code},
+        )
+        return rows[0] if rows else {}
+
+    def get_model_generation_preset(
+        self,
+        *,
+        model_preset_id: int | str | None = None,
+        model_preset_code: str | None = None,
+    ) -> Dict[str, Any]:
+        """Return an active model generation preset by id or code."""
+        params: Dict[str, Any]
+        predicate: str
+
+        if model_preset_id not in (None, ""):
+            try:
+                resolved_id = int(model_preset_id)
+            except Exception:
+                return {}
+            predicate = "model_preset_id = :preset_id"
+            params = {"preset_id": resolved_id}
+        else:
+            code = (model_preset_code or "").strip().upper()
+            if not code:
+                return {}
+            predicate = "upper(model_preset_code) = :preset_code"
+            params = {"preset_code": code}
+
+        rows = self.db.dict_sql_dataset(
+            (
+                f"select model_preset_id,"
+                f"       model_preset_code,"
+                f"       model_preset_name,"
+                f"       description,"
+                f"       temperature,"
+                f"       top_p,"
+                f"       top_k,"
+                f"       repeat_penalty,"
+                f"       num_predict,"
+                f"       seed,"
+                f"       is_system_preset,"
+                f"       is_active "
+                f"from {self.model_generation_presets_object} "
+                f"where {predicate} "
+                f"  and is_active = 'Y'"
+            ),
+            params,
         )
         return rows[0] if rows else {}
 

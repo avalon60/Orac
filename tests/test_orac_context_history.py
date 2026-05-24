@@ -104,10 +104,18 @@ class _FakeLLM:
     def __init__(self, responses: list[str]) -> None:
         self._responses = list(responses)
         self.prompts: list[str] = []
+        self.generation_options_seen: list[dict | None] = []
 
-    def send_prompt(self, prompt_type: str, prompt: str, stream: bool = False) -> str:
+    def send_prompt(
+        self,
+        prompt_type: str,
+        prompt: str,
+        stream: bool = False,
+        generation_options: dict | None = None,
+    ) -> str:
         del prompt_type, stream
         self.prompts.append(prompt)
+        self.generation_options_seen.append(generation_options)
         if self._responses:
             return self._responses.pop(0)
         return "stubbed response"
@@ -117,8 +125,14 @@ class _FakeLLM:
         prompt_type: str,
         prompt: str,
         stream: bool = False,
+        generation_options: dict | None = None,
     ) -> dict[str, int | str]:
-        text = self.send_prompt(prompt_type=prompt_type, prompt=prompt, stream=stream)
+        text = self.send_prompt(
+            prompt_type=prompt_type,
+            prompt=prompt,
+            stream=stream,
+            generation_options=generation_options,
+        )
         return {
             "text": text,
             "prompt_tokens": 0,
@@ -138,8 +152,9 @@ class _ProbeLLM:
         prompt_type: str,
         prompt: str,
         stream: bool = False,
+        generation_options: dict | None = None,
     ) -> dict[str, int | str]:
-        del prompt_type, stream
+        del prompt_type, stream, generation_options
         self.prompts.append(prompt)
         if "and nothing else" in prompt and "Recent exchange" not in prompt:
             return {
@@ -170,8 +185,9 @@ class _ProbeLLMShouldNotBeCalled:
         prompt_type: str,
         prompt: str,
         stream: bool = False,
+        generation_options: dict | None = None,
     ) -> dict[str, int | str]:
-        del prompt_type, prompt, stream
+        del prompt_type, prompt, stream, generation_options
         self.calls += 1
         raise AssertionError("chat probe should not run for non-chat models")
 
@@ -184,8 +200,9 @@ class _ProbeLLMBackendFailure:
         prompt_type: str,
         prompt: str,
         stream: bool = False,
+        generation_options: dict | None = None,
     ) -> dict[str, int | str]:
-        del prompt_type, prompt, stream
+        del prompt_type, prompt, stream, generation_options
         raise RuntimeError("404 Client Error: Not Found for url")
 
 
@@ -208,6 +225,8 @@ class _MemoryContextManager:
                 "IS_ENABLED": "Y",
             }
         }
+        self.personalities: dict[str, dict[str, object]] = {}
+        self.model_generation_presets: dict[int, dict[str, object]] = {}
         self.titles: dict[str, str] = {}
         self.ensure_calls: list[tuple[str, str, int]] = []
         self.saved_events: list[tuple[str, str, str]] = []
@@ -315,8 +334,18 @@ class _MemoryContextManager:
         return self.user_preferences.get((str(username), str(pref_key)))
 
     def get_orac_personality(self, personality_code: str) -> dict[str, str] | None:
-        del personality_code
-        return None
+        return self.personalities.get(str(personality_code).strip().upper())
+
+    def get_model_generation_preset(
+        self,
+        *,
+        model_preset_id=None,
+        model_preset_code=None,
+    ) -> dict[str, object]:
+        del model_preset_code
+        if model_preset_id in (None, ""):
+            return {}
+        return self.model_generation_presets.get(int(model_preset_id), {})
 
     def get_llm_registry_entry_by_provider_model(
         self,
@@ -753,7 +782,12 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         return orchestrator
 
     @staticmethod
-    def _request(prompt: str, *, req_id: str) -> str:
+    def _request(
+        prompt: str,
+        *,
+        req_id: str,
+        meta: dict | None = None,
+    ) -> str:
         return json.dumps(
             {
                 "v": 1,
@@ -761,7 +795,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
                 "id": req_id,
                 "ts": "2026-04-26T10:00:00Z",
                 "route": "orac.prompt",
-                "meta": {"client": "apex"},
+                "meta": {"client": "apex", **(meta or {})},
                 "payload": {"messages": [{"role": "user", "content": prompt}]},
             },
             ensure_ascii=False,

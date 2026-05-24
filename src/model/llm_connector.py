@@ -19,6 +19,117 @@ RESOURCES_DIR = APP_HOME / 'resources'
 CONFIG_DIR = RESOURCES_DIR / 'config'
 CONFIG_FILE_PATH = CONFIG_DIR / 'orac.ini'
 
+GENERATION_OPTION_KEYS = {
+    "temperature",
+    "top_p",
+    "top_k",
+    "repeat_penalty",
+    "num_predict",
+    "seed",
+}
+
+OLLAMA_GENERATION_KEYS = {
+    "temperature",
+    "top_p",
+    "top_k",
+    "repeat_penalty",
+    "num_predict",
+    "seed",
+}
+
+OPENAI_COMPATIBLE_GENERATION_MAP = {
+    "temperature": "temperature",
+    "top_p": "top_p",
+    "num_predict": "max_tokens",
+}
+
+
+def _coerce_float(value: Any) -> float | None:
+    """Return value as float, or None when it cannot be used safely."""
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _coerce_int(value: Any) -> int | None:
+    """Return value as int, or None when it cannot be used safely."""
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def normalise_generation_options(options: dict[str, Any] | None) -> dict[str, Any]:
+    """Return validated provider-neutral generation options.
+
+    Unsupported or intentionally internal options such as ``num_ctx`` and
+    stop sequences are omitted here. ``num_ctx`` belongs to runtime/model
+    configuration, not request-style presets.
+    """
+    if not isinstance(options, dict):
+        return {}
+
+    normalised: dict[str, Any] = {}
+
+    temperature = _coerce_float(options.get("temperature"))
+    if temperature is not None:
+        normalised["temperature"] = min(2.0, max(0.0, temperature))
+
+    top_p = _coerce_float(options.get("top_p"))
+    if top_p is not None:
+        normalised["top_p"] = min(1.0, max(0.0, top_p))
+
+    top_k = _coerce_int(options.get("top_k"))
+    if top_k is not None and top_k >= 1:
+        normalised["top_k"] = top_k
+
+    repeat_penalty = _coerce_float(options.get("repeat_penalty"))
+    if repeat_penalty is not None and repeat_penalty > 0:
+        normalised["repeat_penalty"] = repeat_penalty
+
+    num_predict = _coerce_int(options.get("num_predict"))
+    if num_predict is not None and num_predict >= 1:
+        normalised["num_predict"] = num_predict
+
+    seed = _coerce_int(options.get("seed"))
+    if seed is not None:
+        normalised["seed"] = seed
+
+    return normalised
+
+
+def provider_generation_options(
+    provider: str,
+    options: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Map provider-neutral generation options to provider request fields."""
+    clean = normalise_generation_options(options)
+    provider_key = (provider or "").strip().lower()
+
+    if provider_key == "ollama":
+        return {
+            key: value
+            for key, value in clean.items()
+            if key in OLLAMA_GENERATION_KEYS
+        }
+
+    if provider_key in {"openai", "lmstudio"}:
+        # OpenAI-compatible backends vary on seed/repetition support, so only
+        # pass the common request fields here. Adapter-specific capability
+        # checks can opt in to additional fields later.
+        mapped: dict[str, Any] = {}
+        for source_key, target_key in OPENAI_COMPATIBLE_GENERATION_MAP.items():
+            if source_key in clean:
+                mapped[target_key] = clean[source_key]
+        return mapped
+
+    return {}
+
 
 class LLMConnector(LLMConnectorABC):
     def __init__(self, model_service_id: str):
@@ -49,7 +160,13 @@ class LLMConnector(LLMConnectorABC):
         message = f"Switching models is not implemented for LLM Service {self.llm_service_id}"
         raise NotImplemented(message)
 
-    def send_prompt(self, prompt_type: str, prompt: str, stream: bool = False) -> str:
+    def send_prompt(
+        self,
+        prompt_type: str,
+        prompt: str,
+        stream: bool = False,
+        generation_options: dict[str, Any] | None = None,
+    ) -> str:
         """
         Send a prompt to the LLM backend and return the response.
 
@@ -70,9 +187,15 @@ class LLMConnector(LLMConnectorABC):
         prompt_type: str,
         prompt: str,
         stream: bool = False,
+        generation_options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Send a prompt and return response text with optional usage metadata."""
-        raw = self.send_prompt(prompt_type=prompt_type, prompt=prompt, stream=stream)
+        raw = self.send_prompt(
+            prompt_type=prompt_type,
+            prompt=prompt,
+            stream=stream,
+            generation_options=generation_options,
+        )
         if hasattr(raw, "content"):
             text = raw.content
         else:
@@ -88,13 +211,19 @@ class LLMConnector(LLMConnectorABC):
         self,
         prompt_type: str,
         prompt: str,
+        generation_options: dict[str, Any] | None = None,
     ) -> Iterator[str]:
         """Yield streamed response text deltas.
 
         Connectors without a native streaming implementation fall back to
         the existing non-streaming path and emit one final delta.
         """
-        text = self.send_prompt(prompt_type=prompt_type, prompt=prompt, stream=False)
+        text = self.send_prompt(
+            prompt_type=prompt_type,
+            prompt=prompt,
+            stream=False,
+            generation_options=generation_options,
+        )
         yield text if isinstance(text, str) else str(text)
 
     def interface_name(self) -> str:
@@ -130,20 +259,41 @@ class LMStudioConnector(LLMConnector):
             model=self.model_name
         )
 
-    def send_prompt(self, prompt_type: str, prompt: str, stream: bool = False) -> str:
+    def _invoke_with_generation_options(
+        self,
+        prompt: str,
+        generation_options: dict[str, Any] | None = None,
+    ) -> Any:
+        """Invoke LM Studio with OpenAI-compatible options when available."""
+        request_options = provider_generation_options(
+            "lmstudio",
+            generation_options,
+        )
+        if request_options and hasattr(self.llm_session, "bind"):
+            return self.llm_session.bind(**request_options).invoke(prompt)
+        return self.llm_session.invoke(prompt)
+
+    def send_prompt(
+        self,
+        prompt_type: str,
+        prompt: str,
+        stream: bool = False,
+        generation_options: dict[str, Any] | None = None,
+    ) -> str:
         """Send prompt to LM Studio."""
         print(f"📤 Sending prompt to LM Studio (stream={stream})...")
-        return self.llm_session.invoke(prompt)
+        return self._invoke_with_generation_options(prompt, generation_options)
 
     def send_prompt_with_meta(
         self,
         prompt_type: str,
         prompt: str,
         stream: bool = False,
+        generation_options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Send prompt to LM Studio and return text with token metadata when available."""
         print(f"📤 Sending prompt to LM Studio (stream={stream})...")
-        raw = self.llm_session.invoke(prompt)
+        raw = self._invoke_with_generation_options(prompt, generation_options)
         text = raw.content if hasattr(raw, "content") else raw
         usage = getattr(raw, "usage_metadata", None) or {}
         prompt_tokens = int(
@@ -279,6 +429,31 @@ class OllamaConnector(LLMConnector):
         )
         return current_num_predict + increment
 
+    def _initial_num_predict(
+        self,
+        generation_options: dict[str, Any] | None,
+    ) -> int:
+        """Return the initial completion budget for this request."""
+        options = normalise_generation_options(generation_options)
+        return int(options.get("num_predict") or self.default_num_predict)
+
+    def _ollama_options(
+        self,
+        *,
+        num_predict: int,
+        generation_options: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Build Ollama request options for one generation attempt."""
+        request_options = {
+            "num_predict": int(num_predict),
+            "temperature": 0.2,
+            "repeat_penalty": 1.1,
+        }
+        overrides = provider_generation_options("ollama", generation_options)
+        overrides.pop("num_predict", None)
+        request_options.update(overrides)
+        return request_options
+
     def _chat_once(
         self,
         prompt: str,
@@ -286,6 +461,7 @@ class OllamaConnector(LLMConnector):
         show_reasoning: bool,
         num_predict: int,
         use_system: bool,
+        generation_options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         url = f"{self.service_url}/api/chat"
         msgs = [{"role": "user", "content": prompt}]
@@ -297,11 +473,10 @@ class OllamaConnector(LLMConnector):
             "messages": msgs,
             "stream": False,
             "think": bool(show_reasoning),   # we’ll force False in send_prompt
-            "options": {
-                "num_predict": int(num_predict),
-                "temperature": 0.2,
-                "repeat_penalty": 1.1,
-            }
+            "options": self._ollama_options(
+                num_predict=num_predict,
+                generation_options=generation_options,
+            ),
         }
         self.logger.log_info(
             f"➡️ /api/chat think={payload['think']} stream={payload['stream']} "
@@ -317,17 +492,22 @@ class OllamaConnector(LLMConnector):
             "total_tokens": int(data.get("prompt_eval_count") or 0) + int(data.get("eval_count") or 0),
         }
 
-    def _generate_once(self, prompt: str, *, num_predict: int) -> dict[str, Any]:
+    def _generate_once(
+        self,
+        prompt: str,
+        *,
+        num_predict: int,
+        generation_options: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         url = f"{self.service_url}/api/generate"
         payload = {
             "model": self.model_name,
             "prompt": prompt,
             "stream": False,
-            "options": {
-                "num_predict": int(num_predict),
-                "temperature": 0.2,
-                "repeat_penalty": 1.1,
-            }
+            "options": self._ollama_options(
+                num_predict=num_predict,
+                generation_options=generation_options,
+            ),
         }
         self.logger.log_info(f"➡️ /api/generate np={num_predict}")
         data = self._post_json(url, payload)
@@ -347,6 +527,7 @@ class OllamaConnector(LLMConnector):
         show_reasoning: bool,
         num_predict: int,
         use_system: bool,
+        generation_options: dict[str, Any] | None = None,
     ) -> Iterator[str]:
         """Yield native Ollama chat stream response deltas."""
         url = f"{self.service_url}/api/chat"
@@ -359,11 +540,10 @@ class OllamaConnector(LLMConnector):
             "messages": msgs,
             "stream": True,
             "think": bool(show_reasoning),
-            "options": {
-                "num_predict": int(num_predict),
-                "temperature": 0.2,
-                "repeat_penalty": 1.1,
-            },
+            "options": self._ollama_options(
+                num_predict=num_predict,
+                generation_options=generation_options,
+            ),
         }
         self.logger.log_info(
             f"➡️ /api/chat think={payload['think']} stream={payload['stream']} "
@@ -496,7 +676,13 @@ class OllamaConnector(LLMConnector):
 
         return models
 
-    def send_prompt(self, prompt_type: str, prompt: str, stream: bool = False) -> str:
+    def send_prompt(
+        self,
+        prompt_type: str,
+        prompt: str,
+        stream: bool = False,
+        generation_options: dict[str, Any] | None = None,
+    ) -> str:
         """
         FORCE think=False (hide visible chain-of-thought). For very short prompts (like "Hi"),
         avoid a system prompt to match the working curl. Retry with larger budget, then fall back
@@ -515,9 +701,10 @@ class OllamaConnector(LLMConnector):
                 show_reasoning=False,
                 num_predict=num_predict,
                 use_system=not is_very_short,
+                generation_options=generation_options,
             ),
             runner_name="/api/chat",
-            initial_num_predict=self.default_num_predict,
+            initial_num_predict=self._initial_num_predict(generation_options),
         )
         text = str(result.get("text") or "").strip()
         if text:
@@ -528,9 +715,10 @@ class OllamaConnector(LLMConnector):
             lambda num_predict: self._generate_once(
                 p or "Say hi",
                 num_predict=num_predict,
+                generation_options=generation_options,
             ),
             runner_name="/api/generate",
-            initial_num_predict=self.default_num_predict,
+            initial_num_predict=self._initial_num_predict(generation_options),
         )
         text = str(result.get("text") or "").strip()
         if text:
@@ -543,6 +731,7 @@ class OllamaConnector(LLMConnector):
         self,
         prompt_type: str,
         prompt: str,
+        generation_options: dict[str, Any] | None = None,
     ) -> Iterator[str]:
         """Yield Ollama response text deltas using native HTTP streaming."""
         del prompt_type
@@ -553,14 +742,20 @@ class OllamaConnector(LLMConnector):
         for delta in self._chat_stream(
             p,
             show_reasoning=False,
-            num_predict=self.default_num_predict,
+            num_predict=self._initial_num_predict(generation_options),
             use_system=not is_very_short,
+            generation_options=generation_options,
         ):
             yielded = True
             yield delta
 
         if not yielded:
-            text = self.send_prompt(prompt_type="U", prompt=p, stream=False)
+            text = self.send_prompt(
+                prompt_type="U",
+                prompt=p,
+                stream=False,
+                generation_options=generation_options,
+            )
             if text:
                 yield text
 
@@ -569,6 +764,7 @@ class OllamaConnector(LLMConnector):
         prompt_type: str,
         prompt: str,
         stream: bool = False,
+        generation_options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Send prompt to Ollama and return text plus token metadata.
@@ -585,9 +781,10 @@ class OllamaConnector(LLMConnector):
                 show_reasoning=False,
                 num_predict=num_predict,
                 use_system=not is_very_short,
+                generation_options=generation_options,
             ),
             runner_name="/api/chat",
-            initial_num_predict=self.default_num_predict,
+            initial_num_predict=self._initial_num_predict(generation_options),
         )
         text = str(result.get("text") or "").strip()
         if not text:
@@ -595,9 +792,10 @@ class OllamaConnector(LLMConnector):
                 lambda num_predict: self._generate_once(
                     p or "Say hi",
                     num_predict=num_predict,
+                    generation_options=generation_options,
                 ),
                 runner_name="/api/generate",
-                initial_num_predict=self.default_num_predict,
+                initial_num_predict=self._initial_num_predict(generation_options),
             )
             text = str(result.get("text") or "").strip()
 

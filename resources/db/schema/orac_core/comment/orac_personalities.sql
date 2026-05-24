@@ -37,6 +37,9 @@ comment on column orac_core.orac_personalities.admit_uncertainty is
 comment on column orac_core.orac_personalities.packaged_persona is
   'Flag indicating a system-supplied persona. Packaged personas are immutable and cannot be updated or deleted.';
 
+comment on column orac_core.orac_personalities.model_preset_id is
+  'Optional default model generation preset used when this persona is selected.';
+
 comment on column orac_core.orac_personalities.system_prompt is
   'Core instruction template defining behavioural rules, constraints, and identity of the assistant.';
 

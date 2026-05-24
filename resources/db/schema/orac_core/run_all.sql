@@ -8,6 +8,7 @@ prompt === tables ===
 @table/conversations.sql
 @table/devices.sql
 @table/llm_registry.sql
+@table/model_generation_presets.sql
 @table/message_embeddings.sql
 @table/messages.sql
 @table/orac_personalities.sql
@@ -29,6 +30,8 @@ prompt === indexes ===
 @index/device_users_fk1_idx.sql
 @index/llm_reg_pk.sql
 @index/llm_reg_uk1_idx.sql
+@index/model_generation_presets_pk.sql
+@index/model_generation_presets_uk1.sql
 @index/mesg_emb_mesgs_fk1_idx.sql
 @index/mesg_emb_pk.sql
 @index/mesg_emb_uk1_idx.sql
@@ -54,6 +57,7 @@ prompt === constraints_pk ===
 @constraint_pk/convs_pk.sql
 @constraint_pk/device_pk.sql
 @constraint_pk/llm_reg_pk.sql
+@constraint_pk/model_generation_presets_pk.sql
 @constraint_pk/mesg_emb_pk.sql
 @constraint_pk/mesgs_pk.sql
 @constraint_pk/orpers_pk.sql
@@ -67,6 +71,7 @@ prompt === constraints_uc ===
 @constraint_uc/tmzone_uk1.sql
 @constraint_uc/convs_uk1.sql
 @constraint_uc/llm_reg_uk1.sql
+@constraint_uc/model_generation_presets_uk1.sql
 @constraint_uc/mesg_emb_uk1.sql
 @constraint_uc/mesgs_uk1.sql
 @constraint_uc/orpers_uk1.sql
@@ -80,6 +85,7 @@ prompt === constraints_fk ===
 @constraint_fk/mesg_emb_mesgs_fk1.sql
 @constraint_fk/mesgs_convs_fk1.sql
 @constraint_fk/mesgs_llm_reg_fk1.sql
+@constraint_fk/orpers_model_preset_fk1.sql
 @constraint_fk/user_pe_users_fk1.sql
 @constraint_fk/user_pref_users_fk1.sql
 @constraint_fk/user_syns_users_fk1.sql
@@ -96,6 +102,9 @@ prompt === constraints_other ===
 @constraint_other/device_ck1.sql
 @constraint_other/llm_reg_ck1.sql
 @constraint_other/llm_reg_ck2.sql
+@constraint_other/model_generation_presets_ck1.sql
+@constraint_other/model_generation_presets_ck2.sql
+@constraint_other/model_generation_presets_ck3.sql
 @constraint_other/mesg_emb_ck1.sql
 @constraint_other/mesgs_ck1.sql
 @constraint_other/mesgs_ck2.sql
@@ -113,6 +122,7 @@ prompt === comments ===
 @comment/timezones.sql
 @comment/conversations.sql
 @comment/llm_registry.sql
+@comment/model_generation_presets.sql
 @comment/message_embeddings.sql
 @comment/messages.sql
 @comment/orac_personalities.sql
@@ -125,6 +135,7 @@ prompt === triggers ===
 @trigger/convs_bu.sql
 @trigger/device_bu.sql
 @trigger/llm_reg_bu.sql
+@trigger/model_generation_presets_bu.sql
 @trigger/mesg_emb_bu.sql
 @trigger/mesgs_bu.sql
 @trigger/user_pe_bu.sql

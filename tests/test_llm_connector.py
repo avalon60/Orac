@@ -35,7 +35,11 @@ if "langchain_openai" not in sys.modules:
     sys.modules["langchain_openai"] = stub_module
 
 
-from model.llm_connector import OllamaConnector
+from model.llm_connector import (
+    OllamaConnector,
+    normalise_generation_options,
+    provider_generation_options,
+)
 
 
 class _FakeLogger:
@@ -76,15 +80,22 @@ class _StubOllamaConnector(OllamaConnector):
         show_reasoning: bool,
         num_predict: int,
         use_system: bool,
+        generation_options: dict | None = None,
     ) -> dict[str, str]:
-        del prompt, show_reasoning, use_system
+        del prompt, show_reasoning, use_system, generation_options
         self.chat_num_predicts.append(num_predict)
         if self._chat_results:
             return self._chat_results.pop(0)
         return {"text": "", "done_reason": "stop"}
 
-    def _generate_once(self, prompt: str, *, num_predict: int) -> dict[str, str]:
-        del prompt
+    def _generate_once(
+        self,
+        prompt: str,
+        *,
+        num_predict: int,
+        generation_options: dict | None = None,
+    ) -> dict[str, str]:
+        del prompt, generation_options
         self.generate_num_predicts.append(num_predict)
         if self._generate_results:
             return self._generate_results.pop(0)
@@ -132,6 +143,65 @@ class OllamaConnectorRetryTests(unittest.TestCase):
         self.assertEqual(response, "complete answer")
         self.assertEqual(connector.chat_num_predicts, [384])
         self.assertEqual(connector.generate_num_predicts, [])
+
+    def test_generation_options_omit_internal_context_and_stop_fields(self) -> None:
+        options = normalise_generation_options(
+            {
+                "temperature": 0.5,
+                "num_ctx": 8192,
+                "stop": ["</tool>"],
+                "stop_sequences": ["</json>"],
+            }
+        )
+
+        self.assertEqual(options, {"temperature": 0.5})
+
+    def test_provider_generation_options_map_supported_fields_only(self) -> None:
+        options = {
+            "temperature": 0.4,
+            "top_p": 0.9,
+            "top_k": 40,
+            "repeat_penalty": 1.1,
+            "num_predict": 1024,
+            "seed": 42,
+        }
+
+        self.assertEqual(
+            provider_generation_options("ollama", options),
+            {
+                "temperature": 0.4,
+                "top_p": 0.9,
+                "top_k": 40,
+                "repeat_penalty": 1.1,
+                "num_predict": 1024,
+                "seed": 42,
+            },
+        )
+        self.assertEqual(
+            provider_generation_options("lmstudio", options),
+            {
+                "temperature": 0.4,
+                "top_p": 0.9,
+                "max_tokens": 1024,
+            },
+        )
+
+    def test_generation_option_num_predict_overrides_initial_retry_budget(self) -> None:
+        connector = _StubOllamaConnector(
+            chat_results=[
+                {"text": "complete answer", "done_reason": "stop"},
+            ],
+            default_num_predict=200,
+        )
+
+        response = connector.send_prompt(
+            prompt_type="U",
+            prompt="What happened?",
+            generation_options={"num_predict": 768},
+        )
+
+        self.assertEqual(response, "complete answer")
+        self.assertEqual(connector.chat_num_predicts, [768])
 
 
 if __name__ == "__main__":

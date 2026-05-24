@@ -171,31 +171,22 @@ wwv_flow_imp_shared.create_list_item(
 ,p_list_item_current_for_pages=>'2'
 );
 wwv_flow_imp_shared.create_list_item(
- p_id=>wwv_flow_imp.id(13900100000000001)
+ p_id=>wwv_flow_imp.id(14400100000000010)
 ,p_list_item_display_sequence=>40
-,p_list_item_link_text=>'Preference Definitions'
-,p_list_item_link_target=>'f?p=&APP_ID.:7:&SESSION.::&DEBUG.::::'
-,p_list_item_icon=>'fa-sliders'
+,p_list_item_link_text=>'Orac Admin'
+,p_list_item_link_target=>'f?p=&APP_ID.:32:&SESSION.::&DEBUG.::::'
+,p_list_item_icon=>'fa-user-wrench'
 ,p_list_item_current_type=>'COLON_DELIMITED_PAGE_LIST'
-,p_list_item_current_for_pages=>'7'
+,p_list_item_current_for_pages=>'7,8,9,10,30,31,32'
 );
 wwv_flow_imp_shared.create_list_item(
- p_id=>wwv_flow_imp.id(14000100000000001)
-,p_list_item_display_sequence=>45
-,p_list_item_link_text=>'Orac Personas'
-,p_list_item_link_target=>'f?p=&APP_ID.:9:&SESSION.::&DEBUG.::::'
-,p_list_item_icon=>'fa-user-circle-o'
-,p_list_item_current_type=>'COLON_DELIMITED_PAGE_LIST'
-,p_list_item_current_for_pages=>'9'
-);
-wwv_flow_imp_shared.create_list_item(
- p_id=>wwv_flow_imp.id(14100100000000001)
+ p_id=>wwv_flow_imp.id(14500100000000010)
 ,p_list_item_display_sequence=>50
-,p_list_item_link_text=>'Registered LLMs'
-,p_list_item_link_target=>'f?p=&APP_ID.:11:&SESSION.::&DEBUG.::::'
+,p_list_item_link_text=>'Model Admin'
+,p_list_item_link_target=>'f?p=&APP_ID.:33:&SESSION.::&DEBUG.::::'
 ,p_list_item_icon=>'fa-microchip'
 ,p_list_item_current_type=>'COLON_DELIMITED_PAGE_LIST'
-,p_list_item_current_for_pages=>'11'
+,p_list_item_current_for_pages=>'11,12,33'
 );
 wwv_flow_imp_shared.create_list_item(
  p_id=>wwv_flow_imp.id(11644460366769356)
@@ -273,6 +264,60 @@ wwv_flow_imp_shared.create_list_item(
 ,p_list_item_link_text=>'Dashboard'
 ,p_list_item_link_target=>'f?p=&APP_ID.:2:&APP_SESSION.::&DEBUG.:::'
 ,p_list_item_icon=>'fa-dashboard'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+end;
+/
+prompt --application/shared_components/navigation/lists/orac_admin_cards
+begin
+wwv_flow_imp_shared.create_list(
+ p_id=>wwv_flow_imp.id(14400100000000001)
+,p_name=>'Orac Admin Cards'
+,p_list_status=>'PUBLIC'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(14400100000000002)
+,p_list_item_display_sequence=>10
+,p_list_item_link_text=>'Preference Definitions'
+,p_list_item_link_target=>'f?p=&APP_ID.:7:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-sliders'
+,p_list_text_01=>'Manage preference keys, labels, defaults, and allowed value metadata.'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(14400100000000003)
+,p_list_item_display_sequence=>20
+,p_list_item_link_text=>'Orac Personas'
+,p_list_item_link_target=>'f?p=&APP_ID.:9:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-user-circle-o'
+,p_list_text_01=>'Manage assistant personas, prompt behaviour, and presentation style.'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(14400100000000004)
+,p_list_item_display_sequence=>30
+,p_list_item_link_text=>'Model Presets'
+,p_list_item_link_target=>'f?p=&APP_ID.:30:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-sliders'
+,p_list_text_01=>'Manage reusable generation settings for model requests.'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+end;
+/
+prompt --application/shared_components/navigation/lists/model_admin_cards
+begin
+wwv_flow_imp_shared.create_list(
+ p_id=>wwv_flow_imp.id(14500100000000001)
+,p_name=>'Model Admin Cards'
+,p_list_status=>'PUBLIC'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(14500100000000002)
+,p_list_item_display_sequence=>10
+,p_list_item_link_text=>'Registered LLMs'
+,p_list_item_link_target=>'f?p=&APP_ID.:11:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-microchip'
+,p_list_text_01=>'Manage registered model runtimes and provider metadata.'
 ,p_list_item_current_type=>'TARGET_PAGE'
 );
 end;
@@ -1783,6 +1828,18 @@ wwv_flow_imp_shared.create_menu_option(
 ,p_page_id=>2
 );
 wwv_flow_imp_shared.create_menu_option(
+ p_id=>wwv_flow_imp.id(14400100000000011)
+,p_short_name=>'Orac Admin'
+,p_link=>'f?p=&APP_ID.:32:&APP_SESSION.::&DEBUG.:::'
+,p_page_id=>32
+);
+wwv_flow_imp_shared.create_menu_option(
+ p_id=>wwv_flow_imp.id(14500100000000011)
+,p_short_name=>'Model Admin'
+,p_link=>'f?p=&APP_ID.:33:&APP_SESSION.::&DEBUG.:::'
+,p_page_id=>33
+);
+wwv_flow_imp_shared.create_menu_option(
  p_id=>wwv_flow_imp.id(13900100000000002)
 ,p_short_name=>'Preference Definitions'
 ,p_link=>'f?p=&APP_ID.:7:&APP_SESSION.::&DEBUG.:::'
@@ -1806,6 +1863,19 @@ wwv_flow_imp_shared.create_menu_option(
 ,p_short_name=>'Registered LLM'
 ,p_link=>'f?p=&APP_ID.:12:&APP_SESSION.::&DEBUG.:::'
 ,p_page_id=>12
+);
+wwv_flow_imp_shared.create_menu_option(
+ p_id=>wwv_flow_imp.id(14300100000000002)
+,p_short_name=>'Model Presets'
+,p_link=>'f?p=&APP_ID.:30:&APP_SESSION.::&DEBUG.:::'
+,p_page_id=>30
+);
+wwv_flow_imp_shared.create_menu_option(
+ p_id=>wwv_flow_imp.id(14300100000000003)
+,p_parent_id=>wwv_flow_imp.id(14300100000000002)
+,p_short_name=>'Model Preset'
+,p_link=>'f?p=&APP_ID.:31:&APP_SESSION.::&DEBUG.:::'
+,p_page_id=>31
 );
 end;
 /
@@ -5650,8 +5720,11 @@ wwv_flow_imp_page.create_report_region(
 '       case when packaged_persona then ''Y'' else ''N'' end as packaged_persona_yn,',
 '       case when is_active then ''Y'' else ''N'' end as is_active_yn,',
 '       case when packaged_persona then ''fa fa-check u-success-text'' end as packaged_persona_icon,',
-'       case when is_active then ''fa fa-check u-success-text'' end as is_active_icon',
-'  from orac_api.orac_personalities_v',
+'       case when is_active then ''fa fa-check u-success-text'' end as is_active_icon,',
+'       mgp.model_preset_name as model_preset_name',
+'  from orac_api.orac_personalities_v p',
+'  left join orac_api.model_generation_presets_v mgp',
+'    on mgp.model_preset_id = p.model_preset_id',
 ' order by personality_name'))
 ,p_ajax_enabled=>'Y'
 ,p_lazy_loading=>false
@@ -5759,6 +5832,14 @@ wwv_flow_imp_page.create_report_columns(
 ,p_column_alias=>'IS_ACTIVE_ICON'
 ,p_column_display_sequence=>10
 ,p_hidden_column=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(14000100000000217)
+,p_query_column_id=>11
+,p_column_alias=>'MODEL_PRESET_NAME'
+,p_column_display_sequence=>7
+,p_column_heading=>'Model Preset'
+,p_heading_alignment=>'LEFT'
 );
 wwv_flow_imp_page.create_page_button(
  p_id=>wwv_flow_imp.id(14000100000000211)
@@ -5975,6 +6056,34 @@ wwv_flow_imp_page.create_page_item(
   'character_counter', 'N',
   'resizable', 'Y',
   'trim_spaces', 'BOTH')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000340)
+,p_name=>'P10_MODEL_PRESET_ID'
+,p_source_data_type=>'NUMBER'
+,p_item_sequence=>45
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_prompt=>'Model Preset'
+,p_display_as=>'NATIVE_SELECT_ONE'
+,p_lov=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select model_preset_name || '' ('' || model_preset_code || '')'' d,',
+'       model_preset_id r',
+'  from orac_api.model_generation_presets_v',
+' where is_active = ''Y''',
+' order by case is_system_preset when ''Y'' then 0 else 1 end,',
+'          model_preset_name,',
+'          model_preset_code'))
+,p_lov_display_null=>'YES'
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'YES'
+,p_help_text=>'Controls model generation settings such as creativity, determinism, repetition control, and output length.'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'case_sensitive', 'N',
+  'fetch_on_search', 'Y',
+  'match_type', 'CONTAINS',
+  'min_chars', '0')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(14000100000000311)
@@ -6251,6 +6360,7 @@ wwv_flow_imp_page.create_page_process(
 '      p_enforce_precision   => to_bool(:P10_ENFORCE_PRECISION),',
 '      p_admit_uncertainty   => to_bool(:P10_ADMIT_UNCERTAINTY),',
 '      p_packaged_persona    => to_bool(:P10_PACKAGED_PERSONA),',
+'      p_model_preset_id     => :P10_MODEL_PRESET_ID,',
 '      p_system_prompt       => :P10_SYSTEM_PROMPT,',
 '      p_style_prompt        => :P10_STYLE_PROMPT,',
 '      p_is_active           => to_bool(:P10_IS_ACTIVE),',
@@ -6270,6 +6380,7 @@ wwv_flow_imp_page.create_page_process(
 '      p_enforce_precision   => to_bool(:P10_ENFORCE_PRECISION),',
 '      p_admit_uncertainty   => to_bool(:P10_ADMIT_UNCERTAINTY),',
 '      p_packaged_persona    => to_bool(:P10_PACKAGED_PERSONA),',
+'      p_model_preset_id     => :P10_MODEL_PRESET_ID,',
 '      p_system_prompt       => :P10_SYSTEM_PROMPT,',
 '      p_style_prompt        => :P10_STYLE_PROMPT,',
 '      p_is_active           => to_bool(:P10_IS_ACTIVE),',
@@ -6323,6 +6434,7 @@ wwv_flow_imp_page.create_page_process(
 '           enforce_precision,',
 '           admit_uncertainty,',
 '           packaged_persona,',
+'           model_preset_id,',
 '           system_prompt,',
 '           style_prompt,',
 '           is_active,',
@@ -6338,6 +6450,7 @@ wwv_flow_imp_page.create_page_process(
 '           l_enforce_precision,',
 '           l_admit_uncertainty,',
 '           l_packaged_persona,',
+'           :P10_MODEL_PRESET_ID,',
 '           :P10_SYSTEM_PROMPT,',
 '           :P10_STYLE_PROMPT,',
 '           l_is_active,',
@@ -7090,6 +7203,597 @@ wwv_flow_imp_page.create_page_process(
 ,p_process_clob_language=>'PLSQL'
 ,p_error_display_location=>'INLINE_IN_NOTIFICATION'
 ,p_internal_uid=>14200100000000317
+);
+end;
+/
+prompt --application/pages/page_00030
+begin
+wwv_flow_imp_page.create_page(
+ p_id=>30
+,p_name=>'Model Presets'
+,p_alias=>'MODEL-PRESETS'
+,p_step_title=>'Model Presets'
+,p_warn_on_unsaved_changes=>'N'
+,p_autocomplete_on_off=>'OFF'
+,p_step_template=>2526643373347724467
+,p_page_template_options=>'#DEFAULT#'
+,p_protection_level=>'C'
+,p_page_component_map=>'03'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(14300100000000201)
+,p_plug_name=>'Breadcrumb'
+,p_region_template_options=>'#DEFAULT#:t-BreadcrumbRegion--useBreadcrumbTitle'
+,p_component_template_options=>'#DEFAULT#'
+,p_plug_template=>2531463326621247859
+,p_plug_display_sequence=>10
+,p_plug_display_point=>'REGION_POSITION_01'
+,p_menu_id=>wwv_flow_imp.id(11444266688769030)
+,p_plug_source_type=>'NATIVE_BREADCRUMB'
+,p_menu_template_id=>4072363345357175094
+);
+wwv_flow_imp_page.create_report_region(
+ p_id=>wwv_flow_imp.id(14300100000000202)
+,p_name=>'Model Presets'
+,p_template=>4072358936313175081
+,p_display_sequence=>20
+,p_region_template_options=>'#DEFAULT#:t-Region--noPadding:t-Region--scrollBody'
+,p_component_template_options=>'t-Report--stretch:#DEFAULT#:t-Report--altRowsDefault:t-Report--rowHighlight:t-Report--inline'
+,p_source_type=>'NATIVE_SQL_REPORT'
+,p_query_type=>'SQL'
+,p_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select model_preset_id,',
+'       model_preset_code,',
+'       model_preset_name,',
+'       temperature,',
+'       top_p,',
+'       top_k,',
+'       repeat_penalty,',
+'       num_predict,',
+'       seed,',
+'       is_system_preset,',
+'       is_active',
+'  from orac_api.model_generation_presets_v',
+' order by case is_system_preset when ''Y'' then 0 else 1 end, model_preset_name'))
+,p_ajax_enabled=>'Y'
+,p_lazy_loading=>false
+,p_query_row_template=>2538654340625403440
+,p_query_num_rows=>100
+,p_query_options=>'DERIVED_REPORT_COLUMNS'
+,p_query_no_data_found=>'No data found.'
+,p_query_num_rows_type=>'NEXT_PREVIOUS_LINKS'
+,p_query_row_count_max=>5000
+,p_pagination_display_position=>'BOTTOM_RIGHT'
+,p_csv_output=>'N'
+,p_prn_output=>'N'
+,p_sort_null=>'L'
+,p_plug_query_strip_html=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(14300100000000203)
+,p_query_column_id=>1
+,p_column_alias=>'MODEL_PRESET_ID'
+,p_column_display_sequence=>1
+,p_column_heading=>'<span class="u-VisuallyHidden">Edit</span>'
+,p_column_link=>'f?p=&APP_ID.:31:&APP_SESSION.::&DEBUG.:RP:P31_MODEL_PRESET_ID:#MODEL_PRESET_ID#'
+,p_column_linktext=>'<span role="img" aria-label="Edit" class="fa fa-edit" title="Edit"></span>'
+,p_heading_alignment=>'LEFT'
+,p_report_column_width=>32
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(14300100000000204)
+,p_button_sequence=>10
+,p_button_plug_id=>wwv_flow_imp.id(14300100000000202)
+,p_button_name=>'POP_MODEL_PRESETS'
+,p_button_action=>'REDIRECT_PAGE'
+,p_button_template_options=>'#DEFAULT#:t-Button--noUI'
+,p_button_template_id=>2349107722467437027
+,p_button_image_alt=>'Add Model Preset'
+,p_button_position=>'EDIT'
+,p_button_redirect_url=>'f?p=&APP_ID.:31:&APP_SESSION.::&DEBUG.:RP,31::'
+,p_icon_css_classes=>'fa-plus'
+);
+wwv_flow_imp_page.create_page_da_event(
+ p_id=>wwv_flow_imp.id(14300100000000205)
+,p_name=>'Dialog Closed'
+,p_event_sequence=>10
+,p_triggering_element_type=>'REGION'
+,p_triggering_region_id=>wwv_flow_imp.id(14300100000000202)
+,p_bind_type=>'bind'
+,p_execution_type=>'IMMEDIATE'
+,p_bind_event_type=>'apexafterclosedialog'
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(14300100000000206)
+,p_event_id=>wwv_flow_imp.id(14300100000000205)
+,p_event_result=>'TRUE'
+,p_action_sequence=>10
+,p_execute_on_page_init=>'N'
+,p_action=>'NATIVE_REFRESH'
+,p_affected_elements_type=>'REGION'
+,p_affected_region_id=>wwv_flow_imp.id(14300100000000202)
+);
+end;
+/
+prompt --application/pages/page_00031
+begin
+wwv_flow_imp_page.create_page(
+ p_id=>31
+,p_name=>'Model Preset'
+,p_alias=>'MODEL-PRESET'
+,p_page_mode=>'MODAL'
+,p_step_title=>'Model Preset'
+,p_autocomplete_on_off=>'OFF'
+,p_step_template=>1661186590416509825
+,p_page_template_options=>'#DEFAULT#:js-dialog-class-t-Drawer--pullOutEnd'
+,p_dialog_chained=>'N'
+,p_dialog_resizable=>'Y'
+,p_protection_level=>'C'
+,p_page_component_map=>'16'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(14300100000000301)
+,p_plug_name=>'Model Preset'
+,p_region_template_options=>'#DEFAULT#'
+,p_plug_template=>4501440665235496320
+,p_plug_display_sequence=>10
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'expand_shortcuts', 'N',
+  'output_as', 'TEXT',
+  'show_line_breaks', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(14300100000000302)
+,p_plug_name=>'Buttons'
+,p_region_template_options=>'#DEFAULT#'
+,p_plug_template=>2126429139436695430
+,p_plug_display_sequence=>20
+,p_plug_display_point=>'REGION_POSITION_03'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'expand_shortcuts', 'N',
+  'output_as', 'TEXT',
+  'show_line_breaks', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(14300100000000303)
+,p_button_sequence=>10
+,p_button_plug_id=>wwv_flow_imp.id(14300100000000302)
+,p_button_name=>'CANCEL'
+,p_button_action=>'DEFINED_BY_DA'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>4072362960822175091
+,p_button_image_alt=>'Cancel'
+,p_button_position=>'CLOSE'
+,p_button_alignment=>'RIGHT'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(14300100000000304)
+,p_button_sequence=>20
+,p_button_plug_id=>wwv_flow_imp.id(14300100000000302)
+,p_button_name=>'DELETE'
+,p_button_action=>'SUBMIT'
+,p_button_template_options=>'#DEFAULT#:t-Button--danger:t-Button--simple'
+,p_button_template_id=>4072362960822175091
+,p_button_image_alt=>'Delete'
+,p_button_position=>'DELETE'
+,p_button_alignment=>'RIGHT'
+,p_button_execute_validations=>'N'
+,p_confirm_message=>'&APP_TEXT$DELETE_MSG!RAW.'
+,p_confirm_style=>'danger'
+,p_button_condition=>'P31_MODEL_PRESET_ID'
+,p_button_condition_type=>'ITEM_IS_NOT_NULL'
+,p_database_action=>'DELETE'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(14300100000000305)
+,p_button_sequence=>30
+,p_button_plug_id=>wwv_flow_imp.id(14300100000000302)
+,p_button_name=>'SAVE'
+,p_button_action=>'SUBMIT'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>4072362960822175091
+,p_button_is_hot=>'Y'
+,p_button_image_alt=>'Apply Changes'
+,p_button_position=>'NEXT'
+,p_button_alignment=>'RIGHT'
+,p_button_condition=>'P31_MODEL_PRESET_ID'
+,p_button_condition_type=>'ITEM_IS_NOT_NULL'
+,p_database_action=>'UPDATE'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(14300100000000306)
+,p_button_sequence=>40
+,p_button_plug_id=>wwv_flow_imp.id(14300100000000302)
+,p_button_name=>'CREATE'
+,p_button_action=>'SUBMIT'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>4072362960822175091
+,p_button_is_hot=>'Y'
+,p_button_image_alt=>'Create'
+,p_button_position=>'NEXT'
+,p_button_alignment=>'RIGHT'
+,p_button_condition=>'P31_MODEL_PRESET_ID'
+,p_button_condition_type=>'ITEM_IS_NULL'
+,p_database_action=>'INSERT'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14300100000000307)
+,p_name=>'P31_MODEL_PRESET_ID'
+,p_source_data_type=>'NUMBER'
+,p_item_sequence=>10
+,p_item_plug_id=>wwv_flow_imp.id(14300100000000301)
+,p_display_as=>'NATIVE_HIDDEN'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14300100000000308)
+,p_name=>'P31_MODEL_PRESET_CODE'
+,p_source_data_type=>'VARCHAR2'
+,p_is_required=>true
+,p_item_sequence=>20
+,p_item_plug_id=>wwv_flow_imp.id(14300100000000301)
+,p_prompt=>'Preset Code'
+,p_display_as=>'NATIVE_TEXT_FIELD'
+,p_cSize=>30
+,p_cMaxlength=>50
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'disabled', 'N',
+  'submit_when_enter_pressed', 'N',
+  'subtype', 'TEXT',
+  'trim_spaces', 'BOTH')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14300100000000309)
+,p_name=>'P31_MODEL_PRESET_NAME'
+,p_source_data_type=>'VARCHAR2'
+,p_is_required=>true
+,p_item_sequence=>30
+,p_item_plug_id=>wwv_flow_imp.id(14300100000000301)
+,p_prompt=>'Name'
+,p_display_as=>'NATIVE_TEXT_FIELD'
+,p_cSize=>50
+,p_cMaxlength=>100
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14300100000000310)
+,p_name=>'P31_DESCRIPTION'
+,p_source_data_type=>'VARCHAR2'
+,p_item_sequence=>40
+,p_item_plug_id=>wwv_flow_imp.id(14300100000000301)
+,p_prompt=>'Description'
+,p_display_as=>'NATIVE_TEXTAREA'
+,p_cSize=>60
+,p_cMaxlength=>4000
+,p_cHeight=>4
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14300100000000311)
+,p_name=>'P31_TEMPERATURE'
+,p_source_data_type=>'NUMBER'
+,p_item_sequence=>50
+,p_item_plug_id=>wwv_flow_imp.id(14300100000000301)
+,p_prompt=>'Temperature'
+,p_display_as=>'NATIVE_NUMBER_FIELD'
+,p_cSize=>20
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14300100000000312)
+,p_name=>'P31_TOP_P'
+,p_source_data_type=>'NUMBER'
+,p_item_sequence=>60
+,p_item_plug_id=>wwv_flow_imp.id(14300100000000301)
+,p_prompt=>'Top P'
+,p_display_as=>'NATIVE_NUMBER_FIELD'
+,p_cSize=>20
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14300100000000313)
+,p_name=>'P31_TOP_K'
+,p_source_data_type=>'NUMBER'
+,p_item_sequence=>70
+,p_item_plug_id=>wwv_flow_imp.id(14300100000000301)
+,p_prompt=>'Top K'
+,p_display_as=>'NATIVE_NUMBER_FIELD'
+,p_cSize=>20
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14300100000000314)
+,p_name=>'P31_REPEAT_PENALTY'
+,p_source_data_type=>'NUMBER'
+,p_item_sequence=>80
+,p_item_plug_id=>wwv_flow_imp.id(14300100000000301)
+,p_prompt=>'Repeat Penalty'
+,p_display_as=>'NATIVE_NUMBER_FIELD'
+,p_cSize=>20
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14300100000000315)
+,p_name=>'P31_NUM_PREDICT'
+,p_source_data_type=>'NUMBER'
+,p_item_sequence=>90
+,p_item_plug_id=>wwv_flow_imp.id(14300100000000301)
+,p_prompt=>'Num Predict'
+,p_display_as=>'NATIVE_NUMBER_FIELD'
+,p_cSize=>20
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14300100000000316)
+,p_name=>'P31_SEED'
+,p_source_data_type=>'NUMBER'
+,p_item_sequence=>100
+,p_item_plug_id=>wwv_flow_imp.id(14300100000000301)
+,p_prompt=>'Seed'
+,p_display_as=>'NATIVE_NUMBER_FIELD'
+,p_cSize=>20
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14300100000000317)
+,p_name=>'P31_IS_SYSTEM_PRESET'
+,p_source_data_type=>'VARCHAR2'
+,p_is_required=>true
+,p_item_sequence=>110
+,p_item_plug_id=>wwv_flow_imp.id(14300100000000301)
+,p_item_default=>'N'
+,p_prompt=>'System Preset'
+,p_display_as=>'NATIVE_YES_NO'
+,p_cSize=>64
+,p_cMaxlength=>4000
+,p_field_template=>2318601014859922299
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'NO'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'use_defaults', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14300100000000318)
+,p_name=>'P31_IS_ACTIVE'
+,p_source_data_type=>'VARCHAR2'
+,p_is_required=>true
+,p_item_sequence=>120
+,p_item_plug_id=>wwv_flow_imp.id(14300100000000301)
+,p_item_default=>'Y'
+,p_prompt=>'Is Active'
+,p_display_as=>'NATIVE_YES_NO'
+,p_cSize=>64
+,p_cMaxlength=>4000
+,p_field_template=>2318601014859922299
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'NO'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'use_defaults', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14300100000000319)
+,p_name=>'P31_ROW_VERSION'
+,p_source_data_type=>'NUMBER'
+,p_item_sequence=>130
+,p_item_plug_id=>wwv_flow_imp.id(14300100000000301)
+,p_display_as=>'NATIVE_HIDDEN'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_da_event(
+ p_id=>wwv_flow_imp.id(14300100000000320)
+,p_name=>'Cancel Dialog'
+,p_event_sequence=>10
+,p_triggering_element_type=>'BUTTON'
+,p_triggering_button_id=>wwv_flow_imp.id(14300100000000303)
+,p_bind_type=>'bind'
+,p_execution_type=>'IMMEDIATE'
+,p_bind_event_type=>'click'
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(14300100000000321)
+,p_event_id=>wwv_flow_imp.id(14300100000000320)
+,p_event_result=>'TRUE'
+,p_action_sequence=>10
+,p_execute_on_page_init=>'N'
+,p_action=>'NATIVE_DIALOG_CANCEL'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(14300100000000322)
+,p_process_sequence=>10
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Process form Model Preset'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'begin',
+'  if :REQUEST = ''DELETE'' then',
+'    delete from orac_api.model_generation_presets_v',
+'     where model_preset_id = :P31_MODEL_PRESET_ID',
+'       and row_version = :P31_ROW_VERSION;',
+'  elsif :REQUEST = ''CREATE'' then',
+'    insert into orac_api.model_generation_presets_v (',
+'      model_preset_code, model_preset_name, description,',
+'      temperature, top_p, top_k, repeat_penalty, num_predict, seed,',
+'      is_system_preset, is_active',
+'    ) values (',
+'      :P31_MODEL_PRESET_CODE, :P31_MODEL_PRESET_NAME, :P31_DESCRIPTION,',
+'      :P31_TEMPERATURE, :P31_TOP_P, :P31_TOP_K, :P31_REPEAT_PENALTY, :P31_NUM_PREDICT, :P31_SEED,',
+'      :P31_IS_SYSTEM_PRESET, :P31_IS_ACTIVE',
+'    ) returning model_preset_id, row_version',
+'      into :P31_MODEL_PRESET_ID, :P31_ROW_VERSION;',
+'  else',
+'    update orac_api.model_generation_presets_v',
+'       set model_preset_code = :P31_MODEL_PRESET_CODE,',
+'           model_preset_name = :P31_MODEL_PRESET_NAME,',
+'           description = :P31_DESCRIPTION,',
+'           temperature = :P31_TEMPERATURE,',
+'           top_p = :P31_TOP_P,',
+'           top_k = :P31_TOP_K,',
+'           repeat_penalty = :P31_REPEAT_PENALTY,',
+'           num_predict = :P31_NUM_PREDICT,',
+'           seed = :P31_SEED,',
+'           is_system_preset = :P31_IS_SYSTEM_PRESET,',
+'           is_active = :P31_IS_ACTIVE',
+'     where model_preset_id = :P31_MODEL_PRESET_ID',
+'       and row_version = :P31_ROW_VERSION',
+'     returning row_version into :P31_ROW_VERSION;',
+'  end if;',
+'',
+'  if sql%rowcount = 0 then',
+'    raise_application_error(-20000, ''Model Preset was changed by another session. Refresh and try again.'');',
+'  end if;',
+'end;'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_process_when=>'CREATE,SAVE,DELETE'
+,p_process_when_type=>'REQUEST_IN_CONDITION'
+,p_internal_uid=>14300100000000322
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(14300100000000323)
+,p_process_sequence=>50
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_CLOSE_WINDOW'
+,p_process_name=>'Close Dialog'
+,p_attribute_01=>'P31_MODEL_PRESET_ID,REQUEST'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_process_when=>'CREATE,SAVE,DELETE'
+,p_process_when_type=>'REQUEST_IN_CONDITION'
+,p_internal_uid=>14300100000000323
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(14300100000000324)
+,p_process_sequence=>10
+,p_process_point=>'BEFORE_HEADER'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Initialize Model Preset'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'begin',
+'  if :P31_MODEL_PRESET_ID is not null then',
+'    select model_preset_code, model_preset_name, description,',
+'           temperature, top_p, top_k, repeat_penalty, num_predict, seed,',
+'           is_system_preset, is_active, row_version',
+'      into :P31_MODEL_PRESET_CODE, :P31_MODEL_PRESET_NAME, :P31_DESCRIPTION,',
+'           :P31_TEMPERATURE, :P31_TOP_P, :P31_TOP_K, :P31_REPEAT_PENALTY, :P31_NUM_PREDICT, :P31_SEED,',
+'           :P31_IS_SYSTEM_PRESET, :P31_IS_ACTIVE, :P31_ROW_VERSION',
+'      from orac_api.model_generation_presets_v',
+'     where model_preset_id = :P31_MODEL_PRESET_ID;',
+'  else',
+'    :P31_IS_SYSTEM_PRESET := coalesce(:P31_IS_SYSTEM_PRESET, ''N'');',
+'    :P31_IS_ACTIVE := coalesce(:P31_IS_ACTIVE, ''Y'');',
+'  end if;',
+'end;'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_internal_uid=>14300100000000324
+);
+end;
+/
+prompt --application/pages/page_00032
+begin
+wwv_flow_imp_page.create_page(
+ p_id=>32
+,p_name=>'Orac Admin'
+,p_alias=>'ORAC-ADMIN'
+,p_step_title=>'Orac Admin'
+,p_warn_on_unsaved_changes=>'N'
+,p_autocomplete_on_off=>'OFF'
+,p_step_template=>2526643373347724467
+,p_page_template_options=>'#DEFAULT#'
+,p_protection_level=>'C'
+,p_page_component_map=>'03'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(14400100000000201)
+,p_plug_name=>'Breadcrumb'
+,p_region_template_options=>'#DEFAULT#:t-BreadcrumbRegion--useBreadcrumbTitle'
+,p_component_template_options=>'#DEFAULT#'
+,p_plug_template=>2531463326621247859
+,p_plug_display_sequence=>10
+,p_plug_display_point=>'REGION_POSITION_01'
+,p_menu_id=>wwv_flow_imp.id(11444266688769030)
+,p_plug_source_type=>'NATIVE_BREADCRUMB'
+,p_menu_template_id=>4072363345357175094
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(14400100000000202)
+,p_plug_name=>'Orac Admin'
+,p_region_template_options=>'#DEFAULT#'
+,p_component_template_options=>'#DEFAULT#:u-colors:t-Cards--featured t-Cards--block force-fa-lg:t-Cards--displayIcons:t-Cards--3cols:t-Cards--animColorFill'
+,p_plug_template=>4501440665235496320
+,p_plug_display_sequence=>20
+,p_location=>null
+,p_list_id=>wwv_flow_imp.id(14400100000000001)
+,p_plug_source_type=>'NATIVE_LIST'
+,p_list_template_id=>2886769488667748277
+,p_plug_query_num_rows=>15
+,p_ai_enabled=>false
+);
+end;
+/
+prompt --application/pages/page_00033
+begin
+wwv_flow_imp_page.create_page(
+ p_id=>33
+,p_name=>'Model Admin'
+,p_alias=>'MODEL-ADMIN'
+,p_step_title=>'Model Admin'
+,p_warn_on_unsaved_changes=>'N'
+,p_autocomplete_on_off=>'OFF'
+,p_step_template=>2526643373347724467
+,p_page_template_options=>'#DEFAULT#'
+,p_protection_level=>'C'
+,p_page_component_map=>'03'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(14500100000000201)
+,p_plug_name=>'Breadcrumb'
+,p_region_template_options=>'#DEFAULT#:t-BreadcrumbRegion--useBreadcrumbTitle'
+,p_component_template_options=>'#DEFAULT#'
+,p_plug_template=>2531463326621247859
+,p_plug_display_sequence=>10
+,p_plug_display_point=>'REGION_POSITION_01'
+,p_menu_id=>wwv_flow_imp.id(11444266688769030)
+,p_plug_source_type=>'NATIVE_BREADCRUMB'
+,p_menu_template_id=>4072363345357175094
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(14500100000000202)
+,p_plug_name=>'Model Admin'
+,p_region_template_options=>'#DEFAULT#'
+,p_component_template_options=>'#DEFAULT#:u-colors:t-Cards--featured t-Cards--block force-fa-lg:t-Cards--displayIcons:t-Cards--3cols:t-Cards--animColorFill'
+,p_plug_template=>4501440665235496320
+,p_plug_display_sequence=>20
+,p_location=>null
+,p_list_id=>wwv_flow_imp.id(14500100000000001)
+,p_plug_source_type=>'NATIVE_LIST'
+,p_list_template_id=>2886769488667748277
+,p_plug_query_num_rows=>15
+,p_ai_enabled=>false
 );
 end;
 /
