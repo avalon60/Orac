@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "ecfb7dc5ce95",
+  "strategy": "manual-commit",
+  "branch": "develop",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/aec-design.md",
+    "poetry.lock",
+    "pyproject.toml",
+    "resources/config/orac.ini",
+    "resources/config/orac.ini.kokoro",
+    "resources/config/orac.ini.piper",
+    "src/controller/orac.py",
+    "src/orac_voice/__init__.py",
+    "src/orac_voice/aec.py",
+    "tests/test_orac_voice.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ec/fb7dc5ce95/0/metadata.json",
+      "transcript": "/ec/fb7dc5ce95/0/full.jsonl",
+      "content_hash": "/ec/fb7dc5ce95/0/content_hash.txt",
+      "prompt": "/ec/fb7dc5ce95/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 182087,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 741632,
+    "output_tokens": 6605,
+    "api_call_count": 14
+  }
+}
