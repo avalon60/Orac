@@ -164,6 +164,73 @@ class DisplayEventPipeTests(unittest.TestCase):
 
       self.assertIsNone(load_latest_state_file(state_file))
 
+  def test_backend_display_events_cover_fields_consumed_by_web_display(self) -> None:
+    """Backend display events expose the names and fields the web UI consumes."""
+    app_source = (
+      PROJECT_ROOT / "web" / "orac-display" / "src" / "App.tsx"
+    ).read_text(encoding="utf-8")
+    readme_source = (
+      PROJECT_ROOT / "web" / "orac-display" / "README.md"
+    ).read_text(encoding="utf-8")
+    event_names = {
+      "state_changed",
+      "status_message",
+      "ui_config",
+      "runtime.identity",
+      "transcript.turn.clear",
+      "transcript.user.final",
+      "transcript.orac.start",
+      "transcript.orac.delta",
+      "transcript.orac.final",
+    }
+    frontend_aliases = {
+      "voice_stt_final",
+      "stt_final",
+      "stream_start",
+      "text_delta",
+      "stream_end",
+      "response",
+    }
+
+    for event_name in event_names | frontend_aliases:
+      with self.subTest(event_name=event_name):
+        self.assertIn(event_name, app_source)
+    for documented_name in (
+      "runtime.identity",
+      "transcript.turn.clear",
+      "transcript.user.final",
+      "transcript.orac.start",
+      "transcript.orac.delta",
+      "transcript.orac.final",
+      "stream_start",
+      "text_delta",
+      "stream_end",
+      "response",
+    ):
+      with self.subTest(documented_name=documented_name):
+        self.assertIn(documented_name, readme_source)
+
+    state_event = DisplayEvent(
+      event="state_changed",
+      state="speaking",
+      message="Speaking",
+      session_id="voice-session",
+      turn_id="turn-1",
+    ).to_dict()
+    transcript_event = DisplayEvent(
+      event="transcript.orac.delta",
+      session_id="voice-session",
+      turn_id="turn-1",
+      extra={"text": "Hel", "delta": "Hel"},
+    ).to_dict()
+
+    self.assertEqual(
+      set(state_event),
+      {"event", "state", "message", "session_id", "turn_id", "created_on", "v"},
+    )
+    self.assertEqual(transcript_event["text"], "Hel")
+    self.assertEqual(transcript_event["delta"], "Hel")
+
 
 if __name__ == "__main__":
   unittest.main()

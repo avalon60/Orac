@@ -34,7 +34,9 @@
       { "$ref": "#/$defs/promptResponsePayload" },
       { "$ref": "#/$defs/streamStartPayload" },
       { "$ref": "#/$defs/streamDeltaPayload" },
+      { "$ref": "#/$defs/textChunkPayload" },
       { "$ref": "#/$defs/streamEndPayload" },
+      { "$ref": "#/$defs/streamTerminalPayload" },
       { "$ref": "#/$defs/ttsPlaybackEventPayload" },
       { "$ref": "#/$defs/voiceCancelRequestPayload" },
       { "$ref": "#/$defs/voiceCancelResponsePayload" },
@@ -64,6 +66,55 @@
       "then": { "properties": { "payload": { "oneOf": [
         { "$ref": "#/$defs/promptResponsePayload" }, { "type": "null" }
       ] } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "stream_start" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/streamStartPayload" } }, "required": ["payload"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "text_delta" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/streamDeltaPayload" } }, "required": ["payload"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "text_chunk" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/textChunkPayload" } }, "required": ["payload"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "stream_end" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/streamEndPayload" } }, "required": ["payload"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "stream_error" } }, "required": ["type"] },
+      "then": {
+        "properties": {
+          "payload": { "$ref": "#/$defs/streamTerminalPayload" },
+          "error": { "$ref": "#/$defs/errorObj" }
+        },
+        "required": ["payload", "error"]
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "stream_cancelled" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/streamTerminalPayload" } }, "required": ["payload"] }
+    },
+    {
+      "if": { "properties": { "type": { "enum": [
+        "tts_playback_started",
+        "tts_playback_finished",
+        "tts_playback_cancelled",
+        "voice_turn_complete"
+      ] } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/ttsPlaybackEventPayload" } }, "required": ["payload"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "tts_playback_error" } }, "required": ["type"] },
+      "then": {
+        "properties": {
+          "payload": { "$ref": "#/$defs/ttsPlaybackEventPayload" },
+          "error": { "$ref": "#/$defs/errorObj" }
+        },
+        "required": ["payload", "error"]
+      }
     },
     {
       "if": { "properties": { "type": { "const": "event" }, "route": { "const": "orac.prompt" } }, "required": ["type", "route"] },
@@ -149,25 +200,76 @@
     "streamStartPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["model"],
-      "properties": { "model": { "type": "string" } }
+      "properties": {
+        "content_type": { "type": "string", "enum": ["text"] },
+        "voice_session_id": { "type": ["string", "null"] },
+        "turn_id": { "type": ["string", "null"] },
+        "model": {
+          "type": "string",
+          "description": "Legacy compatibility field; current runtime emits model identity in envelope meta.model."
+        }
+      },
+      "anyOf": [
+        { "required": ["content_type"] },
+        { "required": ["model"] }
+      ]
     },
 
     "streamDeltaPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["content_delta"],
-      "properties": { "content_delta": { "type": "string" } }
+      "properties": {
+        "delta": { "type": "string" },
+        "content_delta": {
+          "type": "string",
+          "description": "Legacy alias for delta; current runtime emits delta."
+        },
+        "voice_session_id": { "type": ["string", "null"] },
+        "turn_id": { "type": ["string", "null"] }
+      },
+      "anyOf": [
+        { "required": ["delta"] },
+        { "required": ["content_delta"] }
+      ]
+    },
+
+    "textChunkPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chunk"],
+      "properties": {
+        "chunk": { "type": "string" },
+        "session_id": { "type": ["string", "null"] },
+        "voice_session_id": { "type": ["string", "null"] },
+        "turn_id": { "type": ["string", "null"] }
+      }
     },
 
     "streamEndPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["stop_reason", "usage"],
+      "required": ["stop_reason"],
       "properties": {
         "stop_reason": { "type": "string", "enum": ["stop", "length", "tool_call", "error"] },
+        "voice_session_id": { "type": ["string", "null"] },
+        "turn_id": { "type": ["string", "null"] },
         "usage": { "$ref": "#/$defs/usage" }
       }
+    },
+
+    "streamTerminalPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reason": { "type": "string" },
+        "voice_session_id": { "type": ["string", "null"] },
+        "turn_id": { "type": ["string", "null"] }
+      },
+      "anyOf": [
+        { "required": ["reason"] },
+        { "required": ["voice_session_id"] },
+        { "required": ["turn_id"] }
+      ]
     },
 
     "ttsPlaybackEventPayload": {
@@ -187,13 +289,23 @@
     "voiceCancelRequestPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["session_id", "scope", "reason"],
+      "required": ["scope", "reason"],
       "properties": {
         "session_id": { "type": "string", "minLength": 1 },
-        "turn_id": { "type": "string" },
+        "turn_id": { "type": "string", "minLength": 1 },
         "scope": { "type": "string", "enum": ["turn", "session", "active", "all"] },
         "reason": { "type": "string" }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "scope": { "const": "turn" } }, "required": ["scope"] },
+          "then": { "required": ["session_id", "turn_id"] }
+        },
+        {
+          "if": { "properties": { "scope": { "enum": ["session", "active"] } }, "required": ["scope"] },
+          "then": { "required": ["session_id"] }
+        }
+      ]
     },
 
     "voiceCancelResponsePayload": {

@@ -31,6 +31,7 @@ from lib.config_mgr import ConfigManager
 from lib.fsutils import project_home
 from lib.icons import Icons
 from lib.logutil import Logger
+from lib.protocol_validation import disabled_protocol_validator
 from model.orac_auth import FrameAuthChain, ZenFrameAuth
 from model.context_manager import OracContextManager
 from model.text_chunker import TextChunker
@@ -112,10 +113,11 @@ except Exception as e:
         PROTOCOL_VERSION = schema.get("$id", "local-schema")
         logger.log_info(f"✅ Using local protocol schema at {local_schema_path}")
     except Exception as e2:
-        logger.log_warning(f"⚠️ Local schema fallback failed; validation disabled: {e2}")
-
-        def validate_frame(_): ...
-        PROTOCOL_VERSION = "unknown"
+        logger.log_warning(f"⚠️ Local schema fallback failed: {e2}")
+        validate_frame, PROTOCOL_VERSION = disabled_protocol_validator(e2)
+        logger.log_warning(
+            "⚠️ Protocol validation disabled by explicit development override."
+        )
 
 # --- Debug dump helper (module-level so it's always available) ----------------
 def _dump_debug_blob(name: str, content: str) -> None:
@@ -914,6 +916,10 @@ class Orac:
                 "code": str(event_dict.get("code") or "TTS_PLAYBACK_ERROR"),
                 "message": str(event_dict.get("message") or "TTS playback failed"),
             }
+        self._validate_outbound_protocol_frame(
+            frame,
+            context="Voice playback event failed protocol validation",
+        )
         return frame
 
     def _publish_voice_playback_event(self, event: VoiceEvent) -> None:
@@ -2842,6 +2848,19 @@ class Orac:
             _log_exception("Response failed protocol validation (returning anyway)", e)
         return resp
 
+    def _validate_outbound_protocol_frame(
+        self,
+        frame: dict[str, Any],
+        *,
+        context: str,
+    ) -> None:
+        """Validate an outbound protocol frame and fail closed on errors."""
+        try:
+            validate_frame(frame)
+        except Exception as e:
+            _log_exception(context, e)
+            raise
+
     def _build_stream_event(
         self,
         req_env: dict,
@@ -2858,7 +2877,7 @@ class Orac:
         responses. The final ``response`` frame remains the compatibility
         terminator for clients that still need a complete answer.
         """
-        return {
+        frame = {
             "v": 1,
             "type": event_type,
             "id": new_id("evt"),
@@ -2874,6 +2893,11 @@ class Orac:
             "payload": payload or {},
             "error": error,
         }
+        self._validate_outbound_protocol_frame(
+            frame,
+            context="Stream event failed protocol validation",
+        )
+        return frame
 
     async def _emit_stream_event(
         self,
@@ -2887,19 +2911,18 @@ class Orac:
         error: dict[str, Any] | None = None,
     ) -> None:
         """Emit one stream event when a sink is available."""
+        frame = self._build_stream_event(
+            req_env,
+            event_type,
+            payload=payload,
+            model_name=model_name,
+            user_registration=user_registration,
+            error=error,
+        )
         self._route_stream_event_to_voice(req_env, event_type, payload)
         if event_sink is None:
             return
-        await event_sink(
-            self._build_stream_event(
-                req_env,
-                event_type,
-                payload=payload,
-                model_name=model_name,
-                user_registration=user_registration,
-                error=error,
-            )
-        )
+        await event_sink(frame)
 
     def _missing_stream_speech_suffix(
         self,
@@ -3112,7 +3135,7 @@ class Orac:
         def synthesise_voice_turn_complete() -> dict[str, Any]:
             """Build a fallback completion frame for a drained voice turn."""
             timestamp = iso_now()
-            return {
+            frame = {
                 "v": 1,
                 "type": "voice_turn_complete",
                 "id": new_id("evt"),
@@ -3132,6 +3155,11 @@ class Orac:
                 },
                 "error": None,
             }
+            self._validate_outbound_protocol_frame(
+                frame,
+                context="Synthesised voice turn completion failed protocol validation",
+            )
+            return frame
 
         if voice_session_id and voice_turn_id:
             voice_subscription = _VoicePlaybackSubscription(
@@ -3316,8 +3344,6 @@ class Orac:
                 f"auth_user='{auth_user}' raw_client='{meta.get('client', '')}' "
                 f"ext_sid_present={'session_id' in (req_env.get('meta') or {})}"
             )
-
-            session_id_base = self._derive_session_id(meta, auth_user)
 
             session_id_base = self._derive_session_id(meta, auth_user)
             logger.log_debug(f"{Icons.tick} derived session_id_base='{session_id_base}'")
