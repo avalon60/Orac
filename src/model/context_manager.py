@@ -345,6 +345,38 @@ class OracContextManager:
         resolved = str(value).strip().upper()
         return resolved or None
 
+    def get_conversation_prompt_policy_fingerprint(
+        self,
+        session_id: str,
+    ) -> Optional[str]:
+        """Return the stored prompt policy fingerprint for a conversation."""
+        cid = self._conversation_id(session_id)
+        if not cid:
+            return None
+
+        rows = self.db.dict_sql_dataset(
+            (
+                "select json_value("
+                "meta, '$.prompt_policy_fingerprint' "
+                "returning varchar2(128) null on error"
+                ") as prompt_policy_fingerprint "
+                f"from {self.messages_object} "
+                "where conversation_id = :cid "
+                "  and role = 'system' "
+                "  and turn_index = 1"
+            ),
+            {"cid": cid},
+        )
+        if not rows:
+            return None
+
+        value = rows[0].get("PROMPT_POLICY_FINGERPRINT")
+        if value is None:
+            return None
+
+        resolved = str(value).strip()
+        return resolved or None
+
     def _create_user(self, username: str) -> int:
         norm = username.strip()
         with self.db.cursor() as cur:

@@ -9,6 +9,7 @@ import asyncio
 import subprocess
 import re
 import json
+import hashlib
 import threading
 import uuid
 import os
@@ -425,16 +426,57 @@ def _orac_system_primer(meta: dict, policy: dict[str, Any]) -> str:
 
     identity = policy.get("identity", {})
     assistant_name = identity.get("assistant_name", "Orac")
-    vendor_claims = identity.get("disallowed_vendor_claims", [])
-    if vendor_claims:
-        claims_text = ", ".join(vendor_claims[:-1])
-        if len(vendor_claims) > 1:
-            claims_text = f"{claims_text}, or {vendor_claims[-1]}"
+    creator_profile = identity.get("creator_profile", {})
+    if not isinstance(creator_profile, dict):
+        creator_profile = {}
+    creator_name = str(creator_profile.get("name") or "").strip()
+    creator_role = str(creator_profile.get("role") or "").strip()
+    identity_answer = (
+        f"I am {assistant_name}, an extensible artificial intelligence system"
+    )
+    if creator_name:
+        identity_answer = f"{identity_answer}, created by {creator_name}"
+    lines.append(
+        f"Your name is {assistant_name}. For ordinary identity questions, "
+        f"answer simply: \"{identity_answer}.\""
+    )
+
+    if creator_name:
+        if creator_role:
+            lines.append(
+                f"{assistant_name} was created by "
+                f"{creator_name}, {creator_role}."
+            )
         else:
-            claims_text = vendor_claims[0]
-        lines.append(
-            f"Your name is {assistant_name}. Never claim to be {claims_text}."
+            lines.append(f"{assistant_name} was created by {creator_name}.")
+    lines.append(
+        "Do not volunteer details about Orac's implementation, underlying "
+        "model, runtime, training, or vendor provenance."
+    )
+    lines.append(
+        "If asked whether Orac was created, trained, or operated by a "
+        "third-party model vendor, answer no without listing vendor names."
+    )
+    lines.append(
+        "Only if asked specifically about technical implementation details, "
+        "say Orac is running on the configured local model/runtime."
+    )
+    lines.append(
+        "Do not infer or invent model provenance, and do not add vendor "
+        "denials to ordinary identity answers."
+    )
+
+    notable_works = creator_profile.get("notable_works", [])
+    if notable_works:
+        works_text = "; ".join(
+            str(item).strip() for item in notable_works if str(item).strip()
         )
+        if works_text:
+            lines.append(f"Creator profile notable works: {works_text}.")
+
+    lines.extend(
+        str(rule) for rule in identity.get("rules", []) if str(rule).strip()
+    )
 
     for section_name in (
         "response_style",
@@ -463,6 +505,10 @@ def _orac_system_primer(meta: dict, policy: dict[str, Any]) -> str:
         )
     return rendered
 
+
+def _system_prompt_fingerprint(primer: str) -> str:
+    """Return a stable fingerprint for a rendered system primer."""
+    return hashlib.sha256(primer.encode("utf-8")).hexdigest()
 
 
 # ==============================================================================
@@ -3279,6 +3325,20 @@ class Orac:
                 auth_user=auth_user,
                 meta=meta,
             )
+            force_new_conversation = (
+                _as_bool(meta.get("force_new_conversation")) is True
+            )
+            current_primer = _orac_system_primer(
+                {
+                    "reply_language": meta.get(
+                        "reply_language",
+                        self._reply_language,
+                    ),
+                    "orac_personality": meta.get("orac_personality"),
+                },
+                self._system_prompt_policy,
+            )
+            current_primer_fingerprint = _system_prompt_fingerprint(current_primer)
 
             # Prefer timeout-aware conversation rollover. If anything goes wrong,
             # fall back to the non-timeout path and keep going.
@@ -3359,6 +3419,44 @@ class Orac:
                         request_flags["anonymous_user"] = True
                     _log_exception("ensure_conversation fallback failed (non-fatal)", e2)
 
+            if force_new_conversation and not created_new_conversation:
+                logger.log_info(
+                    f"{Icons.info} force_new_conversation requested for "
+                    f"session '{session_id}'. Starting a new conversation."
+                )
+                try:
+                    if getattr(self, "_archive_on_rollover", False):
+                        self.ctx.archive_conversation(session_id)
+                        logger.log_info(
+                            f"{Icons.box} Archived prior conversation: "
+                            f"{session_id}"
+                        )
+                    elif getattr(self, "_close_on_rollover", True):
+                        self.ctx.close_conversation(session_id)
+                        logger.log_info(
+                            f"{Icons.stop} Closed prior conversation: "
+                            f"{session_id}"
+                        )
+                    else:
+                        logger.log_debug(
+                            f"{Icons.info} Prior conversation left 'open': "
+                            f"{session_id}"
+                        )
+                except Exception as e_state:
+                    _log_exception(
+                        "Failed to transition prior conversation during "
+                        "forced rollover",
+                        e_state,
+                    )
+
+                session_id = new_session_id(session_id_base)
+                self.ctx.ensure_conversation(
+                    user_name=auth_user,
+                    session_id=session_id,
+                    llm_id=new_conversation_selection.get("llm_id"),
+                )
+                created_new_conversation = True
+
             selected_default_llm_id = new_conversation_selection.get("llm_id")
             if (
                 not created_new_conversation
@@ -3410,7 +3508,10 @@ class Orac:
             selected_personality_code = str(
                 meta.get("personality_code") or "DEFAULT"
             ).strip().upper()
-            if not created_new_conversation:
+            if (
+                not created_new_conversation
+                and self.ctx.last_turn_index(session_id) > 0
+            ):
                 try:
                     conversation_personality_code = self.ctx.get_conversation_personality_code(
                         session_id
@@ -3438,6 +3539,63 @@ class Orac:
                     except Exception as e_state:
                         _log_exception(
                             "Failed to transition prior conversation during persona rollover",
+                            e_state,
+                        )
+
+                    session_id = new_session_id(session_id_base)
+                    self.ctx.ensure_conversation(
+                        user_name=auth_user,
+                        session_id=session_id,
+                        llm_id=new_conversation_selection.get("llm_id"),
+                    )
+                    created_new_conversation = True
+
+            if (
+                not created_new_conversation
+                and self.ctx.last_turn_index(session_id) > 0
+            ):
+                try:
+                    conversation_prompt_fingerprint = (
+                        self.ctx.get_conversation_prompt_policy_fingerprint(
+                            session_id
+                        )
+                    )
+                except Exception as e:
+                    _log_exception(
+                        "Failed to read conversation prompt policy "
+                        "fingerprint for reuse check",
+                        e,
+                    )
+                    conversation_prompt_fingerprint = current_primer_fingerprint
+
+                if conversation_prompt_fingerprint != current_primer_fingerprint:
+                    logger.log_info(
+                        f"{Icons.info} System prompt policy change detected "
+                        f"for session '{session_id}'. Starting a new "
+                        "conversation."
+                    )
+                    try:
+                        if getattr(self, "_archive_on_rollover", False):
+                            self.ctx.archive_conversation(session_id)
+                            logger.log_info(
+                                f"{Icons.box} Archived prior conversation: "
+                                f"{session_id}"
+                            )
+                        elif getattr(self, "_close_on_rollover", True):
+                            self.ctx.close_conversation(session_id)
+                            logger.log_info(
+                                f"{Icons.stop} Closed prior conversation: "
+                                f"{session_id}"
+                            )
+                        else:
+                            logger.log_debug(
+                                f"{Icons.info} Prior conversation left "
+                                f"'open': {session_id}"
+                            )
+                    except Exception as e_state:
+                        _log_exception(
+                            "Failed to transition prior conversation during "
+                            "prompt policy rollover",
                             e_state,
                         )
 
@@ -3480,24 +3638,23 @@ class Orac:
             # --- Ensure a system primer is stored once per conversation ---------
             try:
                 if self.ctx.last_turn_index(session_id) == 0:
-                    primer = _orac_system_primer(
-                        {
-                            "reply_language": meta.get(
-                                "reply_language",
-                                self._reply_language,
+                    self.ctx.save_system_turn(
+                        session_id,
+                        auth_user,
+                        current_primer,
+                        meta={
+                            "kind": "primer",
+                            "ts": iso_now(),
+                            "protocol_version": PROTOCOL_VERSION,
+                            "prompt_policy_fingerprint": (
+                                current_primer_fingerprint
                             ),
-                            "orac_personality": meta.get("orac_personality"),
+                            "personality_code": str(
+                                meta.get("personality_code") or "DEFAULT"
+                            ).strip().upper(),
                         },
-                        self._system_prompt_policy,
+                        llm_id=effective_llm_id,
                     )
-                    self.ctx.save_system_turn(session_id, auth_user, primer, meta={
-                        "kind": "primer",
-                        "ts": iso_now(),
-                        "protocol_version": PROTOCOL_VERSION,
-                        "personality_code": str(
-                            meta.get("personality_code") or "DEFAULT"
-                        ).strip().upper(),
-                    }, llm_id=effective_llm_id)
             except Exception as e:
                 if self._is_unregistered_user_error(e):
                     request_flags["anonymous_user"] = True

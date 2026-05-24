@@ -176,7 +176,10 @@ class _ProbeLLM:
     ) -> dict[str, int | str]:
         del prompt_type, stream, generation_options
         self.prompts.append(prompt)
-        if "and nothing else" in prompt and "Recent exchange" not in prompt:
+        if (
+            "and nothing else" in prompt
+            and "Conversation context" not in prompt
+        ):
             return {
                 "text": "ACK",
                 "prompt_tokens": 0,
@@ -236,6 +239,7 @@ class _MemoryContextManager:
         self.conversation_llm_ids: dict[str, int | None] = {}
         self.closed_sessions: list[str] = []
         self.archived_sessions: list[str] = []
+        self.system_metas_by_session: dict[str, list[dict]] = {}
         self.user_preferences: dict[tuple[str, str], str] = {}
         self.llm_registry_entries: dict[int, dict[str, object]] = {
             1: {
@@ -288,7 +292,15 @@ class _MemoryContextManager:
             self.conversation_llm_ids[session_id] = llm_id
         return self.conversation_ids[session_id]
 
-    def _save(self, session_id: str, role: str, text: str) -> dict[str, int]:
+    def _save(
+        self,
+        session_id: str,
+        role: str,
+        text: str,
+        *,
+        meta: dict | None = None,
+        tokens_used=None,
+    ) -> dict[str, int]:
         if self.fail_role == role:
             raise RuntimeError(f"Simulated {role} persistence failure")
         bucket = self.messages_by_session.setdefault(session_id, [])
@@ -297,9 +309,14 @@ class _MemoryContextManager:
             {
                 "role": role,
                 "content": text,
-                "tokens_used": None,
+                "meta": meta or {},
+                "tokens_used": tokens_used,
             }
         )
+        if role == "system":
+            self.system_metas_by_session.setdefault(session_id, []).append(
+                meta or {}
+            )
         self.saved_events.append((session_id, role, text))
         return {
             "conversation_id": self.conversation_ids.setdefault(session_id, self._next_conversation_id),
@@ -311,8 +328,8 @@ class _MemoryContextManager:
         return len(self.messages_by_session.get(session_id, []))
 
     def save_system_turn(self, session_id: str, user_name: str, text: str, *, meta=None, llm_id=None) -> dict[str, int]:
-        del user_name, meta, llm_id
-        return self._save(session_id, "system", text)
+        del user_name, llm_id
+        return self._save(session_id, "system", text, meta=meta)
 
     def save_user_turn(
         self,
@@ -324,8 +341,8 @@ class _MemoryContextManager:
         llm_id=None,
         tokens_used=None,
     ) -> dict[str, int]:
-        del user_name, meta, llm_id, tokens_used
-        return self._save(session_id, "user", text)
+        del user_name, llm_id
+        return self._save(session_id, "user", text, meta=meta, tokens_used=tokens_used)
 
     def save_assistant_turn(
         self,
@@ -337,10 +354,14 @@ class _MemoryContextManager:
         llm_id=None,
         tokens_used=None,
     ) -> dict[str, int]:
-        del user_name, meta, llm_id
-        result = self._save(session_id, "assistant", text)
-        self.messages_by_session[session_id][-1]["tokens_used"] = tokens_used
-        return result
+        del user_name, llm_id
+        return self._save(
+            session_id,
+            "assistant",
+            text,
+            meta=meta,
+            tokens_used=tokens_used,
+        )
 
     def get_messages_for_prompt(self, session_id: str, limit: int = 20) -> list[dict[str, str]]:
         del limit
@@ -411,6 +432,16 @@ class _MemoryContextManager:
     def get_conversation_personality_code(self, session_id: str) -> str:
         del session_id
         return "DEFAULT"
+
+    def get_conversation_prompt_policy_fingerprint(
+        self,
+        session_id: str,
+    ) -> str | None:
+        metas = self.system_metas_by_session.get(session_id) or []
+        if not metas:
+            return None
+        value = metas[0].get("prompt_policy_fingerprint")
+        return str(value).strip() if value else None
 
     def get_conversation_llm_id(self, session_id: str) -> int | None:
         return self.conversation_llm_ids.get(session_id)
@@ -699,6 +730,75 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("physical embodiment", clock)
 
+    def test_system_primer_includes_creator_and_model_provenance_rules(self) -> None:
+        """System primer should constrain creator and vendor provenance."""
+        primer = orac_module._orac_system_primer(
+            {"reply_language": "English"},
+            {
+                "title": "SYSTEM POLICY — ORAC PERSONA:",
+                "identity": {
+                    "assistant_name": "Orac",
+                    "disallowed_vendor_claims": [
+                        "DeepSeek",
+                        "OpenAI",
+                        "Google",
+                    ],
+                    "creator_profile": {
+                        "name": "Clive Bostock",
+                        "role": "Orac's author and designer",
+                        "notable_works": ["OraTAPI"],
+                    },
+                    "rules": [
+                        "Treat the creator_profile facts as authoritative.",
+                    ],
+                },
+            },
+        )
+
+        self.assertIn(
+            "For ordinary identity questions, answer simply: \"I am Orac, "
+            "an extensible artificial intelligence system, created by "
+            "Clive Bostock.\"",
+            primer,
+        )
+        self.assertIn(
+            "Orac was created by Clive Bostock, Orac's author and designer.",
+            primer,
+        )
+        self.assertIn(
+            "Do not volunteer details about Orac's implementation, "
+            "underlying model, runtime, training, or vendor provenance.",
+            primer,
+        )
+        self.assertIn(
+            "If asked whether Orac was created, trained, or operated by a "
+            "third-party model vendor, answer no without listing vendor "
+            "names.",
+            primer,
+        )
+        self.assertIn(
+            "Only if asked specifically about technical implementation "
+            "details, say Orac is running on the configured local "
+            "model/runtime.",
+            primer,
+        )
+        self.assertIn(
+            "do not add vendor denials to ordinary identity answers.",
+            primer,
+        )
+        self.assertNotIn("Google", primer)
+        self.assertNotIn("OpenAI", primer)
+        self.assertNotIn("DeepSeek", primer)
+        self.assertNotIn("assistant application", primer)
+        self.assertNotIn("currently backed", primer)
+        self.assertNotIn("large language model", primer)
+        self.assertNotIn("LLM", primer)
+        self.assertIn("Creator profile notable works: OraTAPI.", primer)
+        self.assertIn(
+            "Treat the creator_profile facts as authoritative.",
+            primer,
+        )
+
     def setUp(self) -> None:
         self._original_logger = orac_module.logger
         self._original_validate_frame = orac_module.validate_frame
@@ -751,7 +851,25 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             "title": "SYSTEM POLICY — ORAC PERSONA:",
             "identity": {
                 "assistant_name": "Orac",
-                "disallowed_vendor_claims": ["DeepSeek", "OpenAI"],
+                "disallowed_vendor_claims": [
+                    "DeepSeek",
+                    "OpenAI",
+                    "Google",
+                    "Anthropic",
+                    "Meta",
+                ],
+                "creator_profile": {
+                    "name": "Clive Bostock",
+                    "role": "Orac's author and designer",
+                    "notable_works": [
+                        "CTk Theme Builder",
+                        "CTkFontAwesome",
+                        "OraTAPI",
+                    ],
+                },
+                "rules": [
+                    "Treat the creator_profile facts as authoritative.",
+                ],
             },
             "response_style": {
                 "rules": [
@@ -888,12 +1006,6 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             follow_up_prompt,
         )
         self.assertIn(
-            "Do not mention, label, summarise, or quote 'Recent exchange' "
-            "in the reply unless the user explicitly asks about Orac's "
-            "prompt or context.",
-            follow_up_prompt,
-        )
-        self.assertIn(
             "When the user asks for more detail about the previous answer, "
             "expand it with new information rather than restating the same "
             "summary.",
@@ -904,7 +1016,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             "ASSISTANT: The Battle of Agincourt was fought in 1415.",
             follow_up_prompt,
         )
-        self.assertIn("USER (new message):\nTell me more", follow_up_prompt)
+        self.assertIn("Current user message:\n\nTell me more", follow_up_prompt)
 
     async def test_follow_up_prompt_discourages_regreeting_mid_conversation(
         self,
@@ -980,7 +1092,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             follow_up_prompt,
         )
         self.assertIn(
-            "USER (new message):\nHow did king Henry manage to win?",
+            "Current user message:\n\nHow did king Henry manage to win?",
             follow_up_prompt,
         )
         self.assertIn(
@@ -1030,7 +1142,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             "explicitly asks for repetition, clarification, or more detail.",
             reaction_prompt,
         )
-        self.assertIn("USER (new message):\nTis a miracle.", reaction_prompt)
+        self.assertIn("Current user message:\n\nTis a miracle.", reaction_prompt)
 
     async def test_authenticated_user_profile_is_injected_into_prompt(self) -> None:
         orchestrator = self._make_orac_stub(
@@ -1125,6 +1237,170 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(user_turn_sessions, ["clive", "clive"])
         self.assertEqual(len(context_manager.conversation_ids), 1)
         self.assertEqual(context_manager.ensure_calls[0][2], context_manager.ensure_calls[1][2])
+        self.assertTrue(
+            context_manager.get_conversation_prompt_policy_fingerprint("clive")
+        )
+
+    async def test_default_generation_options_stay_on_system_defaults(self) -> None:
+        context_manager = _MemoryContextManager()
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Default preset answer."],
+            context_manager=context_manager,
+        )
+
+        await orchestrator.handle_request(
+            self._request("Use the default style.", req_id="req-default")
+        )
+
+        self.assertEqual(
+            orchestrator.llm.generation_options_seen[-1],
+            {
+                "temperature": 0.2,
+                "repeat_penalty": 1.1,
+            },
+        )
+
+    async def test_persona_model_preset_drives_generation_options(self) -> None:
+        context_manager = _MemoryContextManager()
+        context_manager.personalities["DEFAULT"] = {
+            "PERSONALITY_CODE": "DEFAULT",
+            "PERSONALITY_NAME": "Default",
+            "MODEL_PRESET_ID": 2,
+        }
+        context_manager.model_generation_presets[2] = {
+            "MODEL_PRESET_ID": 2,
+            "MODEL_PRESET_CODE": "PRECISE_DETAILED",
+            "TEMPERATURE": 0.15,
+            "TOP_P": 0.9,
+            "TOP_K": 40,
+            "REPEAT_PENALTY": 1.1,
+            "NUM_PREDICT": 3072,
+            "SEED": None,
+        }
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Preset answer."],
+            context_manager=context_manager,
+        )
+
+        await orchestrator.handle_request(
+            self._request("Use the persona preset.", req_id="req-preset")
+        )
+
+        self.assertEqual(
+            orchestrator.llm.generation_options_seen[-1],
+            {
+                "temperature": 0.15,
+                "repeat_penalty": 1.1,
+                "top_p": 0.9,
+                "top_k": 40,
+                "num_predict": 3072,
+            },
+        )
+
+    async def test_persona_model_preset_overrides_selected_default_preset(self) -> None:
+        context_manager = _MemoryContextManager()
+        context_manager.personalities["DEFAULT"] = {
+            "PERSONALITY_CODE": "DEFAULT",
+            "PERSONALITY_NAME": "Default",
+            "MODEL_PRESET_ID": 2,
+        }
+        context_manager.model_generation_presets[1] = {
+            "MODEL_PRESET_ID": 1,
+            "MODEL_PRESET_CODE": "CREATIVE",
+            "TEMPERATURE": 0.75,
+            "NUM_PREDICT": 2048,
+        }
+        context_manager.model_generation_presets[2] = {
+            "MODEL_PRESET_ID": 2,
+            "MODEL_PRESET_CODE": "PRECISE",
+            "TEMPERATURE": 0.1,
+            "NUM_PREDICT": 1536,
+        }
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Preset precedence answer."],
+            context_manager=context_manager,
+        )
+
+        await orchestrator.handle_request(
+            self._request(
+                "Use the persona preset.",
+                req_id="req-preset-precedence",
+                meta={"model_preset_id": 1},
+            )
+        )
+
+        self.assertEqual(
+            orchestrator.llm.generation_options_seen[-1],
+            {
+                "temperature": 0.1,
+                "repeat_penalty": 1.1,
+                "num_predict": 1536,
+            },
+        )
+
+    async def test_force_new_conversation_meta_starts_new_conversation(self) -> None:
+        context_manager = _MemoryContextManager()
+        orchestrator = self._make_orac_stub(
+            llm_responses=["First answer.", "Fresh answer."],
+            context_manager=context_manager,
+        )
+
+        await orchestrator.handle_request(self._request("First prompt", req_id="req1"))
+        await orchestrator.handle_request(
+            self._request(
+                "Fresh prompt",
+                req_id="req2",
+                meta={"force_new_conversation": True},
+            )
+        )
+
+        user_turn_sessions = [
+            session_id
+            for session_id, role, _text in context_manager.saved_events
+            if role == "user"
+        ]
+        self.assertEqual(context_manager.closed_sessions, ["clive"])
+        self.assertEqual(user_turn_sessions[0], "clive")
+        self.assertTrue(user_turn_sessions[1].startswith("clive#"))
+        fresh_user_meta = context_manager.messages_by_session[
+            user_turn_sessions[1]
+        ][1]["meta"]
+        self.assertNotIn("force_new_conversation", fresh_user_meta)
+
+    async def test_prompt_policy_fingerprint_change_starts_new_conversation(
+        self,
+    ) -> None:
+        context_manager = _MemoryContextManager()
+        orchestrator = self._make_orac_stub(
+            llm_responses=["First answer.", "Fresh policy answer."],
+            context_manager=context_manager,
+        )
+
+        await orchestrator.handle_request(self._request("First prompt", req_id="req1"))
+        old_fingerprint = (
+            context_manager.get_conversation_prompt_policy_fingerprint("clive")
+        )
+        orchestrator._system_prompt_policy["safety"]["rules"].append(
+            "New policy rule for test isolation."
+        )
+        await orchestrator.handle_request(
+            self._request("Second prompt", req_id="req2")
+        )
+
+        user_turn_sessions = [
+            session_id
+            for session_id, role, _text in context_manager.saved_events
+            if role == "user"
+        ]
+        self.assertEqual(context_manager.closed_sessions, ["clive"])
+        self.assertEqual(user_turn_sessions[0], "clive")
+        self.assertTrue(user_turn_sessions[1].startswith("clive#"))
+        new_fingerprint = (
+            context_manager.get_conversation_prompt_policy_fingerprint(
+                user_turn_sessions[1]
+            )
+        )
+        self.assertNotEqual(old_fingerprint, new_fingerprint)
 
     async def test_default_llm_preference_change_starts_new_conversation(self) -> None:
         context_manager = _MemoryContextManager()
