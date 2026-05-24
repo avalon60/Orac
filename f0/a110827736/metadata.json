@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "f0a110827736",
+  "strategy": "manual-commit",
+  "branch": "develop",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "README.md",
+    "resources/docker/oracle/Dockerfile"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f0/a110827736/0/metadata.json",
+      "transcript": "/f0/a110827736/0/full.jsonl",
+      "content_hash": "/f0/a110827736/0/content_hash.txt",
+      "prompt": "/f0/a110827736/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 182087,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 741632,
+    "output_tokens": 6605,
+    "api_call_count": 14
+  }
+}
