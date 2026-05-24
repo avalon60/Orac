@@ -1,0 +1,302 @@
+You are auditing the Orac repository for architectural cleanliness.
+
+Set reasoning to Extra High / xhigh.
+
+This is a read-only audit. Do not modify files.
+
+Goal:
+Analyse the repository and identify whether recent rapid AI-assisted development has introduced accidental complexity, poor boundaries, duplicate abstractions, unclear ownership, dead code, inconsistent patterns, or fragile integration seams.
+
+Focus areas:
+- Core Orac runtime and orchestration.
+- LLM provider abstraction and streaming behaviour.
+- Plugin runtime, especially service and hybrid plugins.
+- Home Assistant integration.
+- Voice pipeline: STT, TTS, playback, VAD, AEC, barge-in, LiveKit integration.
+- Web UI under web/orac-display.
+- Database/APEX integration.
+- Configuration and credential handling.
+- Tests and whether they protect intended architecture rather than incidental implementation.
+
+Produce a report only.
+
+For each finding include:
+1. Title.
+2. Severity: must fix / should fix / tidy later / leave alone.
+3. Files involved.
+4. Evidence from the code.
+5. Why it matters architecturally.
+6. Suggested remediation.
+7. Whether remediation should be done as a small patch, a larger refactor, or not at all.
+8. Tests that should exist before changing it.
+
+Specific things to look for:
+- Provider-specific logic leaking into core code.
+- Voice pipeline components knowing too much about each other.
+- Service plugins running their own unmanaged loops instead of being supervised.
+- Plugin lifecycle logic duplicated across plugins.
+- UI protocol coupling directly to implementation details rather than stable events.
+- Configuration keys that are declared but not used.
+- Environment variables, path handling, and credential locations that are inconsistent.
+- Dead compatibility code from earlier designs.
+- Duplicate models/classes/functions with overlapping responsibility.
+- Broad exception handlers hiding real errors.
+- Tests that only lock in current behaviour without asserting desired contracts.
+- Modules that have too many reasons to change.
+
+Output structure:
+- Executive summary.
+- Architectural map inferred from the repo.
+- Boundary assessment.
+- Top 10 issues by architectural risk.
+- Quick wins.
+- High-risk areas to avoid changing casually.
+- Recommended refactoring sequence.
+- Suggested guardrails for future Codex work.
+
+Do not invent problems. If something looks deliberate, say so.
+Do not recommend rewrites unless the current structure is genuinely harmful.
+Prefer small, reviewable, test-backed changes.
+
+---
+
+Please save to project-refinements.md
+
+---
+
+Please save this a architecture-qa-results.md
+
+---
+
+You are working in the Orac repository.
+
+Use high reasoning.
+
+Goal:
+Turn the architecture audit (architecture-qa-results.md) into a safe, staged remediation plan, then implement only Phase 1 contract tests and Phase 2 low-risk quick wins.
+
+Do not perform large refactors in this task.
+
+Inputs:
+Use the existing architecture audit findings as the source of truth.
+
+Phase 1 - Add contract tests:
+1. Add golden protocol tests for:
+   - stream_start
+   - text_delta
+   - text_chunk
+   - stream_end
+   - stream_error
+   - stream_cancelled
+   - TTS playback related frames if present
+   - voice cancellation frames if present
+
+2. Add provider streaming contract tests covering:
+   - native streaming provider
+   - fallback non-streaming provider
+   - error propagation
+   - usage metadata behaviour where currently supported
+   - declared provider capability flags if already present
+
+3. Add plugin lifecycle tests covering:
+   - service manifest discovery
+   - hybrid manifest discovery
+   - auto-start services are either started under supervision or explicitly reported as unsupported
+   - shutdown stops any started services
+
+4. Add display event schema tests covering:
+   - backend event names
+   - frontend aliases if they exist
+   - payload fields consumed by web/orac-display
+
+Do not rewrite the architecture to satisfy these tests unless the change is very small and directly required.
+
+Phase 2 - Apply low-risk quick wins:
+- Replace any incorrect `raise NotImplemented(...)` usage with `raise NotImplementedError(...)`.
+- Replace connector `print(...)` calls with the project logger.
+- Add a sensible timeout to LM Studio model-listing HTTP calls.
+- Remove duplicate session derivation if it is genuinely duplicated and safe to remove.
+- Ensure protocol validation does not silently become a no-op in production. If validator import fails, fail closed unless an explicit development flag allows no-op validation.
+- Add comments or metadata marking unused/deferred config sections as active, deprecated, or roadmap.
+
+Rules:
+- Keep changes small and reviewable.
+- Do not extract Orac controller responsibilities yet.
+- Do not change protocol field names unless tests prove the existing schema/runtime mismatch and the minimal compatibility path is clear.
+- Preserve existing behaviour unless fixing an obvious bug.
+- Add tests before behaviour changes where practical.
+- Update documentation only where needed to explain contract behaviour.
+
+Deliverables:
+1. Summary of tests added.
+2. Summary of quick wins applied.
+3. List of audit findings intentionally not fixed yet.
+4. Any risks or follow-up tasks.
+
+---
+
+You are working in the Orac repository.
+
+Use high reasoning.
+
+Goal:
+Align the canonical Orac protocol schema, protocol documentation, runtime stream frames, voice/slave handling, and web display event expectations so that the protocol boundary is explicit, tested, and no longer drifting.
+
+This task follows the architecture audit in architecture-qa-results.md and the recent Phase 1/Phase 2 hardening work. The previous hardening pass added contract tests and quick fixes only. Use those new tests as guardrails.
+
+Scope:
+- Focus only on protocol/schema/runtime/display alignment.
+- Do not extract the Orac controller.
+- Do not introduce an LLM provider registry.
+- Do not refactor the voice loop state machine.
+- Do not implement Home Assistant runtime behaviour.
+- Do not add plugin execution policy in this task.
+- Do not tidy unrelated files.
+- Do not modify unrelated existing changes shown by git status.
+
+Important current issue:
+The audit found that protocol/README.md and protocol/orac_protocol/resources/json_schema/protocol.schema.json describe the schema as canonical, but current runtime stream frames use fields such as:
+- payload.delta
+- payload.chunk
+- payload.voice_session_id
+- payload.turn_id
+- payload.usage
+- model identity in meta
+
+The schema and the actual frames consumed by slave, voice, and web display must be reconciled.
+
+Phase 0 - Inspect before editing:
+1. Read:
+   - architecture-qa-results.md
+   - protocol/README.md
+   - protocol/orac_protocol/resources/json_schema/protocol.schema.json
+   - src/controller/orac.py
+   - src/view/slave.py
+   - src/orac_voice/voice_loop_local.py
+   - src/orac_voice/voice_events.py
+   - web/orac-display/src/App.tsx
+   - web/orac-display/README.md
+   - tests/test_protocol_contract.py
+   - tests/test_display_event_pipe.py
+
+2. Identify:
+   - every protocol frame type currently emitted by the backend
+   - every frame type currently consumed by the slave client
+   - every frame/event type currently consumed by the local voice loop
+   - every event alias currently consumed by web/orac-display
+   - which payload fields are required, optional, or legacy-compatible
+
+3. Before changing files, produce a short implementation note in your working summary:
+   - whether the runtime should change to match the schema
+   - whether the schema should change to match the runtime
+   - whether backward-compatible aliases are needed
+   - the minimal safe path
+
+Expected direction:
+Prefer making the schema accurately describe the current working wire protocol, unless there is a very small, low-risk runtime correction that makes the implementation cleaner without breaking clients.
+
+Phase 1 - Schema alignment:
+Update protocol/orac_protocol/resources/json_schema/protocol.schema.json so it validates the current intended wire protocol for:
+- stream_start
+- text_delta
+- text_chunk
+- stream_end
+- stream_error
+- stream_cancelled
+- tts_playback_started
+- tts_playback_finished
+- tts_playback_cancelled
+- tts_playback_error
+- voice_turn_complete
+- orac.voice.cancel request
+- orac.voice.cancel response
+
+Rules:
+- Keep compatibility with fields currently consumed by src/view/slave.py, src/orac_voice/voice_loop_local.py, and web/orac-display/src/App.tsx.
+- If both canonical and legacy names exist, document that explicitly.
+- Do not silently remove existing fields unless all consumers are updated and tests prove safety.
+- Make required fields strict only where the runtime genuinely guarantees them.
+- Keep optional fields optional where older clients may omit them.
+
+Phase 2 - Runtime validation:
+Ensure outbound stream frames are validated consistently where practical.
+
+Specifically:
+- Normal response frames should continue to validate.
+- Stream frames should validate against the aligned schema.
+- Validation failures should be logged clearly.
+- Do not let validation fail open in production.
+- Preserve the explicit development-only no-op behaviour controlled by ORAC_ALLOW_NOOP_PROTOCOL_VALIDATION.
+
+Do not add heavy runtime overhead or invasive refactoring.
+
+Phase 3 - Documentation:
+Update protocol/README.md so it clearly states:
+- the canonical schema location
+- the current stream frame contract
+- payload fields for text_delta and text_chunk
+- the distinction between immediate UI text deltas and speech-oriented text chunks
+- voice cancellation request/response shape
+- TTS playback lifecycle frames
+- compatibility notes for frontend aliases, if applicable
+
+Update web/orac-display/README.md only if the frontend event aliases or consumed fields need clarification.
+
+Phase 4 - Tests:
+Update or add tests so the protocol boundary is covered by executable checks.
+
+Required tests:
+1. Golden schema validation tests for:
+   - stream_start
+   - text_delta
+   - text_chunk
+   - stream_end
+   - stream_error
+   - stream_cancelled
+   - TTS playback lifecycle frames
+   - voice_turn_complete
+   - voice cancel request/response
+
+2. Runtime frame tests proving:
+   - frames built by src/controller/orac.py validate against the schema
+   - stream frames include the fields consumed by slave, voice, and display clients
+   - model metadata remains where clients expect it
+
+3. Negative tests for at least:
+   - invalid frame type
+   - missing required route/type/id/ts structure
+   - malformed voice cancel request
+   - malformed stream_end usage metadata if usage is present
+
+4. Display compatibility tests proving:
+   - web/orac-display still recognises current backend event names
+   - documented frontend aliases remain supported
+
+Validation commands:
+Run the focused tests first:
+
+poetry run python -m unittest \
+  tests.test_protocol_contract \
+  tests.test_protocol_validation_policy \
+  tests.test_display_event_pipe
+
+Then run any existing protocol/voice/slave/web-display related unit tests that are directly affected.
+
+Finally run:
+
+poetry run python -m unittest discover -s tests
+
+If full discovery still fails only because of the existing unrelated weather plugin mock issue, report it clearly and do not fix it in this task.
+
+Deliverables:
+1. Summary of schema changes.
+2. Summary of runtime validation changes.
+3. Summary of documentation changes.
+4. Tests added or updated.
+5. Exact validation commands run and results.
+6. Any compatibility risks.
+7. Follow-up tasks intentionally deferred.
+
+Stop conditions:
+- Stop after protocol/schema/runtime/display alignment is complete.
+- Do not begin provider extraction, controller extraction, voice state-machine refactor, plugin policy, or Home Assistant implementation.

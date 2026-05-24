@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "381020fd1742",
+  "strategy": "manual-commit",
+  "branch": "develop",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "protocol/README.md",
+    "protocol/orac_protocol/resources/json_schema/protocol.schema.json",
+    "src/controller/orac.py",
+    "tests/test_display_event_pipe.py",
+    "tests/test_protocol_contract.py",
+    "web/orac-display/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/38/1020fd1742/0/metadata.json",
+      "transcript": "/38/1020fd1742/0/full.jsonl",
+      "content_hash": "/38/1020fd1742/0/content_hash.txt",
+      "prompt": "/38/1020fd1742/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1265494,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 17888128,
+    "output_tokens": 58547,
+    "api_call_count": 136
+  }
+}
