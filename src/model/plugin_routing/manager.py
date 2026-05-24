@@ -43,6 +43,7 @@ class PluginManager:
         self._discovery = PluginDiscovery(self._plugins_dir)
         self._index = PluginIntentIndex()
         self._manifests: dict[str, PluginManifest] = {}
+        self._discovered_manifests: tuple[PluginManifest, ...] = ()
         self._last_refresh_report: dict[str, Any] = {}
         self._logger = logger
 
@@ -51,6 +52,7 @@ class PluginManager:
         self._log_info(f"Plugin routing refresh starting for root {self._plugins_dir}")
         discovered_count = len(list(self._plugins_dir.glob("*.json"))) if self._plugins_dir.exists() else 0
         manifests, errors = self._discovery.discover()
+        self._discovered_manifests = tuple(manifests)
         valid_count = len(manifests)
         invalid_count = len(errors)
         enabled_manifests = [manifest for manifest in manifests if manifest.enabled]
@@ -164,6 +166,10 @@ class PluginManager:
     def get_manifest(self, plugin_id: str) -> PluginManifest | None:
         """Returns the manifest for an indexed plugin."""
         return self._manifests.get(plugin_id)
+
+    def discovered_manifests(self) -> tuple[PluginManifest, ...]:
+        """Returns all valid manifests found during the last refresh."""
+        return self._discovered_manifests
 
     def status(self) -> dict[str, Any]:
         """Returns the last refresh report."""

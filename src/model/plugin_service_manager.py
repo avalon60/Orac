@@ -102,7 +102,12 @@ class PluginServiceManager:
         self._dependency_invalid.clear()
 
         for manifest in manifests:
-            if not manifest.enabled or manifest.runtime_mode not in {"service", "hybrid"}:
+            if manifest.runtime_mode not in {"service", "hybrid"}:
+                continue
+            if not manifest.enabled:
+                self._log_info(
+                    f"Plugin service '{manifest.plugin_id}' skipped because manifest is disabled."
+                )
                 continue
             if manifest.service_runtime is None:
                 self._log_error(
@@ -134,6 +139,10 @@ class PluginServiceManager:
             service_runtime = record.manifest.service_runtime
             if service_runtime and service_runtime.start_policy == "auto":
                 self.start(plugin_id)
+            else:
+                self._log_info(
+                    f"Plugin service '{plugin_id}' discovered with manual start policy; not auto-started."
+                )
 
     def start(self, plugin_id: str) -> bool:
         """Start a registered plugin service."""

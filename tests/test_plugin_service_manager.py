@@ -299,6 +299,25 @@ class PluginServiceManagerTests(unittest.TestCase):
             self.assertEqual(report["registered"], 0)
             self.assertEqual(report["dependency_invalid"], 1)
 
+    def test_disabled_service_plugin_is_discovered_but_not_registered(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            plugin_id = "disabled_service"
+            manifest = _base_manifest(plugin_id, _long_running_runtime(start_policy="auto"))
+            manifest["enabled"] = False
+            _write_plugin(
+                plugins_dir,
+                plugin_id,
+                manifest,
+                LONG_RUNNING_SERVICE_CODE,
+            )
+            service_manager = PluginServiceManager(logger=_FakeLogger())
+
+            report = service_manager.register_manifests(_discover(plugins_dir))
+
+            self.assertEqual(report["registered"], 0)
+            self.assertEqual(service_manager.service_ids(), ())
+
     def test_scheduled_service_tick_is_called_on_start_when_configured(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:
             plugins_dir = Path(temp_plugins)
@@ -369,6 +388,45 @@ class PluginServiceManagerTests(unittest.TestCase):
             service_manager.stop(plugin_id)
 
             self.assertEqual(service_manager.get_state(plugin_id), "stopped")
+
+    def test_auto_start_services_are_started_under_supervision_and_stop_all_stops_them(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            auto_plugin_id = "long_auto"
+            manual_plugin_id = "long_manual"
+            _write_plugin(
+                plugins_dir,
+                auto_plugin_id,
+                _base_manifest(
+                    auto_plugin_id,
+                    _long_running_runtime(start_policy="auto"),
+                ),
+                LONG_RUNNING_SERVICE_CODE,
+            )
+            _write_plugin(
+                plugins_dir,
+                manual_plugin_id,
+                _base_manifest(
+                    manual_plugin_id,
+                    _long_running_runtime(start_policy="manual"),
+                ),
+                LONG_RUNNING_SERVICE_CODE,
+            )
+            service_manager = PluginServiceManager(logger=_FakeLogger())
+            service_manager.register_manifests(_discover(plugins_dir))
+
+            service_manager.start_auto_services()
+            self.assertTrue(
+                _wait_until(
+                    lambda: service_manager.get_state(auto_plugin_id) == "running"
+                )
+            )
+            self.assertEqual(service_manager.get_state(manual_plugin_id), "discovered")
+
+            service_manager.stop_all()
+
+            self.assertEqual(service_manager.get_state(auto_plugin_id), "stopped")
+            self.assertEqual(service_manager.get_state(manual_plugin_id), "stopped")
 
     def test_failing_service_transitions_to_failed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:

@@ -48,6 +48,7 @@ from model.plugin_routing import (
     render_plugin_routing_hints,
 )
 from model.plugin_router import PluginRouter
+from model.plugin_service_manager import PluginServiceManager
 from lib.session_manager import DBSession
 from lib.user_security import UserSecurity
 
@@ -713,6 +714,7 @@ class Orac:
             self._plugin_routing_min_score = float(min_score_raw) if min_score_raw else None
             self.plugin_manager: PluginManager | None = None
             self.plugin_router: PluginRouter | None = None
+            self.plugin_service_manager: PluginServiceManager | None = None
             self._plugin_routing_ready = False
             self._init_plugin_routing()
             self._init_voice_output()
@@ -1992,6 +1994,10 @@ class Orac:
                 dimensions=embedding_dimensions,
             )
             self.plugin_manager = PluginManager(embedding_provider=embedding_provider, logger=logger)
+            self.plugin_service_manager = PluginServiceManager(
+                logger=logger,
+                config_mgr=self.config_mgr,
+            )
             self.plugin_router = PluginRouter(
                 plugin_manager=self.plugin_manager,
                 logger=logger,
@@ -2008,6 +2014,7 @@ class Orac:
         except Exception as e:
             self.plugin_manager = None
             self.plugin_router = None
+            self.plugin_service_manager = None
             self._plugin_routing_ready = False
             _log_exception("Plugin routing initialisation failed (non-fatal)", e)
 
@@ -2018,6 +2025,9 @@ class Orac:
             return None
         logger.log_info(f"{Icons.info} Plugin routing refresh requested.")
         report = self.plugin_manager.refresh()
+        service_status = self._refresh_plugin_services_from_discovery()
+        if service_status is not None:
+            report["service_lifecycle"] = service_status
         self._plugin_routing_ready = True
         logger.log_info(
             f"{Icons.info} Plugin routing refresh complete: "
@@ -2027,6 +2037,54 @@ class Orac:
             f"re_embedded={report.get('re_embedded', 0)}"
         )
         return report
+
+    def _refresh_plugin_services_from_discovery(self) -> dict[str, Any] | None:
+        """Register and auto-start service-capable plugins from the latest discovery."""
+        service_manager = getattr(self, "plugin_service_manager", None)
+        plugin_manager = getattr(self, "plugin_manager", None)
+        if service_manager is None or plugin_manager is None:
+            logger.log_debug("Plugin service lifecycle unavailable; skipping service refresh.")
+            return None
+
+        discovered_manifests = getattr(plugin_manager, "discovered_manifests", None)
+        manifests = (
+            list(discovered_manifests())
+            if callable(discovered_manifests)
+            else []
+        )
+        service_manifests = [
+            manifest
+            for manifest in manifests
+            if manifest.runtime_mode in {"service", "hybrid"}
+        ]
+        if service_manager.service_ids():
+            logger.log_info(f"{Icons.info} Plugin service refresh stopping previously managed services.")
+            service_manager.stop_all()
+
+        registration_status = service_manager.register_manifests(service_manifests)
+        service_manager.start_auto_services()
+        status = service_manager.status()
+        logger.log_info(
+            f"{Icons.info} Plugin service refresh complete: "
+            f"registered={status.get('registered', 0)} "
+            f"dependency_invalid={status.get('dependency_invalid', 0)}"
+        )
+        return status or registration_status
+
+    def shutdown_plugin_services(self) -> None:
+        """Stop all supervised plugin services owned by this Orac instance."""
+        service_manager = getattr(self, "plugin_service_manager", None)
+        if service_manager is None:
+            return
+        try:
+            logger.log_info(f"{Icons.info} Plugin service shutdown requested.")
+            service_manager.stop_all()
+        except Exception as exc:
+            _log_exception("Plugin service shutdown failed", exc)
+
+    def shutdown(self) -> None:
+        """Shut down runtime resources owned directly by this Orac instance."""
+        self.shutdown_plugin_services()
 
     def _ensure_plugin_routing_ready(self, *, force_refresh: bool = False) -> dict[str, Any] | None:
         """Ensures plugin routing is ready without rebuilding on every request."""
@@ -4104,6 +4162,7 @@ class Orac:
 
 # --- Module-level main() runner ----------------------------------------------
 async def main():
+    orchestrator = None
     try:
         orchestrator = Orac()
         listener = OracListener(orchestrator=orchestrator, host="127.0.0.1", port=8765)
@@ -4111,6 +4170,9 @@ async def main():
     except Exception as e:
         _log_exception("Fatal in main()", e)
         raise
+    finally:
+        if orchestrator is not None:
+            orchestrator.shutdown()
 
 
 # --- Entrypoint ---------------------------------------------------------------
