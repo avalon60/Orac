@@ -7,3 +7,7 @@ Is the lack of ORAC_APX_PUB's visibility of ORAC_CODE objects a workspace/schema
 ---
 
 Maybe objects need to be schema qualified in SQLs?
+
+---
+
+Please import it to the database.
