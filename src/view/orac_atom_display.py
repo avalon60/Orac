@@ -155,7 +155,7 @@ STATE_STYLES: dict[AtomState, AtomStateStyle] = {
     particles=5,
     disruption=0.00,
     trail_segments=3,
-    core_scale=0.80,
+    core_scale=1.80,
   ),
   AtomState.INITIALISING: AtomStateStyle(
     core="#b8f2ff",
