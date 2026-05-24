@@ -30,6 +30,9 @@ voice-wake-porcupine = [
   "pvporcupine (>=4.0.2,<5.0.0)",
   "pvrecorder (>=1.2.7,<2.0.0)"
 ]
+voice-aec-livekit = [
+  "livekit (>=1.1.8,<2.0.0)"
+]
 
 [build-system]
 requires = ["setuptools", "wheel"]

@@ -68,6 +68,7 @@ from orac_voice.aec import AEC_FRAME_DURATION_MS
 from orac_voice.aec import AEC_SAMPLE_RATE
 from orac_voice.aec import AEC_SAMPLE_WIDTH_BYTES
 from orac_voice.aec import AEC_SAMPLES_PER_FRAME
+from orac_voice.aec import LiveKitAcousticEchoCanceller
 from orac_voice.aec import NullAcousticEchoCanceller
 from orac_voice.aec import create_aec_adapter_from_config
 from orac_voice.aec import create_aec_backend
@@ -282,6 +283,52 @@ class _FakeAecAdapter:
   def reset(self) -> None:
     """Record one reset call."""
     self.reset_calls += 1
+
+
+class _FakeLiveKitAudioFrame:
+  """LiveKit AudioFrame-compatible test double."""
+
+  def __init__(
+    self,
+    data: bytearray,
+    sample_rate: int,
+    num_channels: int,
+    samples_per_channel: int,
+  ) -> None:
+    self._data = data
+    self.sample_rate = sample_rate
+    self.num_channels = num_channels
+    self.samples_per_channel = samples_per_channel
+
+  @property
+  def data(self) -> memoryview:
+    """Return frame data using LiveKit's int16 memoryview shape."""
+    return memoryview(self._data).cast("h")
+
+
+class _FakeLiveKitApm:
+  """LiveKit APM-compatible test double."""
+
+  instances: list["_FakeLiveKitApm"] = []
+
+  def __init__(self) -> None:
+    self.reverse_frames: list[bytes] = []
+    self.capture_frames: list[bytes] = []
+    self.stream_delay_ms: int | None = None
+    _FakeLiveKitApm.instances.append(self)
+
+  def process_reverse_stream(self, audio_frame: _FakeLiveKitAudioFrame) -> None:
+    """Record one reverse stream frame."""
+    self.reverse_frames.append(bytes(audio_frame._data))
+
+  def process_stream(self, audio_frame: _FakeLiveKitAudioFrame) -> None:
+    """Record and mutate one capture stream frame."""
+    self.capture_frames.append(bytes(audio_frame._data))
+    audio_frame._data[:] = b"\x01" * len(audio_frame._data)
+
+  def set_stream_delay_ms(self, delay_ms: int) -> None:
+    """Record the configured stream delay."""
+    self.stream_delay_ms = delay_ms
 
 
 class _FakeRawOutputStream:
@@ -3137,13 +3184,96 @@ class OracVoiceTests(unittest.TestCase):
 
     self.assertIsInstance(adapter, NullAcousticEchoCanceller)
 
-  def test_aec_backend_livekit_fails_until_implemented(self) -> None:
-    """Reserved LiveKit AEC backend should fail clearly for now."""
-    with self.assertRaisesRegex(
-      NotImplementedError,
-      "LiveKit AEC backend is not implemented yet",
+  def test_livekit_aec_processes_reverse_and_capture_frames(self) -> None:
+    """LiveKit AEC should adapt Orac frames to the LiveKit APM API."""
+    _FakeLiveKitApm.instances.clear()
+    adapter = LiveKitAcousticEchoCanceller(
+      stream_delay_ms=35,
+      apm_factory=_FakeLiveKitApm,
+      audio_frame_factory=_FakeLiveKitAudioFrame,
+    )
+    reverse_frame = bytes(AEC_BYTES_PER_FRAME)
+    capture_frame = bytes(range(256)) + bytes(range(64))
+
+    adapter.process_reverse_frame(reverse_frame)
+    processed = adapter.process_capture_frame(capture_frame)
+
+    self.assertEqual(len(_FakeLiveKitApm.instances), 1)
+    self.assertEqual(_FakeLiveKitApm.instances[0].stream_delay_ms, 35)
+    self.assertEqual(_FakeLiveKitApm.instances[0].reverse_frames, [reverse_frame])
+    self.assertEqual(_FakeLiveKitApm.instances[0].capture_frames, [capture_frame])
+    self.assertEqual(processed, b"\x01" * AEC_BYTES_PER_FRAME)
+
+  def test_livekit_aec_reset_recreates_apm_state(self) -> None:
+    """LiveKit AEC reset should clear backend state by recreating APM."""
+    _FakeLiveKitApm.instances.clear()
+    adapter = LiveKitAcousticEchoCanceller(
+      stream_delay_ms=12,
+      apm_factory=_FakeLiveKitApm,
+      audio_frame_factory=_FakeLiveKitAudioFrame,
+    )
+
+    adapter.reset()
+
+    self.assertEqual(len(_FakeLiveKitApm.instances), 2)
+    self.assertEqual(_FakeLiveKitApm.instances[1].stream_delay_ms, 12)
+
+  def test_aec_backend_livekit_creates_livekit_adapter(self) -> None:
+    """Configured LiveKit AEC should create the real adapter class."""
+    with (
+      patch(
+        "orac_voice.aec._load_livekit_apm_factory",
+        return_value=_FakeLiveKitApm,
+      ),
+      patch(
+        "orac_voice.aec._load_livekit_audio_frame_factory",
+        return_value=_FakeLiveKitAudioFrame,
+      ),
     ):
-      create_aec_backend(backend_name="livekit")
+      adapter = create_aec_backend(
+        backend_name="livekit",
+        stream_delay_ms=24,
+      )
+
+    self.assertIsInstance(adapter, LiveKitAcousticEchoCanceller)
+    self.assertEqual(adapter.stream_delay_ms, 24)
+
+  def test_aec_backend_from_config_uses_livekit_adapter(self) -> None:
+    """voice.aec_backend=livekit should pass stream delay into adapter."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      config_path = Path(tmp_name) / "orac.ini"
+      config_path.write_text(
+        "\n".join(
+          [
+            "[voice]",
+            "aec_backend = livekit",
+            "aec_stream_delay_ms = 42",
+          ]
+        ),
+        encoding="utf-8",
+      )
+      config_mgr = ConfigManager(config_file_path=config_path)
+
+      with (
+        patch(
+          "orac_voice.aec._load_livekit_apm_factory",
+          return_value=_FakeLiveKitApm,
+        ),
+        patch(
+          "orac_voice.aec._load_livekit_audio_frame_factory",
+          return_value=_FakeLiveKitAudioFrame,
+        ),
+      ):
+        adapter = create_aec_adapter_from_config(config_mgr)
+
+    self.assertIsInstance(adapter, LiveKitAcousticEchoCanceller)
+    self.assertEqual(adapter.stream_delay_ms, 42)
+
+  def test_aec_backend_livekit_missing_sdk_fails_clearly(self) -> None:
+    """Configured LiveKit AEC should fail clearly if the SDK is absent."""
+    with patch.dict(sys.modules, {"livekit": None}):
+      with self.assertRaisesRegex(RuntimeError, "requires the livekit Python SDK"):
+        create_aec_backend(backend_name="livekit")
 
   def test_aec_backend_unknown_value_fails_clearly(self) -> None:
     """Unsupported AEC backend config should not silently fall back."""
@@ -4186,6 +4316,136 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(len(timeout_warnings), 1)
     self.assertTrue(
       any(frame.get("type") == "voice_turn_complete" for frame in frames),
+    )
+
+  async def test_voice_stream_synthesises_missing_turn_complete(self) -> None:
+    """Drained playback should not hang if turn completion is missed."""
+    orchestrator = Orac.__new__(Orac)
+    orchestrator.model_name = "test-model"
+    orchestrator._tts_worker = _FakeVoiceWorker()
+    orchestrator._tts_coalescer = None
+    orchestrator._voice_event_subscribers = {}
+    orchestrator._voice_event_subscriber_lock = threading.Lock()
+
+    message = json.dumps(
+      {
+        "v": 1,
+        "type": "request",
+        "id": "req-drained",
+        "route": "orac.prompt",
+        "meta": {
+          "client": "slave",
+          "session_id": "session-drained",
+          "stream": True,
+        },
+        "payload": {
+          "messages": [
+            {"role": "system", "content": "you are orac."},
+            {"role": "user", "content": "Say hello."},
+          ]
+        },
+      }
+    )
+
+    async def fake_handle_request(message: str, event_sink=None) -> str:
+      """Emit playback finished without the worker completion event."""
+      req_env = json.loads(message)
+      await orchestrator._emit_stream_event(
+        event_sink,
+        req_env,
+        "stream_start",
+        payload={"content_type": "text"},
+        model_name=orchestrator.model_name,
+        user_registration="registered",
+      )
+      await orchestrator._emit_stream_event(
+        event_sink,
+        req_env,
+        "text_chunk",
+        payload={
+          "chunk": "Hello there.",
+          "session_id": "session-drained",
+          "voice_session_id": "session-drained",
+          "turn_id": "req-drained",
+        },
+        model_name=orchestrator.model_name,
+        user_registration="registered",
+      )
+      orchestrator._publish_voice_playback_event(
+        VoiceTtsPlaybackStarted(
+          session_id="session-drained",
+          turn_id="req-drained",
+          utterance_id="utt-drained",
+        )
+      )
+      await orchestrator._emit_stream_event(
+        event_sink,
+        req_env,
+        "stream_end",
+        payload={"stop_reason": "stop"},
+        model_name=orchestrator.model_name,
+        user_registration="registered",
+      )
+      orchestrator._publish_voice_playback_event(
+        VoiceTtsPlaybackFinished(
+          session_id="session-drained",
+          turn_id="req-drained",
+          utterance_id="utt-drained",
+        )
+      )
+      return json.dumps(
+        {
+          "v": 1,
+          "type": "response",
+          "id": "res-drained",
+          "reply_to": "req-drained",
+          "ts": "2026-05-21T00:00:00Z",
+          "route": "orac.prompt",
+          "meta": {
+            "status": "ok",
+            "model": orchestrator.model_name,
+            "req_id": "req-drained",
+            "user_registration": "registered",
+          },
+          "payload": {
+            "content": "Hello there.",
+            "stop_reason": "stop",
+          },
+          "error": None,
+        },
+        ensure_ascii=False,
+      )
+
+    async def collect_frames() -> list[dict[str, object]]:
+      """Collect all streamed request event frames."""
+      frames: list[dict[str, object]] = []
+      async for frame in orchestrator.handle_request_events(message):
+        frames.append(json.loads(frame))
+      return frames
+
+    with (
+      patch.object(controller_orac_module.logger, "log_warning") as mock_warning,
+      patch.object(orchestrator, "handle_request", new=fake_handle_request),
+    ):
+      frames = await asyncio.wait_for(
+        collect_frames(),
+        timeout=1.0,
+      )
+
+    complete_frames = [
+      frame for frame in frames
+      if frame.get("type") == "voice_turn_complete"
+    ]
+    self.assertEqual(len(complete_frames), 1)
+    self.assertEqual(
+      complete_frames[0]["payload"]["reason"],
+      "playback-drained",
+    )
+    self.assertTrue(
+      any(
+        "Synthesising missing voice turn completion" in str(call.args[0])
+        for call in mock_warning.call_args_list
+      )
     )
 
   async def test_voice_prompt_skips_stale_reply_frame(self) -> None:

@@ -3063,6 +3063,30 @@ class Orac:
 
             loop.call_soon_threadsafe(_enqueue)
 
+        def synthesise_voice_turn_complete() -> dict[str, Any]:
+            """Build a fallback completion frame for a drained voice turn."""
+            timestamp = iso_now()
+            return {
+                "v": 1,
+                "type": "voice_turn_complete",
+                "id": new_id("evt"),
+                "reply_to": voice_turn_id,
+                "ts": timestamp,
+                "route": "orac.prompt",
+                "meta": {
+                    "status": "ok",
+                    "model": self.model_name,
+                    "req_id": voice_turn_id,
+                },
+                "payload": {
+                    "turn_id": voice_turn_id,
+                    "request_id": voice_turn_id,
+                    "timestamp": timestamp,
+                    "reason": "playback-drained",
+                },
+                "error": None,
+            }
+
         if voice_session_id and voice_turn_id:
             voice_subscription = _VoicePlaybackSubscription(
                 callback=voice_event_sink
@@ -3110,8 +3134,21 @@ class Orac:
                     playback_wait_started_at = None
 
                 if response_task.done() and queue.empty() and not playback_pending:
-                    if voice_subscription is None or turn_complete_event is not None:
+                    if voice_subscription is None:
                         break
+                    if turn_complete_event is None:
+                        log_message = (
+                            f"Synthesising missing voice turn completion: "
+                            f"session={voice_session_id} turn={voice_turn_id} "
+                            f"queued={voice_subscription.playback_queued} "
+                            f"finished={voice_subscription.playback_finished}"
+                        )
+                        if voice_subscription.playback_expected:
+                            logger.log_warning(f"{Icons.warn} {log_message}")
+                        else:
+                            logger.log_debug(log_message)
+                        turn_complete_event = synthesise_voice_turn_complete()
+                    break
                 try:
                     yield await asyncio.wait_for(queue.get(), timeout=0.05)
                 except asyncio.TimeoutError:

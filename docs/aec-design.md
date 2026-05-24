@@ -5,9 +5,9 @@ only the AEC seam: lifecycle, frame routing, backend selection, and the
 minimal diagnostics needed to prove that audio reaches the seam. Real
 echo cancellation must come from an external audio processing backend.
 
-LiveKit APM is the first intended prototype backend. It is not currently
-implemented or enabled, and Orac must continue to run without a LiveKit
-dependency while the configured backend is `null`.
+LiveKit APM is the first real backend. It is optional and disabled by
+default; Orac must continue to run without a LiveKit dependency while the
+configured backend is `null`.
 
 ## Interface
 
@@ -62,9 +62,21 @@ measured playback and capture timestamps.
 
 LiveKit APM matches the desired backend shape: reverse stream input,
 capture stream processing, fixed 10 ms frames, and configurable stream
-delay. The Orac-side implementation should adapt LiveKit to the
-`AcousticEchoCanceller` interface, not add Orac-owned echo suppression
-logic.
+delay. The Orac-side implementation adapts LiveKit to the
+`AcousticEchoCanceller` interface and does not add Orac-owned echo
+suppression logic.
+
+To enable the LiveKit backend, install the optional dependency and set:
+
+```ini
+[voice]
+playback_backend = native
+aec_backend = livekit
+aec_stream_delay_ms = 0
+```
+
+The native playback backend is required so Orac can feed playback
+reference frames into LiveKit's reverse stream.
 
 ## Barge-In Implications
 
