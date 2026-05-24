@@ -3,7 +3,7 @@
   "checkpoint_id": "798074dd2ec8",
   "strategy": "manual-commit",
   "branch": "develop",
-  "checkpoints_count": 3,
+  "checkpoints_count": 4,
   "files_touched": [
     "src/controller/orac.py",
     "src/model/plugin_routing/manager.py",
@@ -17,13 +17,19 @@
       "transcript": "/79/8074dd2ec8/0/full.jsonl",
       "content_hash": "/79/8074dd2ec8/0/content_hash.txt",
       "prompt": "/79/8074dd2ec8/0/prompt.txt"
+    },
+    {
+      "metadata": "/79/8074dd2ec8/1/metadata.json",
+      "transcript": "/79/8074dd2ec8/1/full.jsonl",
+      "content_hash": "/79/8074dd2ec8/1/content_hash.txt",
+      "prompt": "/79/8074dd2ec8/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 1534501,
+    "input_tokens": 1887857,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 22259200,
-    "output_tokens": 70103,
-    "api_call_count": 180
+    "cache_read_tokens": 28770560,
+    "output_tokens": 100804,
+    "api_call_count": 234
   }
 }

@@ -1,0 +1,9 @@
+We have a number of problems with the APEXC app and possible inter-schema interactactions: 1. Model Admin -> Registered LLMs [Image #1] - broken and should also be an Interactive Report ; 2. Orac Admin -> Orac Personas [Image #2]; 3. Orac Admmin -> Model Presets [Image #3] (No details - just links. I would expect the details to be avialable alongside the links and that it would be in be an Interactive Report. Preference Definitions should also be Interactive Report.
+
+---
+
+Is the lack of ORAC_APX_PUB's visibility of ORAC_CODE objects a workspace/schema assignment issue?
+
+---
+
+Maybe objects need to be schema qualified in SQLs?
