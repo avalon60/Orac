@@ -46,6 +46,7 @@
     "mode": "hybrid",
     "service": {
       "entry_point": "plugin:HomeAssistantService",
+      "execution_model": "long_running",
       "start_policy": "auto",
       "restart_policy": "on_failure",
       "shutdown_timeout_seconds": 10,

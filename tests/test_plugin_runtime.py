@@ -15,7 +15,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from model.plugin_routing.discovery import PluginDiscovery
-from model.plugin_runtime import load_plugin_class
+from model.plugin_runtime import load_plugin_class, load_plugin_service_class
 
 
 class PluginRuntimeTests(unittest.TestCase):
@@ -29,6 +29,17 @@ class PluginRuntimeTests(unittest.TestCase):
         plugin_class = load_plugin_class(weather_manifest)
 
         self.assertEqual(plugin_class.__name__, "WeatherPlugin")
+
+    def test_home_assistant_service_entry_point_loads(self) -> None:
+        manifests, errors = PluginDiscovery(Path("plugins")).discover()
+        self.assertEqual(errors, [])
+        manifest = next(
+            manifest for manifest in manifests if manifest.plugin_id == "home_assistant"
+        )
+
+        plugin_class = load_plugin_service_class(manifest)
+
+        self.assertEqual(plugin_class.__name__, "HomeAssistantService")
 
 
 if __name__ == "__main__":

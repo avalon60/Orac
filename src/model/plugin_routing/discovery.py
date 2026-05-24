@@ -18,6 +18,7 @@ from model.plugin_routing.models import (
     PluginDatabaseVersionCheck,
     PluginHealthCheck,
     PluginManifest,
+    PluginServiceSchedule,
     PluginServiceRuntime,
 )
 
@@ -26,10 +27,13 @@ DATABASE_SCHEMA_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 MANIFEST_SCHEMA_VERSION = 2
 RUNTIME_MODES = {"on_demand", "service", "hybrid"}
 CONFIG_VALUE_TYPES = {"string", "bool", "int", "float", "path", "list"}
+SERVICE_EXECUTION_MODELS = {"scheduled", "long_running"}
 SERVICE_START_POLICIES = {"auto", "manual"}
 SERVICE_RESTART_POLICIES = {"never", "on_failure"}
 DATABASE_ON_MISSING_POLICIES = {"warn_disable", "warn_only", "fail_refresh"}
 DATABASE_MANAGERS = {"orac"}
+MAX_SERVICE_SECONDS = 86400
+MAX_HEALTH_FAILURE_THRESHOLD = 100
 REQUIRED_FIELDS = {
     "schema_version",
     "plugin_id",
@@ -210,20 +214,31 @@ class PluginDiscovery:
 
         required_fields = {
             "entry_point",
+            "execution_model",
             "start_policy",
             "restart_policy",
             "shutdown_timeout_seconds",
         }
-        optional_fields = {"health_check"}
+        optional_fields = {"health_check", "schedule"}
         self._reject_unknown_fields(value, required_fields | optional_fields, "runtime.service")
         self._require_fields(value, required_fields, "runtime.service")
 
+        execution_model = self._require_enum(
+            value["execution_model"],
+            "runtime.service.execution_model",
+            SERVICE_EXECUTION_MODELS,
+        )
+        schedule = self._load_service_schedule(
+            value.get("schedule"),
+            execution_model=execution_model,
+        )
         health_check = self._load_health_check(value.get("health_check", {"enabled": False}))
         return PluginServiceRuntime(
             entry_point=self._require_non_empty_string(
                 value["entry_point"],
                 "runtime.service.entry_point",
             ),
+            execution_model=execution_model,
             start_policy=self._require_enum(
                 value["start_policy"],
                 "runtime.service.start_policy",
@@ -234,11 +249,71 @@ class PluginDiscovery:
                 "runtime.service.restart_policy",
                 SERVICE_RESTART_POLICIES,
             ),
-            shutdown_timeout_seconds=self._require_positive_int(
+            shutdown_timeout_seconds=self._require_bounded_positive_int(
                 value["shutdown_timeout_seconds"],
                 "runtime.service.shutdown_timeout_seconds",
+                max_value=MAX_SERVICE_SECONDS,
             ),
             health_check=health_check,
+            schedule=schedule,
+        )
+
+    def _load_service_schedule(
+        self,
+        value: Any,
+        *,
+        execution_model: str,
+    ) -> PluginServiceSchedule | None:
+        if execution_model == "long_running":
+            if value is not None:
+                raise PluginManifestError(
+                    "runtime.service.schedule is only allowed when execution_model is scheduled"
+                )
+            return None
+
+        if value is None:
+            raise PluginManifestError(
+                "runtime.service.schedule is required when execution_model is scheduled"
+            )
+        if not isinstance(value, dict):
+            raise PluginManifestError("runtime.service.schedule must be an object")
+
+        required_fields = {"interval_seconds"}
+        optional_fields = {"run_on_start", "jitter_seconds", "timeout_seconds"}
+        self._reject_unknown_fields(value, required_fields | optional_fields, "runtime.service.schedule")
+        self._require_fields(value, required_fields, "runtime.service.schedule")
+
+        interval_seconds = self._require_bounded_positive_int(
+            value["interval_seconds"],
+            "runtime.service.schedule.interval_seconds",
+            max_value=MAX_SERVICE_SECONDS,
+        )
+        jitter_seconds = self._require_non_negative_int(
+            value.get("jitter_seconds"),
+            "runtime.service.schedule.jitter_seconds",
+        )
+        if jitter_seconds is not None and jitter_seconds >= interval_seconds:
+            raise PluginManifestError(
+                "runtime.service.schedule.jitter_seconds must be less than "
+                "runtime.service.schedule.interval_seconds"
+            )
+
+        timeout_seconds = None
+        if value.get("timeout_seconds") is not None:
+            timeout_seconds = self._require_bounded_positive_int(
+                value["timeout_seconds"],
+                "runtime.service.schedule.timeout_seconds",
+                max_value=MAX_SERVICE_SECONDS,
+            )
+
+        return PluginServiceSchedule(
+            interval_seconds=interval_seconds,
+            run_on_start=self._require_bool(
+                value.get("run_on_start", False),
+                "runtime.service.schedule.run_on_start",
+            ),
+            jitter_seconds=jitter_seconds,
+            timeout_seconds=timeout_seconds,
         )
 
     def _load_health_check(self, value: Any) -> PluginHealthCheck:
@@ -271,17 +346,20 @@ class PluginDiscovery:
                 value["method"],
                 "runtime.service.health_check.method",
             ),
-            interval_seconds=self._require_positive_int(
+            interval_seconds=self._require_bounded_positive_int(
                 value["interval_seconds"],
                 "runtime.service.health_check.interval_seconds",
+                max_value=MAX_SERVICE_SECONDS,
             ),
-            timeout_seconds=self._require_positive_int(
+            timeout_seconds=self._require_bounded_positive_int(
                 value["timeout_seconds"],
                 "runtime.service.health_check.timeout_seconds",
+                max_value=MAX_SERVICE_SECONDS,
             ),
-            failure_threshold=self._require_positive_int(
+            failure_threshold=self._require_bounded_positive_int(
                 value["failure_threshold"],
                 "runtime.service.health_check.failure_threshold",
+                max_value=MAX_HEALTH_FAILURE_THRESHOLD,
             ),
         )
 
@@ -448,6 +526,30 @@ class PluginDiscovery:
             raise PluginManifestError(f"{field_name} must be an integer")
         if value <= 0:
             raise PluginManifestError(f"{field_name} must be greater than zero")
+        return value
+
+    @staticmethod
+    def _require_bounded_positive_int(
+        value: Any,
+        field_name: str,
+        *,
+        max_value: int,
+    ) -> int:
+        result = PluginDiscovery._require_positive_int(value, field_name)
+        if result > max_value:
+            raise PluginManifestError(
+                f"{field_name} must be less than or equal to {max_value}"
+            )
+        return result
+
+    @staticmethod
+    def _require_non_negative_int(value: Any, field_name: str) -> int | None:
+        if value is None:
+            return None
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise PluginManifestError(f"{field_name} must be an integer")
+        if value < 0:
+            raise PluginManifestError(f"{field_name} must be greater than or equal to zero")
         return value
 
     @staticmethod

@@ -14,6 +14,7 @@ from model.plugin_routing.models import (
     PluginDatabaseVersionCheck,
     PluginHealthCheck,
     PluginManifest,
+    PluginServiceSchedule,
     PluginServiceRuntime,
 )
 
@@ -29,6 +30,7 @@ __all__ = [
     "PluginManager",
     "PluginManifest",
     "PluginRoutingHandoff",
+    "PluginServiceSchedule",
     "PluginServiceRuntime",
     "render_plugin_routing_hints",
 ]

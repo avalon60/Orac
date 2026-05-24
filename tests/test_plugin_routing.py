@@ -241,6 +241,7 @@ class PluginRoutingTests(unittest.TestCase):
                             "mode": "hybrid",
                             "service": {
                                 "entry_point": "plugin:AlphaService",
+                                "execution_model": "long_running",
                                 "start_policy": "auto",
                                 "restart_policy": "on_failure",
                                 "shutdown_timeout_seconds": 10,
@@ -287,8 +288,202 @@ class PluginRoutingTests(unittest.TestCase):
             self.assertEqual(errors, [])
             self.assertEqual(manifests[0].runtime_mode, "hybrid")
             self.assertEqual(manifests[0].service_runtime.entry_point, "plugin:AlphaService")
+            self.assertEqual(manifests[0].service_runtime.execution_model, "long_running")
             self.assertEqual(manifests[0].configuration_required[0].key, "host")
             self.assertEqual(manifests[0].database_schemas[0].schema_name, "orac_alpha")
+
+    def test_discovery_loads_scheduled_service_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Scheduled plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.sync"],
+                        "entitlements": [],
+                        "runtime": {
+                            "mode": "service",
+                            "service": {
+                                "entry_point": "plugin:AlphaService",
+                                "execution_model": "scheduled",
+                                "start_policy": "manual",
+                                "restart_policy": "never",
+                                "shutdown_timeout_seconds": 10,
+                                "schedule": {
+                                    "interval_seconds": 60,
+                                    "run_on_start": True,
+                                    "jitter_seconds": 5,
+                                    "timeout_seconds": 30,
+                                },
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(errors, [])
+            service_runtime = manifests[0].service_runtime
+            self.assertEqual(service_runtime.execution_model, "scheduled")
+            self.assertEqual(service_runtime.schedule.interval_seconds, 60)
+            self.assertTrue(service_runtime.schedule.run_on_start)
+
+    def test_discovery_rejects_invalid_service_execution_model(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Bad service plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.sync"],
+                        "entitlements": [],
+                        "runtime": {
+                            "mode": "service",
+                            "service": {
+                                "entry_point": "plugin:AlphaService",
+                                "execution_model": "daemon",
+                                "start_policy": "manual",
+                                "restart_policy": "never",
+                                "shutdown_timeout_seconds": 10,
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(manifests, [])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("runtime.service.execution_model must be one of", errors[0])
+
+    def test_discovery_rejects_scheduled_service_missing_interval(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Bad scheduled plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.sync"],
+                        "entitlements": [],
+                        "runtime": {
+                            "mode": "service",
+                            "service": {
+                                "entry_point": "plugin:AlphaService",
+                                "execution_model": "scheduled",
+                                "start_policy": "manual",
+                                "restart_policy": "never",
+                                "shutdown_timeout_seconds": 10,
+                                "schedule": {},
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(manifests, [])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("runtime.service.schedule missing required field(s): interval_seconds", errors[0])
+
+    def test_discovery_rejects_scheduled_jitter_equal_to_interval(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Bad scheduled plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.sync"],
+                        "entitlements": [],
+                        "runtime": {
+                            "mode": "service",
+                            "service": {
+                                "entry_point": "plugin:AlphaService",
+                                "execution_model": "scheduled",
+                                "start_policy": "manual",
+                                "restart_policy": "never",
+                                "shutdown_timeout_seconds": 10,
+                                "schedule": {
+                                    "interval_seconds": 10,
+                                    "jitter_seconds": 10,
+                                },
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(manifests, [])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("jitter_seconds must be less than", errors[0])
+
+    def test_discovery_allows_long_running_service_without_schedule(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Long running plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.listen"],
+                        "entitlements": [],
+                        "runtime": {
+                            "mode": "service",
+                            "service": {
+                                "entry_point": "plugin:AlphaService",
+                                "execution_model": "long_running",
+                                "start_policy": "manual",
+                                "restart_policy": "never",
+                                "shutdown_timeout_seconds": 10,
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(errors, [])
+            self.assertEqual(manifests[0].service_runtime.execution_model, "long_running")
+            self.assertIsNone(manifests[0].service_runtime.schedule)
 
     def test_discovery_rejects_malformed_configuration_entry(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -472,9 +667,9 @@ class PluginRoutingTests(unittest.TestCase):
         self.assertEqual(report["invalid"], 0)
         self.assertEqual(report["enabled"], 3)
         self.assertEqual(report["disabled"], 0)
-        self.assertEqual(report["dependency_disabled"], 1)
-        self.assertEqual(report["indexed_plugin_count"], 2)
-        self.assertIsNone(manager.get_manifest("home_assistant"))
+        self.assertEqual(report["dependency_disabled"], 0)
+        self.assertEqual(report["indexed_plugin_count"], 3)
+        self.assertIsNotNone(manager.get_manifest("home_assistant"))
         self.assertEqual(len(candidates), 2)
         self.assertGreaterEqual(candidates[0].score, candidates[1].score)
         self.assertTrue(all(candidate.score <= 1.0 for candidate in candidates))
@@ -498,6 +693,7 @@ class PluginRoutingTests(unittest.TestCase):
                             "mode": "service",
                             "service": {
                                 "entry_point": "plugin:AlphaService",
+                                "execution_model": "long_running",
                                 "start_policy": "manual",
                                 "restart_policy": "never",
                                 "shutdown_timeout_seconds": 10,

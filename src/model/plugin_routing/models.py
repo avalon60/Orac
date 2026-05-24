@@ -11,6 +11,7 @@ from typing import Literal
 
 PluginRuntimeMode = Literal["on_demand", "service", "hybrid"]
 PluginConfigValueType = Literal["string", "bool", "int", "float", "path", "list"]
+PluginServiceExecutionModel = Literal["scheduled", "long_running"]
 PluginServiceStartPolicy = Literal["auto", "manual"]
 PluginServiceRestartPolicy = Literal["never", "on_failure"]
 PluginDatabaseOnMissing = Literal["warn_disable", "warn_only", "fail_refresh"]
@@ -39,14 +40,26 @@ class PluginHealthCheck:
 
 
 @dataclass(frozen=True)
+class PluginServiceSchedule:
+    """Represents Orac-owned schedule metadata for a service plugin."""
+
+    interval_seconds: int
+    run_on_start: bool = False
+    jitter_seconds: int | None = None
+    timeout_seconds: int | None = None
+
+
+@dataclass(frozen=True)
 class PluginServiceRuntime:
     """Represents background service metadata declared by a manifest."""
 
     entry_point: str
+    execution_model: PluginServiceExecutionModel
     start_policy: PluginServiceStartPolicy
     restart_policy: PluginServiceRestartPolicy
     shutdown_timeout_seconds: int
     health_check: PluginHealthCheck
+    schedule: PluginServiceSchedule | None = None
 
 
 @dataclass(frozen=True)
