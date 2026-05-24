@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "1993f319aaa6",
+  "session_id": "019e599b-63e9-70a0-a3af-507406012503",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-24T11:34:59.217873813Z",
+  "branch": "develop",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/view/orac_atom_display.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "5bd02c51604d",
+  "token_usage": {
+    "input_tokens": 182087,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 741632,
+    "output_tokens": 6605,
+    "api_call_count": 14
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-24T11:34:59.197217916Z",
+    "agent_lines": 1,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1,
+    "total_lines_changed": 2,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
