@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 import yaml
 
 from model.network import OracListener
+from model.llm_connector import LLMUsageMetadata
 from model.llm_connector import LMStudioConnector, OllamaConnector
 from lib.config_mgr import ConfigManager
 from lib.fsutils import project_home
@@ -3556,6 +3557,7 @@ class Orac:
             prompt_tokens = 0
             completion_tokens = 0
             total_tokens = 0
+            tokens_used: int | None = None
             stream_emitted_delta = False
             stream_cancelled = False
             voice_session_id = incoming_voice_session_id
@@ -3579,12 +3581,19 @@ class Orac:
                 chunker = TextChunker()
                 raw_parts: list[str] = []
                 speech_chunks: list[str] = []
+                stream_usage: LLMUsageMetadata | None = None
+
+                def _capture_stream_usage(usage: LLMUsageMetadata) -> None:
+                    """Capture final token metadata from a completed stream."""
+                    nonlocal stream_usage
+                    stream_usage = usage
 
                 try:
                     for delta in llm_connector.stream_prompt_deltas(
                         prompt_type="U",
                         prompt=final_prompt,
                         generation_options=generation_options,
+                        on_usage_metadata=_capture_stream_usage,
                     ):
                         if self._is_voice_turn_cancelled(
                             session_id=voice_session_id,
@@ -3700,6 +3709,14 @@ class Orac:
                         ),
                     )
                 raw = "".join(raw_parts).strip()
+                if not stream_cancelled and stream_usage is not None:
+                    if stream_usage.prompt_tokens is not None:
+                        prompt_tokens = stream_usage.prompt_tokens
+                    if stream_usage.completion_tokens is not None:
+                        completion_tokens = stream_usage.completion_tokens
+                    if stream_usage.total_tokens is not None:
+                        total_tokens = stream_usage.total_tokens
+                        tokens_used = stream_usage.total_tokens
             else:
                 # === Call backend (non-streaming path) ===
                 try:
@@ -3725,6 +3742,7 @@ class Orac:
                 prompt_tokens = int(prompt_result.get("prompt_tokens") or 0)
                 completion_tokens = int(prompt_result.get("completion_tokens") or 0)
                 total_tokens = int(prompt_result.get("total_tokens") or 0)
+                tokens_used = total_tokens or None
 
             # Apply local reasoning-strip unless explicitly requested
             if show_reasoning:
@@ -3802,7 +3820,7 @@ class Orac:
                 req_id=req_env.get("id"),
                 show_reasoning=show_reasoning,
                 llm_id=effective_llm_id,
-                tokens_used=total_tokens or None,
+                tokens_used=tokens_used,
                 request_flags=request_flags,
             )
 

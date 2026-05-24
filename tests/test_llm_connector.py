@@ -8,10 +8,12 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import types
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -100,6 +102,28 @@ class _StubOllamaConnector(OllamaConnector):
         if self._generate_results:
             return self._generate_results.pop(0)
         return {"text": "", "done_reason": "stop"}
+
+
+class _FakeStreamResponse:
+    """Context-manager response double for Ollama streaming tests."""
+
+    def __init__(self, frames: list[dict]) -> None:
+        self._frames = frames
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        del exc_type, exc, traceback
+
+    def raise_for_status(self) -> None:
+        """Pretend the HTTP response succeeded."""
+
+    def iter_lines(self, decode_unicode: bool = False):
+        """Yield encoded or decoded JSON stream lines."""
+        for frame in self._frames:
+            line = json.dumps(frame)
+            yield line if decode_unicode else line.encode("utf-8")
 
 
 class OllamaConnectorRetryTests(unittest.TestCase):
@@ -202,6 +226,47 @@ class OllamaConnectorRetryTests(unittest.TestCase):
 
         self.assertEqual(response, "complete answer")
         self.assertEqual(connector.chat_num_predicts, [768])
+
+    def test_stream_prompt_deltas_captures_final_ollama_usage(self) -> None:
+        connector = _StubOllamaConnector(chat_results=[])
+        connector.model_name = "llama3.2"
+        connector.service_url = "http://127.0.0.1:11434"
+        connector._connect_timeout = 5
+        connector._read_timeout = 30
+        usage = []
+        frames = [
+            {
+                "message": {"content": "Hello"},
+                "done": False,
+            },
+            {
+                "message": {"content": ""},
+                "done": True,
+                "prompt_eval_count": 11,
+                "eval_count": 7,
+                "prompt_eval_duration": 100,
+                "eval_duration": 200,
+            },
+        ]
+
+        with patch(
+            "model.llm_connector.requests.post",
+            return_value=_FakeStreamResponse(frames),
+        ):
+            deltas = list(
+                connector.stream_prompt_deltas(
+                    prompt_type="U",
+                    prompt="Hello",
+                    on_usage_metadata=usage.append,
+                )
+            )
+
+        self.assertEqual(deltas, ["Hello"])
+        self.assertEqual(len(usage), 1)
+        self.assertEqual(usage[0].prompt_tokens, 11)
+        self.assertEqual(usage[0].completion_tokens, 7)
+        self.assertEqual(usage[0].total_tokens, 18)
+        self.assertEqual(usage[0].raw["prompt_eval_duration"], 100)
 
 
 if __name__ == "__main__":

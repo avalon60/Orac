@@ -53,6 +53,7 @@ if "oracledb" not in sys.modules:
 import controller.orac as orac_module
 from controller.orac import Orac
 from model.context_manager import OracContextManager
+from model.llm_connector import LLMUsageMetadata
 from model.plugin_runtime import PluginExecutionResult
 
 
@@ -105,6 +106,7 @@ class _FakeLLM:
         self._responses = list(responses)
         self.prompts: list[str] = []
         self.generation_options_seen: list[dict | None] = []
+        self.stream_usage_metadata: LLMUsageMetadata | None = None
 
     def send_prompt(
         self,
@@ -139,6 +141,24 @@ class _FakeLLM:
             "completion_tokens": 0,
             "total_tokens": 0,
         }
+
+    def stream_prompt_deltas(
+        self,
+        prompt_type: str,
+        prompt: str,
+        generation_options: dict | None = None,
+        on_usage_metadata=None,
+    ):
+        """Yield a queued response as one streaming delta."""
+        text = self.send_prompt(
+            prompt_type=prompt_type,
+            prompt=prompt,
+            stream=True,
+            generation_options=generation_options,
+        )
+        yield text
+        if self.stream_usage_metadata is not None and on_usage_metadata is not None:
+            on_usage_metadata(self.stream_usage_metadata)
 
 
 class _ProbeLLM:
@@ -273,7 +293,13 @@ class _MemoryContextManager:
             raise RuntimeError(f"Simulated {role} persistence failure")
         bucket = self.messages_by_session.setdefault(session_id, [])
         turn_index = len(bucket) + 1
-        bucket.append({"role": role, "content": text})
+        bucket.append(
+            {
+                "role": role,
+                "content": text,
+                "tokens_used": None,
+            }
+        )
         self.saved_events.append((session_id, role, text))
         return {
             "conversation_id": self.conversation_ids.setdefault(session_id, self._next_conversation_id),
@@ -311,8 +337,10 @@ class _MemoryContextManager:
         llm_id=None,
         tokens_used=None,
     ) -> dict[str, int]:
-        del user_name, meta, llm_id, tokens_used
-        return self._save(session_id, "assistant", text)
+        del user_name, meta, llm_id
+        result = self._save(session_id, "assistant", text)
+        self.messages_by_session[session_id][-1]["tokens_used"] = tokens_used
+        return result
 
     def get_messages_for_prompt(self, session_id: str, limit: int = 20) -> list[dict[str, str]]:
         del limit
@@ -1016,6 +1044,44 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Known user facts:", prompt)
         self.assertIn("Authenticated username: clive", prompt)
         self.assertIn("Display name: Clive", prompt)
+
+    async def test_streaming_turn_persists_final_usage_metadata(self) -> None:
+        context_manager = _MemoryContextManager()
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Streaming answer."],
+            context_manager=context_manager,
+        )
+        orchestrator.llm.stream_usage_metadata = LLMUsageMetadata(
+            prompt_tokens=13,
+            completion_tokens=8,
+            total_tokens=21,
+            raw={"prompt_eval_count": 13, "eval_count": 8},
+        )
+
+        stream_events: list[dict] = []
+
+        async def _event_sink(event: dict) -> None:
+            stream_events.append(event)
+
+        await orchestrator.handle_request(
+            self._request(
+                "Stream this answer.",
+                req_id="req-stream-usage",
+                meta={"stream": True},
+            ),
+            event_sink=_event_sink,
+        )
+
+        assistant_rows = [
+            row
+            for row in context_manager.messages_by_session["clive"]
+            if row["role"] == "assistant"
+        ]
+        self.assertEqual(len(assistant_rows), 1)
+        self.assertEqual(assistant_rows[0]["tokens_used"], 21)
+        self.assertTrue(
+            any(event.get("type") == "text_delta" for event in stream_events)
+        )
 
     async def test_plugin_handled_turn_is_persisted_and_replayed_into_next_prompt(self) -> None:
         plugin_content = "In Brigadoon, Khomas Region, Namibia, it's currently 21°C and clear."

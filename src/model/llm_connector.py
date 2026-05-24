@@ -8,7 +8,8 @@
 from model.orac_abc import LLMConnectorABC, MODEL_SERVICE_DESCRIPTORS
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from typing import Any, cast
 from lib.config_mgr import ConfigManager
 from lib.fsutils import project_home
@@ -42,6 +43,19 @@ OPENAI_COMPATIBLE_GENERATION_MAP = {
     "top_p": "top_p",
     "num_predict": "max_tokens",
 }
+
+
+@dataclass
+class LLMUsageMetadata:
+    """Token usage metadata returned by an LLM backend."""
+
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    raw: dict[str, Any] | None = None
+
+
+LLMUsageMetadataCallback = Callable[[LLMUsageMetadata], None]
 
 
 def _coerce_float(value: Any) -> float | None:
@@ -131,6 +145,63 @@ def provider_generation_options(
     return {}
 
 
+def _usage_metadata_from_result(
+    result: dict[str, Any],
+) -> LLMUsageMetadata | None:
+    """Build usage metadata from a connector result dictionary.
+
+    Args:
+        result (dict[str, Any]): Connector response metadata.
+
+    Returns:
+        LLMUsageMetadata | None: Metadata when token counts are present.
+    """
+    prompt_tokens = _coerce_int(result.get("prompt_tokens"))
+    completion_tokens = _coerce_int(result.get("completion_tokens"))
+    total_tokens = _coerce_int(result.get("total_tokens"))
+    if total_tokens is None and (
+        prompt_tokens is not None or completion_tokens is not None
+    ):
+        total_tokens = (prompt_tokens or 0) + (completion_tokens or 0)
+    if prompt_tokens is None and completion_tokens is None and total_tokens is None:
+        return None
+    if (
+        total_tokens == 0
+        and prompt_tokens in (None, 0)
+        and completion_tokens in (None, 0)
+    ):
+        return None
+    return LLMUsageMetadata(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        raw=dict(result),
+    )
+
+
+def _usage_metadata_from_ollama_response(
+    data: dict[str, Any],
+) -> LLMUsageMetadata | None:
+    """Build usage metadata from Ollama's final streaming response.
+
+    Args:
+        data (dict[str, Any]): Final Ollama stream frame.
+
+    Returns:
+        LLMUsageMetadata | None: Token metadata when Ollama supplied it.
+    """
+    prompt_tokens = _coerce_int(data.get("prompt_eval_count"))
+    completion_tokens = _coerce_int(data.get("eval_count"))
+    if prompt_tokens is None and completion_tokens is None:
+        return None
+    return LLMUsageMetadata(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=(prompt_tokens or 0) + (completion_tokens or 0),
+        raw=dict(data),
+    )
+
+
 class LLMConnector(LLMConnectorABC):
     def __init__(self, model_service_id: str):
         self.config_mgr = ConfigManager(config_file_path=CONFIG_FILE_PATH)
@@ -212,18 +283,24 @@ class LLMConnector(LLMConnectorABC):
         prompt_type: str,
         prompt: str,
         generation_options: dict[str, Any] | None = None,
+        on_usage_metadata: LLMUsageMetadataCallback | None = None,
     ) -> Iterator[str]:
         """Yield streamed response text deltas.
 
         Connectors without a native streaming implementation fall back to
         the existing non-streaming path and emit one final delta.
         """
-        text = self.send_prompt(
+        result = self.send_prompt_with_meta(
             prompt_type=prompt_type,
             prompt=prompt,
             stream=False,
             generation_options=generation_options,
         )
+        if on_usage_metadata is not None:
+            usage = _usage_metadata_from_result(result)
+            if usage is not None:
+                on_usage_metadata(usage)
+        text = result.get("text", "")
         yield text if isinstance(text, str) else str(text)
 
     def interface_name(self) -> str:
@@ -528,6 +605,7 @@ class OllamaConnector(LLMConnector):
         num_predict: int,
         use_system: bool,
         generation_options: dict[str, Any] | None = None,
+        on_usage_metadata: LLMUsageMetadataCallback | None = None,
     ) -> Iterator[str]:
         """Yield native Ollama chat stream response deltas."""
         url = f"{self.service_url}/api/chat"
@@ -574,6 +652,9 @@ class OllamaConnector(LLMConnector):
                 if delta:
                     yield str(delta)
                 if data.get("done") is True:
+                    usage = _usage_metadata_from_ollama_response(data)
+                    if usage is not None and on_usage_metadata is not None:
+                        on_usage_metadata(usage)
                     break
 
     def _run_with_num_predict_growth(
@@ -732,6 +813,7 @@ class OllamaConnector(LLMConnector):
         prompt_type: str,
         prompt: str,
         generation_options: dict[str, Any] | None = None,
+        on_usage_metadata: LLMUsageMetadataCallback | None = None,
     ) -> Iterator[str]:
         """Yield Ollama response text deltas using native HTTP streaming."""
         del prompt_type
@@ -745,17 +827,22 @@ class OllamaConnector(LLMConnector):
             num_predict=self._initial_num_predict(generation_options),
             use_system=not is_very_short,
             generation_options=generation_options,
+            on_usage_metadata=on_usage_metadata,
         ):
             yielded = True
             yield delta
 
         if not yielded:
-            text = self.send_prompt(
+            result = self.send_prompt_with_meta(
                 prompt_type="U",
                 prompt=p,
                 stream=False,
                 generation_options=generation_options,
             )
+            usage = _usage_metadata_from_result(result)
+            if usage is not None and on_usage_metadata is not None:
+                on_usage_metadata(usage)
+            text = result.get("text", "")
             if text:
                 yield text
 
