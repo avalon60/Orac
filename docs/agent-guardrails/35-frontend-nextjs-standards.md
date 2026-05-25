@@ -9,10 +9,9 @@ including Next.js pages, layouts, route segments, React components, client
 components, server components, frontend data-fetching flows, metadata, images,
 fonts, bundle behaviour, hydration, or frontend performance.
 
-Do not load these guardrails or operational frontend skills for database work,
-backend-only services, Python tooling, generic documentation updates,
-non-Next.js React applications, or application areas where Next.js is not
-present.
+Do not load these guardrails for database work, backend-only services, Python
+tooling, generic documentation updates, non-Next.js React applications, or
+application areas where Next.js is not present.
 
 ## Confirm Next.js Scope First
 
@@ -50,31 +49,6 @@ These reference docs are not skills. Do not load them wholesale by default;
 open the relevant index or rule files only when the current task needs that
 detail.
 
-## Operational Skill Loading Rules
-
-Load project-local frontend skills only for narrow frontend Next.js operational
-workflows.
-
-- Use `.agents/skills/nitro-components/SKILL.md` when writing, reviewing, or
-  refactoring UI in apps that import `@idp/nitro-redwood` and
-  `@idp/nitro-providers` directly rather than through a wrapper package.
-
-Do not load these skills for:
-
-- Oracle Database, SQL, PL/SQL, or Liquibase tasks
-- backend-only services or scripts
-- non-Next.js React applications
-- documentation-only work unless the documentation is specifically about a
-  frontend Next.js application
-- generated output review where no frontend Next.js source or behaviour is in
-  scope
-- general Next.js or React best-practice lookup that is better answered by the
-  guardrail references above
-
-When a task touches both frontend Next.js and other layers, load the frontend
-skills only for the frontend portion and continue to follow the relevant
-database, security, Python, or git guardrails for the other portions.
-
 ## Frontend Architecture Rules
 
 - Follow the framework, package manager, routing model, and component layout
@@ -108,6 +82,41 @@ database, security, Python, or git guardrails for the other portions.
 - Keep redirects, not-found flows, error boundaries, and global error handling
   aligned with existing route conventions.
 
+## Accessibility Rules
+
+- Prefer semantic HTML before adding custom roles or scripted behaviour.
+- Preserve keyboard navigation for interactive controls and workflows.
+- Maintain visible focus states.
+- Use ARIA sparingly and only where semantic HTML is insufficient.
+- Do not introduce inaccessible icon-only controls; provide an accessible name.
+- Respect reduced-motion preferences for animation and transitions.
+- Consider colour contrast when changing visual styling.
+
+## Styling And Design-System Rules
+
+- Inspect the app's existing styling approach before adding new patterns.
+- Reuse existing components, tokens, CSS modules, Tailwind conventions, or
+  styling utilities where present.
+- Do not introduce a second design system casually.
+- Keep app-specific styling local unless there is clear shared reuse.
+- Avoid broad global CSS changes unless the task explicitly requires them.
+
+## Forms And Client State Rules
+
+- Keep form validation clear and close to the form boundary.
+- Provide pending, success, and error states for user actions.
+- Avoid unnecessary global state.
+- Prefer URL state for shareable filters, search, and sort state where
+  appropriate.
+- Be careful with optimistic updates and ensure failure recovery is defined.
+
+## User-Facing UX State Rules
+
+- Handle loading, empty, error, unauthorised, not-found, and responsive states.
+- Do not leave blank screens or silent failures.
+- Preserve useful feedback during long-running actions.
+- Keep mobile and narrow viewport behaviour in scope when changing layouts.
+
 ## Performance And Bundle Rules
 
 - Avoid importing large packages into client components when a smaller,
@@ -123,11 +132,25 @@ database, security, Python, or git guardrails for the other portions.
 - Fix hydration mismatches by removing the mismatch or isolating expected
   client-only values; do not suppress warnings without justification.
 
+## Frontend Security And Privacy Rules
+
+- Never expose secrets through client code or public environment variables.
+- Treat `NEXT_PUBLIC_*` values as visible to users.
+- Avoid `dangerouslySetInnerHTML` unless explicitly justified and sanitised.
+- Be cautious with third-party scripts, telemetry, and external embeds.
+- Preserve existing authentication and authorisation boundaries.
+
+## Dependency Policy Rules
+
+- Prefer existing project dependencies and utilities.
+- Do not add large frontend packages for small UI changes.
+- Justify new dependencies by need, bundle impact, maintenance cost, and
+  existing alternatives.
+- Avoid introducing overlapping libraries for the same purpose.
+
 ## Monorepo Shared Component Rules
 
 - Keep shared UI package versions centralized across apps.
-- Keep `@idp/nitro-redwood` versioned through the monorepo's established global
-  dependency mechanism, not independently in each app.
 - Keep components used by only one app inside that app and import them directly
   within that app.
 - Move components used by more than one app or region into the shared
@@ -136,26 +159,14 @@ database, security, Python, or git guardrails for the other portions.
 - Keep shared components app-agnostic; pass region-specific text, links,
   permissions, data, and callbacks as props.
 
-## Nitro Direct Component Rules
+## Testing Expectations
 
-When a Next.js app imports `@idp/nitro-redwood` or `@idp/nitro-providers`
-directly, prefer installed Nitro primitives before building custom React UI.
-
-- Inspect the app's package manifest and existing imports before changing UI.
-- Discover available Nitro components from `node_modules`, especially
-  `node_modules/@idp/nitro-redwood/dist/types` and
-  `node_modules/@idp/nitro-redwood/dist/esm`.
-- Import UI directly from `@idp/nitro-redwood` and provider/runtime helpers
-  directly from `@idp/nitro-providers` only when needed.
-- Keep app-owned styling focused on layout, spacing, placement, sizing,
-  responsive behaviour, map/background containers, and overlays.
-- Do not recolor Nitro components, override Nitro internal classes, restyle
-  Nitro chrome, or replace Nitro visual language with app-owned CSS.
-- Do not recreate Nitro buttons, chips, badges, navigation, cards, search
-  inputs, or page primitives with custom markup when Nitro provides a matching
-  component.
-- If a requested visual change conflicts with Nitro's native design, compose
-  Nitro components differently before proposing stronger visual overrides.
+- Match validation to the risk of the change.
+- Use type checks, linting, unit tests, component tests, or browser tests as
+  appropriate to the app.
+- Add interaction tests for meaningful user flows, form behaviour, state
+  transitions, or regressions.
+- Do not rely only on visual inspection for non-trivial behaviour changes.
 
 ## Validation
 

@@ -11,7 +11,6 @@ This directory contains reference material for
   - `area-description.md` - Individual rule files
 - `metadata.json` - Document metadata (version, organization, abstract)
 - `index.md` - Short index and priority summary
-- `full-guide.md` - Expanded compiled guide
 
 ## Usage
 
@@ -32,7 +31,7 @@ frontend Next.js task.
    - `advanced-` for Advanced Patterns (Section 8)
 3. Fill in the frontmatter and content
 4. Ensure you have clear examples with explanations
-5. Update `index.md` and `full-guide.md` if the summarized guidance changes
+5. Update `index.md` if the summarized guidance changes
 
 ## Rule File Structure
 
@@ -70,7 +69,7 @@ When adding or modifying rules:
 2. Follow the `_template.md` structure
 3. Include clear bad/good examples with explanations
 4. Add appropriate tags
-5. Update `index.md` and `full-guide.md` if needed
+5. Update `index.md` if needed
 6. Rules are automatically sorted by title - no need to manage numbers!
 
 ## Acknowledgments
