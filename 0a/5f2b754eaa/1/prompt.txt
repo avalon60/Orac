@@ -1,0 +1,104 @@
+Can you analyse the docs/agent-guardrails/35-frontend-nextjs-standards.md and establish whether these are mainly oriented around Redwood themed apps?
+
+---
+
+Remove all references/orientation of Redwood and Oracle from the document.
+
+---
+
+Yes - please make this non-Nitro.
+
+---
+
+Does the document present a rounded set of guidlines?
+
+---
+
+Please extend docs/agent-guardrails/35-frontend-nextjs-standards.md so it becomes a rounded, generic Next.js frontend guardrail.
+
+Keep it non-Nitro, non-Redwood, and non-Oracle.
+
+Do not add any references to:
+- Redwood
+- Nitro
+- Oracle-specific frontend packages
+- @idp packages
+- project-specific design systems unless already present in the repo
+
+Goal:
+Keep the document centred on Next.js, but add missing general frontend delivery guidance.
+
+Add concise sections covering:
+
+1. Accessibility
+- Prefer semantic HTML.
+- Preserve keyboard navigation.
+- Maintain visible focus states.
+- Use ARIA sparingly and only where semantic HTML is insufficient.
+- Do not introduce inaccessible icon-only controls.
+- Respect reduced-motion preferences.
+- Consider colour contrast when changing visual styling.
+
+2. Styling and design-system use
+- Inspect the app's existing styling approach before adding new patterns.
+- Reuse existing components, tokens, CSS modules, Tailwind conventions, or styling utilities where present.
+- Do not introduce a second design system casually.
+- Keep app-specific styling local unless there is clear shared reuse.
+- Avoid broad global CSS changes unless the task explicitly requires them.
+
+3. Forms and client state
+- Keep form validation clear and close to the form boundary.
+- Provide pending, success, and error states for user actions.
+- Avoid unnecessary global state.
+- Prefer URL state for shareable filters/search/sort state where appropriate.
+- Be careful with optimistic updates and ensure failure recovery is defined.
+
+4. User-facing UX states
+- Handle loading, empty, error, unauthorised, not-found, and responsive states.
+- Do not leave blank screens or silent failures.
+- Preserve useful feedback during long-running actions.
+- Keep mobile and narrow viewport behaviour in scope when changing layouts.
+
+5. Frontend security and privacy
+- Never expose secrets through client code or public environment variables.
+- Treat NEXT_PUBLIC_* values as visible to users.
+- Avoid dangerouslySetInnerHTML unless explicitly justified and sanitised.
+- Be cautious with third-party scripts, telemetry, and external embeds.
+- Preserve existing authentication and authorisation boundaries.
+
+6. Dependency policy
+- Prefer existing project dependencies and utilities.
+- Do not add large frontend packages for small UI changes.
+- Justify new dependencies by need, bundle impact, maintenance cost, and existing alternatives.
+- Avoid introducing overlapping libraries for the same purpose.
+
+7. Testing expectations
+- Match validation to the risk of the change.
+- Use type checks, linting, unit tests, component tests, or browser tests as appropriate to the app.
+- Add interaction tests for meaningful user flows, form behaviour, state transitions, or regressions.
+- Do not rely only on visual inspection for non-trivial behaviour changes.
+
+Keep the document concise and guardrail-like.
+Do not turn it into a tutorial.
+Do not rewrite unrelated sections.
+After editing, search the file to confirm there are no occurrences of:
+- Redwood
+- redwood
+- Nitro
+- nitro
+- Oracle
+- oracle
+- @idp
+
+Report:
+- sections added
+- any wording changed outside the new sections
+- confirmation that the banned terms are absent
+
+---
+
+Do the documents in sub-directories, below docs/agent-guardrails/frontend-nextjs add much value?
+
+---
+
+Can we get rid of react-performance/full-guide.md and any links to it.

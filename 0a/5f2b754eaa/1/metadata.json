@@ -1,0 +1,88 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "0a5f2b754eaa",
+  "session_id": "019e606b-6574-7ae3-bf8b-cc25db0b8025",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-25T18:47:59.509873725Z",
+  "branch": "develop",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "AGENTS.md",
+    "docs/agent-guardrails/35-frontend-nextjs-standards.md",
+    "docs/agent-guardrails/frontend-nextjs/react-performance/README.md",
+    "docs/agent-guardrails/frontend-nextjs/react-performance/full-guide.md",
+    "docs/agent-guardrails/frontend-nextjs/react-performance/index.md",
+    "tests/test_check_guardrails.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "ff767e6692c5",
+  "token_usage": {
+    "input_tokens": 120678,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1097088,
+    "output_tokens": 10121,
+    "api_call_count": 25
+  },
+  "session_metrics": {
+    "turn_count": 6
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-25T18:47:59.489752168Z",
+    "agent_lines": 168,
+    "agent_removed": 3815,
+    "human_added": 189,
+    "human_modified": 52,
+    "human_removed": 0,
+    "total_committed": 409,
+    "total_lines_changed": 4224,
+    "agent_percentage": 94.29450757575758,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 3,
+      "user_lines_removed": 52,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "docs/agent-guardrails/35-frontend-nextjs-standards.md": 3
+      },
+      "user_removed_per_file": {
+        "docs/agent-guardrails/35-frontend-nextjs-standards.md": 52
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3,
+      "agent_lines_removed": 52
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3,
+      "agent_lines_removed": 52
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 236,
+      "user_lines_removed": 0,
+      "agent_lines_added": 61,
+      "agent_lines_removed": 50,
+      "user_added_per_file": {
+        "scripts/check_guardrails.py": 236
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 462,
+      "agent_lines_removed": 50
+    }
+  ]
+}
