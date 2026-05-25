@@ -3,9 +3,49 @@
   "checkpoint_id": "f045acdbcd5a",
   "strategy": "manual-commit",
   "branch": "develop",
-  "checkpoints_count": 6,
+  "checkpoints_count": 19,
   "files_touched": [
-    "docs/agent-guardrails/table-abbreviations.csv"
+    "docs/agent-guardrails/table-abbreviations.csv",
+    "docs/plugin-audit-db-api-design.md",
+    "docs/plugin-audit-persistence.md",
+    "resources/db/schema/orac_api/grant/orac_tapi_consumer_access.sql",
+    "resources/db/schema/orac_api/package_body/plugin_audit_events_tapi.sql",
+    "resources/db/schema/orac_api/package_body/plugin_invocations_tapi.sql",
+    "resources/db/schema/orac_api/package_spec/plugin_audit_events_tapi.sql",
+    "resources/db/schema/orac_api/package_spec/plugin_invocations_tapi.sql",
+    "resources/db/schema/orac_api/privilege/orac_api_core_table_access.sql",
+    "resources/db/schema/orac_api/view/plugin_audit_events_v.sql",
+    "resources/db/schema/orac_api/view/plugin_invocations_v.sql",
+    "resources/db/schema/orac_code/grant/orac_code_consumer_package_access.sql",
+    "resources/db/schema/orac_code/package_body/plugin_audit_api.sql",
+    "resources/db/schema/orac_code/package_spec/plugin_audit_api.sql",
+    "resources/db/schema/orac_core/comment/plugin_audit_events.sql",
+    "resources/db/schema/orac_core/comment/plugin_invocations.sql",
+    "resources/db/schema/orac_core/constraint_fk/plg_audevt_plg_inv_fk1.sql",
+    "resources/db/schema/orac_core/constraint_fk/plg_inv_convs_fk1.sql",
+    "resources/db/schema/orac_core/constraint_fk/plg_inv_mesgs_fk1.sql",
+    "resources/db/schema/orac_core/constraint_fk/plg_inv_users_fk1.sql",
+    "resources/db/schema/orac_core/constraint_other/plg_audevt_ck1.sql",
+    "resources/db/schema/orac_core/constraint_other/plg_audevt_ck2.sql",
+    "resources/db/schema/orac_core/constraint_other/plg_audevt_ck3.sql",
+    "resources/db/schema/orac_core/constraint_other/plg_inv_ck1.sql",
+    "resources/db/schema/orac_core/constraint_other/plg_inv_ck2.sql",
+    "resources/db/schema/orac_core/constraint_other/plg_inv_ck3.sql",
+    "resources/db/schema/orac_core/constraint_other/plg_inv_ck4.sql",
+    "resources/db/schema/orac_core/constraint_pk/plg_audevt_pk.sql",
+    "resources/db/schema/orac_core/constraint_pk/plg_inv_pk.sql",
+    "resources/db/schema/orac_core/index/plg_audevt_pk.sql",
+    "resources/db/schema/orac_core/index/plg_audevt_plg_inv_fk1_idx.sql",
+    "resources/db/schema/orac_core/index/plg_inv_convs_fk1_idx.sql",
+    "resources/db/schema/orac_core/index/plg_inv_mesgs_fk1_idx.sql",
+    "resources/db/schema/orac_core/index/plg_inv_pk.sql",
+    "resources/db/schema/orac_core/index/plg_inv_req_idx.sql",
+    "resources/db/schema/orac_core/index/plg_inv_users_fk1_idx.sql",
+    "resources/db/schema/orac_core/run_all.sql",
+    "resources/db/schema/orac_core/table/plugin_audit_events.sql",
+    "resources/db/schema/orac_core/table/plugin_invocations.sql",
+    "resources/db/schema/orac_core/trigger/plg_audevt_bu.sql",
+    "resources/db/schema/orac_core/trigger/plg_inv_bu.sql"
   ],
   "sessions": [
     {
@@ -13,13 +53,19 @@
       "transcript": "/f0/45acdbcd5a/0/full.jsonl",
       "content_hash": "/f0/45acdbcd5a/0/content_hash.txt",
       "prompt": "/f0/45acdbcd5a/0/prompt.txt"
+    },
+    {
+      "metadata": "/f0/45acdbcd5a/1/metadata.json",
+      "transcript": "/f0/45acdbcd5a/1/full.jsonl",
+      "content_hash": "/f0/45acdbcd5a/1/content_hash.txt",
+      "prompt": "/f0/45acdbcd5a/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 489331,
+    "input_tokens": 4451907,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 4129792,
-    "output_tokens": 38164,
-    "api_call_count": 44
+    "cache_read_tokens": 68818944,
+    "output_tokens": 258144,
+    "api_call_count": 548
   }
 }

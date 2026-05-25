@@ -1,0 +1,1468 @@
+You are auditing the Orac repository for architectural cleanliness.
+
+Set reasoning to Extra High / xhigh.
+
+This is a read-only audit. Do not modify files.
+
+Goal:
+Analyse the repository and identify whether recent rapid AI-assisted development has introduced accidental complexity, poor boundaries, duplicate abstractions, unclear ownership, dead code, inconsistent patterns, or fragile integration seams.
+
+Focus areas:
+- Core Orac runtime and orchestration.
+- LLM provider abstraction and streaming behaviour.
+- Plugin runtime, especially service and hybrid plugins.
+- Home Assistant integration.
+- Voice pipeline: STT, TTS, playback, VAD, AEC, barge-in, LiveKit integration.
+- Web UI under web/orac-display.
+- Database/APEX integration.
+- Configuration and credential handling.
+- Tests and whether they protect intended architecture rather than incidental implementation.
+
+Produce a report only.
+
+For each finding include:
+1. Title.
+2. Severity: must fix / should fix / tidy later / leave alone.
+3. Files involved.
+4. Evidence from the code.
+5. Why it matters architecturally.
+6. Suggested remediation.
+7. Whether remediation should be done as a small patch, a larger refactor, or not at all.
+8. Tests that should exist before changing it.
+
+Specific things to look for:
+- Provider-specific logic leaking into core code.
+- Voice pipeline components knowing too much about each other.
+- Service plugins running their own unmanaged loops instead of being supervised.
+- Plugin lifecycle logic duplicated across plugins.
+- UI protocol coupling directly to implementation details rather than stable events.
+- Configuration keys that are declared but not used.
+- Environment variables, path handling, and credential locations that are inconsistent.
+- Dead compatibility code from earlier designs.
+- Duplicate models/classes/functions with overlapping responsibility.
+- Broad exception handlers hiding real errors.
+- Tests that only lock in current behaviour without asserting desired contracts.
+- Modules that have too many reasons to change.
+
+Output structure:
+- Executive summary.
+- Architectural map inferred from the repo.
+- Boundary assessment.
+- Top 10 issues by architectural risk.
+- Quick wins.
+- High-risk areas to avoid changing casually.
+- Recommended refactoring sequence.
+- Suggested guardrails for future Codex work.
+
+Do not invent problems. If something looks deliberate, say so.
+Do not recommend rewrites unless the current structure is genuinely harmful.
+Prefer small, reviewable, test-backed changes.
+
+---
+
+Please save to project-refinements.md
+
+---
+
+Please save this a architecture-qa-results.md
+
+---
+
+You are working in the Orac repository.
+
+Use high reasoning.
+
+Goal:
+Turn the architecture audit (architecture-qa-results.md) into a safe, staged remediation plan, then implement only Phase 1 contract tests and Phase 2 low-risk quick wins.
+
+Do not perform large refactors in this task.
+
+Inputs:
+Use the existing architecture audit findings as the source of truth.
+
+Phase 1 - Add contract tests:
+1. Add golden protocol tests for:
+   - stream_start
+   - text_delta
+   - text_chunk
+   - stream_end
+   - stream_error
+   - stream_cancelled
+   - TTS playback related frames if present
+   - voice cancellation frames if present
+
+2. Add provider streaming contract tests covering:
+   - native streaming provider
+   - fallback non-streaming provider
+   - error propagation
+   - usage metadata behaviour where currently supported
+   - declared provider capability flags if already present
+
+3. Add plugin lifecycle tests covering:
+   - service manifest discovery
+   - hybrid manifest discovery
+   - auto-start services are either started under supervision or explicitly reported as unsupported
+   - shutdown stops any started services
+
+4. Add display event schema tests covering:
+   - backend event names
+   - frontend aliases if they exist
+   - payload fields consumed by web/orac-display
+
+Do not rewrite the architecture to satisfy these tests unless the change is very small and directly required.
+
+Phase 2 - Apply low-risk quick wins:
+- Replace any incorrect `raise NotImplemented(...)` usage with `raise NotImplementedError(...)`.
+- Replace connector `print(...)` calls with the project logger.
+- Add a sensible timeout to LM Studio model-listing HTTP calls.
+- Remove duplicate session derivation if it is genuinely duplicated and safe to remove.
+- Ensure protocol validation does not silently become a no-op in production. If validator import fails, fail closed unless an explicit development flag allows no-op validation.
+- Add comments or metadata marking unused/deferred config sections as active, deprecated, or roadmap.
+
+Rules:
+- Keep changes small and reviewable.
+- Do not extract Orac controller responsibilities yet.
+- Do not change protocol field names unless tests prove the existing schema/runtime mismatch and the minimal compatibility path is clear.
+- Preserve existing behaviour unless fixing an obvious bug.
+- Add tests before behaviour changes where practical.
+- Update documentation only where needed to explain contract behaviour.
+
+Deliverables:
+1. Summary of tests added.
+2. Summary of quick wins applied.
+3. List of audit findings intentionally not fixed yet.
+4. Any risks or follow-up tasks.
+
+---
+
+You are working in the Orac repository.
+
+Use high reasoning.
+
+Goal:
+Align the canonical Orac protocol schema, protocol documentation, runtime stream frames, voice/slave handling, and web display event expectations so that the protocol boundary is explicit, tested, and no longer drifting.
+
+This task follows the architecture audit in architecture-qa-results.md and the recent Phase 1/Phase 2 hardening work. The previous hardening pass added contract tests and quick fixes only. Use those new tests as guardrails.
+
+Scope:
+- Focus only on protocol/schema/runtime/display alignment.
+- Do not extract the Orac controller.
+- Do not introduce an LLM provider registry.
+- Do not refactor the voice loop state machine.
+- Do not implement Home Assistant runtime behaviour.
+- Do not add plugin execution policy in this task.
+- Do not tidy unrelated files.
+- Do not modify unrelated existing changes shown by git status.
+
+Important current issue:
+The audit found that protocol/README.md and protocol/orac_protocol/resources/json_schema/protocol.schema.json describe the schema as canonical, but current runtime stream frames use fields such as:
+- payload.delta
+- payload.chunk
+- payload.voice_session_id
+- payload.turn_id
+- payload.usage
+- model identity in meta
+
+The schema and the actual frames consumed by slave, voice, and web display must be reconciled.
+
+Phase 0 - Inspect before editing:
+1. Read:
+   - architecture-qa-results.md
+   - protocol/README.md
+   - protocol/orac_protocol/resources/json_schema/protocol.schema.json
+   - src/controller/orac.py
+   - src/view/slave.py
+   - src/orac_voice/voice_loop_local.py
+   - src/orac_voice/voice_events.py
+   - web/orac-display/src/App.tsx
+   - web/orac-display/README.md
+   - tests/test_protocol_contract.py
+   - tests/test_display_event_pipe.py
+
+2. Identify:
+   - every protocol frame type currently emitted by the backend
+   - every frame type currently consumed by the slave client
+   - every frame/event type currently consumed by the local voice loop
+   - every event alias currently consumed by web/orac-display
+   - which payload fields are required, optional, or legacy-compatible
+
+3. Before changing files, produce a short implementation note in your working summary:
+   - whether the runtime should change to match the schema
+   - whether the schema should change to match the runtime
+   - whether backward-compatible aliases are needed
+   - the minimal safe path
+
+Expected direction:
+Prefer making the schema accurately describe the current working wire protocol, unless there is a very small, low-risk runtime correction that makes the implementation cleaner without breaking clients.
+
+Phase 1 - Schema alignment:
+Update protocol/orac_protocol/resources/json_schema/protocol.schema.json so it validates the current intended wire protocol for:
+- stream_start
+- text_delta
+- text_chunk
+- stream_end
+- stream_error
+- stream_cancelled
+- tts_playback_started
+- tts_playback_finished
+- tts_playback_cancelled
+- tts_playback_error
+- voice_turn_complete
+- orac.voice.cancel request
+- orac.voice.cancel response
+
+Rules:
+- Keep compatibility with fields currently consumed by src/view/slave.py, src/orac_voice/voice_loop_local.py, and web/orac-display/src/App.tsx.
+- If both canonical and legacy names exist, document that explicitly.
+- Do not silently remove existing fields unless all consumers are updated and tests prove safety.
+- Make required fields strict only where the runtime genuinely guarantees them.
+- Keep optional fields optional where older clients may omit them.
+
+Phase 2 - Runtime validation:
+Ensure outbound stream frames are validated consistently where practical.
+
+Specifically:
+- Normal response frames should continue to validate.
+- Stream frames should validate against the aligned schema.
+- Validation failures should be logged clearly.
+- Do not let validation fail open in production.
+- Preserve the explicit development-only no-op behaviour controlled by ORAC_ALLOW_NOOP_PROTOCOL_VALIDATION.
+
+Do not add heavy runtime overhead or invasive refactoring.
+
+Phase 3 - Documentation:
+Update protocol/README.md so it clearly states:
+- the canonical schema location
+- the current stream frame contract
+- payload fields for text_delta and text_chunk
+- the distinction between immediate UI text deltas and speech-oriented text chunks
+- voice cancellation request/response shape
+- TTS playback lifecycle frames
+- compatibility notes for frontend aliases, if applicable
+
+Update web/orac-display/README.md only if the frontend event aliases or consumed fields need clarification.
+
+Phase 4 - Tests:
+Update or add tests so the protocol boundary is covered by executable checks.
+
+Required tests:
+1. Golden schema validation tests for:
+   - stream_start
+   - text_delta
+   - text_chunk
+   - stream_end
+   - stream_error
+   - stream_cancelled
+   - TTS playback lifecycle frames
+   - voice_turn_complete
+   - voice cancel request/response
+
+2. Runtime frame tests proving:
+   - frames built by src/controller/orac.py validate against the schema
+   - stream frames include the fields consumed by slave, voice, and display clients
+   - model metadata remains where clients expect it
+
+3. Negative tests for at least:
+   - invalid frame type
+   - missing required route/type/id/ts structure
+   - malformed voice cancel request
+   - malformed stream_end usage metadata if usage is present
+
+4. Display compatibility tests proving:
+   - web/orac-display still recognises current backend event names
+   - documented frontend aliases remain supported
+
+Validation commands:
+Run the focused tests first:
+
+poetry run python -m unittest \
+  tests.test_protocol_contract \
+  tests.test_protocol_validation_policy \
+  tests.test_display_event_pipe
+
+Then run any existing protocol/voice/slave/web-display related unit tests that are directly affected.
+
+Finally run:
+
+poetry run python -m unittest discover -s tests
+
+If full discovery still fails only because of the existing unrelated weather plugin mock issue, report it clearly and do not fix it in this task.
+
+Deliverables:
+1. Summary of schema changes.
+2. Summary of runtime validation changes.
+3. Summary of documentation changes.
+4. Tests added or updated.
+5. Exact validation commands run and results.
+6. Any compatibility risks.
+7. Follow-up tasks intentionally deferred.
+
+Stop conditions:
+- Stop after protocol/schema/runtime/display alignment is complete.
+- Do not begin provider extraction, controller extraction, voice state-machine refactor, plugin policy, or Home Assistant implementation.
+
+---
+
+You are working in the Orac repository.
+
+Use medium reasoning.
+
+Goal:
+Fix the existing unrelated weather plugin unit test failure so full unittest discovery is clean.
+
+Current failing command:
+
+poetry run python -m unittest discover -s tests
+
+Current failure:
+tests/test_weather_plugin.py::test_weather_plugin_returns_graceful_failure_when_provider_errors
+fails with:
+
+TypeError: 'Mock' object is not iterable
+
+Scope:
+- Only inspect and modify the weather plugin test and, if absolutely necessary, the smallest related weather plugin code path.
+- Do not change protocol, LLM provider, voice, plugin lifecycle, Home Assistant, or controller architecture.
+- Do not refactor unrelated weather plugin behaviour.
+- Preserve the intent of the failing test: provider errors should produce a graceful failure response.
+
+Tasks:
+1. Inspect tests/test_weather_plugin.py and the weather plugin implementation.
+2. Determine whether the test mock is wrong or the implementation is mishandling provider errors.
+3. Apply the smallest correct fix.
+4. Run:
+
+poetry run python -m unittest tests.test_weather_plugin
+poetry run python -m unittest discover -s tests
+
+Deliverables:
+- Explain the root cause.
+- List files changed.
+- Show validation results.
+- Confirm no unrelated cleanup was performed.
+
+---
+
+You are working in the Orac repository.
+
+Use high reasoning.
+
+Goal:
+Wire the existing PluginServiceManager into the Orac runtime lifecycle so service and hybrid plugin manifests have real supervised startup and shutdown behaviour.
+
+This follows the architecture audit and the recent protocol/schema hardening work.
+
+Scope:
+- Focus only on plugin service lifecycle wiring.
+- Do not implement Home Assistant device control.
+- Do not add plugin execution policy yet.
+- Do not refactor the Orac controller broadly.
+- Do not introduce an LLM provider registry.
+- Do not change protocol schema or display events.
+- Do not tidy unrelated files.
+- Preserve existing on-demand plugin routing behaviour.
+
+Background:
+The audit found that PluginServiceManager exists and has tests, and manifests such as plugins/home_assistant.json can declare runtime.mode as service or hybrid with start_policy auto. However, Orac initialises PluginManager and PluginRouter but does not appear to wire PluginServiceManager into live startup/shutdown.
+
+Goal behaviour:
+1. At Orac startup or plugin refresh, service and hybrid manifests are registered with PluginServiceManager.
+2. Plugins with service start_policy auto are started under PluginServiceManager supervision.
+3. Manual service plugins are discovered but not started.
+4. Disabled, invalid, or dependency-failed service plugins are not started.
+5. Orac shutdown stops all managed service plugins cleanly.
+6. Existing on-demand plugin behaviour remains unchanged.
+7. Home Assistant may remain scaffold/experimental, but if its manifest says enabled and auto-start, the runtime must either:
+   - start only the safe placeholder service under supervision, or
+   - explicitly skip it because it is marked scaffold/experimental/unsupported.
+   Do not silently ignore it.
+
+Phase 0 - Inspect before editing:
+Read:
+- architecture-qa-results.md
+- src/controller/orac.py
+- src/model/plugin_service_manager.py
+- src/model/plugin_routing/manager.py
+- src/model/plugin_router.py
+- src/model/plugin_runtime.py
+- plugins/home_assistant.json
+- plugins/README.md
+- tests/test_plugin_service_manager.py
+- any existing Orac startup/shutdown tests
+
+Before editing, summarise:
+- where plugin manifests are currently discovered
+- where PluginRouter is initialised
+- where Orac startup/refresh/shutdown hooks exist
+- the minimal integration point for PluginServiceManager
+
+Phase 1 - Runtime lifecycle wiring:
+Implement the smallest safe integration:
+- Add a PluginServiceManager instance to the Orac runtime where plugin routing is initialised.
+- Register discovered service/hybrid manifests with it.
+- Start auto services at the appropriate lifecycle point.
+- Stop all managed services during shutdown/cleanup.
+- Make lifecycle logging clear:
+  - discovered
+  - skipped
+  - started
+  - failed
+  - stopped
+
+Avoid broad controller extraction. A small helper method is acceptable if it keeps the controller readable.
+
+Phase 2 - Manifest/runtime compatibility:
+Ensure service/hybrid mode handling is explicit:
+- on_demand plugins remain routed as before
+- service plugins are managed by PluginServiceManager
+- hybrid plugins can be both routable and service-managed
+- disabled plugins are not started
+- missing dependency plugins are skipped with clear logging
+
+If Home Assistant is still scaffold-only, either:
+- mark it explicitly as scaffold/experimental and skip real auto-start, or
+- start only its safe placeholder service if that is already implemented and harmless
+
+Do not implement actual HA websocket/device control.
+
+Phase 3 - Tests:
+Add or update tests covering:
+1. Orac initialises PluginServiceManager.
+2. Service and hybrid manifests are registered during plugin setup/refresh.
+3. auto-start service plugins are started.
+4. manual service plugins are discovered but not started.
+5. disabled service plugins are not started.
+6. dependency-failed service plugins are not started.
+7. shutdown stops started services.
+8. on-demand plugin routing still works.
+
+Prefer testing via the public Orac lifecycle where possible. If private methods must be used because no public lifecycle seam exists yet, mark those tests as interim and keep them small.
+
+Validation:
+Run:
+
+poetry run python -m unittest tests.test_plugin_service_manager
+poetry run python -m unittest discover -s tests
+
+If full discovery fails for an unrelated existing issue, report it clearly and do not fix it unless the issue is caused by this task.
+
+Deliverables:
+- Summary of lifecycle changes.
+- Files changed.
+- Tests added or updated.
+- Validation results.
+- Any service plugins intentionally skipped and why.
+- Follow-up tasks deferred, especially plugin execution policy and real Home Assistant runtime.
+
+---
+
+You are working in the Orac repository.
+
+Use high reasoning.
+
+Goal:
+Add a first-pass plugin execution policy and provenance layer so Orac can distinguish safe informational plugin responses from actions that require explicit policy checks, confirmation, or stronger auditability.
+
+This follows the architecture audit and the recent hardening work:
+- protocol/schema/runtime/display alignment is complete
+- plugin service lifecycle is now wired into Orac runtime
+- full unittest discovery is currently green
+
+Scope:
+- Focus only on plugin execution policy and provenance.
+- Do not implement real Home Assistant device control.
+- Do not refactor the Orac controller broadly.
+- Do not introduce an LLM provider registry.
+- Do not change protocol schema unless a minimal additive field is absolutely required and tested.
+- Do not refactor the voice loop.
+- Do not alter plugin service lifecycle beyond what is needed to respect execution policy.
+- Do not tidy unrelated files.
+
+Background:
+The audit identified that plugin execution currently risks bypassing mature policy and provenance boundaries. The router can call plugin code and persist the result in a way that may look like a normal assistant response. That is acceptable for harmless informational plugins, but not for future device-control, filesystem, backup, external service, or database mutation plugins.
+
+Goal behaviour:
+1. Plugin manifests can declare the nature of plugin actions.
+2. The runtime can classify plugin execution as one of:
+   - informational/read-only
+   - external read
+   - local mutation
+   - external mutation
+   - device control
+   - privileged/system action
+3. Informational/read-only plugins may execute without confirmation.
+4. Higher-risk action types must be denied or require confirmation unless explicitly allowed by policy.
+5. Plugin results should carry clear provenance indicating:
+   - plugin id
+   - plugin name
+   - action type
+   - whether it was allowed, denied, failed, or requires confirmation
+   - whether the result came from plugin execution rather than direct LLM generation
+6. Existing weather plugin behaviour should remain working.
+7. Existing on-demand routing behaviour should remain working.
+8. Home Assistant must remain non-control-capable until policy, entitlement, credentials, and runtime behaviour are real.
+
+Phase 0 - Inspect before editing:
+Read:
+- architecture-qa-results.md
+- plugins/README.md
+- plugins/weather.json
+- plugins/home_assistant.json
+- src/model/plugin_router.py
+- src/model/plugin_runtime.py
+- src/model/plugin_routing/manager.py
+- src/model/plugin_service_manager.py
+- src/controller/orac.py
+- tests/test_plugin_runtime.py
+- tests/test_orac_plugin_integration.py
+- tests/test_weather_plugin.py
+- any manifest schema or validation code
+
+Before editing, summarise:
+- how plugin manifests currently declare capabilities or entitlements
+- where plugin execution is invoked
+- where plugin results are converted into Orac responses
+- where plugin results are persisted
+- the smallest place to add policy checks without broad refactoring
+
+Phase 1 - Define policy model:
+Add a small, explicit policy model for plugin execution.
+
+Prefer simple data structures first. Avoid over-engineering.
+
+The model should support:
+- action_type
+- requires_confirmation
+- allowed_by_default
+- entitlement or capability names if already present in manifests
+- denial reason
+- provenance metadata
+
+If existing manifest fields already express this, reuse them. Do not invent a parallel system unless necessary.
+
+Phase 2 - Manifest compatibility:
+Update or validate plugin manifests so:
+- weather remains read-only/informational
+- Home Assistant is marked as scaffold/experimental and/or device-control-capable but not allowed to perform real control
+- service lifecycle metadata remains separate from execution/action policy
+- unsupported or missing policy declarations fail safe for risky plugins
+
+Do not break existing valid plugin manifests unnecessarily.
+
+Phase 3 - Runtime policy enforcement:
+Add policy enforcement before plugin execution or immediately around it.
+
+Rules:
+- Read-only/weather-style plugins should still execute.
+- Plugins declaring device control or mutation should be denied or return "requires confirmation" unless policy explicitly allows them.
+- Unknown action type should fail safe.
+- Plugin exceptions should still be handled gracefully.
+- Timeouts or sandboxing may be left as follow-up unless already easy to wire in.
+
+Phase 4 - Provenance:
+Ensure plugin-handled responses include provenance metadata internally.
+
+If persistence currently records plugin output as an assistant turn, add enough metadata or a clearly marked path so future code can distinguish:
+- assistant LLM response
+- plugin response
+- denied plugin action
+- failed plugin action
+- confirmation-required plugin action
+
+Do not perform a large persistence schema migration in this task. If the current database/API surface cannot store full provenance yet, add in-memory/response metadata and document the persistence gap as a follow-up.
+
+Phase 5 - Tests:
+Add or update tests covering:
+1. Weather/read-only plugin still executes successfully.
+2. Weather provider failure still returns graceful failure.
+3. Device-control plugin without allow policy is denied or requires confirmation.
+4. Unknown/risky action type fails safe.
+5. Plugin execution result includes provenance metadata.
+6. Denied plugin action is not persisted as a normal assistant response without provenance.
+7. Home Assistant remains non-control-capable.
+8. Existing plugin service lifecycle tests still pass.
+9. Existing plugin routing tests still pass.
+
+Validation:
+Run:
+
+poetry run python -m unittest tests.test_weather_plugin
+poetry run python -m unittest tests.test_plugin_runtime
+poetry run python -m unittest tests.test_plugin_service_manager
+poetry run python -m unittest tests.test_orac_plugin_integration
+poetry run python -m unittest discover -s tests
+
+Deliverables:
+1. Summary of policy model added.
+2. Summary of manifest changes.
+3. Summary of runtime enforcement changes.
+4. Summary of provenance behaviour.
+5. Tests added or updated.
+6. Validation results.
+7. Follow-up tasks deferred.
+
+Stop conditions:
+- Stop after first-pass plugin execution policy and provenance are implemented.
+- Do not implement real HA control.
+- Do not add broad sandboxing unless already present.
+- Do not do controller extraction.
+- Do not do unrelated cleanup.
+
+---
+
+You are working in the Orac repository.
+
+Use high reasoning.
+
+Goal:
+Add a first-pass plugin execution policy and provenance layer so Orac can distinguish safe informational plugin responses from actions that require explicit policy checks, confirmation, or stronger auditability.
+
+This follows the architecture audit and the recent hardening work:
+- protocol/schema/runtime/display alignment is complete
+- plugin service lifecycle is now wired into Orac runtime
+- full unittest discovery is currently green
+
+Scope:
+- Focus only on plugin execution policy and provenance.
+- Do not implement real Home Assistant device control.
+- Do not refactor the Orac controller broadly.
+- Do not introduce an LLM provider registry.
+- Do not change protocol schema unless a minimal additive field is absolutely required and tested.
+- Do not refactor the voice loop.
+- Do not alter plugin service lifecycle beyond what is needed to respect execution policy.
+- Do not tidy unrelated files.
+
+Background:
+The audit identified that plugin execution currently risks bypassing mature policy and provenance boundaries. The router can call plugin code and persist the result in a way that may look like a normal assistant response. That is acceptable for harmless informational plugins, but not for future device-control, filesystem, backup, external service, or database mutation plugins.
+
+Goal behaviour:
+1. Plugin manifests can declare the nature of plugin actions.
+2. The runtime can classify plugin execution as one of:
+   - informational/read-only
+   - external read
+   - local mutation
+   - external mutation
+   - device control
+   - privileged/system action
+3. Informational/read-only plugins may execute without confirmation.
+4. Higher-risk action types must be denied or require confirmation unless explicitly allowed by policy.
+5. Plugin results should carry clear provenance indicating:
+   - plugin id
+   - plugin name
+   - action type
+   - whether it was allowed, denied, failed, or requires confirmation
+   - whether the result came from plugin execution rather than direct LLM generation
+6. Existing weather plugin behaviour should remain working.
+7. Existing on-demand routing behaviour should remain working.
+8. Home Assistant must remain non-control-capable until policy, entitlement, credentials, and runtime behaviour are real.
+
+Phase 0 - Inspect before editing:
+Read:
+- architecture-qa-results.md
+- plugins/README.md
+- plugins/weather.json
+- plugins/home_assistant.json
+- src/model/plugin_router.py
+- src/model/plugin_runtime.py
+- src/model/plugin_routing/manager.py
+- src/model/plugin_service_manager.py
+- src/controller/orac.py
+- tests/test_plugin_runtime.py
+- tests/test_orac_plugin_integration.py
+- tests/test_weather_plugin.py
+- any manifest schema or validation code
+
+Before editing, summarise:
+- how plugin manifests currently declare capabilities or entitlements
+- where plugin execution is invoked
+- where plugin results are converted into Orac responses
+- where plugin results are persisted
+- the smallest place to add policy checks without broad refactoring
+
+Phase 1 - Define policy model:
+Add a small, explicit policy model for plugin execution.
+
+Prefer simple data structures first. Avoid over-engineering.
+
+The model should support:
+- action_type
+- requires_confirmation
+- allowed_by_default
+- entitlement or capability names if already present in manifests
+- denial reason
+- provenance metadata
+
+If existing manifest fields already express this, reuse them. Do not invent a parallel system unless necessary.
+
+Phase 2 - Manifest compatibility:
+Update or validate plugin manifests so:
+- weather remains read-only/informational
+- Home Assistant is marked as scaffold/experimental and/or device-control-capable but not allowed to perform real control
+- service lifecycle metadata remains separate from execution/action policy
+- unsupported or missing policy declarations fail safe for risky plugins
+
+Do not break existing valid plugin manifests unnecessarily.
+
+Phase 3 - Runtime policy enforcement:
+Add policy enforcement before plugin execution or immediately around it.
+
+Rules:
+- Read-only/weather-style plugins should still execute.
+- Plugins declaring device control or mutation should be denied or return "requires confirmation" unless policy explicitly allows them.
+- Unknown action type should fail safe.
+- Plugin exceptions should still be handled gracefully.
+- Timeouts or sandboxing may be left as follow-up unless already easy to wire in.
+
+Phase 4 - Provenance:
+Ensure plugin-handled responses include provenance metadata internally.
+
+If persistence currently records plugin output as an assistant turn, add enough metadata or a clearly marked path so future code can distinguish:
+- assistant LLM response
+- plugin response
+- denied plugin action
+- failed plugin action
+- confirmation-required plugin action
+
+Do not perform a large persistence schema migration in this task. If the current database/API surface cannot store full provenance yet, add in-memory/response metadata and document the persistence gap as a follow-up.
+
+Phase 5 - Tests:
+Add or update tests covering:
+1. Weather/read-only plugin still executes successfully.
+2. Weather provider failure still returns graceful failure.
+3. Device-control plugin without allow policy is denied or requires confirmation.
+4. Unknown/risky action type fails safe.
+5. Plugin execution result includes provenance metadata.
+6. Denied plugin action is not persisted as a normal assistant response without provenance.
+7. Home Assistant remains non-control-capable.
+8. Existing plugin service lifecycle tests still pass.
+9. Existing plugin routing tests still pass.
+
+Validation:
+Run:
+
+poetry run python -m unittest tests.test_weather_plugin
+poetry run python -m unittest tests.test_plugin_runtime
+poetry run python -m unittest tests.test_plugin_service_manager
+poetry run python -m unittest tests.test_orac_plugin_integration
+poetry run python -m unittest discover -s tests
+
+Deliverables:
+1. Summary of policy model added.
+2. Summary of manifest changes.
+3. Summary of runtime enforcement changes.
+4. Summary of provenance behaviour.
+5. Tests added or updated.
+6. Validation results.
+7. Follow-up tasks deferred.
+
+Stop conditions:
+- Stop after first-pass plugin execution policy and provenance are implemented.
+- Do not implement real HA control.
+- Do not add broad sandboxing unless already present.
+- Do not do controller extraction.
+- Do not do unrelated cleanup.
+
+---
+
+Please perform an architectural boundary QA pass over the Orac plugin execution path.
+
+Current state:
+- Plugin manifests support execution_policy metadata.
+- PluginExecutionPolicy and PluginPolicyDecision exist in src/model/plugin_execution_policy.py.
+- PluginRouter evaluates policy before importing/executing plugin code.
+- Informational read-only plugins such as weather are allowed by default.
+- Device-control plugins such as Home Assistant require confirmation, are denied by default, and may be marked scaffold.
+- Scaffold plugins must be denied even if request metadata claims confirmation or allow.
+- Unknown action types must fail closed.
+- PluginExecutionResult carries provenance.
+- Orac includes plugin provenance in response metadata and assistant-turn persistence metadata.
+
+Please audit and tighten the boundaries between:
+1. plugin discovery;
+2. routing/candidate selection;
+3. execution policy evaluation;
+4. plugin import/invocation;
+5. provenance creation;
+6. response metadata;
+7. assistant-turn persistence.
+
+Important architectural rules:
+- Plugin discovery must not import plugin code.
+- Plugin code must never make final allow/deny decisions for its own execution.
+- Orac core owns policy, confirmation, routing, persistence, and provenance.
+- The LLM may help interpret intent, but must not authorise device control or mutation actions.
+- Denied, scaffold, unknown-action, and confirmation-required plugin actions must not import or execute plugin code.
+- Scaffold denial must override any request metadata.
+- Unknown action types must fail closed.
+- Request-supplied confirmation metadata must not be treated as a final trusted user confirmation in the long-term architecture. If currently used for tests, document it as provisional and add a clear seam/TODO for a trusted confirmation broker/manager.
+
+Deliverables:
+1. Add or update tests proving the boundaries above.
+2. Add a concise architecture note, for example docs/plugin-execution-boundaries.md, describing the intended flow and ownership boundaries.
+3. Refactor only if necessary to keep policy evaluation testable without plugin import/execution.
+4. Do not implement real Home Assistant control.
+5. Do not implement full confirmation UX/protocol yet.
+6. Do not perform a database schema migration.
+7. Preserve existing weather plugin behaviour.
+8. Preserve existing plugin service lifecycle behaviour.
+9. Run the relevant unit tests and full discovery.
+
+Validation commands:
+- poetry run python -m unittest tests.test_weather_plugin
+- poetry run python -m unittest tests.test_plugin_runtime
+- poetry run python -m unittest tests.test_plugin_router
+- poetry run python -m unittest tests.test_plugin_routing
+- poetry run python -m unittest tests.test_plugin_service_manager
+- poetry run python -m unittest tests.test_orac_plugin_integration
+- poetry run python -m unittest discover -s tests
+
+Please report:
+- files changed;
+- boundary risks found;
+- tests added/updated;
+- any deferred work.
+
+---
+
+So what from the architecture-qa-results.md is remaining?
+
+---
+
+Please implement the next architecture QA remediation pass for Orac: introduce a provider registry/factory and explicit provider capability model, while preserving current behaviour.
+
+Current state:
+- src/controller/orac.py still contains provider-specific orchestration logic.
+- Ollama-specific behaviour such as model alias/latest handling, model pull/load/probe behaviour, and availability checks is partly in the core controller.
+- LM Studio-specific model listing/probing is also partly visible to orchestration.
+- Provider streaming semantics are uneven: Ollama supports native streaming, while other providers may use fallback non-streaming behaviour.
+- Contract tests for provider streaming exist, but provider capabilities are not yet explicit enough.
+
+Goals:
+1. Introduce a small provider registry/factory layer.
+2. Move provider-specific mapping and behaviour out of src/controller/orac.py where practical.
+3. Add an explicit provider capability model.
+4. Preserve existing runtime behaviour.
+5. Preserve existing tests unless they are asserting implementation details that must be updated.
+6. Do not perform broad refactoring of voice, plugins, persistence, or Home Assistant.
+7. Do not change protocol frame names or payload structure.
+8. Do not add new cloud provider support in this pass.
+
+Suggested design:
+- Add a ProviderCapabilities dataclass or equivalent model.
+- Add a ProviderRegistry or ProviderFactory responsible for:
+  - mapping provider names to connector/runtime implementations;
+  - returning provider capabilities;
+  - creating connector instances;
+  - handling provider-owned model alias/probe/list behaviour where appropriate.
+- Keep provider-specific logic close to provider implementations.
+- Orac should consume a provider abstraction rather than knowing Ollama/LM Studio details directly.
+- Make connector capability differences explicit:
+  - native streaming support;
+  - fallback streaming behaviour;
+  - usage metadata support;
+  - model listing support;
+  - model pull/load support;
+  - cancellation semantics if already present.
+
+Important constraints:
+- Keep the patch staged and conservative.
+- Do not extract the full LLM runtime unless the provider registry naturally requires a very small helper.
+- Do not change user-facing behaviour.
+- Do not change database schema.
+- Do not change Home Assistant behaviour.
+- Do not change plugin policy/provenance behaviour.
+- Do not change the voice loop.
+
+Tests:
+- Add or update tests proving:
+  - provider registry resolves known providers;
+  - unknown providers fail clearly;
+  - Ollama capabilities are explicit;
+  - LM Studio capabilities are explicit;
+  - fallback streaming capability is explicit;
+  - Orac no longer needs hard-coded provider maps where the registry owns them;
+  - current Ollama and LM Studio behaviours remain intact.
+
+Validation commands:
+- poetry run python -m unittest tests.test_llm_connector
+- poetry run python -m unittest tests.test_orac_plugin_integration
+- poetry run python -m unittest tests.test_plugin_router
+- poetry run python -m unittest discover -s tests
+
+Please report:
+- files changed;
+- provider-specific logic moved out of Orac;
+- new provider capability fields;
+- tests added/updated;
+- any remaining provider leakage in src/controller/orac.py;
+- deferred work.
+
+---
+
+Please implement the next conservative architecture QA remediation pass for Orac: extract a small PluginExecutionService from src/controller/orac.py without changing runtime behaviour.
+
+Current state:
+- Provider registry/factory and explicit provider capabilities have now been implemented.
+- Plugin routing, service lifecycle, execution policy, scaffold denial, no-import denied paths, and provenance are already covered by tests.
+- src/controller/orac.py still owns too much orchestration.
+- The next safe reduction is to extract plugin execution coordination, not to alter plugin policy or implement Home Assistant control.
+
+Goals:
+1. Add a small PluginExecutionService, probably under src/model or src/controller support code.
+2. Move plugin execution coordination out of Orac where practical.
+3. Preserve existing plugin routing, policy, provenance, and persistence behaviour.
+4. Preserve current weather plugin behaviour.
+5. Preserve Home Assistant scaffold denial.
+6. Do not implement trusted confirmation broker in this pass.
+7. Do not implement real Home Assistant control.
+8. Do not change database schema.
+9. Do not change protocol frame names or payload structure.
+10. Do not touch the voice loop.
+
+Suggested design:
+- PluginExecutionService should wrap the existing PluginRouter interaction.
+- It should expose a simple method that accepts the prompt/request context and returns either:
+  - not handled, so Orac continues to the LLM path; or
+  - handled, with response text/result metadata/provenance.
+- The service should not import plugin code directly except through the existing router.
+- The router should remain responsible for policy enforcement and no-import denial behaviour.
+- Orac should remain responsible for the wider request lifecycle, persistence, protocol response construction, and LLM fallback.
+
+Important constraints:
+- This is a refactor/boundary extraction only.
+- Do not add new plugin capabilities.
+- Do not loosen policy decisions.
+- Do not allow scaffold plugins to execute.
+- Do not change request metadata confirmation behaviour, except to preserve existing semantics.
+- Keep the patch staged and conservative.
+
+Tests:
+- Add or update tests proving:
+  - Orac delegates plugin execution through PluginExecutionService.
+  - Weather plugin handled turns still work.
+  - Non-plugin prompts still fall through to the LLM path.
+  - Confirmation-required, scaffold, and unknown-action denials still do not import plugin code.
+  - Plugin provenance still reaches response metadata.
+  - Plugin provenance still reaches persisted assistant-turn metadata.
+  - Existing plugin router tests remain valid.
+
+Validation commands:
+- poetry run python -m unittest tests.test_plugin_router
+- poetry run python -m unittest tests.test_plugin_runtime
+- poetry run python -m unittest tests.test_orac_plugin_integration
+- poetry run python -m unittest tests.test_weather_plugin
+- poetry run python -m unittest discover -s tests
+
+Please report:
+- files changed;
+- code moved out of src/controller/orac.py;
+- new PluginExecutionService responsibilities;
+- behaviours explicitly preserved;
+- tests added/updated;
+- any remaining plugin execution logic still in Orac;
+- deferred work.
+
+---
+
+Please perform the next architecture QA remediation pass for Orac: add or strengthen high-level voice turn contract tests before extracting the voice turn controller.
+
+Current state:
+- Provider registry/factory and explicit provider capabilities have been implemented.
+- PluginExecutionService has been extracted from Orac.
+- Plugin policy, scaffold denial, provenance, and service lifecycle are already covered.
+- The remaining high-risk boundary is the oversized local voice loop in src/orac_voice/voice_loop_local.py.
+- Do not refactor the voice loop in this pass unless a tiny test-enabling seam is unavoidable.
+
+Goals:
+1. Add high-level voice turn contract tests that describe the required behaviour of the voice loop.
+2. Preserve current runtime behaviour.
+3. Make future extraction of a VoiceTurnController safer.
+4. Avoid locking tests to incidental private implementation details where practical.
+5. Do not change protocol frame names or payload structure.
+6. Do not change plugin, provider, persistence, Home Assistant, or DB behaviour.
+
+Test scenarios to cover:
+- Normal streamed assistant turn:
+  - stream_start is handled.
+  - text_delta updates display/transcript behaviour.
+  - text_chunk is handled as the TTS/speech chunk path.
+  - stream_end finalises the turn.
+- Stream plus TTS playback:
+  - playback start/finish events are respected.
+  - the voice loop does not treat a turn as complete before playback finishes.
+- Non-streaming or fallback assistant response:
+  - the voice path still produces a coherent spoken/displayed response.
+- Barge-in cancellation:
+  - user interruption cancels the active turn.
+  - stale frames from the cancelled turn are ignored.
+  - the next turn can proceed cleanly.
+- Timeout/error path:
+  - stream timeout or stream_error is handled cleanly.
+  - display/voice state is reset.
+- Display event path:
+  - user transcript final event is emitted where expected.
+  - assistant start/delta/final events remain compatible with the web display contract.
+
+Important constraints:
+- Do not extract VoiceTurnController yet.
+- Do not redesign barge-in.
+- Do not alter AEC frame contracts.
+- Do not alter TTS/STT engines.
+- Do not change protocol schema.
+- Do not change src/controller/orac.py unless required for a tiny test seam.
+- Prefer contract-level tests over tests that assert private helper internals.
+- Existing tests should continue to pass.
+
+Validation commands:
+- poetry run python -m unittest tests.test_orac_voice
+- poetry run python -m unittest discover -s tests
+
+Please report:
+- files changed;
+- voice turn behaviours covered;
+- tests added/updated;
+- any fragile private implementation coupling that remains;
+- whether the code is now ready for a VoiceTurnController extraction;
+- deferred work.
+
+---
+
+We appear to have a problem - see Orac response: [Image #1]
+
+---
+
+Please implement the next architecture QA remediation pass for Orac: extract a conservative VoiceTurnController from src/orac_voice/voice_loop_local.py.
+
+Current state:
+- High-level voice turn contract tests have been added/strengthened.
+- tests/test_orac_voice.py now covers:
+  - normal streamed assistant turns;
+  - stream_start/text_delta/text_chunk/stream_end handling;
+  - TTS playback and voice_turn_complete;
+  - fallback non-streaming response;
+  - stream_error handling and display reset;
+  - barge-in cancellation;
+  - stale cancelled frame rejection;
+  - next-turn recovery;
+  - display transcript start/delta/final events;
+  - thinking/speaking/idle display states.
+- These tests currently exercise _send_orac_prompt as the best available high-level seam.
+- No production code was changed in the previous pass.
+
+Goal:
+Extract the turn-level voice state machine into a new VoiceTurnController while preserving existing behaviour.
+
+Suggested design:
+- Add a new module, probably:
+  - src/orac_voice/voice_turn_controller.py
+- Add a VoiceTurnController class responsible for turn-level protocol/frame handling and voice/display state transitions.
+- Move the core logic currently concentrated around _send_orac_prompt into the controller where practical.
+- Keep _send_orac_prompt as a compatibility wrapper if that minimises churn and preserves existing tests.
+- Alternatively, move the existing tests to the new controller boundary if that is cleaner, but only if behaviour remains identical.
+
+VoiceTurnController should own:
+- active voice turn state;
+- stream_start handling;
+- text_delta handling;
+- text_chunk handling;
+- stream_end handling;
+- stream_error handling;
+- TTS playback coordination;
+- voice_turn_complete signalling;
+- barge-in cancellation state;
+- stale/cancelled frame rejection;
+- display state transitions at turn level.
+
+VoiceTurnController should not own:
+- STT engine implementation;
+- TTS engine implementation internals;
+- AEC implementation or frame contracts;
+- wake word detection;
+- low-level microphone capture;
+- protocol schema changes;
+- Orac server-side request handling;
+- provider/plugin/database logic.
+
+Important constraints:
+- Preserve current runtime behaviour.
+- Do not redesign barge-in.
+- Do not alter AEC frame size, sample rate, or backend contracts.
+- Do not alter TTS/STT engine APIs unless absolutely necessary.
+- Do not change protocol frame names or payload structure.
+- Do not change display event names or payload structure.
+- Do not change src/controller/orac.py.
+- Do not change provider, plugin, Home Assistant, persistence, or DB behaviour.
+- Keep the extraction staged and conservative.
+- Avoid broad rewrites of voice_loop_local.py.
+
+Tests:
+- Preserve or update the existing voice contract tests so they verify the new controller boundary where appropriate.
+- Add targeted tests for VoiceTurnController if useful, but do not remove existing end-to-end-style voice turn coverage.
+- Existing behaviours that must continue to pass:
+  - streamed turn completes correctly;
+  - fallback non-streaming response completes correctly;
+  - stream_error resets display/voice state;
+  - barge-in cancels active turn;
+  - stale cancelled frames are ignored;
+  - next turn proceeds cleanly;
+  - transcript/display events remain compatible.
+
+Validation commands:
+- poetry run python -m unittest tests.test_orac_voice
+- poetry run python -m unittest discover -s tests
+
+Please report:
+- files changed;
+- logic moved out of voice_loop_local.py;
+- VoiceTurnController responsibilities;
+- behaviours explicitly preserved;
+- tests added/updated;
+- any remaining oversized voice_loop_local responsibilities;
+- deferred work.
+
+---
+
+What does voice_loop_local.py do?#
+
+---
+
+Please implement the next architecture QA remediation pass for Orac: add a trusted confirmation broker/manager seam for plugin actions, without implementing real Home Assistant control.
+
+Current state:
+- Provider registry/factory and explicit provider capabilities are implemented.
+- PluginExecutionService has been extracted from Orac.
+- Plugin policy/provenance is implemented as a first-pass boundary.
+- Scaffold plugins are denied.
+- Unknown action types fail closed.
+- Denied, scaffold, unknown-action, and confirmation-required plugin paths do not import plugin code.
+- Request metadata confirmation currently exists as a provisional/test seam.
+- VoiceTurnController has been extracted and voice contract tests pass.
+- Home Assistant remains scaffold-only and must not become real control in this pass.
+
+Goal:
+Introduce a trusted confirmation broker/manager abstraction so that future risky plugin actions are authorised only by Orac-owned confirmation state, not arbitrary caller-supplied metadata.
+
+Suggested design:
+- Add a ConfirmationBroker or PluginConfirmationBroker class.
+- The broker should be responsible for:
+  - creating confirmation requests;
+  - assigning a confirmation id/token;
+  - recording plugin name/action type/capability/action summary;
+  - recording expiry;
+  - validating confirmation responses;
+  - preventing replay where practical;
+  - returning a trusted confirmation decision object.
+- Add a small confirmation decision/result dataclass if useful.
+- Integrate the broker into the plugin execution policy path conservatively.
+- Preserve the existing provisional metadata path for tests only if needed, but clearly mark it as legacy/test-only or development-only.
+- Do not trust arbitrary request metadata as final authority for risky/device-control actions unless it is backed by broker-issued state.
+
+Important constraints:
+- Do not implement real Home Assistant control.
+- Do not remove scaffold denial.
+- Do not loosen policy checks.
+- Do not change protocol frame names or payload structure.
+- Do not change database schema.
+- Do not implement a full UI confirmation workflow yet.
+- Do not change voice behaviour.
+- Do not change provider behaviour.
+- Keep this as a conservative safety-boundary pass.
+
+Expected behaviour:
+- Informational read-only plugins continue to work as before.
+- Device-control or mutation-style actions still require confirmation.
+- Confirmation-required actions should produce a structured confirmation-required result.
+- A broker-issued trusted confirmation should be distinguishable from arbitrary request metadata.
+- Scaffold plugins must still be denied even if broker confirmation exists.
+- Unknown action types must still fail closed.
+- Denied/confirmation-required/scaffold paths must still avoid plugin import.
+
+Tests:
+- Add or update tests proving:
+  - confirmation requests can be created with plugin/action/capability metadata;
+  - confirmation decisions expire;
+  - confirmation decisions cannot be reused if replay prevention is implemented;
+  - arbitrary request metadata is not treated as trusted confirmation for risky actions;
+  - broker-issued confirmation is recognised by policy where appropriate;
+  - scaffold denial overrides broker confirmation;
+  - unknown action type still fails closed;
+  - confirmation-required paths still do not import plugin code;
+  - weather/read-only plugin behaviour remains unchanged;
+  - plugin provenance still reaches response metadata and persisted metadata.
+
+Validation commands:
+- poetry run python -m unittest tests.test_plugin_router
+- poetry run python -m unittest tests.test_plugin_runtime
+- poetry run python -m unittest tests.test_orac_plugin_integration
+- poetry run python -m unittest tests.test_weather_plugin
+- poetry run python -m unittest discover -s tests
+
+Please report:
+- files changed;
+- confirmation broker responsibilities;
+- how trusted confirmation is represented;
+- how provisional request metadata is handled;
+- tests added/updated;
+- behaviours preserved;
+- remaining confirmation/UX/protocol work deferred.
+
+---
+
+pytest has been added to the repo.
+
+---
+
+Please implement the next architecture QA remediation pass for Orac: add plugin execution timeout handling and richer failed-plugin provenance, without implementing real Home Assistant control.
+
+Current state:
+- Provider registry/factory and explicit provider capabilities are implemented.
+- PluginExecutionService has been extracted.
+- Plugin execution policy/provenance exists.
+- Trusted PluginConfirmationBroker has been added.
+- Arbitrary request metadata is no longer trusted for risky actions.
+- Scaffold denial and unknown action denial fail closed.
+- Denied/confirmation-required/scaffold paths avoid plugin import/execution.
+- Weather/read-only behaviour works.
+- Home Assistant remains scaffold-only.
+
+Goal:
+Strengthen runtime plugin execution safety by adding timeout handling and structured failure provenance for plugin exceptions/timeouts.
+
+Requirements:
+1. Add plugin execution timeout support at the runtime/service layer where plugin code is actually invoked.
+2. Ensure plugin exceptions produce structured failed-plugin results rather than escaping as ambiguous assistant failures.
+3. Ensure plugin timeout results are distinct from plugin exception results.
+4. Ensure denied, confirmation-required, scaffold, and unknown-action policy paths remain unchanged and still avoid plugin import.
+5. Preserve weather plugin behaviour.
+6. Do not implement real Home Assistant control.
+7. Do not implement confirmation UI/protocol exchange.
+8. Do not add database schema changes.
+9. Do not change protocol frame names or payload structure.
+10. Do not change voice/provider behaviour.
+
+Suggested provenance fields:
+- source: plugin
+- plugin_name
+- action_type
+- status: completed / denied / confirmation_required / failed / timed_out
+- policy_decision where relevant
+- failure_type where relevant
+- failure_message safe for logs/metadata
+- confirmation_id where relevant
+- scaffold flag where relevant
+
+Important constraints:
+- Do not expose stack traces to the end user.
+- Log useful diagnostic details for developers.
+- User-facing text for plugin failure should be safe and concise.
+- Timeout should be configurable or have a conservative default.
+- Keep this as a narrow safety pass.
+
+Tests:
+- Add or update tests proving:
+  - a plugin exception returns failed-plugin provenance;
+  - a plugin timeout returns timed-out provenance;
+  - failed plugin result is not mistaken for normal LLM output;
+  - failed plugin provenance reaches response metadata where applicable;
+  - failed plugin provenance reaches persisted assistant-turn metadata where applicable;
+  - weather plugin still works;
+  - confirmation-required/scaffold/unknown-action paths still do not import plugin code;
+  - trusted confirmation behaviour remains intact.
+
+Validation commands:
+- poetry run python -m unittest tests.test_plugin_router
+- poetry run python -m unittest tests.test_plugin_runtime
+- poetry run python -m unittest tests.test_orac_plugin_integration
+- poetry run python -m unittest tests.test_weather_plugin
+- poetry run python -m unittest discover -s tests
+
+Please report:
+- files changed;
+- timeout mechanism used;
+- failure provenance structure;
+- behaviours preserved;
+- tests added/updated;
+- any remaining plugin execution risks;
+- deferred work.
+
+---
+
+Please implement the next architecture QA remediation pass for Orac: design and prepare first-class plugin audit/result persistence, without enabling real Home Assistant control.
+
+Current state:
+- Plugin execution policy exists.
+- PluginExecutionService has been extracted.
+- Trusted PluginConfirmationBroker exists.
+- Arbitrary request metadata is no longer trusted for risky plugin confirmation.
+- Plugin execution now has timeout handling.
+- Plugin exceptions and timeouts now return structured provenance.
+- Plugin provenance currently flows through response metadata and assistant-turn persistence metadata.
+- Home Assistant remains scaffold-only.
+
+Goal:
+Introduce a clear first-class persistence model for plugin invocations, policy decisions, confirmation decisions, execution results, failures, and timeouts.
+
+Important:
+This pass should be conservative. Prefer design documentation and code seams first. Only implement database DDL if the existing project conventions and migration path are clear.
+
+Suggested work:
+1. Add or update an architecture document describing plugin audit/result persistence.
+2. Define the lifecycle that should be persisted:
+   - plugin candidate selected;
+   - policy decision;
+   - confirmation required;
+   - confirmation issued;
+   - confirmation accepted/rejected/expired;
+   - plugin execution started;
+   - plugin execution completed;
+   - plugin execution failed;
+   - plugin execution timed out.
+3. Define the minimum data model needed for durable audit:
+   - conversation id;
+   - user id if available;
+   - message/turn id if available;
+   - plugin id/name;
+   - action type;
+   - capabilities/entitlements;
+   - policy decision;
+   - confirmation id where relevant;
+   - execution status;
+   - timeout seconds where relevant;
+   - safe failure type/message;
+   - created/updated timestamps;
+   - correlation id/request id/turn id where available.
+4. Identify where the current response metadata and assistant-turn metadata should map into future durable tables.
+5. Add a narrow persistence adapter/seam if useful, but avoid large schema changes unless the repository already has a clear object-by-object DDL pattern for this.
+6. Preserve all current runtime behaviour.
+
+Important constraints:
+- Do not implement real Home Assistant control.
+- Do not enable scaffold plugins.
+- Do not loosen policy, confirmation, or timeout behaviour.
+- Do not change protocol frame names or payload structure.
+- Do not change voice/provider behaviour.
+- Do not change plugin execution semantics.
+- Do not perform a broad DB/APEX refactor.
+- Do not expose raw stack traces to persisted user-facing records.
+- Keep this as a persistence-boundary preparation pass.
+
+Tests:
+- Add or update tests proving:
+  - plugin provenance can be normalised into an audit payload;
+  - completed plugin results map to audit fields;
+  - denied policy results map to audit fields;
+  - confirmation-required results map to audit fields;
+  - failed plugin results map to audit fields;
+  - timed-out plugin results map to audit fields;
+  - existing response metadata behaviour is preserved;
+  - existing assistant-turn metadata behaviour is preserved.
+
+Validation commands:
+- poetry run python -m unittest tests.test_plugin_router
+- poetry run python -m unittest tests.test_plugin_runtime
+- poetry run python -m unittest tests.test_orac_plugin_integration
+- poetry run python -m unittest tests.test_weather_plugin
+- poetry run python -m unittest discover -s tests
+
+Please report:
+- files changed;
+- audit lifecycle defined;
+- proposed persistence model;
+- code seams added, if any;
+- tests added/updated;
+- behaviours preserved;
+- whether a DB migration is recommended next;
+- deferred work.
+
+---
+
+Scrub this.
+
+---
+
+Please adjust the next architecture QA remediation pass for Orac: focus on plugin audit/result persistence design and Home Assistant data lifecycle design, not real Home Assistant runtime control.
+
+Current state:
+- Plugin execution policy exists.
+- PluginExecutionService has been extracted.
+- Trusted PluginConfirmationBroker exists.
+- Plugin execution timeout and failed/timed-out provenance exist.
+- Home Assistant is still scaffold-only.
+- The HA database objects currently exist only as tables/schema assets.
+- HA tables are not populated yet.
+- No real HA state query or device control should be implemented in this pass.
+
+Goals:
+1. Define durable plugin audit/result persistence requirements.
+2. Define the intended Home Assistant data lifecycle before implementing HA runtime.
+3. Clarify whether HA tables are cache/state/audit tables.
+4. Clarify how HA data will be populated and freshness-checked.
+5. Preserve all current runtime behaviour.
+
+Plugin audit/result persistence design should cover:
+- plugin candidate selected;
+- policy decision;
+- confirmation required;
+- confirmation issued;
+- confirmation accepted/rejected/expired;
+- plugin execution started;
+- plugin execution completed;
+- plugin execution failed;
+- plugin execution timed out.
+
+Plugin audit data model should include, at minimum:
+- conversation id where available;
+- user id where available;
+- message/turn id where available;
+- plugin id/name;
+- action type;
+- capabilities/entitlements;
+- policy decision;
+- confirmation id where relevant;
+- execution status;
+- timeout seconds where relevant;
+- safe failure type/message;
+- request/correlation/turn id where available;
+- created/updated timestamps.
+
+Home Assistant data lifecycle design should cover:
+- which plugin/service owns HA table population;
+- whether HA state is pulled, received by websocket, or both;
+- how cached device/entity state is refreshed;
+- how stale data is detected;
+- how schema/plugin version compatibility is checked;
+- what happens if HA credentials are missing;
+- what happens if HA is offline;
+- whether user-facing state query reads cached Orac tables or live HA directly;
+- why device control must remain disabled until state query, confirmation, credentials, entitlements, audit, and safety semantics are complete.
+
+Important constraints:
+- Do not implement real Home Assistant control.
+- Do not populate HA tables in this pass.
+- Do not implement websocket integration in this pass.
+- Do not perform a database schema migration unless the existing object-by-object DDL conventions make a small documentation-only or metadata-only change clearly safe.
+- Do not loosen plugin policy, confirmation, scaffold denial, or timeout behaviour.
+- Do not change protocol frame names or payload structure.
+- Do not change voice/provider behaviour.
+
+Deliverables:
+- Add or update architecture documentation for plugin audit/result persistence.
+- Add or update architecture documentation for HA data lifecycle and readiness.
+- Add lightweight code seams/tests only if useful for normalising existing plugin provenance into future audit payloads.
+- Preserve existing tests.
+
+Validation commands:
+- poetry run python -m unittest tests.test_plugin_router
+- poetry run python -m unittest tests.test_plugin_runtime
+- poetry run python -m unittest tests.test_orac_plugin_integration
+- poetry run python -m unittest tests.test_weather_plugin
+- poetry run python -m unittest discover -s tests
+
+Please report:
+- files changed;
+- plugin audit lifecycle defined;
+- HA data lifecycle defined;
+- whether HA tables are currently cache/state/audit tables;
+- proposed next implementation step;
+- behaviours preserved;
+- deferred work.
