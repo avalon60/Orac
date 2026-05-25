@@ -473,6 +473,139 @@ class PluginRouterTests(unittest.TestCase):
             any(event[1]["event_type"] == "execution_completed" for event in audit_adapter.sessions[0].events if event[0] == "execution")
         )
 
+    def test_router_records_audit_event_for_declined_can_handle(self) -> None:
+        logger = _FakeLogger()
+        manifest = self._manifest()
+        audit_adapter = _FakeAuditAdapter()
+        router = PluginRouter(
+            plugin_manager=_FakePluginManager(manifest),
+            logger=logger,
+            config_mgr=object(),
+            context_manager=object(),
+        )
+
+        class _DecliningPlugin:
+            def __init__(self, logger, config_mgr):
+                self.logger = logger
+                self.config_mgr = config_mgr
+
+            def can_handle(self, prompt: str) -> bool:
+                return False
+
+            def execute(self, prompt: str, meta: dict):
+                raise AssertionError("declined plugin must not execute")
+
+        original_loader = plugin_router_module.load_plugin_class
+        plugin_router_module.load_plugin_class = lambda loaded_manifest: _DecliningPlugin
+        try:
+            result = router.route(
+                "What's the weather in London?",
+                {},
+                PluginRoutingHandoff(
+                    candidates=(PluginCandidate(plugin_id="weather", score=0.91),),
+                    refreshed=False,
+                ),
+                auth_user="unit_user",
+                audit_adapter=audit_adapter,
+                request_context={"request_id": "req-3", "turn_id": "turn-3"},
+            )
+        finally:
+            plugin_router_module.load_plugin_class = original_loader
+
+        self.assertIsNone(result)
+        self.assertEqual(len(audit_adapter.sessions), 1)
+        self.assertTrue(
+            any(
+                event[0] == "execution"
+                and event[1]["event_type"] == "execution_failed"
+                and event[1]["execution_status"] == "denied"
+                and event[1]["failure_type"] == "can_handle_declined"
+                for event in audit_adapter.sessions[0].events
+            )
+        )
+
+    def test_router_records_audit_event_for_load_failure(self) -> None:
+        logger = _FakeLogger()
+        manifest = self._manifest()
+        audit_adapter = _FakeAuditAdapter()
+        router = PluginRouter(
+            plugin_manager=_FakePluginManager(manifest),
+            logger=logger,
+            config_mgr=object(),
+            context_manager=object(),
+        )
+
+        with patch.object(
+            plugin_router_module,
+            "load_plugin_class",
+            side_effect=AssertionError("load failure"),
+        ):
+            result = router.route(
+                "What's the weather in London?",
+                {},
+                PluginRoutingHandoff(
+                    candidates=(PluginCandidate(plugin_id="weather", score=0.91),),
+                    refreshed=False,
+                ),
+                auth_user="unit_user",
+                audit_adapter=audit_adapter,
+                request_context={"request_id": "req-4", "turn_id": "turn-4"},
+            )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.provenance["status"], "failed")
+        self.assertEqual(len(audit_adapter.sessions), 1)
+        self.assertTrue(
+            any(
+                event[0] == "execution"
+                and event[1]["event_type"] == "execution_failed"
+                and event[1]["execution_status"] == "failed"
+                and event[1]["failure_type"] == "AssertionError"
+                for event in audit_adapter.sessions[0].events
+            )
+        )
+
+    def test_router_records_audit_event_for_instantiate_failure(self) -> None:
+        logger = _FakeLogger()
+        manifest = self._manifest()
+        audit_adapter = _FakeAuditAdapter()
+        router = PluginRouter(
+            plugin_manager=_FakePluginManager(manifest),
+            logger=logger,
+            config_mgr=object(),
+            context_manager=object(),
+        )
+
+        class _BrokenPlugin:
+            def __init__(self, logger, config_mgr):
+                raise RuntimeError("instantiate failure")
+
+        with patch.object(plugin_router_module, "load_plugin_class", return_value=_BrokenPlugin):
+            result = router.route(
+                "What's the weather in London?",
+                {},
+                PluginRoutingHandoff(
+                    candidates=(PluginCandidate(plugin_id="weather", score=0.91),),
+                    refreshed=False,
+                ),
+                auth_user="unit_user",
+                audit_adapter=audit_adapter,
+                request_context={"request_id": "req-5", "turn_id": "turn-5"},
+            )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.provenance["status"], "failed")
+        self.assertEqual(len(audit_adapter.sessions), 1)
+        self.assertTrue(
+            any(
+                event[0] == "execution"
+                and event[1]["event_type"] == "execution_failed"
+                and event[1]["execution_status"] == "failed"
+                and event[1]["failure_type"] == "RuntimeError"
+                for event in audit_adapter.sessions[0].events
+            )
+        )
+
     def test_router_records_audit_events_for_denied_plugin(self) -> None:
         logger = _FakeLogger()
         manifest = self._home_assistant_manifest(scaffold=True)

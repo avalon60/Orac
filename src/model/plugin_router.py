@@ -176,7 +176,21 @@ class PluginRouter:
                     provenance=policy_decision.provenance,
                 )
 
-            audit_state: dict[str, PluginAuditSession | None] = {"session": None}
+            audit_session = self._start_audit_session(
+                audit_adapter=audit_adapter,
+                request_context=request_context,
+                manifest=manifest,
+                policy_decision=policy_decision,
+                auth_user=auth_user,
+            )
+            self._record_policy_outcome(
+                audit_session=audit_session,
+                policy_decision=policy_decision,
+            )
+            self._record_confirmation_outcome(
+                audit_session=audit_session,
+                policy_decision=policy_decision,
+            )
             try:
                 result = self._invoke_with_timeout(
                     lambda: self._invoke_plugin_candidate(
@@ -184,10 +198,8 @@ class PluginRouter:
                         prompt=prompt,
                         meta=meta,
                         auth_user=auth_user,
-                        audit_adapter=audit_adapter,
-                        request_context=request_context,
                         policy_decision=policy_decision,
-                        audit_state=audit_state,
+                        audit_session=audit_session,
                     )
                 )
             except _PluginInvocationTimeout:
@@ -195,7 +207,6 @@ class PluginRouter:
                     "Plugin execution timed out for "
                     f"'{candidate.plugin_id}' after {self._execution_timeout_seconds:.3f}s."
                 )
-                audit_session = audit_state.get("session")
                 if audit_session is not None:
                     self._record_execution_outcome(
                         audit_session=audit_session,
@@ -228,7 +239,6 @@ class PluginRouter:
                     f"'{candidate.plugin_id}' during {exc.stage} (non-fatal)",
                     exc.original,
                 )
-                audit_session = audit_state.get("session")
                 if audit_session is not None:
                     self._record_execution_outcome(
                         audit_session=audit_session,
@@ -274,10 +284,8 @@ class PluginRouter:
         prompt: str,
         meta: dict[str, Any],
         auth_user: str,
-        audit_adapter: PluginAuditAdapter | None = None,
-        request_context: dict[str, Any] | None = None,
         policy_decision=None,
-        audit_state: dict[str, PluginAuditSession | None] | None = None,
+        audit_session: PluginAuditSession | None = None,
     ) -> PluginExecutionResult | object | None:
         """Load and invoke one policy-approved plugin candidate."""
         try:
@@ -303,37 +311,26 @@ class PluginRouter:
 
         try:
             if hasattr(plugin_instance, "can_handle") and not plugin_instance.can_handle(prompt):
+                self._record_execution_outcome(
+                    audit_session=audit_session,
+                    event_type="execution_failed",
+                    execution_status="denied",
+                    failure_type="can_handle_declined",
+                    failure_message="Plugin declined prompt during can_handle.",
+                    provenance_json=(
+                        policy_decision.provenance if policy_decision is not None else None
+                    ),
+                )
                 return _DECLINED
         except BaseException as exc:
             raise _PluginInvocationError("can_handle", exc) from exc
 
-        audit_session = None
-        if audit_adapter is not None and policy_decision is not None:
-            audit_session = audit_adapter.create_session(
-                provenance=policy_decision.provenance,
-                request_context=self._request_audit_context(
-                    request_context=request_context,
-                    manifest=manifest,
-                    auth_user=auth_user,
-                ),
-                policy_decision=policy_decision.status,
-            )
-            if audit_state is not None:
-                audit_state["session"] = audit_session
-            self._record_policy_outcome(
-                audit_session=audit_session,
-                policy_decision=policy_decision,
-            )
-            self._record_confirmation_outcome(
-                audit_session=audit_session,
-                policy_decision=policy_decision,
-            )
-            self._record_execution_outcome(
-                audit_session=audit_session,
-                event_type="execution_started",
-                execution_status="execution_started",
-                provenance_json=policy_decision.provenance,
-            )
+        self._record_execution_outcome(
+            audit_session=audit_session,
+            event_type="execution_started",
+            execution_status="execution_started",
+            provenance_json=policy_decision.provenance if policy_decision is not None else None,
+        )
 
         try:
             result = plugin_instance.execute(prompt, meta)

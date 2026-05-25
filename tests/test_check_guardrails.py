@@ -149,3 +149,7 @@ def test_current_agents_guardrail_references_resolve() -> None:
     assert references
     missing = [reference.raw for reference in references if not reference.target.exists()]
     assert missing == []
+
+
+def test_checker_passes_for_current_repository_root() -> None:
+    assert check_guardrails.main(["--root", str(PROJECT_ROOT)]) == 0
