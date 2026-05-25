@@ -1,0 +1,238 @@
+Implement selectable TTS voice support for Orac user preferences.
+
+Scope:
+
+This change should add database, APEX UI, and runtime support for selecting a TTS voice per user.
+
+The selected voice should come from the user's preferences. Runtime voice selection must only fall back to the existing orac.ini TTS voice setting if the user's preferred voice is missing, disabled, unavailable, or invalid.
+
+Do not implement vocal model switching or a voice-command plugin in this change.
+
+Part 1: Database table
+
+Add a new table:
+
+  orac.tts_voices
+
+Purpose:
+
+orac.tts_voices is a startup-refreshed runtime catalogue of available TTS voices. It is populated from available TTS providers such as Piper and Kokoro. It is not master/reference data and must not be used as the target of hard foreign keys from user preferences.
+
+Each row represents one selectable voice from one provider.
+
+Required columns:
+
+- tts_voice_key
+  - varchar2(300 char)
+  - not null
+  - Stable logical key.
+  - Expected format: provider_code || ':' || provider_voice_id.
+  - Examples:
+    - piper:en_GB-southern_english_female-low
+    - kokoro:af_heart
+
+- provider_code
+  - varchar2(30 char)
+  - not null
+  - Examples: piper, kokoro, indextts.
+
+- provider_voice_id
+  - varchar2(240 char)
+  - not null
+  - Provider-native voice identifier.
+
+- display_name
+  - varchar2(240 char)
+  - not null
+  - Human-friendly name for APEX LOV display.
+
+- language_code
+  - varchar2(20 char)
+  - nullable
+
+- locale_code
+  - varchar2(20 char)
+  - nullable
+
+- voice_quality
+  - varchar2(40 char)
+  - nullable
+
+- model_path
+  - varchar2(1000 char)
+  - nullable
+
+- config_path
+  - varchar2(1000 char)
+  - nullable
+
+- metadata_json
+  - clob
+  - nullable
+  - Provider-specific metadata.
+
+- default_yn
+  - varchar2(1 char)
+  - not null
+  - default 'N'
+
+- enabled_yn
+  - varchar2(1 char)
+  - not null
+  - default 'Y'
+
+- sort_order
+  - number
+  - nullable
+
+- loaded_on
+  - timestamp
+  - not null
+  - default systimestamp
+
+Required constraints:
+
+- Primary key:
+  - columns: tts_voice_key
+
+- Unique constraint:
+  - columns: provider_code, provider_voice_id
+
+- Check constraint:
+  - column: default_yn
+  - allowed values: 'Y', 'N'
+
+- Check constraint:
+  - column: enabled_yn
+  - allowed values: 'Y', 'N'
+
+- JSON check constraint:
+  - column: metadata_json
+  - ensure the value is valid JSON when populated
+
+Important database rules:
+
+- Do not add a surrogate identity key.
+- Do not add foreign keys from user preferences to this table.
+- Use varchar2(n char), not varchar2(n).
+- Use lowercase SQL reserved words.
+- Let the existing project guardrails determine object names, index names, constraint names, comments, Liquibase formatting, and migration placement.
+- Follow the existing project conventions for DDL, comments, install scripts, and migrations.
+
+Part 2: User preference storage
+
+Locate the existing user preference placeholder for selected TTS voice.
+
+Use that existing preference field if it already exists.
+
+The stored value should be:
+
+  tts_voice_key
+
+Do not store provider_code and provider_voice_id as two separate preference values unless the existing design already requires that. The selected key should be a single soft-reference value.
+
+Do not add a foreign key to orac.tts_voices.
+
+Part 3: Startup/refreshed catalogue behaviour
+
+Implement or extend the existing startup catalogue-loading pattern if one already exists for Ollama / LM Studio model discovery.
+
+The TTS voice catalogue should be refreshed at Orac startup.
+
+Expected behaviour:
+
+- Discover available voices from all enabled/configured TTS providers.
+- Include Piper voices when Piper is configured/available.
+- Include Kokoro voices when Kokoro is configured/available.
+- Insert each discovered voice into orac.tts_voices.
+- Use provider_code to distinguish providers.
+- Build tts_voice_key as provider_code || ':' || provider_voice_id.
+- Mark the configured orac.ini default voice with default_yn = 'Y' where it matches a discovered row.
+- Set enabled_yn = 'Y' for usable voices.
+- Log unavailable providers, but do not fail startup unless no usable TTS voice remains available.
+
+If the project already has a safe truncate-and-load pattern for runtime catalogues, follow that pattern.
+
+Part 4: APEX User Preferences UI
+
+Update the APEX User Preferences UI so the user can select a TTS voice from orac.tts_voices.
+
+Use a Popup LOV or Shared LOV according to the existing APEX application conventions.
+
+The LOV should:
+
+- Return:
+  - tts_voice_key
+
+- Display:
+  - provider_code
+  - display_name
+  - provider_voice_id
+  - locale_code
+  - voice_quality
+
+Suggested LOV query shape:
+
+select
+  initcap(provider_code) || ' - ' || display_name as d,
+  tts_voice_key as r,
+  provider_code,
+  provider_voice_id,
+  locale_code,
+  voice_quality
+from
+  orac.tts_voices
+where
+  enabled_yn = 'Y'
+order by
+  provider_code,
+  nvl(sort_order, 999999),
+  display_name
+
+The UI should write the selected tts_voice_key into the existing user preference field.
+
+If the current APEX application uses exported application metadata, update the appropriate APEX export files according to the existing project workflow.
+
+If the current project uses SQL migrations or APEX supporting objects for LOVs/preferences, follow that pattern.
+
+Part 5: Runtime voice selection in voice_ai.py
+
+Update voice_ai.py so TTS voice selection uses user preference first.
+
+Runtime selection order:
+
+1. Read the current user's preferred TTS voice key from user preferences.
+2. Look up that key in orac.tts_voices.
+3. If the row exists and enabled_yn = 'Y':
+   - use provider_code to select the TTS provider/adapter.
+   - use provider_voice_id, model_path, config_path, and metadata_json as needed by that provider.
+4. If the user preference is null, missing, disabled, unavailable, or invalid:
+   - fall back to the existing orac.ini TTS voice setting.
+5. If the orac.ini voice is also unavailable:
+   - fall back to a discovered default row where default_yn = 'Y'.
+6. If there is still no valid voice:
+   - fail cleanly with a clear log message.
+
+Important runtime behaviour:
+
+- Selecting a voice should implicitly select the provider.
+- For example, selecting kokoro:af_heart should route to Kokoro even if the old orac.ini default was Piper.
+- Do not assume the configured global tts_engine is the only provider available.
+- Preserve backwards compatibility with the existing orac.ini behaviour.
+- Log when a user preference is unavailable and fallback is used.
+- Do not crash merely because a stored user preference points to a voice that is no longer present in orac.tts_voices.
+
+Part 6: Tests
+
+Add or update tests for:
+
+- Creation/migration of orac.tts_voices according to project conventions.
+- Startup loading of Piper voices, if an existing discovery seam is available.
+- Startup loading of Kokoro voices, if an existing discovery seam is available.
+- Runtime selection uses the user's preferred voice when valid.
+- Runtime selection falls back to orac.ini when the user's preferred voice is unavailable.
+- Runtime selection falls back cleanly when the preference is null.
+- Runtime selection routes to the correct provider based on provider_code.
+- A stored preference value is treated as a soft reference, not a hard database relationship.
+
+Keep the implementation focused. Do not add voice-command switching, persona-level voice defaults, or model-switching behaviour in this change.
