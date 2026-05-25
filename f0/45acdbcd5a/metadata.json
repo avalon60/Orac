@@ -3,7 +3,7 @@
   "checkpoint_id": "f045acdbcd5a",
   "strategy": "manual-commit",
   "branch": "develop",
-  "checkpoints_count": 21,
+  "checkpoints_count": 28,
   "files_touched": [
     "docs/agent-guardrails/table-abbreviations.csv",
     "docs/plugin-audit-db-api-design.md",
@@ -65,13 +65,19 @@
       "transcript": "/f0/45acdbcd5a/2/full.jsonl",
       "content_hash": "/f0/45acdbcd5a/2/content_hash.txt",
       "prompt": "/f0/45acdbcd5a/2/prompt.txt"
+    },
+    {
+      "metadata": "/f0/45acdbcd5a/3/metadata.json",
+      "transcript": "/f0/45acdbcd5a/3/full.jsonl",
+      "content_hash": "/f0/45acdbcd5a/3/content_hash.txt",
+      "prompt": "/f0/45acdbcd5a/3/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 4820878,
+    "input_tokens": 5064877,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 76876416,
-    "output_tokens": 290250,
-    "api_call_count": 614
+    "cache_read_tokens": 80447744,
+    "output_tokens": 301540,
+    "api_call_count": 657
   }
 }

@@ -1,0 +1,37 @@
+Orac is unable to accurately tell the time. What would be a good way for Orac to be appraised of the current time? [Image #1]
+
+---
+
+Implement the plan.
+
+---
+
+Take care not to confuse Orac about his location. That is currently based on weather location, which is preverable to timezone location.
+
+---
+
+pytest has now been added.
+
+---
+
+As I feared: Q: "Hey Orac, where are you?" A: "I am located in London"
+
+---
+
+Wait
+
+---
+
+I had forgotten to set the Weather location in User Preferences - it is working after all.
+
+---
+
+Is Orac/src/lib/bdds_lib.py used by anything in Orac?
+
+---
+
+Please remve the file.
+
+---
+
+remove
