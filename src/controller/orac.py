@@ -38,6 +38,8 @@ from orac_voice.tts_coalescer import DEFAULT_TTS_COALESCE_MAX_CHARS
 from orac_voice.tts_coalescer import DEFAULT_TTS_COALESCE_MIN_CHUNKS
 from orac_voice.tts_worker import TtsWorker
 from orac_voice.tts_worker import create_local_tts_worker_from_config
+from orac_voice.tts_voice_catalog import refresh_tts_voice_catalog
+from orac_voice.tts_voice_catalog import resolve_tts_voice_selection
 from orac_voice.voice_events import VoiceEvent
 from model.plugin_routing import (
     HashEmbeddingProvider,
@@ -702,6 +704,7 @@ class Orac:
             # Context manager + pruning policy
             self.ctx = OracContextManager(self.db_session, logger=logger)
             self._sync_llm_registry()
+            self._refresh_tts_voice_catalog()
             self._llm_probe_stop = threading.Event()
             self._llm_probe_thread: threading.Thread | None = None
             self._llm_probe_interval_secs = int(
@@ -759,6 +762,20 @@ class Orac:
             self._tts_worker = None
             self._tts_coalescer = None
             logger.log_error(f"{Icons.error} Local voice output unavailable: {exc}")
+
+    def _refresh_tts_voice_catalog(self) -> None:
+        """Refresh the runtime TTS voice catalogue without hiding failures."""
+        try:
+            rows = refresh_tts_voice_catalog(
+                db_session=self.db_session,
+                config_mgr=self.config_mgr,
+                orac_home=APP_HOME,
+            )
+            logger.log_info(
+                f"{Icons.tick} TTS voice catalogue refreshed: {len(rows)} voice(s)"
+            )
+        except Exception as exc:
+            _log_exception("TTS voice catalogue refresh failed", exc)
 
     def _create_tts_coalescer(self) -> TtsChunkCoalescer:
         """Create the local TTS chunk coalescer from configuration."""
@@ -1000,6 +1017,13 @@ class Orac:
             or "unknown-turn"
         )
         coalescer = getattr(self, "_tts_coalescer", None)
+        request_meta = req_env.get("meta") if isinstance(req_env, dict) else {}
+        tts_voice = (
+            request_meta.get("tts_voice")
+            if isinstance(request_meta, dict)
+            and isinstance(request_meta.get("tts_voice"), dict)
+            else None
+        )
 
         if event_type == "text_chunk":
             chunk_text = str(event_payload.get("chunk") or "").strip()
@@ -1010,6 +1034,7 @@ class Orac:
                     session_id=session_id,
                     turn_id=turn_id,
                     text=chunk_text,
+                    tts_voice=tts_voice,
                 )
                 if queued:
                     self._mark_voice_playback_queued(
@@ -1030,6 +1055,7 @@ class Orac:
                     session_id=session_id,
                     turn_id=turn_id,
                     text=speech_text,
+                    tts_voice=tts_voice,
                 )
                 if queued:
                     self._mark_voice_playback_queued(
@@ -1060,6 +1086,7 @@ class Orac:
                         session_id=session_id,
                         turn_id=terminal_turn_id,
                         text=speech_text,
+                        tts_voice=tts_voice,
                     )
                     if queued:
                         self._mark_voice_playback_queued(
@@ -2218,6 +2245,42 @@ class Orac:
                 )
         if default_llm_id is not None:
             enriched_meta["default_llm_id"] = default_llm_id
+
+        try:
+            tts_voice_pref = self.ctx.get_user_preference_value(
+                username=auth_user,
+                pref_key="tts_voice",
+            )
+        except Exception as e:
+            _log_exception("Failed to load tts_voice preference", e)
+            tts_voice_pref = None
+
+        tts_voice_selection_checked = False
+        try:
+            tts_voice = resolve_tts_voice_selection(
+                db_session=self.db_session,
+                config_mgr=self.config_mgr,
+                preferred_voice_key=(
+                    str(tts_voice_pref).strip()
+                    if tts_voice_pref not in (None, "")
+                    else None
+                ),
+                username=auth_user,
+            )
+            tts_voice_selection_checked = True
+        except Exception as e:
+            _log_exception("Failed to resolve selected TTS voice", e)
+            tts_voice = None
+
+        if tts_voice is not None:
+            enriched_meta["tts_voice_key"] = tts_voice.tts_voice_key
+            enriched_meta["tts_voice"] = tts_voice.to_runtime_dict()
+        elif tts_voice_selection_checked:
+            enriched_meta["tts_voice"] = {
+                "tts_voice_key": "__unavailable__",
+                "provider_code": "unavailable",
+                "provider_voice_id": "",
+            }
 
         try:
             personality_pref = self.ctx.get_user_preference_value(

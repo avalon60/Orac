@@ -158,8 +158,10 @@ confirmation exists.
 
 ## Recommended Next Step
 
-The next implementation step should be a database/API design pass for plugin
-audit/result persistence, followed by a read-only HA cache population pass. The
-read-only pass should populate structural metadata and current state under
-service supervision, with state query still returning only clearly marked cached
-results. Device control should remain out of scope.
+The next implementation step should be database verification for the existing
+plugin audit object set, followed by a runtime audit adapter pass that calls
+`orac_code.plugin_audit_api`. The read-only HA cache population pass should
+remain separate and deferred until audit wiring exists. It should populate
+structural metadata and current state under service supervision, with state
+query still returning only clearly marked cached results. Device control should
+remain out of scope.

@@ -457,21 +457,42 @@ using (
     'TTS Voice',
     'Preferred text-to-speech voice.',
     'string',
-    'select_list',
-    'static',
-    cast(null as varchar2(4000 byte)),
-    'TTS_VOICE',
-    json(q'["en-GB-female-1"]'),
+    'popup_lov',
+    'sql',
+    q'[select initcap(provider_code)
+             || ' - '
+             || display_name
+             || ' ('
+             || provider_voice_id
+             || case
+                  when locale_code is not null then ', ' || locale_code
+                end
+             || case
+                  when voice_quality is not null then ', ' || voice_quality
+                end
+             || ')' as d,
+             tts_voice_key as r,
+             provider_code,
+             provider_voice_id,
+             locale_code,
+             voice_quality
+        from orac_api.tts_voices_v
+       where enabled_yn = 'Y'
+       order by provider_code,
+                nvl(sort_order, 999999),
+                display_name]',
+    cast(null as varchar2(100 byte)),
+    json(q'[""]'),
     cast(null as number),
     cast(null as number),
-    1,
-    100,
+    0,
+    300,
     cast(null as varchar2(1000 byte)),
-    'Y',
+    'N',
     'Y',
     180,
     'speech',
-    'Chooses the default voice for supported text-to-speech playback.',
+    'Chooses the preferred text-to-speech voice for local playback.',
     'Y'
   from dual
 ) src

@@ -8,6 +8,7 @@ prompt === tables ===
 @table/conversations.sql
 @table/devices.sql
 @table/llm_registry.sql
+@table/tts_voices.sql
 @table/model_generation_presets.sql
 @table/message_embeddings.sql
 @table/messages.sql
@@ -32,6 +33,8 @@ prompt === indexes ===
 @index/device_users_fk1_idx.sql
 @index/llm_reg_pk.sql
 @index/llm_reg_uk1_idx.sql
+@index/tts_voice_pk.sql
+@index/tts_voice_uk1_idx.sql
 @index/model_generation_presets_pk.sql
 @index/model_generation_presets_uk1.sql
 @index/mesg_emb_mesgs_fk1_idx.sql
@@ -66,6 +69,7 @@ prompt === constraints_pk ===
 @constraint_pk/convs_pk.sql
 @constraint_pk/device_pk.sql
 @constraint_pk/llm_reg_pk.sql
+@constraint_pk/tts_voice_pk.sql
 @constraint_pk/model_generation_presets_pk.sql
 @constraint_pk/mesg_emb_pk.sql
 @constraint_pk/mesgs_pk.sql
@@ -82,6 +86,7 @@ prompt === constraints_uc ===
 @constraint_uc/tmzone_uk1.sql
 @constraint_uc/convs_uk1.sql
 @constraint_uc/llm_reg_uk1.sql
+@constraint_uc/tts_voice_uk1.sql
 @constraint_uc/model_generation_presets_uk1.sql
 @constraint_uc/mesg_emb_uk1.sql
 @constraint_uc/mesgs_uk1.sql
@@ -117,6 +122,9 @@ prompt === constraints_other ===
 @constraint_other/device_ck1.sql
 @constraint_other/llm_reg_ck1.sql
 @constraint_other/llm_reg_ck2.sql
+@constraint_other/tts_voice_ck1.sql
+@constraint_other/tts_voice_ck2.sql
+@constraint_other/tts_voice_ck3.sql
 @constraint_other/model_generation_presets_ck1.sql
 @constraint_other/model_generation_presets_ck2.sql
 @constraint_other/model_generation_presets_ck3.sql
@@ -144,6 +152,7 @@ prompt === comments ===
 @comment/timezones.sql
 @comment/conversations.sql
 @comment/llm_registry.sql
+@comment/tts_voices.sql
 @comment/model_generation_presets.sql
 @comment/message_embeddings.sql
 @comment/messages.sql

@@ -23,8 +23,8 @@ Boundary decisions:
 ## Approved Table Abbreviations
 
 The following entries are recorded in
-`docs/agent-guardrails/table-abbreviations.csv` for the future object-by-object
-DDL/API pass:
+`docs/agent-guardrails/table-abbreviations.csv` and are used by the current
+object-by-object plugin audit assets:
 
 | Schema | Table | Abbreviation |
 | --- | --- | --- |
@@ -35,9 +35,10 @@ These abbreviations should be used for derived object names such as primary
 keys, foreign keys, check constraints, indexes, triggers, and generated TAPI
 objects where table abbreviations are part of the existing naming convention.
 
-## Proposed Tables
+## Current Tables
 
-Use two core tables.
+The two core tables already exist as object-by-object assets. The notes below
+document their current shape and the remaining runtime integration boundary.
 
 ### `orac_core.plugin_invocations`
 
@@ -145,7 +146,7 @@ Suggested `event_type` values:
 
 ## Object-by-Object Implementation Shape
 
-Object files are created in the existing style.
+The object files already exist in the current style.
 
 Core layer:
 
@@ -342,9 +343,7 @@ They should not store plugin audit or device-control audit records.
 
 ## Deferred Work
 
-- Create object-by-object DDL, constraints, indexes, comments, triggers, views,
-  TAPIs, code package, grants, and install-order updates.
-- Add database tests or SQLcl verification for generated objects.
+- Add database/static verification for the existing object-by-object assets.
 - Add Python runtime persistence through `orac_code.plugin_audit_api`.
 - Backfill or correlate existing assistant-turn provenance where useful.
 - Persist trusted confirmation broker state.
