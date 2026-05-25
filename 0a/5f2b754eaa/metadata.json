@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "0a5f2b754eaa",
+  "strategy": "manual-commit",
+  "branch": "develop",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "AGENTS.md",
+    "docs/agent-guardrails/35-frontend-nextjs-standards.md",
+    "scripts/check_guardrails.py",
+    "tests/test_check_guardrails.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0a/5f2b754eaa/0/metadata.json",
+      "transcript": "/0a/5f2b754eaa/0/full.jsonl",
+      "content_hash": "/0a/5f2b754eaa/0/content_hash.txt",
+      "prompt": "/0a/5f2b754eaa/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 498610,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 7968128,
+    "output_tokens": 20119,
+    "api_call_count": 61
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "0a5f2b754eaa",
+  "session_id": "019e6062-df80-7fa1-afc5-ab77f14548b1",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-25T18:47:59.119293556Z",
+  "branch": "develop",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "AGENTS.md",
+    "docs/agent-guardrails/35-frontend-nextjs-standards.md",
+    "scripts/check_guardrails.py",
+    "tests/test_check_guardrails.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "ce992bff1a30",
+  "token_usage": {
+    "input_tokens": 498610,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 7968128,
+    "output_tokens": 20119,
+    "api_call_count": 61
+  },
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-25T18:47:59.077252499Z",
+    "agent_lines": 462,
+    "agent_removed": 50,
+    "human_added": 2,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 464,
+    "total_lines_changed": 4331,
+    "agent_percentage": 11.82175017317017,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 61,
+      "agent_lines_removed": 50
+    }
+  ]
+}
