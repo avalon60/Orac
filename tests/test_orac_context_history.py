@@ -530,8 +530,11 @@ class _ConditionalPluginRouter:
         meta: dict,
         handoff,
         auth_user: str | None = None,
+        *,
+        audit_adapter=None,
+        request_context=None,
     ) -> PluginExecutionResult | None:
-        del meta, handoff, auth_user
+        del meta, handoff, auth_user, audit_adapter, request_context
         self.calls.append(prompt)
         if prompt == "What is the weather like in Brigadoon?":
             return PluginExecutionResult(plugin_id="weather", content=self.weather_content)

@@ -486,14 +486,23 @@ class _FakeVoiceWorker:
 
   def __init__(self) -> None:
     self.enqueued: list[tuple[str, str, str]] = []
+    self.enqueued_tts_voice: list[dict[str, object] | None] = []
     self.completed_turns: list[tuple[str, str]] = []
     self.cancelled_sessions: list[str] = []
     self.cancelled_turns: list[tuple[str, str]] = []
     self.cleared_turns: list[tuple[str, str]] = []
 
-  def enqueue_text(self, *, session_id: str, turn_id: str, text: str) -> bool:
+  def enqueue_text(
+    self,
+    *,
+    session_id: str,
+    turn_id: str,
+    text: str,
+    tts_voice: dict[str, object] | None = None,
+  ) -> bool:
     """Record queued text."""
     self.enqueued.append((session_id, turn_id, text))
+    self.enqueued_tts_voice.append(tts_voice)
     return True
 
   def mark_turn_input_complete(self, *, session_id: str, turn_id: str) -> None:
@@ -3824,6 +3833,41 @@ class OracVoiceTests(unittest.TestCase):
 
     self.assertEqual(worker.enqueued, [("voice-session", "turn1", "Speak this.")])
     self.assertEqual(worker.completed_turns, [("voice-session", "turn1")])
+
+  def test_orac_routes_tts_voice_metadata_to_worker(self) -> None:
+    """Voice routing should pass the selected TTS voice through to the worker."""
+    orchestrator = Orac.__new__(Orac)
+    worker = _FakeVoiceWorker()
+    orchestrator._tts_worker = worker
+    req_env = {
+      "id": "req1",
+      "meta": {
+        "session_id": "session1",
+        "tts_voice": {
+          "tts_voice_key": "piper:en_GB-alan-medium",
+          "provider_code": "piper",
+          "provider_voice_id": "en_GB-alan-medium",
+        },
+      },
+    }
+
+    orchestrator._route_stream_event_to_voice(
+      req_env,
+      "text_chunk",
+      {"chunk": "Speak this.", "turn_id": "turn1"},
+    )
+
+    self.assertEqual(worker.enqueued, [("session1", "turn1", "Speak this.")])
+    self.assertEqual(
+      worker.enqueued_tts_voice,
+      [
+        {
+          "tts_voice_key": "piper:en_GB-alan-medium",
+          "provider_code": "piper",
+          "provider_voice_id": "en_GB-alan-medium",
+        }
+      ],
+    )
 
   def test_tts_coalescer_merges_short_complete_chunks(self) -> None:
     """TTS coalescer should merge short chunks for one turn."""

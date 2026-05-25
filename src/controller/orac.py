@@ -41,6 +41,7 @@ from orac_voice.tts_worker import create_local_tts_worker_from_config
 from orac_voice.tts_voice_catalog import refresh_tts_voice_catalog
 from orac_voice.tts_voice_catalog import resolve_tts_voice_selection
 from orac_voice.voice_events import VoiceEvent
+from model.plugin_audit_adapter import PluginAuditAdapter
 from model.plugin_routing import (
     HashEmbeddingProvider,
     PluginManager,
@@ -733,6 +734,7 @@ class Orac:
             self.plugin_manager: PluginManager | None = None
             self.plugin_router: PluginRouter | None = None
             self.plugin_execution_service: PluginExecutionService | None = None
+            self.plugin_audit_adapter: PluginAuditAdapter | None = None
             self.plugin_confirmation_broker: PluginConfirmationBroker | None = None
             self.plugin_service_manager: PluginServiceManager | None = None
             self._plugin_routing_ready = False
@@ -2043,6 +2045,10 @@ class Orac:
                 logger=logger,
                 config_mgr=self.config_mgr,
             )
+            self.plugin_audit_adapter = PluginAuditAdapter(
+                db_session=self.db_session,
+                logger=logger,
+            )
             self.plugin_confirmation_broker = PluginConfirmationBroker()
             self.plugin_router = PluginRouter(
                 plugin_manager=self.plugin_manager,
@@ -2054,6 +2060,7 @@ class Orac:
             self.plugin_execution_service = PluginExecutionService(
                 plugin_router=self.plugin_router,
                 logger=logger,
+                plugin_audit_adapter=self.plugin_audit_adapter,
             )
             logger.log_info(f"{Icons.info} Plugin routing bootstrap starting.")
             logger.log_info(
@@ -2066,6 +2073,7 @@ class Orac:
             self.plugin_manager = None
             self.plugin_router = None
             self.plugin_execution_service = None
+            self.plugin_audit_adapter = None
             self.plugin_confirmation_broker = None
             self.plugin_service_manager = None
             self._plugin_routing_ready = False
@@ -2198,6 +2206,7 @@ class Orac:
         meta: dict[str, Any],
         plugin_routing_handoff: PluginRoutingHandoff | None,
         auth_user: str,
+        request_context: dict[str, Any] | None = None,
     ) -> Any | None:
         """Delegate plugin execution through the plugin execution service."""
         plugin_execution_service = getattr(self, "plugin_execution_service", None)
@@ -2208,6 +2217,7 @@ class Orac:
             plugin_execution_service = PluginExecutionService(
                 plugin_router=plugin_router,
                 logger=logger,
+                plugin_audit_adapter=getattr(self, "plugin_audit_adapter", None),
             )
             self.plugin_execution_service = plugin_execution_service
         return plugin_execution_service.execute(
@@ -2215,6 +2225,7 @@ class Orac:
             meta=meta,
             handoff=plugin_routing_handoff,
             auth_user=auth_user,
+            request_context=request_context,
         )
 
     def _apply_user_preference_meta(
@@ -3855,12 +3866,36 @@ class Orac:
                     request_flags["anonymous_user"] = True
                 self._handle_persistence_failure("user_turn", e)
 
+            conversation_id = None
+            user_id = None
+            try:
+                conversation_lookup = getattr(self.ctx, "_conversation_id", None)
+                if callable(conversation_lookup):
+                    conversation_id = conversation_lookup(session_id)
+            except Exception:
+                conversation_id = None
+            try:
+                user_lookup = getattr(self.ctx, "_find_user_id", None)
+                if callable(user_lookup):
+                    user_id = user_lookup(auth_user)
+            except Exception:
+                user_id = None
+
             plugin_routing_handoff = self._collect_plugin_routing_handoff(prompt, meta)
             plugin_execution_result = self._execute_plugin_request(
                 prompt=prompt,
                 meta=meta,
                 plugin_routing_handoff=plugin_routing_handoff,
                 auth_user=auth_user,
+                request_context={
+                    "request_id": req_env.get("id"),
+                    "correlation_id": req_env.get("meta", {}).get("correlation_id") if isinstance(req_env.get("meta"), dict) else None,
+                    "turn_id": req_env.get("id"),
+                    "session_id": session_id,
+                    "conversation_id": conversation_id,
+                    "message_id": None,
+                    "user_id": user_id,
+                },
             )
 
             if plugin_execution_result is not None and plugin_execution_result.handled:

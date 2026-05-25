@@ -174,8 +174,9 @@ class _FakePluginRouter:
 
 
 class _FakePluginExecutionService:
-    def __init__(self, result: PluginExecutionResult | None = None):
+    def __init__(self, result: PluginExecutionResult | None = None, *, plugin_audit_adapter=None):
         self.result = result
+        self.plugin_audit_adapter = plugin_audit_adapter
         self.calls: list[dict] = []
 
     def execute(
@@ -185,6 +186,7 @@ class _FakePluginExecutionService:
         meta: dict,
         handoff: PluginRoutingHandoff | None,
         auth_user: str,
+        request_context: dict | None = None,
     ) -> PluginExecutionResult | None:
         self.calls.append(
             {
@@ -194,6 +196,8 @@ class _FakePluginExecutionService:
                 "auth_user": auth_user,
             }
         )
+        if request_context is not None:
+            self.calls[-1]["request_context"] = request_context
         return self.result
 
 
@@ -299,6 +303,7 @@ class OracPluginIntegrationTests(unittest.TestCase):
         orchestrator.plugin_router = None
         orchestrator.plugin_execution_service = None
         orchestrator.plugin_service_manager = None
+        orchestrator.db_session = None
         orchestrator.config_mgr = object()
         orchestrator.ctx = object()
         orchestrator.model_name = "test-model"
@@ -367,6 +372,7 @@ class OracPluginIntegrationTests(unittest.TestCase):
         self.assertIsInstance(orchestrator.plugin_service_manager, _FakePluginServiceManager)
         self.assertIsInstance(orchestrator.plugin_router, _FakePluginRouter)
         self.assertIsNotNone(orchestrator.plugin_execution_service)
+        self.assertIs(orchestrator.plugin_execution_service.plugin_audit_adapter, orchestrator.plugin_audit_adapter)
 
     def test_execute_plugin_request_delegates_to_plugin_execution_service(self) -> None:
         orchestrator = self._make_orac_stub()

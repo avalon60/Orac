@@ -7,7 +7,8 @@ layout.
 ## Decision
 
 Database DDL/API assets are now represented as object-by-object files. Runtime
-plugin execution is not wired to these objects yet.
+plugin execution is wired to these objects through a narrow Orac-owned audit
+adapter; plugin code still does not write audit records directly.
 
 Boundary decisions:
 

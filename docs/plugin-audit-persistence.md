@@ -9,9 +9,9 @@ The concrete database/API design is in
 ## Purpose
 
 Plugin results currently flow through response metadata and assistant-turn
-metadata as provenance. That is useful for compatibility, but it is not enough
-for durable audit once Orac supports risky plugins, device integrations, or
-external mutation.
+metadata as provenance. That is still useful for compatibility, and Orac now
+normalises that provenance through a narrow runtime audit adapter before it
+reaches the approved database API.
 
 The target model is a first-class plugin audit/result record owned by Orac core.
 Plugin code must not write these records directly.
@@ -89,10 +89,9 @@ Current assistant-turn metadata:
 - `meta.plugin_status` maps to audit `execution_status`.
 - `meta.provenance` is the source snapshot for the audit normalizer.
 
-The current runtime should continue writing this metadata exactly as it does
-today until a later runtime pass calls the first-class audit insert API. A
-future code seam can normalise the current provenance shape into these fields at
-that API boundary.
+The current runtime continues writing this metadata exactly as it does today,
+and the audit adapter maps it onto the durable plugin audit tables without
+changing plugin behaviour or direct response metadata.
 
 ## Database Recommendation
 
@@ -109,7 +108,6 @@ message fields plus a structured provenance snapshot.
 
 ## Deferred
 
-- Runtime calls to `orac_code.plugin_audit_api`.
 - Migration/backfill from existing assistant-turn provenance metadata.
 - Durable confirmation broker state.
 - Full confirmation UI/protocol workflow.

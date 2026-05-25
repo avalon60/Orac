@@ -73,6 +73,9 @@ class _FakeRouter:
         meta: dict,
         handoff: PluginRoutingHandoff | None,
         auth_user: str,
+        *,
+        audit_adapter=None,
+        request_context=None,
     ) -> PluginExecutionResult | None:
         self.calls.append(
             {
@@ -80,9 +83,122 @@ class _FakeRouter:
                 "meta": meta,
                 "handoff": handoff,
                 "auth_user": auth_user,
+                "audit_adapter": audit_adapter,
+                "request_context": request_context,
             }
         )
         return self.result
+
+
+class _FakeAuditSession:
+    def __init__(self, payload: dict | None = None):
+        self.payload = payload or {}
+        self.plugin_invocation_id = 1
+        self.row_version = None
+        self.events: list[tuple[str, dict]] = []
+
+    def record_policy_decision(
+        self,
+        *,
+        policy_decision: str,
+        policy_reason: str | None = None,
+        event_message: str | None = None,
+        provenance_json: dict | None = None,
+    ) -> int | None:
+        self.events.append(
+            (
+                "policy",
+                {
+                    "policy_decision": policy_decision,
+                    "policy_reason": policy_reason,
+                    "event_message": event_message,
+                    "provenance_json": provenance_json,
+                },
+            )
+        )
+        return self.row_version
+
+    def record_confirmation_event(
+        self,
+        *,
+        event_type: str,
+        confirmation_id: str | None,
+        confirmation_status: str | None,
+        event_message: str | None = None,
+        event_payload_json: dict | None = None,
+    ) -> int | None:
+        self.events.append(
+            (
+                "confirmation",
+                {
+                    "event_type": event_type,
+                    "confirmation_id": confirmation_id,
+                    "confirmation_status": confirmation_status,
+                    "event_message": event_message,
+                    "event_payload_json": event_payload_json,
+                },
+            )
+        )
+        return self.row_version
+
+    def record_execution_event(
+        self,
+        *,
+        event_type: str,
+        execution_status: str,
+        timeout_seconds: float | None = None,
+        failure_type: str | None = None,
+        failure_message: str | None = None,
+        provenance_json: dict | None = None,
+    ) -> int | None:
+        self.events.append(
+            (
+                "execution",
+                {
+                    "event_type": event_type,
+                    "execution_status": execution_status,
+                    "timeout_seconds": timeout_seconds,
+                    "failure_type": failure_type,
+                    "failure_message": failure_message,
+                    "provenance_json": provenance_json,
+                },
+            )
+        )
+        return self.row_version
+
+
+class _FakeAuditAdapter:
+    def __init__(self):
+        self.sessions: list[_FakeAuditSession] = []
+        self.create_calls: list[dict] = []
+
+    def create_session(
+        self,
+        *,
+        provenance: dict,
+        request_context: dict | None = None,
+        policy_decision: str | None = None,
+        confirmation_status: str | None = None,
+        execution_status: str | None = None,
+        timeout_seconds: float | None = None,
+        failure_type: str | None = None,
+        failure_message: str | None = None,
+    ) -> _FakeAuditSession:
+        self.create_calls.append(
+            {
+                "provenance": provenance,
+                "request_context": request_context,
+                "policy_decision": policy_decision,
+                "confirmation_status": confirmation_status,
+                "execution_status": execution_status,
+                "timeout_seconds": timeout_seconds,
+                "failure_type": failure_type,
+                "failure_message": failure_message,
+            }
+        )
+        session = _FakeAuditSession(payload=request_context)
+        self.sessions.append(session)
+        return session
 
 
 class PluginExecutionServiceTests(unittest.TestCase):
@@ -119,13 +235,19 @@ class PluginExecutionServiceTests(unittest.TestCase):
             provenance={"source": "plugin_execution", "plugin_id": "weather"},
         )
         router = _FakeRouter(expected)
-        service = PluginExecutionService(plugin_router=router, logger=_FakeLogger())
+        audit_adapter = object()
+        service = PluginExecutionService(
+            plugin_router=router,
+            logger=_FakeLogger(),
+            plugin_audit_adapter=audit_adapter,
+        )
 
         result = service.execute(
             prompt="What's the weather?",
             meta={"client": "unit"},
             handoff=handoff,
             auth_user="unit_user",
+            request_context={"request_id": "req-1"},
         )
 
         self.assertIs(result, expected)
@@ -133,6 +255,8 @@ class PluginExecutionServiceTests(unittest.TestCase):
         self.assertEqual(router.calls[0]["prompt"], "What's the weather?")
         self.assertEqual(router.calls[0]["handoff"], handoff)
         self.assertEqual(router.calls[0]["auth_user"], "unit_user")
+        self.assertIs(router.calls[0]["audit_adapter"], audit_adapter)
+        self.assertEqual(router.calls[0]["request_context"], {"request_id": "req-1"})
 
     def test_service_returns_none_for_unhandled_router_result(self) -> None:
         router = _FakeRouter(
@@ -289,6 +413,103 @@ class PluginRouterTests(unittest.TestCase):
         self.assertEqual(result.provenance["plugin_id"], "weather")
         self.assertEqual(result.provenance["action_type"], "informational_read_only")
         self.assertEqual(result.provenance["status"], "allowed")
+
+    def test_router_records_audit_events_for_handled_plugin(self) -> None:
+        logger = _FakeLogger()
+        manifest = self._manifest()
+        audit_adapter = _FakeAuditAdapter()
+        router = PluginRouter(
+            plugin_manager=_FakePluginManager(manifest),
+            logger=logger,
+            config_mgr=object(),
+            context_manager=object(),
+        )
+
+        class _HandlingPlugin:
+            def __init__(self, logger, config_mgr):
+                self.logger = logger
+                self.config_mgr = config_mgr
+
+            def can_handle(self, prompt: str) -> bool:
+                return True
+
+            def execute(self, prompt: str, meta: dict):
+                return PluginExecutionResult(plugin_id="weather", content="Direct weather answer")
+
+        original_loader = plugin_router_module.load_plugin_class
+        plugin_router_module.load_plugin_class = lambda loaded_manifest: _HandlingPlugin
+        try:
+            result = router.route(
+                "What's the weather in London?",
+                {},
+                PluginRoutingHandoff(
+                    candidates=(PluginCandidate(plugin_id="weather", score=0.91),),
+                    refreshed=False,
+                ),
+                auth_user="unit_user",
+                audit_adapter=audit_adapter,
+                request_context={"request_id": "req-1", "turn_id": "turn-1"},
+            )
+        finally:
+            plugin_router_module.load_plugin_class = original_loader
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.plugin_id, "weather")
+        self.assertEqual(len(audit_adapter.sessions), 1)
+        self.assertEqual(audit_adapter.create_calls[0]["request_context"]["request_id"], "req-1")
+        self.assertTrue(
+            any(
+                event[0] == "policy" and event[1]["policy_decision"] == "allowed"
+                for event in audit_adapter.sessions[0].events
+            )
+        )
+        self.assertTrue(
+            any(
+                event[0] == "execution" and event[1]["event_type"] == "execution_started"
+                for event in audit_adapter.sessions[0].events
+            )
+        )
+        self.assertTrue(
+            any(event[1]["event_type"] == "execution_completed" for event in audit_adapter.sessions[0].events if event[0] == "execution")
+        )
+
+    def test_router_records_audit_events_for_denied_plugin(self) -> None:
+        logger = _FakeLogger()
+        manifest = self._home_assistant_manifest(scaffold=True)
+        audit_adapter = _FakeAuditAdapter()
+        router = PluginRouter(
+            plugin_manager=_FakePluginManager(manifest),
+            logger=logger,
+            config_mgr=object(),
+            context_manager=object(),
+        )
+
+        with patch.object(
+            plugin_router_module,
+            "load_plugin_class",
+            side_effect=AssertionError("blocked plugin code must not be imported"),
+        ):
+            result = router.route(
+                "Turn on the kitchen lights.",
+                {},
+                PluginRoutingHandoff(
+                    candidates=(PluginCandidate(plugin_id="home_assistant", score=0.91),),
+                    refreshed=False,
+                ),
+                auth_user="unit_user",
+                audit_adapter=audit_adapter,
+                request_context={"request_id": "req-2", "turn_id": "turn-2"},
+            )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.provenance["status"], "denied")
+        self.assertEqual(len(audit_adapter.sessions), 1)
+        self.assertTrue(
+            any(
+                event[0] == "policy" and event[1]["policy_decision"] == "denied"
+                for event in audit_adapter.sessions[0].events
+            )
+        )
 
     def test_router_blocks_device_control_without_confirmation(self) -> None:
         logger = _FakeLogger()
