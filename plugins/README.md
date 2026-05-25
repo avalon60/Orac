@@ -77,6 +77,7 @@ Optional fields:
 - `entities`
 - `examples`
 - `entry_point`
+- `execution`
 - `configuration`
 - `database`
 
@@ -84,6 +85,7 @@ Important distinctions:
 
 - `description`, `capabilities`, `entities`, and `examples` are routing-semantic fields
 - `entry_point` is execution metadata, not routing metadata
+- `execution` is action-risk and provenance metadata, not routing text
 - `runtime`, `configuration`, and `database` are runtime/dependency metadata, not routing text
 - `version` is plugin/package metadata, not part of canonical routing text
 
@@ -102,11 +104,51 @@ The current canonical routing text does not include:
 
 - `version`
 - `entry_point`
+- `execution`
 - `runtime`
 - `configuration`
 - `database`
 
 Only plugins with `"enabled": true`, `runtime.mode` of `on_demand` or `hybrid`, and satisfied runtime dependencies are included in the routing index.
+
+## Execution Policy
+
+Plugin manifests may declare first-pass execution policy metadata under the
+optional `execution` object. This metadata lets Orac distinguish harmless
+informational plugins from future mutation, device-control, filesystem,
+external-service, or privileged actions before plugin code is imported.
+
+Required `execution` fields:
+
+- `action_type`: one of `informational_read_only`, `external_read`,
+  `local_mutation`, `external_mutation`, `device_control`, or
+  `privileged_system_action`
+- `requires_confirmation`: whether the action must be confirmed before
+  execution
+- `allowed_by_default`: whether Orac may execute the plugin without an
+  explicit allow policy
+
+Optional `execution` fields:
+
+- `capabilities`: the declared manifest capabilities covered by this policy
+- `entitlements`: the declared manifest entitlements covered by this policy
+- `scaffold`: marks an experimental or placeholder plugin as not executable
+  for real control
+- `notes`: human-readable policy context
+
+Current behaviour:
+
+- `informational_read_only` plugins with `allowed_by_default: true` may run.
+- Higher-risk actions are denied or returned as requiring confirmation unless
+  request policy metadata explicitly allows them.
+- Unknown action types fail closed.
+- Plugin-handled responses carry provenance metadata identifying the plugin,
+  action type, and policy result.
+
+The weather plugin is explicitly informational/read-only. The Home Assistant
+plugin is marked scaffold-only and device-control-capable in intent, but real
+control remains disabled until policy, entitlements, credentials and runtime
+behaviour are complete.
 
 ## Required Vs Optional Files
 

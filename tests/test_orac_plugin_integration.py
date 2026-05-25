@@ -54,6 +54,7 @@ from model.plugin_routing.models import (
     PluginManifest,
     PluginServiceRuntime,
 )
+from model.plugin_runtime import PluginExecutionResult
 
 
 def _manifest(
@@ -172,12 +173,101 @@ class _FakePluginRouter:
         self.kwargs = kwargs
 
 
+class _FakePluginExecutionService:
+    def __init__(self, result: PluginExecutionResult | None = None):
+        self.result = result
+        self.calls: list[dict] = []
+
+    def execute(
+        self,
+        *,
+        prompt: str,
+        meta: dict,
+        handoff: PluginRoutingHandoff | None,
+        auth_user: str,
+    ) -> PluginExecutionResult | None:
+        self.calls.append(
+            {
+                "prompt": prompt,
+                "meta": meta,
+                "handoff": handoff,
+                "auth_user": auth_user,
+            }
+        )
+        return self.result
+
+
 class _FakeConfigManager:
     def config_value(self, section: str, key: str, default=None):
         return default
 
     def int_config_value(self, section: str, key: str, default=None):
         return default
+
+
+class _FakeContextManager:
+    def __init__(self):
+        self.assistant_turns: list[dict] = []
+
+    def save_assistant_turn(
+        self,
+        session_id: str,
+        user_name: str,
+        text: str,
+        *,
+        meta=None,
+        llm_id=None,
+        tokens_used=None,
+    ) -> dict:
+        self.assistant_turns.append(
+            {
+                "session_id": session_id,
+                "user_name": user_name,
+                "text": text,
+                "meta": meta,
+                "llm_id": llm_id,
+                "tokens_used": tokens_used,
+            }
+        )
+        return {"turn_index": len(self.assistant_turns)}
+
+
+class _FakeProviderRegistry:
+    def __init__(self):
+        self.created: list[dict[str, str]] = []
+        self.validated: list[dict[str, str]] = []
+        self.connector = object()
+
+    def create_connector(
+        self,
+        *,
+        provider_id: str,
+        service_url: str,
+        model_name: str,
+    ):
+        self.created.append(
+            {
+                "provider_id": provider_id,
+                "service_url": service_url,
+                "model_name": model_name,
+            }
+        )
+        return self.connector
+
+    def validate_or_prepare_model(
+        self,
+        *,
+        provider_id: str,
+        service_url: str,
+        model_name: str,
+    ) -> None:
+        self.validated.append(
+            {
+                "provider_id": provider_id,
+                "service_url": service_url,
+                "model_name": model_name,
+            }
+        )
 
 
 class OracPluginIntegrationTests(unittest.TestCase):
@@ -207,9 +297,14 @@ class OracPluginIntegrationTests(unittest.TestCase):
         orchestrator._plugin_routing_min_score = None
         orchestrator.plugin_manager = None
         orchestrator.plugin_router = None
+        orchestrator.plugin_execution_service = None
         orchestrator.plugin_service_manager = None
         orchestrator.config_mgr = object()
         orchestrator.ctx = object()
+        orchestrator.model_name = "test-model"
+        orchestrator.llm_service_id = "unit-provider"
+        orchestrator.service_url = "http://unit-provider"
+        orchestrator._llm_connector_cache = {}
         return orchestrator
 
     def setUp(self) -> None:
@@ -271,6 +366,56 @@ class OracPluginIntegrationTests(unittest.TestCase):
 
         self.assertIsInstance(orchestrator.plugin_service_manager, _FakePluginServiceManager)
         self.assertIsInstance(orchestrator.plugin_router, _FakePluginRouter)
+        self.assertIsNotNone(orchestrator.plugin_execution_service)
+
+    def test_execute_plugin_request_delegates_to_plugin_execution_service(self) -> None:
+        orchestrator = self._make_orac_stub()
+        handoff = PluginRoutingHandoff(
+            candidates=(PluginCandidate(plugin_id="weather", score=0.91),),
+            refreshed=False,
+        )
+        expected = PluginExecutionResult(
+            plugin_id="weather",
+            content="Weather answer.",
+            provenance={"source": "plugin_execution", "plugin_id": "weather"},
+        )
+        service = _FakePluginExecutionService(expected)
+        orchestrator.plugin_execution_service = service
+
+        result = orchestrator._execute_plugin_request(
+            prompt="What's the weather?",
+            meta={"client": "unit"},
+            plugin_routing_handoff=handoff,
+            auth_user="unit_user",
+        )
+
+        self.assertIs(result, expected)
+        self.assertEqual(
+            service.calls,
+            [
+                {
+                    "prompt": "What's the weather?",
+                    "meta": {"client": "unit"},
+                    "handoff": handoff,
+                    "auth_user": "unit_user",
+                }
+            ],
+        )
+
+    def test_execute_plugin_request_returns_none_for_llm_fallback(self) -> None:
+        orchestrator = self._make_orac_stub()
+        service = _FakePluginExecutionService(None)
+        orchestrator.plugin_execution_service = service
+
+        result = orchestrator._execute_plugin_request(
+            prompt="Hello there",
+            meta={},
+            plugin_routing_handoff=None,
+            auth_user="unit_user",
+        )
+
+        self.assertIsNone(result)
+        self.assertEqual(len(service.calls), 1)
 
     def test_refresh_registers_discovered_service_and_hybrid_manifests(self) -> None:
         manifests = [
@@ -315,6 +460,148 @@ class OracPluginIntegrationTests(unittest.TestCase):
         orchestrator.shutdown()
 
         self.assertEqual(service_manager.stop_all_calls, 1)
+
+    def test_plugin_provenance_is_persisted_with_assistant_turn(self) -> None:
+        orchestrator = self._make_orac_stub()
+        context_manager = _FakeContextManager()
+        orchestrator.ctx = context_manager
+        provenance = {
+            "source": "plugin_execution",
+            "plugin_id": "home_assistant",
+            "plugin_name": "Home Assistant",
+            "action_type": "device_control",
+            "status": "denied",
+        }
+
+        turn_index = orchestrator._save_assistant_turn(
+            "session-1",
+            "unit_user",
+            "Home Assistant is not allowed to run that action.",
+            client="unit",
+            req_id="req1",
+            show_reasoning=False,
+            provenance=provenance,
+            request_flags={},
+        )
+
+        self.assertEqual(turn_index, 1)
+        saved_meta = context_manager.assistant_turns[0]["meta"]
+        self.assertEqual(saved_meta["source"], "plugin_execution")
+        self.assertEqual(saved_meta["plugin_id"], "home_assistant")
+        self.assertEqual(saved_meta["plugin_status"], "denied")
+        self.assertEqual(saved_meta["provenance"], provenance)
+
+    def test_plugin_provenance_is_in_response_metadata(self) -> None:
+        orchestrator = self._make_orac_stub()
+        provenance = {
+            "source": "plugin_execution",
+            "plugin_id": "weather",
+            "plugin_name": "Weather",
+            "action_type": "informational_read_only",
+            "status": "allowed",
+        }
+
+        response = orchestrator._build_response(
+            {"id": "req1", "route": "orac.prompt", "meta": {}},
+            "Weather answer.",
+            model_name="test-model",
+            provenance=provenance,
+        )
+
+        self.assertEqual(response["meta"]["source"], "plugin_execution")
+        self.assertEqual(response["meta"]["provenance"], provenance)
+
+    def test_failed_plugin_provenance_reaches_persistence_and_response_metadata(self) -> None:
+        orchestrator = self._make_orac_stub()
+        context_manager = _FakeContextManager()
+        orchestrator.ctx = context_manager
+        provenance = {
+            "source": "plugin_execution",
+            "plugin_id": "weather",
+            "plugin_name": "Weather",
+            "action_type": "informational_read_only",
+            "status": "failed",
+            "policy_decision": "allowed",
+            "failure_type": "RuntimeError",
+            "failure_message": "Plugin execution failed during execute.",
+        }
+
+        turn_index = orchestrator._save_assistant_turn(
+            "session-1",
+            "unit_user",
+            "Weather could not complete the request.",
+            client="unit",
+            req_id="req1",
+            show_reasoning=False,
+            provenance=provenance,
+            request_flags={},
+        )
+        response = orchestrator._build_response(
+            {"id": "req1", "route": "orac.prompt", "meta": {}},
+            "Weather could not complete the request.",
+            model_name="test-model",
+            provenance=provenance,
+        )
+
+        self.assertEqual(turn_index, 1)
+        saved_meta = context_manager.assistant_turns[0]["meta"]
+        self.assertEqual(saved_meta["source"], "plugin_execution")
+        self.assertEqual(saved_meta["plugin_id"], "weather")
+        self.assertEqual(saved_meta["plugin_status"], "failed")
+        self.assertEqual(saved_meta["provenance"], provenance)
+        self.assertEqual(response["meta"]["source"], "plugin_execution")
+        self.assertEqual(response["meta"]["provenance"]["status"], "failed")
+        self.assertEqual(response["meta"]["provenance"]["failure_type"], "RuntimeError")
+
+    def test_get_llm_connector_uses_provider_registry_factory(self) -> None:
+        orchestrator = self._make_orac_stub()
+        provider_registry = _FakeProviderRegistry()
+        orchestrator.provider_registry = provider_registry
+
+        connector = orchestrator._get_llm_connector(
+            service_id="unit-provider",
+            service_url="http://unit-provider",
+            model_name="unit-model",
+        )
+        cached = orchestrator._get_llm_connector(
+            service_id="unit-provider",
+            service_url="http://unit-provider",
+            model_name="unit-model",
+        )
+
+        self.assertIs(connector, provider_registry.connector)
+        self.assertIs(cached, provider_registry.connector)
+        self.assertEqual(
+            provider_registry.created,
+            [
+                {
+                    "provider_id": "unit-provider",
+                    "service_url": "http://unit-provider",
+                    "model_name": "unit-model",
+                }
+            ],
+        )
+
+    def test_validate_or_pull_model_delegates_to_provider_registry(self) -> None:
+        orchestrator = self._make_orac_stub()
+        provider_registry = _FakeProviderRegistry()
+        orchestrator.provider_registry = provider_registry
+        orchestrator.llm_service_id = "unit-provider"
+        orchestrator.service_url = "http://unit-provider"
+        orchestrator.model_name = "unit-model"
+
+        orchestrator._validate_or_pull_model()
+
+        self.assertEqual(
+            provider_registry.validated,
+            [
+                {
+                    "provider_id": "unit-provider",
+                    "service_url": "http://unit-provider",
+                    "model_name": "unit-model",
+                }
+            ],
+        )
 
     def test_render_plugin_routing_hints_is_narrow_and_scored(self) -> None:
         handoff = PluginRoutingHandoff(

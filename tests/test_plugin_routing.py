@@ -112,8 +112,111 @@ class PluginRoutingTests(unittest.TestCase):
             self.assertNotIn("version:", text)
             self.assertNotIn("entry_point:", text)
             self.assertNotIn("runtime:", text)
+            self.assertNotIn("execution:", text)
             self.assertNotIn("configuration:", text)
             self.assertNotIn("database:", text)
+
+    def test_discovery_loads_explicit_execution_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Test plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.query"],
+                        "entitlements": ["users.username"],
+                        "entry_point": "plugin:AlphaPlugin",
+                        "execution": {
+                            "action_type": "informational_read_only",
+                            "requires_confirmation": False,
+                            "allowed_by_default": True,
+                            "capabilities": ["alpha.query"],
+                            "entitlements": ["users.username"],
+                        },
+                        "runtime": {"mode": "on_demand"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(errors, [])
+            self.assertEqual(manifests[0].execution_policy.action_type, "informational_read_only")
+            self.assertEqual(manifests[0].execution_policy.capabilities, ("alpha.query",))
+            self.assertEqual(manifests[0].execution_policy.entitlements, ("users.username",))
+
+    def test_discovery_does_not_import_plugin_code(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            plugin_dir = plugins_dir / "alpha"
+            plugin_dir.mkdir()
+            (plugin_dir / "plugin.py").write_text(
+                "raise RuntimeError('discovery imported plugin code')\n",
+                encoding="utf-8",
+            )
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Test plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.query"],
+                        "entitlements": [],
+                        "entry_point": "plugin:AlphaPlugin",
+                        "execution": {
+                            "action_type": "informational_read_only",
+                            "requires_confirmation": False,
+                            "allowed_by_default": True,
+                        },
+                        "runtime": {"mode": "on_demand"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(errors, [])
+            self.assertEqual(len(manifests), 1)
+
+    def test_discovery_infers_fail_closed_policy_for_risky_legacy_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Legacy risky plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.control"],
+                        "entitlements": [],
+                        "entry_point": "plugin:AlphaPlugin",
+                        "runtime": {"mode": "on_demand"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(errors, [])
+            self.assertEqual(manifests[0].execution_policy.action_type, "privileged_system_action")
+            self.assertTrue(manifests[0].execution_policy.requires_confirmation)
+            self.assertFalse(manifests[0].execution_policy.allowed_by_default)
 
     def test_discovery_rejects_unknown_field(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -694,6 +694,18 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             "use the user-facing local time above, not UTC",
             clock,
         )
+        self.assertIn(
+            "The user-facing local time is authoritative for the current turn",
+            clock,
+        )
+        self.assertIn(
+            "answer with the exact HH:MM value",
+            clock,
+        )
+        self.assertIn(
+            "Do not round to the hour or omit minutes",
+            clock,
+        )
 
     def test_clock_context_uses_weather_location_for_where_are_you(self) -> None:
         """Clock context should disambiguate location questions."""
@@ -709,11 +721,16 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             clock,
         )
         self.assertIn(
+            "This weather location is the preferred location context",
+            clock,
+        )
+        self.assertIn(
             "If asked where you are, where you are located, or similar, answer "
             "with this configured operational/home location.",
             clock,
         )
         self.assertIn("physical embodiment", clock)
+        self.assertNotIn("based on the session timezone", clock)
 
     def test_clock_context_disambiguates_inferred_location(self) -> None:
         """Clock context should also disambiguate timezone-derived location."""
@@ -828,6 +845,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         orchestrator.strip_reasoning_tags = True
         orchestrator._history_turn_pairs = 24
         orchestrator._reply_language = "English"
+        orchestrator._default_timezone = "Europe/London"
         orchestrator._conversation_timeout_secs = 3600
         orchestrator._use_history = True
         orchestrator._economy_mode = "normal"
@@ -946,6 +964,64 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             },
             ensure_ascii=False,
         )
+
+    def test_contextual_prompt_uses_configured_timezone_by_default(self) -> None:
+        """Prompt context should use the configured runtime timezone."""
+        orchestrator = self._make_orac_stub(llm_responses=[])
+        orchestrator._default_timezone = "Europe/Paris"
+
+        prompt = orchestrator._build_contextual_prompt(
+            "session-1",
+            "What time is it?",
+            {},
+            "clive",
+        )
+
+        self.assertIn("Session timezone preference: Europe/Paris.", prompt)
+        self.assertIn("answer with the exact HH:MM value", prompt)
+
+    def test_contextual_prompt_allows_request_timezone_override(self) -> None:
+        """Request metadata may override the configured runtime timezone."""
+        orchestrator = self._make_orac_stub(llm_responses=[])
+        orchestrator._default_timezone = "Europe/Paris"
+
+        prompt = orchestrator._build_contextual_prompt(
+            "session-1",
+            "What time is it?",
+            {"timezone": "America/New_York"},
+            "clive",
+        )
+
+        self.assertIn("Session timezone preference: America/New_York.", prompt)
+        self.assertNotIn("Session timezone preference: Europe/Paris.", prompt)
+
+    def test_contextual_prompt_prefers_weather_location_over_timezone_location(
+        self,
+    ) -> None:
+        """Weather location should outrank timezone-derived location."""
+        orchestrator = self._make_orac_stub(llm_responses=[])
+        orchestrator._default_timezone = "Europe/Paris"
+
+        prompt = orchestrator._build_contextual_prompt(
+            "session-1",
+            "Where are you?",
+            {
+                "timezone": "America/New_York",
+                "weather_location": "Thornton Dale, England, United Kingdom",
+            },
+            "clive",
+        )
+
+        self.assertIn(
+            "Assume your current location is Thornton Dale, England, United Kingdom.",
+            prompt,
+        )
+        self.assertIn(
+            "This weather location is the preferred location context",
+            prompt,
+        )
+        self.assertNotIn("Assume your current location is New York", prompt)
+        self.assertNotIn("based on the session timezone", prompt)
 
     async def test_two_normal_turns_replay_first_turn_in_second_prompt(self) -> None:
         orchestrator = self._make_orac_stub(

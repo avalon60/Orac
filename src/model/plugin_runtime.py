@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import importlib
 import inspect
 from pathlib import Path
@@ -29,6 +29,7 @@ class PluginExecutionResult:
     content: str
     handled: bool = True
     stop_reason: str = "stop"
+    provenance: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

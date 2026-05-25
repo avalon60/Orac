@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 from lib.config_mgr import ConfigManager
 from lib.fsutils import project_home
+from lib.logutil import Logger
 
 
 APP_HOME = project_home()
@@ -229,7 +230,7 @@ class LLMConnector(LLMConnectorABC):
 
     def switch_model(self, model_name):
         message = f"Switching models is not implemented for LLM Service {self.llm_service_id}"
-        raise NotImplemented(message)
+        raise NotImplementedError(message)
 
     def send_prompt(
         self,
@@ -315,6 +316,7 @@ class LLMConnector(LLMConnectorABC):
 class LMStudioConnector(LLMConnector):
     def __init__(self, model_name: str, service_url: str):
         super().__init__("lmstudio")
+        self.logger = Logger()
         # 🧹 Defensive strip
         self.model_name = model_name.strip()
         clean_url = service_url.strip()
@@ -326,10 +328,23 @@ class LMStudioConnector(LLMConnector):
             parsed_url = urlparse(clean_url)
         clean_url = urlunparse(parsed_url._replace(path="")).rstrip("/")
 
-        print(f"🔗 LMStudio base_url: '{clean_url}'")
-        print(f"📝 LMStudio model: '{self.model_name}'")
+        self.logger.log_info(f"🔗 LMStudio base_url: '{clean_url}'")
+        self.logger.log_info(f"📝 LMStudio model: '{self.model_name}'")
 
         self.service_url = clean_url
+        req_to = int(
+            self.config_mgr.config_value(
+                "service",
+                "llm_timeout",
+                default=self.config_mgr.config_value(
+                    "client",
+                    "llm_timeout",
+                    default="60",
+                ),
+            )
+        )
+        self._connect_timeout = 5
+        self._read_timeout = max(30, req_to)
         self.llm_session = ChatOpenAI(
             base_url=self.service_url + "/v1",
             api_key=cast(SecretStr, "not-needed"),  # LM Studio ignores this
@@ -358,7 +373,7 @@ class LMStudioConnector(LLMConnector):
         generation_options: dict[str, Any] | None = None,
     ) -> str:
         """Send prompt to LM Studio."""
-        print(f"📤 Sending prompt to LM Studio (stream={stream})...")
+        self.logger.log_info(f"📤 Sending prompt to LM Studio (stream={stream})...")
         return self._invoke_with_generation_options(prompt, generation_options)
 
     def send_prompt_with_meta(
@@ -369,7 +384,7 @@ class LMStudioConnector(LLMConnector):
         generation_options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Send prompt to LM Studio and return text with token metadata when available."""
-        print(f"📤 Sending prompt to LM Studio (stream={stream})...")
+        self.logger.log_info(f"📤 Sending prompt to LM Studio (stream={stream})...")
         raw = self._invoke_with_generation_options(prompt, generation_options)
         text = raw.content if hasattr(raw, "content") else raw
         usage = getattr(raw, "usage_metadata", None) or {}
@@ -396,7 +411,13 @@ class LMStudioConnector(LLMConnector):
 
     def list_models(self):
         """List available models from LM Studio."""
-        response = requests.get(f"{self.service_url}/v1/models")
+        response = requests.get(
+            f"{self.service_url}/v1/models",
+            timeout=(
+                getattr(self, "_connect_timeout", 5),
+                getattr(self, "_read_timeout", 60),
+            ),
+        )
         return [model["id"] for model in response.json().get("data", [])]
 
 
@@ -406,7 +427,6 @@ import re
 import time
 import math
 from urllib.parse import urlparse, urlunparse
-from lib.logutil import Logger
 
 class OllamaConnector(LLMConnector):
     def __init__(self, model_name: str, service_url: str):
@@ -423,8 +443,6 @@ class OllamaConnector(LLMConnector):
 
         self.logger.log_info(f"🔗 Ollama base_url: '{self.service_url}'")
         self.logger.log_info(f"📝 Ollama model: '{self.model_name}'")
-        print(f"🔗 Ollama base_url: '{self.service_url}'")
-        print(f"📝 Ollama model: '{self.model_name}'")
 
 
         # config -> default hide reasoning (strip_reasoning_tags=true => default_show_reasoning False)

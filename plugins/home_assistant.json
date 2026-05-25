@@ -42,6 +42,25 @@
     "Is Orac reporting as healthy in Home Assistant?"
   ],
   "entry_point": "plugin:HomeAssistantPlugin",
+  "execution": {
+    "action_type": "device_control",
+    "requires_confirmation": true,
+    "allowed_by_default": false,
+    "capabilities": [
+      "home_assistant.device_control",
+      "home_assistant.state_query",
+      "home_assistant.scene_activation",
+      "home_assistant.event_listener",
+      "home_assistant.health_status"
+    ],
+    "entitlements": [
+      "network.local_http",
+      "home_assistant.api_token",
+      "user_preferences.home_location"
+    ],
+    "scaffold": true,
+    "notes": "Scaffold-only placeholder; real Home Assistant control remains disabled until policy, credentials, entitlement checks and runtime behaviour are complete."
+  },
   "runtime": {
     "mode": "hybrid",
     "service": {

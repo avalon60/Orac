@@ -6,7 +6,6 @@
 #   selection and fallback handling.
 
 import asyncio
-import subprocess
 import re
 import json
 import hashlib
@@ -26,7 +25,6 @@ import yaml
 
 from model.network import OracListener
 from model.llm_connector import LLMUsageMetadata
-from model.llm_connector import LMStudioConnector, OllamaConnector
 from lib.config_mgr import ConfigManager
 from lib.fsutils import project_home
 from lib.icons import Icons
@@ -47,8 +45,11 @@ from model.plugin_routing import (
     PluginRoutingHandoff,
     render_plugin_routing_hints,
 )
+from model.plugin_execution_service import PluginExecutionService
+from model.plugin_confirmation_broker import PluginConfirmationBroker
 from model.plugin_router import PluginRouter
 from model.plugin_service_manager import PluginServiceManager
+from model.provider_registry import ProviderRegistry
 from lib.session_manager import DBSession
 from lib.user_security import UserSecurity
 
@@ -220,12 +221,23 @@ def system_clock_line(prefs: dict) -> str:
     lines = [
         f"Session timezone preference: {tz_name}.",
         f"User-facing local time: {local_str}; day: {dow}.",
+        "The user-facing local time is authoritative for the current turn; "
+        "do not infer the current time from conversation history or "
+        "client/request timestamps.",
         "When answering questions about the current time or date, use the "
         "user-facing local time above, not UTC.",
+        "For direct questions like 'what time is it?', answer with the exact "
+        "HH:MM value from the user-facing local time. Do not round to the "
+        "hour or omit minutes unless the user explicitly asks for an "
+        "approximate time.",
         f"Current UTC time for logs and technical timestamps only: {utc_iso}.",
     ]
     if weather_location:
         lines.append(f"Assume your current location is {weather_location}.")
+        lines.append(
+            "This weather location is the preferred location context; do not "
+            "replace it with a location inferred from the timezone."
+        )
         lines.append(
             "If asked where you are, where you are located, or similar, answer "
             "with this configured operational/home location. Do not answer that "
@@ -535,6 +547,7 @@ class Orac:
             self.llm_service_id = self.config_mgr.config_value("service", "llm_service_id")
             self.model_name = self.config_mgr.config_value("service", "default_model_name")
             self.service_url = self.config_mgr.config_value("service", "service_url")
+            self.provider_registry = ProviderRegistry(logger=logger)
             self.enable_prompt_dump = self.config_mgr.bool_config_value("context", "enable_prompt_dump", default=False)
             self._orac_run_dir = Path(os.environ.get("ORAC_RUN_DIR", "/run/orac"))
             self._dump_context_flag = self._orac_run_dir / "dump-context.once"
@@ -556,6 +569,10 @@ class Orac:
                 self.config_mgr.config_value("context", "history_turn_pairs", default="6")
             )
             self._reply_language = self.config_mgr.config_value("context", "reply_language", default="English")
+            self._default_timezone = (
+                self.config_mgr.config_value("context", "timezone", default="Europe/London").strip()
+                or "Europe/London"
+            )
             self._persistence_failures: list[dict[str, str]] = []
             self._fail_on_persistence_error = False
 
@@ -618,20 +635,18 @@ class Orac:
             self._history_budget_reserve = int(
                 self.config_mgr.config_value('context', 'history_budget_reserve', default='300'))
 
-            service_map = {
-                "ollama": OllamaConnector,
-                "lmstudio": LMStudioConnector,
-            }
-
             self._validate_or_pull_model()
             try:
-                connector_cls = service_map[self.llm_service_id]
-            except KeyError:
+                self.llm = self.provider_registry.create_connector(
+                    provider_id=self.llm_service_id,
+                    service_url=self.service_url,
+                    model_name=self.model_name,
+                )
+            except ValueError as exc:
                 message = f"{Icons.error} LLM service not implemented: {self.llm_service_id}"
                 logger.log_critical(message)
-                raise NotImplementedError(message)
+                raise NotImplementedError(message) from exc
 
-            self.llm = connector_cls(service_url=self.service_url, model_name=self.model_name)
             self._llm_connector_cache: dict[tuple[str, str, str], Any] = {
                 (self.llm_service_id.strip().lower(), self.service_url.strip(), self.model_name.strip()): self.llm,
             }
@@ -714,6 +729,8 @@ class Orac:
             self._plugin_routing_min_score = float(min_score_raw) if min_score_raw else None
             self.plugin_manager: PluginManager | None = None
             self.plugin_router: PluginRouter | None = None
+            self.plugin_execution_service: PluginExecutionService | None = None
+            self.plugin_confirmation_broker: PluginConfirmationBroker | None = None
             self.plugin_service_manager: PluginServiceManager | None = None
             self._plugin_routing_ready = False
             self._init_plugin_routing()
@@ -1233,8 +1250,9 @@ class Orac:
     ) -> str:
         try:
             dump_prompt = self._should_dump_prompt()
+            default_timezone = getattr(self, "_default_timezone", "Europe/London")
             prefs = {
-                "timezone": meta.get("timezone", "Europe/London"),
+                "timezone": meta.get("timezone") or default_timezone,
                 "weather_location": meta.get("weather_location"),
                 "force_concise": meta.get("force_concise"),
             }
@@ -1998,11 +2016,17 @@ class Orac:
                 logger=logger,
                 config_mgr=self.config_mgr,
             )
+            self.plugin_confirmation_broker = PluginConfirmationBroker()
             self.plugin_router = PluginRouter(
                 plugin_manager=self.plugin_manager,
                 logger=logger,
                 config_mgr=self.config_mgr,
                 context_manager=self.ctx,
+                confirmation_broker=self.plugin_confirmation_broker,
+            )
+            self.plugin_execution_service = PluginExecutionService(
+                plugin_router=self.plugin_router,
+                logger=logger,
             )
             logger.log_info(f"{Icons.info} Plugin routing bootstrap starting.")
             logger.log_info(
@@ -2014,6 +2038,8 @@ class Orac:
         except Exception as e:
             self.plugin_manager = None
             self.plugin_router = None
+            self.plugin_execution_service = None
+            self.plugin_confirmation_broker = None
             self.plugin_service_manager = None
             self._plugin_routing_ready = False
             _log_exception("Plugin routing initialisation failed (non-fatal)", e)
@@ -2136,6 +2162,32 @@ class Orac:
         return PluginRoutingHandoff(
             candidates=tuple(candidates),
             refreshed=refreshed,
+        )
+
+    def _execute_plugin_request(
+        self,
+        *,
+        prompt: str,
+        meta: dict[str, Any],
+        plugin_routing_handoff: PluginRoutingHandoff | None,
+        auth_user: str,
+    ) -> Any | None:
+        """Delegate plugin execution through the plugin execution service."""
+        plugin_execution_service = getattr(self, "plugin_execution_service", None)
+        if plugin_execution_service is None:
+            plugin_router = getattr(self, "plugin_router", None)
+            if plugin_router is None:
+                return None
+            plugin_execution_service = PluginExecutionService(
+                plugin_router=plugin_router,
+                logger=logger,
+            )
+            self.plugin_execution_service = plugin_execution_service
+        return plugin_execution_service.execute(
+            prompt=prompt,
+            meta=meta,
+            handoff=plugin_routing_handoff,
+            auth_user=auth_user,
         )
 
     def _apply_user_preference_meta(
@@ -2315,15 +2367,18 @@ class Orac:
         if cached is not None:
             return cached
 
-        service_map = {
-            "ollama": OllamaConnector,
-            "lmstudio": LMStudioConnector,
-        }
-        connector_cls = service_map.get(key[0])
-        if connector_cls is None:
-            raise RuntimeError(f"Unsupported LLM service: {service_id}")
-
-        connector = connector_cls(service_url=key[1], model_name=key[2])
+        provider_registry = getattr(self, "provider_registry", None)
+        if provider_registry is None:
+            provider_registry = ProviderRegistry(logger=logger)
+            self.provider_registry = provider_registry
+        try:
+            connector = provider_registry.create_connector(
+                provider_id=key[0],
+                service_url=key[1],
+                model_name=key[2],
+            )
+        except ValueError as exc:
+            raise RuntimeError(f"Unsupported LLM service: {service_id}") from exc
         self._llm_connector_cache[key] = connector
         return connector
 
@@ -2336,15 +2391,17 @@ class Orac:
 
     def _backend_model_available(self, *, provider: str, model_name: str) -> bool:
         """Return whether the configured backend currently exposes a model."""
-        provider_norm = str(provider or "").strip().lower()
-        model_norm = str(model_name or "").strip()
-        if not provider_norm or not model_norm:
-            return False
-        if provider_norm != self.llm_service_id.strip().lower():
-            return False
-        if model_norm in self._available_backend_models:
-            return True
-        return model_norm == self.model_name.strip()
+        provider_registry = getattr(self, "provider_registry", None)
+        if provider_registry is None:
+            provider_registry = ProviderRegistry(logger=logger)
+            self.provider_registry = provider_registry
+        return provider_registry.backend_model_available(
+            active_provider_id=self.llm_service_id,
+            provider_id=provider,
+            model_name=model_name,
+            available_models=self._available_backend_models,
+            configured_model_name=self.model_name,
+        )
 
     def _configured_model_lookup_candidates(self) -> list[str]:
         """Return model-name candidates for resolving the configured fallback row."""
@@ -2352,22 +2409,14 @@ class Orac:
         if not configured_model:
             return []
 
-        candidates: list[str] = [configured_model]
-        provider = self.llm_service_id.strip().lower()
-
-        if provider == "ollama":
-            if ":" not in configured_model:
-                candidates.append(f"{configured_model}:latest")
-            elif configured_model.endswith(":latest"):
-                candidates.append(configured_model[: -len(":latest")])
-
-        deduped: list[str] = []
-        seen: set[str] = set()
-        for candidate in candidates:
-            if candidate and candidate not in seen:
-                seen.add(candidate)
-                deduped.append(candidate)
-        return deduped
+        provider_registry = getattr(self, "provider_registry", None)
+        if provider_registry is None:
+            provider_registry = ProviderRegistry(logger=logger)
+            self.provider_registry = provider_registry
+        return provider_registry.model_lookup_candidates(
+            provider_id=self.llm_service_id,
+            model_name=configured_model,
+        )
 
     def _configured_fallback_registry_row(self) -> dict[str, Any]:
         """Resolve the registry row for the configured fallback model, tolerating aliases."""
@@ -2609,48 +2658,15 @@ class Orac:
     # --- Model availability checks -------------------------------------------
     def _validate_or_pull_model(self):
         """Validates that the configured model is available (pulls for Ollama; checks LM Studio)."""
-        if self.llm_service_id == "ollama":
-            try:
-                output = subprocess.check_output(["ollama", "list"], text=True)
-                if self.model_name not in output:
-                    logger.log_warning(f"{Icons.warn} Model '{self.model_name}' not found in Ollama. Pulling it now...")
-                    subprocess.run(["ollama", "pull", self.model_name], check=True)
-                    logger.log_info(f"{Icons.tick} Model '{self.model_name}' pulled successfully.")
-                else:
-                    logger.log_info(f"{Icons.tick} Model '{self.model_name}' is already available in Ollama.")
-            except FileNotFoundError as e:
-                _log_exception(f"{Icons.error} Ollama not installed or not in PATH", e)
-                raise RuntimeError("Ollama is not installed or not in PATH.") from e
-            except subprocess.CalledProcessError as e:
-                _log_exception(f"{Icons.error} Failed to pull model '{self.model_name}'", e)
-                raise RuntimeError(f"Failed to pull model '{self.model_name}': {e}") from e
-
-        elif self.llm_service_id == "lmstudio":
-            import requests
-            try:
-                response = requests.get(f"{self.service_url}/v1/models", timeout=10)
-                response.raise_for_status()
-                models = response.json().get("data", [])
-                available_models = [m["id"] for m in models]
-                if self.model_name not in available_models:
-                    msg = (
-                        f"{Icons.error} Model '{self.model_name}' not loaded in LM Studio at {self.service_url}."
-                        f"\n{Icons.right_arrow} Please load it in LM Studio and try again."
-                    )
-                    logger.log_error(msg)
-                    raise RuntimeError(msg)
-                else:
-                    logger.log_info(f"{Icons.tick} Model '{self.model_name}' is loaded in LM Studio.")
-            except requests.exceptions.ConnectionError as e:
-                _log_exception(f"{Icons.error} Could not connect to LM Studio server at {self.service_url}", e)
-                raise RuntimeError(f"Could not connect to LM Studio server at {self.service_url}.") from e
-            except Exception as e:
-                _log_exception(f"{Icons.error} Error validating model in LM Studio", e)
-                raise RuntimeError(f"Error validating model in LM Studio: {e}") from e
-        else:
-            msg = f"{Icons.error} Unknown LLM service: {self.llm_service_id}"
-            logger.log_error(msg)
-            raise RuntimeError(msg)
+        provider_registry = getattr(self, "provider_registry", None)
+        if provider_registry is None:
+            provider_registry = ProviderRegistry(logger=logger)
+            self.provider_registry = provider_registry
+        provider_registry.validate_or_prepare_model(
+            provider_id=self.llm_service_id,
+            service_url=self.service_url,
+            model_name=self.model_name,
+        )
 
     # --- Output hygiene -------------------------------------------------------
     def _strip_reasoning_tags(self, text: str) -> str:
@@ -2807,6 +2823,7 @@ class Orac:
         show_reasoning: bool,
         llm_id: int | None = None,
         tokens_used: int | None = None,
+        provenance: dict[str, Any] | None = None,
         request_flags: dict[str, bool] | None = None,
     ) -> int:
         """Persists an assistant turn and returns the new turn index if available."""
@@ -2817,6 +2834,11 @@ class Orac:
             "req_id": req_id,
             "show_reasoning": show_reasoning,
         }
+        if provenance:
+            asst_meta["provenance"] = provenance
+            asst_meta["source"] = provenance.get("source", "plugin_execution")
+            asst_meta["plugin_id"] = provenance.get("plugin_id")
+            asst_meta["plugin_status"] = provenance.get("status")
         try:
             save_res_a = self.ctx.save_assistant_turn(
                 session_id,
@@ -2874,9 +2896,18 @@ class Orac:
                         prompt_tokens: int = 0,
                         completion_tokens: int = 0,
                         model_name: str | None = None,
-                        user_registration: str = "registered") -> dict:
+                        user_registration: str = "registered",
+                        provenance: dict[str, Any] | None = None) -> dict:
         """Build a protocol-compliant non-streaming response envelope."""
         response_model = str(model_name or self.model_name)
+        response_meta = self._runtime_response_meta(
+            req_env,
+            model_name=response_model,
+            user_registration=user_registration,
+        )
+        if provenance:
+            response_meta["provenance"] = provenance
+            response_meta["source"] = provenance.get("source", "plugin_execution")
         resp = {
             "v": 1,
             "type": "response",
@@ -2884,11 +2915,7 @@ class Orac:
             "reply_to": req_env.get("id"),
             "ts": iso_now(),
             "route": req_env.get("route", "orac.prompt"),
-            "meta": self._runtime_response_meta(
-                req_env,
-                model_name=response_model,
-                user_registration=user_registration,
-            ),
+            "meta": response_meta,
             "payload": {
                 "content": content,
                 "stop_reason": stop_reason,
@@ -3766,19 +3793,16 @@ class Orac:
                 self._handle_persistence_failure("user_turn", e)
 
             plugin_routing_handoff = self._collect_plugin_routing_handoff(prompt, meta)
-            plugin_execution_result = None
-            if self.plugin_router is not None:
-                plugin_execution_result = self.plugin_router.route(
-                    prompt,
-                    meta,
-                    plugin_routing_handoff,
-                    auth_user,
-                )
+            plugin_execution_result = self._execute_plugin_request(
+                prompt=prompt,
+                meta=meta,
+                plugin_routing_handoff=plugin_routing_handoff,
+                auth_user=auth_user,
+            )
 
             if plugin_execution_result is not None and plugin_execution_result.handled:
                 content = plugin_execution_result.content
-                # TODO: Persist plugin_result separately from assistant_response once
-                # context/message provenance is introduced explicitly.
+                plugin_provenance = plugin_execution_result.provenance
                 last_ti = self._save_assistant_turn(
                     session_id,
                     auth_user,
@@ -3787,6 +3811,7 @@ class Orac:
                     req_id=req_env.get("id"),
                     show_reasoning=show_reasoning,
                     llm_id=effective_llm_id,
+                    provenance=plugin_provenance,
                     request_flags=request_flags,
                 )
                 self._maybe_set_conversation_title(session_id, meta, llm_connector)
@@ -3801,6 +3826,7 @@ class Orac:
                     user_registration=(
                         "anonymous" if request_flags["anonymous_user"] else "registered"
                     ),
+                    provenance=plugin_provenance,
                 )
                 if stream_requested:
                     await self._emit_complete_text_as_stream(

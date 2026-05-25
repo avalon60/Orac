@@ -16,6 +16,14 @@ PluginServiceStartPolicy = Literal["auto", "manual"]
 PluginServiceRestartPolicy = Literal["never", "on_failure"]
 PluginDatabaseOnMissing = Literal["warn_disable", "warn_only", "fail_refresh"]
 PluginDatabaseManagedBy = Literal["orac"]
+PluginActionType = Literal[
+    "informational_read_only",
+    "external_read",
+    "local_mutation",
+    "external_mutation",
+    "device_control",
+    "privileged_system_action",
+]
 
 
 @dataclass(frozen=True)
@@ -60,6 +68,19 @@ class PluginServiceRuntime:
     shutdown_timeout_seconds: int
     health_check: PluginHealthCheck
     schedule: PluginServiceSchedule | None = None
+
+
+@dataclass(frozen=True)
+class PluginExecutionPolicy:
+    """Represents action-risk metadata declared by a plugin manifest."""
+
+    action_type: PluginActionType
+    requires_confirmation: bool
+    allowed_by_default: bool
+    capabilities: tuple[str, ...] = ()
+    entitlements: tuple[str, ...] = ()
+    scaffold: bool = False
+    notes: str | None = None
 
 
 @dataclass(frozen=True)
@@ -109,6 +130,7 @@ class PluginManifest:
     manifest_hash: str
     runtime_mode: PluginRuntimeMode = "on_demand"
     service_runtime: PluginServiceRuntime | None = None
+    execution_policy: PluginExecutionPolicy | None = None
     configuration_required: tuple[PluginConfigKey, ...] = ()
     configuration_optional: tuple[PluginConfigKey, ...] = ()
     database_required: bool = False

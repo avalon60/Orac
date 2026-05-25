@@ -16,6 +16,7 @@ from model.plugin_routing.models import (
     PluginDatabaseBackup,
     PluginDatabaseSchema,
     PluginDatabaseVersionCheck,
+    PluginExecutionPolicy,
     PluginHealthCheck,
     PluginManifest,
     PluginServiceSchedule,
@@ -32,6 +33,14 @@ SERVICE_START_POLICIES = {"auto", "manual"}
 SERVICE_RESTART_POLICIES = {"never", "on_failure"}
 DATABASE_ON_MISSING_POLICIES = {"warn_disable", "warn_only", "fail_refresh"}
 DATABASE_MANAGERS = {"orac"}
+PLUGIN_ACTION_TYPES = {
+    "informational_read_only",
+    "external_read",
+    "local_mutation",
+    "external_mutation",
+    "device_control",
+    "privileged_system_action",
+}
 MAX_SERVICE_SECONDS = 86400
 MAX_HEALTH_FAILURE_THRESHOLD = 100
 REQUIRED_FIELDS = {
@@ -49,6 +58,7 @@ OPTIONAL_FIELDS = {
     "entities",
     "examples",
     "entry_point",
+    "execution",
     "configuration",
     "database",
 }
@@ -148,6 +158,11 @@ class PluginDiscovery:
         examples = self._require_string_list(data.get("examples", []), "examples")
         entry_point = self._require_optional_string(data.get("entry_point"), "entry_point")
         runtime_mode, service_runtime = self._load_runtime(data["runtime"])
+        execution_policy = self._load_execution_policy(
+            data.get("execution"),
+            capabilities=capabilities,
+            entitlements=entitlements,
+        )
         configuration_required, configuration_optional = self._load_configuration(
             data.get("configuration", {})
         )
@@ -174,6 +189,7 @@ class PluginDiscovery:
             manifest_hash=manifest_hash,
             runtime_mode=runtime_mode,
             service_runtime=service_runtime,
+            execution_policy=execution_policy,
             configuration_required=tuple(configuration_required),
             configuration_optional=tuple(configuration_optional),
             database_required=database_required,
@@ -207,6 +223,101 @@ class PluginDiscovery:
             service_runtime = None
 
         return mode, service_runtime
+
+    def _load_execution_policy(
+        self,
+        value: Any,
+        *,
+        capabilities: list[str],
+        entitlements: list[str],
+    ) -> PluginExecutionPolicy:
+        """Load first-pass plugin action policy metadata."""
+        if value is None:
+            return self._default_execution_policy(
+                capabilities=capabilities,
+                entitlements=entitlements,
+            )
+        if not isinstance(value, dict):
+            raise PluginManifestError("execution must be an object")
+
+        required_fields = {"action_type", "requires_confirmation", "allowed_by_default"}
+        optional_fields = {"capabilities", "entitlements", "scaffold", "notes"}
+        self._reject_unknown_fields(value, required_fields | optional_fields, "execution")
+        self._require_fields(value, required_fields, "execution")
+
+        policy_capabilities = tuple(
+            self._require_string_list(
+                value.get("capabilities", capabilities),
+                "execution.capabilities",
+            )
+        )
+        policy_entitlements = tuple(
+            self._require_string_list(
+                value.get("entitlements", entitlements),
+                "execution.entitlements",
+            )
+        )
+        self._require_subset(policy_capabilities, capabilities, "execution.capabilities", "capabilities")
+        self._require_subset(policy_entitlements, entitlements, "execution.entitlements", "entitlements")
+
+        return PluginExecutionPolicy(
+            action_type=self._require_enum(
+                value["action_type"],
+                "execution.action_type",
+                PLUGIN_ACTION_TYPES,
+            ),
+            requires_confirmation=self._require_bool(
+                value["requires_confirmation"],
+                "execution.requires_confirmation",
+            ),
+            allowed_by_default=self._require_bool(
+                value["allowed_by_default"],
+                "execution.allowed_by_default",
+            ),
+            capabilities=policy_capabilities,
+            entitlements=policy_entitlements,
+            scaffold=self._require_bool(value.get("scaffold", False), "execution.scaffold"),
+            notes=self._require_optional_string(value.get("notes"), "execution.notes"),
+        )
+
+    def _default_execution_policy(
+        self,
+        *,
+        capabilities: list[str],
+        entitlements: list[str],
+    ) -> PluginExecutionPolicy:
+        """Infer a conservative policy for older manifests without execution metadata."""
+        risky_terms = (
+            "control",
+            "activate",
+            "activation",
+            "write",
+            "sync",
+            "backup",
+            "delete",
+            "mutation",
+            "filesystem",
+            "shell",
+            "system",
+            "token",
+        )
+        action_text = " ".join([*capabilities, *entitlements]).lower()
+        if any(term in action_text for term in risky_terms):
+            return PluginExecutionPolicy(
+                action_type="privileged_system_action",
+                requires_confirmation=True,
+                allowed_by_default=False,
+                capabilities=tuple(capabilities),
+                entitlements=tuple(entitlements),
+                notes="Inferred fail-safe policy for manifest without explicit execution metadata.",
+            )
+        return PluginExecutionPolicy(
+            action_type="informational_read_only",
+            requires_confirmation=False,
+            allowed_by_default=True,
+            capabilities=tuple(capabilities),
+            entitlements=tuple(entitlements),
+        )
 
     def _load_service_runtime(self, value: Any) -> PluginServiceRuntime:
         if not isinstance(value, dict):
@@ -584,6 +695,20 @@ class PluginDiscovery:
         if missing_fields:
             raise PluginManifestError(
                 f"{field_name} missing required field(s): {', '.join(missing_fields)}"
+            )
+
+    @staticmethod
+    def _require_subset(
+        values: tuple[str, ...],
+        allowed_values: list[str],
+        field_name: str,
+        parent_field_name: str,
+    ) -> None:
+        disallowed = sorted(set(values) - set(allowed_values))
+        if disallowed:
+            raise PluginManifestError(
+                f"{field_name} must only reference values declared in "
+                f"{parent_field_name}: {', '.join(disallowed)}"
             )
 
     @staticmethod

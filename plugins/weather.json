@@ -30,6 +30,19 @@
     "What's the temperature outside?"
   ],
   "entry_point": "plugin:WeatherPlugin",
+  "execution": {
+    "action_type": "informational_read_only",
+    "requires_confirmation": false,
+    "allowed_by_default": true,
+    "capabilities": [
+      "weather.current_conditions",
+      "weather.short_forecast"
+    ],
+    "entitlements": [
+      "user_preferences.weather_location",
+      "user_preferences.timezone"
+    ]
+  },
   "runtime": {
     "mode": "on_demand"
   },
