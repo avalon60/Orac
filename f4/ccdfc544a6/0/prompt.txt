@@ -1,0 +1,329 @@
+Please group remaining modifications and perform the necessary commits.
+
+---
+
+Are the docs/agent-guardrails/*.md files, enough to minimise architectural drift?
+
+---
+
+Please add lightweight architectural drift checks for the Orac project.
+
+Goal:
+Turn the existing docs/agent-guardrails/*.md guidance into basic executable checks, without over-engineering.
+
+Please inspect:
+- AGENTS.md
+- docs/agent-guardrails/*.md
+- current test structure
+- pyproject.toml / tooling configuration
+
+Implement:
+1. A guardrail consistency check script, preferably scripts/check_guardrails.py, that verifies:
+   - docs/agent-guardrails contains no stray/untitled files
+   - all markdown files follow the existing naming convention
+   - all guardrail files referenced by AGENTS.md exist
+   - all relative links from AGENTS.md to docs/agent-guardrails are valid
+   - all relative links between guardrail documents are valid where practical
+
+2. Add tests for the check script if the project test style supports it.
+
+3. Add or document a simple command for running the check locally.
+
+4. Do not introduce heavyweight dependencies unless already present.
+
+5. Do not alter architectural rules unless necessary. This task is about validating the existing guardrail structure, not rewriting it.
+
+After implementation, report:
+- files changed
+- checks added
+- how to run them
+- any broken references or questionable files found
+
+---
+
+Please implement lightweight guardrail drift checks for the Orac project.
+
+Goal:
+Add a small, standard-library-only Python checker that validates the structure and local references of docs/agent-guardrails without rewriting guardrail content or adding dependencies.
+
+Files to inspect:
+- AGENTS.md
+- docs/agent-guardrails/
+- current test layout
+- pyproject.toml only if needed to understand pytest usage
+
+Implement:
+
+1. Create scripts/check_guardrails.py.
+
+Requirements:
+- Use only the Python standard library.
+- Include the normal script header used in this project.
+- Use argparse for CLI arguments.
+- Provide a --root argument, defaulting to the project root inferred from the script location.
+- Return exit code 0 when clean and 1 when issues are found.
+- Print concise issue lines when broken.
+
+The checker should validate:
+- docs/agent-guardrails exists.
+- Top-level markdown guardrail files follow the naming convention:
+  - NN-kebab-case.md
+  - examples: 00-project-principles.md, 10-architecture-boundaries.md
+- Known non-markdown assets are allowed explicitly, currently:
+  - table-abbreviations.csv
+- Nested documentation directories, such as docs/agent-guardrails/frontend-nextjs/, are allowed and do not need to follow the top-level numeric naming convention.
+- Stray/temp/editor-style files are rejected, including:
+  - names containing "untitled" case-insensitively
+  - files with no extension
+  - backup suffixes such as ~, .bak, .tmp, .swp
+  - leading dotfiles
+- Local guardrail references from AGENTS.md are extracted and validated.
+- Local guardrail references from guardrail markdown files are extracted and validated where practical.
+
+Reference extraction should support:
+- plain references such as docs/agent-guardrails/foo.md
+- inline-code references such as `docs/agent-guardrails/foo.md`
+- Markdown links such as [text](docs/agent-guardrails/foo.md)
+- relative links between guardrail documents where practical
+
+Ignore:
+- http:// links
+- https:// links
+- anchors-only links
+- email-style links
+- external Markdown links
+
+2. Add tests/test_check_guardrails.py.
+
+Testing requirements:
+- Import scripts/check_guardrails.py directly using importlib.util.spec_from_file_location.
+- Do not require scripts/ to be a package.
+- Unit-test reference extraction for:
+  - AGENTS.md-style plain references
+  - inline-code references
+  - Markdown local links
+  - ignored external links
+- Unit-test invalid names using tmp_path, including:
+  - Untitled Document
+  - backup files
+  - dotfiles
+  - extensionless files
+- Unit-test valid top-level guardrail names using tmp_path.
+- Unit-test that nested guardrail docs are allowed without the top-level numeric naming convention.
+- Add a repository smoke test that verifies current AGENTS.md guardrail references resolve.
+- Do not make the pytest suite depend on the current repository containing docs/agent-guardrails/Untitled Document.
+  - The direct checker may fail today because that file exists.
+  - The tests should remain valid after that file is removed.
+
+3. Documentation:
+Add a very short note in AGENTS.md or an existing lightweight developer documentation location showing:
+
+poetry run python scripts/check_guardrails.py
+poetry run pytest tests/test_check_guardrails.py
+
+Do not add a pyproject entry point.
+Do not add dependencies.
+Do not rewrite guardrail content.
+Do not implement source-code architectural policy checks in this pass.
+
+Expected current direct-check result:
+- poetry run python scripts/check_guardrails.py may return non-zero while docs/agent-guardrails/Untitled Document exists.
+- That is expected and should be reported clearly.
+
+After implementation, report:
+- files changed
+- checks added
+- how to run them
+- any current issues found in the repository
+
+---
+
+Implement the plan.
+
+---
+
+Please perform a review-only architecture reconciliation pass for Orac.
+
+Current context:
+- The original architecture audit is in architecture-qa-results.md.
+- Since that audit, multiple remediation passes have been completed, including:
+  - protocol/schema/runtime/display alignment;
+  - fail-closed protocol validation;
+  - provider registry/factory;
+  - explicit provider capabilities;
+  - plugin service lifecycle wiring;
+  - plugin execution policy and provenance;
+  - PluginExecutionService extraction;
+  - trusted PluginConfirmationBroker;
+  - plugin timeout handling;
+  - failed/timed-out plugin provenance;
+  - high-level voice turn contract tests;
+  - VoiceTurnController extraction;
+  - Home Assistant data lifecycle documentation;
+  - plugin audit persistence documentation;
+  - plugin audit DB/API design documentation;
+  - table abbreviation governance for plugin_invocations and plugin_audit_events.
+
+Important:
+This is a review-only pass.
+Do not modify code.
+Do not modify DDL.
+Do not modify documentation unless explicitly asked after this review.
+Do not implement runtime plugin audit persistence.
+Do not implement Home Assistant population, websocket integration, state query, or device control.
+
+Goals:
+1. Cross-check architecture-qa-results.md against the current repository state.
+2. For each original Top 10 issue, classify it as:
+   - resolved;
+   - mostly resolved;
+   - partially resolved;
+   - still open;
+   - superseded;
+   - newly risky due to later changes.
+3. Re-evaluate the current architecture for coherence and boundaries of responsibility.
+4. Identify any architectural regressions introduced by the remediation passes.
+5. Identify any stale documentation or mismatches between docs and current code.
+6. Reconfirm or revise the next recommended implementation sequence.
+
+Please inspect:
+- architecture-qa-results.md
+- docs/plugin-execution-boundaries.md
+- docs/plugin-audit-persistence.md
+- docs/plugin-audit-db-api-design.md
+- docs/home-assistant-data-lifecycle.md
+- docs/agent-guardrails/table-abbreviations.csv
+- src/controller/orac.py
+- src/model/provider_registry.py
+- src/model/plugin_execution_service.py
+- src/model/plugin_confirmation_broker.py
+- src/model/plugin_execution_policy.py
+- src/model/plugin_router.py
+- src/model/plugin_service_manager.py
+- src/orac_voice/voice_turn_controller.py
+- src/orac_voice/voice_loop_local.py
+- plugins/home_assistant.json
+- plugins/weather.json
+- relevant tests under tests/
+
+Specific checks:
+1. Confirm whether provider-specific logic has genuinely moved out of Orac or whether meaningful leakage remains.
+2. Confirm whether PluginExecutionService is a clean boundary or just a thin relocation with hidden coupling.
+3. Confirm whether plugin policy, confirmation, timeout, and provenance form a coherent execution boundary.
+4. Confirm whether denied/scaffold/unknown/confirmation-required paths still avoid plugin import.
+5. Confirm whether Home Assistant remains safely scaffold-only.
+6. Confirm whether HA tables are consistently treated as cache/state tables, not audit tables.
+7. Confirm whether plugin audit persistence design is ready for DDL/API implementation.
+8. Confirm whether table abbreviations are now consistently:
+   - plugin_invocations -> plg_inv
+   - plugin_audit_events -> plg_audevt
+   and whether any stale plg_aud_evt references remain.
+9. Confirm whether VoiceTurnController improved the boundary or merely moved the large state machine.
+10. Confirm whether tests are still overfitted to private implementation details and whether that now matters.
+11. Confirm whether src/controller/orac.py remains the primary pressure point and, if so, what the next safe extraction would be.
+12. Confirm whether the original "Recommended Refactoring Sequence" should now be updated.
+
+Output format:
+- Executive summary.
+- Updated status table for the original Top 10 issues.
+- Newly discovered architectural risks, if any.
+- Stale documentation/code mismatches, if any.
+- Boundary assessment by subsystem:
+  - core controller;
+  - provider runtime;
+  - plugin execution;
+  - plugin service lifecycle;
+  - confirmation broker;
+  - voice runtime;
+  - Home Assistant;
+  - DB/API persistence;
+  - protocol/display.
+- Recommended next sequence.
+- Explicit "do not do yet" list.
+- Validation commands run and results.
+
+Validation:
+- poetry run python -m unittest discover -s tests
+
+Remember:
+This is a review-only pass. Do not make changes.
+
+---
+
+Please save results to architecture-qa-update1.md
+
+---
+
+Please implement the next architecture QA remediation pass for Orac: reconcile stale plugin audit documentation and add database verification for the new plugin audit objects.
+
+Current state:
+- The architecture reconciliation pass found no major new architectural drift.
+- Provider, plugin policy, confirmation, timeout, provenance, service lifecycle, and voice boundary work are mostly resolved.
+- The main remaining pressure point is src/controller/orac.py.
+- PluginExecutionService is currently a useful seam but not yet a full execution lifecycle boundary.
+- Plugin audit DB/API assets now exist.
+- docs/plugin-audit-db-api-design.md and docs/home-assistant-data-lifecycle.md contain stale wording that predates the plugin audit DB/API assets.
+- No runtime plugin audit persistence should be wired in this pass.
+
+Goals:
+1. Reconcile stale documentation around plugin audit DB/API status and HA next steps.
+2. Add database/static verification for plugin audit objects, grants, constraints, indexes, triggers, views, and package validity, following existing project conventions.
+3. Preserve current runtime behaviour.
+4. Do not wire runtime plugin execution into DB persistence yet.
+5. Do not implement Home Assistant cache population, websocket integration, live state query, or device control.
+
+Please inspect:
+- docs/plugin-audit-db-api-design.md
+- docs/plugin-audit-persistence.md
+- docs/home-assistant-data-lifecycle.md
+- resources/db/schema
+- resources/db/schema/AGENT_CONTEXT.md
+- any existing DB verification scripts/tests
+- orac_core.plugin_invocations assets
+- orac_core.plugin_audit_events assets
+- orac_code plugin audit API/package assets, if present
+
+Specific tasks:
+1. Update documentation to reflect that plugin audit DB/API assets now exist.
+2. Remove or reword stale statements saying object-by-object DDL/API work is still future work.
+3. Update HA lifecycle docs so the next step is not "plugin audit DB/API design", but DB verification and runtime audit adapter work.
+4. Add or extend DB verification checks for:
+   - plugin_invocations table;
+   - plugin_audit_events table;
+   - primary keys;
+   - foreign keys;
+   - check constraints;
+   - indexes;
+   - triggers;
+   - comments;
+   - API views;
+   - TAPI/API packages;
+   - grants;
+   - install-order inclusion.
+5. Confirm the canonical abbreviation is:
+   - plugin_invocations -> plg_inv
+   - plugin_audit_events -> plg_audevt
+6. Confirm no stale plg_aud_evt references remain.
+
+Important constraints:
+- Do not change plugin execution behaviour.
+- Do not wire runtime audit persistence yet.
+- Do not let plugins write audit tables directly.
+- Do not implement Home Assistant runtime behaviour.
+- Do not remove HA scaffold protection.
+- Do not change protocol, provider, voice, confirmation, timeout, or policy behaviour.
+- Use lowercase Oracle SQL/PLSQL reserved words.
+- Preserve existing tests.
+
+Validation:
+- poetry run python -m unittest discover -s tests
+- Run any existing DB/static verification command if present.
+
+Please report:
+- files changed;
+- stale documentation corrected;
+- DB verification added;
+- plugin audit objects verified;
+- any missing DB/API assets found;
+- validation results;
+- deferred work.

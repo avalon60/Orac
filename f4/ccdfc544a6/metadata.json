@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "f4ccdfc544a6",
+  "strategy": "manual-commit",
+  "branch": "develop",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "CoE Cheat Sheet - Liquibase.pdf",
+    "architecture-qa-update1.md",
+    "docs/agent-guardrails/table-abbreviations.csv",
+    "docs/home-assistant-data-lifecycle.md",
+    "docs/plugin-audit-db-api-design.md",
+    "resources/db/data_model/table_abbreviations.csv",
+    "resources/db/schema.zip",
+    "resources/db/schema/orac_api/grant/orac_api_consumer_view_access.sql",
+    "resources/db/schema/orac_api/privilege/orac_api_core_table_access.sql",
+    "resources/db/schema/orac_code/package_body/user_preferences_api.sql",
+    "resources/db/schema/orac_code/view/user_preferences_display_v.sql",
+    "resources/db/schema/orac_core/constraint_other/user_pref_ck1.sql",
+    "resources/db/schema/orac_core/run_all.sql",
+    "resources/db/schema/orac_core/seed_data/prfdfn_preference_catalog.sql",
+    "src/controller/orac.py",
+    "src/orac_voice/tts_piper.py",
+    "src/orac_voice/tts_worker.py",
+    "src/orac_voice/voice_events.py",
+    "tests/test_plugin_audit_schema.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f4/ccdfc544a6/0/metadata.json",
+      "transcript": "/f4/ccdfc544a6/0/full.jsonl",
+      "content_hash": "/f4/ccdfc544a6/0/content_hash.txt",
+      "prompt": "/f4/ccdfc544a6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 921499,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 13454080,
+    "output_tokens": 49131,
+    "api_call_count": 103
+  }
+}
