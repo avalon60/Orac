@@ -1,0 +1,93 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "d165094dc470",
+  "session_id": "019e6062-df80-7fa1-afc5-ab77f14548b1",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-25T23:21:34.017742102Z",
+  "branch": "develop",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "docs/plugin-audit-db-api-design.md",
+    "docs/plugin-audit-persistence.md",
+    "src/controller/orac.py",
+    "src/model/plugin_audit_adapter.py",
+    "src/model/plugin_execution_service.py",
+    "src/model/plugin_router.py",
+    "tests/test_orac_context_history.py",
+    "tests/test_orac_plugin_integration.py",
+    "tests/test_orac_voice.py",
+    "tests/test_plugin_audit_adapter.py",
+    "tests/test_plugin_router.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.4-mini",
+  "turn_id": "ce7b3cd94940",
+  "token_usage": {
+    "input_tokens": 1365858,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 25178496,
+    "output_tokens": 119047,
+    "api_call_count": 179
+  },
+  "session_metrics": {
+    "turn_count": 11
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-25T23:21:33.857281123Z",
+    "agent_lines": 1406,
+    "agent_removed": 16,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1406,
+    "total_lines_changed": 1422,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 169,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 169,
+      "user_lines_removed": 0,
+      "agent_lines_added": 45,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 169,
+      "user_lines_removed": 0,
+      "agent_lines_added": 45,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 169,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1406,
+      "agent_lines_removed": 16,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141
+      }
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "d165094dc470",
+  "strategy": "manual-commit",
+  "branch": "develop",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "docs/plugin-audit-db-api-design.md",
+    "docs/plugin-audit-persistence.md",
+    "src/controller/orac.py",
+    "src/model/plugin_audit_adapter.py",
+    "src/model/plugin_execution_service.py",
+    "src/model/plugin_router.py",
+    "tests/test_orac_context_history.py",
+    "tests/test_orac_plugin_integration.py",
+    "tests/test_orac_voice.py",
+    "tests/test_plugin_audit_adapter.py",
+    "tests/test_plugin_router.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d1/65094dc470/0/metadata.json",
+      "transcript": "/d1/65094dc470/0/full.jsonl",
+      "content_hash": "/d1/65094dc470/0/content_hash.txt",
+      "prompt": "/d1/65094dc470/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1365858,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 25178496,
+    "output_tokens": 119047,
+    "api_call_count": 179
+  }
+}
