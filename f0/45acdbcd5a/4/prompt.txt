@@ -1,0 +1,1 @@
+Please inspect the Orac data model in resources/db/data_model/orac3.dmd, determin the abbreviations from docs/agent-guardrails/table-abbreviations.csv and add them to the CSV.
