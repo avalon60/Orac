@@ -124,6 +124,7 @@ from orac_voice.voice_loop_local import _send_orac_prompt
 from orac_voice.voice_loop_local import _transcribe_once
 from orac_voice.voice_loop_local import _voice_session_async
 from orac_voice.voice_loop_local import build_parser
+from orac_voice.voice_turn_controller import VoiceTurnController
 
 
 class _FakeTtsEngine:
@@ -4079,6 +4080,7 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
       "text_delta",
       "text_chunk",
       "stream_end",
+      "stream_error",
       "stream_cancelled",
       "tts_playback_started",
       "tts_playback_finished",
@@ -4103,6 +4105,39 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     self._slave_patch.start()
     self.addCleanup(self._slave_patch.stop)
 
+  @staticmethod
+  def _reader_with_frames(frames: list[dict[str, object]]) -> asyncio.StreamReader:
+    """Return a stream reader preloaded with NDJSON protocol frames."""
+    reader = asyncio.StreamReader()
+    for frame in frames:
+      reader.feed_data((json.dumps(frame) + "\n").encode("utf-8"))
+    reader.feed_eof()
+    return reader
+
+  @staticmethod
+  def _prompt_request_builder(request_ids: list[str]):
+    """Return a fake request builder that emits deterministic request ids."""
+    remaining_ids = list(request_ids)
+
+    def _build_prompt_request(prompt_text: str, **kwargs):
+      request_id = remaining_ids.pop(0)
+      meta = {}
+      session_id = kwargs.get("session_id")
+      if session_id is not None:
+        meta["session_id"] = session_id
+      return {
+        "v": 1,
+        "type": "request",
+        "id": request_id,
+        "route": "orac.prompt",
+        "meta": meta,
+        "payload": {
+          "messages": [{"role": "user", "content": prompt_text}],
+        },
+      }
+
+    return _build_prompt_request
+
   def test_configured_runtime_identity_uses_default_model(self) -> None:
     """Startup identity should populate the display before the first turn."""
     sender = _FakeDisplaySender()
@@ -4114,6 +4149,378 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(sender.events[0]["model"], "llama3.1-64K")
     self.assertEqual(sender.events[0]["persona"], "DEFAULT")
     self.assertEqual(sender.events[0]["session_id"], "voice-session")
+
+  async def test_voice_turn_controller_handles_non_streaming_response(
+    self,
+  ) -> None:
+    """The extracted controller should own one complete response turn."""
+    reader = self._reader_with_frames(
+      [
+        {
+          "v": 1,
+          "type": "response",
+          "reply_to": "req_current",
+          "payload": {"content": "Controller answer."},
+        },
+      ]
+    )
+    writer = _FakeStreamWriter()
+    sender = _FakeDisplaySender()
+    controller = VoiceTurnController(
+      reader=reader,
+      writer=writer,
+      prompt_text="Say something",
+      voice_session_id="voice-session",
+      display_sender=sender,
+    )
+
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+      status = await controller.run()
+
+    self.assertEqual(status, 0)
+    self.assertIn("Orac: Controller answer.", output.getvalue())
+    transcript_events = [
+      event
+      for event in sender.events
+      if str(event.get("event", "")).startswith("transcript.")
+    ]
+    self.assertEqual(
+      [event["event"] for event in transcript_events],
+      ["transcript.orac.start", "transcript.orac.final"],
+    )
+    self.assertEqual([state[0] for state in sender.states], ["thinking", "idle"])
+
+  async def test_voice_turn_contract_normal_stream_routes_text_and_playback(
+    self,
+  ) -> None:
+    """A normal streamed turn should update transcript, speech, and display."""
+    reader = self._reader_with_frames(
+      [
+        {
+          "v": 1,
+          "type": "stream_start",
+          "reply_to": "req_current",
+          "payload": {},
+        },
+        {
+          "v": 1,
+          "type": "text_delta",
+          "reply_to": "req_current",
+          "payload": {"delta": "Hello"},
+        },
+        {
+          "v": 1,
+          "type": "text_chunk",
+          "reply_to": "req_current",
+          "payload": {"chunk": "Hello there.", "turn_id": "req_current"},
+        },
+        {
+          "v": 1,
+          "type": "text_delta",
+          "reply_to": "req_current",
+          "payload": {"delta": " there."},
+        },
+        {
+          "v": 1,
+          "type": "stream_end",
+          "reply_to": "req_current",
+          "payload": {"stop_reason": "stop"},
+        },
+        {
+          "v": 1,
+          "type": "response",
+          "reply_to": "req_current",
+          "payload": {"content": "Hello there."},
+        },
+        {
+          "v": 1,
+          "type": "tts_playback_started",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+        },
+        {
+          "v": 1,
+          "type": "tts_playback_finished",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+        },
+        {
+          "v": 1,
+          "type": "voice_turn_complete",
+          "reply_to": "req_current",
+          "payload": {
+            "turn_id": "req_current",
+            "request_id": "req_current",
+            "timestamp": "2026-05-25T10:00:00+00:00",
+          },
+        },
+      ]
+    )
+    writer = _FakeStreamWriter()
+    sender = _FakeDisplaySender()
+
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+      status = await _send_orac_prompt(
+        reader=reader,
+        writer=writer,
+        prompt_text="Say hello",
+        voice_session_id="voice-session",
+        display_sender=sender,
+      )
+
+    transcript_events = [
+      event
+      for event in sender.events
+      if str(event.get("event", "")).startswith("transcript.")
+    ]
+    self.assertEqual(status, 0)
+    self.assertIn("Orac: Hello there.", output.getvalue())
+    self.assertEqual(
+      [event["event"] for event in transcript_events],
+      [
+        "transcript.orac.start",
+        "transcript.orac.delta",
+        "transcript.orac.delta",
+        "transcript.orac.final",
+      ],
+    )
+    self.assertEqual(transcript_events[1]["text"], "Hello")
+    self.assertEqual(transcript_events[2]["text"], " there.")
+    self.assertEqual(transcript_events[3]["text"], "Hello there.")
+    self.assertEqual(
+      [state[0] for state in sender.states],
+      ["thinking", "speaking", "idle"],
+    )
+    self.assertEqual(sender.states[-1][1], "Listening for wake word")
+
+  async def test_voice_turn_contract_non_streaming_response_speaks_and_resets(
+    self,
+  ) -> None:
+    """A fallback non-streaming response should still produce a coherent turn."""
+    reader = self._reader_with_frames(
+      [
+        {
+          "v": 1,
+          "type": "response",
+          "reply_to": "req_current",
+          "payload": {"content": "Fallback answer."},
+        },
+      ]
+    )
+    writer = _FakeStreamWriter()
+    sender = _FakeDisplaySender()
+
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+      status = await _send_orac_prompt(
+        reader=reader,
+        writer=writer,
+        prompt_text="Say something",
+        voice_session_id="voice-session",
+        display_sender=sender,
+      )
+
+    transcript_events = [
+      event
+      for event in sender.events
+      if str(event.get("event", "")).startswith("transcript.")
+    ]
+    self.assertEqual(status, 0)
+    self.assertIn("Orac: Fallback answer.", output.getvalue())
+    self.assertEqual(
+      [event["event"] for event in transcript_events],
+      ["transcript.orac.start", "transcript.orac.final"],
+    )
+    self.assertEqual(transcript_events[-1]["text"], "Fallback answer.")
+    self.assertEqual(
+      [state[0] for state in sender.states],
+      ["thinking", "idle"],
+    )
+
+  async def test_voice_turn_contract_stream_error_resets_display_state(
+    self,
+  ) -> None:
+    """A stream error should fail the turn cleanly and return display to idle."""
+    reader = self._reader_with_frames(
+      [
+        {
+          "v": 1,
+          "type": "stream_start",
+          "reply_to": "req_current",
+          "payload": {},
+        },
+        {
+          "v": 1,
+          "type": "text_delta",
+          "reply_to": "req_current",
+          "payload": {"delta": "Partial answer"},
+        },
+        {
+          "v": 1,
+          "type": "stream_error",
+          "reply_to": "req_current",
+          "error": {"code": "MODEL_ERROR", "message": "model failed"},
+          "payload": {},
+        },
+        {
+          "v": 1,
+          "type": "stream_end",
+          "reply_to": "req_current",
+          "payload": {"stop_reason": "error"},
+        },
+        {
+          "v": 1,
+          "type": "response",
+          "reply_to": "req_current",
+          "payload": {"content": "Partial answer"},
+        },
+      ]
+    )
+    writer = _FakeStreamWriter()
+    sender = _FakeDisplaySender()
+
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+      status = await _send_orac_prompt(
+        reader=reader,
+        writer=writer,
+        prompt_text="Fail cleanly",
+        voice_session_id="voice-session",
+        display_sender=sender,
+      )
+
+    self.assertEqual(status, 1)
+    self.assertIn("[stream error] MODEL_ERROR: model failed", output.getvalue())
+    self.assertEqual(sender.states[-1][0], "idle")
+    self.assertEqual(sender.states[-1][1], "Listening for wake word")
+
+  async def test_voice_turn_contract_barge_in_ignores_cancelled_stale_frames(
+    self,
+  ) -> None:
+    """After barge-in, stale frames must not poison the next voice turn."""
+    reader = self._reader_with_frames(
+      [
+        {
+          "v": 1,
+          "type": "stream_start",
+          "reply_to": "req_cancel",
+          "payload": {},
+        },
+        {
+          "v": 1,
+          "type": "text_delta",
+          "reply_to": "req_cancel",
+          "payload": {"delta": "First part."},
+        },
+        {
+          "v": 1,
+          "type": "text_chunk",
+          "reply_to": "req_cancel",
+          "payload": {"chunk": "First part.", "turn_id": "req_cancel"},
+        },
+        {
+          "v": 1,
+          "type": "tts_playback_started",
+          "reply_to": "req_cancel",
+          "payload": {"turn_id": "req_cancel", "utterance_id": "utt1"},
+        },
+        {
+          "v": 1,
+          "type": "text_delta",
+          "reply_to": "req_cancel",
+          "payload": {"delta": "Stale cancelled content."},
+        },
+        {
+          "v": 1,
+          "type": "stream_end",
+          "reply_to": "req_cancel",
+          "payload": {"stop_reason": "cancelled"},
+        },
+        {
+          "v": 1,
+          "type": "response",
+          "reply_to": "req_cancel",
+          "payload": {"content": "Stale cancelled final."},
+        },
+        {
+          "v": 1,
+          "type": "stream_start",
+          "reply_to": "req_next",
+          "payload": {},
+        },
+        {
+          "v": 1,
+          "type": "text_delta",
+          "reply_to": "req_next",
+          "payload": {"delta": "Next answer."},
+        },
+        {
+          "v": 1,
+          "type": "stream_end",
+          "reply_to": "req_next",
+          "payload": {"stop_reason": "stop"},
+        },
+        {
+          "v": 1,
+          "type": "response",
+          "reply_to": "req_next",
+          "payload": {"content": "Next answer final."},
+        },
+      ]
+    )
+    writer = _FakeStreamWriter()
+    sender = _FakeDisplaySender()
+    cancel_calls = []
+
+    async def _fake_cancel(**kwargs) -> None:
+      cancel_calls.append(kwargs)
+
+    with (
+      patch(
+        "view.slave.build_prompt_request",
+        side_effect=self._prompt_request_builder(["req_cancel", "req_next"]),
+      ),
+      patch(
+        "orac_voice.voice_loop_local._send_voice_cancel_request",
+        side_effect=_fake_cancel,
+      ),
+    ):
+      output = io.StringIO()
+      with contextlib.redirect_stdout(output):
+        first_status = await _send_orac_prompt(
+          reader=reader,
+          writer=writer,
+          prompt_text="cancel this turn",
+          barge_in_controller=_ImmediateBargeInController(),
+          voice_session_id="voice-session",
+          cancel_host="127.0.0.1",
+          cancel_port=8765,
+          display_sender=sender,
+        )
+        second_status = await _send_orac_prompt(
+          reader=reader,
+          writer=writer,
+          prompt_text="next turn",
+          voice_session_id="voice-session",
+          display_sender=sender,
+        )
+
+    self.assertEqual(first_status, 0)
+    self.assertEqual(second_status, 0)
+    self.assertEqual(cancel_calls[0]["turn_id"], "req_cancel")
+    self.assertIn("[interrupted]", output.getvalue())
+    self.assertIn("Orac: Next answer.", output.getvalue())
+    self.assertNotIn("Stale cancelled content", output.getvalue())
+    self.assertNotIn("Stale cancelled final", output.getvalue())
+    final_events = [
+      event
+      for event in sender.events
+      if event.get("event") == "transcript.orac.final"
+    ]
+    self.assertEqual(final_events[-1]["turn_id"], "req_next")
+    self.assertEqual(final_events[-1]["text"], "Next answer final.")
 
   async def test_voice_prompt_consumes_stream_final_response_frame(self) -> None:
     """Voice session should not leave stale final frames for the next turn."""
