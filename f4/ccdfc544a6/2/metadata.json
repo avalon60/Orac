@@ -1,0 +1,98 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "f4ccdfc544a6",
+  "session_id": "019e60c7-023c-7b72-968e-25e2df38791d",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-25T22:08:22.068021094Z",
+  "branch": "develop",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CoE Cheat Sheet - Liquibase.pdf",
+    "docs/agent-guardrails/table-abbreviations.csv",
+    "resources/db/data_model/table_abbreviations.csv",
+    "resources/db/schema.zip",
+    "resources/db/schema/orac_api/grant/orac_api_consumer_view_access.sql",
+    "resources/db/schema/orac_api/privilege/orac_api_core_table_access.sql",
+    "resources/db/schema/orac_code/package_body/user_preferences_api.sql",
+    "resources/db/schema/orac_code/view/user_preferences_display_v.sql",
+    "resources/db/schema/orac_core/constraint_other/user_pref_ck1.sql",
+    "resources/db/schema/orac_core/run_all.sql",
+    "resources/db/schema/orac_core/seed_data/prfdfn_preference_catalog.sql",
+    "src/controller/orac.py",
+    "src/orac_voice/tts_piper.py",
+    "src/orac_voice/tts_worker.py",
+    "src/orac_voice/voice_events.py",
+    "tests/test_tts_voice_catalog.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "c58d3bb302a2",
+  "token_usage": {
+    "input_tokens": 158067,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 5899392,
+    "output_tokens": 15469,
+    "api_call_count": 59
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-25T22:08:22.045389066Z",
+    "agent_lines": 28,
+    "agent_removed": 6,
+    "human_added": 227,
+    "human_modified": 15,
+    "human_removed": 0,
+    "total_committed": 270,
+    "total_lines_changed": 289,
+    "agent_percentage": 11.76470588235294,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 1674,
+      "user_lines_removed": 15,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "architecture-qa-update1.md": 204,
+        "docs/agent-guardrails/table-abbreviations.csv": 1,
+        "resources/db/data_model/table_abbreviations.csv": 1,
+        "resources/db/schema/orac/synonym/tts_voices.sql": 5,
+        "resources/db/schema/orac/synonym/tts_voices_v.sql": 5,
+        "resources/db/schema/orac_api/grant/orac_api_consumer_view_access.sql": 6,
+        "resources/db/schema/orac_api/privilege/orac_api_core_table_access.sql": 1,
+        "resources/db/schema/orac_api/view/tts_voices_v.sql": 22,
+        "resources/db/schema/orac_apx_pub/synonym/tts_voices.sql": 5,
+        "resources/db/schema/orac_apx_pub/synonym/tts_voices_v.sql": 5,
+        "resources/db/schema/orac_code/view/user_preferences_display_v.sql": 22,
+        "resources/db/schema/orac_core/comment/tts_voices.sql": 59,
+        "resources/db/schema/orac_core/constraint_other/tts_voice_ck1.sql": 9,
+        "resources/db/schema/orac_core/constraint_other/tts_voice_ck2.sql": 9,
+        "resources/db/schema/orac_core/constraint_other/tts_voice_ck3.sql": 9,
+        "resources/db/schema/orac_core/constraint_pk/tts_voice_pk.sql": 9,
+        "resources/db/schema/orac_core/constraint_uc/tts_voice_uk1.sql": 9,
+        "resources/db/schema/orac_core/index/tts_voice_pk.sql": 11,
+        "resources/db/schema/orac_core/index/tts_voice_uk1_idx.sql": 12,
+        "resources/db/schema/orac_core/run_all.sql": 9,
+        "resources/db/schema/orac_core/seed_data/prfdfn_preference_catalog.sql": 30,
+        "resources/db/schema/orac_core/table/tts_voices.sql": 23,
+        "src/controller/orac.py": 63,
+        "src/orac_voice/tts_piper.py": 16,
+        "src/orac_voice/tts_voice_catalog.py": 471,
+        "src/orac_voice/tts_worker.py": 131,
+        "src/orac_voice/voice_events.py": 1,
+        "tests/test_tts_voice_catalog.py": 357
+      },
+      "user_removed_per_file": {
+        "resources/db/schema/orac_core/seed_data/prfdfn_preference_catalog.sql": 9,
+        "src/orac_voice/tts_piper.py": 1,
+        "src/orac_voice/tts_worker.py": 5
+      }
+    }
+  ]
+}

@@ -3,7 +3,7 @@
   "checkpoint_id": "f4ccdfc544a6",
   "strategy": "manual-commit",
   "branch": "develop",
-  "checkpoints_count": 5,
+  "checkpoints_count": 6,
   "files_touched": [
     "CoE Cheat Sheet - Liquibase.pdf",
     "architecture-qa-update1.md",
@@ -53,13 +53,19 @@
       "transcript": "/f4/ccdfc544a6/1/full.jsonl",
       "content_hash": "/f4/ccdfc544a6/1/content_hash.txt",
       "prompt": "/f4/ccdfc544a6/1/prompt.txt"
+    },
+    {
+      "metadata": "/f4/ccdfc544a6/2/metadata.json",
+      "transcript": "/f4/ccdfc544a6/2/full.jsonl",
+      "content_hash": "/f4/ccdfc544a6/2/content_hash.txt",
+      "prompt": "/f4/ccdfc544a6/2/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 1152893,
+    "input_tokens": 1310960,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 28922624,
-    "output_tokens": 87692,
-    "api_call_count": 196
+    "cache_read_tokens": 34822016,
+    "output_tokens": 103161,
+    "api_call_count": 255
   }
 }

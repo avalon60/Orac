@@ -1,0 +1,1 @@
+The recent updates to the app and database (probably the ones to accomodate the capture of voice options) has possibly caused this issue: [Image #1]. Please investigate and fix.
