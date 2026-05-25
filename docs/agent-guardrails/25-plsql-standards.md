@@ -2,69 +2,6 @@
 
 Naming conventions, commenting code, error handling and instrumentation
 
--   [1. Introduction](#CoEBestPracticePLSQL-Introduction)
-
--   [2. General Guidelines](#CoEBestPracticePLSQL-GeneralGuidelines)
-
-    -   [2.1. Modular Code](#CoEBestPracticePLSQL-ModularCode)
-
-    -   [2.2. Formatting](#CoEBestPracticePLSQL-Formatting)
-
--   [3. Variable Naming
-    Conventions](#CoEBestPracticePLSQL-VariableNamingConv)
-
--   [4. Comments](#CoEBestPracticePLSQL-Comments)
-
-    -   [4.1. Package Level
-        Comments](#CoEBestPracticePLSQL-PackageLevelCommen)
-
-    -   [4.2. Procedure / Function Level
-        comments](#CoEBestPracticePLSQL-Procedure/Function)
-
-    -   [4.3. Ace Extension](#CoEBestPracticePLSQL-AceExtension)
-
--   [5. Code](#CoEBestPracticePLSQL-Code)
-
-    -   [5.1. Constants](#CoEBestPracticePLSQL-Constants)
-
-    -   [5.2. Variables & Types](#CoEBestPracticePLSQL-Variables&Types)
-
-    -   [5.3. Numeric Data
-        Types](#CoEBestPracticePLSQL-NumericDataTypes)
-
--   [6. Control Structure
-    Cursor](#CoEBestPracticePLSQL-ControlStructureCu)
-
-    -   [6.1. CASE / IF / DECODE / NVL / NVL2 /
-        COALESCE](#CoEBestPracticePLSQL-CASE/IF/DECODE/NVL)
-
-    -   [6.2. Flow Control](#CoEBestPracticePLSQL-FlowControl)
-
--   [7. Exception Handling](#CoEBestPracticePLSQL-ExceptionHandling)
-
--   [8. Dynamic SQL](#CoEBestPracticePLSQL-DynamicSQL)
-
--   [9. Stored Objects](#CoEBestPracticePLSQL-StoredObjects)
-
-    -   [9.1. Packages](#CoEBestPracticePLSQL-Packages)
-
--   [10. Best Practices](#CoEBestPracticePLSQL-BestPractices)
-
--   [11. Instrumentation](#CoEBestPracticePLSQL-Instrumentation)
-
-    -   [11.1. Use of logger](#CoEBestPracticePLSQL-Useoflogger)
-
-        -   [11.1.1. General
-            Guidelines](#CoEBestPracticePLSQL-GeneralGuidelines.)
-
-        -   [11.1.2. Example
-            Pattern](#CoEBestPracticePLSQL-ExamplePattern)
-
-        -   [11.1.3. Why This
-            Matters](#CoEBestPracticePLSQL-WhyThisMatters)
-
-        -   [11.1.4. ✅ Do and ❌ Don't Checklist for
-            logger](#CoEBestPracticePLSQL-✅Doand❌Don’tCheckl)
 
 # 1. Introduction
 
