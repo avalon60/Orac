@@ -1,0 +1,46 @@
+› Please examine the codex-sdk.zip and determine whether we could adapt/implement this within the repo. The contained SDK does require a prescribed repo structure, but maybe we
+    could its topology to suit the use case here. The idea is that we have a routing AGENTS.md file, at the root of the repo. The links therein, are mainly conditional, to
+  avoid
+    context bloat. These include 2 types of link: links to subsidiary AGENT.md files, these are used to describe in generic terms, the repo substructure that mthey govern. All
+  AGENTS.md files are repo agnostic. The next idea is that we use AGENT_CONTEXT.md files to describe repo specific characteristics/topology. For example the schema / namespace
+  mappings within the database. A template is provided that outlines the structure for the database oriented details. In our case this would only be used to describe  orac_core, orace_api, orac_code, orac_apx_pub, orac schenas.
+
+---
+
+The orac schema is meant for internal orac database connections, by the core Orac Python stack. The idea is that relevant grants are made to the orac schema, such that it can access business logic in the orac_code schema. I'm not sure whether this POLP has been implemented yet. The ora_ha is destined to be implemented via a plugin and should not be referenced, other than to say that it should only be considered, if explicitly requested. The orac_plugin schema, is the go-between schema, for Orac and plugins, where a plugin requires to create it's own schema. The idea is that the plugin will grant access to entrypoints in it's schema, to the plugin_schema, which will allow Orac access to necessary database resident APIs in the plugin schema. Pleae confirm that this makes sense, presuming it makes sense.
+
+---
+
+So, we can implement the SDK?
+
+---
+
+For all intents and purposes, the repo is now clean.
+
+---
+
+We likely need to adapt the topology to allow for the split between APEX apps and the web based apps. We will need mention of these somewhere in AGENT_CONTEXT.md files.
+
+---
+
+The orac_ws perhaps deserves a mention, alongside the APEX apps.
+
+---
+
+Has the fill list of agent-guardrails docs been added from the ZIP file?
+
+---
+
+Remove the existing 30-python-standards.md abd replace with 30-python-engineering-foundations.md and 31-python-standards.md.
+
+---
+
+Actually - merge them instead.
+
+---
+
+Other than the 30-python-engineering-foundations.md, there are still agent-guardrails markdown documents missing in the repo, that exist in the zip. Also existing matches should be updated from the ZIP.
+
+---
+
+Leave the Python guardrail out of this.
