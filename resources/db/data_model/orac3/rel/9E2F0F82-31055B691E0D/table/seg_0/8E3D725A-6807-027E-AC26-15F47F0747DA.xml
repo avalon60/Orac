@@ -1,0 +1,256 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<Table class="oracle.dbtools.crest.model.design.relational.Table" directorySegmentName="seg_0" id="8E3D725A-6807-027E-AC26-15F47F0747DA" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="USER_PROMPT_ELEMENTS">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>USER_PROMPT_ELEMENTS</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 08:53:21 UTC</createdTime>
+<comment><![CDATA[Supports advanced options, allowing the user to front load the context. Based on entries in the table. Vector operations are used to make associations with the relevant entries, based on the conversation.]]></comment>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>633A1B63-D72D-0128-60B6-EFA250864E1A</importedID>
+<abbreviation>user_pe</abbreviation>
+<allowColumnReorder>false</allowColumnReorder>
+<existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
+<parsed>true</parsed>
+<columns itemClass="oracle.dbtools.crest.model.design.relational.Column">
+<Column name="ELEMENT_ID" id="3E1DB7A4-80C6-3DCB-69E6-963F2EB19681">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PROMPT_ELEMENTS</sourceObjSchema>
+<sourceObjName>ELEMENT_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 08:53:21 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>D39D741F-C1C6-59D8-C245-CEF956ECBE43</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementColumn>true</autoIncrementColumn>
+<identityColumn>true</identityColumn>
+<defaultOntNull>true</defaultOntNull>
+<autoIncrementCycle>false</autoIncrementCycle>
+<autoIncrementDisableCache>false</autoIncrementDisableCache>
+<autoIncrementCache>20</autoIncrementCache>
+<autoIncrementOrder>false</autoIncrementOrder>
+<autoIncrementGenerateTrigger>false</autoIncrementGenerateTrigger>
+</Column>
+<Column name="USER_ID" id="B52383FE-0BC3-A607-B6BD-5DAC2A96098F">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PROMPT_ELEMENTS</sourceObjSchema>
+<sourceObjName>USER_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 08:53:21 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>9771896A-872B-2EE8-E94C-0437F83E7E2D</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+<associations>
+<colAssociation fkAssociation="A9238EA1-2849-5639-CA5F-CC0B04896C04" referredColumn="1FEA3C39-B46D-00D0-8926-978F12A4AEDB"/>
+</associations>
+</Column>
+<Column name="CATEGORY_CODE" id="047E879C-CF08-62A8-996C-4C4FA2211784">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PROMPT_ELEMENTS</sourceObjSchema>
+<sourceObjName>CATEGORY_CODE</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 08:53:21 UTC</createdTime>
+<comment><![CDATA[A unique code for the user, which ]]></comment>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>E991F9D8-DFC3-A327-29FA-5434DDD357CC</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>50 BYTE</dataTypeSize>
+<ownDataTypeParameters>50 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="PROMPT_ELEMENT" id="2F403341-AB96-BD40-510A-F2D385822613">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PROMPT_ELEMENTS</sourceObjSchema>
+<sourceObjName>PROMPT_ELEMENT</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 08:53:21 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>DFD791DC-D480-AC0D-FC48-0100E981FF0B</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT028</logicalDatatype>
+<dataTypeSize>4000</dataTypeSize>
+<ownDataTypeParameters>4000,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="WEIGHT_SCORE" id="A9D83617-7434-EA74-CBA2-5199F31861EF">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PROMPT_ELEMENTS</sourceObjSchema>
+<sourceObjName>WEIGHT_SCORE</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 08:53:21 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>1AFAC4C8-AC39-BF02-03BB-EAD65D773BB0</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<dataTypePrecision>5</dataTypePrecision>
+<dataTypeScale>2</dataTypeScale>
+<defaultValue>1</defaultValue>
+<ownDataTypeParameters>,5,2</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="IS_ENABLED" id="E794846C-08ED-CD1D-84DD-82FC1D50AA81">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PROMPT_ELEMENTS</sourceObjSchema>
+<sourceObjName>IS_ENABLED</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 08:53:21 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>56B198C9-3C1C-9501-5693-6B49499B3D81</importedID>
+<constraintName>USER_PE_CK1</constraintName>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT025</logicalDatatype>
+<dataTypeSize>1 BYTE</dataTypeSize>
+<listOfValues>
+<valueDef value="&apos;N&apos;" description=""/>
+<valueDef value="&apos;Y&apos;" description=""/>
+</listOfValues>
+<defaultValue>&apos;Y&apos;</defaultValue>
+<ownDataTypeParameters>1 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_ON" id="CCA13578-BBEC-4454-F874-8E5662EC3719">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PROMPT_ELEMENTS</sourceObjSchema>
+<sourceObjName>CREATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 08:53:21 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>BD7807CC-4819-5A33-CD47-A384D82F39CC</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<defaultValue>systimestamp</defaultValue>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_BY" id="5ABCF2BA-73D8-2BDD-6281-1DFAB6B517F4">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PROMPT_ELEMENTS</sourceObjSchema>
+<sourceObjName>CREATED_BY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 08:53:21 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>5D30A342-3901-5A23-1E69-02C86A18D34D</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 BYTE</dataTypeSize>
+<defaultValue>sys_context(&apos;userenv&apos;, &apos;session_user&apos;)</defaultValue>
+<ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_ON" id="45CCD06E-EB79-5DE1-0C36-566D8739B129">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PROMPT_ELEMENTS</sourceObjSchema>
+<sourceObjName>UPDATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 08:53:21 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>BDA4DDBD-A14F-30DA-956E-BAAE38A77628</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_BY" id="DBAD10C6-9FE0-A9A5-8672-BD06FE41E2E2">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PROMPT_ELEMENTS</sourceObjSchema>
+<sourceObjName>UPDATED_BY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 08:53:21 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>5BF27AF6-4DE4-6C7C-832A-2920C7CA87FF</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 BYTE</dataTypeSize>
+<ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="ROW_VERSION" id="0DC49E5F-40DB-0D20-7EB1-5D9044157780">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>USER_PROMPT_ELEMENTS</sourceObjSchema>
+<sourceObjName>ROW_VERSION</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 08:53:21 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>C4F48270-4747-0D7B-2D19-0B0D85F34B45</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<defaultValue>1</defaultValue>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+</columns>
+<indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
+<ind_PK_UK id="63FC6E9D-18E8-5615-6E02-2D4338E9C712" name="USER_PE_PK">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 09:06:24 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<pk>true</pk>
+<indexState>Primary Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="3E1DB7A4-80C6-3DCB-69E6-963F2EB19681"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="80E0884A-5C8C-F1CB-7CCA-7CCE9836D7A7" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="USER_PE_IDX1">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>UPE_USER_CAT_IDX</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 08:53:21 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>40B84489-A5B8-78E6-2C86-144F263E5325</importedID>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="B52383FE-0BC3-A607-B6BD-5DAC2A96098F"/>
+<colUsage columnID="047E879C-CF08-62A8-996C-4C4FA2211784"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="AB6EFD2D-7F04-BFC9-F7AD-DF4AA7FA3915" schemaObject="0A0EFB75-031D-9FAD-6900-3D75372A603B" name="USER_PE_PK_IDX">
+<sourceConnName>OracSchema</sourceConnName>
+<sourceObjSchema>ORAC</sourceObjSchema>
+<sourceObjName>USER_PE_PK_IDX</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-04-27 17:22:02 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>57FC307D-256D-CC93-B8EB-1E0CFC6F2E10</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="3E1DB7A4-80C6-3DCB-69E6-963F2EB19681"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="99939551-548C-FEA3-6D33-1E0EE71AF43F" name="USER_PE_USERS_FK1">
+<createdBy>clive</createdBy>
+<createdTime>2025-08-31 09:07:03 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<indexState>Foreign Key</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="B52383FE-0BC3-A607-B6BD-5DAC2A96098F"/>
+</indexColumnUsage>
+</ind_PK_UK>
+</indexes>
+</Table>

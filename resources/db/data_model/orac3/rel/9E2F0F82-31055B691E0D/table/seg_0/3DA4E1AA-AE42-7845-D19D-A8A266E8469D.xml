@@ -1,0 +1,273 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<Table class="oracle.dbtools.crest.model.design.relational.Table" directorySegmentName="seg_0" id="3DA4E1AA-AE42-7845-D19D-A8A266E8469D" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="TIMEZONES">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>ORAC_CORE</sourceObjSchema>
+<sourceObjName>TIMEZONES</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Curated canonical timezone catalogue used for user-facing LOVs and validation.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>C1DC44C8-00E4-7712-472C-1C4CCFA3880F</importedID>
+<allowColumnReorder>false</allowColumnReorder>
+<existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
+<parsed>true</parsed>
+<columns itemClass="oracle.dbtools.crest.model.design.relational.Column">
+<Column name="TIMEZONE_ID" id="FA11BF39-FBAF-7F25-8297-FF0FB92870F0">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>TIMEZONES</sourceObjSchema>
+<sourceObjName>TIMEZONE_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Primary key for the timezone row.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>1BD46CA8-B62E-1D87-C807-34C49F268130</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementColumn>true</autoIncrementColumn>
+<identityColumn>true</identityColumn>
+<defaultOntNull>true</defaultOntNull>
+<autoIncrementCycle>false</autoIncrementCycle>
+<autoIncrementDisableCache>false</autoIncrementDisableCache>
+<autoIncrementCache>20</autoIncrementCache>
+<autoIncrementOrder>false</autoIncrementOrder>
+</Column>
+<Column name="TZ_NAME" id="9FC7263D-C511-99DB-74F3-847EAC6F8FC7">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>TIMEZONES</sourceObjSchema>
+<sourceObjName>TZ_NAME</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Canonical timezone region name stored in preferences, for example Europe/London.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>B74178E1-9911-030F-1270-A720B868D8DB</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>100 BYTE</dataTypeSize>
+<ownDataTypeParameters>100 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="DISPLAY_LABEL" id="E3D06C4F-7AAF-2B65-AE32-4D13A1409CE9">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>TIMEZONES</sourceObjSchema>
+<sourceObjName>DISPLAY_LABEL</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[User-friendly display label shown in LOVs and preference editors.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>9FBBBE04-8C5E-CAA4-C478-F1E5E3D2A166</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>200 BYTE</dataTypeSize>
+<ownDataTypeParameters>200 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="REGION_GROUP" id="B3FFCD25-6E84-4129-E06B-368C00129271">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>TIMEZONES</sourceObjSchema>
+<sourceObjName>REGION_GROUP</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[High-level grouping used to organise timezone LOVs, for example Europe or North America.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>A3872736-AF93-11D2-6B36-0BB229677E45</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>50 BYTE</dataTypeSize>
+<ownDataTypeParameters>50 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="DISPLAY_SEQUENCE" id="968F1902-46D8-072F-9039-B17CFE65428C">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>TIMEZONES</sourceObjSchema>
+<sourceObjName>DISPLAY_SEQUENCE</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Display ordering used within a region group.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>DEC8D26D-457C-8AB6-AD36-B8AFAAF7FC5E</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<defaultValue>10</defaultValue>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="IS_ACTIVE" id="7A0B7741-31B2-6F35-8181-B1E04809C0D7">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>TIMEZONES</sourceObjSchema>
+<sourceObjName>IS_ACTIVE</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Indicates whether the timezone may be selected by users.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>1BEABA7A-F49B-76FE-4927-18B3E6CACB01</importedID>
+<constraintName>TMZONE_CK1</constraintName>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>1 BYTE</dataTypeSize>
+<listOfValues>
+<valueDef value="&apos;N&apos;" description=""/>
+<valueDef value="&apos;Y&apos;" description=""/>
+</listOfValues>
+<defaultValue>&apos;Y&apos;</defaultValue>
+<ownDataTypeParameters>1 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_ON" id="1F2923A1-7DAA-E6FE-E3E7-08B41858E381">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>TIMEZONES</sourceObjSchema>
+<sourceObjName>CREATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Timestamp when the row was created.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>E5B0C500-9A69-7998-91D5-60EEB4A52044</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<defaultValue>systimestamp</defaultValue>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_BY" id="D65D8B58-00CA-DEC4-411E-6BA5374CEBF9">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>TIMEZONES</sourceObjSchema>
+<sourceObjName>CREATED_BY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[User or process that created the row.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>EABAD77D-EB22-1474-27C7-47C7246AB0C3</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 BYTE</dataTypeSize>
+<defaultValue>coalesce(
+                      sys_context(&apos;apex$session&apos;, &apos;app_user&apos;),
+                      sys_context(&apos;userenv&apos;, &apos;proxy_user&apos;),
+                      sys_context(&apos;userenv&apos;, &apos;session_user&apos;),
+                      user
+                    )</defaultValue>
+<ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_ON" id="9EDC3D62-78EC-110C-7B5C-DE334DE5F56C">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>TIMEZONES</sourceObjSchema>
+<sourceObjName>UPDATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Timestamp when the row was last updated.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>E815C578-004F-A3B5-5F6E-1E81570EC565</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_BY" id="596BA546-45D8-F9D8-FB69-515630EBC7E4">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>TIMEZONES</sourceObjSchema>
+<sourceObjName>UPDATED_BY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[User or process that last updated the row.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>5B33291E-93E4-B7C9-0D7C-92CEBA271E1B</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 BYTE</dataTypeSize>
+<ownDataTypeParameters>128 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="ROW_VERSION" id="95F80087-4E1A-21AD-7C6E-63F9CCC19657">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>TIMEZONES</sourceObjSchema>
+<sourceObjName>ROW_VERSION</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Row version number used for optimistic locking.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>07C6876D-4747-A3D4-1B85-2F9766DBE86F</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<defaultValue>1</defaultValue>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+</columns>
+<indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
+<ind_PK_UK id="BFF16000-B2C2-9814-B9F4-2CBC03DFC1E5" name="TMZONE_PK">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>ORAC_CORE</sourceObjSchema>
+<sourceObjName>TMZONE_PK</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>FB89B559-83AE-428E-9401-F259B617A9CB</importedID>
+<pk>true</pk>
+<indexState>Primary Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="FA11BF39-FBAF-7F25-8297-FF0FB92870F0"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="8431EEF6-FA7B-028D-AB40-575FC35CAE60" name="TMZONE_UK1">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>ORAC_CORE</sourceObjSchema>
+<sourceObjName>TMZONE_UK1</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>A8EE8629-9152-6DFA-858F-8E60DF32D76C</importedID>
+<indexState>Unique Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="9FC7263D-C511-99DB-74F3-847EAC6F8FC7"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="6339F9B9-64DA-C31C-0BC8-7A497E487CB0" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="TMZONE_PK">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>ORAC_CORE</sourceObjSchema>
+<sourceObjName>TMZONE_PK</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>1CF96CE0-8AAC-C377-7DC0-E64B1896056A</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="FA11BF39-FBAF-7F25-8297-FF0FB92870F0"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="80DEF6AC-2E12-E305-F6E0-51AE672D3247" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="TMZONE_UK1_IDX">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>ORAC_CORE</sourceObjSchema>
+<sourceObjName>TMZONE_UK1_IDX</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>E1C9E4B8-E334-B42A-4452-65630B9B2023</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="9FC7263D-C511-99DB-74F3-847EAC6F8FC7"/>
+</indexColumnUsage>
+</ind_PK_UK>
+</indexes>
+</Table>
