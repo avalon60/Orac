@@ -1,0 +1,11 @@
+-- __author__: clive
+-- __date__: 2026-05-25
+-- __description__: conversation foreign key index for plugin_invocations
+
+
+create index orac_core.plg_inv_convs_fk1_idx
+  on orac_core.plugin_invocations
+  (
+    conversation_id asc
+  )
+;

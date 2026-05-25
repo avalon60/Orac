@@ -15,3 +15,5 @@ grant select, insert, update, delete on orac_core.devices to orac_api with grant
 grant select, insert, update, delete on orac_core.message_embeddings to orac_api with grant option;
 grant select, insert, update, delete on orac_core.user_prompt_elements to orac_api with grant option;
 grant select, insert, update, delete on orac_core.orac_personalities to orac_api with grant option;
+grant select, insert, update, delete on orac_core.plugin_invocations to orac_api with grant option;
+grant select, insert, update, delete on orac_core.plugin_audit_events to orac_api with grant option;

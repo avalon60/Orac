@@ -11,6 +11,8 @@ prompt === tables ===
 @table/model_generation_presets.sql
 @table/message_embeddings.sql
 @table/messages.sql
+@table/plugin_invocations.sql
+@table/plugin_audit_events.sql
 @table/orac_personalities.sql
 @table/user_preferences.sql
 @table/user_prompt_elements.sql
@@ -39,6 +41,13 @@ prompt === indexes ===
 @index/mesgs_llm_reg_fk1_idx.sql
 @index/mesgs_pk.sql
 @index/mesgs_uk1_idx.sql
+@index/plg_inv_convs_fk1_idx.sql
+@index/plg_inv_mesgs_fk1_idx.sql
+@index/plg_inv_pk.sql
+@index/plg_inv_req_idx.sql
+@index/plg_inv_users_fk1_idx.sql
+@index/plg_audevt_pk.sql
+@index/plg_audevt_plg_inv_fk1_idx.sql
 @index/orpers_pk.sql
 @index/orpers_uk1_idx.sql
 @index/user_pe_idx1.sql
@@ -60,6 +69,8 @@ prompt === constraints_pk ===
 @constraint_pk/model_generation_presets_pk.sql
 @constraint_pk/mesg_emb_pk.sql
 @constraint_pk/mesgs_pk.sql
+@constraint_pk/plg_inv_pk.sql
+@constraint_pk/plg_audevt_pk.sql
 @constraint_pk/orpers_pk.sql
 @constraint_pk/user_pe_pk.sql
 @constraint_pk/user_pref_pk.sql
@@ -85,6 +96,10 @@ prompt === constraints_fk ===
 @constraint_fk/mesg_emb_mesgs_fk1.sql
 @constraint_fk/mesgs_convs_fk1.sql
 @constraint_fk/mesgs_llm_reg_fk1.sql
+@constraint_fk/plg_inv_convs_fk1.sql
+@constraint_fk/plg_inv_mesgs_fk1.sql
+@constraint_fk/plg_inv_users_fk1.sql
+@constraint_fk/plg_audevt_plg_inv_fk1.sql
 @constraint_fk/orpers_model_preset_fk1.sql
 @constraint_fk/user_pe_users_fk1.sql
 @constraint_fk/user_pref_users_fk1.sql
@@ -108,6 +123,13 @@ prompt === constraints_other ===
 @constraint_other/mesg_emb_ck1.sql
 @constraint_other/mesgs_ck1.sql
 @constraint_other/mesgs_ck2.sql
+@constraint_other/plg_inv_ck1.sql
+@constraint_other/plg_inv_ck2.sql
+@constraint_other/plg_inv_ck3.sql
+@constraint_other/plg_inv_ck4.sql
+@constraint_other/plg_audevt_ck1.sql
+@constraint_other/plg_audevt_ck2.sql
+@constraint_other/plg_audevt_ck3.sql
 @constraint_other/orpers_ck1.sql
 @constraint_other/orpers_ck2.sql
 @constraint_other/orpers_ck3.sql
@@ -125,6 +147,8 @@ prompt === comments ===
 @comment/model_generation_presets.sql
 @comment/message_embeddings.sql
 @comment/messages.sql
+@comment/plugin_invocations.sql
+@comment/plugin_audit_events.sql
 @comment/orac_personalities.sql
 @comment/user_preferences.sql
 @comment/users.sql
@@ -138,6 +162,8 @@ prompt === triggers ===
 @trigger/model_generation_presets_bu.sql
 @trigger/mesg_emb_bu.sql
 @trigger/mesgs_bu.sql
+@trigger/plg_inv_bu.sql
+@trigger/plg_audevt_bu.sql
 @trigger/user_pe_bu.sql
 @trigger/user_pref_bu.sql
 @trigger/user_syns_bu.sql

@@ -66,6 +66,8 @@ grant select on orac_api.devices_v to orac_code with grant option;
 grant select on orac_api.message_embeddings_v to orac_code with grant option;
 grant select on orac_api.orac_personalities_v to orac_code with grant option;
 grant select on orac_api.user_prompt_elements_v to orac_code with grant option;
+grant select on orac_api.plugin_invocations_v to orac_code with grant option;
+grant select on orac_api.plugin_audit_events_v to orac_code with grant option;
 
 grant read on orac_api.preference_definitions_v to orac_code with grant option;
 grant read on orac_api.users_v to orac_code with grant option;
@@ -79,6 +81,8 @@ grant read on orac_api.devices_v to orac_code with grant option;
 grant read on orac_api.message_embeddings_v to orac_code with grant option;
 grant read on orac_api.orac_personalities_v to orac_code with grant option;
 grant read on orac_api.user_prompt_elements_v to orac_code with grant option;
+grant read on orac_api.plugin_invocations_v to orac_code with grant option;
+grant read on orac_api.plugin_audit_events_v to orac_code with grant option;
 
 grant execute on orac_api.preference_definitions_tapi to orac_code;
 grant execute on orac_api.users_tapi to orac_code;
@@ -91,3 +95,5 @@ grant execute on orac_api.devices_tapi to orac_code;
 grant execute on orac_api.message_embeddings_tapi to orac_code;
 grant execute on orac_api.orac_personalities_tapi to orac_code;
 grant execute on orac_api.user_prompt_elements_tapi to orac_code;
+grant execute on orac_api.plugin_invocations_tapi to orac_code;
+grant execute on orac_api.plugin_audit_events_tapi to orac_code;
