@@ -1,0 +1,66 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "87590100d367",
+  "session_id": "019e6062-df80-7fa1-afc5-ab77f14548b1",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-26T10:53:09.969558762Z",
+  "branch": "develop",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "resources/config/orac.ini",
+    "src/controller/orac.py",
+    "src/orac_core/retrieval/__init__.py",
+    "src/orac_core/retrieval/response_style.py",
+    "tests/test_orac_context_history.py",
+    "tests/test_retrieval.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.4-mini",
+  "turn_id": "a3c392e8f65d",
+  "token_usage": {
+    "input_tokens": 2818556,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 67565312,
+    "output_tokens": 279850,
+    "api_call_count": 496
+  },
+  "session_metrics": {
+    "turn_count": 29
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-26T10:53:09.670176533Z",
+    "agent_lines": 318,
+    "agent_removed": 7,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 318,
+    "total_lines_changed": 325,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 169,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 169,
+      "user_lines_removed": 0,
+      "agent_lines_added": 318,
+      "agent_lines_removed": 7,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141
+      }
+    }
+  ]
+}

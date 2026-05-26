@@ -1,0 +1,1031 @@
+Please group remaining modifications and perform the necessary commits.
+
+---
+
+Are the docs/agent-guardrails/*.md files, enough to minimise architectural drift?
+
+---
+
+Please add lightweight architectural drift checks for the Orac project.
+
+Goal:
+Turn the existing docs/agent-guardrails/*.md guidance into basic executable checks, without over-engineering.
+
+Please inspect:
+- AGENTS.md
+- docs/agent-guardrails/*.md
+- current test structure
+- pyproject.toml / tooling configuration
+
+Implement:
+1. A guardrail consistency check script, preferably scripts/check_guardrails.py, that verifies:
+   - docs/agent-guardrails contains no stray/untitled files
+   - all markdown files follow the existing naming convention
+   - all guardrail files referenced by AGENTS.md exist
+   - all relative links from AGENTS.md to docs/agent-guardrails are valid
+   - all relative links between guardrail documents are valid where practical
+
+2. Add tests for the check script if the project test style supports it.
+
+3. Add or document a simple command for running the check locally.
+
+4. Do not introduce heavyweight dependencies unless already present.
+
+5. Do not alter architectural rules unless necessary. This task is about validating the existing guardrail structure, not rewriting it.
+
+After implementation, report:
+- files changed
+- checks added
+- how to run them
+- any broken references or questionable files found
+
+---
+
+Please implement lightweight guardrail drift checks for the Orac project.
+
+Goal:
+Add a small, standard-library-only Python checker that validates the structure and local references of docs/agent-guardrails without rewriting guardrail content or adding dependencies.
+
+Files to inspect:
+- AGENTS.md
+- docs/agent-guardrails/
+- current test layout
+- pyproject.toml only if needed to understand pytest usage
+
+Implement:
+
+1. Create scripts/check_guardrails.py.
+
+Requirements:
+- Use only the Python standard library.
+- Include the normal script header used in this project.
+- Use argparse for CLI arguments.
+- Provide a --root argument, defaulting to the project root inferred from the script location.
+- Return exit code 0 when clean and 1 when issues are found.
+- Print concise issue lines when broken.
+
+The checker should validate:
+- docs/agent-guardrails exists.
+- Top-level markdown guardrail files follow the naming convention:
+  - NN-kebab-case.md
+  - examples: 00-project-principles.md, 10-architecture-boundaries.md
+- Known non-markdown assets are allowed explicitly, currently:
+  - table-abbreviations.csv
+- Nested documentation directories, such as docs/agent-guardrails/frontend-nextjs/, are allowed and do not need to follow the top-level numeric naming convention.
+- Stray/temp/editor-style files are rejected, including:
+  - names containing "untitled" case-insensitively
+  - files with no extension
+  - backup suffixes such as ~, .bak, .tmp, .swp
+  - leading dotfiles
+- Local guardrail references from AGENTS.md are extracted and validated.
+- Local guardrail references from guardrail markdown files are extracted and validated where practical.
+
+Reference extraction should support:
+- plain references such as docs/agent-guardrails/foo.md
+- inline-code references such as `docs/agent-guardrails/foo.md`
+- Markdown links such as [text](docs/agent-guardrails/foo.md)
+- relative links between guardrail documents where practical
+
+Ignore:
+- http:// links
+- https:// links
+- anchors-only links
+- email-style links
+- external Markdown links
+
+2. Add tests/test_check_guardrails.py.
+
+Testing requirements:
+- Import scripts/check_guardrails.py directly using importlib.util.spec_from_file_location.
+- Do not require scripts/ to be a package.
+- Unit-test reference extraction for:
+  - AGENTS.md-style plain references
+  - inline-code references
+  - Markdown local links
+  - ignored external links
+- Unit-test invalid names using tmp_path, including:
+  - Untitled Document
+  - backup files
+  - dotfiles
+  - extensionless files
+- Unit-test valid top-level guardrail names using tmp_path.
+- Unit-test that nested guardrail docs are allowed without the top-level numeric naming convention.
+- Add a repository smoke test that verifies current AGENTS.md guardrail references resolve.
+- Do not make the pytest suite depend on the current repository containing docs/agent-guardrails/Untitled Document.
+  - The direct checker may fail today because that file exists.
+  - The tests should remain valid after that file is removed.
+
+3. Documentation:
+Add a very short note in AGENTS.md or an existing lightweight developer documentation location showing:
+
+poetry run python scripts/check_guardrails.py
+poetry run pytest tests/test_check_guardrails.py
+
+Do not add a pyproject entry point.
+Do not add dependencies.
+Do not rewrite guardrail content.
+Do not implement source-code architectural policy checks in this pass.
+
+Expected current direct-check result:
+- poetry run python scripts/check_guardrails.py may return non-zero while docs/agent-guardrails/Untitled Document exists.
+- That is expected and should be reported clearly.
+
+After implementation, report:
+- files changed
+- checks added
+- how to run them
+- any current issues found in the repository
+
+---
+
+Implement the plan.
+
+---
+
+Please perform a review-only architecture reconciliation pass for Orac.
+
+Current context:
+- The original architecture audit is in architecture-qa-results.md.
+- Since that audit, multiple remediation passes have been completed, including:
+  - protocol/schema/runtime/display alignment;
+  - fail-closed protocol validation;
+  - provider registry/factory;
+  - explicit provider capabilities;
+  - plugin service lifecycle wiring;
+  - plugin execution policy and provenance;
+  - PluginExecutionService extraction;
+  - trusted PluginConfirmationBroker;
+  - plugin timeout handling;
+  - failed/timed-out plugin provenance;
+  - high-level voice turn contract tests;
+  - VoiceTurnController extraction;
+  - Home Assistant data lifecycle documentation;
+  - plugin audit persistence documentation;
+  - plugin audit DB/API design documentation;
+  - table abbreviation governance for plugin_invocations and plugin_audit_events.
+
+Important:
+This is a review-only pass.
+Do not modify code.
+Do not modify DDL.
+Do not modify documentation unless explicitly asked after this review.
+Do not implement runtime plugin audit persistence.
+Do not implement Home Assistant population, websocket integration, state query, or device control.
+
+Goals:
+1. Cross-check architecture-qa-results.md against the current repository state.
+2. For each original Top 10 issue, classify it as:
+   - resolved;
+   - mostly resolved;
+   - partially resolved;
+   - still open;
+   - superseded;
+   - newly risky due to later changes.
+3. Re-evaluate the current architecture for coherence and boundaries of responsibility.
+4. Identify any architectural regressions introduced by the remediation passes.
+5. Identify any stale documentation or mismatches between docs and current code.
+6. Reconfirm or revise the next recommended implementation sequence.
+
+Please inspect:
+- architecture-qa-results.md
+- docs/plugin-execution-boundaries.md
+- docs/plugin-audit-persistence.md
+- docs/plugin-audit-db-api-design.md
+- docs/home-assistant-data-lifecycle.md
+- docs/agent-guardrails/table-abbreviations.csv
+- src/controller/orac.py
+- src/model/provider_registry.py
+- src/model/plugin_execution_service.py
+- src/model/plugin_confirmation_broker.py
+- src/model/plugin_execution_policy.py
+- src/model/plugin_router.py
+- src/model/plugin_service_manager.py
+- src/orac_voice/voice_turn_controller.py
+- src/orac_voice/voice_loop_local.py
+- plugins/home_assistant.json
+- plugins/weather.json
+- relevant tests under tests/
+
+Specific checks:
+1. Confirm whether provider-specific logic has genuinely moved out of Orac or whether meaningful leakage remains.
+2. Confirm whether PluginExecutionService is a clean boundary or just a thin relocation with hidden coupling.
+3. Confirm whether plugin policy, confirmation, timeout, and provenance form a coherent execution boundary.
+4. Confirm whether denied/scaffold/unknown/confirmation-required paths still avoid plugin import.
+5. Confirm whether Home Assistant remains safely scaffold-only.
+6. Confirm whether HA tables are consistently treated as cache/state tables, not audit tables.
+7. Confirm whether plugin audit persistence design is ready for DDL/API implementation.
+8. Confirm whether table abbreviations are now consistently:
+   - plugin_invocations -> plg_inv
+   - plugin_audit_events -> plg_audevt
+   and whether any stale plg_aud_evt references remain.
+9. Confirm whether VoiceTurnController improved the boundary or merely moved the large state machine.
+10. Confirm whether tests are still overfitted to private implementation details and whether that now matters.
+11. Confirm whether src/controller/orac.py remains the primary pressure point and, if so, what the next safe extraction would be.
+12. Confirm whether the original "Recommended Refactoring Sequence" should now be updated.
+
+Output format:
+- Executive summary.
+- Updated status table for the original Top 10 issues.
+- Newly discovered architectural risks, if any.
+- Stale documentation/code mismatches, if any.
+- Boundary assessment by subsystem:
+  - core controller;
+  - provider runtime;
+  - plugin execution;
+  - plugin service lifecycle;
+  - confirmation broker;
+  - voice runtime;
+  - Home Assistant;
+  - DB/API persistence;
+  - protocol/display.
+- Recommended next sequence.
+- Explicit "do not do yet" list.
+- Validation commands run and results.
+
+Validation:
+- poetry run python -m unittest discover -s tests
+
+Remember:
+This is a review-only pass. Do not make changes.
+
+---
+
+Please save results to architecture-qa-update1.md
+
+---
+
+Please implement the next architecture QA remediation pass for Orac: reconcile stale plugin audit documentation and add database verification for the new plugin audit objects.
+
+Current state:
+- The architecture reconciliation pass found no major new architectural drift.
+- Provider, plugin policy, confirmation, timeout, provenance, service lifecycle, and voice boundary work are mostly resolved.
+- The main remaining pressure point is src/controller/orac.py.
+- PluginExecutionService is currently a useful seam but not yet a full execution lifecycle boundary.
+- Plugin audit DB/API assets now exist.
+- docs/plugin-audit-db-api-design.md and docs/home-assistant-data-lifecycle.md contain stale wording that predates the plugin audit DB/API assets.
+- No runtime plugin audit persistence should be wired in this pass.
+
+Goals:
+1. Reconcile stale documentation around plugin audit DB/API status and HA next steps.
+2. Add database/static verification for plugin audit objects, grants, constraints, indexes, triggers, views, and package validity, following existing project conventions.
+3. Preserve current runtime behaviour.
+4. Do not wire runtime plugin execution into DB persistence yet.
+5. Do not implement Home Assistant cache population, websocket integration, live state query, or device control.
+
+Please inspect:
+- docs/plugin-audit-db-api-design.md
+- docs/plugin-audit-persistence.md
+- docs/home-assistant-data-lifecycle.md
+- resources/db/schema
+- resources/db/schema/AGENT_CONTEXT.md
+- any existing DB verification scripts/tests
+- orac_core.plugin_invocations assets
+- orac_core.plugin_audit_events assets
+- orac_code plugin audit API/package assets, if present
+
+Specific tasks:
+1. Update documentation to reflect that plugin audit DB/API assets now exist.
+2. Remove or reword stale statements saying object-by-object DDL/API work is still future work.
+3. Update HA lifecycle docs so the next step is not "plugin audit DB/API design", but DB verification and runtime audit adapter work.
+4. Add or extend DB verification checks for:
+   - plugin_invocations table;
+   - plugin_audit_events table;
+   - primary keys;
+   - foreign keys;
+   - check constraints;
+   - indexes;
+   - triggers;
+   - comments;
+   - API views;
+   - TAPI/API packages;
+   - grants;
+   - install-order inclusion.
+5. Confirm the canonical abbreviation is:
+   - plugin_invocations -> plg_inv
+   - plugin_audit_events -> plg_audevt
+6. Confirm no stale plg_aud_evt references remain.
+
+Important constraints:
+- Do not change plugin execution behaviour.
+- Do not wire runtime audit persistence yet.
+- Do not let plugins write audit tables directly.
+- Do not implement Home Assistant runtime behaviour.
+- Do not remove HA scaffold protection.
+- Do not change protocol, provider, voice, confirmation, timeout, or policy behaviour.
+- Use lowercase Oracle SQL/PLSQL reserved words.
+- Preserve existing tests.
+
+Validation:
+- poetry run python -m unittest discover -s tests
+- Run any existing DB/static verification command if present.
+
+Please report:
+- files changed;
+- stale documentation corrected;
+- DB verification added;
+- plugin audit objects verified;
+- any missing DB/API assets found;
+- validation results;
+- deferred work.
+
+---
+
+Please fix the current full-suite failures in tests/test_orac_voice.py around _FakeVoiceWorker.enqueue_text(... tts_voice=...).
+
+Context:
+- The previous pass only changed plugin audit documentation/schema verification.
+- The full suite now fails in tests/test_orac_voice.py because the fake voice worker does not match the current production enqueue_text call signature.
+- Do not change plugin audit code.
+- Do not change database/schema files.
+- Do not change Home Assistant behaviour.
+- Do not change provider/plugin policy/confirmation/timeout behaviour.
+- Keep the fix narrow.
+
+Tasks:
+1. Inspect the production TTS/voice worker enqueue_text signature and all call sites.
+2. Update _FakeVoiceWorker in tests/test_orac_voice.py to match the production contract.
+3. Prefer an explicit tts_voice optional keyword parameter if that is now part of the contract.
+4. Only use **kwargs if the production contract genuinely supports arbitrary keyword arguments.
+5. Preserve the existing voice contract tests.
+6. Add assertions for tts_voice only if the tests already have enough context to do so cleanly.
+7. Run:
+   - poetry run python -m unittest tests.test_orac_voice
+   - poetry run python -m unittest discover -s tests
+
+Please report:
+- files changed;
+- root cause;
+- whether the production contract or only the test fake was stale;
+- validation results.
+
+---
+
+So what now remains?
+
+---
+
+Please implement the next Orac architecture remediation pass: add runtime plugin audit persistence through a narrow PluginAuditAdapter and wire it through PluginExecutionService.
+
+Current state:
+- The full test suite is green again.
+- Plugin audit DB/API assets now exist and have static verification.
+- plugin_invocations and plugin_audit_events are the durable audit tables.
+- orac_code.plugin_audit_api exists as the approved database API boundary.
+- PluginExecutionService currently acts as a useful seam, but not yet a full plugin execution lifecycle boundary.
+- PluginRouter already handles policy, scaffold denial, confirmation checks, timeout handling, failed/timed-out provenance, and no-import denied paths.
+- Plugins must not write audit records directly.
+- Home Assistant remains scaffold-only.
+- HA tables are cache/state tables, not audit tables.
+
+Goal:
+Add a runtime-facing plugin audit adapter and wire plugin execution lifecycle audit recording through PluginExecutionService, without changing plugin execution behaviour.
+
+Important architecture rule:
+Plugin audit persistence must be owned by Orac runtime code, not by plugins. Plugins should not know about or write to plugin_invocations or plugin_audit_events.
+
+Please inspect:
+- src/model/plugin_execution_service.py
+- src/model/plugin_router.py
+- src/model/plugin_execution_policy.py
+- src/model/plugin_confirmation_broker.py
+- src/controller/orac.py
+- docs/plugin-audit-persistence.md
+- docs/plugin-audit-db-api-design.md
+- tests/test_plugin_router.py
+- tests/test_orac_plugin_integration.py
+- tests/test_plugin_audit_schema.py
+- the orac_code.plugin_audit_api package assets under resources/db/schema
+
+Tasks:
+
+1. Add a PluginAuditAdapter
+   - Suggested location: src/model/plugin_audit_adapter.py
+   - The adapter should be the only Python-side seam for writing plugin audit records.
+   - It should call the approved orac_code.plugin_audit_api path if runtime DB access is available.
+   - If DB/context access is unavailable, it should degrade safely and log clearly, without breaking normal plugin execution.
+
+2. Define a small Python-side audit payload model
+   - Use dataclasses or existing project style.
+   - Include fields such as:
+     - request_id
+     - correlation_id
+     - turn_id
+     - conversation_id
+     - message_id
+     - user_id
+     - plugin_id
+     - plugin_name
+     - action_type
+     - capabilities
+     - entitlements
+     - policy_decision
+     - confirmation_id
+     - confirmation_status
+     - execution_status
+     - timeout_seconds
+     - failure_type
+     - failure_message
+     - provenance_json / provenance dict
+
+3. Wire PluginExecutionService to the adapter
+   - PluginExecutionService should coordinate audit recording for plugin execution outcomes.
+   - Do not put audit writes inside plugin code.
+   - Do not make PluginRouter responsible for database persistence unless it already owns the relevant context cleanly.
+   - The service should record or prepare audit events for:
+     - candidate selected, if candidate information is available;
+     - policy evaluated;
+     - confirmation required;
+     - execution started;
+     - execution completed;
+     - execution failed;
+     - execution timed out;
+     - denied/scaffold/unknown-action outcomes.
+
+4. Preserve existing behaviour
+   - Weather plugin behaviour must remain unchanged.
+   - Non-plugin prompts must still fall through to the LLM path.
+   - Denied, scaffold, unknown-action, and confirmation-required paths must still avoid plugin import/execution.
+   - Trusted confirmation behaviour must remain unchanged.
+   - Timeout/failure provenance must remain unchanged from the caller’s perspective.
+   - Existing response metadata and assistant-turn metadata must remain compatible.
+
+5. Safe failure behaviour
+   - Audit persistence failure must not cause normal safe plugin execution to fail unless the existing project explicitly treats audit persistence as mandatory.
+   - Log audit persistence failures with useful developer detail.
+   - Do not expose raw DB errors, stack traces, secrets, or internal SQL details to the user-facing response.
+
+6. Tests
+   Add or update tests proving:
+   - PluginAuditAdapter can normalise completed plugin provenance into an audit payload.
+   - Denied/scaffold/unknown-action/confirmation-required outcomes map to audit payloads.
+   - Failed plugin provenance maps to audit payloads.
+   - Timed-out plugin provenance maps to audit payloads.
+   - PluginExecutionService calls the audit adapter for handled plugin outcomes.
+   - PluginExecutionService still returns None for LLM fallback.
+   - Audit adapter failure does not break existing plugin execution unless explicitly configured to do so.
+   - Plugins do not write audit records directly.
+   - Weather/read-only plugin behaviour remains unchanged.
+   - Existing plugin provenance still reaches response metadata and assistant-turn metadata.
+
+Important constraints:
+- Do not implement real Home Assistant control.
+- Do not populate HA tables.
+- Do not implement HA websocket integration.
+- Do not implement live HA state query.
+- Do not remove HA scaffold protection.
+- Do not change protocol frame names or payload structure.
+- Do not change provider behaviour.
+- Do not change voice behaviour.
+- Do not change plugin policy, confirmation, timeout, or provenance semantics except to add audit persistence around them.
+- Do not perform unrelated DB/APEX cleanup.
+- Do not let plugins write audit tables directly.
+
+Validation:
+- poetry run python -m unittest tests.test_plugin_router
+- poetry run python -m unittest tests.test_plugin_runtime
+- poetry run python -m unittest tests.test_orac_plugin_integration
+- poetry run python -m unittest tests.test_plugin_audit_schema
+- poetry run python -m unittest tests.test_weather_plugin
+- poetry run python -m unittest discover -s tests
+
+Also run:
+- poetry run python scripts/check_guardrails.py
+
+Note:
+scripts/check_guardrails.py may still fail if docs/agent-guardrails/Untitled Document remains present. Report that separately as a known guardrail hygiene issue, not as a plugin audit failure.
+
+Please report:
+- files changed;
+- PluginAuditAdapter responsibilities;
+- how audit payloads map to plugin_invocations and plugin_audit_events;
+- where audit recording is wired into PluginExecutionService;
+- which lifecycle events are recorded;
+- behaviours preserved;
+- validation results;
+- any remaining audit gaps;
+- deferred work.
+
+---
+
+Please commit changes
+
+---
+
+Any uncommitted changes?
+
+---
+
+Please implement the next Orac architecture remediation pass: clean the remaining guardrail hygiene issue and add a small audit-completeness improvement around plugin audit persistence.
+
+Current state:
+- The full unit test suite is green.
+- PluginAuditAdapter exists.
+- PluginExecutionService now wires runtime plugin audit persistence through PluginRouter/PluginAuditAdapter.
+- Plugin audit DB/API assets exist and are statically verified.
+- Plugin audit records are written through the approved orac_code.plugin_audit_api path.
+- Plugins must not write audit records directly.
+- Home Assistant remains scaffold-only.
+- HA tables are cache/state tables, not audit tables.
+- scripts/check_guardrails.py currently fails only because docs/agent-guardrails/Untitled Document exists.
+
+Goals:
+1. Remove or resolve the known guardrail hygiene issue:
+   - docs/agent-guardrails/Untitled Document
+2. Add a small audit-completeness improvement if there is a clean existing hook:
+   - link the persisted assistant message_id back to the plugin audit invocation after assistant-turn persistence.
+3. Do not perform broad architecture refactoring.
+4. Do not implement Home Assistant cache population or control.
+5. Preserve current plugin execution behaviour.
+
+Tasks:
+
+1. Guardrail cleanup
+   - Inspect docs/agent-guardrails/Untitled Document.
+   - If it is empty, stray, or clearly obsolete, remove it.
+   - If it contains useful content, move/rename it into a valid guardrail document name following the NN-kebab-case.md convention.
+   - After cleanup, scripts/check_guardrails.py should pass.
+
+2. Plugin audit message_id linking
+   - Inspect the current assistant-turn persistence flow.
+   - Identify whether PluginAuditAdapter or PluginExecutionService has access to the plugin_invocation_id and the saved assistant message_id after _save_assistant_turn or equivalent persistence completes.
+   - If a clean hook exists, add a small link/update call through the approved plugin audit API path.
+   - Do not add direct table writes.
+   - Do not let plugin code write audit data.
+   - If no clean hook exists, do not force it. Document the missing seam and leave this deferred.
+
+3. Audit completeness decision
+   - Review whether declined can_handle paths and pre-execution load/instantiate failures can be audited cleanly with the current lifecycle context.
+   - If they can be added without broad refactoring, add narrow audit events.
+   - If they require a larger lifecycle redesign, document them as deferred.
+   - Do not destabilise current no-import denial guarantees.
+
+4. Optional config only if already consistent with project conventions
+   - Inspect existing config style.
+   - If straightforward, add a documented audit persistence mode:
+     - best_effort
+     - strict
+   - Default must remain best_effort.
+   - If adding this would be too invasive, document it as deferred instead.
+
+Important constraints:
+- Do not implement real Home Assistant control.
+- Do not populate HA tables.
+- Do not implement HA websocket integration.
+- Do not implement live HA state query.
+- Do not remove HA scaffold protection.
+- Do not change protocol frame names or payload structure.
+- Do not change provider behaviour.
+- Do not change voice behaviour.
+- Do not change plugin policy, confirmation, timeout, or provenance semantics.
+- Do not perform unrelated DB/APEX cleanup.
+- Do not add broad controller refactoring.
+- Do not allow plugins to write audit tables directly.
+
+Tests:
+- Update or add tests proving:
+  - scripts/check_guardrails.py passes after the stray file cleanup.
+  - Existing plugin audit persistence behaviour still works.
+  - If message_id linking is implemented, the audit adapter/API receives the saved message_id through the approved path.
+  - If no clean message_id hook exists, no runtime behaviour changes are made.
+  - Weather plugin behaviour remains unchanged.
+  - Non-plugin prompts still fall through to the LLM path.
+  - Denied/scaffold/unknown-action/confirmation-required paths still avoid plugin import/execution.
+
+Validation:
+- poetry run python scripts/check_guardrails.py
+- poetry run python -m unittest tests.test_plugin_audit_adapter
+- poetry run python -m unittest tests.test_plugin_router
+- poetry run python -m unittest tests.test_orac_plugin_integration
+- poetry run python -m unittest tests.test_plugin_audit_schema
+- poetry run python -m unittest tests.test_weather_plugin
+- poetry run python -m unittest discover -s tests
+
+Please report:
+- files changed;
+- what happened to docs/agent-guardrails/Untitled Document;
+- whether message_id audit linking was implemented or deferred;
+- whether declined can_handle/load/instantiate failures were audited or deferred;
+- whether audit persistence mode config was added or deferred;
+- behaviours preserved;
+- validation results;
+- remaining audit gaps;
+- recommended next step.
+
+---
+
+Please commit the changes
+
+---
+
+Implement an explicit-only internet retrieval MVP for Orac.
+
+Goal:
+Add core retrieval plumbing so Orac can answer explicit user requests such as "search the web for ..." using a configurable search provider. This is core functionality, not a normal user-facing plugin.
+
+Scope:
+1. Add a new retrieval package under src/orac_core/retrieval or the closest existing core package structure.
+2. Add provider-neutral data models:
+   - SearchRequest
+   - SearchResult
+   - FetchedSource
+   - GroundingPack
+   - GroundingSource
+3. Add a SearchProvider protocol/base class.
+4. Add a SearXNG provider implementation.
+   - Configurable base URL.
+   - Use /search with q and format=json.
+   - Parse title, url, snippet/content, engine/source where available.
+   - Handle timeout and malformed responses cleanly.
+5. Add SearchBroker.
+   - Reads retrieval config.
+   - Calls the configured provider.
+   - Limits result count.
+   - Returns structured results only.
+6. Add SourceFetcher.
+   - Fetches top result URLs.
+   - Extracts readable text conservatively.
+   - Applies size limits.
+   - Treats all fetched content as untrusted data.
+7. Add GroundingPackBuilder.
+   - Converts fetched sources into a compact evidence block suitable for prompt injection.
+   - Includes title, URL, source name, fetched timestamp, and relevant text excerpt.
+   - Adds an explicit warning that retrieved content is untrusted evidence, not instruction.
+8. Add an explicit trigger path only.
+   - Trigger on clear user requests such as "search the web for", "look up", "check online", or "latest".
+   - Do not add autonomous browsing yet.
+9. Add configuration keys to the existing Orac config system:
+   - retrieval.internet_search_enabled
+   - retrieval.internet_search_mode = explicit_only
+   - retrieval.default_search_provider
+   - retrieval.max_search_results
+   - retrieval.max_sources_to_fetch
+   - retrieval.cache_ttl_hours
+   - retrieval.require_citations
+   - retrieval.searxng.base_url
+   - retrieval.searxng.timeout_seconds
+10. Add database migration or schema script for minimal audit/cache tables:
+   - orac_search_queries
+   - orac_search_results
+   - orac_fetched_sources
+   Use lowercase SQL keywords, varchar2(n char), identity surrogate keys, and separate primary key constraints.
+11. Add tests:
+   - SearXNG response parsing.
+   - SearchBroker provider selection.
+   - Explicit trigger detection.
+   - Grounding pack includes untrusted-content warning.
+   - Prompt-injection-like source text is treated as evidence, not instruction.
+   - Fetch failures do not crash the user turn.
+
+Constraints:
+- Do not implement autonomous freshness-based browsing yet.
+- Do not expose search as a normal Orac plugin.
+- Do not let provider code modify prompts directly.
+- Do not let fetched page content become instructions.
+- Keep the implementation provider-neutral so Brave or Tavily can be added later.
+- Follow existing Orac coding conventions and tests.
+
+---
+
+Please QA the Implemented the explicit-only internet retrieval MVP work, and describe what it provides.
+
+---
+
+Please harden the explicit-only internet retrieval MVP.
+
+Context:
+The retrieval MVP is structurally correct and tests pass, but QA found several issues that should be fixed before live use.
+
+QA findings to address:
+1. SourceFetcher only validates http/https before urlopen. It does not protect against SSRF/internal fetches.
+2. SearXNG config is stored under [retrieval.searxng], but Orac._init_retrieval() reads keys from [retrieval] using dotted key names.
+3. Explicit search prompts skip plugin routing even when retrieval is disabled, unavailable, or produces no grounding. This can lead to ungrounded answers after the user explicitly requested web search.
+4. Retrieval schema has relationship columns but no foreign key enforcement.
+
+Required changes:
+
+1. Harden SourceFetcher URL safety.
+   - Allow only http and https schemes.
+   - Reject file, ftp, data, javascript and all other schemes.
+   - Reject localhost and localhost-like hostnames.
+   - Resolve hostnames before fetching.
+   - Reject loopback, private, link-local, multicast, reserved and unspecified IP ranges.
+   - Reject obvious metadata-service addresses such as 169.254.169.254.
+   - Apply the same validation before fetching and after every redirect.
+   - Do not allow urllib or any HTTP client to follow redirects without validating the redirect target first.
+   - Add a small configurable maximum redirect count.
+   - Return a safe FetchedSource failure record for blocked URLs rather than crashing the user turn.
+
+2. Add conservative fetch limits.
+   - Configurable timeout.
+   - Configurable maximum response bytes.
+   - Only process text/html, text/plain and application/xhtml+xml for now.
+   - Unsupported content types should produce a fetch_status/error_message record, not an exception through the user turn.
+   - Keep PDF parsing out of scope unless already implemented.
+
+3. Fix SearXNG config wiring.
+   - Read base_url and timeout_seconds from [retrieval.searxng].
+   - Keep the existing [retrieval] keys for general retrieval settings.
+   - Add tests proving [retrieval.searxng] values are honoured.
+   - Optional: support old dotted keys as a fallback only if that fits existing ConfigManager conventions.
+
+4. Improve explicit-search failure behaviour.
+   - If explicit retrieval is requested but retrieval is disabled, unavailable, fails, or produces no usable grounding, do not silently answer as though web evidence was retrieved.
+   - Add a retrieval status object or equivalent prompt context.
+   - The model should be instructed not to claim it searched online when retrieval failed.
+   - Prefer a clear user-facing answer such as "I could not retrieve online evidence for that request" rather than an ungrounded current-facts answer.
+   - Keep internet retrieval out of the plugin system.
+
+5. Add foreign key constraints to the retrieval schema.
+   - orac_search_results.search_query_id should reference orac_search_queries.search_query_id.
+   - orac_fetched_sources.search_result_id should reference orac_search_results.search_result_id.
+   - Follow existing schema asset conventions.
+   - Use lowercase SQL keywords.
+   - Use existing guardrail naming conventions for constraint names.
+
+6. Add tests.
+   - Unsafe URL blocking:
+     - localhost
+     - 127.0.0.1
+     - ::1
+     - 10.0.0.0/8
+     - 172.16.0.0/12
+     - 192.168.0.0/16
+     - 169.254.0.0/16
+     - metadata address 169.254.169.254
+     - file:// and other non-http schemes
+   - Unsafe redirect blocking.
+   - Unsupported content-type handling.
+   - Oversized response handling.
+   - [retrieval.searxng] config values are actually used.
+   - Explicit retrieval unavailable/failure path does not produce an ungrounded answer as though search succeeded.
+   - Existing retrieval tests continue to pass.
+
+Constraints:
+- Do not implement autonomous browsing.
+- Do not expose internet retrieval as a normal plugin.
+- Do not let fetched page content affect system, persona, routing, tool or policy instructions.
+- Provider code should return structured search results only.
+- Prompt construction and untrusted-content boundaries must remain in core.
+- Keep the change small and reviewable.
+- Run:
+  poetry run python scripts/check_guardrails.py
+  poetry run python -m unittest discover -s tests
+
+---
+
+continue
+
+---
+
+How is an internet search instigated?
+
+---
+
+Does Orac see my prompt? For example can it combine it's own knowledge with internet results?
+
+---
+
+Question: What is Dex's Midnight Runner's latest single? Search the Internet? Response: I cannot search the Internet. My knowledge is current only up to my training cutoff.
+
+Regarding "Dex's Midnight Runner": there is no widely known artist by that exact name. You likely mean **Dex** (the electronic music producer), whose track is often titled "Midnight Runner" or similar, or you may be conflating names. If you are referring to a specific recent release by Dex, please clarify the artist's full name or the track title, and I will answer from my internal knowledge base.
+
+---
+
+Q: Search the internet for Dex's Midnight Runner's latest single. A: I could not retrieve online evidence for that request.
+
+---
+
+Q: Search the internet for information on Neil Armstrong A: I could not retrieve online evidence for that request.
+
+---
+
+Am I supposed to run a local service for internet searches?
+
+---
+
+How do I do that?
+
+---
+
+Please ensure that the README.md includes details of this.
+
+---
+
+I have the docker container running, but I still get:  could not retrieve online evidence for that request.
+
+---
+
+clive@clive-MS-7C95:~/PycharmProjects/Orac$ docker ps
+CONTAINER ID   IMAGE                                      COMMAND                  CREATED         STATUS                   PORTS                                                                                                                                             NAMES
+86ef380add3d   searxng/searxng:latest                     "/usr/local/searxng/…"   2 minutes ago   Up 2 minutes             127.0.0.1:8888->8080/tcp                                                                                                                          orac-searxng
+82a435b21d64   orac:latest                                "/bin/bash -c $ORACL…"   14 hours ago    Up 7 minutes (healthy)   0.0.0.0:1521->1521/tcp, [::]:1521->1521/tcp, 0.0.0.0:5500->5500/tcp, [::]:5500->5500/tcp, 8888/tcp, 0.0.0.0:8042->8080/tcp, [::]:8042->8080/tcp   orac-db
+19ef0506638a   ghcr.io/remsky/kokoro-fastapi-cpu:latest   "./entrypoint.sh"        8 days ago      Up 13 minutes            127.0.0.1:8880->8880/tcp                                                                                                                          orac-kokoro
+cd1b042f8622   ghcr.io/open-webui/open-webui:cuda         "bash start.sh"          2 months ago    Up 2 hours (healthy)     0.0.0.0:3000->8080/tcp, [::]:3000->8080/tcp                                                                                                       open-webui
+
+---
+
+Please diagnose and fix the local SearXNG JSON API configuration used by Orac internet retrieval.
+
+Context:
+Orac's explicit-only internet retrieval MVP uses SearXNG via format=json.
+
+Manual testing shows:
+
+curl -sS --max-time 10 \
+  -H 'X-Forwarded-For: 127.0.0.1' \
+  -H 'X-Real-IP: 127.0.0.1' \
+  'http://127.0.0.1:8888/search?q=Neil%20Armstrong&format=json' \
+  | head -c 1000
+
+returns:
+
+<!doctype html>
+<html lang=en>
+<title>403 Forbidden</title>
+<h1>Forbidden</h1>
+<p>You don't have the permission to access the requested resource. It is either read-protected or not readable by the server.</p>
+
+But plain HTML search works:
+
+curl -sS --max-time 10 \
+  'http://127.0.0.1:8888/search?q=Neil%20Armstrong' \
+  | head -c 300
+
+returns normal SearXNG HTML.
+
+Likely cause:
+SearXNG is reachable, but JSON output is not enabled. SearXNG requires output formats to be enabled under the search section of settings.yml. If format=json is requested but json is not listed, SearXNG returns 403 Forbidden.
+
+Goal:
+Make the local SearXNG instance usable by Orac retrieval with format=json, and add a small repeatable smoke-test/diagnostic so this can be checked again later.
+
+Tasks:
+
+1. Locate the actual SearXNG configuration used by the running container.
+   - Inspect the running SearXNG container.
+   - Identify the bind mount or volume used for /etc/searxng.
+   - Do not assume a local settings.yml path unless docker inspect confirms it.
+
+2. Update the active SearXNG settings.yml so the search section enables JSON output.
+   Required effective YAML:
+
+   search:
+     formats:
+       - html
+       - json
+
+   Preserve existing search settings such as safe_search, autocomplete, default_lang, etc.
+   Do not duplicate the search section.
+   Do not remove unrelated settings.
+
+3. Restart the SearXNG container.
+
+4. Verify JSON output directly.
+   Run:
+
+   curl -sS --max-time 10 \
+     'http://127.0.0.1:8888/search?q=Neil%20Armstrong&format=json' \
+     | python -m json.tool | head -40
+
+   Expected result:
+   The response should parse as JSON.
+   It should not return the 403 HTML page.
+
+5. Verify Orac configuration.
+   Confirm resources/config/orac.ini has:
+
+   [retrieval.searxng]
+   base_url = http://127.0.0.1:8888
+   timeout_seconds = 10
+
+   Confirm the Orac retrieval code reads this section, not dotted keys under [retrieval].
+
+6. Add a small developer smoke-test command or script if there is an existing suitable scripts/ convention.
+   Preferred name:
+   scripts/check_searxng_retrieval.py
+
+   Behaviour:
+   - Read Orac's configured SearXNG base URL if practical.
+   - Otherwise default to http://127.0.0.1:8888.
+   - Request /search?q=Neil%20Armstrong&format=json.
+   - Fail clearly if:
+     - connection fails
+     - HTTP status is not 200
+     - response is HTML
+     - response is not valid JSON
+     - expected top-level JSON structure is missing
+   - Print a concise success message showing the query and number of results found.
+   - Use argparse for command-line parameters.
+   - Include the required script header:
+     Author: Clive Bostock
+     Date: <today's date>
+     Description: Checks that the configured SearXNG instance supports JSON search for Orac retrieval.
+
+7. Add tests if practical.
+   - Test that the smoke-test parser detects HTML 403 as a failure.
+   - Test that valid JSON is accepted.
+   - Avoid requiring a live SearXNG instance in normal unit tests.
+
+8. Run validation:
+   poetry run python scripts/check_guardrails.py
+   poetry run python -m unittest discover -s tests
+
+Non-goals:
+- Do not change the Orac retrieval architecture.
+- Do not expose retrieval as a plugin.
+- Do not add autonomous web browsing.
+- Do not weaken SourceFetcher SSRF protections.
+- Do not make SourceFetcher allow localhost result URLs.
+- The local SearXNG provider endpoint may be localhost, but fetched search result URLs must still be treated as untrusted external content and safety-checked.
+
+Return:
+- What SearXNG config path was actually used.
+- The exact settings.yml change made.
+- The direct curl/json validation result.
+- Whether the Orac retrieval smoke test passes.
+- The normal test-suite result.
+
+---
+
+I still get this, after restarting the Orac stack: I cannot search the internet. My knowledge is current only up to my training cutoff.
+
+Regarding Kevin Rowland's latest single: based on available information up to my cutoff, his most recent notable release was "The Greatest Love Of All" (2022) under the "As It Should Have Sounded" reissue label. There is no verified data on a newer single released after my training data. If you are looking for a specific track, please clarify the timeframe or context.
+
+---
+
+I asked a question and it is hanging on waiting for response: [Image #1]
+
+---
+
+Please commit the changes
+
+---
+
+Please improve the conversational style of Orac's explicit internet retrieval responses.
+
+Context:
+The explicit-only internet retrieval path is now working, but successful responses can sound mechanical and implementation-leaky.
+
+Example current response:
+"The song is 'My Life in England, Pt. 1' by Dexys Midnight Runners. The retrieved evidence confirms its existence and availability on platforms like YouTube and Spotify, though the specific lyrics or full track details were not fully extracted in the search results."
+
+Problem:
+The response exposes internal retrieval mechanics using phrases like "retrieved evidence" and "search results". That is useful for logs or debug mode, but too clunky for normal conversation.
+
+Goal:
+Make successful retrieval responses sound natural, while preserving transparency when retrieval fails, is incomplete, or the user asks for diagnostic detail.
+
+Required behaviour:
+
+1. Successful retrieval, sufficient evidence:
+   - Answer naturally.
+   - Do not mention "retrieved evidence", "grounding pack", "fetched sources", "search results confirm", or similar internal mechanics.
+   - Example:
+     "The song is 'My Life in England, Pt. 1' by Dexys Midnight Runners."
+
+2. Successful retrieval, partial evidence:
+   - Answer naturally, but briefly mention the limitation.
+   - Example:
+     "The song is 'My Life in England, Pt. 1' by Dexys Midnight Runners. I found public references to it on YouTube and Spotify, but not enough reliable detail to confirm lyrics or deeper track notes."
+
+3. Retrieval failed, disabled, unavailable, blocked, or produced no usable grounding:
+   - Be transparent.
+   - Do not let the model answer as though it searched successfully.
+   - Example:
+     "I could not retrieve usable online evidence for that. I can answer from general knowledge, but I cannot confirm the current online details."
+
+4. Diagnostic/debug mode:
+   - Keep or add a way to expose retrieval detail when explicitly requested.
+   - Useful detail includes provider, query, result URLs, fetch status, skipped/blocked URLs, and grounding excerpts.
+   - Do not show this by default in normal conversation.
+
+Implementation guidance:
+- Keep the untrusted-content warning inside the prompt/grounding boundary, but do not let that warning leak into the final answer unless relevant.
+- Add or update response instructions around the injected grounding pack.
+- Consider adding a retrieval_visibility or retrieval_response_style setting if there is already a suitable config/preferences pattern:
+  - normal
+  - transparent
+  - debug
+- Default should be normal.
+- Do not change the retrieval architecture.
+- Do not expose internet retrieval as a plugin.
+- Do not weaken URL safety or prompt-injection protections.
+
+Tests:
+- Add tests showing successful retrieval responses do not contain mechanical phrases such as:
+  - "retrieved evidence"
+  - "grounding pack"
+  - "fetched sources"
+  - "search results confirm"
+- Add tests showing retrieval failure still produces a transparent failure message.
+- Add tests showing partial retrieval can mention limitations naturally.
+- Existing retrieval and guardrail tests must continue to pass.
+
+Run:
+poetry run python scripts/check_guardrails.py
+poetry run python -m unittest discover -s tests
+
+Return:
+- Files changed.
+- Behaviour before and after.
+- Validation output.
