@@ -1029,3 +1029,7 @@ Return:
 - Files changed.
 - Behaviour before and after.
 - Validation output.
+
+---
+
+Please commit the changes.
