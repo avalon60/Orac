@@ -1,0 +1,23 @@
+Please commit changes
+
+---
+
+Hey, Orac: What is today's date? A: I am Orac, an extensible artificial intelligence system, created by Clive Bostock. 
+
+The current time is 00:50. Today's date is Tuesday, 26 May 2026.
+
+---
+
+So I ask for the date, why is Orac starting with who Orac is abd who created Orac?
+
+---
+
+No, Hey Orac is the wake word/phrase. The recieved text is "Wjat is today's date?"
+
+---
+
+Please modify the primer text.
+
+---
+
+Should it not be in the resources/config/orac_system_prompt.yaml file that we implement this?
