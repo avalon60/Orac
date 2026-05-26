@@ -13,6 +13,9 @@ from .models import GroundingSource
 from .models import RetrievalOutcome
 from .models import SearchRequest
 from .models import SearchResult
+from .response_style import build_retrieval_response_guidance
+from .response_style import normalize_retrieval_response_style
+from .response_style import polish_retrieval_response_text
 from .providers import SearXNGSearchProvider
 from .providers import SearchProvider
 from .service import ExplicitRetrievalService
@@ -32,5 +35,8 @@ __all__ = [
     "SearchRequest",
     "SearchResult",
     "SourceFetcher",
+    "build_retrieval_response_guidance",
     "detect_explicit_search_request",
+    "normalize_retrieval_response_style",
+    "polish_retrieval_response_text",
 ]

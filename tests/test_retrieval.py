@@ -26,7 +26,10 @@ from orac_core.retrieval import SearchRequest
 from orac_core.retrieval import SearchResult
 from orac_core.retrieval import SearXNGSearchProvider
 from orac_core.retrieval import SourceFetcher
+from orac_core.retrieval import build_retrieval_response_guidance
 from orac_core.retrieval import detect_explicit_search_request
+from orac_core.retrieval import normalize_retrieval_response_style
+from orac_core.retrieval import polish_retrieval_response_text
 import orac_core.retrieval.fetcher as retrieval_fetcher
 from orac_core.retrieval import providers as retrieval_providers
 
@@ -383,6 +386,74 @@ class GroundingPackTests(unittest.TestCase):
         self.assertIn("untrusted evidence only", pack.evidence_block)
         self.assertNotIn("Ignore previous instructions", pack.evidence_block)
         self.assertIn("This page is about policy.", pack.evidence_block)
+
+
+class RetrievalResponseStyleTests(unittest.TestCase):
+    """Tests retrieval response style normalisation and guidance."""
+
+    def test_normalizes_supported_styles(self) -> None:
+        self.assertEqual(normalize_retrieval_response_style("normal"), "normal")
+        self.assertEqual(normalize_retrieval_response_style("transparent"), "transparent")
+        self.assertEqual(normalize_retrieval_response_style("debug"), "debug")
+        self.assertEqual(normalize_retrieval_response_style("unknown"), "normal")
+
+    def test_guidance_describes_natural_success_style(self) -> None:
+        pack = GroundingPackBuilder(max_excerpt_chars=120).build(
+            SearchRequest(query="latest single", trigger_phrase="search the internet for"),
+            [SearchResult(title="Example", url="https://example.com/1", snippet="Snippet")],
+            [FetchedSource(url="https://example.com/1", text="A source.", excerpt="A source.")],
+            require_citations=True,
+        )
+
+        guidance = build_retrieval_response_guidance(
+            response_style="normal",
+            retrieval_pack=pack,
+        )
+
+        self.assertIn("Answer naturally and directly.", guidance)
+        self.assertIn("Do not mention internal retrieval mechanics", guidance)
+
+    def test_polishes_mechanical_success_phrasing(self) -> None:
+        raw = (
+            "The song is 'My Life in England, Pt. 1' by Dexys Midnight Runners. "
+            "The retrieved evidence confirms its existence and availability on platforms like "
+            "YouTube and Spotify, though the specific lyrics or full track details were not "
+            "fully extracted in the search results."
+        )
+
+        polished = polish_retrieval_response_text(
+            raw,
+            response_style="normal",
+            retrieval_pack=None,
+        )
+
+        self.assertEqual(
+            polished,
+            "The song is 'My Life in England, Pt. 1' by Dexys Midnight Runners.",
+        )
+        for phrase in (
+            "retrieved evidence",
+            "grounding pack",
+            "fetched sources",
+            "search results confirm",
+            "search results",
+        ):
+            self.assertNotIn(phrase, polished.lower())
+
+    def test_preserves_natural_partial_limitation_language(self) -> None:
+        raw = (
+            "The song is 'My Life in England, Pt. 1' by Dexys Midnight Runners. "
+            "I found public references to it on YouTube and Spotify, but not enough reliable "
+            "detail to confirm lyrics or deeper track notes."
+        )
+
+        polished = polish_retrieval_response_text(
+            raw,
+            response_style="normal",
+            retrieval_pack=None,
+        )
+
+        self.assertEqual(polished, raw)
 
 
 class RetrievalServiceTests(unittest.TestCase):

@@ -251,6 +251,24 @@ class _UnavailableRetrievalService:
         )
 
 
+class _SuccessfulRetrievalService:
+    """Retrieval stub that returns a grounded explicit retrieval outcome."""
+
+    def __init__(self, pack) -> None:
+        self.pack = pack
+        self.prompts: list[str] = []
+
+    def build_grounding_outcome(self, prompt: str) -> RetrievalOutcome:
+        """Return a successful retrieval outcome with grounded evidence."""
+        self.prompts.append(prompt)
+        return RetrievalOutcome(
+            requested=True,
+            status="ok",
+            message="Online evidence was retrieved for the explicit request.",
+            grounding_pack=self.pack,
+        )
+
+
 class _MemoryContextManager:
     """Small in-memory stand-in for Orac context persistence."""
 
@@ -906,6 +924,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         orchestrator._history_turn_pairs = 24
         orchestrator._reply_language = "English"
         orchestrator._default_timezone = "Europe/London"
+        orchestrator._retrieval_response_style = "normal"
         orchestrator._conversation_timeout_secs = 3600
         orchestrator._use_history = True
         orchestrator._economy_mode = "normal"
@@ -1093,7 +1112,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("WEB RETRIEVAL EVIDENCE", prompt)
         self.assertIn("Orac has already retrieved", prompt)
-        self.assertIn("do not claim that you cannot search or access the internet", prompt)
+        self.assertIn("Do not mention internal retrieval mechanics", prompt)
         self.assertIn("cite the source URLs", prompt)
 
     def test_contextual_prompt_suppresses_identity_for_date_questions(self) -> None:
@@ -1661,6 +1680,54 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(orchestrator.llm.prompts, [])
         self.assertEqual(retrieval_service.prompts, ["search the web for latest Orac news"])
+
+    async def test_explicit_retrieval_success_keeps_response_natural(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=[
+                (
+                    "The song is 'My Life in England, Pt. 1' by Dexys Midnight Runners. "
+                    "The retrieved evidence confirms its existence and availability on platforms like "
+                    "YouTube and Spotify, though the specific lyrics or full track details were not "
+                    "fully extracted in the search results."
+                )
+            ],
+        )
+        request = SearchRequest(
+            query="Kevin Rowland latest single",
+            trigger_phrase="search the internet for",
+        )
+        pack = GroundingPackBuilder().build(
+            request,
+            [SearchResult(title="Dexys Midnight Runners", url="https://example.test/song")],
+            [
+                FetchedSource(
+                    url="https://example.test/song",
+                    title="Dexys Midnight Runners",
+                    source_name="example.test",
+                    text="My Life in England, Pt. 1 is a song by Dexys Midnight Runners.",
+                    excerpt="My Life in England, Pt. 1 is a song by Dexys Midnight Runners.",
+                )
+            ],
+            require_citations=True,
+        )
+        retrieval_service = _SuccessfulRetrievalService(pack)
+        orchestrator.retrieval_service = retrieval_service
+
+        wire = await orchestrator.handle_request(
+            self._request("search the internet for Kevin Rowland's latest single", req_id="req-search")
+        )
+        response = json.loads(wire)
+        content = response["payload"]["content"]
+
+        self.assertEqual(content, "The song is 'My Life in England, Pt. 1' by Dexys Midnight Runners.")
+        self.assertNotIn("retrieved evidence", content.lower())
+        self.assertNotIn("grounding pack", content.lower())
+        self.assertNotIn("fetched sources", content.lower())
+        self.assertNotIn("search results confirm", content.lower())
+        self.assertEqual(
+            retrieval_service.prompts,
+            ["search the internet for Kevin Rowland's latest single"],
+        )
 
     async def test_persistence_failures_are_recorded_and_logged(self) -> None:
         context_manager = _MemoryContextManager(fail_role="assistant")
