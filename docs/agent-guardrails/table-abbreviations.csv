@@ -9,6 +9,9 @@ orac_core,llm_registry,llm_reg
 orac_core,tts_voices,tts_voice
 orac_core,message_embeddings,mesg_emb
 orac_core,messages,mesgs
+orac_core,orac_search_queries,orac_srch_q
+orac_core,orac_search_results,orac_srch_res
+orac_core,orac_fetched_sources,orac_fch_src
 orac_core,model_generation_presets,model_generation_presets
 orac_core,orac_personalities,orpers
 orac_core,user_preferences,user_pref

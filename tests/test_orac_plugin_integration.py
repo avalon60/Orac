@@ -208,6 +208,41 @@ class _FakeConfigManager:
     def int_config_value(self, section: str, key: str, default=None):
         return default
 
+    def float_config_value(self, section: str, key: str, default=None):
+        return default
+
+    def bool_config_value(self, section: str, key: str, default=None):
+        return default
+
+
+class _RetrievalConfigManager:
+    def __init__(self):
+        self.values = {
+            ("retrieval.searxng", "base_url"): "https://search.example.test",
+            ("retrieval.searxng", "timeout_seconds"): 7.5,
+            ("retrieval", "internet_search_enabled"): True,
+            ("retrieval", "internet_search_mode"): "explicit_only",
+            ("retrieval", "default_search_provider"): "searxng",
+            ("retrieval", "max_search_results"): 4,
+            ("retrieval", "max_sources_to_fetch"): 2,
+            ("retrieval", "max_response_bytes"): 1234,
+            ("retrieval", "max_redirects"): 2,
+            ("retrieval", "cache_ttl_hours"): 6.0,
+            ("retrieval", "require_citations"): True,
+        }
+
+    def config_value(self, section: str, key: str, default=None):
+        return self.values.get((section, key), default)
+
+    def int_config_value(self, section: str, key: str, default=None):
+        return int(self.values.get((section, key), default))
+
+    def float_config_value(self, section: str, key: str, default=None):
+        return float(self.values.get((section, key), default))
+
+    def bool_config_value(self, section: str, key: str, default=None):
+        return bool(self.values.get((section, key), default))
+
 
 class _FakeContextManager:
     def __init__(self):
@@ -328,6 +363,23 @@ class OracPluginIntegrationTests(unittest.TestCase):
 
         self.assertEqual(report, orchestrator.plugin_manager.status())
         self.assertEqual(orchestrator.plugin_manager.refresh_calls, 0)
+
+    def test_retrieval_initialisation_reads_searxng_subsection(self) -> None:
+        orchestrator = self._make_orac_stub()
+        orchestrator.config_mgr = _RetrievalConfigManager()
+
+        orchestrator._init_retrieval()
+
+        service = orchestrator.retrieval_service
+        self.assertIsNotNone(service)
+        broker = service._search_broker  # type: ignore[union-attr]
+        provider = broker._providers["searxng"]  # type: ignore[attr-defined]
+        fetcher = service._source_fetcher  # type: ignore[union-attr]
+        self.assertEqual(provider._base_url, "https://search.example.test")
+        self.assertEqual(provider._timeout_seconds, 7.5)
+        self.assertEqual(fetcher._timeout_seconds, 7.5)
+        self.assertEqual(fetcher._max_bytes, 1234)
+        self.assertEqual(fetcher._max_redirects, 2)
 
     def test_collect_plugin_routing_handoff_refreshes_when_requested(self) -> None:
         orchestrator = self._make_orac_stub()

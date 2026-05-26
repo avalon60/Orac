@@ -14,6 +14,9 @@ prompt === tables ===
 @table/messages.sql
 @table/plugin_invocations.sql
 @table/plugin_audit_events.sql
+@table/orac_search_queries.sql
+@table/orac_search_results.sql
+@table/orac_fetched_sources.sql
 @table/orac_personalities.sql
 @table/user_preferences.sql
 @table/user_prompt_elements.sql
@@ -51,6 +54,11 @@ prompt === indexes ===
 @index/plg_inv_users_fk1_idx.sql
 @index/plg_audevt_pk.sql
 @index/plg_audevt_plg_inv_fk1_idx.sql
+@index/orac_srch_q_pk.sql
+@index/orac_srch_res_pk.sql
+@index/orac_srch_res_srch_q_fk1_idx.sql
+@index/orac_fch_src_pk.sql
+@index/orac_fch_src_srch_res_fk1_idx.sql
 @index/orpers_pk.sql
 @index/orpers_uk1_idx.sql
 @index/user_pe_idx1.sql
@@ -75,6 +83,9 @@ prompt === constraints_pk ===
 @constraint_pk/mesgs_pk.sql
 @constraint_pk/plg_inv_pk.sql
 @constraint_pk/plg_audevt_pk.sql
+@constraint_pk/orac_srch_q_pk.sql
+@constraint_pk/orac_srch_res_pk.sql
+@constraint_pk/orac_fch_src_pk.sql
 @constraint_pk/orpers_pk.sql
 @constraint_pk/user_pe_pk.sql
 @constraint_pk/user_pref_pk.sql
@@ -105,6 +116,8 @@ prompt === constraints_fk ===
 @constraint_fk/plg_inv_mesgs_fk1.sql
 @constraint_fk/plg_inv_users_fk1.sql
 @constraint_fk/plg_audevt_plg_inv_fk1.sql
+@constraint_fk/orac_srch_res_orac_srch_q_fk1.sql
+@constraint_fk/orac_fch_src_srch_res_fk1.sql
 @constraint_fk/orpers_model_preset_fk1.sql
 @constraint_fk/user_pe_users_fk1.sql
 @constraint_fk/user_pref_users_fk1.sql

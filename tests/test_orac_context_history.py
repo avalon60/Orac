@@ -55,6 +55,11 @@ from controller.orac import Orac
 from model.context_manager import OracContextManager
 from model.llm_connector import LLMUsageMetadata
 from model.plugin_runtime import PluginExecutionResult
+from orac_core.retrieval import FetchedSource
+from orac_core.retrieval import GroundingPackBuilder
+from orac_core.retrieval import RetrievalOutcome
+from orac_core.retrieval import SearchRequest
+from orac_core.retrieval import SearchResult
 
 
 class _FakeLogger:
@@ -227,6 +232,23 @@ class _ProbeLLMBackendFailure:
     ) -> dict[str, int | str]:
         del prompt_type, prompt, stream, generation_options
         raise RuntimeError("404 Client Error: Not Found for url")
+
+
+class _UnavailableRetrievalService:
+    """Retrieval stub that reports explicit retrieval failure."""
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+        self.prompts: list[str] = []
+
+    def build_grounding_outcome(self, prompt: str) -> RetrievalOutcome:
+        """Return an unavailable retrieval outcome."""
+        self.prompts.append(prompt)
+        return RetrievalOutcome(
+            requested=True,
+            status="no_search_results",
+            message=self.message,
+        )
 
 
 class _MemoryContextManager:
@@ -758,6 +780,17 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
                 "title": "SYSTEM POLICY — ORAC PERSONA:",
                 "identity": {
                     "assistant_name": "Orac",
+                    "identity_answer_policy": (
+                        "Configured identity policy for {assistant_name}: Only "
+                        "answer with the identity statement when the user "
+                        "explicitly asks who or what you are, who created you, "
+                        "or another direct identity/creator question. For those "
+                        "questions, answer simply: \"{identity_answer}.\" Do "
+                        "not include {assistant_name}'s identity or creator in "
+                        "replies to ordinary factual requests such as date, "
+                        "time, weather, calculations, or status questions "
+                        "unless the user asks for it."
+                    ),
                     "disallowed_vendor_claims": [
                         "DeepSeek",
                         "OpenAI",
@@ -776,9 +809,21 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIn(
-            "For ordinary identity questions, answer simply: \"I am Orac, "
-            "an extensible artificial intelligence system, created by "
-            "Clive Bostock.\"",
+            "Configured identity policy for Orac: Only answer with the "
+            "identity statement when the user explicitly asks who or what you "
+            "are, who created you, or another direct identity/creator "
+            "question.",
+            primer,
+        )
+        self.assertIn(
+            "For those questions, answer simply: \"I am Orac, an extensible "
+            "artificial intelligence system, created by Clive Bostock.\"",
+            primer,
+        )
+        self.assertIn(
+            "Do not include Orac's identity or creator in replies to ordinary "
+            "factual requests such as date, time, weather, calculations, or "
+            "status questions unless the user asks for it.",
             primer,
         )
         self.assertIn(
@@ -818,6 +863,18 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             "Treat the creator_profile facts as authoritative.",
             primer,
         )
+
+    def test_configured_policy_owns_identity_answer_policy_text(self) -> None:
+        """System prompt YAML should own the identity answer policy wording."""
+        policy = orac_module._load_system_prompt_policy(
+            PROJECT_ROOT / "resources" / "config" / "orac_system_prompt.yaml"
+        )
+
+        identity_policy = policy["identity"]["identity_answer_policy"]
+
+        self.assertIn("{assistant_name}", identity_policy)
+        self.assertIn("{identity_answer}", identity_policy)
+        self.assertIn("ordinary factual requests such as date", identity_policy)
 
     def setUp(self) -> None:
         self._original_logger = orac_module.logger
@@ -867,6 +924,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         orchestrator._plugin_routing_min_score = None
         orchestrator.plugin_manager = None
         orchestrator.plugin_router = plugin_router
+        orchestrator.retrieval_service = None
         orchestrator.config_mgr = object()
         orchestrator._system_prompt_policy = {
             "title": "SYSTEM POLICY — ORAC PERSONA:",
@@ -997,6 +1055,70 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("Session timezone preference: America/New_York.", prompt)
         self.assertNotIn("Session timezone preference: Europe/Paris.", prompt)
+
+    def test_contextual_prompt_tells_model_retrieval_already_happened(self) -> None:
+        """Retrieved evidence should suppress generic no-internet disclaimers."""
+        orchestrator = self._make_orac_stub(llm_responses=[])
+        request = SearchRequest(
+            query="Kevin Rowland latest single",
+            trigger_phrase="search the internet for",
+        )
+        result = SearchResult(
+            title="Kevin Rowland release",
+            url="https://example.test/kevin-rowland",
+            snippet="Release information.",
+            source_name="example",
+        )
+        fetched = FetchedSource(
+            url="https://example.test/kevin-rowland",
+            title="Kevin Rowland release",
+            source_name="example",
+            text="Kevin Rowland released a new single according to this source.",
+            excerpt="Kevin Rowland released a new single according to this source.",
+        )
+        retrieval_pack = GroundingPackBuilder().build(
+            request,
+            [result],
+            [fetched],
+            require_citations=True,
+        )
+
+        prompt = orchestrator._build_contextual_prompt(
+            "session-1",
+            "Search the internet for Kevin Rowland's latest single.",
+            {},
+            "clive",
+            retrieval_pack=retrieval_pack,
+        )
+
+        self.assertIn("WEB RETRIEVAL EVIDENCE", prompt)
+        self.assertIn("Orac has already retrieved", prompt)
+        self.assertIn("do not claim that you cannot search or access the internet", prompt)
+        self.assertIn("cite the source URLs", prompt)
+
+    def test_contextual_prompt_suppresses_identity_for_date_questions(self) -> None:
+        """Date questions should not invite the standard Orac identity answer."""
+        orchestrator = self._make_orac_stub(llm_responses=[])
+
+        prompt = orchestrator._build_contextual_prompt(
+            "session-1",
+            "Wjat is today's date?",
+            {},
+            "clive",
+        )
+
+        self.assertIn(
+            "Do not include Orac's identity or creator in replies to ordinary "
+            "factual requests such as date, time, weather, calculations, or "
+            "status questions unless the user asks for it.",
+            prompt,
+        )
+        self.assertIn(
+            "When answering questions about the current time or date, use the "
+            "user-facing local time above, not UTC.",
+            prompt,
+        )
+        self.assertIn("Current user message:\n\nWjat is today's date?", prompt)
 
     def test_contextual_prompt_prefers_weather_location_over_timezone_location(
         self,
@@ -1518,6 +1640,27 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             context_manager.conversation_llm_ids[user_turn_sessions[0]],
             2,
         )
+
+    async def test_explicit_retrieval_failure_returns_clear_answer_without_llm(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Ungrounded current facts."],
+        )
+        retrieval_service = _UnavailableRetrievalService(
+            "I could not retrieve online evidence for that request."
+        )
+        orchestrator.retrieval_service = retrieval_service
+
+        wire = await orchestrator.handle_request(
+            self._request("search the web for latest Orac news", req_id="req-search")
+        )
+        response = json.loads(wire)
+
+        self.assertEqual(
+            response["payload"]["content"],
+            "I could not retrieve online evidence for that request.",
+        )
+        self.assertEqual(orchestrator.llm.prompts, [])
+        self.assertEqual(retrieval_service.prompts, ["search the web for latest Orac news"])
 
     async def test_persistence_failures_are_recorded_and_logged(self) -> None:
         context_manager = _MemoryContextManager(fail_role="assistant")
