@@ -1,0 +1,1 @@
+please examine the system logs and check for reasons why my keyboard, mouse and possibly other USB devices were not responding (I couldn't get the login screeb to appear, although the computer appeared active (in-case lights lit up).

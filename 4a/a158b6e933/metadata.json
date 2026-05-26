@@ -3,7 +3,7 @@
   "checkpoint_id": "4aa158b6e933",
   "strategy": "manual-commit",
   "branch": "develop",
-  "checkpoints_count": 14,
+  "checkpoints_count": 15,
   "files_touched": [
     "README.md",
     "docs/agent-guardrails/table-abbreviations.csv",
@@ -52,6 +52,12 @@
       "transcript": "/4a/a158b6e933/1/full.jsonl",
       "content_hash": "/4a/a158b6e933/1/content_hash.txt",
       "prompt": "/4a/a158b6e933/1/prompt.txt"
+    },
+    {
+      "metadata": "/4a/a158b6e933/2/metadata.json",
+      "transcript": "/4a/a158b6e933/2/full.jsonl",
+      "content_hash": "/4a/a158b6e933/2/content_hash.txt",
+      "prompt": "/4a/a158b6e933/2/prompt.txt"
     }
   ],
   "token_usage": {
