@@ -1,0 +1,299 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "4aa158b6e933",
+  "session_id": "019e6062-df80-7fa1-afc5-ab77f14548b1",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-26T10:40:24.047136411Z",
+  "branch": "develop",
+  "checkpoints_count": 13,
+  "files_touched": [
+    "README.md",
+    "docs/agent-guardrails/table-abbreviations.csv",
+    "resources/config/orac.ini",
+    "resources/config/orac_system_prompt.yaml",
+    "resources/db/schema/orac_core/constraint_fk/orac_fch_src_srch_res_fk1.sql",
+    "resources/db/schema/orac_core/constraint_fk/orac_srch_res_orac_srch_q_fk1.sql",
+    "resources/db/schema/orac_core/constraint_pk/orac_fch_src_pk.sql",
+    "resources/db/schema/orac_core/constraint_pk/orac_srch_q_pk.sql",
+    "resources/db/schema/orac_core/constraint_pk/orac_srch_res_pk.sql",
+    "resources/db/schema/orac_core/index/orac_fch_src_pk.sql",
+    "resources/db/schema/orac_core/index/orac_fch_src_srch_res_fk1_idx.sql",
+    "resources/db/schema/orac_core/index/orac_srch_q_pk.sql",
+    "resources/db/schema/orac_core/index/orac_srch_res_pk.sql",
+    "resources/db/schema/orac_core/index/orac_srch_res_srch_q_fk1_idx.sql",
+    "resources/db/schema/orac_core/run_all.sql",
+    "resources/db/schema/orac_core/table/orac_fetched_sources.sql",
+    "resources/db/schema/orac_core/table/orac_search_queries.sql",
+    "resources/db/schema/orac_core/table/orac_search_results.sql",
+    "scripts/check_searxng_retrieval.py",
+    "src/controller/orac.py",
+    "src/orac_core/__init__.py",
+    "src/orac_core/retrieval/__init__.py",
+    "src/orac_core/retrieval/broker.py",
+    "src/orac_core/retrieval/fetcher.py",
+    "src/orac_core/retrieval/grounding.py",
+    "src/orac_core/retrieval/models.py",
+    "src/orac_core/retrieval/providers.py",
+    "src/orac_core/retrieval/service.py",
+    "src/orac_core/retrieval/triggers.py",
+    "tests/test_check_searxng_retrieval.py",
+    "tests/test_orac_context_history.py",
+    "tests/test_orac_plugin_integration.py",
+    "tests/test_retrieval.py",
+    "tests/test_retrieval_schema.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.4-mini",
+  "turn_id": "e1cccead597a",
+  "token_usage": {
+    "input_tokens": 2723590,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 58141440,
+    "output_tokens": 251715,
+    "api_call_count": 439
+  },
+  "session_metrics": {
+    "turn_count": 27
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-26T10:40:23.771915061Z",
+    "agent_lines": 2628,
+    "agent_removed": 3,
+    "human_added": 168,
+    "human_modified": 19,
+    "human_removed": 0,
+    "total_committed": 2815,
+    "total_lines_changed": 2818,
+    "agent_percentage": 93.36408800567779,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 339,
+      "user_lines_removed": 36,
+      "agent_lines_added": 118,
+      "agent_lines_removed": 175,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "src/model/plugin_router.py": 33,
+        "tests/test_check_guardrails.py": 4,
+        "tests/test_plugin_router.py": 133
+      },
+      "user_removed_per_file": {
+        "src/model/plugin_router.py": 36
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 339,
+      "user_lines_removed": 36,
+      "agent_lines_added": 1739,
+      "agent_lines_removed": 192,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "src/model/plugin_router.py": 33,
+        "tests/test_check_guardrails.py": 4,
+        "tests/test_plugin_router.py": 133
+      },
+      "user_removed_per_file": {
+        "src/model/plugin_router.py": 36
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 525,
+      "user_lines_removed": 54,
+      "agent_lines_added": 1739,
+      "agent_lines_removed": 192,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "src/model/plugin_router.py": 33,
+        "src/orac_core/retrieval/fetcher.py": 184,
+        "src/orac_core/retrieval/models.py": 2,
+        "tests/test_check_guardrails.py": 4,
+        "tests/test_plugin_router.py": 133
+      },
+      "user_removed_per_file": {
+        "src/model/plugin_router.py": 36,
+        "src/orac_core/retrieval/fetcher.py": 17,
+        "src/orac_core/retrieval/models.py": 1
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 339,
+      "user_lines_removed": 36,
+      "agent_lines_added": 2386,
+      "agent_lines_removed": 192,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "src/model/plugin_router.py": 33,
+        "tests/test_check_guardrails.py": 4,
+        "tests/test_plugin_router.py": 133
+      },
+      "user_removed_per_file": {
+        "src/model/plugin_router.py": 36
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 339,
+      "user_lines_removed": 36,
+      "agent_lines_added": 2386,
+      "agent_lines_removed": 192,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "src/model/plugin_router.py": 33,
+        "tests/test_check_guardrails.py": 4,
+        "tests/test_plugin_router.py": 133
+      },
+      "user_removed_per_file": {
+        "src/model/plugin_router.py": 36
+      }
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 339,
+      "user_lines_removed": 36,
+      "agent_lines_added": 2386,
+      "agent_lines_removed": 192,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "src/model/plugin_router.py": 33,
+        "tests/test_check_guardrails.py": 4,
+        "tests/test_plugin_router.py": 133
+      },
+      "user_removed_per_file": {
+        "src/model/plugin_router.py": 36
+      }
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 339,
+      "user_lines_removed": 36,
+      "agent_lines_added": 2429,
+      "agent_lines_removed": 192,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "src/model/plugin_router.py": 33,
+        "tests/test_check_guardrails.py": 4,
+        "tests/test_plugin_router.py": 133
+      },
+      "user_removed_per_file": {
+        "src/model/plugin_router.py": 36
+      }
+    },
+    {
+      "checkpoint_number": 9,
+      "user_lines_added": 339,
+      "user_lines_removed": 36,
+      "agent_lines_added": 2429,
+      "agent_lines_removed": 192,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "src/model/plugin_router.py": 33,
+        "tests/test_check_guardrails.py": 4,
+        "tests/test_plugin_router.py": 133
+      },
+      "user_removed_per_file": {
+        "src/model/plugin_router.py": 36
+      }
+    },
+    {
+      "checkpoint_number": 10,
+      "user_lines_added": 339,
+      "user_lines_removed": 36,
+      "agent_lines_added": 2429,
+      "agent_lines_removed": 192,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "src/model/plugin_router.py": 33,
+        "tests/test_check_guardrails.py": 4,
+        "tests/test_plugin_router.py": 133
+      },
+      "user_removed_per_file": {
+        "src/model/plugin_router.py": 36
+      }
+    },
+    {
+      "checkpoint_number": 11,
+      "user_lines_added": 339,
+      "user_lines_removed": 36,
+      "agent_lines_added": 2429,
+      "agent_lines_removed": 192,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "src/model/plugin_router.py": 33,
+        "tests/test_check_guardrails.py": 4,
+        "tests/test_plugin_router.py": 133
+      },
+      "user_removed_per_file": {
+        "src/model/plugin_router.py": 36
+      }
+    },
+    {
+      "checkpoint_number": 12,
+      "user_lines_added": 340,
+      "user_lines_removed": 37,
+      "agent_lines_added": 2525,
+      "agent_lines_removed": 192,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "resources/config/orac.ini": 1,
+        "src/model/plugin_router.py": 33,
+        "tests/test_check_guardrails.py": 4,
+        "tests/test_plugin_router.py": 133
+      },
+      "user_removed_per_file": {
+        "resources/config/orac.ini": 1,
+        "src/model/plugin_router.py": 36
+      }
+    },
+    {
+      "checkpoint_number": 13,
+      "user_lines_added": 339,
+      "user_lines_removed": 36,
+      "agent_lines_added": 2769,
+      "agent_lines_removed": 192,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "src/model/plugin_router.py": 33,
+        "tests/test_check_guardrails.py": 4,
+        "tests/test_plugin_router.py": 133
+      },
+      "user_removed_per_file": {
+        "src/model/plugin_router.py": 36
+      }
+    },
+    {
+      "checkpoint_number": 14,
+      "user_lines_added": 339,
+      "user_lines_removed": 36,
+      "agent_lines_added": 2870,
+      "agent_lines_removed": 192,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "src/model/plugin_router.py": 33,
+        "tests/test_check_guardrails.py": 4,
+        "tests/test_plugin_router.py": 133
+      },
+      "user_removed_per_file": {
+        "src/model/plugin_router.py": 36
+      }
+    }
+  ]
+}
