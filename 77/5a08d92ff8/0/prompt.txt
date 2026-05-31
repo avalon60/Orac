@@ -1,0 +1,2105 @@
+Please group remaining modifications and perform the necessary commits.
+
+---
+
+Are the docs/agent-guardrails/*.md files, enough to minimise architectural drift?
+
+---
+
+Please add lightweight architectural drift checks for the Orac project.
+
+Goal:
+Turn the existing docs/agent-guardrails/*.md guidance into basic executable checks, without over-engineering.
+
+Please inspect:
+- AGENTS.md
+- docs/agent-guardrails/*.md
+- current test structure
+- pyproject.toml / tooling configuration
+
+Implement:
+1. A guardrail consistency check script, preferably scripts/check_guardrails.py, that verifies:
+   - docs/agent-guardrails contains no stray/untitled files
+   - all markdown files follow the existing naming convention
+   - all guardrail files referenced by AGENTS.md exist
+   - all relative links from AGENTS.md to docs/agent-guardrails are valid
+   - all relative links between guardrail documents are valid where practical
+
+2. Add tests for the check script if the project test style supports it.
+
+3. Add or document a simple command for running the check locally.
+
+4. Do not introduce heavyweight dependencies unless already present.
+
+5. Do not alter architectural rules unless necessary. This task is about validating the existing guardrail structure, not rewriting it.
+
+After implementation, report:
+- files changed
+- checks added
+- how to run them
+- any broken references or questionable files found
+
+---
+
+Please implement lightweight guardrail drift checks for the Orac project.
+
+Goal:
+Add a small, standard-library-only Python checker that validates the structure and local references of docs/agent-guardrails without rewriting guardrail content or adding dependencies.
+
+Files to inspect:
+- AGENTS.md
+- docs/agent-guardrails/
+- current test layout
+- pyproject.toml only if needed to understand pytest usage
+
+Implement:
+
+1. Create scripts/check_guardrails.py.
+
+Requirements:
+- Use only the Python standard library.
+- Include the normal script header used in this project.
+- Use argparse for CLI arguments.
+- Provide a --root argument, defaulting to the project root inferred from the script location.
+- Return exit code 0 when clean and 1 when issues are found.
+- Print concise issue lines when broken.
+
+The checker should validate:
+- docs/agent-guardrails exists.
+- Top-level markdown guardrail files follow the naming convention:
+  - NN-kebab-case.md
+  - examples: 00-project-principles.md, 10-architecture-boundaries.md
+- Known non-markdown assets are allowed explicitly, currently:
+  - table-abbreviations.csv
+- Nested documentation directories, such as docs/agent-guardrails/frontend-nextjs/, are allowed and do not need to follow the top-level numeric naming convention.
+- Stray/temp/editor-style files are rejected, including:
+  - names containing "untitled" case-insensitively
+  - files with no extension
+  - backup suffixes such as ~, .bak, .tmp, .swp
+  - leading dotfiles
+- Local guardrail references from AGENTS.md are extracted and validated.
+- Local guardrail references from guardrail markdown files are extracted and validated where practical.
+
+Reference extraction should support:
+- plain references such as docs/agent-guardrails/foo.md
+- inline-code references such as `docs/agent-guardrails/foo.md`
+- Markdown links such as [text](docs/agent-guardrails/foo.md)
+- relative links between guardrail documents where practical
+
+Ignore:
+- http:// links
+- https:// links
+- anchors-only links
+- email-style links
+- external Markdown links
+
+2. Add tests/test_check_guardrails.py.
+
+Testing requirements:
+- Import scripts/check_guardrails.py directly using importlib.util.spec_from_file_location.
+- Do not require scripts/ to be a package.
+- Unit-test reference extraction for:
+  - AGENTS.md-style plain references
+  - inline-code references
+  - Markdown local links
+  - ignored external links
+- Unit-test invalid names using tmp_path, including:
+  - Untitled Document
+  - backup files
+  - dotfiles
+  - extensionless files
+- Unit-test valid top-level guardrail names using tmp_path.
+- Unit-test that nested guardrail docs are allowed without the top-level numeric naming convention.
+- Add a repository smoke test that verifies current AGENTS.md guardrail references resolve.
+- Do not make the pytest suite depend on the current repository containing docs/agent-guardrails/Untitled Document.
+  - The direct checker may fail today because that file exists.
+  - The tests should remain valid after that file is removed.
+
+3. Documentation:
+Add a very short note in AGENTS.md or an existing lightweight developer documentation location showing:
+
+poetry run python scripts/check_guardrails.py
+poetry run pytest tests/test_check_guardrails.py
+
+Do not add a pyproject entry point.
+Do not add dependencies.
+Do not rewrite guardrail content.
+Do not implement source-code architectural policy checks in this pass.
+
+Expected current direct-check result:
+- poetry run python scripts/check_guardrails.py may return non-zero while docs/agent-guardrails/Untitled Document exists.
+- That is expected and should be reported clearly.
+
+After implementation, report:
+- files changed
+- checks added
+- how to run them
+- any current issues found in the repository
+
+---
+
+Implement the plan.
+
+---
+
+Please perform a review-only architecture reconciliation pass for Orac.
+
+Current context:
+- The original architecture audit is in architecture-qa-results.md.
+- Since that audit, multiple remediation passes have been completed, including:
+  - protocol/schema/runtime/display alignment;
+  - fail-closed protocol validation;
+  - provider registry/factory;
+  - explicit provider capabilities;
+  - plugin service lifecycle wiring;
+  - plugin execution policy and provenance;
+  - PluginExecutionService extraction;
+  - trusted PluginConfirmationBroker;
+  - plugin timeout handling;
+  - failed/timed-out plugin provenance;
+  - high-level voice turn contract tests;
+  - VoiceTurnController extraction;
+  - Home Assistant data lifecycle documentation;
+  - plugin audit persistence documentation;
+  - plugin audit DB/API design documentation;
+  - table abbreviation governance for plugin_invocations and plugin_audit_events.
+
+Important:
+This is a review-only pass.
+Do not modify code.
+Do not modify DDL.
+Do not modify documentation unless explicitly asked after this review.
+Do not implement runtime plugin audit persistence.
+Do not implement Home Assistant population, websocket integration, state query, or device control.
+
+Goals:
+1. Cross-check architecture-qa-results.md against the current repository state.
+2. For each original Top 10 issue, classify it as:
+   - resolved;
+   - mostly resolved;
+   - partially resolved;
+   - still open;
+   - superseded;
+   - newly risky due to later changes.
+3. Re-evaluate the current architecture for coherence and boundaries of responsibility.
+4. Identify any architectural regressions introduced by the remediation passes.
+5. Identify any stale documentation or mismatches between docs and current code.
+6. Reconfirm or revise the next recommended implementation sequence.
+
+Please inspect:
+- architecture-qa-results.md
+- docs/plugin-execution-boundaries.md
+- docs/plugin-audit-persistence.md
+- docs/plugin-audit-db-api-design.md
+- docs/home-assistant-data-lifecycle.md
+- docs/agent-guardrails/table-abbreviations.csv
+- src/controller/orac.py
+- src/model/provider_registry.py
+- src/model/plugin_execution_service.py
+- src/model/plugin_confirmation_broker.py
+- src/model/plugin_execution_policy.py
+- src/model/plugin_router.py
+- src/model/plugin_service_manager.py
+- src/orac_voice/voice_turn_controller.py
+- src/orac_voice/voice_loop_local.py
+- plugins/home_assistant.json
+- plugins/weather.json
+- relevant tests under tests/
+
+Specific checks:
+1. Confirm whether provider-specific logic has genuinely moved out of Orac or whether meaningful leakage remains.
+2. Confirm whether PluginExecutionService is a clean boundary or just a thin relocation with hidden coupling.
+3. Confirm whether plugin policy, confirmation, timeout, and provenance form a coherent execution boundary.
+4. Confirm whether denied/scaffold/unknown/confirmation-required paths still avoid plugin import.
+5. Confirm whether Home Assistant remains safely scaffold-only.
+6. Confirm whether HA tables are consistently treated as cache/state tables, not audit tables.
+7. Confirm whether plugin audit persistence design is ready for DDL/API implementation.
+8. Confirm whether table abbreviations are now consistently:
+   - plugin_invocations -> plg_inv
+   - plugin_audit_events -> plg_audevt
+   and whether any stale plg_aud_evt references remain.
+9. Confirm whether VoiceTurnController improved the boundary or merely moved the large state machine.
+10. Confirm whether tests are still overfitted to private implementation details and whether that now matters.
+11. Confirm whether src/controller/orac.py remains the primary pressure point and, if so, what the next safe extraction would be.
+12. Confirm whether the original "Recommended Refactoring Sequence" should now be updated.
+
+Output format:
+- Executive summary.
+- Updated status table for the original Top 10 issues.
+- Newly discovered architectural risks, if any.
+- Stale documentation/code mismatches, if any.
+- Boundary assessment by subsystem:
+  - core controller;
+  - provider runtime;
+  - plugin execution;
+  - plugin service lifecycle;
+  - confirmation broker;
+  - voice runtime;
+  - Home Assistant;
+  - DB/API persistence;
+  - protocol/display.
+- Recommended next sequence.
+- Explicit "do not do yet" list.
+- Validation commands run and results.
+
+Validation:
+- poetry run python -m unittest discover -s tests
+
+Remember:
+This is a review-only pass. Do not make changes.
+
+---
+
+Please save results to architecture-qa-update1.md
+
+---
+
+Please implement the next architecture QA remediation pass for Orac: reconcile stale plugin audit documentation and add database verification for the new plugin audit objects.
+
+Current state:
+- The architecture reconciliation pass found no major new architectural drift.
+- Provider, plugin policy, confirmation, timeout, provenance, service lifecycle, and voice boundary work are mostly resolved.
+- The main remaining pressure point is src/controller/orac.py.
+- PluginExecutionService is currently a useful seam but not yet a full execution lifecycle boundary.
+- Plugin audit DB/API assets now exist.
+- docs/plugin-audit-db-api-design.md and docs/home-assistant-data-lifecycle.md contain stale wording that predates the plugin audit DB/API assets.
+- No runtime plugin audit persistence should be wired in this pass.
+
+Goals:
+1. Reconcile stale documentation around plugin audit DB/API status and HA next steps.
+2. Add database/static verification for plugin audit objects, grants, constraints, indexes, triggers, views, and package validity, following existing project conventions.
+3. Preserve current runtime behaviour.
+4. Do not wire runtime plugin execution into DB persistence yet.
+5. Do not implement Home Assistant cache population, websocket integration, live state query, or device control.
+
+Please inspect:
+- docs/plugin-audit-db-api-design.md
+- docs/plugin-audit-persistence.md
+- docs/home-assistant-data-lifecycle.md
+- resources/db/schema
+- resources/db/schema/AGENT_CONTEXT.md
+- any existing DB verification scripts/tests
+- orac_core.plugin_invocations assets
+- orac_core.plugin_audit_events assets
+- orac_code plugin audit API/package assets, if present
+
+Specific tasks:
+1. Update documentation to reflect that plugin audit DB/API assets now exist.
+2. Remove or reword stale statements saying object-by-object DDL/API work is still future work.
+3. Update HA lifecycle docs so the next step is not "plugin audit DB/API design", but DB verification and runtime audit adapter work.
+4. Add or extend DB verification checks for:
+   - plugin_invocations table;
+   - plugin_audit_events table;
+   - primary keys;
+   - foreign keys;
+   - check constraints;
+   - indexes;
+   - triggers;
+   - comments;
+   - API views;
+   - TAPI/API packages;
+   - grants;
+   - install-order inclusion.
+5. Confirm the canonical abbreviation is:
+   - plugin_invocations -> plg_inv
+   - plugin_audit_events -> plg_audevt
+6. Confirm no stale plg_aud_evt references remain.
+
+Important constraints:
+- Do not change plugin execution behaviour.
+- Do not wire runtime audit persistence yet.
+- Do not let plugins write audit tables directly.
+- Do not implement Home Assistant runtime behaviour.
+- Do not remove HA scaffold protection.
+- Do not change protocol, provider, voice, confirmation, timeout, or policy behaviour.
+- Use lowercase Oracle SQL/PLSQL reserved words.
+- Preserve existing tests.
+
+Validation:
+- poetry run python -m unittest discover -s tests
+- Run any existing DB/static verification command if present.
+
+Please report:
+- files changed;
+- stale documentation corrected;
+- DB verification added;
+- plugin audit objects verified;
+- any missing DB/API assets found;
+- validation results;
+- deferred work.
+
+---
+
+Please fix the current full-suite failures in tests/test_orac_voice.py around _FakeVoiceWorker.enqueue_text(... tts_voice=...).
+
+Context:
+- The previous pass only changed plugin audit documentation/schema verification.
+- The full suite now fails in tests/test_orac_voice.py because the fake voice worker does not match the current production enqueue_text call signature.
+- Do not change plugin audit code.
+- Do not change database/schema files.
+- Do not change Home Assistant behaviour.
+- Do not change provider/plugin policy/confirmation/timeout behaviour.
+- Keep the fix narrow.
+
+Tasks:
+1. Inspect the production TTS/voice worker enqueue_text signature and all call sites.
+2. Update _FakeVoiceWorker in tests/test_orac_voice.py to match the production contract.
+3. Prefer an explicit tts_voice optional keyword parameter if that is now part of the contract.
+4. Only use **kwargs if the production contract genuinely supports arbitrary keyword arguments.
+5. Preserve the existing voice contract tests.
+6. Add assertions for tts_voice only if the tests already have enough context to do so cleanly.
+7. Run:
+   - poetry run python -m unittest tests.test_orac_voice
+   - poetry run python -m unittest discover -s tests
+
+Please report:
+- files changed;
+- root cause;
+- whether the production contract or only the test fake was stale;
+- validation results.
+
+---
+
+So what now remains?
+
+---
+
+Please implement the next Orac architecture remediation pass: add runtime plugin audit persistence through a narrow PluginAuditAdapter and wire it through PluginExecutionService.
+
+Current state:
+- The full test suite is green again.
+- Plugin audit DB/API assets now exist and have static verification.
+- plugin_invocations and plugin_audit_events are the durable audit tables.
+- orac_code.plugin_audit_api exists as the approved database API boundary.
+- PluginExecutionService currently acts as a useful seam, but not yet a full plugin execution lifecycle boundary.
+- PluginRouter already handles policy, scaffold denial, confirmation checks, timeout handling, failed/timed-out provenance, and no-import denied paths.
+- Plugins must not write audit records directly.
+- Home Assistant remains scaffold-only.
+- HA tables are cache/state tables, not audit tables.
+
+Goal:
+Add a runtime-facing plugin audit adapter and wire plugin execution lifecycle audit recording through PluginExecutionService, without changing plugin execution behaviour.
+
+Important architecture rule:
+Plugin audit persistence must be owned by Orac runtime code, not by plugins. Plugins should not know about or write to plugin_invocations or plugin_audit_events.
+
+Please inspect:
+- src/model/plugin_execution_service.py
+- src/model/plugin_router.py
+- src/model/plugin_execution_policy.py
+- src/model/plugin_confirmation_broker.py
+- src/controller/orac.py
+- docs/plugin-audit-persistence.md
+- docs/plugin-audit-db-api-design.md
+- tests/test_plugin_router.py
+- tests/test_orac_plugin_integration.py
+- tests/test_plugin_audit_schema.py
+- the orac_code.plugin_audit_api package assets under resources/db/schema
+
+Tasks:
+
+1. Add a PluginAuditAdapter
+   - Suggested location: src/model/plugin_audit_adapter.py
+   - The adapter should be the only Python-side seam for writing plugin audit records.
+   - It should call the approved orac_code.plugin_audit_api path if runtime DB access is available.
+   - If DB/context access is unavailable, it should degrade safely and log clearly, without breaking normal plugin execution.
+
+2. Define a small Python-side audit payload model
+   - Use dataclasses or existing project style.
+   - Include fields such as:
+     - request_id
+     - correlation_id
+     - turn_id
+     - conversation_id
+     - message_id
+     - user_id
+     - plugin_id
+     - plugin_name
+     - action_type
+     - capabilities
+     - entitlements
+     - policy_decision
+     - confirmation_id
+     - confirmation_status
+     - execution_status
+     - timeout_seconds
+     - failure_type
+     - failure_message
+     - provenance_json / provenance dict
+
+3. Wire PluginExecutionService to the adapter
+   - PluginExecutionService should coordinate audit recording for plugin execution outcomes.
+   - Do not put audit writes inside plugin code.
+   - Do not make PluginRouter responsible for database persistence unless it already owns the relevant context cleanly.
+   - The service should record or prepare audit events for:
+     - candidate selected, if candidate information is available;
+     - policy evaluated;
+     - confirmation required;
+     - execution started;
+     - execution completed;
+     - execution failed;
+     - execution timed out;
+     - denied/scaffold/unknown-action outcomes.
+
+4. Preserve existing behaviour
+   - Weather plugin behaviour must remain unchanged.
+   - Non-plugin prompts must still fall through to the LLM path.
+   - Denied, scaffold, unknown-action, and confirmation-required paths must still avoid plugin import/execution.
+   - Trusted confirmation behaviour must remain unchanged.
+   - Timeout/failure provenance must remain unchanged from the caller’s perspective.
+   - Existing response metadata and assistant-turn metadata must remain compatible.
+
+5. Safe failure behaviour
+   - Audit persistence failure must not cause normal safe plugin execution to fail unless the existing project explicitly treats audit persistence as mandatory.
+   - Log audit persistence failures with useful developer detail.
+   - Do not expose raw DB errors, stack traces, secrets, or internal SQL details to the user-facing response.
+
+6. Tests
+   Add or update tests proving:
+   - PluginAuditAdapter can normalise completed plugin provenance into an audit payload.
+   - Denied/scaffold/unknown-action/confirmation-required outcomes map to audit payloads.
+   - Failed plugin provenance maps to audit payloads.
+   - Timed-out plugin provenance maps to audit payloads.
+   - PluginExecutionService calls the audit adapter for handled plugin outcomes.
+   - PluginExecutionService still returns None for LLM fallback.
+   - Audit adapter failure does not break existing plugin execution unless explicitly configured to do so.
+   - Plugins do not write audit records directly.
+   - Weather/read-only plugin behaviour remains unchanged.
+   - Existing plugin provenance still reaches response metadata and assistant-turn metadata.
+
+Important constraints:
+- Do not implement real Home Assistant control.
+- Do not populate HA tables.
+- Do not implement HA websocket integration.
+- Do not implement live HA state query.
+- Do not remove HA scaffold protection.
+- Do not change protocol frame names or payload structure.
+- Do not change provider behaviour.
+- Do not change voice behaviour.
+- Do not change plugin policy, confirmation, timeout, or provenance semantics except to add audit persistence around them.
+- Do not perform unrelated DB/APEX cleanup.
+- Do not let plugins write audit tables directly.
+
+Validation:
+- poetry run python -m unittest tests.test_plugin_router
+- poetry run python -m unittest tests.test_plugin_runtime
+- poetry run python -m unittest tests.test_orac_plugin_integration
+- poetry run python -m unittest tests.test_plugin_audit_schema
+- poetry run python -m unittest tests.test_weather_plugin
+- poetry run python -m unittest discover -s tests
+
+Also run:
+- poetry run python scripts/check_guardrails.py
+
+Note:
+scripts/check_guardrails.py may still fail if docs/agent-guardrails/Untitled Document remains present. Report that separately as a known guardrail hygiene issue, not as a plugin audit failure.
+
+Please report:
+- files changed;
+- PluginAuditAdapter responsibilities;
+- how audit payloads map to plugin_invocations and plugin_audit_events;
+- where audit recording is wired into PluginExecutionService;
+- which lifecycle events are recorded;
+- behaviours preserved;
+- validation results;
+- any remaining audit gaps;
+- deferred work.
+
+---
+
+Please commit changes
+
+---
+
+Any uncommitted changes?
+
+---
+
+Please implement the next Orac architecture remediation pass: clean the remaining guardrail hygiene issue and add a small audit-completeness improvement around plugin audit persistence.
+
+Current state:
+- The full unit test suite is green.
+- PluginAuditAdapter exists.
+- PluginExecutionService now wires runtime plugin audit persistence through PluginRouter/PluginAuditAdapter.
+- Plugin audit DB/API assets exist and are statically verified.
+- Plugin audit records are written through the approved orac_code.plugin_audit_api path.
+- Plugins must not write audit records directly.
+- Home Assistant remains scaffold-only.
+- HA tables are cache/state tables, not audit tables.
+- scripts/check_guardrails.py currently fails only because docs/agent-guardrails/Untitled Document exists.
+
+Goals:
+1. Remove or resolve the known guardrail hygiene issue:
+   - docs/agent-guardrails/Untitled Document
+2. Add a small audit-completeness improvement if there is a clean existing hook:
+   - link the persisted assistant message_id back to the plugin audit invocation after assistant-turn persistence.
+3. Do not perform broad architecture refactoring.
+4. Do not implement Home Assistant cache population or control.
+5. Preserve current plugin execution behaviour.
+
+Tasks:
+
+1. Guardrail cleanup
+   - Inspect docs/agent-guardrails/Untitled Document.
+   - If it is empty, stray, or clearly obsolete, remove it.
+   - If it contains useful content, move/rename it into a valid guardrail document name following the NN-kebab-case.md convention.
+   - After cleanup, scripts/check_guardrails.py should pass.
+
+2. Plugin audit message_id linking
+   - Inspect the current assistant-turn persistence flow.
+   - Identify whether PluginAuditAdapter or PluginExecutionService has access to the plugin_invocation_id and the saved assistant message_id after _save_assistant_turn or equivalent persistence completes.
+   - If a clean hook exists, add a small link/update call through the approved plugin audit API path.
+   - Do not add direct table writes.
+   - Do not let plugin code write audit data.
+   - If no clean hook exists, do not force it. Document the missing seam and leave this deferred.
+
+3. Audit completeness decision
+   - Review whether declined can_handle paths and pre-execution load/instantiate failures can be audited cleanly with the current lifecycle context.
+   - If they can be added without broad refactoring, add narrow audit events.
+   - If they require a larger lifecycle redesign, document them as deferred.
+   - Do not destabilise current no-import denial guarantees.
+
+4. Optional config only if already consistent with project conventions
+   - Inspect existing config style.
+   - If straightforward, add a documented audit persistence mode:
+     - best_effort
+     - strict
+   - Default must remain best_effort.
+   - If adding this would be too invasive, document it as deferred instead.
+
+Important constraints:
+- Do not implement real Home Assistant control.
+- Do not populate HA tables.
+- Do not implement HA websocket integration.
+- Do not implement live HA state query.
+- Do not remove HA scaffold protection.
+- Do not change protocol frame names or payload structure.
+- Do not change provider behaviour.
+- Do not change voice behaviour.
+- Do not change plugin policy, confirmation, timeout, or provenance semantics.
+- Do not perform unrelated DB/APEX cleanup.
+- Do not add broad controller refactoring.
+- Do not allow plugins to write audit tables directly.
+
+Tests:
+- Update or add tests proving:
+  - scripts/check_guardrails.py passes after the stray file cleanup.
+  - Existing plugin audit persistence behaviour still works.
+  - If message_id linking is implemented, the audit adapter/API receives the saved message_id through the approved path.
+  - If no clean message_id hook exists, no runtime behaviour changes are made.
+  - Weather plugin behaviour remains unchanged.
+  - Non-plugin prompts still fall through to the LLM path.
+  - Denied/scaffold/unknown-action/confirmation-required paths still avoid plugin import/execution.
+
+Validation:
+- poetry run python scripts/check_guardrails.py
+- poetry run python -m unittest tests.test_plugin_audit_adapter
+- poetry run python -m unittest tests.test_plugin_router
+- poetry run python -m unittest tests.test_orac_plugin_integration
+- poetry run python -m unittest tests.test_plugin_audit_schema
+- poetry run python -m unittest tests.test_weather_plugin
+- poetry run python -m unittest discover -s tests
+
+Please report:
+- files changed;
+- what happened to docs/agent-guardrails/Untitled Document;
+- whether message_id audit linking was implemented or deferred;
+- whether declined can_handle/load/instantiate failures were audited or deferred;
+- whether audit persistence mode config was added or deferred;
+- behaviours preserved;
+- validation results;
+- remaining audit gaps;
+- recommended next step.
+
+---
+
+Please commit the changes
+
+---
+
+Implement an explicit-only internet retrieval MVP for Orac.
+
+Goal:
+Add core retrieval plumbing so Orac can answer explicit user requests such as "search the web for ..." using a configurable search provider. This is core functionality, not a normal user-facing plugin.
+
+Scope:
+1. Add a new retrieval package under src/orac_core/retrieval or the closest existing core package structure.
+2. Add provider-neutral data models:
+   - SearchRequest
+   - SearchResult
+   - FetchedSource
+   - GroundingPack
+   - GroundingSource
+3. Add a SearchProvider protocol/base class.
+4. Add a SearXNG provider implementation.
+   - Configurable base URL.
+   - Use /search with q and format=json.
+   - Parse title, url, snippet/content, engine/source where available.
+   - Handle timeout and malformed responses cleanly.
+5. Add SearchBroker.
+   - Reads retrieval config.
+   - Calls the configured provider.
+   - Limits result count.
+   - Returns structured results only.
+6. Add SourceFetcher.
+   - Fetches top result URLs.
+   - Extracts readable text conservatively.
+   - Applies size limits.
+   - Treats all fetched content as untrusted data.
+7. Add GroundingPackBuilder.
+   - Converts fetched sources into a compact evidence block suitable for prompt injection.
+   - Includes title, URL, source name, fetched timestamp, and relevant text excerpt.
+   - Adds an explicit warning that retrieved content is untrusted evidence, not instruction.
+8. Add an explicit trigger path only.
+   - Trigger on clear user requests such as "search the web for", "look up", "check online", or "latest".
+   - Do not add autonomous browsing yet.
+9. Add configuration keys to the existing Orac config system:
+   - retrieval.internet_search_enabled
+   - retrieval.internet_search_mode = explicit_only
+   - retrieval.default_search_provider
+   - retrieval.max_search_results
+   - retrieval.max_sources_to_fetch
+   - retrieval.cache_ttl_hours
+   - retrieval.require_citations
+   - retrieval.searxng.base_url
+   - retrieval.searxng.timeout_seconds
+10. Add database migration or schema script for minimal audit/cache tables:
+   - orac_search_queries
+   - orac_search_results
+   - orac_fetched_sources
+   Use lowercase SQL keywords, varchar2(n char), identity surrogate keys, and separate primary key constraints.
+11. Add tests:
+   - SearXNG response parsing.
+   - SearchBroker provider selection.
+   - Explicit trigger detection.
+   - Grounding pack includes untrusted-content warning.
+   - Prompt-injection-like source text is treated as evidence, not instruction.
+   - Fetch failures do not crash the user turn.
+
+Constraints:
+- Do not implement autonomous freshness-based browsing yet.
+- Do not expose search as a normal Orac plugin.
+- Do not let provider code modify prompts directly.
+- Do not let fetched page content become instructions.
+- Keep the implementation provider-neutral so Brave or Tavily can be added later.
+- Follow existing Orac coding conventions and tests.
+
+---
+
+Please QA the Implemented the explicit-only internet retrieval MVP work, and describe what it provides.
+
+---
+
+Please harden the explicit-only internet retrieval MVP.
+
+Context:
+The retrieval MVP is structurally correct and tests pass, but QA found several issues that should be fixed before live use.
+
+QA findings to address:
+1. SourceFetcher only validates http/https before urlopen. It does not protect against SSRF/internal fetches.
+2. SearXNG config is stored under [retrieval.searxng], but Orac._init_retrieval() reads keys from [retrieval] using dotted key names.
+3. Explicit search prompts skip plugin routing even when retrieval is disabled, unavailable, or produces no grounding. This can lead to ungrounded answers after the user explicitly requested web search.
+4. Retrieval schema has relationship columns but no foreign key enforcement.
+
+Required changes:
+
+1. Harden SourceFetcher URL safety.
+   - Allow only http and https schemes.
+   - Reject file, ftp, data, javascript and all other schemes.
+   - Reject localhost and localhost-like hostnames.
+   - Resolve hostnames before fetching.
+   - Reject loopback, private, link-local, multicast, reserved and unspecified IP ranges.
+   - Reject obvious metadata-service addresses such as 169.254.169.254.
+   - Apply the same validation before fetching and after every redirect.
+   - Do not allow urllib or any HTTP client to follow redirects without validating the redirect target first.
+   - Add a small configurable maximum redirect count.
+   - Return a safe FetchedSource failure record for blocked URLs rather than crashing the user turn.
+
+2. Add conservative fetch limits.
+   - Configurable timeout.
+   - Configurable maximum response bytes.
+   - Only process text/html, text/plain and application/xhtml+xml for now.
+   - Unsupported content types should produce a fetch_status/error_message record, not an exception through the user turn.
+   - Keep PDF parsing out of scope unless already implemented.
+
+3. Fix SearXNG config wiring.
+   - Read base_url and timeout_seconds from [retrieval.searxng].
+   - Keep the existing [retrieval] keys for general retrieval settings.
+   - Add tests proving [retrieval.searxng] values are honoured.
+   - Optional: support old dotted keys as a fallback only if that fits existing ConfigManager conventions.
+
+4. Improve explicit-search failure behaviour.
+   - If explicit retrieval is requested but retrieval is disabled, unavailable, fails, or produces no usable grounding, do not silently answer as though web evidence was retrieved.
+   - Add a retrieval status object or equivalent prompt context.
+   - The model should be instructed not to claim it searched online when retrieval failed.
+   - Prefer a clear user-facing answer such as "I could not retrieve online evidence for that request" rather than an ungrounded current-facts answer.
+   - Keep internet retrieval out of the plugin system.
+
+5. Add foreign key constraints to the retrieval schema.
+   - orac_search_results.search_query_id should reference orac_search_queries.search_query_id.
+   - orac_fetched_sources.search_result_id should reference orac_search_results.search_result_id.
+   - Follow existing schema asset conventions.
+   - Use lowercase SQL keywords.
+   - Use existing guardrail naming conventions for constraint names.
+
+6. Add tests.
+   - Unsafe URL blocking:
+     - localhost
+     - 127.0.0.1
+     - ::1
+     - 10.0.0.0/8
+     - 172.16.0.0/12
+     - 192.168.0.0/16
+     - 169.254.0.0/16
+     - metadata address 169.254.169.254
+     - file:// and other non-http schemes
+   - Unsafe redirect blocking.
+   - Unsupported content-type handling.
+   - Oversized response handling.
+   - [retrieval.searxng] config values are actually used.
+   - Explicit retrieval unavailable/failure path does not produce an ungrounded answer as though search succeeded.
+   - Existing retrieval tests continue to pass.
+
+Constraints:
+- Do not implement autonomous browsing.
+- Do not expose internet retrieval as a normal plugin.
+- Do not let fetched page content affect system, persona, routing, tool or policy instructions.
+- Provider code should return structured search results only.
+- Prompt construction and untrusted-content boundaries must remain in core.
+- Keep the change small and reviewable.
+- Run:
+  poetry run python scripts/check_guardrails.py
+  poetry run python -m unittest discover -s tests
+
+---
+
+continue
+
+---
+
+How is an internet search instigated?
+
+---
+
+Does Orac see my prompt? For example can it combine it's own knowledge with internet results?
+
+---
+
+Question: What is Dex's Midnight Runner's latest single? Search the Internet? Response: I cannot search the Internet. My knowledge is current only up to my training cutoff.
+
+Regarding "Dex's Midnight Runner": there is no widely known artist by that exact name. You likely mean **Dex** (the electronic music producer), whose track is often titled "Midnight Runner" or similar, or you may be conflating names. If you are referring to a specific recent release by Dex, please clarify the artist's full name or the track title, and I will answer from my internal knowledge base.
+
+---
+
+Q: Search the internet for Dex's Midnight Runner's latest single. A: I could not retrieve online evidence for that request.
+
+---
+
+Q: Search the internet for information on Neil Armstrong A: I could not retrieve online evidence for that request.
+
+---
+
+Am I supposed to run a local service for internet searches?
+
+---
+
+How do I do that?
+
+---
+
+Please ensure that the README.md includes details of this.
+
+---
+
+I have the docker container running, but I still get:  could not retrieve online evidence for that request.
+
+---
+
+clive@clive-MS-7C95:~/PycharmProjects/Orac$ docker ps
+CONTAINER ID   IMAGE                                      COMMAND                  CREATED         STATUS                   PORTS                                                                                                                                             NAMES
+86ef380add3d   searxng/searxng:latest                     "/usr/local/searxng/…"   2 minutes ago   Up 2 minutes             127.0.0.1:8888->8080/tcp                                                                                                                          orac-searxng
+82a435b21d64   orac:latest                                "/bin/bash -c $ORACL…"   14 hours ago    Up 7 minutes (healthy)   0.0.0.0:1521->1521/tcp, [::]:1521->1521/tcp, 0.0.0.0:5500->5500/tcp, [::]:5500->5500/tcp, 8888/tcp, 0.0.0.0:8042->8080/tcp, [::]:8042->8080/tcp   orac-db
+19ef0506638a   ghcr.io/remsky/kokoro-fastapi-cpu:latest   "./entrypoint.sh"        8 days ago      Up 13 minutes            127.0.0.1:8880->8880/tcp                                                                                                                          orac-kokoro
+cd1b042f8622   ghcr.io/open-webui/open-webui:cuda         "bash start.sh"          2 months ago    Up 2 hours (healthy)     0.0.0.0:3000->8080/tcp, [::]:3000->8080/tcp                                                                                                       open-webui
+
+---
+
+Please diagnose and fix the local SearXNG JSON API configuration used by Orac internet retrieval.
+
+Context:
+Orac's explicit-only internet retrieval MVP uses SearXNG via format=json.
+
+Manual testing shows:
+
+curl -sS --max-time 10 \
+  -H 'X-Forwarded-For: 127.0.0.1' \
+  -H 'X-Real-IP: 127.0.0.1' \
+  'http://127.0.0.1:8888/search?q=Neil%20Armstrong&format=json' \
+  | head -c 1000
+
+returns:
+
+<!doctype html>
+<html lang=en>
+<title>403 Forbidden</title>
+<h1>Forbidden</h1>
+<p>You don't have the permission to access the requested resource. It is either read-protected or not readable by the server.</p>
+
+But plain HTML search works:
+
+curl -sS --max-time 10 \
+  'http://127.0.0.1:8888/search?q=Neil%20Armstrong' \
+  | head -c 300
+
+returns normal SearXNG HTML.
+
+Likely cause:
+SearXNG is reachable, but JSON output is not enabled. SearXNG requires output formats to be enabled under the search section of settings.yml. If format=json is requested but json is not listed, SearXNG returns 403 Forbidden.
+
+Goal:
+Make the local SearXNG instance usable by Orac retrieval with format=json, and add a small repeatable smoke-test/diagnostic so this can be checked again later.
+
+Tasks:
+
+1. Locate the actual SearXNG configuration used by the running container.
+   - Inspect the running SearXNG container.
+   - Identify the bind mount or volume used for /etc/searxng.
+   - Do not assume a local settings.yml path unless docker inspect confirms it.
+
+2. Update the active SearXNG settings.yml so the search section enables JSON output.
+   Required effective YAML:
+
+   search:
+     formats:
+       - html
+       - json
+
+   Preserve existing search settings such as safe_search, autocomplete, default_lang, etc.
+   Do not duplicate the search section.
+   Do not remove unrelated settings.
+
+3. Restart the SearXNG container.
+
+4. Verify JSON output directly.
+   Run:
+
+   curl -sS --max-time 10 \
+     'http://127.0.0.1:8888/search?q=Neil%20Armstrong&format=json' \
+     | python -m json.tool | head -40
+
+   Expected result:
+   The response should parse as JSON.
+   It should not return the 403 HTML page.
+
+5. Verify Orac configuration.
+   Confirm resources/config/orac.ini has:
+
+   [retrieval.searxng]
+   base_url = http://127.0.0.1:8888
+   timeout_seconds = 10
+
+   Confirm the Orac retrieval code reads this section, not dotted keys under [retrieval].
+
+6. Add a small developer smoke-test command or script if there is an existing suitable scripts/ convention.
+   Preferred name:
+   scripts/check_searxng_retrieval.py
+
+   Behaviour:
+   - Read Orac's configured SearXNG base URL if practical.
+   - Otherwise default to http://127.0.0.1:8888.
+   - Request /search?q=Neil%20Armstrong&format=json.
+   - Fail clearly if:
+     - connection fails
+     - HTTP status is not 200
+     - response is HTML
+     - response is not valid JSON
+     - expected top-level JSON structure is missing
+   - Print a concise success message showing the query and number of results found.
+   - Use argparse for command-line parameters.
+   - Include the required script header:
+     Author: Clive Bostock
+     Date: <today's date>
+     Description: Checks that the configured SearXNG instance supports JSON search for Orac retrieval.
+
+7. Add tests if practical.
+   - Test that the smoke-test parser detects HTML 403 as a failure.
+   - Test that valid JSON is accepted.
+   - Avoid requiring a live SearXNG instance in normal unit tests.
+
+8. Run validation:
+   poetry run python scripts/check_guardrails.py
+   poetry run python -m unittest discover -s tests
+
+Non-goals:
+- Do not change the Orac retrieval architecture.
+- Do not expose retrieval as a plugin.
+- Do not add autonomous web browsing.
+- Do not weaken SourceFetcher SSRF protections.
+- Do not make SourceFetcher allow localhost result URLs.
+- The local SearXNG provider endpoint may be localhost, but fetched search result URLs must still be treated as untrusted external content and safety-checked.
+
+Return:
+- What SearXNG config path was actually used.
+- The exact settings.yml change made.
+- The direct curl/json validation result.
+- Whether the Orac retrieval smoke test passes.
+- The normal test-suite result.
+
+---
+
+I still get this, after restarting the Orac stack: I cannot search the internet. My knowledge is current only up to my training cutoff.
+
+Regarding Kevin Rowland's latest single: based on available information up to my cutoff, his most recent notable release was "The Greatest Love Of All" (2022) under the "As It Should Have Sounded" reissue label. There is no verified data on a newer single released after my training data. If you are looking for a specific track, please clarify the timeframe or context.
+
+---
+
+I asked a question and it is hanging on waiting for response: [Image #1]
+
+---
+
+Please commit the changes
+
+---
+
+Please improve the conversational style of Orac's explicit internet retrieval responses.
+
+Context:
+The explicit-only internet retrieval path is now working, but successful responses can sound mechanical and implementation-leaky.
+
+Example current response:
+"The song is 'My Life in England, Pt. 1' by Dexys Midnight Runners. The retrieved evidence confirms its existence and availability on platforms like YouTube and Spotify, though the specific lyrics or full track details were not fully extracted in the search results."
+
+Problem:
+The response exposes internal retrieval mechanics using phrases like "retrieved evidence" and "search results". That is useful for logs or debug mode, but too clunky for normal conversation.
+
+Goal:
+Make successful retrieval responses sound natural, while preserving transparency when retrieval fails, is incomplete, or the user asks for diagnostic detail.
+
+Required behaviour:
+
+1. Successful retrieval, sufficient evidence:
+   - Answer naturally.
+   - Do not mention "retrieved evidence", "grounding pack", "fetched sources", "search results confirm", or similar internal mechanics.
+   - Example:
+     "The song is 'My Life in England, Pt. 1' by Dexys Midnight Runners."
+
+2. Successful retrieval, partial evidence:
+   - Answer naturally, but briefly mention the limitation.
+   - Example:
+     "The song is 'My Life in England, Pt. 1' by Dexys Midnight Runners. I found public references to it on YouTube and Spotify, but not enough reliable detail to confirm lyrics or deeper track notes."
+
+3. Retrieval failed, disabled, unavailable, blocked, or produced no usable grounding:
+   - Be transparent.
+   - Do not let the model answer as though it searched successfully.
+   - Example:
+     "I could not retrieve usable online evidence for that. I can answer from general knowledge, but I cannot confirm the current online details."
+
+4. Diagnostic/debug mode:
+   - Keep or add a way to expose retrieval detail when explicitly requested.
+   - Useful detail includes provider, query, result URLs, fetch status, skipped/blocked URLs, and grounding excerpts.
+   - Do not show this by default in normal conversation.
+
+Implementation guidance:
+- Keep the untrusted-content warning inside the prompt/grounding boundary, but do not let that warning leak into the final answer unless relevant.
+- Add or update response instructions around the injected grounding pack.
+- Consider adding a retrieval_visibility or retrieval_response_style setting if there is already a suitable config/preferences pattern:
+  - normal
+  - transparent
+  - debug
+- Default should be normal.
+- Do not change the retrieval architecture.
+- Do not expose internet retrieval as a plugin.
+- Do not weaken URL safety or prompt-injection protections.
+
+Tests:
+- Add tests showing successful retrieval responses do not contain mechanical phrases such as:
+  - "retrieved evidence"
+  - "grounding pack"
+  - "fetched sources"
+  - "search results confirm"
+- Add tests showing retrieval failure still produces a transparent failure message.
+- Add tests showing partial retrieval can mention limitations naturally.
+- Existing retrieval and guardrail tests must continue to pass.
+
+Run:
+poetry run python scripts/check_guardrails.py
+poetry run python -m unittest discover -s tests
+
+Return:
+- Files changed.
+- Behaviour before and after.
+- Validation output.
+
+---
+
+Please commit the changes.
+
+---
+
+Implement a controlled retrieval-decision layer for Orac internet retrieval.
+
+Context:
+Orac currently supports explicit-only internet retrieval. It searches only when the user clearly asks to search online. This is working and has been hardened. The next step is not full autonomous browsing, but a controlled decision layer that can identify when internet retrieval would be useful or necessary.
+
+Goal:
+Add a RetrievalDecisionService that classifies whether a user turn needs internet retrieval, without immediately enabling unrestricted autonomous browsing.
+
+Required behaviour:
+
+1. Add retrieval modes:
+   - explicit_only
+     Existing behaviour. Only explicit user search requests trigger retrieval.
+   - suggest_search
+     Orac may identify that internet retrieval is advisable. It should either ask/announce briefly or return a decision that the controller can use.
+   - auto_safe
+     Reserved or minimally implemented. Allows automatic retrieval only for high-confidence freshness-sensitive categories.
+   - disabled
+     No internet retrieval.
+
+2. Add provider-neutral decision model:
+   - RetrievalDecision
+     Fields should include:
+       - should_retrieve: bool
+       - retrieval_type: internet/local/none if applicable
+       - confidence: low/medium/high
+       - reason_code
+       - user_visible_reason
+       - explicit_request: bool
+       - requires_user_confirmation: bool
+
+3. Add RetrievalDecisionService.
+   It should classify user messages using deterministic heuristics first.
+   Do not use another LLM call for this MVP unless there is already an established internal pattern.
+
+4. Classification should identify high-confidence internet retrieval needs for:
+   - latest/current/recent release or version
+   - current documentation/API behaviour
+   - current prices
+   - current product availability
+   - recent news/events
+   - current laws/rules/regulations
+   - current schedules/fixtures/scores
+   - current public/company roles
+   - package/library/tool support that may have changed
+
+5. Classification should avoid internet retrieval for:
+   - general conceptual questions
+   - stable historical facts
+   - maths
+   - creative writing
+   - local Orac architecture/design discussion unless the user asks to check external docs
+   - questions answerable from local project context
+   - phrases like "my latest change" or "latest local config" unless clearly external/current
+
+6. Integrate with current explicit retrieval.
+   - explicit_only must preserve existing behaviour.
+   - suggest_search should not silently browse unless existing UX conventions support that.
+   - auto_safe should only search automatically for high-confidence freshness-sensitive cases, or may be added as a config value but left disabled until tests are mature.
+   - disabled must never search.
+
+7. Logging/audit:
+   - Log retrieval decisions with reason_code and confidence.
+   - Do not expose verbose decision details to the user unless debug mode is enabled.
+
+8. User-facing style:
+   - In normal mode, keep it brief:
+     "I’ll check that online."
+     or
+     "That may have changed recently; I should check online."
+   - Do not expose internal labels like RetrievalDecisionService, grounding pack, or reason_code in normal conversation.
+
+9. Tests:
+   Add tests for:
+   - explicit search still triggers in explicit_only.
+   - non-explicit freshness-sensitive query is detected but not searched in explicit_only.
+   - suggest_search produces a confirmation/announcement path.
+   - auto_safe only triggers for high-confidence current/freshness-sensitive queries.
+   - "my latest local change" does not trigger internet retrieval.
+   - "latest Python release" does trigger a high-confidence retrieval decision.
+   - "what is recursion?" does not trigger retrieval.
+   - retrieval disabled never searches.
+   - existing retrieval tests still pass.
+
+10. Configuration:
+   Update resources/config/orac.ini with:
+   - retrieval.internet_search_mode = explicit_only by default
+   Document allowed values:
+   - disabled
+   - explicit_only
+   - suggest_search
+   - auto_safe
+
+Constraints:
+- Do not weaken SourceFetcher URL safety.
+- Do not expose internet retrieval as a normal plugin.
+- Do not implement broad autonomous browsing by default.
+- Keep provider code dumb; decisioning belongs in core.
+- Keep the change small and reviewable.
+- Follow existing Orac coding conventions.
+
+Run:
+poetry run python scripts/check_guardrails.py
+poetry run python -m unittest discover -s tests
+
+Return:
+- Files changed.
+- New retrieval decision behaviour.
+- Examples of messages that do and do not trigger retrieval decisions.
+- Validation output.
+
+---
+
+Please fix the retrieval-decision behaviour for current-news prompts.
+
+Problem:
+Orac was asked:
+
+"What is the latest news on the war in Iran?"
+
+It responded from general/model knowledge:
+
+"There is no active war in Iran. The country is currently experiencing significant internal unrest and protests, but it is not engaged in a declared war."
+
+This is a bad failure mode. The user asked for "latest news", which is inherently freshness-sensitive and should require internet retrieval before making current factual claims or correcting the user's premise.
+
+Required changes:
+
+1. Treat news/current-update wording as explicit retrieval intent.
+   The following phrases should trigger internet retrieval even in explicit_only mode:
+   - latest news
+   - current news
+   - breaking news
+   - latest updates
+   - live updates
+   - today’s news
+   - news today
+   - what’s happening now
+   - what is happening now
+
+2. Add high-confidence retrieval classification for live/current affairs categories:
+   - war
+   - conflict
+   - invasion
+   - strikes
+   - ceasefire
+   - peace talks
+   - sanctions
+   - protests/unrest
+   - elections
+   - disasters
+   - public health emergencies
+   - financial market shocks
+   - major legal/regulatory developments
+
+3. Do not allow Orac to confidently negate a current-events premise without retrieval.
+   For example, if the user asks "latest news on the war in X", Orac must not answer:
+   "There is no war in X"
+   unless retrieval has succeeded and the grounding supports that correction.
+
+4. Mode behaviour:
+   - disabled:
+     Return a transparent message that internet retrieval is disabled and current news cannot be verified.
+   - explicit_only:
+     Search automatically for explicit news/update phrases such as "latest news", because those are explicit requests for current information.
+   - suggest_search:
+     Either ask permission or announce briefly according to the current UX pattern, but do not answer from stale knowledge.
+   - auto_safe:
+     Search automatically for high-confidence current-news/current-affairs prompts.
+
+5. User-facing style:
+   - Do not expose internal labels like RetrievalDecisionService, reason_code, or grounding pack.
+   - If retrieval is unavailable, say clearly that current online evidence could not be retrieved.
+   - If retrieval succeeds, answer naturally and cite/summarise the latest evidence according to the existing retrieval response style.
+
+6. Tests:
+   Add tests for:
+   - "What is the latest news on the war in Iran?" triggers retrieval in explicit_only.
+   - "latest news on Iran" triggers retrieval in explicit_only.
+   - "breaking news Iran" triggers retrieval.
+   - "what is happening now in Iran" triggers retrieval.
+   - "Is there a war in Iran?" is freshness-sensitive and should require retrieval in auto_safe or suggest_search.
+   - In disabled mode, "latest news on the war in Iran" does not answer from general knowledge and instead returns a transparent retrieval-disabled response.
+   - Orac does not produce a confident premise-negating response for current news when retrieval failed or was unavailable.
+   - Existing tests for "my latest local change" still do not trigger retrieval.
+
+7. Validation:
+   Run:
+   poetry run python scripts/check_guardrails.py
+   poetry run python -m unittest discover -s tests
+
+Constraints:
+- Do not weaken SourceFetcher URL safety.
+- Do not expose internet retrieval as a normal plugin.
+- Do not implement broad unrestricted browsing.
+- Keep provider code dumb; decisioning belongs in core.
+- Keep default retrieval mode unchanged unless explicitly already changed elsewhere.
+
+---
+
+Please fix retrieval follow-up handling and prevent internal retrieval-decision text leaking to the user.
+
+Problem:
+After a successful current-news retrieval for Iran, the user followed up with:
+
+"Is there any more detail on that in the latest news?"
+
+Orac responded:
+
+"The user did not explicitly request internet retrieval."
+
+This is wrong for two reasons:
+1. The response exposes internal classifier/debug language to the user.
+2. The follow-up clearly refers to the previous retrieval-backed topic and also contains "latest news", which should remain current-news retrieval intent.
+
+Goal:
+Add retrieval conversation context so follow-up questions can inherit retrieval intent from the previous turn when appropriate.
+
+Required behaviour:
+
+1. Track recent retrieval context.
+   Store enough information after a retrieval-backed turn to support follow-ups:
+   - retrieval topic or normalised query
+   - original user message
+   - retrieval status: success/failure/disabled/no_grounding
+   - retrieval timestamp
+   - source/result count if available
+   - whether the answer was current-news/current-affairs related
+   - whether the retrieval was explicit or automatic
+
+2. Add follow-up detection.
+   A user message should be treated as a retrieval follow-up when:
+   - the previous assistant turn used internet retrieval or attempted internet retrieval; and
+   - the new user message contains continuation language such as:
+     - more detail
+     - tell me more
+     - any more
+     - any updates
+     - latest news
+     - latest reports
+     - what else
+     - on that
+     - about that
+     - what happened next
+     - anything more recent
+     - what do the sources say
+   - or contains pronouns/references such as "that", "it", "this", "those reports" in a context where the previous retrieval topic is clear.
+
+3. In explicit_only mode:
+   - A follow-up to a successful explicit retrieval should be allowed to continue retrieval.
+   - "Is there any more detail on that in the latest news?" should trigger retrieval because:
+     - it references the previous retrieval topic; and
+     - "latest news" is explicit current-news retrieval wording.
+
+4. In suggest_search mode:
+   - A retrieval follow-up should either continue retrieval if the previous turn was already retrieval-backed, or ask briefly if confirmation is still required.
+   - Do not silently answer from stale model knowledge.
+
+5. In auto_safe mode:
+   - Retrieval follow-ups for current-news/current-affairs topics should retrieve automatically when high-confidence.
+
+6. In disabled mode:
+   - Do not retrieve.
+   - Return a clear natural response such as:
+     "Internet retrieval is disabled, so I cannot check for more current detail."
+
+7. Prevent internal classifier/debug text from reaching the user.
+   The following kinds of text must never be returned as normal user-facing responses:
+   - "The user did not explicitly request internet retrieval."
+   - "RetrievalDecisionService..."
+   - "reason_code..."
+   - "grounding pack..."
+   - "should_retrieve=false..."
+   - raw internal decision diagnostics
+
+8. User-facing style:
+   - If retrieval succeeds, answer naturally.
+   - Do not mention retrieval mechanics unless there is a failure, limitation, or the user explicitly asks how Orac knows.
+   - For successful current-news follow-ups, a natural response would be:
+     "Yes. The latest reports add that..."
+   - For partial evidence:
+     "There is a little more detail, but the available sources are still thin..."
+
+9. Tests:
+   Add tests for:
+   - Previous turn: explicit retrieval success for "latest news on Iran"; follow-up: "Is there any more detail on that in the latest news?" triggers retrieval.
+   - Follow-up "tell me more about that" after retrieval success reuses or continues retrieval context.
+   - Follow-up "any updates?" after a current-news retrieval triggers retrieval or retrieval-follow-up decision.
+   - Follow-up with "that" after a non-retrieval local Orac design discussion does not trigger internet retrieval.
+   - disabled mode returns a natural retrieval-disabled message for retrieval follow-ups.
+   - internal diagnostic text is not returned to the user.
+   - existing tests for "my latest local change" still do not trigger retrieval.
+   - existing explicit_only, suggest_search, auto_safe and disabled tests still pass.
+
+10. Implementation guidance:
+   - Keep provider code dumb.
+   - Retrieval decisioning belongs in core.
+   - Do not weaken SourceFetcher URL safety.
+   - Do not expose retrieval as a normal plugin.
+   - Keep default retrieval mode unchanged.
+   - Keep the change small and reviewable.
+   - Prefer a simple in-memory conversation-level retrieval context first, unless there is already an established persistence pattern for conversation state.
+
+Run:
+poetry run python scripts/check_guardrails.py
+poetry run python -m unittest discover -s tests
+
+Return:
+- Files changed.
+- Explanation of how retrieval follow-up context works.
+- Before/after examples for the Iran latest-news follow-up.
+- Validation output.
+
+---
+
+Please improve Orac's retrieval-decision rules so natural freshness requests trigger internet retrieval.
+
+Context:
+Orac now has a controlled retrieval-decision layer with modes:
+- disabled
+- explicit_only
+- suggest_search
+- auto_safe
+
+However, natural user wording such as:
+
+"What is the latest news on Iran?"
+"What is the latest Python release?"
+"What's the latest SearXNG version?"
+
+should be treated as explicit current-information intent, even though the user did not literally say "search the web".
+
+Goal:
+Treat "what is the latest..." and close variants as explicit internet-retrieval requests when the subject is external, public, current, or not clearly local to the current Orac conversation/project.
+
+Required behaviour:
+
+1. Add natural freshness phrases as explicit retrieval triggers.
+
+The following patterns should trigger internet retrieval in explicit_only mode:
+
+- "what is the latest ..."
+- "what's the latest ..."
+- "whats the latest ..."
+- "what are the latest ..."
+- "latest news ..."
+- "latest update ..."
+- "latest updates ..."
+- "latest version ..."
+- "any news on ..."
+- "any updates on ..."
+- "latest release ..."
+- "any update on ..."
+- "is there any update on ..."
+- "is there any news on ..."
+- "any more news on ..."
+- "any more updates on ..."
+- "more news on ..."
+- "more updates on ..."
+- "latest on ..."
+- "any latest news ..."
+- "is there any latest news ..."
+- "is there any more detail in the latest news ..."
+- "what is the latest news on ..."
+- "what's the latest news on ..."
+
+2. Treat these as explicit retrieval intent.
+
+These should set the decision as:
+- should_retrieve: true
+- explicit_request: true
+- retrieval_type: internet
+- confidence: high
+- reason_code: explicit_freshness_request or similar
+- requires_user_confirmation: false in explicit_only and auto_safe
+
+3. Preserve local-context exclusions.
+
+Do not trigger internet retrieval merely because the word "latest" appears when the phrase clearly refers to local/user/conversation context, for example:
+
+- "my latest local change broke the tests"
+- "the latest Orac patch changed this file"
+- "use the latest local config"
+- "my latest idea is..."
+- "the latest thing I tried was..."
+- "the latest message in this conversation"
+- "the latest test run output above"
+- "the latest file I uploaded"
+- "the latest version in this repo" unless the user asks to check online
+
+4. Differentiate phrase-aware and word-aware matching.
+
+The phrase "what is the latest..." should be a strong explicit trigger.
+
+The word "latest" alone should not be enough unless it is paired with external/current concepts such as:
+- news
+- update/updates
+- release
+- version
+- price
+- availability
+- documentation
+- API
+- law/rule/regulation
+- schedule/fixture/score
+- current role/title
+- public/company figure
+- conflict/war/protest/crisis
+
+5. Current-news follow-ups.
+
+A follow-up such as:
+
+"Is there any more detail on that in the latest news?"
+
+should inherit the previous retrieval context when the previous turn was retrieval-backed, and should trigger/continue retrieval rather than producing classifier/debug text or stale general knowledge.
+
+6. Mode behaviour.
+
+- disabled:
+  Do not retrieve. Return a natural message saying internet retrieval is disabled and current information cannot be verified.
+
+- explicit_only:
+  Retrieve for explicit search phrases and natural explicit freshness phrases such as "what is the latest...".
+
+- suggest_search:
+  If the phrase is an explicit freshness request, retrieve or follow the existing explicit-request path. Do not merely say the user did not explicitly request retrieval.
+
+- auto_safe:
+  Retrieve automatically for high-confidence freshness/current-information prompts.
+
+7. Prevent internal decision text leaking to users.
+
+The following must never be returned as normal user-facing text:
+
+- "The user did not explicitly request internet retrieval."
+- "RetrievalDecisionService..."
+- "reason_code..."
+- "should_retrieve=false..."
+- "grounding pack..."
+- raw classifier/debug diagnostics
+
+8. Tests.
+
+Add tests for these retrieval triggers in explicit_only mode:
+
+- "What is the latest news on Iran?"
+- "What's the latest news on Iran?"
+- "What is the latest Python release?"
+- "What's the latest SearXNG version?"
+- "What is the latest on Kokoro voice cloning?"
+- "latest updates on Iran"
+- "latest release of Python"
+- "latest version of SearXNG"
+
+Add tests for local-context exclusions:
+
+- "my latest local change broke the tests"
+- "the latest Orac patch changed this file"
+- "use the latest local config"
+- "my latest idea is..."
+- "the latest message in this conversation"
+- "the latest test run output above"
+- "the latest file I uploaded"
+
+Add follow-up tests:
+
+- Previous turn had successful retrieval for "latest news on Iran".
+  Follow-up: "Is there any more detail on that in the latest news?"
+  Expected: retrieval follow-up is recognised and retrieval continues or is allowed.
+
+- Previous turn did not use retrieval and was about local Orac design.
+  Follow-up: "tell me more about that"
+  Expected: no internet retrieval.
+
+Add user-facing leakage tests:
+
+- No normal response should contain:
+  - "The user did not explicitly request internet retrieval"
+  - "reason_code"
+  - "RetrievalDecisionService"
+  - "grounding pack"
+
+9. Constraints.
+
+- Do not weaken SourceFetcher URL safety.
+- Do not expose retrieval as a normal plugin.
+- Do not implement unrestricted autonomous browsing.
+- Keep provider code dumb; decisioning belongs in core.
+- Keep default retrieval mode unchanged unless already explicitly changed elsewhere.
+- Keep the change small and reviewable.
+- Follow existing Orac coding conventions.
+
+10. Validation.
+
+Run:
+
+poetry run python scripts/check_guardrails.py
+poetry run python -m unittest discover -s tests
+
+Return:
+- Files changed.
+- Explanation of the updated "latest" retrieval rules.
+- Examples that now trigger retrieval.
+- Examples that remain local/no-retrieval.
+- Validation output.
+
+---
+
+Please improve Orac's retrieval-decision rules so natural freshness requests trigger internet retrieval.
+
+Context:
+Orac now has a controlled retrieval-decision layer with modes:
+- disabled
+- explicit_only
+- suggest_search
+- auto_safe
+
+However, natural user wording such as:
+
+"What is the latest news on Iran?"
+"What is the latest Python release?"
+"What's the latest SearXNG version?"
+
+should be treated as explicit current-information intent, even though the user did not literally say "search the web".
+
+Goal:
+Treat "what is the latest..." and close variants as explicit internet-retrieval requests when the subject is external, public, current, or not clearly local to the current Orac conversation/project.
+
+Required behaviour:
+
+1. Add natural freshness phrases as explicit retrieval triggers.
+
+The following patterns should trigger internet retrieval in explicit_only mode:
+
+- "what is the latest ..."
+- "what's the latest ..."
+- "whats the latest ..."
+- "what are the latest ..."
+- "latest news ..."
+- "latest update ..."
+- "latest updates ..."
+- "latest version ..."
+- "any news on ..."
+- "any updates on ..."
+- "latest release ..."
+- "any update on ..."
+- "is there any update on ..."
+- "is there any news on ..."
+- "any more news on ..."
+- "any more updates on ..."
+- "more news on ..."
+- "more updates on ..."
+- "latest on ..."
+- "any latest news ..."
+- "is there any latest news ..."
+- "is there any more detail in the latest news ..."
+- "what is the latest news on ..."
+- "what's the latest news on ..."
+
+2. Treat these as explicit retrieval intent.
+
+These should set the decision as:
+- should_retrieve: true
+- explicit_request: true
+- retrieval_type: internet
+- confidence: high
+- reason_code: explicit_freshness_request or similar
+- requires_user_confirmation: false in explicit_only and auto_safe
+
+3. Preserve local-context exclusions.
+
+Do not trigger internet retrieval merely because the word "latest" appears when the phrase clearly refers to local/user/conversation context, for example:
+
+- "my latest local change broke the tests"
+- "the latest Orac patch changed this file"
+- "use the latest local config"
+- "my latest idea is..."
+- "the latest thing I tried was..."
+- "the latest message in this conversation"
+- "the latest test run output above"
+- "the latest file I uploaded"
+- "the latest version in this repo" unless the user asks to check online
+
+4. Differentiate phrase-aware and word-aware matching.
+
+The phrase "what is the latest..." should be a strong explicit trigger.
+
+The word "latest" alone should not be enough unless it is paired with external/current concepts such as:
+- news
+- update/updates
+- release
+- version
+- price
+- availability
+- documentation
+- API
+- law/rule/regulation
+- schedule/fixture/score
+- current role/title
+- public/company figure
+- conflict/war/protest/crisis
+
+5. Current-news follow-ups.
+
+A follow-up such as:
+
+"Is there any more detail on that in the latest news?"
+
+should inherit the previous retrieval context when the previous turn was retrieval-backed, and should trigger/continue retrieval rather than producing classifier/debug text or stale general knowledge.
+
+6. Mode behaviour.
+
+- disabled:
+  Do not retrieve. Return a natural message saying internet retrieval is disabled and current information cannot be verified.
+
+- explicit_only:
+  Retrieve for explicit search phrases and natural explicit freshness phrases such as "what is the latest...".
+
+- suggest_search:
+  If the phrase is an explicit freshness request, retrieve or follow the existing explicit-request path. Do not merely say the user did not explicitly request retrieval.
+
+- auto_safe:
+  Retrieve automatically for high-confidence freshness/current-information prompts.
+
+7. Prevent internal decision text leaking to users.
+
+The following must never be returned as normal user-facing text:
+
+- "The user did not explicitly request internet retrieval."
+- "RetrievalDecisionService..."
+- "reason_code..."
+- "should_retrieve=false..."
+- "grounding pack..."
+- raw classifier/debug diagnostics
+
+8. Tests.
+
+Add tests for these retrieval triggers in explicit_only mode:
+
+- "What is the latest news on Iran?"
+- "What's the latest news on Iran?"
+- "What is the latest Python release?"
+- "What's the latest SearXNG version?"
+- "What is the latest on Kokoro voice cloning?"
+- "latest updates on Iran"
+- "latest release of Python"
+- "latest version of SearXNG"
+
+Add tests for local-context exclusions:
+
+- "my latest local change broke the tests"
+- "the latest Orac patch changed this file"
+- "use the latest local config"
+- "my latest idea is..."
+- "the latest message in this conversation"
+- "the latest test run output above"
+- "the latest file I uploaded"
+
+Add follow-up tests:
+
+- Previous turn had successful retrieval for "latest news on Iran".
+  Follow-up: "Is there any more detail on that in the latest news?"
+  Expected: retrieval follow-up is recognised and retrieval continues or is allowed.
+
+- Previous turn did not use retrieval and was about local Orac design.
+  Follow-up: "tell me more about that"
+  Expected: no internet retrieval.
+
+Add user-facing leakage tests:
+
+- No normal response should contain:
+  - "The user did not explicitly request internet retrieval"
+  - "reason_code"
+  - "RetrievalDecisionService"
+  - "grounding pack"
+
+9. Constraints.
+
+- Do not weaken SourceFetcher URL safety.
+- Do not expose retrieval as a normal plugin.
+- Do not implement unrestricted autonomous browsing.
+- Keep provider code dumb; decisioning belongs in core.
+- Keep default retrieval mode unchanged unless already explicitly changed elsewhere.
+- Keep the change small and reviewable.
+- Follow existing Orac coding conventions.
+
+10. Validation.
+
+Run:
+
+poetry run python scripts/check_guardrails.py
+poetry run python -m unittest discover -s tests
+
+Return:
+- Files changed.
+- Explanation of the updated "latest" retrieval rules.
+- Examples that now trigger retrieval.
+- Examples that remain local/no-retrieval.
+- Validation output.
+
+---
+
+Please fix retrieval topic-contamination across current-news turns.
+
+Problem:
+After asking Orac about the latest news on the Iran war, the user pivoted to a new topic:
+
+"What's the latest on the Ukraine-Russia war?"
+
+Orac responded:
+
+"The conflict in Ukraine remains active. Recent reports indicate that peace talks between Iran and the US are under strain following new US strikes."
+
+This is wrong. The second user message is a new current-news request about the Ukraine-Russia war, not a follow-up about Iran. Orac appears to have reused or leaked the previous Iran retrieval context/grounding into the new answer.
+
+Goal:
+Add topic-pivot detection and retrieval-context isolation so a new current-news topic creates a fresh retrieval context and does not reuse unrelated previous grounding.
+
+Required behaviour:
+
+1. Distinguish retrieval follow-ups from topic pivots.
+
+A message may inherit previous retrieval context only when:
+- it contains continuation language such as "more detail", "tell me more", "any updates", "on that", "about that", "what happened next"; and
+- it does not introduce a new dominant topic/entity that conflicts with the previous retrieval topic.
+
+A message must be treated as a new retrieval topic when it introduces new dominant entities or topics, for example:
+- previous topic: Iran
+  new message: "What's the latest on the Ukraine-Russia war?"
+  expected: new retrieval context
+- previous topic: Ukraine-Russia
+  new message: "What's the latest on the Israel-Gaza conflict?"
+  expected: new retrieval context
+- previous topic: Python release
+  new message: "What's the latest SearXNG version?"
+  expected: new retrieval context
+
+2. Track a simple retrieval topic signature.
+
+After a retrieval-backed turn, store a topic signature containing useful terms such as:
+- named entities
+- countries/regions
+- organisations
+- people
+- products/projects
+- conflict pairings, e.g. "Ukraine-Russia", "Israel-Gaza", "US-Iran"
+- original normalised query
+
+This does not need to be a sophisticated NER implementation for the MVP. A deterministic keyword/entity extraction heuristic is acceptable.
+
+3. Add topic-pivot detection.
+
+When a new user message arrives:
+- extract its topic signature
+- compare it with the previous retrieval topic signature
+- if overlap is low and the new message contains its own explicit freshness/current-news trigger, treat it as a new retrieval request
+- do not inherit previous grounding
+
+4. Clear or isolate old grounding.
+
+For a topic pivot:
+- do not inject the previous retrieval grounding pack into the new prompt as evidence
+- do not let previous source excerpts appear as current evidence for the new answer
+- update retrieval context only after the new retrieval attempt completes
+
+5. Query construction must use the current user topic.
+
+For:
+"What's the latest on the Ukraine-Russia war?"
+
+The generated search query should be about:
+- latest Ukraine Russia war
+- Ukraine-Russia war latest news
+- current Ukraine Russia conflict
+
+It must not include Iran, US-Iran, Hormuz, or Iran peace talks unless the user explicitly asks for a comparison.
+
+6. Evidence relevance check.
+
+Before building a grounding pack for a current-news answer, ensure fetched source excerpts are relevant to the current topic signature.
+
+For the Ukraine-Russia example:
+- acceptable grounding should mention Ukraine, Russia, Kyiv, Moscow, Zelenskyy, Putin, NATO, battlefield, drones, missiles, or closely related Ukraine-war terms
+- Iran/US peace-talk material should be rejected as irrelevant unless the user explicitly asked for a comparison
+
+If no relevant evidence remains:
+- return a natural retrieval-failure/no-relevant-evidence message
+- do not answer using unrelated previous evidence
+
+7. User-facing behaviour.
+
+The response to:
+"What's the latest on the Ukraine-Russia war?"
+
+after a previous Iran turn should answer only the Ukraine-Russia topic.
+
+It must not mention:
+- Iran
+- US-Iran peace talks
+- Hormuz
+- US strikes on Iran
+
+unless the user explicitly asks for a comparison or there is a direct relevance in the retrieved Ukraine-Russia sources.
+
+8. Prevent internal diagnostics leaking.
+
+Normal user-facing responses must not contain:
+- "topic_pivot_detected"
+- "retrieval context"
+- "grounding pack"
+- "reason_code"
+- "The user did not explicitly request internet retrieval"
+- raw classifier/debug output
+
+9. Tests.
+
+Add tests for topic pivot behaviour:
+
+A. Iran -> Ukraine pivot
+- Previous turn: successful retrieval for "latest news on Iran"
+- Next user message: "What's the latest on the Ukraine-Russia war?"
+- Expected:
+  - new retrieval decision is made for Ukraine-Russia
+  - previous Iran grounding is not reused
+  - generated query does not contain Iran
+  - final response does not contain Iran-specific content unless explicitly present in new relevant sources
+
+B. Iran -> Iran follow-up
+- Previous turn: successful retrieval for "latest news on Iran"
+- Next user message: "Is there any more detail on that in the latest news?"
+- Expected:
+  - recognised as same-topic retrieval follow-up
+  - previous retrieval topic may be reused or refined
+
+C. Ukraine -> Israel-Gaza pivot
+- Previous turn: successful retrieval for "latest Ukraine-Russia war"
+- Next user message: "What's the latest on the Israel-Gaza conflict?"
+- Expected:
+  - new retrieval context
+  - no Ukraine/Russia grounding reused
+
+D. Python -> SearXNG pivot
+- Previous turn: "What is the latest Python release?"
+- Next user message: "What's the latest SearXNG version?"
+- Expected:
+  - new retrieval context
+  - generated query does not contain Python
+
+E. Local follow-up remains local
+- Previous turn: local Orac architecture discussion, no retrieval
+- Next user message: "tell me more about that"
+- Expected:
+  - no internet retrieval
+
+F. Relevance filtering
+- If search/fetch returns sources whose excerpts do not match the current topic signature, they should not be used as grounding for the answer.
+
+10. Configuration:
+- Keep default retrieval mode unchanged.
+- Do not add broad autonomous browsing.
+- Keep the existing retrieval modes:
+  - disabled
+  - explicit_only
+  - suggest_search
+  - auto_safe
+
+Constraints:
+- Do not weaken SourceFetcher URL safety.
+- Do not expose internet retrieval as a normal plugin.
+- Provider code should remain dumb; topic decisioning belongs in core.
+- Keep prompt-injection protections intact.
+- Keep the change small and reviewable.
+- Follow existing Orac coding conventions.
+
+Run:
+poetry run python scripts/check_guardrails.py
+poetry run python -m unittest discover -s tests
+
+Return:
+- Files changed.
+- Explanation of how topic-pivot detection works.
+- Before/after examples for:
+  - Iran -> Ukraine pivot
+  - Iran -> Iran follow-up
+- Validation output.
+
+---
+
+Please add an internet-retrieval UI state to Orac so users can see when Orac is checking online.
+
+Context:
+Orac now has explicit and controlled internet retrieval. As retrieval becomes more autonomous, users need to know when Orac is using local/model knowledge versus checking online. At the moment, a delay during retrieval can look like normal thinking, a hang, or stale-answer generation.
+
+Goal:
+Add a visible retrieval lifecycle to the Orac stream/UI so the web UI can show a simple state such as "Checking online..." while internet retrieval is happening.
+
+Required behaviour:
+
+1. Add retrieval lifecycle stream events.
+
+Emit structured events around internet retrieval, before normal answer streaming begins.
+
+Suggested event names:
+- retrieval_start
+- retrieval_query
+- retrieval_fetch_start
+- retrieval_fetch_complete
+- retrieval_complete
+- retrieval_failed
+- retrieval_skipped
+
+Keep payloads compact and stable.
+
+Example payloads:
+
+{"event":"retrieval_start","mode":"internet","reason":"explicit_freshness_request"}
+{"event":"retrieval_query","query":"latest Oracle Database version","provider":"searxng"}
+{"event":"retrieval_fetch_start","source_count":4}
+{"event":"retrieval_fetch_complete","fetched_count":4,"usable_source_count":2}
+{"event":"retrieval_complete","source_count":4,"usable_source_count":2}
+{"event":"retrieval_failed","reason":"no_usable_sources"}
+{"event":"retrieval_skipped","reason":"retrieval_disabled"}
+
+2. Normal UI behaviour.
+
+In the normal web UI, do not show verbose retrieval internals.
+
+Map retrieval events to simple user-facing states:
+
+- retrieval_start / retrieval_query:
+  "Checking online..."
+
+- retrieval_fetch_start / retrieval_fetch_complete:
+  "Reading sources..."
+
+- retrieval_complete:
+  clear retrieval status and proceed to normal answer streaming
+
+- retrieval_failed:
+  show a brief failure state if no normal error/answer will explain it
+
+- retrieval_skipped:
+  show no prominent state unless the final answer needs to explain why retrieval was skipped
+
+Prefer the phrase:
+"Checking online..."
+rather than:
+"Searching..."
+
+3. Debug UI behaviour.
+
+If there is already a debug/developer UI mode, expose more detail there:
+- provider
+- query
+- result count
+- fetched count
+- usable source count
+- failure/skipped reason
+
+Do not show these details in normal mode.
+
+4. State model.
+
+Add or extend UI state handling so the display can represent:
+
+- idle
+- listening
+- thinking
+- checking_online
+- reading_sources
+- speaking
+- error
+
+Do not break existing states.
+
+5. WebSocket / NDJSON compatibility.
+
+Orac already streams events such as:
+- stream_start
+- text_delta
+- text_chunk
+- stream_end
+- stream_error
+- stream_cancelled
+
+Add retrieval events without breaking existing clients.
+
+Existing clients that ignore unknown events should continue working.
+
+6. Controller integration.
+
+Emit retrieval events from the core retrieval path in src/controller/orac.py or the appropriate retrieval service seam.
+
+Events should be emitted only when internet retrieval is attempted, skipped due to explicit retrieval policy, or fails after being requested.
+
+Do not emit retrieval events for ordinary local-only answers.
+
+7. Voice behaviour.
+
+Do not make voice mode verbose by default.
+
+If a spoken acknowledgement is already part of the interaction model, it may say briefly:
+"I'll check that."
+or:
+"I'll check online."
+
+But avoid reading out debug details.
+
+8. UI animation.
+
+For web/orac-display:
+- Add a visual state for checking_online.
+- Add a visual state for reading_sources if practical.
+- Keep it subtle.
+- Do not obscure the existing tesseract/cube visual.
+- Suggested normal text label:
+  "Checking online..."
+  then:
+  "Reading sources..."
+
+If animation changes are risky, add the text/state handling first and leave animation polish for a later pass.
+
+9. Tests.
+
+Add or update tests for:
+
+- retrieval_start is emitted when explicit internet retrieval begins
+- retrieval_query is emitted with the configured provider and generated query
+- retrieval_fetch_start / retrieval_fetch_complete are emitted around source fetching where practical
+- retrieval_complete is emitted after successful retrieval
+- retrieval_failed is emitted when retrieval was requested but fails
+- retrieval_skipped is emitted when retrieval is disabled for an explicit/current-information request
+- ordinary non-retrieval answers do not emit retrieval lifecycle events
+- existing stream_start/text_delta/text_chunk/stream_end behaviour still works
+- unknown retrieval events do not break existing stream consumers if there is an existing compatibility test seam
+
+10. Constraints.
+
+- Do not weaken SourceFetcher URL safety.
+- Do not expose internet retrieval as a normal plugin.
+- Do not change retrieval decision policy except where needed to emit lifecycle events.
+- Do not make normal responses mechanically mention "retrieved evidence" or "grounding pack".
+- Do not expose provider/query/source details in normal UI unless debug mode is enabled.
+- Keep the change small and reviewable.
+- Follow existing Orac coding conventions.
+
+11. Validation.
+
+Run:
+
+poetry run python scripts/check_guardrails.py
+poetry run python -m unittest discover -s tests
+
+If web/orac-display has its own test/build command, run the appropriate existing command and report it.
+
+Return:
+- Files changed.
+- New retrieval event names and payloads.
+- UI state mapping.
+- Before/after behaviour for a query such as:
+  "What is the latest version of the Oracle Database?"
+- Validation output.
+
+---
+
+Can we update the resources/config/orac_system_prompt.yaml to include the factoid that Orac is inspired by Orac, the highly intelligent, portable supercomputer from the BBC sci-fi series Blake’s 7.

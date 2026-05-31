@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "775a08d92ff8",
+  "session_id": "019e6062-df80-7fa1-afc5-ab77f14548b1",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-31T19:34:35.825013032Z",
+  "branch": "develop",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "bin/dbwait.sh",
+    "bin/orac-ctl.sh",
+    "bin/orac-db-deploy.sh",
+    "resources/docker/oracle/docker-compose.yaml",
+    "resources/docker/oracle/setup/010-apex-install.sh",
+    "resources/docker/oracle/setup/020-setup-ords.sh",
+    "resources/docker/oracle/setup/026-restart-ords.sh",
+    "resources/docker/oracle/setup/030-orac-user.sh",
+    "resources/docker/oracle/setup/033-orac-datapump-dir.sh",
+    "resources/docker/oracle/setup/035-orac-schema_and_apps (copy).sh",
+    "resources/docker/oracle/setup/035-orac-schema_and_apps.sh",
+    "resources/docker/oracle/setup/999-complete.sh",
+    "resources/docker/oracle/startup/010-start-ords.sh"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.4-mini",
+  "turn_id": "94700263bbed",
+  "token_usage": {
+    "input_tokens": 4467661,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 117278208,
+    "output_tokens": 551731,
+    "api_call_count": 855
+  },
+  "session_metrics": {
+    "turn_count": 33
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-31T19:34:35.331462006Z",
+    "agent_lines": 1082,
+    "agent_removed": 418,
+    "human_added": 977,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 2059,
+    "total_lines_changed": 2495,
+    "agent_percentage": 60.120240480961925,
+    "metric_version": 2
+  }
+}
