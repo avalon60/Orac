@@ -3,11 +3,14 @@
   "checkpoint_id": "775a08d92ff8",
   "strategy": "manual-commit",
   "branch": "develop",
-  "checkpoints_count": 1,
+  "checkpoints_count": 3,
   "files_touched": [
     "bin/dbwait.sh",
     "bin/orac-ctl.sh",
     "bin/orac-db-deploy.sh",
+    "bin/orac-dockge-sync.sh",
+    "docs/docker-compose-deployment.md",
+    "resources/config/orac.env",
     "resources/docker/oracle/docker-compose.yaml",
     "resources/docker/oracle/setup/010-apex-install.sh",
     "resources/docker/oracle/setup/020-setup-ords.sh",
@@ -17,7 +20,8 @@
     "resources/docker/oracle/setup/035-orac-schema_and_apps (copy).sh",
     "resources/docker/oracle/setup/035-orac-schema_and_apps.sh",
     "resources/docker/oracle/setup/999-complete.sh",
-    "resources/docker/oracle/startup/010-start-ords.sh"
+    "resources/docker/oracle/startup/010-start-ords.sh",
+    "tests/test_orac_ctl_compose.py"
   ],
   "sessions": [
     {
@@ -25,13 +29,19 @@
       "transcript": "/77/5a08d92ff8/0/full.jsonl",
       "content_hash": "/77/5a08d92ff8/0/content_hash.txt",
       "prompt": "/77/5a08d92ff8/0/prompt.txt"
+    },
+    {
+      "metadata": "/77/5a08d92ff8/1/metadata.json",
+      "transcript": "/77/5a08d92ff8/1/full.jsonl",
+      "content_hash": "/77/5a08d92ff8/1/content_hash.txt",
+      "prompt": "/77/5a08d92ff8/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 4467661,
+    "input_tokens": 6846933,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 117278208,
-    "output_tokens": 551731,
-    "api_call_count": 855
+    "cache_read_tokens": 160651264,
+    "output_tokens": 711908,
+    "api_call_count": 1206
   }
 }

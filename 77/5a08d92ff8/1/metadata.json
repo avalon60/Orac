@@ -1,0 +1,76 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "775a08d92ff8",
+  "session_id": "019e7da9-d574-7263-a1c2-5afba945a470",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-31T19:36:30.458607221Z",
+  "branch": "develop",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "bin/dbwait.sh",
+    "bin/orac-ctl.sh",
+    "bin/orac-db-deploy.sh",
+    "bin/orac-dockge-sync.sh",
+    "docs/docker-compose-deployment.md",
+    "resources/config/orac.env",
+    "resources/docker/oracle/docker-compose.yaml",
+    "resources/docker/oracle/setup/010-apex-install.sh",
+    "resources/docker/oracle/setup/020-setup-ords.sh",
+    "resources/docker/oracle/setup/026-restart-ords.sh",
+    "resources/docker/oracle/setup/030-orac-user.sh",
+    "resources/docker/oracle/setup/033-orac-datapump-dir.sh",
+    "resources/docker/oracle/setup/035-orac-schema_and_apps (copy).sh",
+    "resources/docker/oracle/setup/035-orac-schema_and_apps.sh",
+    "resources/docker/oracle/setup/999-complete.sh",
+    "resources/docker/oracle/startup/010-start-ords.sh",
+    "tests/test_orac_ctl_compose.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "c8bee784accd",
+  "token_usage": {
+    "input_tokens": 2379272,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 43373056,
+    "output_tokens": 160177,
+    "api_call_count": 351
+  },
+  "session_metrics": {
+    "turn_count": 9
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-31T19:36:30.287947708Z",
+    "agent_lines": 1243,
+    "agent_removed": 436,
+    "human_added": 816,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 2059,
+    "total_lines_changed": 2495,
+    "agent_percentage": 67.29458917835672,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 577,
+      "user_lines_removed": 0,
+      "agent_lines_added": 4767,
+      "agent_lines_removed": 574,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "bin/orac-dockge-sync.sh": 231,
+        "docs/docker-compose-deployment.md": 44,
+        "tests/test_orac_ctl_compose.py": 133
+      }
+    }
+  ]
+}
