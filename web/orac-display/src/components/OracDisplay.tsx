@@ -586,7 +586,7 @@ const TranscriptPanel = ({
 
   return (
     <div
-      className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[1.5rem] border bg-[#04131d]/68 px-5 py-4 backdrop-blur-xl"
+      className="relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-[1.5rem] border bg-[#04131d]/68 px-5 py-4 backdrop-blur-xl"
       style={{
         borderColor: `rgba(27, 95, 145, ${borderOpacity})`,
         boxShadow: `0 0 26px ${accentColor}${muted ? '14' : '22'}`,
