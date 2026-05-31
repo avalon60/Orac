@@ -1,0 +1,276 @@
+You are working in the Orac repository.
+
+Goal:
+Migrate Orac's long-lived Docker services from ad-hoc docker run / docker start / docker stop management to Docker Compose as the source of truth.
+
+Background:
+Orac currently has multiple long-lived Docker containers, including at least:
+
+* orac-db
+* orac-kokoro
+* orac-searxng
+
+The current control script, bin/orac-ctl.sh, has started to drift architecturally:
+
+* it defines a COMPOSE_FILE variable
+* but it does not use docker compose to manage the DB/ORDS container
+* it starts/stops an existing named DB container directly with docker start / docker stop
+* it can create the Kokoro sidecar directly with docker run
+* this makes Dockge/Compose management difficult and creates two competing container-management models
+
+Required architecture:
+
+* Docker Compose is the primary deployment model for Orac containerised services.
+* Dockge must remain optional. Orac must not depend on Dockge.
+* orac-ctl.sh must call docker compose directly, not Dockge.
+* Dockge users may choose to deploy the Orac stack under /opt/stacks/orac.
+* Non-Dockge users must be able to deploy the same stack somewhere else, such as /opt/orac/stack.
+* The active stack directory must be configurable.
+
+High-level rule:
+Long-lived Orac service containers must be defined in Compose.
+Shell scripts may call docker compose, inspect health, wait for readiness, tail logs, and provide convenience wrappers.
+Shell scripts must not create long-lived Orac service containers with docker run, except for temporary diagnostic or one-off maintenance tasks.
+
+Please do the following.
+
+1. Inspect the repository
+
+* Find all scripts that call docker run, docker start, docker stop, docker logs, docker inspect, docker ps, or docker compose.
+* Identify which calls are managing long-lived Orac services.
+* Do not change anything destructive yet.
+* Summarise the current Docker control flow.
+
+2. Compose file strategy
+   Create or update the Orac Compose definition so it can manage:
+
+* orac-db as the core service
+* orac-kokoro as an optional voice profile
+* orac-searxng as an optional search profile
+
+Use Compose profiles for optional services:
+
+* profile voice for orac-kokoro
+* profile search for orac-searxng
+
+The Compose file should support configurable values via .env-style variables, including at least:
+
+* COMPOSE_PROJECT_NAME
+* ORAC_DB_CONTAINER_NAME
+* ORAC_IMAGE_TAG
+* ORADATA_DIR
+* PORT_SQLNET
+* PORT_HTTP
+* PORT_EM
+* KOKORO_IMAGE
+* KOKORO_CONTAINER_NAME
+* KOKORO_HOST
+* KOKORO_PORT
+* SEARXNG_IMAGE
+* SEARXNG_CONTAINER_NAME
+* SEARXNG_HOST
+* SEARXNG_PORT
+
+Do not hard-code Dockge paths into the Compose file.
+
+3. Runtime stack directory
+   Introduce a configurable active stack directory.
+
+Suggested defaults:
+
+* ORAC_STACK_DIR defaults to /opt/orac/stack for normal installed use
+* Dockge users can set ORAC_STACK_DIR=/opt/stacks/orac
+* developers can point ORAC_STACK_DIR at the repository Compose directory
+
+orac-ctl.sh should resolve:
+
+* ORAC_STACK_DIR
+* ORAC_COMPOSE_FILE
+* ORAC_ENV_FILE
+
+It should be possible to override these via environment variables.
+
+4. Refactor orac-ctl.sh
+   Refactor bin/orac-ctl.sh so that it uses docker compose for long-lived containers.
+
+Add a helper function similar to:
+
+compose_cmd() {
+docker compose 
+--env-file "$ORAC_ENV_FILE" 
+-f "$ORAC_COMPOSE_FILE" 
+"$@"
+}
+
+Refactor:
+
+* start: use docker compose up -d for the required profiles
+* stop: use docker compose stop, not docker stop on named containers
+* restart: use compose-based stop/start
+* status: use docker compose ps, plus Orac AI engine status
+* logs db: use docker compose logs -f for the DB service
+* logs voice: use docker compose logs -f for Kokoro
+* logs search: use docker compose logs -f for SearXNG
+
+Preserve the existing behaviour where the Orac AI engine process is started after the DB is ready.
+
+Preserve existing readiness checks:
+
+* dbwait.sh should still be used after starting the DB service
+* Kokoro readiness checks should still be used if the voice profile is enabled
+
+5. Profile selection
+   orac-ctl.sh should determine required Compose profiles from existing Orac configuration where possible.
+
+Existing Kokoro settings should map to Compose profile activation:
+
+* if tts_engine=kokoro and tts_kokoro_autostart=true and tts_kokoro_runtime is docker-cpu or docker-gpu, activate the voice profile
+* if tts_kokoro_runtime=external, do not start the Kokoro container; only check the external readiness URL
+* unsupported runtimes should produce a warning and avoid starting Kokoro
+
+Add a clean mechanism for search/SearXNG profile activation if an existing config setting exists. If no such setting exists, propose a minimal config addition before implementing it.
+
+6. Safety requirements
+   Do not remove or recreate the existing orac-db container automatically.
+   Do not delete Docker volumes.
+   Do not change ORADATA_DIR automatically.
+   Do not run docker compose down -v.
+   Do not run destructive Docker commands without explicit confirmation.
+
+For the DB migration, first provide a compatibility check:
+
+* inspect the current orac-db container
+* compare image, ports, mounts, environment, restart policy, and health check against the Compose definition
+* report any differences
+* only then suggest the migration steps
+
+7. Migration support
+   Add a non-destructive migration/check command if appropriate, for example:
+
+orac-ctl.sh compose-check
+
+This should:
+
+* show the active stack directory
+* show the compose file
+* show the env file
+* validate docker compose config
+* show which profiles would be activated
+* compare current container metadata where possible
+* warn if existing containers are not Compose-managed
+
+8. Documentation
+   Update or create documentation explaining:
+
+* Docker Compose is the Orac deployment model
+* Dockge is optional
+* /opt/stacks/orac is only recommended for Dockge users
+* /opt/orac/stack is suitable for normal installed use
+* developers can run from the repository path
+* optional services are controlled using Compose profiles
+* long-lived containers should not be created with docker run
+
+9. Tests / validation
+   Where practical, add tests or shellcheck-friendly validation for:
+
+* profile selection logic
+* compose command construction
+* missing compose file handling
+* missing env file handling
+* external Kokoro runtime behaviour
+* unsupported Kokoro runtime behaviour
+
+10. Output
+    First provide a concise implementation plan.
+    Then make the changes.
+    After making changes, provide:
+
+* files changed
+* summary of behaviour changes
+* commands to validate the new flow
+* migration notes for the currently running orac-db container
+* any risks or follow-up work
+
+---
+
+clive@clive-MS-7C95:~/PycharmProjects/Orac$ orac-ctl.sh compose-check
+📁 Active stack directory : /opt/orac/stack
+📄 Compose file           : /opt/orac/stack/docker-compose.yaml
+📄 Env file               : /opt/orac/stack/orac.env
+
+❌ Missing Compose file: /opt/orac/stack/docker-compose.yaml
+   Set ORAC_STACK_DIR, ORAC_COMPOSE_FILE, or copy the stack from:
+   /home/clive/PycharmProjects/Orac/resources/docker/oracle/docker-compose.yaml
+❌ Missing Compose env file: /opt/orac/stack/orac.env
+   Set ORAC_ENV_FILE or copy a starting env file from:
+   /home/clive/PycharmProjects/Orac/resources/config/orac.env
+
+---
+
+📁 Active stack directory : /home/clive/PycharmProjects/Orac/resources/docker/oracle
+📄 Compose file           : /home/clive/PycharmProjects/Orac/resources/docker/oracle/docker-compose.yaml
+📄 Env file               : /home/clive/PycharmProjects/Orac/resources/config/orac.env
+
+🧩 Profiles from Orac config: voice search
+🔧 Compose command preview : docker compose --env-file /home/clive/PycharmProjects/Orac/resources/config/orac.env -f /home/clive/PycharmProjects/Orac/resources/docker/oracle/docker-compose.yaml --profile voice --profile search up -d
+
+🧪 Validating docker compose config...
+✅ docker compose config is valid.
+
+🔎 DB container compatibility check:
+  Container: orac-db
+  Expected image : orac:latest
+  Actual image   : orac:latest
+  Expected ports : 1521->1521, 8080->8042, 5500->5500
+  Actual ports   : {"1521/tcp":[{"HostIp":"","HostPort":"1521"}],"5500/tcp":[{"HostIp":"","HostPort":"5500"}],"8080/tcp":[{"HostIp":"","HostPort":"8042"}]}
+  Expected mount : /u01/orac-db/oradata:/opt/oracle/oradata
+  Actual mounts  : [{"Type":"bind","Source":"/u01/orac-db/oradata","Destination":"/opt/oracle/oradata","Mode":"","RW":true,"Propagation":"rprivate"}]
+  Expected env   : ORACLE_PWD=<from credential store>
+  Actual env     : ORACLE_PWD=<present, masked>
+  Expected restart policy: unless-stopped
+  Actual restart policy  : no
+  Difference             : restart policy differs
+  Expected health check  : none in Compose; readiness remains bin/dbwait.sh
+  Actual health check    : {"Test":["CMD-SHELL","\"$ORACLE_BASE/$CHECK_DB_FILE\" >/dev/null || exit 1"],"Interval":60000000000,"Timeout":30000000000,"StartPeriod":300000000000}
+  Compose-managed: no
+  Warning: existing container is not labelled as Docker Compose-managed.
+
+Migration note:
+  This check is non-destructive. It does not remove, recreate, or modify containers or volumes.
+  If an existing 'orac-db' container is not Compose-managed,
+  stop it only after reviewing the differences above, then start through 'orac-ctl.sh start'.
+
+---
+
+bin/orac-ctl.sh start
+
+---
+
+clive@clive-MS-7C95:~/PycharmProjects/Orac$ bin/orac-ctl.sh start
+🚀 Starting Orac stack (Oracle DB + ORDS + AI)...
+📁 Stack directory : /home/clive/PycharmProjects/Orac/resources/docker/oracle
+📄 Compose file    : /home/clive/PycharmProjects/Orac/resources/docker/oracle/docker-compose.yaml
+📄 Env file        : /home/clive/PycharmProjects/Orac/resources/config/orac.env
+🧩 Profiles        : voice search
+[+] up 2/4
+ ✔ Network... Created                                                                                                                                                                                                0.0s
+ ✘ Contain... Error response from daemon: Conflict. The container name "/orac-searxng" is already in use by container "86ef380add3dbe9f5f2a163065eb5d43e867a1613e51db7e297fedee10d62856". You have to remove (or rename) that container to be able to reuse that name. 0.0s
+ ⠋ Contain... Creating                                                                                                                                                                                               0.0s
+ ⠋ Contain... Creating                                                                                                                                                                                               0.0s
+Error response from daemon: Conflict. The container name "/orac-searxng" is already in use by container "86ef380add3dbe9f5f2a163065eb5d43e867a1613e51db7e297fedee10d62856". You have to remove (or rename) that container to be able to reuse that name.
+
+---
+
+How do I restart the whole stack?
+
+---
+
+So - orac-ctl.sh needs to establish defaults for ORAC_STACK_DIR, ORAC_COMPOSE_FILE, ORAC_ENV_FILE such that they are located within the Orac base location. So they need establishing relative to where the orac-ctl.sh script is located.
+
+---
+
+Is the @orac-db-deploy.sh Compose compatible?
+
+---
+
+The bin/orac-db-deploy.sh has been crucial for initialising Orac's database container - do you have an alternative?

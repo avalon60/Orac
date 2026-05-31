@@ -3,7 +3,7 @@
   "checkpoint_id": "d60acd017486",
   "strategy": "manual-commit",
   "branch": "develop",
-  "checkpoints_count": 4,
+  "checkpoints_count": 12,
   "files_touched": [
     "web/orac-display/src/components/OracDisplay.tsx"
   ],
@@ -13,13 +13,19 @@
       "transcript": "/d6/0acd017486/0/full.jsonl",
       "content_hash": "/d6/0acd017486/0/content_hash.txt",
       "prompt": "/d6/0acd017486/0/prompt.txt"
+    },
+    {
+      "metadata": "/d6/0acd017486/1/metadata.json",
+      "transcript": "/d6/0acd017486/1/full.jsonl",
+      "content_hash": "/d6/0acd017486/1/content_hash.txt",
+      "prompt": "/d6/0acd017486/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 4467661,
+    "input_tokens": 4885929,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 117278208,
-    "output_tokens": 551731,
-    "api_call_count": 855
+    "cache_read_tokens": 132907648,
+    "output_tokens": 607500,
+    "api_call_count": 1002
   }
 }

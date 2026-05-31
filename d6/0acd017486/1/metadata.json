@@ -1,0 +1,169 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "d60acd017486",
+  "session_id": "019e7da9-d574-7263-a1c2-5afba945a470",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-31T12:10:36.916772468Z",
+  "branch": "develop",
+  "checkpoints_count": 8,
+  "files_touched": [
+    "web/orac-display/src/components/OracDisplay.tsx"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "a8d9e46c7df2",
+  "token_usage": {
+    "input_tokens": 418268,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 15629440,
+    "output_tokens": 55769,
+    "api_call_count": 147
+  },
+  "session_metrics": {
+    "turn_count": 8
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-31T12:10:36.873794028Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 4,
+    "human_removed": 23,
+    "total_committed": 1,
+    "total_lines_changed": 27,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 2984,
+      "user_lines_removed": 61,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "protocol/orac_protocol/resources/json_schema/protocol.schema.json": 50,
+        "resources/config/orac.ini": 3,
+        "resources/config/orac_system_prompt.yaml": 4,
+        "src/controller/orac.py": 390,
+        "src/orac_core/retrieval/__init__.py": 8,
+        "src/orac_core/retrieval/broker.py": 1,
+        "src/orac_core/retrieval/decision.py": 712,
+        "src/orac_core/retrieval/models.py": 31,
+        "src/orac_core/retrieval/response_style.py": 2,
+        "src/orac_core/retrieval/service.py": 165,
+        "src/orac_core/retrieval/triggers.py": 107,
+        "src/orac_voice/voice_turn_controller.py": 44,
+        "src/view/slave.py": 7,
+        "tests/test_orac_context_history.py": 724,
+        "tests/test_orac_voice.py": 133,
+        "tests/test_protocol_contract.py": 35,
+        "tests/test_retrieval.py": 370,
+        "web/orac-display/src/App.tsx": 2,
+        "web/orac-display/src/components/OracDisplay.tsx": 23,
+        "web/orac-display/src/components/OracStateControls.tsx": 2,
+        "web/orac-display/src/types/oracState.ts": 2
+      },
+      "user_removed_per_file": {
+        "resources/config/orac.ini": 1,
+        "resources/config/orac_system_prompt.yaml": 3,
+        "src/controller/orac.py": 22,
+        "src/orac_core/retrieval/broker.py": 7,
+        "src/orac_core/retrieval/response_style.py": 2,
+        "src/orac_core/retrieval/service.py": 20,
+        "tests/test_orac_context_history.py": 2,
+        "web/orac-display/src/components/OracDisplay.tsx": 4
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 169,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3775,
+      "agent_lines_removed": 298,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 169,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3775,
+      "agent_lines_removed": 298,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 169,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3775,
+      "agent_lines_removed": 298,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 169,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3795,
+      "agent_lines_removed": 305,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 169,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3795,
+      "agent_lines_removed": 305,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141
+      }
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 169,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3851,
+      "agent_lines_removed": 305,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141
+      }
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 169,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3851,
+      "agent_lines_removed": 305,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141
+      }
+    },
+    {
+      "checkpoint_number": 9,
+      "user_lines_added": 169,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3851,
+      "agent_lines_removed": 305,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141
+      }
+    }
+  ]
+}
