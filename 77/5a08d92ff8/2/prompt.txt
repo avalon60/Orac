@@ -1,0 +1,1007 @@
+Why is the Orac text response region, showing a gap to the right? [Image #1] It should surely be right justified.
+
+---
+
+Please commit the changes you just made.
+
+---
+
+The bin/orac-restore.sh soesn't work: clive@clive-MS-7C95:~/PycharmProjects/Orac/bin$ orac-restore.sh ~/OracBackup/orac-backup-20260531-121604.tar.gz
+Backup Orac version : 0.1.0
+Current Orac version: 0.1.0
+
+Restore will import database schemas into orac-db/FREEPDB1.
+This can overwrite existing schema objects/data depending on Data Pump behaviour.
+
+Type RECOVER to continue:
+
+ERROR: Restore cancelled
+clive@clive-MS-7C95:~/PycharmProjects/Orac/bin$ orac-restore.sh ~/OracBackup/orac-backup-20260531-121604.tar.gz
+Backup Orac version : 0.1.0
+Current Orac version: 0.1.0
+
+Restore will import database schemas into orac-db/FREEPDB1.
+This can overwrite existing schema objects/data depending on Data Pump behaviour.
+
+Type RECOVER to continue:
+RECOVER
+Preparing Data Pump directory ORAC_DATAPUMP_DIR in orac-db
+
+Session altered.
+
+
+Directory created.
+
+Copying dump into orac-db:/home/oracle/orac/datapump/orac-20260531-121604.dmp
+Successfully copied 2.86MB (transferred 2.86MB) to orac-db:/home/oracle/orac/datapump/orac-20260531-121604.dmp
+Disabling enabled foreign key constraints for imported schemas.
+
+Session altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+Importing schemas: ORAC_API,ORAC_CODE,ORAC_CORE,ORAC_HA
+
+Import: Release 23.26.0.0.0 - Production on Sun May 31 19:13:11 2026
+Version 23.26.0.0.0
+
+Copyright (c) 1982, 2025, Oracle and/or its affiliates.  All rights reserved.
+
+Connected to: Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
+ORA-39001: invalid argument value
+ORA-39000: bad dump file specification
+ORA-31640: unable to open dump file "/home/oracle/orac/datapump/orac-20260531-121604.dmp" for read
+ORA-27041: unable to open file
+Linux-x86_64 Error: 13: Permission denied
+Additional information: 9
+
+
+Re-enabling foreign key constraints disabled before import.
+
+Session altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+ERROR: Data Pump import failed with status 1
+. Please investigate.
+
+---
+
+It seemed to import data, but the output looks a bit odd clive@clive-MS-7C95:~/PycharmProjects/Orac/bin$ orac-restore.sh ~/OracBackup/orac-backup-20260531-121604.tar.gz
+Backup Orac version : 0.1.0
+Current Orac version: 0.1.0
+
+Restore will import database schemas into orac-db/FREEPDB1.
+This can overwrite existing schema objects/data depending on Data Pump behaviour.
+
+Type RECOVER to continue:
+RECOVER
+Preparing Data Pump directory ORAC_DATAPUMP_DIR in orac-db
+
+Session altered.
+
+
+Directory created.
+
+Copying dump into orac-db:/home/oracle/orac/datapump/orac-20260531-121604.dmp
+Successfully copied 2.86MB (transferred 2.86MB) to orac-db:/home/oracle/orac/datapump/orac-20260531-121604.dmp
+Setting Data Pump dump ownership in orac-db
+Disabling enabled foreign key constraints for imported schemas.
+
+Session altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+Importing schemas: ORAC_API,ORAC_CODE,ORAC_CORE,ORAC_HA
+
+Import: Release 23.26.0.0.0 - Production on Sun May 31 19:18:19 2026
+Version 23.26.0.0.0
+
+Copyright (c) 1982, 2025, Oracle and/or its affiliates.  All rights reserved.
+
+Connected to: Oracle AI Database 26ai Free Release 23.26.0.0.0 - Develop, Learn, and Run for Free
+Master table "SYSTEM"."SYS_IMPORT_SCHEMA_01" successfully loaded/unloaded
+Starting "SYSTEM"."SYS_IMPORT_SCHEMA_01":  system/********@//127.0.0.1:1521/FREEPDB1 schemas=ORAC_API,ORAC_CODE,ORAC_CORE,ORAC_HA directory=ORAC_DATAPUMP_DIR dumpfile=orac-20260531-121604.dmp logfile=orac-restore-orac-20260531-121604.log table_exists_action=replace 
+Processing object type SCHEMA_EXPORT/USER
+ORA-31684: Object type USER:"ORAC_CORE" already exists
+
+ORA-31684: Object type USER:"ORAC_CODE" already exists
+
+ORA-31684: Object type USER:"ORAC_API" already exists
+
+ORA-31684: Object type USER:"ORAC_HA" already exists
+
+Processing object type SCHEMA_EXPORT/SYSTEM_GRANT
+Processing object type SCHEMA_EXPORT/DEFAULT_ROLE
+Processing object type SCHEMA_EXPORT/TABLESPACE_QUOTA
+Processing object type SCHEMA_EXPORT/PRE_SCHEMA/PROCACT_SCHEMA/LOGREP
+Processing object type SCHEMA_EXPORT/TABLE/TABLE
+Processing object type SCHEMA_EXPORT/TABLE/TABLE_DATA
+. . imported "ORAC_CORE"."USER_SYNONYMS"                     0 KB       0 rows
+. . imported "ORAC_CORE"."CONVERSATIONS"                    11 KB      13 rows
+. . imported "ORAC_CORE"."PLUGIN_AUDIT_EVENTS"               0 KB       0 rows
+. . imported "ORAC_CORE"."USER_PROMPT_ELEMENTS"              0 KB       0 rows
+. . imported "ORAC_CORE"."USERS"                           9.3 KB       1 rows
+. . imported "ORAC_CORE"."MESSAGES"                      178.3 KB     209 rows
+. . imported "ORAC_CORE"."TIMEZONES"                      12.4 KB      38 rows
+. . imported "ORAC_CORE"."TTS_VOICES"                     22.7 KB      78 rows
+. . imported "ORAC_HA"."HA_DEVICES"                          0 KB       0 rows
+. . imported "ORAC_CORE"."USER_PREFERENCES"               11.3 KB      19 rows
+. . imported "ORAC_HA"."HA_ENTITIES"                         0 KB       0 rows
+. . imported "ORAC_CORE"."MESSAGE_EMBEDDINGS"                0 KB       0 rows
+. . imported "ORAC_CORE"."LLM_REGISTRY"                   27.8 KB      18 rows
+. . imported "ORAC_CORE"."ORAC_PERSONALITIES"             29.9 KB       6 rows
+. . imported "ORAC_CORE"."PREFERENCE_DEFINITIONS"           26 KB      19 rows
+. . imported "ORAC_CORE"."MODEL_GENERATION_PRESETS"       13.5 KB       8 rows
+. . imported "ORAC_CORE"."PLUGIN_INVOCATIONS"                0 KB       0 rows
+. . imported "ORAC_CORE"."DEVICES"                           0 KB       0 rows
+. . imported "ORAC_HA"."HA_STATES_CURRENT"                   0 KB       0 rows
+. . imported "ORAC_HA"."HA_AREAS"                            0 KB       0 rows
+Processing object type SCHEMA_EXPORT/TABLE/GRANT/OWNER_GRANT/OBJECT_GRANT
+Processing object type SCHEMA_EXPORT/TABLE/COMMENT
+Processing object type SCHEMA_EXPORT/TABLE/IDENTITY_COLUMN
+Processing object type SCHEMA_EXPORT/PACKAGE/PACKAGE_SPEC
+ORA-31684: Object type PACKAGE:"ORAC_API"."CONVERSATIONS_TAPI" already exists
+
+ORA-31684: Object type PACKAGE:"ORAC_API"."DEVICES_TAPI" already exists
+
+ORA-31684: Object type PACKAGE:"ORAC_API"."LLM_REGISTRY_TAPI" already exists
+
+ORA-31684: Object type PACKAGE:"ORAC_API"."MESSAGE_EMBEDDINGS_TAPI" already exists
+
+ORA-31684: Object type PACKAGE:"ORAC_API"."MESSAGES_TAPI" already exists
+
+ORA-31684: Object type PACKAGE:"ORAC_API"."ORAC_PERSONALITIES_TAPI" already exists
+
+ORA-31684: Object type PACKAGE:"ORAC_API"."PLUGIN_AUDIT_EVENTS_TAPI" already exists
+
+ORA-31684: Object type PACKAGE:"ORAC_API"."PLUGIN_INVOCATIONS_TAPI" already exists
+
+ORA-31684: Object type PACKAGE:"ORAC_API"."PREFERENCE_DEFINITIONS_TAPI" already exists
+
+ORA-31684: Object type PACKAGE:"ORAC_API"."USER_PREFERENCES_TAPI" already exists
+
+ORA-31684: Object type PACKAGE:"ORAC_API"."USER_PROMPT_ELEMENTS_TAPI" already exists
+
+ORA-31684: Object type PACKAGE:"ORAC_API"."USER_SYNONYMS_TAPI" already exists
+
+ORA-31684: Object type PACKAGE:"ORAC_API"."USERS_TAPI" already exists
+
+ORA-31684: Object type PACKAGE:"ORAC_CODE"."ORAC_PERSONALITIES_API" already exists
+
+ORA-31684: Object type PACKAGE:"ORAC_CODE"."ORAC_PREFS_SEED" already exists
+
+ORA-31684: Object type PACKAGE:"ORAC_CODE"."PLUGIN_AUDIT_API" already exists
+
+ORA-31684: Object type PACKAGE:"ORAC_CODE"."PREFERENCE_LOV_API" already exists
+
+ORA-31684: Object type PACKAGE:"ORAC_CODE"."USER_PREFERENCES_API" already exists
+
+Processing object type SCHEMA_EXPORT/PACKAGE/GRANT/OWNER_GRANT/OBJECT_GRANT
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."EXECUTE" skipped, base object type PACKAGE:"ORAC_API"."CONVERSATIONS_TAPI" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."EXECUTE" skipped, base object type PACKAGE:"ORAC_API"."DEVICES_TAPI" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."EXECUTE" skipped, base object type PACKAGE:"ORAC_API"."LLM_REGISTRY_TAPI" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."EXECUTE" skipped, base object type PACKAGE:"ORAC_API"."MESSAGE_EMBEDDINGS_TAPI" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."EXECUTE" skipped, base object type PACKAGE:"ORAC_API"."MESSAGES_TAPI" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."EXECUTE" skipped, base object type PACKAGE:"ORAC_API"."ORAC_PERSONALITIES_TAPI" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."EXECUTE" skipped, base object type PACKAGE:"ORAC_API"."PLUGIN_AUDIT_EVENTS_TAPI" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."EXECUTE" skipped, base object type PACKAGE:"ORAC_API"."PLUGIN_INVOCATIONS_TAPI" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."EXECUTE" skipped, base object type PACKAGE:"ORAC_API"."PREFERENCE_DEFINITIONS_TAPI" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."EXECUTE" skipped, base object type PACKAGE:"ORAC_API"."USER_PREFERENCES_TAPI" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."EXECUTE" skipped, base object type PACKAGE:"ORAC_API"."USER_PROMPT_ELEMENTS_TAPI" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."EXECUTE" skipped, base object type PACKAGE:"ORAC_API"."USER_SYNONYMS_TAPI" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."EXECUTE" skipped, base object type PACKAGE:"ORAC_API"."USERS_TAPI" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."EXECUTE" skipped, base object type PACKAGE:"ORAC_CODE"."ORAC_PERSONALITIES_API" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."EXECUTE" skipped, base object type PACKAGE:"ORAC_CODE"."ORAC_PERSONALITIES_API" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."EXECUTE" skipped, base object type PACKAGE:"ORAC_CODE"."ORAC_PREFS_SEED" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."EXECUTE" skipped, base object type PACKAGE:"ORAC_CODE"."ORAC_PREFS_SEED" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."EXECUTE" skipped, base object type PACKAGE:"ORAC_CODE"."PLUGIN_AUDIT_API" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."EXECUTE" skipped, base object type PACKAGE:"ORAC_CODE"."PREFERENCE_LOV_API" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."EXECUTE" skipped, base object type PACKAGE:"ORAC_CODE"."PREFERENCE_LOV_API" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."EXECUTE" skipped, base object type PACKAGE:"ORAC_CODE"."USER_PREFERENCES_API" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."EXECUTE" skipped, base object type PACKAGE:"ORAC_CODE"."USER_PREFERENCES_API" already exists
+
+Processing object type SCHEMA_EXPORT/PACKAGE/COMPILE_PACKAGE/PACKAGE_SPEC/ALTER_PACKAGE_SPEC
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_API"."CONVERSATIONS_TAPI" skipped, base object type PACKAGE:"ORAC_API"."CONVERSATIONS_TAPI" already exists
+
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_API"."DEVICES_TAPI" skipped, base object type PACKAGE:"ORAC_API"."DEVICES_TAPI" already exists
+
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_API"."LLM_REGISTRY_TAPI" skipped, base object type PACKAGE:"ORAC_API"."LLM_REGISTRY_TAPI" already exists
+
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_API"."MESSAGE_EMBEDDINGS_TAPI" skipped, base object type PACKAGE:"ORAC_API"."MESSAGE_EMBEDDINGS_TAPI" already exists
+
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_API"."MESSAGES_TAPI" skipped, base object type PACKAGE:"ORAC_API"."MESSAGES_TAPI" already exists
+
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_API"."ORAC_PERSONALITIES_TAPI" skipped, base object type PACKAGE:"ORAC_API"."ORAC_PERSONALITIES_TAPI" already exists
+
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_API"."PLUGIN_AUDIT_EVENTS_TAPI" skipped, base object type PACKAGE:"ORAC_API"."PLUGIN_AUDIT_EVENTS_TAPI" already exists
+
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_API"."PLUGIN_INVOCATIONS_TAPI" skipped, base object type PACKAGE:"ORAC_API"."PLUGIN_INVOCATIONS_TAPI" already exists
+
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_API"."PREFERENCE_DEFINITIONS_TAPI" skipped, base object type PACKAGE:"ORAC_API"."PREFERENCE_DEFINITIONS_TAPI" already exists
+
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_API"."USER_PREFERENCES_TAPI" skipped, base object type PACKAGE:"ORAC_API"."USER_PREFERENCES_TAPI" already exists
+
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_API"."USER_PROMPT_ELEMENTS_TAPI" skipped, base object type PACKAGE:"ORAC_API"."USER_PROMPT_ELEMENTS_TAPI" already exists
+
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_API"."USER_SYNONYMS_TAPI" skipped, base object type PACKAGE:"ORAC_API"."USER_SYNONYMS_TAPI" already exists
+
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_API"."USERS_TAPI" skipped, base object type PACKAGE:"ORAC_API"."USERS_TAPI" already exists
+
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_CODE"."ORAC_PERSONALITIES_API" skipped, base object type PACKAGE:"ORAC_CODE"."ORAC_PERSONALITIES_API" already exists
+
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_CODE"."ORAC_PREFS_SEED" skipped, base object type PACKAGE:"ORAC_CODE"."ORAC_PREFS_SEED" already exists
+
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_CODE"."PLUGIN_AUDIT_API" skipped, base object type PACKAGE:"ORAC_CODE"."PLUGIN_AUDIT_API" already exists
+
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_CODE"."PREFERENCE_LOV_API" skipped, base object type PACKAGE:"ORAC_CODE"."PREFERENCE_LOV_API" already exists
+
+ORA-39111: Dependent object type ALTER_PACKAGE_SPEC:"ORAC_CODE"."USER_PREFERENCES_API" skipped, base object type PACKAGE:"ORAC_CODE"."USER_PREFERENCES_API" already exists
+
+Processing object type SCHEMA_EXPORT/VIEW/VIEW
+ORA-31684: Object type VIEW:"ORAC_API"."CONVERSATIONS_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_API"."DEVICES_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_API"."LLM_REGISTRY_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_API"."MESSAGE_EMBEDDINGS_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_API"."MESSAGES_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_API"."MODEL_GENERATION_PRESETS_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_API"."ORAC_PERSONALITIES_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_API"."PLUGIN_AUDIT_EVENTS_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_API"."PLUGIN_INVOCATIONS_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_API"."PREFERENCE_DEFINITIONS_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_API"."TIMEZONES_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_API"."TTS_VOICES_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_API"."USER_PROMPT_ELEMENTS_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_API"."USER_SYNONYMS_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_API"."USERS" already exists
+
+ORA-31684: Object type VIEW:"ORAC_API"."USERS_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_CODE"."LLM_REGISTRY_PROBE_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_CODE"."LLM_USAGE_BREAKDOWN_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_CODE"."MESSAGE_ROLE_BREAKDOWN_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_CODE"."MESSAGES_PER_DAY_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_CODE"."TOKEN_USAGE_TREND_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_CODE"."USER_PREFERENCES_DISPLAY_V" already exists
+
+ORA-31684: Object type VIEW:"ORAC_CODE"."USER_PREFERENCES_V" already exists
+
+Processing object type SCHEMA_EXPORT/VIEW/GRANT/OWNER_GRANT/OBJECT_GRANT
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."CONVERSATIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."CONVERSATIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."CONVERSATIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."CONVERSATIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."CONVERSATIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."CONVERSATIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."CONVERSATIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."CONVERSATIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."CONVERSATIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."CONVERSATIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."CONVERSATIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."CONVERSATIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."DEVICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."DEVICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."DEVICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."DEVICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."DEVICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."DEVICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."DEVICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."DEVICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."DEVICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."DEVICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."DEVICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."DEVICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."LLM_REGISTRY_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."LLM_REGISTRY_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."LLM_REGISTRY_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."LLM_REGISTRY_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."LLM_REGISTRY_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."LLM_REGISTRY_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."LLM_REGISTRY_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."LLM_REGISTRY_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."LLM_REGISTRY_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."LLM_REGISTRY_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."LLM_REGISTRY_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."LLM_REGISTRY_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."MESSAGE_EMBEDDINGS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."MESSAGE_EMBEDDINGS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."MESSAGE_EMBEDDINGS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."MESSAGE_EMBEDDINGS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."MESSAGE_EMBEDDINGS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."MESSAGE_EMBEDDINGS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."MESSAGE_EMBEDDINGS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."MESSAGE_EMBEDDINGS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."MESSAGE_EMBEDDINGS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."MESSAGE_EMBEDDINGS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."MESSAGE_EMBEDDINGS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."MESSAGE_EMBEDDINGS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."MESSAGES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."MESSAGES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."MESSAGES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."MESSAGES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."MESSAGES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."MESSAGES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."MESSAGES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."MESSAGES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."MESSAGES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."MESSAGES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."MESSAGES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."MESSAGES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."MODEL_GENERATION_PRESETS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."MODEL_GENERATION_PRESETS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."MODEL_GENERATION_PRESETS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."MODEL_GENERATION_PRESETS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."MODEL_GENERATION_PRESETS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."MODEL_GENERATION_PRESETS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."MODEL_GENERATION_PRESETS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."MODEL_GENERATION_PRESETS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."MODEL_GENERATION_PRESETS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."MODEL_GENERATION_PRESETS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."MODEL_GENERATION_PRESETS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."MODEL_GENERATION_PRESETS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."ORAC_PERSONALITIES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."ORAC_PERSONALITIES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."ORAC_PERSONALITIES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."ORAC_PERSONALITIES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."ORAC_PERSONALITIES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."ORAC_PERSONALITIES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."ORAC_PERSONALITIES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."ORAC_PERSONALITIES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."ORAC_PERSONALITIES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."ORAC_PERSONALITIES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."ORAC_PERSONALITIES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."ORAC_PERSONALITIES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."PLUGIN_AUDIT_EVENTS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."PLUGIN_AUDIT_EVENTS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."PLUGIN_INVOCATIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."PLUGIN_INVOCATIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."PREFERENCE_DEFINITIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."PREFERENCE_DEFINITIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."PREFERENCE_DEFINITIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."PREFERENCE_DEFINITIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."PREFERENCE_DEFINITIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."PREFERENCE_DEFINITIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."PREFERENCE_DEFINITIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."PREFERENCE_DEFINITIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."PREFERENCE_DEFINITIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."PREFERENCE_DEFINITIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."PREFERENCE_DEFINITIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."PREFERENCE_DEFINITIONS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."TIMEZONES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."TIMEZONES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."TIMEZONES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."TIMEZONES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."TIMEZONES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."TIMEZONES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."TTS_VOICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."TTS_VOICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."TTS_VOICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."TTS_VOICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."TTS_VOICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."TTS_VOICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."TTS_VOICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."TTS_VOICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."TTS_VOICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."TTS_VOICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."TTS_VOICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."TTS_VOICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."TTS_VOICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."TTS_VOICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."TTS_VOICES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."USER_PROMPT_ELEMENTS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."USER_PROMPT_ELEMENTS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."USER_PROMPT_ELEMENTS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."USER_PROMPT_ELEMENTS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."USER_PROMPT_ELEMENTS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."USER_PROMPT_ELEMENTS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."USER_PROMPT_ELEMENTS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."USER_PROMPT_ELEMENTS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."USER_PROMPT_ELEMENTS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."USER_PROMPT_ELEMENTS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."USER_PROMPT_ELEMENTS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."USER_PROMPT_ELEMENTS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."USER_SYNONYMS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."USER_SYNONYMS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."USER_SYNONYMS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."USER_SYNONYMS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."USER_SYNONYMS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."USER_SYNONYMS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."USER_SYNONYMS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."USER_SYNONYMS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."USER_SYNONYMS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."USER_SYNONYMS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."USER_SYNONYMS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."USER_SYNONYMS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."USERS" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."USERS" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."USERS" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."USERS" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."USERS" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."USERS" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."USERS" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."USERS" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."USERS" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."USERS" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."USERS" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."USERS" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."USERS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."USERS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."USERS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."USERS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."USERS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."DELETE" skipped, base object type VIEW:"ORAC_API"."USERS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."INSERT" skipped, base object type VIEW:"ORAC_API"."USERS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."USERS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."UPDATE" skipped, base object type VIEW:"ORAC_API"."USERS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."USERS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."SELECT" skipped, base object type VIEW:"ORAC_API"."USERS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_API"."READ" skipped, base object type VIEW:"ORAC_API"."USERS_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."SELECT" skipped, base object type VIEW:"ORAC_CODE"."LLM_REGISTRY_PROBE_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."SELECT" skipped, base object type VIEW:"ORAC_CODE"."LLM_REGISTRY_PROBE_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."SELECT" skipped, base object type VIEW:"ORAC_CODE"."LLM_USAGE_BREAKDOWN_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."SELECT" skipped, base object type VIEW:"ORAC_CODE"."LLM_USAGE_BREAKDOWN_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."SELECT" skipped, base object type VIEW:"ORAC_CODE"."MESSAGE_ROLE_BREAKDOWN_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."SELECT" skipped, base object type VIEW:"ORAC_CODE"."MESSAGE_ROLE_BREAKDOWN_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."SELECT" skipped, base object type VIEW:"ORAC_CODE"."MESSAGES_PER_DAY_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."SELECT" skipped, base object type VIEW:"ORAC_CODE"."MESSAGES_PER_DAY_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."SELECT" skipped, base object type VIEW:"ORAC_CODE"."TOKEN_USAGE_TREND_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."SELECT" skipped, base object type VIEW:"ORAC_CODE"."TOKEN_USAGE_TREND_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."SELECT" skipped, base object type VIEW:"ORAC_CODE"."USER_PREFERENCES_DISPLAY_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."SELECT" skipped, base object type VIEW:"ORAC_CODE"."USER_PREFERENCES_DISPLAY_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."DELETE" skipped, base object type VIEW:"ORAC_CODE"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."INSERT" skipped, base object type VIEW:"ORAC_CODE"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."SELECT" skipped, base object type VIEW:"ORAC_CODE"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."UPDATE" skipped, base object type VIEW:"ORAC_CODE"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."READ" skipped, base object type VIEW:"ORAC_CODE"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."DELETE" skipped, base object type VIEW:"ORAC_CODE"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."INSERT" skipped, base object type VIEW:"ORAC_CODE"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."SELECT" skipped, base object type VIEW:"ORAC_CODE"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."UPDATE" skipped, base object type VIEW:"ORAC_CODE"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type OBJECT_GRANT:"ORAC_CODE"."READ" skipped, base object type VIEW:"ORAC_CODE"."USER_PREFERENCES_V" already exists
+
+Processing object type SCHEMA_EXPORT/PACKAGE/PACKAGE_BODY
+ORA-31684: Object type PACKAGE_BODY:"ORAC_CODE"."USER_PREFERENCES_API" already exists
+
+ORA-31684: Object type PACKAGE_BODY:"ORAC_CODE"."ORAC_PREFS_SEED" already exists
+
+ORA-31684: Object type PACKAGE_BODY:"ORAC_CODE"."ORAC_PERSONALITIES_API" already exists
+
+ORA-31684: Object type PACKAGE_BODY:"ORAC_CODE"."PREFERENCE_LOV_API" already exists
+
+ORA-31684: Object type PACKAGE_BODY:"ORAC_CODE"."PLUGIN_AUDIT_API" already exists
+
+ORA-31684: Object type PACKAGE_BODY:"ORAC_API"."CONVERSATIONS_TAPI" already exists
+
+ORA-31684: Object type PACKAGE_BODY:"ORAC_API"."DEVICES_TAPI" already exists
+
+ORA-31684: Object type PACKAGE_BODY:"ORAC_API"."LLM_REGISTRY_TAPI" already exists
+
+ORA-31684: Object type PACKAGE_BODY:"ORAC_API"."MESSAGE_EMBEDDINGS_TAPI" already exists
+
+ORA-31684: Object type PACKAGE_BODY:"ORAC_API"."USER_PREFERENCES_TAPI" already exists
+
+ORA-31684: Object type PACKAGE_BODY:"ORAC_API"."USERS_TAPI" already exists
+
+ORA-31684: Object type PACKAGE_BODY:"ORAC_API"."PLUGIN_INVOCATIONS_TAPI" already exists
+
+ORA-31684: Object type PACKAGE_BODY:"ORAC_API"."ORAC_PERSONALITIES_TAPI" already exists
+
+ORA-31684: Object type PACKAGE_BODY:"ORAC_API"."USER_PROMPT_ELEMENTS_TAPI" already exists
+
+ORA-31684: Object type PACKAGE_BODY:"ORAC_API"."PREFERENCE_DEFINITIONS_TAPI" already exists
+
+ORA-31684: Object type PACKAGE_BODY:"ORAC_API"."PLUGIN_AUDIT_EVENTS_TAPI" already exists
+
+ORA-31684: Object type PACKAGE_BODY:"ORAC_API"."USER_SYNONYMS_TAPI" already exists
+
+ORA-31684: Object type PACKAGE_BODY:"ORAC_API"."MESSAGES_TAPI" already exists
+
+Processing object type SCHEMA_EXPORT/TABLE/INDEX/INDEX
+Processing object type SCHEMA_EXPORT/TABLE/CONSTRAINT/CONSTRAINT
+Processing object type SCHEMA_EXPORT/TABLE/INDEX/STATISTICS/INDEX_STATISTICS
+Processing object type SCHEMA_EXPORT/VIEW/CONSTRAINT
+ORA-39111: Dependent object type CONSTRAINT:"ORAC_API"."PRFDFN_V_UK1" skipped, base object type VIEW:"ORAC_API"."PREFERENCE_DEFINITIONS_V" already exists
+
+ORA-39111: Dependent object type CONSTRAINT:"ORAC_API"."PRFDFN_V_PK" skipped, base object type VIEW:"ORAC_API"."PREFERENCE_DEFINITIONS_V" already exists
+
+ORA-39111: Dependent object type CONSTRAINT:"ORAC_API"."USER_PREF_V_UK1" skipped, base object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+ORA-39111: Dependent object type CONSTRAINT:"ORAC_API"."USER_PREF_V_PK" skipped, base object type VIEW:"ORAC_API"."USER_PREFERENCES_V" already exists
+
+Processing object type SCHEMA_EXPORT/TABLE/CONSTRAINT/REF_CONSTRAINT
+Processing object type SCHEMA_EXPORT/TABLE/TRIGGER
+Processing object type SCHEMA_EXPORT/VIEW/TRIGGER
+ORA-39111: Dependent object type TRIGGER:"ORAC_CODE"."USER_PREF_V_IUD" skipped, base object type VIEW:"ORAC_CODE"."USER_PREFERENCES_V" already exists
+
+Processing object type SCHEMA_EXPORT/TABLE/STATISTICS/TABLE_STATISTICS
+Job "SYSTEM"."SYS_IMPORT_SCHEMA_01" completed with 315 error(s) at Sun May 31 19:18:40 2026 elapsed 0 00:00:19
+
+Re-enabling foreign key constraints disabled before import.
+
+Session altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+
+Table altered.
+
+ERROR: Data Pump import failed with status 5

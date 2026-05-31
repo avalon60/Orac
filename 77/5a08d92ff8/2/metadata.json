@@ -1,0 +1,111 @@
+{
+  "cli_version": "0.6.2",
+  "checkpoint_id": "775a08d92ff8",
+  "session_id": "019e7dd7-4881-7993-afa2-5f7d65f964ad",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-31T19:36:37.312931898Z",
+  "branch": "develop",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "bin/dbwait.sh",
+    "bin/orac-ctl.sh",
+    "bin/orac-db-deploy.sh",
+    "resources/config/orac.env",
+    "resources/docker/oracle/docker-compose.yaml",
+    "resources/docker/oracle/setup/010-apex-install.sh",
+    "resources/docker/oracle/setup/020-setup-ords.sh",
+    "resources/docker/oracle/setup/026-restart-ords.sh",
+    "resources/docker/oracle/setup/030-orac-user.sh",
+    "resources/docker/oracle/setup/033-orac-datapump-dir.sh",
+    "resources/docker/oracle/setup/035-orac-schema_and_apps (copy).sh",
+    "resources/docker/oracle/setup/035-orac-schema_and_apps.sh",
+    "resources/docker/oracle/setup/999-complete.sh",
+    "resources/docker/oracle/startup/010-start-ords.sh"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.5",
+  "turn_id": "c1c0195b7c33",
+  "checkpoint_transcript_start": 148,
+  "transcript_lines_at_start": 148,
+  "token_usage": {
+    "input_tokens": 204039,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3314304,
+    "output_tokens": 12666,
+    "api_call_count": 31
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-31T19:36:37.233345989Z",
+    "agent_lines": 371,
+    "agent_removed": 200,
+    "human_added": 1216,
+    "human_modified": 236,
+    "human_removed": 0,
+    "total_committed": 1823,
+    "total_lines_changed": 2023,
+    "agent_percentage": 28.225407810182894,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 1095,
+      "user_lines_removed": 238,
+      "agent_lines_added": 4050,
+      "agent_lines_removed": 324,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "README.md": 2,
+        "bin/orac-db-deploy.sh": 111,
+        "bin/orac-dockge-sync.sh": 231,
+        "docs/docker-compose-deployment.md": 44,
+        "resources/docker/oracle/setup/010-apex-install.sh": 53,
+        "resources/docker/oracle/setup/020-setup-ords.sh": 96,
+        "resources/docker/oracle/setup/026-restart-ords.sh": 26,
+        "resources/docker/oracle/setup/030-orac-user.sh": 44,
+        "resources/docker/oracle/setup/033-orac-datapump-dir.sh": 28,
+        "resources/docker/oracle/setup/035-orac-schema_and_apps.sh": 2,
+        "resources/docker/oracle/setup/999-complete.sh": 108,
+        "resources/docker/oracle/startup/010-start-ords.sh": 48,
+        "tests/test_orac_ctl_compose.py": 133
+      },
+      "user_removed_per_file": {
+        "README.md": 2,
+        "resources/docker/oracle/setup/010-apex-install.sh": 14,
+        "resources/docker/oracle/setup/020-setup-ords.sh": 24,
+        "resources/docker/oracle/setup/026-restart-ords.sh": 9,
+        "resources/docker/oracle/setup/030-orac-user.sh": 29,
+        "resources/docker/oracle/setup/033-orac-datapump-dir.sh": 14,
+        "resources/docker/oracle/setup/035-orac-schema_and_apps (copy).sh": 138,
+        "resources/docker/oracle/setup/035-orac-schema_and_apps.sh": 2,
+        "resources/docker/oracle/setup/999-complete.sh": 1,
+        "resources/docker/oracle/startup/010-start-ords.sh": 5
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 577,
+      "user_lines_removed": 0,
+      "agent_lines_added": 4683,
+      "agent_lines_removed": 562,
+      "user_added_per_file": {
+        ".gemini/agents/entire-search.md": 28,
+        ".gemini/settings.json": 141,
+        "bin/orac-dockge-sync.sh": 231,
+        "docs/docker-compose-deployment.md": 44,
+        "tests/test_orac_ctl_compose.py": 133
+      }
+    }
+  ]
+}
