@@ -274,3 +274,7 @@ Is the @orac-db-deploy.sh Compose compatible?
 ---
 
 The bin/orac-db-deploy.sh has been crucial for initialising Orac's database container - do you have an alternative?
+
+---
+
+Please make it Compose aware.
