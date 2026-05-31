@@ -6,7 +6,7 @@
 # Purpose : Unified script to control Orac (Oracle DB + ORDS + AI engine)
 ################################################################################
 
-set -e
+set -euo pipefail
 PROG=$(basename "$0")
 
 # -----------------------------------------------------------------------------#
@@ -16,12 +16,16 @@ realpath() { [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"; }
 SCRIPT_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
 PROJECT_DIR=$(dirname "$SCRIPT_DIR")
 CONFIG_DIR=${PROJECT_DIR}/resources/config
-CONFIG_FILE="${CONFIG_DIR}/orac.ini"
+CONFIG_FILE="${ORAC_CONFIG_FILE:-${CONFIG_DIR}/orac.ini}"
 CTL_DIR=${PROJECT_DIR}/src/controller
 DEFAULTS_FILE="${CONFIG_DIR}/init-defaults.ini"
 ORA_DOCKER_DIR=${PROJECT_DIR}/resources/docker/oracle
-COMPOSE_FILE="${ORA_DOCKER_DIR}/docker-compose.yaml"
-ENV_FILE="${CONFIG_DIR}/orac.env"
+DEFAULT_STACK_DIR="${ORA_DOCKER_DIR}"
+ORAC_STACK_DIR="${ORAC_STACK_DIR:-$DEFAULT_STACK_DIR}"
+ORAC_COMPOSE_FILE="${ORAC_COMPOSE_FILE:-${ORAC_STACK_DIR}/docker-compose.yaml}"
+ORAC_ENV_FILE="${ORAC_ENV_FILE:-${CONFIG_DIR}/orac.env}"
+REPO_COMPOSE_FILE="${ORA_DOCKER_DIR}/docker-compose.yaml"
+REPO_ENV_FILE="${CONFIG_DIR}/orac.env"
 RUN_DIR="/run/orac"
 DUMP_CONTEXT_FLAG="${RUN_DIR}/dump-context.once"
 ORAC_LOG_FILE="${PROJECT_DIR}/logs/orac.log"
@@ -35,33 +39,10 @@ KOKORO_GPU_IMAGE="ghcr.io/remsky/kokoro-fastapi-gpu:latest"
 
 # AI server control script (owns PID, /run/orac, logs)
 ORAC_SH="${SCRIPT_DIR}/orac.sh"
-if [[ ! -x "$ORAC_SH" ]]; then
+if [[ "${ORAC_CTL_LIB_ONLY:-0}" != "1" && ! -x "$ORAC_SH" ]]; then
   echo "❌ Missing or non-executable: $ORAC_SH"
   echo "   Ensure it exists and run:  chmod +x \"$ORAC_SH\""
   exit 1
-fi
-
-# -----------------------------------------------------------------------------#
-# Secrets / env
-# -----------------------------------------------------------------------------#
-ORACLE_PASSWORD=$("$SCRIPT_DIR/dbconn-property.sh" -n orac -p password)
-if [[ -z "$ORACLE_PASSWORD" ]]; then
-  echo "❌ Could not retrieve Oracle password from credential store."
-  exit 1
-fi
-
-# Load Orac environment settings from orac.env
-if [[ -f "$ENV_FILE" ]]; then
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-else
-  echo "⚠️ Defaults file not found: $ENV_FILE. Using hardcoded values."
-  ORADATA_DIR="/u01/orac-db/oradata"
-  CONTAINER_NAME="orac-db"
-  PORT_SQLNET=1521
-  PORT_HTTP=8042    # The meaning of life ;o)
-  PORT_EM=5500
-  IMAGE_TAG="23.5.0-lite"
 fi
 
 # Extract Orac version (controller package)
@@ -70,12 +51,100 @@ ORAC_VERSION=$(grep -m1 "__version__" "${CTL_DIR}/__init__.py" 2>/dev/null | cut
 # -----------------------------------------------------------------------------#
 # Helpers
 # -----------------------------------------------------------------------------#
-ensure_env() {
-  export ORACLE_PWD="${ORACLE_PASSWORD}"
-  export ORADATA_DIR="${ORADATA_DIR}"
-  export PORT_SQLNET="${PORT_SQLNET}"
-  export PORT_HTTP="${PORT_HTTP}"
-  export PORT_EM="${PORT_EM}"
+load_stack_env() {
+  if [[ ! -f "$ORAC_ENV_FILE" ]]; then
+    return 1
+  fi
+
+  set -a
+  # shellcheck disable=SC1090
+  source "$ORAC_ENV_FILE"
+  set +a
+
+  : "${COMPOSE_PROJECT_NAME:=orac}"
+  : "${ORAC_IMAGE_NAME:=orac}"
+  : "${ORAC_IMAGE_TAG:=latest}"
+  : "${ORAC_DB_CONTAINER_NAME:=${CONTAINER_NAME:-orac-db}}"
+  : "${CONTAINER_NAME:=$ORAC_DB_CONTAINER_NAME}"
+  : "${ORADATA_DIR:=/u01/orac-db/oradata}"
+  : "${PORT_SQLNET:=1521}"
+  : "${PORT_HTTP:=8042}"
+  : "${PORT_EM:=5500}"
+  : "${KOKORO_CONTAINER_NAME:=orac-kokoro}"
+  : "${KOKORO_HOST:=127.0.0.1}"
+  : "${KOKORO_PORT:=8880}"
+  : "${SEARXNG_CONTAINER_NAME:=orac-searxng}"
+  : "${SEARXNG_HOST:=127.0.0.1}"
+  : "${SEARXNG_PORT:=8888}"
+
+  export COMPOSE_PROJECT_NAME ORAC_IMAGE_NAME ORAC_IMAGE_TAG
+  export ORAC_DB_CONTAINER_NAME CONTAINER_NAME ORADATA_DIR
+  export PORT_SQLNET PORT_HTTP PORT_EM
+  export KOKORO_CONTAINER_NAME KOKORO_HOST KOKORO_PORT
+  export SEARXNG_CONTAINER_NAME SEARXNG_HOST SEARXNG_PORT
+}
+
+load_stack_env_if_present() {
+  if [[ -f "$ORAC_ENV_FILE" ]]; then
+    load_stack_env
+  fi
+}
+
+require_compose_inputs() {
+  local failed=0
+
+  if [[ ! -f "$ORAC_COMPOSE_FILE" ]]; then
+    echo "❌ Missing Compose file: $ORAC_COMPOSE_FILE"
+    echo "   Set ORAC_STACK_DIR, ORAC_COMPOSE_FILE, or copy the stack from:"
+    echo "   $REPO_COMPOSE_FILE"
+    failed=1
+  fi
+
+  if [[ ! -f "$ORAC_ENV_FILE" ]]; then
+    echo "❌ Missing Compose env file: $ORAC_ENV_FILE"
+    echo "   Set ORAC_ENV_FILE or copy a starting env file from:"
+    echo "   $REPO_ENV_FILE"
+    failed=1
+  fi
+
+  return "$failed"
+}
+
+get_oracle_password() {
+  local password
+
+  password=$("$SCRIPT_DIR/dbconn-property.sh" -n orac -p password)
+  if [[ -z "$password" ]]; then
+    echo "❌ Could not retrieve Oracle password from credential store." >&2
+    return 1
+  fi
+
+  printf '%s\n' "$password"
+}
+
+ensure_compose_runtime_env() {
+  local oracle_password
+
+  require_compose_inputs || return 1
+  load_stack_env
+
+  oracle_password="$(get_oracle_password)"
+  export ORACLE_PWD="$oracle_password"
+}
+
+compose_cmd() {
+  docker compose \
+    --env-file "$ORAC_ENV_FILE" \
+    -f "$ORAC_COMPOSE_FILE" \
+    "$@"
+}
+
+compose_command_preview() {
+  printf 'docker compose --env-file %s -f %s' "$ORAC_ENV_FILE" "$ORAC_COMPOSE_FILE"
+  if [[ "$#" -gt 0 ]]; then
+    printf ' %s' "$@"
+  fi
+  printf '\n'
 }
 
 read_ini_value() {
@@ -169,6 +238,129 @@ kokoro_image_for_runtime() {
   esac
 }
 
+declare -a COMPOSE_PROFILE_ARGS=()
+declare -a ACTIVE_PROFILE_NAMES=()
+VOICE_PROFILE_ENABLED=0
+KOKORO_EXTERNAL_ENABLED=0
+KOKORO_READINESS_URL=""
+KOKORO_RUNTIME_VALUE=""
+SEARCH_PROFILE_ENABLED=0
+
+add_compose_profile() {
+  local profile="$1"
+
+  COMPOSE_PROFILE_ARGS+=(--profile "$profile")
+  ACTIVE_PROFILE_NAMES+=("$profile")
+}
+
+compose_profiles_text() {
+  if [[ "${#ACTIVE_PROFILE_NAMES[@]}" -eq 0 ]]; then
+    printf 'none\n'
+    return 0
+  fi
+
+  printf '%s\n' "${ACTIVE_PROFILE_NAMES[*]}"
+}
+
+determine_voice_profile() {
+  local tts_engine
+  local autostart
+  local runtime
+  local container_name
+  local image
+  local image_override
+  local host
+  local port
+  local base_url
+
+  VOICE_PROFILE_ENABLED=0
+  KOKORO_EXTERNAL_ENABLED=0
+  KOKORO_READINESS_URL=""
+  KOKORO_RUNTIME_VALUE=""
+
+  tts_engine="$(read_ini_value "voice" "tts_engine" "piper" | tr '[:upper:]' '[:lower:]')"
+  autostart="$(read_ini_value "voice" "tts_kokoro_autostart" "false")"
+  runtime="$(read_ini_value "voice" "tts_kokoro_runtime" "docker-cpu" | tr '[:upper:]' '[:lower:]')"
+
+  if [[ "$tts_engine" != "kokoro" ]] || ! is_truthy "$autostart"; then
+    return 0
+  fi
+
+  container_name="$(read_ini_value "voice" "tts_kokoro_container_name" "${KOKORO_CONTAINER_NAME:-orac-kokoro}")"
+  image_override="$(read_ini_value "voice" "tts_kokoro_image" "")"
+  host="$(read_ini_value "voice" "tts_kokoro_host" "${KOKORO_HOST:-127.0.0.1}")"
+  port="$(read_ini_value "voice" "tts_kokoro_port" "${KOKORO_PORT:-8880}")"
+  base_url="$(read_ini_value "voice" "tts_kokoro_base_url" "http://127.0.0.1:8880/v1")"
+
+  export KOKORO_CONTAINER_NAME="$container_name"
+  export KOKORO_HOST="$host"
+  export KOKORO_PORT="$port"
+  KOKORO_RUNTIME_VALUE="$runtime"
+
+  if [[ "$runtime" == "external" ]]; then
+    KOKORO_EXTERNAL_ENABLED=1
+    KOKORO_READINESS_URL="$(kokoro_readiness_url_from_base_url "$base_url")"
+    return 0
+  fi
+
+  if [[ "$runtime" != "docker-cpu" && "$runtime" != "docker-gpu" ]]; then
+    echo "⚠️  Unsupported tts_kokoro_runtime='${runtime}'. Supported values: docker-cpu, docker-gpu, external."
+    echo "⚠️  Kokoro will not be managed by Compose. Piper fallback expected."
+    return 0
+  fi
+
+  if ! image="$(kokoro_image_for_runtime "$runtime" "$image_override")"; then
+    echo "⚠️  Unable to resolve Kokoro image for runtime '${runtime}'. Piper fallback expected."
+    return 0
+  fi
+
+  export KOKORO_IMAGE="$image"
+  if [[ "$runtime" == "docker-gpu" ]]; then
+    export KOKORO_DOCKER_RUNTIME="${KOKORO_DOCKER_RUNTIME:-nvidia}"
+  else
+    export KOKORO_DOCKER_RUNTIME="${KOKORO_DOCKER_RUNTIME:-}"
+  fi
+
+  VOICE_PROFILE_ENABLED=1
+  KOKORO_READINESS_URL="$(kokoro_readiness_url "$host" "$port")"
+  add_compose_profile "voice"
+}
+
+determine_search_profile() {
+  local internet_enabled
+  local provider
+  local autostart
+  local host
+  local port
+
+  SEARCH_PROFILE_ENABLED=0
+
+  internet_enabled="$(read_ini_value "retrieval" "internet_search_enabled" "false")"
+  provider="$(read_ini_value "retrieval" "default_search_provider" "searxng" | tr '[:upper:]' '[:lower:]')"
+  autostart="$(read_ini_value "retrieval.searxng" "autostart" "false")"
+
+  if ! is_truthy "$internet_enabled" || [[ "$provider" != "searxng" ]] || ! is_truthy "$autostart"; then
+    return 0
+  fi
+
+  host="$(read_ini_value "retrieval.searxng" "host" "${SEARXNG_HOST:-127.0.0.1}")"
+  port="$(read_ini_value "retrieval.searxng" "port" "${SEARXNG_PORT:-8888}")"
+
+  export SEARXNG_HOST="$host"
+  export SEARXNG_PORT="$port"
+  SEARCH_PROFILE_ENABLED=1
+  add_compose_profile "search"
+}
+
+determine_compose_profiles() {
+  COMPOSE_PROFILE_ARGS=()
+  ACTIVE_PROFILE_NAMES=()
+
+  load_stack_env_if_present || true
+  determine_voice_profile
+  determine_search_profile
+}
+
 kokoro_endpoint_ready() {
   local url="$1"
 
@@ -192,118 +384,35 @@ wait_for_kokoro_ready() {
   kokoro_endpoint_ready "$url"
 }
 
-ensure_kokoro_sidecar() {
-  local tts_engine
-  local autostart
-  local runtime
-  local container_name
-  local image
-  local image_override
-  local host
-  local port
-  local base_url
-  local readiness_url
+check_kokoro_readiness_if_configured() {
   local wait_timeout_seconds=45
-  local container_state=""
-
-  tts_engine="$(read_ini_value "voice" "tts_engine" "piper" | tr '[:upper:]' '[:lower:]')"
-  autostart="$(read_ini_value "voice" "tts_kokoro_autostart" "false")"
-  runtime="$(read_ini_value "voice" "tts_kokoro_runtime" "docker-cpu" | tr '[:upper:]' '[:lower:]')"
-
-  if [[ "$tts_engine" != "kokoro" ]] || ! is_truthy "$autostart"; then
-    echo "ℹ️  Kokoro autostart disabled (tts_engine=${tts_engine}, tts_kokoro_autostart=${autostart})."
-    return 0
-  fi
-
-  container_name="$(read_ini_value "voice" "tts_kokoro_container_name" "orac-kokoro")"
-  image_override="$(read_ini_value "voice" "tts_kokoro_image" "")"
-  host="$(read_ini_value "voice" "tts_kokoro_host" "127.0.0.1")"
-  port="$(read_ini_value "voice" "tts_kokoro_port" "8880")"
-  base_url="$(read_ini_value "voice" "tts_kokoro_base_url" "http://127.0.0.1:8880/v1")"
-  readiness_url="$(kokoro_readiness_url "$host" "$port")"
 
   if ! command -v curl >/dev/null 2>&1; then
     echo "⚠️  curl is unavailable; cannot check Kokoro readiness. Piper fallback expected."
     return 0
   fi
 
-  if [[ "$runtime" == "external" ]]; then
-    readiness_url="$(kokoro_readiness_url_from_base_url "$base_url")"
-    if kokoro_endpoint_ready "$readiness_url"; then
-      echo "✅ Kokoro external runtime already healthy at ${readiness_url}."
+  if [[ "$KOKORO_EXTERNAL_ENABLED" -eq 1 ]]; then
+    if kokoro_endpoint_ready "$KOKORO_READINESS_URL"; then
+      echo "✅ Kokoro external runtime healthy at ${KOKORO_READINESS_URL}."
     else
-      echo "⚠️  Kokoro runtime is external but ${readiness_url} is not ready."
+      echo "⚠️  Kokoro runtime is external but ${KOKORO_READINESS_URL} is not ready."
       echo "⚠️  Orac will not manage an external Kokoro service. Piper fallback expected."
     fi
     return 0
   fi
 
-  if [[ "$runtime" != "docker-cpu" && "$runtime" != "docker-gpu" ]]; then
-    echo "⚠️  Unsupported tts_kokoro_runtime='${runtime}'. Supported values: docker-cpu, docker-gpu, external."
-    echo "⚠️  Kokoro will not be autostarted. Piper fallback expected."
+  if [[ "$VOICE_PROFILE_ENABLED" -ne 1 ]]; then
     return 0
   fi
 
-  if ! image="$(kokoro_image_for_runtime "$runtime" "$image_override")"; then
-    echo "⚠️  Unable to resolve Kokoro image for runtime '${runtime}'. Piper fallback expected."
+  if wait_for_kokoro_ready "$KOKORO_READINESS_URL" "$wait_timeout_seconds"; then
+    echo "✅ Kokoro ready at ${KOKORO_READINESS_URL} (${KOKORO_RUNTIME_VALUE})."
     return 0
   fi
 
-  if kokoro_endpoint_ready "$readiness_url"; then
-    echo "✅ Kokoro already healthy at ${readiness_url} (${runtime})."
-    return 0
-  fi
-
-  if ! command -v docker >/dev/null 2>&1; then
-    echo "⚠️  Docker is unavailable; cannot autostart Kokoro. Piper fallback expected."
-    return 0
-  fi
-
-  if docker ps -a --format '{{.Names}}' | grep -Fxq "$container_name"; then
-    container_state="$(docker inspect -f '{{.State.Status}}' "$container_name" 2>/dev/null || true)"
-    if [[ "$container_state" == "running" ]]; then
-      echo "⚠️  Kokoro container '${container_name}' is running but ${readiness_url} is not ready."
-      echo "⚠️  Kokoro failed to become ready. Piper fallback expected."
-      return 0
-    fi
-
-    echo "▶️  Starting Kokoro container '${container_name}'..."
-    if docker start "$container_name" >/dev/null; then
-      echo "✅ Kokoro container started."
-    else
-      echo "⚠️  Failed to start Kokoro container '${container_name}'. Piper fallback expected."
-      return 0
-    fi
-  else
-    echo "▶️  Creating Kokoro container '${container_name}' from ${image} (${runtime})..."
-    if [[ "$runtime" == "docker-gpu" ]]; then
-      if docker run -d \
-        --gpus all \
-        --name "$container_name" \
-        -p "${host}:${port}:8880" \
-        "$image" >/dev/null; then
-        echo "✅ Kokoro container created."
-      else
-        echo "⚠️  Failed to create Kokoro GPU container '${container_name}'. Piper fallback expected."
-        return 0
-      fi
-    elif docker run -d \
-      --name "$container_name" \
-      -p "${host}:${port}:8880" \
-      "$image" >/dev/null; then
-      echo "✅ Kokoro container created."
-    else
-      echo "⚠️  Failed to create Kokoro container '${container_name}'. Piper fallback expected."
-      return 0
-    fi
-  fi
-
-  if wait_for_kokoro_ready "$readiness_url" "$wait_timeout_seconds"; then
-    echo "✅ Kokoro ready at ${readiness_url}."
-  else
-    echo "⚠️  Kokoro failed to become ready at ${readiness_url} within ${wait_timeout_seconds}s."
-    echo "⚠️  Piper fallback expected."
-  fi
+  echo "⚠️  Kokoro failed to become ready at ${KOKORO_READINESS_URL} within ${wait_timeout_seconds}s."
+  echo "⚠️  Piper fallback expected."
 }
 
 declare -a CLEANUP_TARGETS=()
@@ -446,61 +555,221 @@ prompt_for_purge() {
 # -----------------------------------------------------------------------------#
 # Actions
 # -----------------------------------------------------------------------------#
+docker_container_exists() {
+  local container_name="$1"
+
+  command -v docker >/dev/null 2>&1 || return 1
+  docker ps -a --format '{{.Names}}' 2>/dev/null | grep -Fxq "$container_name"
+}
+
+docker_inspect_field() {
+  local container_name="$1"
+  local template="$2"
+
+  docker inspect -f "$template" "$container_name" 2>/dev/null || true
+}
+
+print_container_compose_labels() {
+  local container_name="$1"
+  local project
+  local service
+
+  project="$(docker_inspect_field "$container_name" '{{ index .Config.Labels "com.docker.compose.project" }}')"
+  service="$(docker_inspect_field "$container_name" '{{ index .Config.Labels "com.docker.compose.service" }}')"
+
+  if [[ -z "$project" || "$project" == "<no value>" ]]; then
+    echo "  Compose-managed: no"
+    echo "  Warning: existing container is not labelled as Docker Compose-managed."
+    return 0
+  fi
+
+  echo "  Compose-managed: yes"
+  echo "  Compose project: $project"
+  echo "  Compose service: ${service:-unknown}"
+  if [[ "$project" != "${COMPOSE_PROJECT_NAME:-orac}" ]]; then
+    echo "  Warning: project label differs from active COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-orac}."
+  fi
+}
+
+print_container_metadata_comparison() {
+  local container_name="${ORAC_DB_CONTAINER_NAME:-${CONTAINER_NAME:-orac-db}}"
+  local expected_image="${ORAC_IMAGE_NAME:-orac}:${ORAC_IMAGE_TAG:-latest}"
+  local expected_ports
+  local expected_mount
+  local actual_image
+  local actual_ports
+  local actual_mounts
+  local actual_restart
+  local actual_health
+  local has_oracle_pwd
+
+  echo
+  echo "🔎 DB container compatibility check:"
+  echo "  Container: $container_name"
+
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "  Docker is not available; cannot inspect existing containers."
+    return 0
+  fi
+
+  if ! docker ps -a --format '{{.Names}}' >/dev/null 2>&1; then
+    echo "  Docker is not accessible; cannot inspect existing containers."
+    return 0
+  fi
+
+  if ! docker_container_exists "$container_name"; then
+    echo "  Existing container: not found"
+    echo "  Compose will create it on first start if the image and data directory are available."
+    return 0
+  fi
+
+  actual_image="$(docker_inspect_field "$container_name" '{{.Config.Image}}')"
+  actual_ports="$(docker_inspect_field "$container_name" '{{json .HostConfig.PortBindings}}')"
+  actual_mounts="$(docker_inspect_field "$container_name" '{{json .Mounts}}')"
+  actual_restart="$(docker_inspect_field "$container_name" '{{.HostConfig.RestartPolicy.Name}}')"
+  actual_health="$(docker_inspect_field "$container_name" '{{json .Config.Healthcheck}}')"
+  has_oracle_pwd="$(docker_inspect_field "$container_name" '{{range .Config.Env}}{{println .}}{{end}}' | grep -c '^ORACLE_PWD=' || true)"
+
+  expected_ports="1521->${PORT_SQLNET:-1521}, 8080->${PORT_HTTP:-8042}, 5500->${PORT_EM:-5500}"
+  expected_mount="${ORADATA_DIR:-/u01/orac-db/oradata}:/opt/oracle/oradata"
+
+  echo "  Expected image : $expected_image"
+  echo "  Actual image   : ${actual_image:-unknown}"
+  [[ "$actual_image" == "$expected_image" ]] || echo "  Difference     : image differs"
+  echo "  Expected ports : $expected_ports"
+  echo "  Actual ports   : ${actual_ports:-unknown}"
+  echo "  Expected mount : $expected_mount"
+  echo "  Actual mounts  : ${actual_mounts:-unknown}"
+  echo "  Expected env   : ORACLE_PWD=<from credential store>"
+  if [[ "$has_oracle_pwd" -gt 0 ]]; then
+    echo "  Actual env     : ORACLE_PWD=<present, masked>"
+  else
+    echo "  Actual env     : ORACLE_PWD=<not present>"
+  fi
+  echo "  Expected restart policy: unless-stopped"
+  echo "  Actual restart policy  : ${actual_restart:-unknown}"
+  [[ "$actual_restart" == "unless-stopped" ]] || echo "  Difference             : restart policy differs"
+  echo "  Expected health check  : none in Compose; readiness remains bin/dbwait.sh"
+  echo "  Actual health check    : ${actual_health:-unknown}"
+
+  print_container_compose_labels "$container_name"
+}
+
+compose_check_orac_stack() {
+  local all_profiles=(--profile voice --profile search)
+  local config_status=0
+
+  echo "📁 Active stack directory : $ORAC_STACK_DIR"
+  echo "📄 Compose file           : $ORAC_COMPOSE_FILE"
+  echo "📄 Env file               : $ORAC_ENV_FILE"
+  echo
+
+  if ! require_compose_inputs; then
+    return 1
+  fi
+
+  load_stack_env
+  determine_compose_profiles
+
+  echo "🧩 Profiles from Orac config: $(compose_profiles_text)"
+  echo "🔧 Compose command preview : $(compose_command_preview "${COMPOSE_PROFILE_ARGS[@]}" up -d)"
+  echo
+  echo "🧪 Validating docker compose config..."
+  if compose_cmd "${all_profiles[@]}" config >/dev/null; then
+    echo "✅ docker compose config is valid."
+  else
+    config_status=$?
+    echo "❌ docker compose config failed."
+  fi
+
+  print_container_metadata_comparison
+
+  if [[ "$KOKORO_EXTERNAL_ENABLED" -eq 1 ]]; then
+    echo
+    echo "🔎 Kokoro external runtime:"
+    echo "  Runtime: external"
+    echo "  Readiness URL: $KOKORO_READINESS_URL"
+    echo "  Compose profile: not activated"
+  elif [[ "$KOKORO_RUNTIME_VALUE" == "docker-gpu" ]]; then
+    echo
+    echo "⚠️  Kokoro docker-gpu uses Compose runtime '${KOKORO_DOCKER_RUNTIME:-nvidia}'."
+    echo "   Confirm the Docker host has NVIDIA Container Toolkit/runtime support."
+  fi
+
+  echo
+  echo "Migration note:"
+  echo "  This check is non-destructive. It does not remove, recreate, or modify containers or volumes."
+  echo "  If an existing '${ORAC_DB_CONTAINER_NAME:-orac-db}' container is not Compose-managed,"
+  echo "  stop it only after reviewing the differences above, then start through '$PROG start'."
+
+  return "$config_status"
+}
+
 start_orac_stack() {
   echo "🚀 Starting Orac stack (Oracle DB + ORDS + AI)..."
-  ensure_env
+  ensure_compose_runtime_env
+  determine_compose_profiles
 
-  if docker ps -a --format '{{.Names}}' | grep -wq "$CONTAINER_NAME"; then
-    if [[ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME")" == "true" ]]; then
-      echo "✅ '$CONTAINER_NAME' is already running."
-    else
-      echo "▶️  Starting existing container '$CONTAINER_NAME'..."
-      docker start "$CONTAINER_NAME" >/dev/null
-      echo "✅ Database/ORDS started."
-    fi
-  else
-    echo "❌ No container named '$CONTAINER_NAME' found."
-    echo "👉 Run the provisioner first: bin/oracdb-init.sh"
-    exit 1
-  fi
-  $SCRIPT_DIR/dbwait.sh
-  ensure_kokoro_sidecar
+  echo "📁 Stack directory : $ORAC_STACK_DIR"
+  echo "📄 Compose file    : $ORAC_COMPOSE_FILE"
+  echo "📄 Env file        : $ORAC_ENV_FILE"
+  echo "🧩 Profiles        : $(compose_profiles_text)"
+  compose_cmd "${COMPOSE_PROFILE_ARGS[@]}" up -d
+
+  "$SCRIPT_DIR/dbwait.sh"
+  check_kokoro_readiness_if_configured
   echo "🤖 Starting Orac AI engine..."
   "$ORAC_SH" start
 }
 
 stop_orac_stack() {
+  local all_profiles=(--profile voice --profile search)
+
   echo "🛑 Stopping Orac AI engine..."
   "$ORAC_SH" stop || true
 
-  echo "🛑 Stopping Orac DB/ORDS container..."
-  if docker ps -a --format '{{.Names}}' | grep -wq "$CONTAINER_NAME"; then
-    docker stop "$CONTAINER_NAME" >/dev/null || true
-    echo "⏹️  '$CONTAINER_NAME' stopped."
-  else
-    echo "ℹ️ No container named '$CONTAINER_NAME' to stop."
-  fi
+  echo "🛑 Stopping Orac Compose services..."
+  require_compose_inputs || return 1
+  load_stack_env
+  compose_cmd "${all_profiles[@]}" stop
 }
 
 status_orac_stack() {
-  echo "📋 Orac DB/ORDS container status:"
-  docker ps -a | grep -w "$CONTAINER_NAME" || echo "⚠️  Container '$CONTAINER_NAME' not found."
+  local all_profiles=(--profile voice --profile search)
+
+  echo "📋 Orac Compose service status:"
+  require_compose_inputs || return 1
+  load_stack_env
+  compose_cmd "${all_profiles[@]}" ps
   echo
   echo "🤖 Orac AI engine status:"
   "$ORAC_SH" status
 }
 
 logs_orac_stack() {
+  local all_profiles=(--profile voice --profile search)
+
+  require_compose_inputs || return 1
+  load_stack_env
+
   case "${1:-}" in
     ai|orac)
       "$ORAC_SH" logs
       ;;
     db|ords|"")
       echo "📜 Tailing DB/ORDS container logs..."
-      docker logs -f "$CONTAINER_NAME"
+      compose_cmd "${all_profiles[@]}" logs -f orac-db
+      ;;
+    voice|kokoro)
+      echo "📜 Tailing Kokoro container logs..."
+      compose_cmd "${all_profiles[@]}" logs -f orac-kokoro
+      ;;
+    search|searxng)
+      echo "📜 Tailing SearXNG container logs..."
+      compose_cmd "${all_profiles[@]}" logs -f orac-searxng
       ;;
     *)
-      echo "Usage: $PROG logs {ai|db}"
+      echo "Usage: $PROG logs {ai|db|voice|search}"
       exit 1
       ;;
   esac
@@ -594,27 +863,38 @@ purge_orac_runtime() {
 
 print_usage() {
   echo "$PROG - Orac stack control (version: ${ORAC_VERSION})"
-  echo "Usage: $0 {start|stop|restart|status|logs [ai|db]|display [start|stop|status|restart|run]|dump-context|clean [--dry-run|-n]|purge [--dry-run|-n] [--force|-f]}"
+  echo "Usage: $0 {start|stop|restart|status|compose-check|logs [ai|db|voice|search]|display [start|stop|status|restart|run]|dump-context|clean [--dry-run|-n]|purge [--dry-run|-n] [--force|-f]}"
+  echo
+  echo "Stack files:"
+  echo "  ORAC_STACK_DIR defaults to ${DEFAULT_STACK_DIR}."
+  echo "  ORAC_COMPOSE_FILE defaults to \$ORAC_STACK_DIR/docker-compose.yaml."
+  echo "  ORAC_ENV_FILE defaults to ${CONFIG_DIR}/orac.env."
   echo
   echo "Commands:"
   echo "  start"
-  echo "    Start the Oracle DB/ORDS container if needed, wait for it to be ready,"
+  echo "    Start the required Compose services, wait for the DB to be ready,"
   echo "    then start the Orac AI engine process."
   echo
   echo "  stop"
-  echo "    Stop the Orac AI engine process, then stop the Oracle DB/ORDS container."
+  echo "    Stop the Orac AI engine process, then stop the Compose services."
   echo
   echo "  restart"
   echo "    Stop and then start the full Orac stack."
   echo
   echo "  status"
-  echo "    Show container status for the DB/ORDS tier and process status for the"
+  echo "    Show Compose service status and process status for the"
   echo "    Orac AI engine."
   echo
-  echo "  logs [ai|db]"
+  echo "  compose-check"
+  echo "    Validate the active Compose stack and compare any existing DB container"
+  echo "    with the Compose definition without changing Docker state."
+  echo
+  echo "  logs [ai|db|voice|search]"
   echo "    Tail logs for one part of the stack."
   echo "    ai   - follow the Orac AI engine log."
   echo "    db   - follow the Oracle DB/ORDS container log."
+  echo "    voice  - follow the Kokoro sidecar log."
+  echo "    search - follow the SearXNG sidecar log."
   echo "    If omitted, defaults to db."
   echo
   echo "  display [start|stop|status|restart|run]"
@@ -639,11 +919,16 @@ print_usage() {
 # -----------------------------------------------------------------------------#
 # Dispatch
 # -----------------------------------------------------------------------------#
+if [[ "${ORAC_CTL_LIB_ONLY:-0}" == "1" ]]; then
+  return 0 2>/dev/null || exit 0
+fi
+
 case "${1:-}" in
   start)   start_orac_stack ;;
   stop)    stop_orac_stack ;;
   restart) echo "🔄 Restarting Orac stack..."; stop_orac_stack; start_orac_stack ;;
   status)  status_orac_stack ;;
+  compose-check) compose_check_orac_stack ;;
   logs)    shift || true; logs_orac_stack "${1:-}" ;;
   display) shift || true; display_orac_stack "$@" ;;
   dump-context) dump_context_orac_stack ;;

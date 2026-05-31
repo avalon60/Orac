@@ -11,7 +11,7 @@
 #
 ################################################################################
 
-set -e
+set -euo pipefail
 # ------------------------------------------------------------------------------
 # Timing
 # ------------------------------------------------------------------------------
@@ -29,7 +29,12 @@ BIN_DIR="${ORAC_PROJECT_HOME}/bin"
 CONFIG_DIR="${ORAC_PROJECT_HOME}/resources/config"
 ORA_DOCKER_DIR="${ORAC_PROJECT_HOME}/resources/docker/oracle"
 CTL_DIR="${ORAC_PROJECT_HOME}/src/controller"
-ENV_FILE="${CONFIG_DIR}/orac.env"
+DEFAULT_STACK_DIR="${ORA_DOCKER_DIR}"
+ORAC_STACK_DIR="${ORAC_STACK_DIR:-$DEFAULT_STACK_DIR}"
+ORAC_COMPOSE_FILE="${ORAC_COMPOSE_FILE:-${ORAC_STACK_DIR}/docker-compose.yaml}"
+ORAC_ENV_FILE="${ORAC_ENV_FILE:-${CONFIG_DIR}/orac.env}"
+ENV_FILE="$ORAC_ENV_FILE"
+COMPOSE_FILE="$ORAC_COMPOSE_FILE"
 CREDENTIALS_FILE="${HOME}/.Orac/dsn_credentials.ini"
 
 
@@ -53,6 +58,11 @@ usage() {
   cat <<EOF
 Usage: $PROG [--dry-run|-n] [--force|-f] [--no-cache] [--check-prereqs] [--help|-h]
 Initialise and start the Orac database container (db-local topology).
+
+Stack files:
+  ORAC_STACK_DIR defaults to ${DEFAULT_STACK_DIR}
+  ORAC_COMPOSE_FILE defaults to \$ORAC_STACK_DIR/docker-compose.yaml
+  ORAC_ENV_FILE defaults to ${CONFIG_DIR}/orac.env
 EOF
   exit 0
 }
@@ -65,6 +75,51 @@ require_command() {
     echo "❌ ${error_message}"
     return 1
   fi
+}
+
+compose_cmd() {
+  docker compose \
+    --env-file "$ORAC_ENV_FILE" \
+    -f "$ORAC_COMPOSE_FILE" \
+    "$@"
+}
+
+docker_container_exists() {
+  local container_name="$1"
+
+  docker ps -a --format '{{.Names}}' | grep -Fxq "$container_name"
+}
+
+container_compose_project() {
+  local container_name="$1"
+
+  docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}' "$container_name" 2>/dev/null || true
+}
+
+remove_existing_db_container() {
+  local container_name="$1"
+  local compose_project
+
+  if ! docker_container_exists "$container_name"; then
+    return 0
+  fi
+
+  if [[ "${FORCE:-0}" -ne 1 ]]; then
+    echo "⚠️  Container '$container_name' already exists. Use --force to recreate."
+    return 1
+  fi
+
+  compose_project="$(container_compose_project "$container_name")"
+  if [[ -n "$compose_project" && "$compose_project" != "<no value>" ]]; then
+    echo "♻️  Removing Compose-managed DB service: orac-db"
+    compose_cmd stop orac-db >/dev/null || true
+    compose_cmd rm -f orac-db >/dev/null
+    return 0
+  fi
+
+  echo "⚠️  Container '$container_name' is not Compose-managed."
+  echo "♻️  Removing legacy DB container because --force was supplied: $container_name"
+  docker rm -f "$container_name" >/dev/null
 }
 
 validate_port() {
@@ -122,8 +177,8 @@ check_prerequisites() {
     failed=1
   fi
 
-  if [[ ! -f "$ENV_FILE" ]]; then
-    echo "❌ Missing env file: $ENV_FILE"
+  if [[ ! -f "$ORAC_ENV_FILE" ]]; then
+    echo "❌ Missing env file: $ORAC_ENV_FILE"
     failed=1
   fi
 
@@ -146,6 +201,18 @@ check_prerequisites() {
   if [[ ! -d "$ORA_DOCKER_DIR" ]]; then
     echo "❌ Docker build directory not found: $ORA_DOCKER_DIR"
     failed=1
+  fi
+
+  if [[ ! -f "$ORAC_COMPOSE_FILE" ]]; then
+    echo "❌ Compose file not found: $ORAC_COMPOSE_FILE"
+    failed=1
+  fi
+
+  if [[ -f "$ORAC_ENV_FILE" && -f "$ORAC_COMPOSE_FILE" ]] && command -v docker >/dev/null 2>&1; then
+    compose_cmd config >/dev/null || {
+      echo "❌ Docker Compose configuration is invalid."
+      failed=1
+    }
   fi
 
   if [[ ! -x "${BIN_DIR}/dbconn-mgr.sh" ]]; then
@@ -191,6 +258,10 @@ wait_for_orac_deploy() {
     "!! Halting due to STOP_ON_ERROR=1."
     "Database configuration failed. Check logs under '/opt/oracle/cfgtoollogs/dbca'."
     "DATABASE SETUP WAS NOT SUCCESSFUL!"
+    "ORAC_APEX_SETUP_FAILED"
+    "ORAC_ORDS_SETUP_FAILED"
+    "ORAC_ORDS_START_FAILED"
+    "ORAC_DEPLOYMENT_INCOMPLETE"
   )
 
   local start_time
@@ -203,6 +274,16 @@ wait_for_orac_deploy() {
     logs_snapshot="$(docker logs "$container" 2>&1 || true)"
 
     if grep -Fq "$marker" <<<"$logs_snapshot"; then
+      if ! verify_container_ords_config "$container"; then
+        echo "❌ Deployment marker was found, but ORDS validation failed."
+        echo "   Check container logs: docker logs $container"
+        return 1
+      fi
+      if ! wait_for_ords_apex_app "$container"; then
+        echo "❌ ORDS did not begin serving the Orac APEX app in time."
+        echo "   Check ORDS logs in the container: /tmp/ords-start.log"
+        return 1
+      fi
       echo "Orac is deployed!"
       return 0
     fi
@@ -238,6 +319,103 @@ wait_for_orac_deploy() {
   done
 }
 
+verify_container_ords_config() {
+  local container="$1"
+  local output
+  local metadata_status
+
+  metadata_status="$(docker exec "$container" bash -lc '
+    sqlplus -L -s / as sysdba <<SQL
+set heading off feedback off pagesize 0 verify off echo off
+whenever sqlerror exit failure rollback
+alter session set container=FREEPDB1;
+select case
+         when exists (
+                select 1
+                  from dba_objects
+                 where owner = '\''ORDS_METADATA'\''
+                   and object_name = '\''ORDS'\''
+                   and object_type = '\''PACKAGE'\''
+                   and status = '\''VALID'\''
+              )
+          and not exists (
+                select 1
+                  from dba_objects
+                 where owner = '\''ORDS_METADATA'\''
+                   and status <> '\''VALID'\''
+              )
+         then '\''VALID'\''
+         else '\''INVALID'\''
+       end
+  from dual;
+exit
+SQL
+  ' 2>&1)" || {
+    echo "❌ ORDS metadata validation command failed:"
+    echo "$metadata_status"
+    return 1
+  }
+
+  if ! grep -Eq '(^|[[:space:]])VALID([[:space:]]|$)' <<<"$metadata_status"; then
+    echo "❌ ORDS metadata objects are not VALID:"
+    echo "$metadata_status"
+    return 1
+  fi
+
+  output="$(docker exec "$container" bash -lc '
+    if [[ ! -d /home/oracle/orac/ords/conf ]]; then
+      echo "missing ORDS config directory: /home/oracle/orac/ords/conf"
+      exit 1
+    fi
+    /home/oracle/orac/ords/bin/ords --config /home/oracle/orac/ords/conf config list 2>&1
+  ' 2>&1)" || {
+    echo "❌ ORDS config validation command failed:"
+    echo "$output"
+    return 1
+  }
+
+  if grep -Fq "does not contain database pool default" <<<"$output"; then
+    echo "❌ ORDS default database pool is missing:"
+    echo "$output"
+    return 1
+  fi
+
+  return 0
+}
+
+wait_for_ords_apex_app() {
+  local container="$1"
+  local interval=5
+  local timeout=180
+  local start_time now elapsed output
+
+  start_time=$(date +%s)
+  echo "⏳ Waiting for ORDS to serve APEX application 1042..."
+
+  while true; do
+    output="$(docker exec "$container" bash -lc '
+      curl -sS -i --max-time 10 "http://127.0.0.1:8080/ords/f?p=1042" 2>&1 || true
+    ' 2>&1)"
+
+    if grep -Eq 'APEX_APP_ID: 1042|Location: .*f\?p=1042:1|HTTP/[0-9.]+ 200' <<<"$output" &&
+       ! grep -Eq 'ERR-7620|Application not found|Could not determine workspace' <<<"$output"; then
+      echo "✅ ORDS is serving APEX application 1042."
+      return 0
+    fi
+
+    now=$(date +%s)
+    elapsed=$((now - start_time))
+    if (( elapsed >= timeout )); then
+      echo "❌ Timed out waiting for ORDS/APEX application 1042."
+      echo "$output"
+      return 1
+    fi
+
+    echo "ORDS/APEX not ready yet. Checking again in ${interval}s..."
+    sleep "$interval"
+  done
+}
+
 cleanup_oradata_markers() {
   echo "🧹 Cleaning old DB markers under ${ORADATA_DIR}..."
   sudo rm -f "${ORADATA_DIR}/.FREE.created" || true
@@ -267,7 +445,16 @@ retry_oracle_bootstrap() {
   echo "⚠️  Detected intermittent Oracle bootstrap failure (ORA-12721)."
   echo "🔁 Retrying container creation (${attempt}/${max_retries})..."
 
-  docker rm -f "$container" >/dev/null 2>&1 || true
+  if docker_container_exists "$container"; then
+    local compose_project
+    compose_project="$(container_compose_project "$container")"
+    if [[ -n "$compose_project" && "$compose_project" != "<no value>" ]]; then
+      compose_cmd stop orac-db >/dev/null || true
+      compose_cmd rm -f orac-db >/dev/null || true
+    else
+      docker rm -f "$container" >/dev/null 2>&1 || true
+    fi
+  fi
   cleanup_oradata_markers
   ensure_oradata_directory
 
@@ -279,15 +466,13 @@ run_container_with_retries() {
   local attempt=0
 
   while true; do
-    echo "🚀 Launching container '${CONTAINER_NAME}' ..."
-    docker run -d \
-      --name "${CONTAINER_NAME}" \
-      -p "${PORT_SQLNET}:1521" \
-      -p "${PORT_HTTP}:8080" \
-      -p "${PORT_EM}:5500" \
-      -e ORACLE_PWD="${ORACLE_PASSWORD}" \
-      -v "${ORADATA_DIR}:/opt/oracle/oradata" \
-      "${DOCKER_IMAGE}"
+    echo "🚀 Launching Compose service 'orac-db' as container '${CONTAINER_NAME}' ..."
+    export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-orac}"
+    export ORAC_DB_CONTAINER_NAME="${ORAC_DB_CONTAINER_NAME:-$CONTAINER_NAME}"
+    export CONTAINER_NAME="$ORAC_DB_CONTAINER_NAME"
+    export ORAC_IMAGE_NAME ORAC_IMAGE_TAG ORACLE_PWD ORADATA_DIR
+    export PORT_SQLNET PORT_HTTP PORT_EM
+    compose_cmd up -d orac-db
 
     echo "🎉 '${CONTAINER_NAME}' is up"
     echo "📡 SQL*Net  : ${PORT_SQLNET}"
@@ -306,6 +491,7 @@ run_container_with_retries() {
   done
 }
 
+main() {
 trap print_runtime_summary EXIT
 
 # Flags
@@ -322,13 +508,14 @@ for arg in "$@"; do
 done
 
 # Load env
-[[ -f "$ENV_FILE" ]] || { echo "❌ Missing env: $ENV_FILE"; exit 1; }
+[[ -f "$ORAC_ENV_FILE" ]] || { echo "❌ Missing env: $ORAC_ENV_FILE"; exit 1; }
 # shellcheck source=/dev/null
-source "$ENV_FILE"
+source "$ORAC_ENV_FILE"
 
 # Defaults / sanity
 : "${TOPOLOGY:=db-local}"
 : "${CONTAINER_NAME:=orac-db}"
+: "${ORAC_DB_CONTAINER_NAME:=$CONTAINER_NAME}"
 : "${ORADATA_DIR:=/u01/orac-db/oradata}"
 : "${PORT_SQLNET:=1521}"
 : "${PORT_HTTP:=8080}"
@@ -337,6 +524,7 @@ source "$ENV_FILE"
 : "${ORAC_IMAGE_TAG:=latest}"
 
 DOCKER_IMAGE="${ORAC_IMAGE_NAME}:${ORAC_IMAGE_TAG}"
+CONTAINER_NAME="$ORAC_DB_CONTAINER_NAME"
 
 if [[ "$TOPOLOGY" != "db-local" ]]; then
   echo "❌ This init script is for db-local only. Current TOPOLOGY=$TOPOLOGY"
@@ -349,7 +537,9 @@ ORAC_VERSION=$(grep -m1 "__version__" "${CTL_DIR}/__init__.py" | cut -d'"' -f2 |
 
 echo "$PROG"
 echo "Orac version     : ${ORAC_VERSION:-n/a}"
-echo "🔧 Env file      : ${ENV_FILE}"
+echo "📁 Stack dir     : ${ORAC_STACK_DIR}"
+echo "📄 Compose file  : ${ORAC_COMPOSE_FILE}"
+echo "🔧 Env file      : ${ORAC_ENV_FILE}"
 echo "📋 Config:"
 echo " CONTAINER_NAME  : ${CONTAINER_NAME}"
 echo " DOCKER_IMAGE    : ${DOCKER_IMAGE}"
@@ -363,16 +553,7 @@ check_prerequisites
 [[ $CHECK_PREREQS -eq 1 ]] && { echo "🔎 Prerequisites only. Exiting."; exit 0; }
 [[ $DRY_RUN -eq 1 ]] && { echo "🧪 Dry run. Exiting."; exit 0; }
 
-# Existing container
-if docker ps -a --format '{{.Names}}' | grep -qw "$CONTAINER_NAME"; then
-  if [[ $FORCE -eq 1 ]]; then
-    echo "♻️  Removing existing container: $CONTAINER_NAME"
-    docker rm -f "$CONTAINER_NAME" >/dev/null
-  else
-    echo "⚠️  Container '$CONTAINER_NAME' already exists. Use --force to recreate."
-    exit 1
-  fi
-fi
+remove_existing_db_container "$CONTAINER_NAME"
 
 # Clean oradata (optional, destructive bits only when --force)
 if [[ $FORCE -eq 1 ]]; then
@@ -404,3 +585,10 @@ popd >/dev/null
 run_container_with_retries
 
 echo -e "\nDone."
+}
+
+if [[ "${ORAC_DB_DEPLOY_LIB_ONLY:-0}" == "1" ]]; then
+  return 0 2>/dev/null || exit 0
+fi
+
+main "$@"

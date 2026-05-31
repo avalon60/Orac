@@ -51,8 +51,7 @@ SQL
 # --------------------------------------------------------------------------
 
 # ... after you (re)start the DB/ORDS container:
-# e.g. docker start orac-db  OR  docker compose up -d orac-db
+# e.g. docker compose up -d orac-db
 wait_for_oracle 60 || exit 1
 
 # now start Orac AI engine...
-

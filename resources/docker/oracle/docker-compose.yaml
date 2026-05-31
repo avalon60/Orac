@@ -1,13 +1,36 @@
+name: ${COMPOSE_PROJECT_NAME:-orac}
+
 services:
-  orac:
-    image: orac:latest
-    container_name: ${COMPOSE_PROJECT_NAME:-orac}
+  orac-db:
+    image: ${ORAC_IMAGE_NAME:-orac}:${ORAC_IMAGE_TAG:-latest}
+    container_name: ${ORAC_DB_CONTAINER_NAME:-orac-db}
     ports:
       - "${PORT_SQLNET:-1521}:1521"
-      - "${PORT_HTTP:-8080}:8080"
-      - "${PORT_EXTRA:-8888}:8888"
+      - "${PORT_HTTP:-8042}:8080"
+      - "${PORT_EM:-5500}:5500"
     volumes:
-      - "${ORADATA_DIR:-./data/oradata}:/u01/orac/oradata"
+      - "${ORADATA_DIR:-/u01/orac-db/oradata}:/opt/oracle/oradata"
     environment:
-      - ORACLE_PWD=${ORACLE_PWD}
+      ORACLE_PWD: ${ORACLE_PWD:-}
+    restart: unless-stopped
+
+  orac-kokoro:
+    profiles:
+      - voice
+    image: ${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-cpu:latest}
+    container_name: ${KOKORO_CONTAINER_NAME:-orac-kokoro}
+    runtime: ${KOKORO_DOCKER_RUNTIME:-}
+    ports:
+      - "${KOKORO_HOST:-127.0.0.1}:${KOKORO_PORT:-8880}:8880"
+    restart: unless-stopped
+
+  orac-searxng:
+    profiles:
+      - search
+    image: ${SEARXNG_IMAGE:-searxng/searxng:latest}
+    container_name: ${SEARXNG_CONTAINER_NAME:-orac-searxng}
+    ports:
+      - "${SEARXNG_HOST:-127.0.0.1}:${SEARXNG_PORT:-8888}:8080"
+    environment:
+      BASE_URL: "http://${SEARXNG_HOST:-127.0.0.1}:${SEARXNG_PORT:-8888}/"
     restart: unless-stopped

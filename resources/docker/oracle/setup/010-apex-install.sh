@@ -1,26 +1,35 @@
+#!/usr/bin/env bash
 # Author: Clive Bostock
 #   Date: 9 Aug 2025
 #
 # Orac script to install APEX on container setup.
 #
+# Oracle's runUserScripts.sh sources setup shell scripts. Keep this file
+# source-safe: risky installer work runs in a child shell and this script returns
+# control to the Oracle setup runner.
+#
 PROG="Orac: 010-apex-install.sh"
-E="-e"
 
-export APEX_HOME=${APEX_HOME:-/home/oracle/orac/setup/apex/apex}
-export ORACLE_SID=${ORACLE_SID:-FREE}
-export ORACLE_PDB=${ORACLE_PDB:-FREEPDB1}
-export ORAC_HOME=${ORAC_HOME:-/home/oracle/orac}
-export ORACLE_BASE=${ORACLE_BASE:-/opt/oracle}
 timestamp() { date +"%Y-%m-%d %H:%M:%S"; }
-echo "[$(timestamp)] ${PROG} Started"
 
-# Derive the CDN for this release
-CDN=" https://static.oracle.com/cdn/apex/${APEX_VERSION}.0/"
+orac_apex_install() {
+  set -uo pipefail
 
-cd ${APEX_HOME}
+  export APEX_HOME=${APEX_HOME:-/home/oracle/orac/setup/apex/apex}
+  export ORACLE_SID=${ORACLE_SID:-FREE}
+  export ORACLE_PDB=${ORACLE_PDB:-FREEPDB1}
+  export ORAC_HOME=${ORAC_HOME:-/home/oracle/orac}
+  export ORACLE_BASE=${ORACLE_BASE:-/opt/oracle}
 
-echo "${PROG} Launching sqlplus; installing APEX..."
-sqlplus / as sysdba <<EOF 
+  local cdn=" https://static.oracle.com/cdn/apex/${APEX_VERSION}.0/"
+  local validation_output
+
+  echo "[$(timestamp)] ${PROG} Started"
+  echo "${PROG} Launching sqlplus; installing APEX..."
+
+  cd "${APEX_HOME}" || return 1
+
+  sqlplus / as sysdba <<EOF
 alter session set container=${ORACLE_PDB};
 
 -- Switch off password expiry
@@ -55,7 +64,37 @@ alter user ANONYMOUS account unlock;
 alter user APEX_REST_PUBLIC_USER  account unlock;
 alter user APEX_PUBLIC_USER account unlock;
 alter user APEX_LISTENER account unlock;
-@${APEX_HOME}/utilities/reset_image_prefix_core.sql ${CDN} x
+@${APEX_HOME}/utilities/reset_image_prefix_core.sql ${cdn} x
 @${ORACLE_BASE}/scripts/setup/011-apex-check.sql
 EOF
-echo "[$(timestamp)] ${PROG}: Done."     
+
+  validation_output=$(sqlplus -L -s / as sysdba <<SQL
+set heading off feedback off pagesize 0 verify off echo off
+whenever sqlerror exit failure rollback
+alter session set container=${ORACLE_PDB};
+select status from dba_registry where comp_id = 'APEX';
+exit
+SQL
+)
+
+  if ! grep -Eq '(^|[[:space:]])VALID([[:space:]]|$)' <<<"${validation_output}"; then
+    echo "${PROG}: APEX validation failed. Registry status output:"
+    echo "${validation_output}"
+    return 1
+  fi
+
+  echo "ORAC_APEX_SETUP_COMPLETE: APEX registry component is VALID in ${ORACLE_PDB}."
+  echo "[$(timestamp)] ${PROG}: Done."
+}
+
+(
+  orac_apex_install
+)
+apex_status=$?
+
+if [[ ${apex_status} -ne 0 ]]; then
+  echo "ORAC_APEX_SETUP_FAILED: ${PROG} failed with status ${apex_status}."
+  return "${apex_status}" 2>/dev/null || false
+fi
+
+return 0 2>/dev/null || true
