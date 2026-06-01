@@ -548,7 +548,11 @@ async def tcp_client(host=DEFAULT_HOST, port=DEFAULT_PORT):
 # --- Main ---
 
     except ConnectionRefusedError:
-        print(f"{Icons.error} Could not connect to Orac at {host}:{port}. Is it running?")
+        print(
+            f"{Icons.error} Could not connect to Orac at {host}:{port}. "
+            "The Python stack is not running. Start it with "
+            "bin/orac-ctl.sh start or bin/orac.sh start, then try again."
+        )
         logger.log_error(f"Could not connect to Orac at {host}:{port}.")
     except KeyboardInterrupt:
         print(f"\n{Icons.wave} Client terminated by user.")

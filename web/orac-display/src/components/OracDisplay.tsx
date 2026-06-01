@@ -1109,6 +1109,9 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
   onRenderRecovery,
 }) => {
   const config = STATE_CONFIGS[state];
+  const isBackendUnavailableMessage =
+    typeof message === 'string' &&
+    message.includes('Python stack is not running');
   const isIdle = state === 'idle';
   const isListening = state === 'listening' || state === 'wake_detected';
   const isRetrieval = state === 'checking_online' || state === 'reading_sources';
@@ -1211,7 +1214,13 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
             {state.replace('_', ' ')}
           </div>
           {message && (
-            <div className="text-[#72899a] text-[11px] font-medium tracking-[0.15em] text-center max-w-sm opacity-40 leading-relaxed border-t border-[#1b5f91]/20 pt-5 px-10">
+            <div
+              className={`max-w-sm border-t pt-5 px-10 text-center text-[11px] font-medium tracking-[0.15em] leading-relaxed ${
+                isBackendUnavailableMessage
+                  ? 'border-amber-300/30 text-amber-200 opacity-95'
+                  : 'border-[#1b5f91]/20 text-[#72899a] opacity-40'
+              }`}
+            >
               {message}
             </div>
           )}

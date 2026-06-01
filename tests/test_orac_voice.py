@@ -123,8 +123,10 @@ from orac_voice.voice_loop_local import _load_wake_rearm_seconds
 from orac_voice.voice_loop_local import _send_configured_runtime_identity
 from orac_voice.voice_loop_local import _send_orac_prompt
 from orac_voice.voice_loop_local import _transcribe_once
+from orac_voice.voice_loop_local import _voice_turn
 from orac_voice.voice_loop_local import _voice_session_async
 from orac_voice.voice_loop_local import build_parser
+from orac_voice.voice_loop_local import ORAC_BACKEND_UNAVAILABLE_MESSAGE
 from orac_voice.voice_turn_controller import VoiceTurnController
 
 
@@ -6114,6 +6116,89 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
         for state in sender.states
       )
     )
+    self.assertTrue(
+      any(
+        state[0] == "idle" and state[1] == ORAC_BACKEND_UNAVAILABLE_MESSAGE
+        for state in sender.states
+      )
+    )
+
+  async def test_voice_session_displays_backend_unavailable_on_startup(
+    self,
+  ) -> None:
+    """Starting voice mode without the Python stack should update the UI."""
+    args = build_parser().parse_args(
+      ["--voice-session", "--activation-mode", "openwakeword"]
+    )
+    sender = _FakeDisplaySender()
+    activation_listener = _FakeActivationListener(
+      [types.SimpleNamespace(activated=False, exit_requested=True)]
+    )
+
+    with patch(
+      "orac_voice.voice_loop_local.SoundDeviceAudioCapture.from_config",
+      return_value=_FakeWakeCapture(
+        VadCaptureResult(wav_path=Path("/tmp/fake-voice-capture.wav"))
+      ),
+    ):
+      with patch(
+        "orac_voice.voice_loop_local.FasterWhisperSttEngine.from_config",
+        return_value=object(),
+      ):
+        with patch(
+          "orac_voice.voice_loop_local._create_barge_in_controller",
+          return_value=None,
+        ):
+          with patch(
+            "orac_voice.voice_loop_local.DisplayEventSender.from_config",
+            return_value=sender,
+          ):
+            with patch(
+              "orac_voice.voice_loop_local._create_activation_listener",
+              return_value=activation_listener,
+            ):
+              with patch(
+                "orac_voice.voice_loop_local._orac_backend_reachable",
+                return_value=False,
+              ):
+                status = await _voice_session_async(args)
+
+    self.assertEqual(status, 0)
+    self.assertTrue(
+      any(
+        state[0] == "idle" and state[1] == ORAC_BACKEND_UNAVAILABLE_MESSAGE
+        for state in sender.states
+      )
+    )
+
+  def test_voice_turn_displays_backend_unavailable_message(self) -> None:
+    """A refused one-shot backend connection should be visible in the UI."""
+    args = build_parser().parse_args(["--voice-turn"])
+    sender = _FakeDisplaySender()
+
+    def _fake_transcribe_once(*_args, **_kwargs):
+      return "voice-turn", "turn-1", "Are you running?"
+
+    async def _fake_open_connection(*_args, **_kwargs):
+      raise ConnectionRefusedError("backend unavailable")
+
+    with patch(
+      "orac_voice.voice_loop_local.DisplayEventSender.from_config",
+      return_value=sender,
+    ):
+      with patch(
+        "orac_voice.voice_loop_local._transcribe_once",
+        side_effect=_fake_transcribe_once,
+      ):
+        with patch(
+          "orac_voice.voice_loop_local.asyncio.open_connection",
+          side_effect=_fake_open_connection,
+        ):
+          status = _voice_turn(args)
+
+    self.assertEqual(status, 1)
+    self.assertEqual(sender.states[-1][0], "idle")
+    self.assertEqual(sender.states[-1][1], ORAC_BACKEND_UNAVAILABLE_MESSAGE)
 
   async def test_voice_prompt_waits_after_final_response_for_playback_end(self) -> None:
     """Final text response should not re-arm wake before playback finishes."""
