@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from urllib.error import HTTPError
+from datetime import date
 import sys
 import json
 import unittest
@@ -29,9 +30,12 @@ from orac_core.retrieval import SearchResult
 from orac_core.retrieval import build_topic_signature
 from orac_core.retrieval import SearXNGSearchProvider
 from orac_core.retrieval import SourceFetcher
+from orac_core.retrieval import answer_from_stable_bio
 from orac_core.retrieval import build_retrieval_response_guidance
 from orac_core.retrieval import detect_explicit_search_request
+from orac_core.retrieval import calculate_age
 from orac_core.retrieval import normalize_retrieval_response_style
+from orac_core.retrieval import parse_person_age_or_status_query
 from orac_core.retrieval import polish_retrieval_response_text
 import orac_core.retrieval.fetcher as retrieval_fetcher
 from orac_core.retrieval import providers as retrieval_providers
@@ -88,6 +92,76 @@ class _FakeHeaders:
         if key.lower() == "content-type":
             return self._content_type
         return default
+
+
+class PersonStatusHelperTests(unittest.TestCase):
+    """Tests deterministic person age/status helpers."""
+
+    def test_calculate_age_after_birthday(self) -> None:
+        self.assertEqual(
+            calculate_age(date(1980, 5, 3), date(2026, 6, 1)),
+            46,
+        )
+
+    def test_calculate_age_before_birthday(self) -> None:
+        self.assertEqual(
+            calculate_age(date(1980, 10, 3), date(2026, 6, 1)),
+            45,
+        )
+
+    def test_calculate_age_at_death(self) -> None:
+        self.assertEqual(
+            calculate_age(date(1903, 5, 3), date(1977, 10, 14)),
+            74,
+        )
+
+    def test_calculate_age_handles_leap_day_birth(self) -> None:
+        self.assertEqual(
+            calculate_age(date(2000, 2, 29), date(2026, 2, 28)),
+            25,
+        )
+        self.assertEqual(
+            calculate_age(date(2000, 2, 29), date(2026, 3, 1)),
+            26,
+        )
+
+    def test_bing_crosby_stable_bio_answers_age_at_death(self) -> None:
+        query = parse_person_age_or_status_query("How old is Bing Crosby?")
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        answer = answer_from_stable_bio(query, today=date(2026, 6, 1))
+
+        self.assertIsNotNone(answer)
+        self.assertIn("Bing Crosby was 74 when he died", answer or "")
+        self.assertIn("3 May 1903", answer or "")
+        self.assertIn("14 October 1977", answer or "")
+        self.assertIn("would be 123", answer or "")
+
+    def test_elvis_presley_stable_bio_answers_age_at_death(self) -> None:
+        query = parse_person_age_or_status_query("How old is Elvis Presley?")
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        answer = answer_from_stable_bio(query, today=date(2026, 6, 1))
+
+        self.assertIsNotNone(answer)
+        self.assertIn("Elvis Presley was 42 when he died", answer or "")
+        self.assertIn("8 January 1935", answer or "")
+        self.assertIn("16 August 1977", answer or "")
+
+    def test_shakespeare_stable_bio_mentions_uncertain_birth_date(self) -> None:
+        query = parse_person_age_or_status_query("How old is Shakespeare?")
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        answer = answer_from_stable_bio(query, today=date(2026, 6, 1))
+
+        self.assertIsNotNone(answer)
+        self.assertIn("William Shakespeare", answer or "")
+        self.assertIn("born in April 1564", answer or "")
+        self.assertIn("died on 23 April 1616", answer or "")
+        self.assertIn("exact birth date is uncertain", answer or "")
 
 
 class RetrievalTriggerTests(unittest.TestCase):
@@ -207,6 +281,9 @@ class SearXNGProviderTests(unittest.TestCase):
             results = provider.search(SearchRequest(query="latest news"))
 
         self.assertEqual(mocked.call_count, 1)
+        http_request = mocked.call_args.args[0]
+        self.assertEqual(http_request.get_header("X-forwarded-for"), "127.0.0.1")
+        self.assertEqual(http_request.get_header("X-real-ip"), "127.0.0.1")
         self.assertEqual(len(results), 2)
         self.assertEqual(results[0].title, "Example title")
         self.assertEqual(results[0].url, "https://example.com/story")
@@ -283,13 +360,13 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
         self.assertEqual(decision.confidence, "high")
         self.assertEqual(decision.reason_code, "explicit_request")
 
-    def test_explicit_only_detects_freshness_query_without_retrieving(self) -> None:
+    def test_explicit_only_retrieves_explicit_current_query(self) -> None:
         decision = self._service("explicit_only").decide(
             "What is the current Python release?"
         )
 
-        self.assertFalse(decision.should_retrieve)
-        self.assertFalse(decision.explicit_request)
+        self.assertTrue(decision.should_retrieve)
+        self.assertTrue(decision.explicit_request)
         self.assertEqual(decision.retrieval_type, "internet")
         self.assertEqual(decision.confidence, "high")
         self.assertEqual(decision.reason_code, "freshness_release_version")
@@ -384,7 +461,7 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
                 self.assertNotEqual(decision.reason_code, "stable_general_knowledge")
 
     def test_natural_freshness_phrases_are_transparent_when_disabled(self) -> None:
-        decision = self._service("disabled").decide("What is the latest Python release?")
+        decision = self._service("disabled").decide("What is the current Python release?")
 
         self.assertFalse(decision.should_retrieve)
         self.assertTrue(decision.explicit_request)
@@ -405,9 +482,12 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
         self.assertFalse(decision.should_retrieve)
         self.assertTrue(decision.requires_user_confirmation)
         self.assertEqual(decision.reason_code, "current_affairs_war")
-        self.assertIn("check online", decision.user_visible_reason.lower())
+        self.assertEqual(
+            decision.user_visible_reason,
+            "That may have changed recently. Shall I check online?",
+        )
 
-    def test_suggest_search_requests_confirmation_for_current_query(self) -> None:
+    def test_suggest_search_requests_confirmation_for_natural_current_query(self) -> None:
         decision = self._service("suggest_search").decide(
             "What is the current Python release?"
         )
@@ -415,7 +495,10 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
         self.assertFalse(decision.should_retrieve)
         self.assertTrue(decision.requires_user_confirmation)
         self.assertEqual(decision.retrieval_type, "internet")
-        self.assertIn("check online", decision.user_visible_reason.lower())
+        self.assertEqual(
+            decision.user_visible_reason,
+            "That may have changed recently. Shall I check online?",
+        )
 
     def test_auto_safe_retrieves_high_confidence_freshness_query(self) -> None:
         decision = self._service("auto_safe").decide(
@@ -427,12 +510,111 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
         self.assertEqual(decision.retrieval_type, "internet")
         self.assertEqual(decision.confidence, "high")
 
+    def test_auto_safe_retrieves_current_codex_version_directly(self) -> None:
+        decision = self._service("auto_safe").decide(
+            "What is the current version of Codex?"
+        )
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertFalse(decision.requires_user_confirmation)
+        self.assertEqual(decision.search_query, "current version of Codex")
+
     def test_auto_safe_retrieves_current_affairs_prompt(self) -> None:
         decision = self._service("auto_safe").decide("Is there a war in Iran?")
 
         self.assertTrue(decision.should_retrieve)
         self.assertEqual(decision.reason_code, "current_affairs_war")
         self.assertFalse(decision.requires_user_confirmation)
+
+    def test_auto_safe_retrieves_broader_current_information_categories(self) -> None:
+        prompts = [
+            ("What is the latest version of the Oracle Database?", "freshness_release_version"),
+            ("Does SearXNG still use search.formats for JSON output?", "freshness_docs_api"),
+            ("Is this product still available?", "freshness_price_availability"),
+            ("What is the current price of X?", "freshness_price_availability"),
+            ("Who is the current CEO of OpenAI?", "freshness_public_role"),
+            ("Who is president of Iran?", "freshness_public_role"),
+            ("What changed in the latest SearXNG release?", "freshness_release_version"),
+        ]
+
+        for prompt, reason_code in prompts:
+            with self.subTest(prompt=prompt):
+                decision = self._service("auto_safe").decide(prompt)
+                self.assertTrue(decision.should_retrieve)
+                self.assertFalse(decision.requires_user_confirmation)
+                self.assertEqual(decision.retrieval_type, "internet")
+                self.assertEqual(decision.reason_code, reason_code)
+
+    def test_person_death_status_queries_trigger_retrieval_in_explicit_only(self) -> None:
+        prompts = [
+            "When did Kelly Curtis die?",
+            "Is Kelly Curtis dead?",
+            "Did Kelly Curtis die?",
+            "death of Kelly Curtis",
+            "Kelly Curtis obituary",
+            "Kelly Curtis cause of death",
+        ]
+
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                decision = self._service("explicit_only").decide(prompt)
+                self.assertTrue(decision.should_retrieve)
+                self.assertTrue(decision.explicit_request)
+                self.assertEqual(decision.reason_code, "person_age_or_status")
+                self.assertIn("Kelly Curtis", decision.search_query or "")
+                self.assertIn("actress", decision.search_query or "")
+
+    def test_person_age_status_queries_trigger_retrieval_for_modern_people(self) -> None:
+        prompts = [
+            "How old is Kelly Curtis?",
+            "How old was Kelly Curtis?",
+            "When was Kelly Curtis born?",
+            "Kelly Curtis age",
+            "Kelly Curtis date of birth",
+            "Kelly Curtis date of death",
+        ]
+
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                decision = self._service("explicit_only").decide(prompt)
+                self.assertTrue(decision.should_retrieve)
+                self.assertTrue(decision.explicit_request)
+                self.assertEqual(decision.reason_code, "person_age_or_status")
+                self.assertIn("Kelly Curtis", decision.search_query or "")
+
+    def test_person_age_status_historical_exceptions_use_structured_bio(self) -> None:
+        prompts = [
+            "How old is Bing Crosby?",
+            "How old is Elvis Presley?",
+            "How old is Shakespeare?",
+            "When did Shakespeare die?",
+            "When did Ada Lovelace die?",
+            "When did Charles Dickens die?",
+        ]
+
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                decision = self._service("auto_safe").decide(prompt)
+                self.assertFalse(decision.should_retrieve)
+                self.assertEqual(decision.retrieval_type, "structured_bio")
+                self.assertEqual(decision.reason_code, "person_age_or_status")
+
+    def test_disabled_mode_still_allows_stable_structured_bio(self) -> None:
+        decision = self._service("disabled").decide("How old is Bing Crosby?")
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertEqual(decision.retrieval_type, "structured_bio")
+        self.assertEqual(decision.reason_code, "person_age_or_status")
+
+    def test_forced_person_death_search_uses_disambiguating_query(self) -> None:
+        decision = self._service("explicit_only").decide(
+            "do an internet search for the death of Kelly Curtis."
+        )
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertEqual(decision.reason_code, "person_age_or_status")
+        self.assertIn("Kelly Curtis", decision.search_query or "")
+        self.assertIn("actress", decision.search_query or "")
 
     def test_local_latest_change_does_not_trigger_internet_retrieval(self) -> None:
         prompts = [
@@ -444,6 +626,8 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
             "the latest test run output above",
             "the latest file I uploaded",
             "the latest version in this repo",
+            "any updates on that test failure?",
+            "any news on the patch you just made?",
         ]
 
         for prompt in prompts:
@@ -459,6 +643,15 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
         self.assertFalse(decision.should_retrieve)
         self.assertEqual(decision.retrieval_type, "none")
         self.assertEqual(decision.reason_code, "stable_general_knowledge")
+
+    def test_local_architecture_discussion_does_not_trigger_retrieval(self) -> None:
+        decision = self._service("auto_safe").decide(
+            "How should we design Orac's plugin service loop?"
+        )
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertEqual(decision.retrieval_type, "local")
+        self.assertEqual(decision.reason_code, "local_project_context")
 
     def test_disabled_never_retrieves(self) -> None:
         decision = self._service("disabled").decide(
@@ -811,6 +1004,29 @@ class RetrievalResponseStyleTests(unittest.TestCase):
 
         self.assertEqual(polished, raw)
 
+    def test_replaces_acknowledgement_only_retrieval_answer(self) -> None:
+        pack = GroundingPackBuilder(max_excerpt_chars=120).build(
+            SearchRequest(query="current version of Codex", trigger_phrase="freshness_release_version"),
+            [SearchResult(title="Codex", url="https://example.com/codex")],
+            [
+                FetchedSource(
+                    url="https://example.com/codex",
+                    text="Codex release information.",
+                    excerpt="Codex release information.",
+                )
+            ],
+            require_citations=True,
+        )
+
+        polished = polish_retrieval_response_text(
+            "I will check online for the current version of codecs.",
+            response_style="normal",
+            retrieval_pack=pack,
+        )
+
+        self.assertNotIn("I will check online", polished)
+        self.assertIn("couldn't produce a reliable answer", polished)
+
 
 class RetrievalServiceTests(unittest.TestCase):
     """Tests the explicit-only retrieval orchestration seam."""
@@ -892,7 +1108,7 @@ class RetrievalServiceTests(unittest.TestCase):
         outcome = service.build_grounding_outcome("search the web for latest news")
 
         self.assertTrue(outcome.requested)
-        self.assertEqual(outcome.status, "no_usable_sources")
+        self.assertEqual(outcome.status, "all_sources_fetch_failed")
         self.assertIsNone(outcome.grounding_pack)
 
     def test_irrelevant_sources_are_rejected_before_grounding(self) -> None:
@@ -944,3 +1160,217 @@ class RetrievalServiceTests(unittest.TestCase):
         self.assertTrue(outcome.requested)
         self.assertEqual(outcome.status, "no_relevant_sources")
         self.assertIsNone(outcome.grounding_pack)
+
+    def test_forced_person_death_search_enriches_request_variants(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def __init__(self) -> None:
+                self.requests: list[SearchRequest] = []
+
+            def search(self, request: SearchRequest):
+                self.requests.append(request)
+                return ()
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del results, max_sources
+                return ()
+
+        broker = _FakeBroker()
+        service = ExplicitRetrievalService(
+            search_broker=broker,
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome(
+            "do an internet search for the death of Kelly Curtis"
+        )
+
+        self.assertEqual(outcome.status, "no_search_results")
+        self.assertEqual(
+            outcome.message,
+            "I searched, but did not find relevant results for that.",
+        )
+        self.assertEqual(len(broker.requests), 1)
+        request = broker.requests[0]
+        self.assertTrue(request.metadata["person_status"])
+        self.assertIn('"Kelly Curtis" death', request.metadata["query_variants"])
+        self.assertEqual(request.query, "Kelly Curtis actress died")
+        self.assertTrue(
+            any("Jamie Lee Curtis" in variant for variant in request.metadata["query_variants"])
+        )
+
+    def test_generated_person_age_query_preserves_age_metadata(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def __init__(self) -> None:
+                self.requests: list[SearchRequest] = []
+
+            def search(self, request: SearchRequest):
+                self.requests.append(request)
+                return ()
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del results, max_sources
+                return ()
+
+        broker = _FakeBroker()
+        service = ExplicitRetrievalService(
+            search_broker=broker,
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome_for_request(
+            SearchRequest(query="Kelly Curtis actress age born died")
+        )
+
+        self.assertEqual(outcome.status, "no_search_results")
+        self.assertEqual(len(broker.requests), 1)
+        request = broker.requests[0]
+        self.assertTrue(request.metadata["person_status"])
+        self.assertEqual(request.metadata["person_status_query_type"], "age")
+        self.assertEqual(request.metadata["person_name"], "Kelly Curtis")
+        self.assertEqual(request.query, "Kelly Curtis actress age born died")
+        self.assertIn('"Kelly Curtis" date of birth', request.metadata["query_variants"])
+
+    def test_unrelated_person_death_results_are_rejected(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def search(self, request: SearchRequest):
+                del request
+                return (
+                    SearchResult(
+                        title="Curtis Kelly obituary",
+                        url="https://example.com/curtis-kelly",
+                        snippet="Curtis Kelly died in Ohio.",
+                    ),
+                )
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del results, max_sources
+                return (
+                    FetchedSource(
+                        url="https://example.com/curtis-kelly",
+                        title="Curtis Kelly obituary",
+                        text="Curtis Kelly died in Ohio.",
+                        excerpt="Curtis Kelly died in Ohio.",
+                    ),
+                )
+
+        service = ExplicitRetrievalService(
+            search_broker=_FakeBroker(),
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome_for_request(
+            SearchRequest(query="death of Kelly Curtis")
+        )
+
+        self.assertEqual(outcome.status, "no_relevant_sources")
+        self.assertIsNone(outcome.grounding_pack)
+        self.assertEqual(
+            outcome.message,
+            "I found results, but they did not appear relevant enough to verify that safely.",
+        )
+
+    def test_person_death_snippet_fallback_builds_cautious_grounding(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def search(self, request: SearchRequest):
+                del request
+                return (
+                    SearchResult(
+                        title="Kelly Curtis, actress and sister of Jamie Lee Curtis, dies at 69",
+                        url="https://example.com/kelly-curtis",
+                        snippet="Kelly Curtis, daughter of Tony Curtis and Janet Leigh, died aged 69.",
+                    ),
+                )
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del results, max_sources
+                return (
+                    FetchedSource(
+                        url="https://example.com/kelly-curtis",
+                        title="Kelly Curtis",
+                        fetch_status="fetch_failed",
+                        error_message="network unavailable",
+                    ),
+                )
+
+        service = ExplicitRetrievalService(
+            search_broker=_FakeBroker(),
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome_for_request(
+            SearchRequest(query="death of Kelly Curtis")
+        )
+
+        self.assertEqual(outcome.status, "snippet_only")
+        self.assertIsNotNone(outcome.grounding_pack)
+        self.assertTrue(outcome.diagnostics["snippet_only"])
+        self.assertIn("could not retrieve enough readable source text", outcome.message)
+        self.assertEqual(outcome.grounding_pack.fetched_sources[0].fetch_status, "snippet_only")

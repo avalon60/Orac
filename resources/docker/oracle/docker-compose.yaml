@@ -31,6 +31,9 @@ services:
     container_name: ${SEARXNG_CONTAINER_NAME:-orac-searxng}
     ports:
       - "${SEARXNG_HOST:-127.0.0.1}:${SEARXNG_PORT:-8888}:8080"
+    volumes:
+      - "./searxng/settings.yml:/etc/searxng/settings.yml"
     environment:
       BASE_URL: "http://${SEARXNG_HOST:-127.0.0.1}:${SEARXNG_PORT:-8888}/"
+      SEARXNG_SECRET: "${SEARXNG_SECRET:-orac-local-searxng-change-me}"
     restart: unless-stopped

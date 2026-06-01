@@ -32,10 +32,13 @@ _LOCAL_CONTEXT_MARKERS: tuple[str, ...] = (
     "in this project",
     "orac architecture",
     "orac plugin",
+    "orac's plugin",
     "orac controller",
     "orac voice",
     "orac retrieval",
     "orac patch",
+    "patch you just made",
+    "test failure",
     "uploaded",
     "test run output",
 )
@@ -44,6 +47,10 @@ _DIRECT_TRIGGER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "search the web for",
         re.compile(rf"^\s*{_OPTIONAL_POLITE_PREFIX}search(?: the)? web for\s+(?P<query>.+)$", re.I),
+    ),
+    (
+        "do an internet search for",
+        re.compile(rf"^\s*{_OPTIONAL_POLITE_PREFIX}do an internet search for\s+(?P<query>.+)$", re.I),
     ),
     (
         "search online for",

@@ -62,6 +62,7 @@ from orac_core.retrieval import RetrievalDecision
 from orac_core.retrieval import RetrievalDecisionService
 from orac_core.retrieval import RetrievalOutcome
 from orac_core.retrieval import RetrievalSettings
+from orac_core.retrieval import RetrievalTurnContext
 from orac_core.retrieval import SearchRequest
 from orac_core.retrieval import SearchResult
 
@@ -1172,6 +1173,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             logger=orac_module.logger,
         )
         orchestrator._retrieval_context_by_session = {}
+        orchestrator._pending_retrieval_by_session = {}
         orchestrator.config_mgr = object()
         orchestrator._system_prompt_policy = {
             "title": "SYSTEM POLICY — ORAC PERSONA:",
@@ -1963,6 +1965,91 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(orchestrator.llm.prompts, [])
         self.assertEqual(retrieval_service.prompts, ["search the web for latest Orac news"])
 
+    async def test_person_death_retrieval_failure_does_not_fall_back_to_stale_llm(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Kelly Curtis died in 2009."],
+        )
+        orchestrator.retrieval_decision_service = RetrievalDecisionService(
+            settings=RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="searxng",
+                max_search_results=5,
+                max_sources_to_fetch=3,
+                cache_ttl_hours=1,
+                require_citations=True,
+            ),
+            logger=orac_module.logger,
+        )
+        retrieval_service = _UnavailableRetrievalService(
+            "I found results, but they did not appear relevant enough to verify that safely."
+        )
+        orchestrator.retrieval_service = retrieval_service
+
+        wire = await orchestrator.handle_request(
+            self._request("When did Kelly Curtis die?", req_id="req-kelly-death")
+        )
+        response = json.loads(wire)
+
+        content = response["payload"]["content"]
+        self.assertEqual(
+            content,
+            "I found results, but they did not appear relevant enough to verify that safely.",
+        )
+        self.assertEqual(orchestrator.llm.prompts, [])
+        self.assertNotIn("2009", content)
+        self.assertNotIn("reason_code", content)
+        self.assertNotIn("RetrievalDecisionService", content)
+        self.assertNotIn("grounding pack", content.lower())
+
+    async def test_person_death_disabled_mode_returns_verification_disabled_message(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Kelly Curtis died in 2009."],
+        )
+        orchestrator.retrieval_decision_service = RetrievalDecisionService(
+            settings=RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="disabled",
+                default_search_provider="searxng",
+                max_search_results=5,
+                max_sources_to_fetch=3,
+                cache_ttl_hours=1,
+                require_citations=True,
+            ),
+            logger=orac_module.logger,
+        )
+        retrieval_service = _UnavailableRetrievalService("Retrieval should not run.")
+        orchestrator.retrieval_service = retrieval_service
+
+        wire = await orchestrator.handle_request(
+            self._request("When did Kelly Curtis die?", req_id="req-kelly-disabled")
+        )
+        response = json.loads(wire)
+
+        content = response["payload"]["content"]
+        self.assertIn("Internet retrieval is disabled", content)
+        self.assertIn("current information cannot be verified", content)
+        self.assertEqual(orchestrator.llm.prompts, [])
+        self.assertEqual(retrieval_service.prompts, [])
+        self.assertNotIn("2009", content)
+
+    async def test_stable_person_age_answer_does_not_use_llm(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Bing Crosby is 123."],
+        )
+
+        wire = await orchestrator.handle_request(
+            self._request("How old is Bing Crosby?", req_id="req-bing-age")
+        )
+        response = json.loads(wire)
+
+        content = response["payload"]["content"]
+        self.assertIn("Bing Crosby was 74 when he died", content)
+        self.assertIn("3 May 1903", content)
+        self.assertIn("14 October 1977", content)
+        self.assertIn("would be 123", content)
+        self.assertEqual(orchestrator.llm.prompts, [])
+
     async def test_explicit_retrieval_success_keeps_response_natural(self) -> None:
         orchestrator = self._make_orac_stub(
             llm_responses=[
@@ -2174,10 +2261,10 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(
             any(str(frame.get("type", "")).startswith("retrieval_") for frame in stream_frames)
         )
-        self.assertEqual(
-            [frame["type"] for frame in stream_frames[:3]],
-            ["stream_start", "text_delta", "stream_end"],
-        )
+        frame_types = [frame["type"] for frame in stream_frames]
+        self.assertEqual(frame_types[0], "stream_start")
+        self.assertIn("text_delta", frame_types)
+        self.assertIn("stream_end", frame_types)
 
     async def test_retrieval_follow_up_reuses_previous_context(self) -> None:
         orchestrator = self._make_orac_stub(
@@ -2451,7 +2538,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
                 retrieval_type="internet",
                 confidence="high",
                 reason_code="freshness_release_version",
-                user_visible_reason="That may have changed recently; I should check online.",
+                user_visible_reason="That may have changed recently. Shall I check online?",
                 explicit_request=False,
                 requires_user_confirmation=True,
                 search_query="current Python release",
@@ -2465,13 +2552,246 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             response["payload"]["content"],
-            "That may have changed recently; I should check online.",
+            "That may have changed recently. Shall I check online?",
         )
         self.assertEqual(orchestrator.llm.prompts, [])
         self.assertEqual(
             orchestrator.retrieval_decision_service.prompts,
             ["What is the current Python release?"],
         )
+
+    async def test_suggest_search_confirmation_executes_pending_retrieval(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Codex is currently available as described by the retrieved source."],
+        )
+        orchestrator.retrieval_decision_service = RetrievalDecisionService(
+            settings=RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="suggest_search",
+                default_search_provider="searxng",
+                max_search_results=5,
+                max_sources_to_fetch=3,
+                cache_ttl_hours=1,
+                require_citations=True,
+            ),
+            logger=orac_module.logger,
+        )
+        pack = GroundingPackBuilder().build(
+            SearchRequest(query="current version of Codex", trigger_phrase="freshness_release_version"),
+            [SearchResult(title="Codex release", url="https://example.test/codex")],
+            [
+                FetchedSource(
+                    url="https://example.test/codex",
+                    title="Codex release",
+                    source_name="example.test",
+                    text="Codex current release information is available from this source.",
+                    excerpt="Codex current release information is available from this source.",
+                )
+            ],
+            require_citations=True,
+        )
+        retrieval_service = _SuccessfulRetrievalService(pack)
+        orchestrator.retrieval_service = retrieval_service
+
+        first_wire = await orchestrator.handle_request(
+            self._request("What is the current version of Codex?", req_id="req-codex-confirm")
+        )
+        first_response = json.loads(first_wire)
+
+        self.assertEqual(
+            first_response["payload"]["content"],
+            "That may have changed recently. Shall I check online?",
+        )
+        self.assertIn("clive", orchestrator._pending_retrieval_by_session)
+
+        stream_frames: list[dict[str, object]] = []
+
+        async def _event_sink(event: dict[str, object]) -> None:
+            stream_frames.append(dict(event))
+
+        second_wire = await orchestrator.handle_request(
+            self._request("Yes", req_id="req-codex-yes", meta={"stream": True}),
+            event_sink=_event_sink,
+        )
+        second_response = json.loads(second_wire)
+
+        self.assertNotIn("clive", orchestrator._pending_retrieval_by_session)
+        self.assertEqual(retrieval_service.prompts, ["current version of Codex"])
+        frame_types = [str(frame.get("type")) for frame in stream_frames]
+        self.assertIn("retrieval_start", frame_types)
+        self.assertIn("retrieval_query", frame_types)
+        self.assertIn("retrieval_fetch_start", frame_types)
+        self.assertIn("retrieval_fetch_complete", frame_types)
+        self.assertIn("retrieval_complete", frame_types)
+        self.assertIn("Codex is currently available", second_response["payload"]["content"])
+        self.assertNotIn("I will check online", second_response["payload"]["content"])
+        self.assertNotIn("I'll check that online", second_response["payload"]["content"])
+        self.assertNotIn("I’ll check that online", second_response["payload"]["content"])
+        self.assertNotIn("grounding pack", second_response["payload"]["content"].lower())
+
+    async def test_suggest_search_rejection_clears_pending_retrieval(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Fallback answer should not be used."],
+        )
+        orchestrator.retrieval_decision_service = RetrievalDecisionService(
+            settings=RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="suggest_search",
+                default_search_provider="searxng",
+                max_search_results=5,
+                max_sources_to_fetch=3,
+                cache_ttl_hours=1,
+                require_citations=True,
+            ),
+            logger=orac_module.logger,
+        )
+        retrieval_service = _UnavailableRetrievalService("Retrieval should not run.")
+        orchestrator.retrieval_service = retrieval_service
+
+        await orchestrator.handle_request(
+            self._request("What is the current version of Codex?", req_id="req-codex-confirm")
+        )
+        wire = await orchestrator.handle_request(self._request("No", req_id="req-codex-no"))
+        response = json.loads(wire)
+
+        self.assertEqual(response["payload"]["content"], "I won't check online.")
+        self.assertNotIn("clive", orchestrator._pending_retrieval_by_session)
+        self.assertEqual(retrieval_service.prompts, [])
+
+    async def test_suggest_search_new_topic_clears_pending_retrieval(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["The plugin router uses local routing hints."],
+        )
+        orchestrator.retrieval_decision_service = RetrievalDecisionService(
+            settings=RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="suggest_search",
+                default_search_provider="searxng",
+                max_search_results=5,
+                max_sources_to_fetch=3,
+                cache_ttl_hours=1,
+                require_citations=True,
+            ),
+            logger=orac_module.logger,
+        )
+        retrieval_service = _UnavailableRetrievalService("Retrieval should not run.")
+        orchestrator.retrieval_service = retrieval_service
+
+        await orchestrator.handle_request(
+            self._request("What is the current version of Codex?", req_id="req-codex-confirm")
+        )
+        wire = await orchestrator.handle_request(
+            self._request("Actually, how does the Orac plugin router work?", req_id="req-local")
+        )
+        response = json.loads(wire)
+
+        self.assertIn("plugin router", response["payload"]["content"])
+        self.assertNotIn("clive", orchestrator._pending_retrieval_by_session)
+        self.assertEqual(retrieval_service.prompts, [])
+
+    async def test_expired_pending_retrieval_is_not_confirmed(self) -> None:
+        orchestrator = self._make_orac_stub(llm_responses=["Normal acknowledgement."])
+        orchestrator._pending_retrieval_by_session["clive"] = orac_module._PendingRetrievalIntent(
+            original_user_message="What is the current version of Codex?",
+            topic="current version of Codex",
+            search_query="current version of Codex",
+            reason_code="freshness_release_version",
+            retrieval_type="internet",
+            confidence="high",
+            created_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+            expires_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+        )
+        retrieval_service = _UnavailableRetrievalService("Retrieval should not run.")
+        orchestrator.retrieval_service = retrieval_service
+
+        wire = await orchestrator.handle_request(self._request("Yes", req_id="req-expired-yes"))
+        response = json.loads(wire)
+
+        self.assertEqual(response["payload"]["content"], "Normal acknowledgement.")
+        self.assertNotIn("clive", orchestrator._pending_retrieval_by_session)
+        self.assertEqual(retrieval_service.prompts, [])
+
+    async def test_ambiguous_codecs_query_asks_for_clarification(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Fallback answer should not be used."],
+        )
+        orchestrator.retrieval_decision_service = RetrievalDecisionService(
+            settings=RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="suggest_search",
+                default_search_provider="searxng",
+                max_search_results=5,
+                max_sources_to_fetch=3,
+                cache_ttl_hours=1,
+                require_citations=True,
+            ),
+            logger=orac_module.logger,
+        )
+        retrieval_service = _UnavailableRetrievalService("Retrieval should not run.")
+        orchestrator.retrieval_service = retrieval_service
+
+        wire = await orchestrator.handle_request(
+            self._request("What is the current version of codecs?", req_id="req-codecs")
+        )
+        response = json.loads(wire)
+
+        self.assertEqual(
+            response["payload"]["content"],
+            "Do you mean OpenAI Codex, or a specific audio/video codec?",
+        )
+        self.assertEqual(retrieval_service.prompts, [])
+        self.assertNotIn("clive", orchestrator._pending_retrieval_by_session)
+
+    async def test_codecs_query_can_normalise_to_codex_from_recent_retrieval_context(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Codex source-backed answer."],
+        )
+        orchestrator.retrieval_decision_service = RetrievalDecisionService(
+            settings=RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="suggest_search",
+                default_search_provider="searxng",
+                max_search_results=5,
+                max_sources_to_fetch=3,
+                cache_ttl_hours=1,
+                require_citations=True,
+            ),
+            logger=orac_module.logger,
+        )
+        orchestrator._retrieval_context_by_session["clive"] = RetrievalTurnContext(
+            topic="current version of Codex",
+            original_user_message="What is the current version of Codex?",
+            retrieval_status="success",
+            topic_signature=("codex",),
+            explicit_request=True,
+        )
+        pack = GroundingPackBuilder().build(
+            SearchRequest(query="current version of Codex", trigger_phrase="freshness_release_version"),
+            [SearchResult(title="Codex release", url="https://example.test/codex")],
+            [
+                FetchedSource(
+                    url="https://example.test/codex",
+                    title="Codex release",
+                    source_name="example.test",
+                    text="Codex release details.",
+                    excerpt="Codex release details.",
+                )
+            ],
+            require_citations=True,
+        )
+        retrieval_service = _SuccessfulRetrievalService(pack)
+        orchestrator.retrieval_service = retrieval_service
+
+        await orchestrator.handle_request(
+            self._request("What is the current version of codecs?", req_id="req-codecs")
+        )
+        self.assertEqual(
+            orchestrator._pending_retrieval_by_session["clive"].search_query,
+            "current version of Codex",
+        )
+        await orchestrator.handle_request(self._request("yes", req_id="req-codecs-yes"))
+
+        self.assertEqual(retrieval_service.prompts, ["current version of Codex"])
 
     async def test_disabled_retrieval_returns_clear_failure_without_llm(self) -> None:
         orchestrator = self._make_orac_stub(

@@ -255,6 +255,42 @@ bin/orac-ctl.sh logs search
 bin/orac-ctl.sh status
 ```
 
+The Orac Compose stack mounts `resources/docker/oracle/searxng/settings.yml`
+into the SearXNG sidecar. That file enables `search.formats` for both `html`
+and `json`; without `json`, SearXNG returns `403 Forbidden` for the endpoint
+Orac uses. The file is mounted writable because the SearXNG container entrypoint
+normalises ownership during startup.
+
+When deploying the stack outside the repository, copy the `searxng` directory
+next to the Compose file:
+
+```text
+<stack-dir>/docker-compose.yaml
+<stack-dir>/searxng/settings.yml
+```
+
+For Dockge this means:
+
+```text
+/opt/stacks/orac/compose.yaml
+/opt/stacks/orac/searxng/settings.yml
+```
+
+Set `SEARXNG_SECRET` in the active stack env file to a non-default local value.
+The sample `resources/config/orac.env` includes a development value.
+
+If the SearXNG settings mount is added or changed after the container already
+exists, a normal restart is not enough because Docker does not add new bind
+mounts to an existing container. Recreate only the SearXNG service:
+
+```bash
+docker compose \
+  --env-file <ORAC_HOME>/resources/config/orac.env \
+  -f <ORAC_HOME>/resources/docker/oracle/docker-compose.yaml \
+  --profile search \
+  up -d --force-recreate orac-searxng
+```
+
 If port `8888` is already in use, change `SEARXNG_PORT` in the active Compose
 env file and update `resources/config/orac.ini`:
 

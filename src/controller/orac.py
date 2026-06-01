@@ -16,9 +16,10 @@ import time
 import sys
 import traceback
 from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -65,7 +66,9 @@ from orac_core.retrieval import build_retrieval_response_guidance
 from orac_core.retrieval import SearXNGSearchProvider
 from orac_core.retrieval import SearchBroker
 from orac_core.retrieval import normalize_retrieval_response_style
+from orac_core.retrieval import answer_from_stable_bio
 from orac_core.retrieval import polish_retrieval_response_text
+from orac_core.retrieval import parse_person_age_or_status_query
 from orac_core.retrieval import SourceFetcher
 from orac_core.retrieval import SearchRequest
 from orac_core.retrieval import detect_explicit_search_request
@@ -84,6 +87,20 @@ class _VoicePlaybackSubscription:
         self.playback_queued = 0
         self.playback_finished = 0
         self.playback_terminal = False
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingRetrievalIntent:
+    """Pending internet retrieval awaiting a short user confirmation."""
+
+    original_user_message: str
+    topic: str
+    search_query: str
+    reason_code: str
+    retrieval_type: str
+    confidence: str
+    created_at: datetime
+    expires_at: datetime
 
 
 VOICE_PLAYBACK_START_TIMEOUT_SECONDS = 120.0
@@ -780,6 +797,7 @@ class Orac:
             self.retrieval_service: ExplicitRetrievalService | None = None
             self.retrieval_decision_service: RetrievalDecisionService | None = None
             self._retrieval_context_by_session: dict[str, RetrievalTurnContext] = {}
+            self._pending_retrieval_by_session: dict[str, _PendingRetrievalIntent] = {}
             self._plugin_routing_ready = False
             self._init_plugin_routing()
             self._init_retrieval()
@@ -3120,6 +3138,113 @@ class Orac:
         )
         self._retrieval_context_by_session[session_id] = context
 
+    def _pending_retrieval_store(self) -> dict[str, _PendingRetrievalIntent]:
+        """Return the pending retrieval store, creating it for test stubs."""
+        store = getattr(self, "_pending_retrieval_by_session", None)
+        if not isinstance(store, dict):
+            store = {}
+            self._pending_retrieval_by_session = store
+        return store
+
+    def _store_pending_retrieval_intent(
+        self,
+        session_id: str,
+        *,
+        user_message: str,
+        retrieval_decision: Any,
+    ) -> None:
+        """Store a one-turn internet retrieval intent for confirmation."""
+        now = datetime.now(timezone.utc)
+        query = str(getattr(retrieval_decision, "search_query", None) or user_message or "").strip()
+        intent = _PendingRetrievalIntent(
+            original_user_message=str(user_message or "").strip(),
+            topic=query,
+            search_query=query,
+            reason_code=str(getattr(retrieval_decision, "reason_code", "") or "retrieval_confirmation"),
+            retrieval_type=str(getattr(retrieval_decision, "retrieval_type", "") or "internet"),
+            confidence=str(getattr(retrieval_decision, "confidence", "") or "medium"),
+            created_at=now,
+            expires_at=now + timedelta(minutes=5),
+        )
+        self._pending_retrieval_store()[session_id] = intent
+
+    def _pop_pending_retrieval_intent(self, session_id: str) -> _PendingRetrievalIntent | None:
+        """Remove and return a pending retrieval intent for a session."""
+        return self._pending_retrieval_store().pop(session_id, None)
+
+    def _peek_pending_retrieval_intent(self, session_id: str) -> _PendingRetrievalIntent | None:
+        """Return a pending retrieval intent without consuming it."""
+        intent = self._pending_retrieval_store().get(session_id)
+        if intent is None:
+            return None
+        if datetime.now(timezone.utc) > intent.expires_at:
+            self._pop_pending_retrieval_intent(session_id)
+            return None
+        return intent
+
+    @staticmethod
+    def _is_retrieval_confirmation_reply(prompt: str) -> bool:
+        """Return whether a prompt accepts a pending retrieval confirmation."""
+        normalized = " ".join(str(prompt or "").lower().strip(" .?!").split())
+        return normalized in {
+            "yes",
+            "y",
+            "yep",
+            "yeah",
+            "please",
+            "please do",
+            "go ahead",
+            "check",
+            "check online",
+            "do it",
+            "ok",
+            "okay",
+        }
+
+    @staticmethod
+    def _is_retrieval_rejection_reply(prompt: str) -> bool:
+        """Return whether a prompt rejects a pending retrieval confirmation."""
+        normalized = " ".join(str(prompt or "").lower().strip(" .?!").split())
+        return normalized in {"no", "no thanks", "don't", "do not", "not now"}
+
+    @staticmethod
+    def _clarification_for_ambiguous_retrieval_query(
+        query: str,
+        *,
+        previous_context: RetrievalTurnContext | None,
+    ) -> tuple[str | None, str | None]:
+        """Return a normalised query or clarification for ambiguous ASR terms."""
+        cleaned = " ".join(str(query or "").strip(" .?!").split())
+        lowered = cleaned.lower()
+        if not lowered:
+            return cleaned, None
+
+        previous_terms = " ".join(
+            (
+                str(getattr(previous_context, "topic", "") or ""),
+                str(getattr(previous_context, "original_user_message", "") or ""),
+                " ".join(getattr(previous_context, "topic_signature", ()) or ()),
+            )
+        ).lower()
+        if re.search(r"\bcodecs\b", lowered):
+            if "codex" in previous_terms:
+                return re.sub(r"\bcodecs\b", "Codex", cleaned, flags=re.I), None
+            return None, "Do you mean OpenAI Codex, or a specific audio/video codec?"
+
+        generic_targets = {"models", "drivers", "software", "database", "app"}
+        tokens = set(re.findall(r"[a-z0-9]+", lowered))
+        if tokens.intersection(generic_targets) and len(tokens - generic_targets - {
+            "current",
+            "latest",
+            "version",
+            "release",
+            "of",
+            "the",
+        }) == 0:
+            target = next(iter(tokens.intersection(generic_targets)))
+            return None, f"Which {target} do you mean?"
+        return cleaned, None
+
     # --- Response builder -----------------------------------------------------
     def _runtime_response_meta(
         self,
@@ -4107,9 +4232,43 @@ class Orac:
                 user_id = None
 
             retrieval_decision = None
+            llm_prompt = prompt
+            pending_retrieval_rejected = False
+            pending_retrieval_disabled = False
             previous_retrieval_context = self._retrieval_context_by_session.get(session_id)
             decision_service = getattr(self, "retrieval_decision_service", None)
-            if decision_service is not None:
+            pending_intent = self._peek_pending_retrieval_intent(session_id)
+            if pending_intent is not None and self._is_retrieval_confirmation_reply(prompt):
+                settings = getattr(decision_service, "settings", None)
+                retrieval_mode = str(
+                    getattr(settings, "internet_search_mode", "") or ""
+                ).strip().lower()
+                if retrieval_mode == "disabled":
+                    self._pop_pending_retrieval_intent(session_id)
+                    pending_retrieval_disabled = True
+                else:
+                    pending_intent = self._pop_pending_retrieval_intent(session_id)
+                if pending_intent is not None and not pending_retrieval_disabled:
+                    llm_prompt = pending_intent.original_user_message
+                    retrieval_decision = SimpleNamespace(
+                        should_retrieve=True,
+                        retrieval_type=pending_intent.retrieval_type,
+                        confidence=pending_intent.confidence,
+                        reason_code=pending_intent.reason_code,
+                        user_visible_reason="",
+                        explicit_request=False,
+                        requires_user_confirmation=False,
+                        search_query=pending_intent.search_query,
+                    )
+            elif pending_intent is not None and self._is_retrieval_rejection_reply(prompt):
+                self._pop_pending_retrieval_intent(session_id)
+                pending_retrieval_rejected = True
+            elif pending_intent is not None:
+                self._pop_pending_retrieval_intent(session_id)
+
+            if retrieval_decision is not None or pending_retrieval_rejected or pending_retrieval_disabled:
+                pass
+            elif decision_service is not None:
                 try:
                     decide = getattr(decision_service, "decide", None)
                     if callable(decide):
@@ -4176,8 +4335,106 @@ class Orac:
                 except Exception as exc:
                     _log_exception("Failed scheduling retrieval event (non-fatal)", exc)
 
+            async def return_simple_response(content: str) -> str:
+                """Persist and return a direct non-LLM assistant response."""
+                last_ti = self._save_assistant_turn(
+                    session_id,
+                    auth_user,
+                    content,
+                    client=client,
+                    req_id=req_env.get("id"),
+                    show_reasoning=show_reasoning,
+                    llm_id=effective_llm_id,
+                    request_flags=request_flags,
+                )
+                self._maybe_set_conversation_title(session_id, meta, llm_connector)
+                self._maybe_prune(session_id, last_ti)
+                resp_env = self._build_response(
+                    req_env,
+                    content,
+                    stop_reason="stop",
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    model_name=effective_model_name,
+                    user_registration=(
+                        "anonymous" if request_flags["anonymous_user"] else "registered"
+                    ),
+                )
+                if stream_requested:
+                    await self._emit_complete_text_as_stream(
+                        event_sink,
+                        req_env,
+                        content,
+                        model_name=effective_model_name,
+                        llm_source=effective_llm_source,
+                        user_registration=(
+                            "anonymous"
+                            if request_flags["anonymous_user"]
+                            else "registered"
+                        ),
+                        session_id=session_id,
+                        turn_id=str(req_env.get("id") or ""),
+                        stop_reason="stop",
+                    )
+                return json.dumps(resp_env, ensure_ascii=False)
+
+            if pending_retrieval_rejected:
+                return await return_simple_response("I won't check online.")
+            if pending_retrieval_disabled:
+                return await return_simple_response(
+                    "Internet retrieval is disabled right now, so current information cannot be verified."
+                )
+
+            if (
+                retrieval_decision is not None
+                and str(getattr(retrieval_decision, "retrieval_type", ""))
+                == "structured_bio"
+                and str(getattr(retrieval_decision, "reason_code", ""))
+                == "person_age_or_status"
+            ):
+                person_query = parse_person_age_or_status_query(prompt)
+                stable_answer = (
+                    answer_from_stable_bio(
+                        person_query,
+                        today=datetime.now(ZoneInfo("Europe/London")).date(),
+                    )
+                    if person_query is not None
+                    else None
+                )
+                if stable_answer:
+                    return await return_simple_response(stable_answer)
+
+            if retrieval_decision is not None and str(
+                getattr(retrieval_decision, "retrieval_type", "")
+            ) == "internet":
+                normalized_query, clarification = self._clarification_for_ambiguous_retrieval_query(
+                    str(getattr(retrieval_decision, "search_query", "") or ""),
+                    previous_context=previous_retrieval_context,
+                )
+                if clarification:
+                    self._pop_pending_retrieval_intent(session_id)
+                    return await return_simple_response(clarification)
+                if normalized_query and normalized_query != getattr(retrieval_decision, "search_query", None):
+                    retrieval_decision = SimpleNamespace(
+                        should_retrieve=bool(getattr(retrieval_decision, "should_retrieve", False)),
+                        retrieval_type=str(getattr(retrieval_decision, "retrieval_type", "") or "internet"),
+                        confidence=str(getattr(retrieval_decision, "confidence", "") or "medium"),
+                        reason_code=str(getattr(retrieval_decision, "reason_code", "") or "retrieval_request"),
+                        user_visible_reason=str(getattr(retrieval_decision, "user_visible_reason", "") or ""),
+                        explicit_request=bool(getattr(retrieval_decision, "explicit_request", False)),
+                        requires_user_confirmation=bool(
+                            getattr(retrieval_decision, "requires_user_confirmation", False)
+                        ),
+                        search_query=normalized_query,
+                    )
+
             if retrieval_decision is not None:
                 if retrieval_decision.requires_user_confirmation and not retrieval_decision.should_retrieve:
+                    self._store_pending_retrieval_intent(
+                        session_id,
+                        user_message=prompt,
+                        retrieval_decision=retrieval_decision,
+                    )
                     if stream_requested:
                             await self._emit_stream_event(
                                 event_sink,
@@ -4194,7 +4451,12 @@ class Orac:
                                 else "registered"
                             ),
                         )
-                    content = retrieval_decision.user_visible_reason or "That may have changed recently; I should check online."
+                    content = (
+                        retrieval_decision.user_visible_reason
+                        or "That may have changed recently. Shall I check online?"
+                    )
+                    if content == "That may have changed recently; I should check online.":
+                        content = "That may have changed recently. Shall I check online?"
                     last_ti = self._save_assistant_turn(
                         session_id,
                         auth_user,
@@ -4259,7 +4521,7 @@ class Orac:
                     content = retrieval_decision.user_visible_reason or "I could not retrieve online evidence for that request."
                     self._remember_retrieval_context(
                         session_id,
-                        user_message=prompt,
+                        user_message=llm_prompt,
                         previous_context=previous_retrieval_context,
                         retrieval_decision=retrieval_decision,
                         retrieval_outcome=None,
@@ -4366,6 +4628,26 @@ class Orac:
                                         event_emitter=emit_retrieval_event,
                                     )
                                     retrieval_pack = retrieval_outcome.grounding_pack
+                                    if (
+                                        retrieval_outcome.status == "not_requested"
+                                        and retrieval_decision.search_query
+                                    ):
+                                        build_request_outcome = getattr(
+                                            retrieval_service,
+                                            "build_grounding_outcome_for_request",
+                                            None,
+                                        )
+                                        if callable(build_request_outcome):
+                                            retrieval_request = SearchRequest(
+                                                query=str(retrieval_decision.search_query),
+                                                trigger_phrase=retrieval_decision.reason_code,
+                                            )
+                                            retrieval_outcome = await asyncio.to_thread(
+                                                build_request_outcome,
+                                                retrieval_request,
+                                                event_emitter=emit_retrieval_event,
+                                            )
+                                            retrieval_pack = retrieval_outcome.grounding_pack
                                 else:
                                     retrieval_pack = retrieval_service.build_grounding_pack(prompt)
                             else:
@@ -4423,7 +4705,7 @@ class Orac:
                         )
                         self._remember_retrieval_context(
                             session_id,
-                            user_message=prompt,
+                            user_message=llm_prompt,
                             previous_context=previous_retrieval_context,
                             retrieval_decision=retrieval_decision,
                             retrieval_outcome=retrieval_outcome,
@@ -4539,7 +4821,7 @@ class Orac:
             # --- Build context-primed prompt -----------------------------------
             final_prompt = self._build_contextual_prompt(
                 session_id,
-                prompt,
+                llm_prompt,
                 meta,
                 auth_user,
                 plugin_routing_handoff=plugin_routing_handoff,
@@ -4832,7 +5114,7 @@ class Orac:
             if retrieval_pack is not None:
                 self._remember_retrieval_context(
                     session_id,
-                    user_message=prompt,
+                    user_message=llm_prompt,
                     previous_context=previous_retrieval_context,
                     retrieval_decision=retrieval_decision,
                     retrieval_outcome=retrieval_outcome,

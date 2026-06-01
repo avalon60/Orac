@@ -108,6 +108,13 @@ SearXNG profile activation:
 - `default_search_provider = searxng`
 - `retrieval.searxng.autostart = true`
 
+The `orac-searxng` service mounts `./searxng/settings.yml` into the container
+so SearXNG allows JSON output. Orac uses SearXNG's JSON endpoint; if
+`search.formats` does not include `json`, searches fail with `403 Forbidden`.
+The `searxng` directory must be deployed alongside the Compose file, for
+example `/opt/stacks/orac/searxng/settings.yml` for Dockge or
+`/opt/orac/stack/searxng/settings.yml` for a normal installed stack.
+
 ## Environment Variables
 
 The stack env file should define deployment-specific values such as:
@@ -129,6 +136,7 @@ SEARXNG_IMAGE=searxng/searxng:latest
 SEARXNG_CONTAINER_NAME=orac-searxng
 SEARXNG_HOST=127.0.0.1
 SEARXNG_PORT=8888
+SEARXNG_SECRET=orac-local-searxng-change-me
 ```
 
 Do not store `ORACLE_PWD` in the stack env file. `bin/orac-ctl.sh` reads it

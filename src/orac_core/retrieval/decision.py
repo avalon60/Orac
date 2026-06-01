@@ -14,9 +14,13 @@ from typing import Any
 from .broker import RetrievalSettings
 from .models import RetrievalDecision
 from .models import RetrievalTurnContext
+from .person_status import is_stable_historical_person
+from .person_status import parse_person_age_or_status_query
 from .triggers import detect_explicit_search_request
 
 _ALLOWED_MODES = {"disabled", "explicit_only", "suggest_search", "auto_safe"}
+_CONFIRMATION_MESSAGE = "That may have changed recently. Shall I check online?"
+_PERSON_STATUS_CONFIRMATION_MESSAGE = "That may need current verification. Shall I check online?"
 
 _LOCAL_CONTEXT_MARKERS: tuple[str, ...] = (
     "my latest change",
@@ -38,10 +42,13 @@ _LOCAL_CONTEXT_MARKERS: tuple[str, ...] = (
     "in this project",
     "orac architecture",
     "orac plugin",
+    "orac's plugin",
     "orac controller",
     "orac voice",
     "orac retrieval",
     "orac patch",
+    "patch you just made",
+    "test failure",
     "uploaded",
     "test run output",
 )
@@ -148,6 +155,14 @@ _EXPLICIT_FRESHNESS_TRIGGER_PHRASES: tuple[str, ...] = (
     "what's the latest",
     "whats the latest",
     "what are the latest",
+    "what is the current",
+    "what's the current",
+    "whats the current",
+    "what are the current",
+    "current version of",
+    "current version",
+    "current release of",
+    "current release",
     "any latest news on",
     "latest news on",
     "latest news",
@@ -169,6 +184,9 @@ _EXPLICIT_FRESHNESS_TRIGGER_PHRASES: tuple[str, ...] = (
     "more news on",
     "more updates on",
     "latest on",
+    "what changed in the latest",
+    "what changed in latest",
+    "has changed in the latest",
 )
 
 _NEWS_TRIGGER_PHRASES: tuple[str, ...] = (
@@ -246,31 +264,31 @@ _LOCAL_DATE_TIME_PATTERNS: tuple[re.Pattern[str], ...] = (
 _FRESHNESS_PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
     (
         "freshness_release_version",
-        "That may have changed recently; I should check online.",
+        _CONFIRMATION_MESSAGE,
         re.compile(
-            r"\b(?:latest|current|recent|newest|up to date|up-to-date)\b.*\b(?:release|version|build|patch|update)\b|\b(?:release|version|build|patch|update)\b.*\b(?:latest|current|recent|newest)\b",
+            r"\b(?:latest|current|recent|newest|up to date|up-to-date)\b.*\b(?:release|version|build|patch|update|changelog|release notes?)\b|\b(?:release|version|build|patch|update|changelog|release notes?)\b.*\b(?:latest|current|recent|newest|changed)\b",
             re.I,
         ),
     ),
     (
         "freshness_docs_api",
-        "That may have changed recently; I should check online.",
+        _CONFIRMATION_MESSAGE,
         re.compile(
-            r"\b(?:current|latest|recent)\b.*\b(?:docs?|documentation|api|sdk|supported|support|compatibility|behaviour|behavior)\b|\b(?:docs?|documentation|api|sdk|supported|support|compatibility|behaviour|behavior)\b.*\b(?:current|latest|recent)\b",
+            r"\b(?:current|latest|recent|still|changed|changed its|has changed)\b.*\b(?:docs?|documentation|api|sdk|supported|support|compatibility|behaviour|behavior|config|configuration|syntax|parameter|parameters|formats?)\b|\b(?:docs?|documentation|api|sdk|supported|support|compatibility|behaviour|behavior|config|configuration|syntax|parameter|parameters|formats?)\b.*\b(?:current|latest|recent|still|changed|has changed)\b",
             re.I,
         ),
     ),
     (
         "freshness_price_availability",
-        "That may have changed recently; I should check online.",
+        _CONFIRMATION_MESSAGE,
         re.compile(
-            r"\b(?:price|pricing|cost|availability|available|in stock|stock|shipping|delivery)\b",
+            r"\b(?:current|latest|today's|today|now|still)\b.*\b(?:price|pricing|cost|availability|available|in stock|stock|shipping|delivery|subscription|tier|tiers|buy|purchase)\b|\b(?:price|pricing|cost|availability|available|in stock|stock|shipping|delivery|subscription|tier|tiers)\b.*\b(?:current|latest|today's|today|now|still)\b|\bcan i still (?:buy|purchase)\b|\bstill available\b|\bstill buy\b",
             re.I,
         ),
     ),
     (
         "freshness_news_events",
-        "That may have changed recently; I should check online.",
+        _CONFIRMATION_MESSAGE,
         re.compile(
             r"\b(?:news|recent event|events?|announcement|announced|today|today's|this week|this month|breaking)\b",
             re.I,
@@ -278,7 +296,7 @@ _FRESHNESS_PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
     ),
     (
         "freshness_laws_rules",
-        "That may have changed recently; I should check online.",
+        _CONFIRMATION_MESSAGE,
         re.compile(
             r"\b(?:current|latest|recent)\b.*\b(?:law|laws|regulation|regulations|rule|rules|policy|policies|legal)\b|\b(?:law|laws|regulation|regulations|rule|rules|policy|policies|legal)\b.*\b(?:current|latest|recent)\b",
             re.I,
@@ -286,23 +304,23 @@ _FRESHNESS_PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
     ),
     (
         "freshness_schedule_scores",
-        "That may have changed recently; I should check online.",
+        _CONFIRMATION_MESSAGE,
         re.compile(
-            r"\b(?:schedule|schedules|fixture|fixtures|score|scores|match|matches|game|games|kickoff|kick-off)\b",
+            r"\b(?:schedule|schedules|fixture|fixtures|score|scores|kickoff|kick-off|release date|release dates)\b|\b(?:today|latest|current|upcoming|next)\b.*\b(?:match|matches|game|games)\b",
             re.I,
         ),
     ),
     (
         "freshness_public_role",
-        "That may have changed recently; I should check online.",
+        _CONFIRMATION_MESSAGE,
         re.compile(
-            r"\b(?:who is|who's|current|latest|now)\b.*\b(?:ceo|president|minister|director|owner|chair|head|leader|role)\b|\b(?:ceo|president|minister|director|owner|chair|head|leader|role)\b.*\b(?:current|latest|now)\b",
+            r"\b(?:who is|who's|who owns|current|latest|new|now)\b.*\b(?:ceo|cto|president|prime minister|minister|director|owner|owns|chair|head|leader|manager|presenter|host|role)\b|\b(?:ceo|cto|president|prime minister|minister|director|owner|owns|chair|head|leader|manager|presenter|host|role)\b.*\b(?:current|latest|new|now)\b",
             re.I,
         ),
     ),
     (
         "freshness_package_support",
-        "That may have changed recently; I should check online.",
+        _CONFIRMATION_MESSAGE,
         re.compile(
             r"\b(?:package|library|tool|framework|module|dependency)\b.*\b(?:support|supported|compatibility|compatible|works with)\b|\b(?:support|supported|compatibility|compatible|works with)\b.*\b(?:package|library|tool|framework|module|dependency)\b",
             re.I,
@@ -365,6 +383,7 @@ class RetrievalDecisionService:
         search_query = explicit_request.query if explicit_request is not None else normalized
         news_query = _match_current_news_request(normalized)
         current_affairs_reason = _match_current_affairs_request(normalized)
+        person_status_match = parse_person_age_or_status_query(normalized)
         follow_up_match = _classify_follow_up_request(
             normalized,
             previous_context,
@@ -399,19 +418,40 @@ class RetrievalDecisionService:
             self._log_decision(mode, decision)
             return decision
 
+        if (
+            person_status_match is not None
+            and is_stable_historical_person(person_status_match.person_name)
+        ):
+            decision = RetrievalDecision(
+                should_retrieve=False,
+                retrieval_type="structured_bio",
+                confidence="high",
+                reason_code="person_age_or_status",
+                user_visible_reason="",
+                explicit_request=True,
+                requires_user_confirmation=False,
+                search_query=person_status_match.search_query,
+            )
+            self._log_decision(mode, decision)
+            return decision
+
         if mode == "disabled":
             explicit_freshness_request = _is_explicit_freshness_request(explicit_request)
+            explicit_freshness_prompt = _is_explicit_freshness_prompt(normalized)
             current_like = (
                 news_query is not None
                 or current_affairs_reason is not None
+                or person_status_match is not None
                 or follow_up_match is not None
                 or explicit_freshness_request
+                or explicit_freshness_prompt
                 or _looks_fresh(normalized)
             )
             if (
                 explicit_request_found
                 or news_query is not None
                 or current_affairs_reason is not None
+                or person_status_match is not None
                 or follow_up_match is not None
                 or _looks_fresh(normalized)
             ):
@@ -429,14 +469,20 @@ class RetrievalDecisionService:
                     explicit_request=(
                         explicit_request_found
                         or news_query is not None
+                        or person_status_match is not None
                         or follow_up_match is not None
                         or explicit_freshness_request
+                        or explicit_freshness_prompt
                     ),
                     requires_user_confirmation=False,
                     search_query=(
                         follow_up_match.search_query
                         if follow_up_match is not None
-                        else search_query
+                        else (
+                            person_status_match.search_query
+                            if person_status_match is not None
+                            else search_query
+                        )
                     ),
                 )
             else:
@@ -463,11 +509,30 @@ class RetrievalDecisionService:
                 user_visible_reason=(
                     "I’ll check the latest updates on that."
                     if should_retrieve
-                    else "That may have changed recently; I should check online."
+                    else _CONFIRMATION_MESSAGE
                 ),
                 explicit_request=False,
                 requires_user_confirmation=False,
                 search_query=follow_up_match.search_query,
+            )
+            self._log_decision(mode, decision)
+            return decision
+
+        if person_status_match is not None:
+            should_retrieve = mode in {"explicit_only", "auto_safe"}
+            decision = RetrievalDecision(
+                should_retrieve=should_retrieve,
+                retrieval_type="internet",
+                confidence=person_status_match.confidence,
+                reason_code="person_age_or_status",
+                user_visible_reason=(
+                    "I’ll check that online."
+                    if should_retrieve
+                    else _PERSON_STATUS_CONFIRMATION_MESSAGE
+                ),
+                explicit_request=True,
+                requires_user_confirmation=mode == "suggest_search",
+                search_query=person_status_match.search_query,
             )
             self._log_decision(mode, decision)
             return decision
@@ -480,7 +545,7 @@ class RetrievalDecisionService:
                 confidence="high",
                 reason_code="current_news_request",
                 user_visible_reason=(
-                    "I’ll check that online." if should_retrieve else "That may have changed recently; I should check online."
+                    "I’ll check that online." if should_retrieve else _CONFIRMATION_MESSAGE
                 ),
                 explicit_request=True,
                 requires_user_confirmation=mode == "suggest_search",
@@ -491,19 +556,50 @@ class RetrievalDecisionService:
 
         if explicit_request_found:
             explicit_freshness_request = _is_explicit_freshness_request(explicit_request)
+            explicit_person_status = parse_person_age_or_status_query(search_query)
+            freshness_match = (
+                _classify_freshness_sensitive(normalized)
+                if explicit_freshness_request
+                else None
+            )
+            reason_code = "explicit_request"
+            query = search_query
+            if explicit_person_status is not None:
+                reason_code = "person_age_or_status"
+                query = explicit_person_status.search_query
+            elif explicit_freshness_request:
+                reason_code = (
+                    freshness_match.reason_code
+                    if freshness_match is not None
+                    else "explicit_freshness_request"
+                )
+                query = (
+                    freshness_match.search_query
+                    if freshness_match is not None and freshness_match.search_query
+                    else search_query
+                )
+            if mode == "suggest_search" and explicit_freshness_request:
+                decision = RetrievalDecision(
+                    should_retrieve=False,
+                    retrieval_type="internet",
+                    confidence="high",
+                    reason_code=reason_code,
+                    user_visible_reason=_CONFIRMATION_MESSAGE,
+                    explicit_request=True,
+                    requires_user_confirmation=True,
+                    search_query=query,
+                )
+                self._log_decision(mode, decision)
+                return decision
             decision = RetrievalDecision(
                 should_retrieve=True,
                 retrieval_type="internet",
                 confidence="high",
-                reason_code=(
-                    "explicit_freshness_request"
-                    if explicit_freshness_request
-                    else "explicit_request"
-                ),
+                reason_code=reason_code,
                 user_visible_reason="I’ll check that online.",
                 explicit_request=True,
                 requires_user_confirmation=False,
-                search_query=search_query,
+                search_query=query,
             )
             self._log_decision(mode, decision)
             return decision
@@ -515,7 +611,9 @@ class RetrievalDecisionService:
                 retrieval_type="internet",
                 confidence="high",
                 reason_code=f"current_affairs_{current_affairs_reason}",
-                user_visible_reason="That may have changed recently; I should check online.",
+                user_visible_reason=(
+                    "I’ll check that online." if should_retrieve else _CONFIRMATION_MESSAGE
+                ),
                 explicit_request=False,
                 requires_user_confirmation=mode in {"explicit_only", "suggest_search"},
                 search_query=normalized,
@@ -525,17 +623,22 @@ class RetrievalDecisionService:
 
         match = _classify_freshness_sensitive(normalized)
         if match is not None:
-            should_retrieve = mode == "auto_safe"
-            requires_confirmation = mode in {"explicit_only", "suggest_search"}
+            explicit_freshness_prompt = _is_explicit_freshness_prompt(normalized)
+            should_retrieve = mode == "auto_safe" or (
+                mode == "explicit_only" and explicit_freshness_prompt
+            )
+            requires_confirmation = mode in {"explicit_only", "suggest_search"} and not should_retrieve
             decision = RetrievalDecision(
                 should_retrieve=should_retrieve,
                 retrieval_type=match.retrieval_type,
                 confidence=match.confidence,
                 reason_code=match.reason_code,
-                user_visible_reason=match.user_visible_reason,
-                explicit_request=False,
+                user_visible_reason=(
+                    "I’ll check that online." if should_retrieve else match.user_visible_reason
+                ),
+                explicit_request=explicit_freshness_prompt,
                 requires_user_confirmation=requires_confirmation,
-                search_query=match.search_query or normalized,
+                search_query=match.search_query or _build_search_query(normalized, match.reason_code),
             )
             self._log_decision(mode, decision)
             return decision
@@ -603,7 +706,7 @@ def _classify_freshness_sensitive(prompt: str) -> _HeuristicMatch | None:
             user_visible_reason=user_visible_reason,
             confidence="high",
             retrieval_type="internet",
-            search_query=prompt,
+            search_query=_build_search_query(prompt, reason_code),
         )
     return None
 
@@ -721,6 +824,78 @@ def _is_explicit_freshness_request(explicit_request: Any | None) -> bool:
     """Return whether a detected explicit request is freshness-oriented."""
     trigger_phrase = str(getattr(explicit_request, "trigger_phrase", "") or "").strip().lower()
     return trigger_phrase in _EXPLICIT_FRESHNESS_TRIGGER_PHRASES
+
+
+def _is_explicit_freshness_prompt(prompt: str) -> bool:
+    """Return whether the wording itself asks for current external information."""
+    normalized = " ".join(str(prompt or "").lower().split()).strip(" .?!")
+    if not normalized or _looks_local(normalized) or _is_local_date_time_question(normalized):
+        return False
+
+    explicit_patterns = (
+        r"^(?:what(?:'s| is| are)?|which is|name)\s+(?:the\s+)?(?:latest|current|newest)\b",
+        r"^(?:what(?:'s| is| are)?|which is|name)\s+.+\b(?:latest|current|newest)\b",
+        r"^(?:latest|current)\s+(?:version|release|news|updates?|score|scores?|fixture|fixtures?)\b",
+        r"^(?:any|is there any)\s+(?:news|updates?|latest news|latest updates?)\b",
+        r"^what changed in (?:the\s+)?latest\b",
+        r"^does .+\bstill\b.+\b(?:use|support|configure|configured|work|work with)\b",
+        r"^has .+\bchanged\b.+\b(?:api|docs?|documentation|config|configuration|support|behavio(?:u)?r)\b",
+        r"^is .+\bstill\b.+\b(?:current|available|supported|for sale|in stock)\b",
+        r"^can i still (?:buy|purchase)\b",
+        r"^what(?:'s| is)?\s+(?:the\s+)?current\s+(?:price|cost|pricing|subscription|tier|version|release)\b",
+        r"^who (?:is|owns)\b.*\b(?:current|new|now|ceo|cto|president|minister|manager|owner|leader|host|presenter)\b",
+    )
+    return any(re.search(pattern, normalized, re.I) is not None for pattern in explicit_patterns)
+
+
+def _build_search_query(prompt: str, reason_code: str) -> str:
+    """Return a compact search query scoped to the current user prompt."""
+    cleaned = " ".join(str(prompt or "").strip(" .?!").split())
+    if not cleaned:
+        return cleaned
+
+    patterns: tuple[tuple[re.Pattern[str], str], ...] = (
+        (
+            re.compile(
+                r"^(?:what(?:'s| is| are)?|which is|name)\s+(?:the\s+)?(?:latest|current|newest)\s+(?P<topic>.+)$",
+                re.I,
+            ),
+            "{prefix} {topic}",
+        ),
+        (
+            re.compile(r"^what changed in (?:the\s+)?latest\s+(?P<topic>.+)$", re.I),
+            "latest {topic} changelog",
+        ),
+        (
+            re.compile(r"^(?:latest|current)\s+(?P<topic>.+)$", re.I),
+            "{prefix} {topic}",
+        ),
+    )
+
+    prefix = "latest"
+    if "current" in cleaned.lower() and reason_code not in {"freshness_news_events"}:
+        prefix = "current"
+    if reason_code == "freshness_public_role":
+        prefix = "current"
+
+    for pattern, template in patterns:
+        match = pattern.match(cleaned)
+        if match is None:
+            continue
+        topic = _strip_query_filler(match.group("topic"))
+        if topic:
+            return " ".join(template.format(prefix=prefix, topic=topic).split())
+
+    if reason_code == "freshness_news_events" and not re.search(r"\bnews|updates?\b", cleaned, re.I):
+        return f"{cleaned} latest news"
+    return cleaned
+
+
+def _strip_query_filler(value: str) -> str:
+    """Remove question scaffolding from a generated search query."""
+    cleaned = re.sub(r"^(?:the|a|an)\s+", "", str(value or "").strip(), flags=re.I)
+    cleaned = re.sub(r"\b(?:right now|currently)\b", "", cleaned, flags=re.I)
+    return " ".join(cleaned.strip(" .?!:-,;").split())
 
 
 def build_topic_signature(text: str) -> tuple[str, ...]:

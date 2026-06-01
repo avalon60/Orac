@@ -23,6 +23,7 @@ class SearchRequest:
     max_results: int = 5
     provider_name: str | None = None
     trigger_phrase: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=_utc_now)
 
 
@@ -93,6 +94,7 @@ class RetrievalOutcome:
     message: str
     grounding_pack: GroundingPack | None = None
     request: SearchRequest | None = None
+    diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
