@@ -95,6 +95,8 @@ const STATE_MESSAGES: Record<OracState, string> = {
   listening: 'Processing ambient audio...',
   transcribing: 'Converting speech to intent...',
   thinking: 'Synthesizing response...',
+  checking_online: 'Checking online...',
+  reading_sources: 'Reading sources...',
   tool_calling: 'Executing specialised sub-routine...',
   speaking: 'Relaying synthesised output.',
   interrupted: 'Operation suspended.',

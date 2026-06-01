@@ -5,12 +5,16 @@
 
 from .broker import RetrievalSettings
 from .broker import SearchBroker
+from .decision import RetrievalDecisionService
+from .decision import build_topic_signature
 from .fetcher import SourceFetcher
 from .grounding import GroundingPackBuilder
 from .models import FetchedSource
 from .models import GroundingPack
 from .models import GroundingSource
+from .models import RetrievalDecision
 from .models import RetrievalOutcome
+from .models import RetrievalTurnContext
 from .models import SearchRequest
 from .models import SearchResult
 from .response_style import build_retrieval_response_guidance
@@ -28,14 +32,18 @@ __all__ = [
     "GroundingPackBuilder",
     "GroundingSource",
     "RetrievalOutcome",
+    "RetrievalDecision",
     "RetrievalSettings",
+    "RetrievalTurnContext",
     "SearXNGSearchProvider",
     "SearchBroker",
+    "RetrievalDecisionService",
     "SearchProvider",
     "SearchRequest",
     "SearchResult",
     "SourceFetcher",
     "build_retrieval_response_guidance",
+    "build_topic_signature",
     "detect_explicit_search_request",
     "normalize_retrieval_response_style",
     "polish_retrieval_response_text",

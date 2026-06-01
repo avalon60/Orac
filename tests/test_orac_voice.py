@@ -4235,6 +4235,139 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     )
     self.assertEqual([state[0] for state in sender.states], ["thinking", "idle"])
 
+  async def test_voice_turn_controller_maps_retrieval_frames_to_display_states(
+    self,
+  ) -> None:
+    """Retrieval lifecycle frames should surface as visible UI states."""
+    reader = self._reader_with_frames(
+      [
+        {
+          "v": 1,
+          "type": "retrieval_start",
+          "reply_to": "req_current",
+          "payload": {"mode": "internet", "reason": "explicit_freshness_request"},
+        },
+        {
+          "v": 1,
+          "type": "retrieval_query",
+          "reply_to": "req_current",
+          "payload": {
+            "query": "What is the latest version of the Oracle Database?",
+            "provider": "searxng",
+          },
+        },
+        {
+          "v": 1,
+          "type": "retrieval_fetch_start",
+          "reply_to": "req_current",
+          "payload": {"source_count": 4},
+        },
+        {
+          "v": 1,
+          "type": "retrieval_fetch_complete",
+          "reply_to": "req_current",
+          "payload": {"fetched_count": 4, "usable_source_count": 2},
+        },
+        {
+          "v": 1,
+          "type": "retrieval_complete",
+          "reply_to": "req_current",
+          "payload": {"source_count": 4, "usable_source_count": 2},
+        },
+        {
+          "v": 1,
+          "type": "stream_start",
+          "reply_to": "req_current",
+          "payload": {},
+        },
+        {
+          "v": 1,
+          "type": "text_delta",
+          "reply_to": "req_current",
+          "payload": {"delta": "Oracle Database 23ai is current."},
+        },
+        {
+          "v": 1,
+          "type": "text_chunk",
+          "reply_to": "req_current",
+          "payload": {
+            "chunk": "Oracle Database 23ai is current.",
+            "turn_id": "req_current",
+          },
+        },
+        {
+          "v": 1,
+          "type": "stream_end",
+          "reply_to": "req_current",
+          "payload": {"stop_reason": "stop"},
+        },
+        {
+          "v": 1,
+          "type": "response",
+          "reply_to": "req_current",
+          "payload": {"content": "Oracle Database 23ai is current."},
+        },
+        {
+          "v": 1,
+          "type": "tts_playback_started",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+        },
+        {
+          "v": 1,
+          "type": "tts_playback_finished",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+        },
+        {
+          "v": 1,
+          "type": "voice_turn_complete",
+          "reply_to": "req_current",
+          "payload": {
+            "turn_id": "req_current",
+            "request_id": "req_current",
+            "timestamp": "2026-05-25T10:00:00+00:00",
+          },
+        },
+      ]
+    )
+    writer = _FakeStreamWriter()
+    sender = _FakeDisplaySender()
+    controller = VoiceTurnController(
+      reader=reader,
+      writer=writer,
+      prompt_text="What is the latest version of the Oracle Database?",
+      voice_session_id="voice-session",
+      display_sender=sender,
+    )
+
+    from view import slave as slave_client
+
+    patched_stream_events = set(slave_client.STREAM_EVENT_TYPES)
+    patched_stream_events.update(
+      {
+        "retrieval_start",
+        "retrieval_query",
+        "retrieval_fetch_start",
+        "retrieval_fetch_complete",
+        "retrieval_complete",
+        "retrieval_failed",
+        "retrieval_skipped",
+      }
+    )
+
+    output = io.StringIO()
+    with patch.object(slave_client, "STREAM_EVENT_TYPES", patched_stream_events):
+      with contextlib.redirect_stdout(output):
+        status = await controller.run()
+
+    state_names = [state[0] for state in sender.states]
+    self.assertIn("checking_online", state_names)
+    self.assertIn("reading_sources", state_names)
+    self.assertIn("speaking", state_names)
+    self.assertIn("thinking", state_names)
+    self.assertGreaterEqual(len(state_names), 4)
+
   async def test_voice_turn_contract_normal_stream_routes_text_and_playback(
     self,
   ) -> None:

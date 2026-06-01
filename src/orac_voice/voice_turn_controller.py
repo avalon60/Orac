@@ -227,6 +227,40 @@ class VoiceTurnController:
         playback_started_count,
       )
 
+    def _update_retrieval_display_state(frame_type: str) -> None:
+      """Map retrieval lifecycle frames to the display state rail."""
+      if self.display_sender is None:
+        return
+
+      if frame_type in {"retrieval_start", "retrieval_query"}:
+        self.display_sender.send_state(
+          "checking_online",
+          message="Checking online...",
+          session_id=self.voice_session_id,
+          turn_id=req_id,
+        )
+      elif frame_type in {"retrieval_fetch_start", "retrieval_fetch_complete"}:
+        self.display_sender.send_state(
+          "reading_sources",
+          message="Reading sources...",
+          session_id=self.voice_session_id,
+          turn_id=req_id,
+        )
+      elif frame_type == "retrieval_complete":
+        self.display_sender.send_state(
+          "thinking",
+          message="Thinking...",
+          session_id=self.voice_session_id,
+          turn_id=req_id,
+        )
+      elif frame_type == "retrieval_failed":
+        self.display_sender.send_state(
+          "error",
+          message="Could not retrieve online evidence.",
+          session_id=self.voice_session_id,
+          turn_id=req_id,
+        )
+
     def _maybe_finish_turn() -> int | None:
       """Return the final status once the answer and playback are complete."""
       if playback_cancelled:
@@ -380,6 +414,16 @@ class VoiceTurnController:
 
         frame_type = env.get("type")
         if frame_type in slave_client.STREAM_EVENT_TYPES:
+          if frame_type in {
+            "retrieval_start",
+            "retrieval_query",
+            "retrieval_fetch_start",
+            "retrieval_fetch_complete",
+            "retrieval_complete",
+            "retrieval_failed",
+          }:
+            _update_retrieval_display_state(str(frame_type))
+            continue
           if frame_type == "tts_playback_error":
             if not interruption_policy.accept_output_event(output_turn_id=req_id):
               logger.debug(

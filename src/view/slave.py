@@ -83,6 +83,13 @@ DEFAULT_PORT = 8765
 WRAP_WIDTH = 100
 STREAM_EVENT_TYPES = {
     "stream_start",
+    "retrieval_start",
+    "retrieval_query",
+    "retrieval_fetch_start",
+    "retrieval_fetch_complete",
+    "retrieval_complete",
+    "retrieval_failed",
+    "retrieval_skipped",
     "text_delta",
     "text_chunk",
     "stream_end",

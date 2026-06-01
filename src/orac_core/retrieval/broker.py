@@ -52,14 +52,9 @@ class SearchBroker:
         return self._settings
 
     def search(self, request: SearchRequest) -> tuple[SearchResult, ...]:
-        """Return structured results for a single explicit search request."""
+        """Return structured results for a single search request."""
         if not self._settings.internet_search_enabled:
             self._log_debug("Internet search is disabled.")
-            return ()
-        if str(self._settings.internet_search_mode).strip().lower() != "explicit_only":
-            self._log_debug(
-                "Internet search mode is not explicit_only; skipping retrieval."
-            )
             return ()
 
         query = " ".join(str(request.query or "").split())
@@ -220,4 +215,3 @@ def _int_config_value(config_mgr: Any, section: str, key: str, default: int = 0)
 def _float_config_value(config_mgr: Any, section: str, key: str, default: float = 0.0) -> float:
     """Read a float config value from the existing config manager."""
     return config_mgr.float_config_value(section, key, default=default)
-

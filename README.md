@@ -92,21 +92,27 @@ Orac uses an Oracle Database container for local configuration and metadata stor
 1. Configure `resources/config/orac.env`.
 2. Prepare a host directory for persistent Oracle data files.
 3. Create or confirm the `orac` database credential entry.
-4. Run `bin/orac-db-deploy.sh` to build and start the database container.
+4. Run `bin/orac-db-deploy.sh` to build the image and start the Compose
+   `orac-db` service.
 
 ### Configure `resources/config/orac.env`
 
-`bin/orac-db-deploy.sh` sources `resources/config/orac.env` before doing any work. At minimum, review these settings:
+`bin/orac-db-deploy.sh` uses the same Compose stack defaults as
+`bin/orac-ctl.sh`: the Compose file under `resources/docker/oracle` and the
+env file under `resources/config`, both resolved relative to the Orac base
+directory. At minimum, review these settings:
 
 ```bash
-export CONTAINER_NAME=orac-db
-export ORADATA_DIR=/u01/orac-db/oradata
-export ORAC_IMAGE_NAME=orac
-export ORAC_IMAGE_TAG=latest
-export PORT_SQLNET=1521
-export PORT_HTTP=8042
-export PORT_EM=5500
-export TOPOLOGY=db-local
+COMPOSE_PROJECT_NAME=orac
+ORAC_DB_CONTAINER_NAME=orac-db
+CONTAINER_NAME=orac-db
+ORADATA_DIR=/u01/orac-db/oradata
+ORAC_IMAGE_NAME=orac
+ORAC_IMAGE_TAG=latest
+PORT_SQLNET=1521
+PORT_HTTP=8042
+PORT_EM=5500
+TOPOLOGY=db-local
 ```
 
 Important points:
@@ -204,7 +210,10 @@ cache_ttl_hours = 12
 require_citations = true
 
 [retrieval.searxng]
-base_url = http://127.0.0.1:8080
+base_url = http://127.0.0.1:8888
+autostart = true
+host = 127.0.0.1
+port = 8888
 timeout_seconds = 10
 ```
 
@@ -215,47 +224,45 @@ message such as:
 I could not retrieve online evidence for that request.
 ```
 
-### Run SearXNG locally with Docker
+### Run SearXNG locally with Docker Compose
 
-For local development, start SearXNG on `127.0.0.1:8080`:
+Long-lived Orac services are managed by Docker Compose. To let
+`bin/orac-ctl.sh` start the local SearXNG sidecar, enable the search profile
+through Orac configuration:
 
-```bash
-docker run -d \
-  --name orac-searxng \
-  -p 127.0.0.1:8080:8080 \
-  -e BASE_URL=http://127.0.0.1:8080/ \
-  searxng/searxng:latest
+```ini
+[retrieval.searxng]
+base_url = http://127.0.0.1:8888
+autostart = true
+host = 127.0.0.1
+port = 8888
+timeout_seconds = 10
 ```
 
 Verify the JSON search endpoint before testing through Orac:
 
 ```bash
-curl 'http://127.0.0.1:8080/search?q=Neil%20Armstrong&format=json'
+bin/orac-ctl.sh compose-check
+bin/orac-ctl.sh start
+curl 'http://127.0.0.1:8888/search?q=Neil%20Armstrong&format=json'
 ```
 
-The response should be JSON containing a `results` array. Useful service
+The response should be JSON containing a `results` array. Useful service log
 commands:
 
 ```bash
-docker logs orac-searxng
-docker stop orac-searxng
-docker start orac-searxng
+bin/orac-ctl.sh logs search
+bin/orac-ctl.sh status
 ```
 
-If port `8080` is already in use, map another host port and update
-`resources/config/orac.ini`:
-
-```bash
-docker run -d \
-  --name orac-searxng \
-  -p 127.0.0.1:8888:8080 \
-  -e BASE_URL=http://127.0.0.1:8888/ \
-  searxng/searxng:latest
-```
+If port `8888` is already in use, change `SEARXNG_PORT` in the active Compose
+env file and update `resources/config/orac.ini`:
 
 ```ini
 [retrieval.searxng]
-base_url = http://127.0.0.1:8888
+base_url = http://127.0.0.1:<port>
+host = 127.0.0.1
+port = <port>
 timeout_seconds = 10
 ```
 
@@ -328,27 +335,25 @@ Kokoro can be used as a higher-quality optional TTS backend when a local
 Kokoro-FastAPI or compatible OpenAI speech API service is running. Orac does
 not bundle Kokoro and does not require it for normal operation. Either run the
 Kokoro speech server yourself and point Orac at its local HTTP endpoint, or set
-`tts_kokoro_autostart = true` and let `bin/orac-ctl.sh` manage a local Docker
-sidecar. The service must expose an OpenAI-compatible speech route and return
+`tts_kokoro_autostart = true` and let `bin/orac-ctl.sh` manage the Compose
+`voice` profile. The service must expose an OpenAI-compatible speech route and return
 WAV audio.
 
 The tested integration target is
 [remsky/Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI), which
 provides Docker images and a local OpenAI-compatible speech API. Follow the
 upstream project for current installation details. If you use
-`tts_kokoro_runtime = docker-cpu`, Orac uses the CPU image internally and you
-do not need to put the image name in `orac.ini`. A manual local CPU start using
-the published container image is:
+`tts_kokoro_runtime = docker-cpu`, Orac uses the CPU image from the Compose
+definition and you do not need to put the image name in `orac.ini`.
 
 ```bash
-docker run -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:latest
+bin/orac-ctl.sh compose-check
+bin/orac-ctl.sh start
 ```
 
-For NVIDIA GPU support, use the upstream GPU image instead:
-
-```bash
-docker run --gpus all -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-gpu:latest
-```
+For NVIDIA GPU support, set `tts_kokoro_runtime = docker-gpu`. The Compose
+service uses the GPU image and the Docker `nvidia` runtime; confirm the host
+has NVIDIA Container Toolkit/runtime support before enabling it.
 
 The upstream project also supports Docker Compose and direct `uv` startup.
 Use those paths if you want a pinned checkout, local UI, custom model storage,
@@ -394,9 +399,8 @@ tts_kokoro_api_key_env =
 ```
 
 `tts_kokoro_autostart = true` allows `bin/orac-ctl.sh start` and
-`bin/orac-ctl.sh restart` to manage a local Kokoro sidecar service when
-`tts_engine = kokoro`. It first checks the readiness endpoint and does not
-restart a healthy service.
+`bin/orac-ctl.sh restart` to activate the Compose `voice` profile when
+`tts_engine = kokoro`. Readiness is checked after Compose starts the sidecar.
 
 `tts_kokoro_runtime` selects how Kokoro is provided:
 
@@ -640,7 +644,8 @@ If you cannot access the Orac Admin application:
    Ensure the URL path ends with `f?p=1042:LOGIN` (not the developer workspace path).
 
 3. **Confirm port mapping (Docker):**
-   If running in a container, make sure port **8042** on the host maps to **8042** in the container:
+   If running in a container, make sure port **8042** on the host maps to
+   container port **8080**:
 
    ```bash
    docker ps
@@ -793,16 +798,19 @@ The restore command:
 - Runs `impdp`.
 - Re-enables the foreign key constraints it disabled before import.
 
-The default Data Pump table handling is:
+The default restore mode imports table data into an already installed Orac
+schema set:
 
 ```bash
-ORAC_RESTORE_TABLE_EXISTS_ACTION=replace
+ORAC_RESTORE_CONTENT=data_only
+ORAC_RESTORE_TABLE_EXISTS_ACTION=truncate
 ```
 
-This passes `table_exists_action=replace` to `impdp`. Existing target tables
-are dropped and recreated from the dump before data is loaded, which avoids
-duplicate primary or unique key collisions after reinstalling Orac and
-restoring from backup.
+This passes `content=data_only table_exists_action=truncate` to `impdp`. The
+restore keeps the installed schema objects, packages, views, grants, and
+triggers in place, truncates the imported tables, and reloads their rows from
+the dump. This avoids noisy `ORA-31684`/`ORA-39111` metadata-exists messages
+when restoring into an Orac database that has already been deployed.
 
 Advanced restore mode override:
 
@@ -811,9 +819,22 @@ ORAC_RESTORE_TABLE_EXISTS_ACTION=truncate \
   bin/orac-restore.sh /tmp/orac-backups/orac-backup-YYYYMMDD-HHMMSS.tar.gz
 ```
 
-Supported values are the Oracle Data Pump modes `skip`, `append`, `truncate`,
-and `replace`. Use `append` only with care because it can hit duplicate key
-errors when seed data already exists.
+Supported table handling values are the Oracle Data Pump modes `skip`,
+`append`, and `truncate` for the default data-only restore. Use `append` only
+with care because it can hit duplicate key errors when seed data already
+exists.
+
+To replay schema metadata as well as data, use:
+
+```bash
+ORAC_RESTORE_CONTENT=all \
+ORAC_RESTORE_TABLE_EXISTS_ACTION=replace \
+  bin/orac-restore.sh /tmp/orac-backups/orac-backup-YYYYMMDD-HHMMSS.tar.gz
+```
+
+Full metadata import is intended for carefully prepared targets. If the users,
+packages, views, grants, or triggers already exist, Data Pump can report
+metadata-exists errors even when table rows are imported.
 
 Current limitation: `bin/orac-restore.sh` imports the database dump but does
 not yet restore `vaults/portable/vault_export.json.enc` back into `~/.Orac`.
@@ -829,6 +850,13 @@ Use `bin/orac-ctl.sh` as the primary control script for the full Orac stack:
 - ORDS / APEX HTTP endpoint
 - Orac AI engine
 
+Docker Compose is the deployment model for long-lived Orac services.
+`bin/orac-ctl.sh` defaults to Compose and env files under the Orac base
+directory resolved from the script location. Dockge is optional; Dockge users
+can mirror the stack into `/opt/stacks/orac` with `bin/orac-dockge-sync.sh`,
+while normal installed deployments can explicitly use `/opt/orac/stack` if preferred. See
+[`docs/docker-compose-deployment.md`](docs/docker-compose-deployment.md).
+
 Common commands:
 
 ```bash
@@ -836,27 +864,36 @@ bin/orac-ctl.sh start
 bin/orac-ctl.sh stop
 bin/orac-ctl.sh restart
 bin/orac-ctl.sh status
+bin/orac-ctl.sh compose-check
 bin/orac-ctl.sh logs
 bin/orac-ctl.sh logs ai
 bin/orac-ctl.sh logs db
+bin/orac-ctl.sh logs voice
+bin/orac-ctl.sh logs search
 ```
 
 What these do:
 
 - `start`
-  Starts the Oracle/ORDS container if needed, waits for the database, then starts the Orac AI engine.
+  Starts the required Docker Compose services, waits for the database, then starts the Orac AI engine.
 - `stop`
-  Stops the Orac AI engine, then stops the Oracle/ORDS container.
+  Stops the Orac AI engine, then stops the Compose services.
 - `restart`
   Restarts the full stack.
 - `status`
-  Shows both container status and Orac AI engine status.
+  Shows Compose service status and Orac AI engine status.
+- `compose-check`
+  Validates the active Compose stack and compares any existing DB container without changing Docker state.
 - `logs`
-  Tails database / ORDS container logs by default.
+  Tails database / ORDS Compose service logs by default.
 - `logs ai`
   Shows Orac AI engine logs.
 - `logs db`
   Shows database / ORDS container logs.
+- `logs voice`
+  Shows Kokoro sidecar logs.
+- `logs search`
+  Shows SearXNG sidecar logs.
 
 The lower-level `bin/orac.sh` script is still available if you only want to control the AI engine itself:
 
@@ -872,11 +909,11 @@ bin/orac.sh logs
 ## Checking the Install
 If `bin/orac-db-deploy.sh` does not complete successfully, inspect the database container logs:
 
-`docker logs orac-db`
+`bin/orac-ctl.sh logs db`
 
 To monitor the deployment while it is still running:
 
-`docker logs --tail 200 -f orac-db`
+`bin/orac-ctl.sh logs db`
 
 ## 📄 License
 

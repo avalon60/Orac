@@ -14,6 +14,8 @@ const STATES: OracState[] = [
   'listening',
   'transcribing',
   'thinking',
+  'checking_online',
+  'reading_sources',
   'tool_calling',
   'speaking',
   'interrupted',

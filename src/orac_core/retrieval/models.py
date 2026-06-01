@@ -93,3 +93,34 @@ class RetrievalOutcome:
     message: str
     grounding_pack: GroundingPack | None = None
     request: SearchRequest | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievalDecision:
+    """Describes whether a turn should enter internet retrieval."""
+
+    should_retrieve: bool
+    retrieval_type: str
+    confidence: str
+    reason_code: str
+    user_visible_reason: str
+    explicit_request: bool
+    requires_user_confirmation: bool
+    search_query: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievalTurnContext:
+    """Summarises the most recent retrieval-backed turn for follow-ups."""
+
+    topic: str
+    original_user_message: str
+    retrieval_status: str
+    topic_signature: tuple[str, ...] = field(default_factory=tuple)
+    retrieval_timestamp: datetime = field(default_factory=_utc_now)
+    source_count: int | None = None
+    result_count: int | None = None
+    current_news_related: bool = False
+    current_affairs_related: bool = False
+    explicit_request: bool = False
+    automatic_request: bool = False

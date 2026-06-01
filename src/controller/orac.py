@@ -19,6 +19,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from decimal import Decimal
 from pathlib import Path
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 from zoneinfo import ZoneInfo
 import yaml
@@ -56,13 +57,17 @@ from model.provider_registry import ProviderRegistry
 from orac_core.retrieval import ExplicitRetrievalService
 from orac_core.retrieval import GroundingPack
 from orac_core.retrieval import GroundingPackBuilder
+from orac_core.retrieval import RetrievalDecisionService
 from orac_core.retrieval import RetrievalOutcome
+from orac_core.retrieval import RetrievalTurnContext
+from orac_core.retrieval import build_topic_signature
 from orac_core.retrieval import build_retrieval_response_guidance
 from orac_core.retrieval import SearXNGSearchProvider
 from orac_core.retrieval import SearchBroker
 from orac_core.retrieval import normalize_retrieval_response_style
 from orac_core.retrieval import polish_retrieval_response_text
 from orac_core.retrieval import SourceFetcher
+from orac_core.retrieval import SearchRequest
 from orac_core.retrieval import detect_explicit_search_request
 from lib.session_manager import DBSession
 from lib.user_security import UserSecurity
@@ -773,6 +778,8 @@ class Orac:
             self.plugin_confirmation_broker: PluginConfirmationBroker | None = None
             self.plugin_service_manager: PluginServiceManager | None = None
             self.retrieval_service: ExplicitRetrievalService | None = None
+            self.retrieval_decision_service: RetrievalDecisionService | None = None
+            self._retrieval_context_by_session: dict[str, RetrievalTurnContext] = {}
             self._plugin_routing_ready = False
             self._init_plugin_routing()
             self._init_retrieval()
@@ -2189,12 +2196,17 @@ class Orac:
                 grounding_pack_builder=grounding_pack_builder,
                 logger=logger,
             )
+            self.retrieval_decision_service = RetrievalDecisionService(
+                settings=broker.settings,
+                logger=logger,
+            )
             logger.log_info(
                 f"{Icons.info} Explicit retrieval subsystem initialised with provider "
                 f"'{broker.settings.default_search_provider}'."
             )
         except Exception as e:
             self.retrieval_service = None
+            self.retrieval_decision_service = None
             _log_exception("Explicit retrieval initialisation failed (non-fatal)", e)
 
     def refresh_plugin_routing(self) -> dict[str, Any] | None:
@@ -3047,6 +3059,59 @@ class Orac:
                 request_flags["anonymous_user"] = True
             self._handle_persistence_failure("assistant_turn", e)
             return 0
+
+    def _remember_retrieval_context(
+        self,
+        session_id: str,
+        *,
+        user_message: str,
+        previous_context: RetrievalTurnContext | None,
+        retrieval_decision: Any | None,
+        retrieval_outcome: RetrievalOutcome | None,
+        retrieval_pack: GroundingPack | None,
+        retrieval_status_override: str | None = None,
+    ) -> None:
+        """Store the most recent retrieval context for follow-up turns."""
+        if retrieval_decision is None:
+            return
+
+        status = retrieval_status_override or "no_grounding"
+        source_count: int | None = None
+        result_count: int | None = None
+        if retrieval_outcome is not None:
+            status = str(retrieval_outcome.status or "no_grounding")
+            request = getattr(retrieval_outcome, "request", None)
+            if request is not None:
+                result_count = getattr(request, "max_results", None)
+        if retrieval_pack is not None:
+            source_count = len(getattr(retrieval_pack, "fetched_sources", ()) or ())
+            result_count = len(getattr(retrieval_pack, "search_results", ()) or ())
+            status = "success"
+        topic = str(getattr(retrieval_decision, "search_query", None) or user_message or "").strip()
+        context = RetrievalTurnContext(
+            topic=topic,
+            topic_signature=build_topic_signature(topic or user_message or ""),
+            original_user_message=str(user_message or "").strip(),
+            retrieval_status=status,
+            source_count=source_count,
+            result_count=result_count,
+            current_news_related=bool(
+                (previous_context.current_news_related if previous_context is not None else False)
+                or str(getattr(retrieval_decision, "reason_code", "")).startswith("current_news")
+                or str(getattr(retrieval_decision, "reason_code", "")).startswith("current_affairs")
+                or str(getattr(retrieval_decision, "reason_code", "")).startswith("retrieval_follow_up")
+            ),
+            current_affairs_related=bool(
+                (previous_context.current_affairs_related if previous_context is not None else False)
+                or str(getattr(retrieval_decision, "reason_code", "")).startswith("current_affairs")
+            ),
+            explicit_request=bool(getattr(retrieval_decision, "explicit_request", False)),
+            automatic_request=bool(
+                not getattr(retrieval_decision, "explicit_request", False)
+                and getattr(retrieval_decision, "should_retrieve", False)
+            ),
+        )
+        self._retrieval_context_by_session[session_id] = context
 
     # --- Response builder -----------------------------------------------------
     def _runtime_response_meta(
@@ -3999,32 +4064,164 @@ class Orac:
             except Exception:
                 user_id = None
 
-            explicit_search_request = detect_explicit_search_request(prompt)
+            retrieval_decision = None
+            previous_retrieval_context = self._retrieval_context_by_session.get(session_id)
+            decision_service = getattr(self, "retrieval_decision_service", None)
+            if decision_service is not None:
+                try:
+                    decide = getattr(decision_service, "decide", None)
+                    if callable(decide):
+                        retrieval_decision = decide(
+                            prompt,
+                            previous_context=previous_retrieval_context,
+                        )
+                except Exception as e:
+                    _log_exception("Retrieval decision failed (non-fatal)", e)
+                    retrieval_decision = None
+            else:
+                explicit_search_request = detect_explicit_search_request(prompt)
+                if explicit_search_request is not None:
+                    retrieval_decision = SimpleNamespace(
+                        should_retrieve=True,
+                        retrieval_type="internet",
+                        confidence="high",
+                        reason_code="explicit_request",
+                        user_visible_reason="I’ll check that online.",
+                        explicit_request=True,
+                        requires_user_confirmation=False,
+                        search_query=explicit_search_request.query,
+                    )
+
             retrieval_pack = None
             retrieval_outcome: RetrievalOutcome | None = None
-            if explicit_search_request is not None:
-                try:
-                    retrieval_service = getattr(self, "retrieval_service", None)
-                    if retrieval_service is not None:
-                        build_outcome = getattr(
-                            retrieval_service,
-                            "build_grounding_outcome",
-                            None,
-                        )
-                        if callable(build_outcome):
-                            retrieval_outcome = build_outcome(prompt)
-                            retrieval_pack = retrieval_outcome.grounding_pack
-                        else:
-                            retrieval_pack = retrieval_service.build_grounding_pack(prompt)
-                except Exception as e:
-                    _log_exception("Explicit retrieval failed (non-fatal)", e)
-                    retrieval_pack = None
+            retrieval_event_loop = asyncio.get_running_loop()
 
-                if retrieval_pack is None:
-                    content = (
-                        retrieval_outcome.message
-                        if retrieval_outcome is not None
-                        else "I could not retrieve online evidence for that request."
+            def emit_retrieval_event(
+                event_type: str,
+                payload: dict[str, Any] | None = None,
+            ) -> None:
+                """Schedule one retrieval lifecycle event from a worker thread."""
+                if not stream_requested or event_sink is None:
+                    return
+
+                async def _emit() -> None:
+                    await self._emit_stream_event(
+                        event_sink,
+                        req_env,
+                        event_type,
+                        payload=payload or {},
+                        model_name=effective_model_name,
+                        user_registration=(
+                            "anonymous"
+                            if request_flags["anonymous_user"]
+                            else "registered"
+                        ),
+                    )
+
+                try:
+                    future = asyncio.run_coroutine_threadsafe(
+                        _emit(),
+                        retrieval_event_loop,
+                    )
+
+                    def _log_future_result(done: Any) -> None:
+                        try:
+                            done.result()
+                        except Exception as exc:
+                            _log_exception("Retrieval event dispatch failed (non-fatal)", exc)
+
+                    future.add_done_callback(_log_future_result)
+                except Exception as exc:
+                    _log_exception("Failed scheduling retrieval event (non-fatal)", exc)
+
+            if retrieval_decision is not None:
+                if retrieval_decision.requires_user_confirmation and not retrieval_decision.should_retrieve:
+                    if stream_requested:
+                            await self._emit_stream_event(
+                                event_sink,
+                                req_env,
+                                "retrieval_skipped",
+                                payload={
+                                    "mode": "internet",
+                                    "reason": "confirmation_required",
+                                },
+                                model_name=effective_model_name,
+                                user_registration=(
+                                    "anonymous"
+                                if request_flags["anonymous_user"]
+                                else "registered"
+                            ),
+                        )
+                    content = retrieval_decision.user_visible_reason or "That may have changed recently; I should check online."
+                    last_ti = self._save_assistant_turn(
+                        session_id,
+                        auth_user,
+                        content,
+                        client=client,
+                        req_id=req_env.get("id"),
+                        show_reasoning=show_reasoning,
+                        llm_id=effective_llm_id,
+                        request_flags=request_flags,
+                    )
+                    self._maybe_set_conversation_title(session_id, meta, llm_connector)
+                    self._maybe_prune(session_id, last_ti)
+                    resp_env = self._build_response(
+                        req_env,
+                        content,
+                        stop_reason="stop",
+                        prompt_tokens=0,
+                        completion_tokens=0,
+                        model_name=effective_model_name,
+                        user_registration=(
+                            "anonymous" if request_flags["anonymous_user"] else "registered"
+                        ),
+                    )
+                    if stream_requested:
+                        await self._emit_complete_text_as_stream(
+                            event_sink,
+                            req_env,
+                            content,
+                            model_name=effective_model_name,
+                            user_registration=(
+                                "anonymous"
+                                if request_flags["anonymous_user"]
+                                else "registered"
+                            ),
+                            session_id=session_id,
+                            turn_id=str(req_env.get("id") or ""),
+                            stop_reason="stop",
+                        )
+                    return json.dumps(resp_env, ensure_ascii=False)
+
+                if (
+                    retrieval_decision.reason_code == "disabled"
+                    and not retrieval_decision.should_retrieve
+                ):
+                    if stream_requested:
+                        await self._emit_stream_event(
+                            event_sink,
+                            req_env,
+                            "retrieval_skipped",
+                            payload={
+                                "mode": "internet",
+                                "reason": "retrieval_disabled",
+                            },
+                            model_name=effective_model_name,
+                            user_registration=(
+                                "anonymous"
+                                if request_flags["anonymous_user"]
+                                else "registered"
+                            ),
+                        )
+                    content = retrieval_decision.user_visible_reason or "I could not retrieve online evidence for that request."
+                    self._remember_retrieval_context(
+                        session_id,
+                        user_message=prompt,
+                        previous_context=previous_retrieval_context,
+                        retrieval_decision=retrieval_decision,
+                        retrieval_outcome=None,
+                        retrieval_pack=None,
+                        retrieval_status_override="disabled",
                     )
                     last_ti = self._save_assistant_turn(
                         session_id,
@@ -4066,9 +4263,171 @@ class Orac:
                         )
                     return json.dumps(resp_env, ensure_ascii=False)
 
+                if retrieval_decision.should_retrieve:
+                    try:
+                        retrieval_service = getattr(self, "retrieval_service", None)
+                        if retrieval_service is not None:
+                            if stream_requested:
+                                await self._emit_stream_event(
+                                    event_sink,
+                                    req_env,
+                                    "retrieval_start",
+                                    payload={
+                                        "mode": "internet",
+                                        "reason": str(
+                                            retrieval_decision.reason_code or "retrieval_request"
+                                        ),
+                                    },
+                                    model_name=effective_model_name,
+                                    user_registration=(
+                                        "anonymous"
+                                        if request_flags["anonymous_user"]
+                                        else "registered"
+                                    ),
+                                )
+                                await self._emit_stream_event(
+                                    event_sink,
+                                    req_env,
+                                    "retrieval_query",
+                                    payload={
+                                        "query": str(
+                                            retrieval_decision.search_query or prompt
+                                        ),
+                                        "provider": str(
+                                            getattr(
+                                                retrieval_service,
+                                                "default_search_provider",
+                                                "searxng",
+                                            )
+                                            or "searxng"
+                                        ),
+                                    },
+                                    model_name=effective_model_name,
+                                    user_registration=(
+                                        "anonymous"
+                                        if request_flags["anonymous_user"]
+                                        else "registered"
+                                    ),
+                                )
+                            if retrieval_decision.explicit_request:
+                                build_outcome = getattr(
+                                    retrieval_service,
+                                    "build_grounding_outcome",
+                                    None,
+                                )
+                                if callable(build_outcome):
+                                    retrieval_outcome = await asyncio.to_thread(
+                                        build_outcome,
+                                        prompt,
+                                        event_emitter=emit_retrieval_event,
+                                    )
+                                    retrieval_pack = retrieval_outcome.grounding_pack
+                                else:
+                                    retrieval_pack = retrieval_service.build_grounding_pack(prompt)
+                            else:
+                                build_outcome = getattr(
+                                    retrieval_service,
+                                    "build_grounding_outcome_for_request",
+                                    None,
+                                )
+                                if callable(build_outcome):
+                                    retrieval_request = SearchRequest(
+                                        query=str(retrieval_decision.search_query or prompt),
+                                        trigger_phrase=retrieval_decision.reason_code,
+                                    )
+                                    retrieval_outcome = await asyncio.to_thread(
+                                        build_outcome,
+                                        retrieval_request,
+                                        event_emitter=emit_retrieval_event,
+                                    )
+                                    retrieval_pack = retrieval_outcome.grounding_pack
+                                else:
+                                    retrieval_outcome = RetrievalOutcome(
+                                        requested=True,
+                                        status="failed",
+                                        message="I could not retrieve online evidence for that request.",
+                                    )
+                        elif stream_requested:
+                                await self._emit_stream_event(
+                                    event_sink,
+                                    req_env,
+                                    "retrieval_failed",
+                                    payload={
+                                        "mode": "internet",
+                                        "reason": "service_unavailable",
+                                    },
+                                    model_name=effective_model_name,
+                                    user_registration=(
+                                        "anonymous"
+                                    if request_flags["anonymous_user"]
+                                    else "registered"
+                                ),
+                            )
+                    except Exception as e:
+                        _log_exception("Retrieval failed (non-fatal)", e)
+                        retrieval_pack = None
+
+                    if retrieval_pack is None:
+                        content = (
+                            retrieval_outcome.message
+                            if retrieval_outcome is not None
+                            else (
+                                retrieval_decision.user_visible_reason
+                                if retrieval_decision.explicit_request and retrieval_decision.reason_code == "disabled"
+                                else "I could not retrieve online evidence for that request."
+                            )
+                        )
+                        self._remember_retrieval_context(
+                            session_id,
+                            user_message=prompt,
+                            previous_context=previous_retrieval_context,
+                            retrieval_decision=retrieval_decision,
+                            retrieval_outcome=retrieval_outcome,
+                            retrieval_pack=None,
+                        )
+                        last_ti = self._save_assistant_turn(
+                            session_id,
+                            auth_user,
+                            content,
+                            client=client,
+                            req_id=req_env.get("id"),
+                            show_reasoning=show_reasoning,
+                            llm_id=effective_llm_id,
+                            request_flags=request_flags,
+                        )
+                        self._maybe_set_conversation_title(session_id, meta, llm_connector)
+                        self._maybe_prune(session_id, last_ti)
+                        resp_env = self._build_response(
+                            req_env,
+                            content,
+                            stop_reason="stop",
+                            prompt_tokens=0,
+                            completion_tokens=0,
+                            model_name=effective_model_name,
+                            user_registration=(
+                                "anonymous" if request_flags["anonymous_user"] else "registered"
+                            ),
+                        )
+                        if stream_requested:
+                            await self._emit_complete_text_as_stream(
+                                event_sink,
+                                req_env,
+                                content,
+                                model_name=effective_model_name,
+                                user_registration=(
+                                    "anonymous"
+                                    if request_flags["anonymous_user"]
+                                    else "registered"
+                                ),
+                                session_id=session_id,
+                                turn_id=str(req_env.get("id") or ""),
+                                stop_reason="stop",
+                            )
+                        return json.dumps(resp_env, ensure_ascii=False)
+
             plugin_routing_handoff = None
             plugin_execution_result = None
-            if explicit_search_request is None:
+            if retrieval_decision is None or not retrieval_decision.should_retrieve:
                 plugin_routing_handoff = self._collect_plugin_routing_handoff(prompt, meta)
                 plugin_execution_result = self._execute_plugin_request(
                     prompt=prompt,
@@ -4414,6 +4773,15 @@ class Orac:
                 )
 
             # --- Save ASSISTANT turn -------------------------------------------
+            if retrieval_pack is not None:
+                self._remember_retrieval_context(
+                    session_id,
+                    user_message=prompt,
+                    previous_context=previous_retrieval_context,
+                    retrieval_decision=retrieval_decision,
+                    retrieval_outcome=retrieval_outcome,
+                    retrieval_pack=retrieval_pack,
+                )
             last_ti = self._save_assistant_turn(
                 session_id,
                 auth_user,

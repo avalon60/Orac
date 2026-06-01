@@ -20,10 +20,13 @@ if str(SRC_ROOT) not in sys.path:
 from orac_core.retrieval import ExplicitRetrievalService
 from orac_core.retrieval import FetchedSource
 from orac_core.retrieval import GroundingPackBuilder
+from orac_core.retrieval import RetrievalDecisionService
 from orac_core.retrieval import RetrievalSettings
+from orac_core.retrieval import RetrievalTurnContext
 from orac_core.retrieval import SearchBroker
 from orac_core.retrieval import SearchRequest
 from orac_core.retrieval import SearchResult
+from orac_core.retrieval import build_topic_signature
 from orac_core.retrieval import SearXNGSearchProvider
 from orac_core.retrieval import SourceFetcher
 from orac_core.retrieval import build_retrieval_response_guidance
@@ -121,6 +124,33 @@ class RetrievalTriggerTests(unittest.TestCase):
         self.assertIsNotNone(request)
         self.assertEqual(request.query, "Dexy's Midnight Runners' latest single")
         self.assertEqual(request.trigger_phrase, "latest")
+
+    def test_detects_natural_freshness_request_variants(self) -> None:
+        cases = [
+            ("What is the latest news on Iran?", "Iran"),
+            ("What's the latest news on Iran?", "Iran"),
+            ("whats the latest news on Iran?", "Iran"),
+            ("What are the latest news on Iran?", "Iran"),
+            ("What is the latest Python release?", "Python release"),
+            ("What's the latest SearXNG version?", "SearXNG version"),
+            ("whats the latest SearXNG version?", "SearXNG version"),
+            ("What is the latest on Kokoro voice cloning?", "Kokoro voice cloning"),
+            ("latest updates on Iran", "Iran"),
+            ("latest release of Python", "Python"),
+            ("latest version of SearXNG", "SearXNG"),
+            ("any news on Iran", "Iran"),
+            ("any updates on Iran", "Iran"),
+            ("is there any update on Iran", "Iran"),
+            ("is there any latest news on Iran", "Iran"),
+            ("more news on Iran", "Iran"),
+        ]
+
+        for prompt, expected_query in cases:
+            with self.subTest(prompt=prompt):
+                request = detect_explicit_search_request(prompt)
+                self.assertIsNotNone(request)
+                self.assertEqual(request.query, expected_query)
+                self.assertIsNotNone(request.trigger_phrase)
 
     def test_detects_trailing_search_instruction(self) -> None:
         request = detect_explicit_search_request(
@@ -223,6 +253,296 @@ class SearchBrokerTests(unittest.TestCase):
         self.assertEqual(len(results), 2)
         self.assertEqual(provider.calls[0].provider_name, "custom")
         self.assertEqual(provider.calls[0].max_results, 2)
+
+
+class RetrievalDecisionServiceTests(unittest.TestCase):
+    """Tests controlled retrieval decisioning."""
+
+    def _service(self, mode: str) -> RetrievalDecisionService:
+        return RetrievalDecisionService(
+            settings=RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode=mode,
+                default_search_provider="searxng",
+                max_search_results=5,
+                max_sources_to_fetch=3,
+                cache_ttl_hours=1,
+                require_citations=True,
+            ),
+            logger=_FakeLogger(),
+        )
+
+    def test_explicit_only_triggers_explicit_request(self) -> None:
+        decision = self._service("explicit_only").decide(
+            "Please search the internet for the latest Python release"
+        )
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertTrue(decision.explicit_request)
+        self.assertEqual(decision.retrieval_type, "internet")
+        self.assertEqual(decision.confidence, "high")
+        self.assertEqual(decision.reason_code, "explicit_request")
+
+    def test_explicit_only_detects_freshness_query_without_retrieving(self) -> None:
+        decision = self._service("explicit_only").decide(
+            "What is the current Python release?"
+        )
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertFalse(decision.explicit_request)
+        self.assertEqual(decision.retrieval_type, "internet")
+        self.assertEqual(decision.confidence, "high")
+        self.assertEqual(decision.reason_code, "freshness_release_version")
+
+    def test_latest_news_triggers_retrieval_in_explicit_only(self) -> None:
+        decision = self._service("explicit_only").decide(
+            "What is the latest news on the war in Iran?"
+        )
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertTrue(decision.explicit_request)
+        self.assertEqual(decision.reason_code, "current_news_request")
+        self.assertEqual(decision.user_visible_reason, "I’ll check that online.")
+
+    def test_news_today_triggers_retrieval_in_explicit_only(self) -> None:
+        decision = self._service("explicit_only").decide("breaking news Iran")
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertTrue(decision.explicit_request)
+        self.assertEqual(decision.reason_code, "current_news_request")
+
+    def test_latest_news_on_iran_triggers_retrieval_in_explicit_only(self) -> None:
+        decision = self._service("explicit_only").decide("latest news on Iran")
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertTrue(decision.explicit_request)
+        self.assertEqual(decision.reason_code, "current_news_request")
+
+    def test_natural_freshness_phrases_trigger_retrieval_in_explicit_only(self) -> None:
+        prompts = [
+            "What is the latest news on Iran?",
+            "What's the latest news on Iran?",
+            "What is the latest Python release?",
+            "What's the latest SearXNG version?",
+            "What is the latest on Kokoro voice cloning?",
+            "latest updates on Iran",
+            "latest release of Python",
+            "latest version of SearXNG",
+            "any news on Iran",
+            "any updates on Iran",
+            "any update on Iran",
+            "is there any news on Iran",
+            "is there any update on Iran",
+            "any more news on Iran",
+            "more updates on Iran",
+            "latest on Iran",
+        ]
+
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                decision = self._service("explicit_only").decide(prompt)
+                self.assertTrue(decision.should_retrieve)
+                self.assertTrue(decision.explicit_request)
+                self.assertEqual(decision.retrieval_type, "internet")
+                self.assertEqual(decision.confidence, "high")
+                self.assertNotEqual(decision.reason_code, "stable_general_knowledge")
+
+    def test_natural_freshness_phrases_are_transparent_when_disabled(self) -> None:
+        decision = self._service("disabled").decide("What is the latest Python release?")
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertTrue(decision.explicit_request)
+        self.assertEqual(decision.retrieval_type, "internet")
+        self.assertEqual(decision.reason_code, "disabled")
+        self.assertIn("current information cannot be verified", decision.user_visible_reason.lower())
+
+    def test_happening_now_triggers_retrieval_in_explicit_only(self) -> None:
+        decision = self._service("explicit_only").decide("what is happening now in Iran")
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertTrue(decision.explicit_request)
+        self.assertEqual(decision.reason_code, "current_news_request")
+
+    def test_current_affairs_prompts_require_retrieval_or_confirmation(self) -> None:
+        decision = self._service("suggest_search").decide("Is there a war in Iran?")
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertTrue(decision.requires_user_confirmation)
+        self.assertEqual(decision.reason_code, "current_affairs_war")
+        self.assertIn("check online", decision.user_visible_reason.lower())
+
+    def test_suggest_search_requests_confirmation_for_current_query(self) -> None:
+        decision = self._service("suggest_search").decide(
+            "What is the current Python release?"
+        )
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertTrue(decision.requires_user_confirmation)
+        self.assertEqual(decision.retrieval_type, "internet")
+        self.assertIn("check online", decision.user_visible_reason.lower())
+
+    def test_auto_safe_retrieves_high_confidence_freshness_query(self) -> None:
+        decision = self._service("auto_safe").decide(
+            "What is the current Python release?"
+        )
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertFalse(decision.requires_user_confirmation)
+        self.assertEqual(decision.retrieval_type, "internet")
+        self.assertEqual(decision.confidence, "high")
+
+    def test_auto_safe_retrieves_current_affairs_prompt(self) -> None:
+        decision = self._service("auto_safe").decide("Is there a war in Iran?")
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertEqual(decision.reason_code, "current_affairs_war")
+        self.assertFalse(decision.requires_user_confirmation)
+
+    def test_local_latest_change_does_not_trigger_internet_retrieval(self) -> None:
+        prompts = [
+            "my latest local change broke the tests",
+            "the latest Orac patch changed this file",
+            "use the latest local config",
+            "my latest idea is...",
+            "the latest message in this conversation",
+            "the latest test run output above",
+            "the latest file I uploaded",
+            "the latest version in this repo",
+        ]
+
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                decision = self._service("auto_safe").decide(prompt)
+                self.assertFalse(decision.should_retrieve)
+                self.assertEqual(decision.retrieval_type, "local")
+                self.assertEqual(decision.reason_code, "local_project_context")
+
+    def test_recursion_does_not_trigger_retrieval(self) -> None:
+        decision = self._service("auto_safe").decide("what is recursion?")
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertEqual(decision.retrieval_type, "none")
+        self.assertEqual(decision.reason_code, "stable_general_knowledge")
+
+    def test_disabled_never_retrieves(self) -> None:
+        decision = self._service("disabled").decide(
+            "search the internet for the latest Python release"
+        )
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertTrue(decision.explicit_request)
+        self.assertEqual(decision.retrieval_type, "internet")
+        self.assertEqual(decision.reason_code, "disabled")
+        self.assertEqual(
+            decision.user_visible_reason,
+            "Internet retrieval is disabled right now, so current information cannot be verified.",
+        )
+
+    def test_disabled_news_prompt_returns_transparent_current_news_message(self) -> None:
+        decision = self._service("disabled").decide(
+            "What is the latest news on the war in Iran?"
+        )
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertTrue(decision.explicit_request)
+        self.assertEqual(decision.reason_code, "disabled")
+        self.assertIn("current information cannot be verified", decision.user_visible_reason.lower())
+
+    def test_follow_up_more_detail_retrieves_using_previous_context(self) -> None:
+        previous_context = RetrievalTurnContext(
+            topic="latest news on the war in Iran",
+            original_user_message="What is the latest news on the war in Iran?",
+            retrieval_status="success",
+            current_news_related=True,
+            explicit_request=True,
+        )
+        decision = self._service("explicit_only").decide(
+            "Is there any more detail on that in the latest news?",
+            previous_context=previous_context,
+        )
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertEqual(decision.reason_code, "retrieval_follow_up")
+        self.assertEqual(decision.search_query, "latest news on the war in Iran")
+
+    def test_follow_up_updates_retrieves_using_previous_context(self) -> None:
+        previous_context = RetrievalTurnContext(
+            topic="latest news on Iran",
+            original_user_message="What is the latest news on Iran?",
+            retrieval_status="success",
+            topic_signature=build_topic_signature("latest news on Iran"),
+            current_news_related=True,
+            explicit_request=True,
+        )
+        decision = self._service("explicit_only").decide(
+            "Any updates?",
+            previous_context=previous_context,
+        )
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertEqual(decision.reason_code, "retrieval_follow_up")
+
+    def test_follow_up_pivots_to_new_current_news_topic(self) -> None:
+        previous_context = RetrievalTurnContext(
+            topic="latest news on Iran",
+            original_user_message="What is the latest news on Iran?",
+            retrieval_status="success",
+            topic_signature=build_topic_signature("latest news on Iran"),
+            current_news_related=True,
+            explicit_request=True,
+        )
+        decision = self._service("explicit_only").decide(
+            "What's the latest on the Ukraine-Russia war?",
+            previous_context=previous_context,
+        )
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertNotEqual(decision.reason_code, "retrieval_follow_up")
+        self.assertNotIn("Iran", decision.search_query or "")
+        self.assertIn("Ukraine", decision.search_query or "")
+
+    def test_follow_up_pivots_to_new_product_topic(self) -> None:
+        previous_context = RetrievalTurnContext(
+            topic="latest Python release",
+            original_user_message="What is the latest Python release?",
+            retrieval_status="success",
+            topic_signature=build_topic_signature("latest Python release"),
+            explicit_request=True,
+        )
+        decision = self._service("explicit_only").decide(
+            "What's the latest SearXNG version?",
+            previous_context=previous_context,
+        )
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertNotEqual(decision.reason_code, "retrieval_follow_up")
+        self.assertNotIn("Python", decision.search_query or "")
+        self.assertIn("SearXNG", decision.search_query or "")
+
+    def test_follow_up_pivots_to_new_current_affairs_topic(self) -> None:
+        previous_context = RetrievalTurnContext(
+            topic="latest Ukraine-Russia war news",
+            original_user_message="What's the latest on the Ukraine-Russia war?",
+            retrieval_status="success",
+            topic_signature=build_topic_signature("latest Ukraine-Russia war news"),
+            current_news_related=True,
+            explicit_request=True,
+        )
+        decision = self._service("explicit_only").decide(
+            "What's the latest on the Israel-Gaza conflict?",
+            previous_context=previous_context,
+        )
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertNotEqual(decision.reason_code, "retrieval_follow_up")
+        self.assertNotIn("Ukraine", decision.search_query or "")
+        self.assertIn("Israel", decision.search_query or "")
+
+    def test_follow_up_pronoun_does_not_trigger_without_retrieval_context(self) -> None:
+        decision = self._service("explicit_only").decide("Tell me more about that")
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertEqual(decision.reason_code, "stable_general_knowledge")
 
 
 class SourceFetcherSafetyTests(unittest.TestCase):
@@ -537,4 +857,54 @@ class RetrievalServiceTests(unittest.TestCase):
 
         self.assertTrue(outcome.requested)
         self.assertEqual(outcome.status, "no_usable_sources")
+        self.assertIsNone(outcome.grounding_pack)
+
+    def test_irrelevant_sources_are_rejected_before_grounding(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def search(self, request: SearchRequest):
+                del request
+                return (
+                    SearchResult(title="Ukraine update", url="https://example.com/ukraine"),
+                )
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _IrrelevantFetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del results, max_sources
+                return (
+                    FetchedSource(
+                        url="https://example.com/iran",
+                        title="Iran update",
+                        source_name="example.com",
+                        text="Iran peace talks and US strikes dominate the report.",
+                        excerpt="Iran peace talks and US strikes dominate the report.",
+                    ),
+                )
+
+        service = ExplicitRetrievalService(
+            search_broker=_FakeBroker(),
+            source_fetcher=_IrrelevantFetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome_for_request(
+            SearchRequest(query="latest Ukraine-Russia war news")
+        )
+
+        self.assertTrue(outcome.requested)
+        self.assertEqual(outcome.status, "no_relevant_sources")
         self.assertIsNone(outcome.grounding_pack)

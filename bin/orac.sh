@@ -32,18 +32,27 @@ LOG_FILE="${LOG_DIR}/orac.log"
 
 # --- Helpers ------------------------------------------------------------------
 setup_run_dir() {
-  sudo mkdir -p "$RUN_DIR"
-  sudo chown "$(id -un)":"$(id -gn)" "$RUN_DIR"
-  sudo chmod 700 "$RUN_DIR"
+  if [[ -d "$RUN_DIR" && -w "$RUN_DIR" && -O "$RUN_DIR" ]]; then
+    chmod 700 "$RUN_DIR"
+  else
+    sudo mkdir -p "$RUN_DIR"
+    sudo chown "$(id -un)":"$(id -gn)" "$RUN_DIR"
+    sudo chmod 700 "$RUN_DIR"
+  fi
 
   mkdir -p "$LOG_DIR"
   chmod 700 "$LOG_DIR"
 
   # Generate an ephemeral HMAC secret if missing (defence-in-depth)
   if [[ ! -f "$SECRET_FILE" ]]; then
-    # 32 bytes, base64
-    openssl rand -base64 32 | sudo install -m 600 /dev/stdin "$SECRET_FILE"
-    sudo chown "$(id -un)":"$(id -gn)" "$SECRET_FILE"
+    if [[ -w "$RUN_DIR" && -O "$RUN_DIR" ]]; then
+      umask 077
+      openssl rand -base64 32 > "$SECRET_FILE"
+    else
+      # 32 bytes, base64
+      openssl rand -base64 32 | sudo install -m 600 /dev/stdin "$SECRET_FILE"
+      sudo chown "$(id -un)":"$(id -gn)" "$SECRET_FILE"
+    fi
   fi
 }
 
@@ -150,7 +159,11 @@ start_orac() {
 
   mkdir -p "$(dirname "$LOG_FILE")"
   echo "🚀 Starting Orac (version ${ORAC_VERSION})..."
-  nohup "$PYTHON" "${CONTROL_DIR}/${ENTRY_POINT}" >>"$LOG_FILE" 2>&1 &
+  if command -v setsid >/dev/null 2>&1; then
+    setsid "$PYTHON" "${CONTROL_DIR}/${ENTRY_POINT}" >>"$LOG_FILE" 2>&1 < /dev/null &
+  else
+    nohup "$PYTHON" "${CONTROL_DIR}/${ENTRY_POINT}" >>"$LOG_FILE" 2>&1 &
+  fi
   local pid=$!
   echo "$pid" > "$PID_FILE"
 

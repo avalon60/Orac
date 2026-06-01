@@ -57,7 +57,11 @@ from model.llm_connector import LLMUsageMetadata
 from model.plugin_runtime import PluginExecutionResult
 from orac_core.retrieval import FetchedSource
 from orac_core.retrieval import GroundingPackBuilder
+from orac_core.retrieval import GroundingPack
+from orac_core.retrieval import RetrievalDecision
+from orac_core.retrieval import RetrievalDecisionService
 from orac_core.retrieval import RetrievalOutcome
+from orac_core.retrieval import RetrievalSettings
 from orac_core.retrieval import SearchRequest
 from orac_core.retrieval import SearchResult
 
@@ -237,13 +241,44 @@ class _ProbeLLMBackendFailure:
 class _UnavailableRetrievalService:
     """Retrieval stub that reports explicit retrieval failure."""
 
+    default_search_provider = "searxng"
+
     def __init__(self, message: str) -> None:
         self.message = message
         self.prompts: list[str] = []
 
-    def build_grounding_outcome(self, prompt: str) -> RetrievalOutcome:
+    def build_grounding_outcome(
+        self,
+        prompt: str,
+        *,
+        event_emitter=None,
+    ) -> RetrievalOutcome:
         """Return an unavailable retrieval outcome."""
         self.prompts.append(prompt)
+        if callable(event_emitter):
+            event_emitter(
+                "retrieval_failed",
+                {"mode": "internet", "reason": "no_search_results"},
+            )
+        return RetrievalOutcome(
+            requested=True,
+            status="no_search_results",
+            message=self.message,
+        )
+
+    def build_grounding_outcome_for_request(
+        self,
+        request: RetrievalDecision,
+        *,
+        event_emitter=None,
+    ) -> RetrievalOutcome:
+        """Return an unavailable retrieval outcome for a supplied request."""
+        self.prompts.append(str(getattr(request, "query", "")))
+        if callable(event_emitter):
+            event_emitter(
+                "retrieval_failed",
+                {"mode": "internet", "reason": "no_search_results"},
+            )
         return RetrievalOutcome(
             requested=True,
             status="no_search_results",
@@ -254,19 +289,199 @@ class _UnavailableRetrievalService:
 class _SuccessfulRetrievalService:
     """Retrieval stub that returns a grounded explicit retrieval outcome."""
 
+    default_search_provider = "searxng"
+
     def __init__(self, pack) -> None:
         self.pack = pack
         self.prompts: list[str] = []
 
-    def build_grounding_outcome(self, prompt: str) -> RetrievalOutcome:
+    def build_grounding_outcome(
+        self,
+        prompt: str,
+        *,
+        event_emitter=None,
+    ) -> RetrievalOutcome:
         """Return a successful retrieval outcome with grounded evidence."""
         self.prompts.append(prompt)
+        self._emit_lifecycle_events(event_emitter)
         return RetrievalOutcome(
             requested=True,
             status="ok",
             message="Online evidence was retrieved for the explicit request.",
             grounding_pack=self.pack,
         )
+
+    def build_grounding_outcome_for_request(
+        self,
+        request: RetrievalDecision,
+        *,
+        event_emitter=None,
+    ) -> RetrievalOutcome:
+        """Return a successful retrieval outcome for a supplied request."""
+        self.prompts.append(str(getattr(request, "query", "")))
+        self._emit_lifecycle_events(event_emitter)
+        return RetrievalOutcome(
+            requested=True,
+            status="ok",
+            message="Online evidence was retrieved for the request.",
+            grounding_pack=self.pack,
+        )
+
+    def _emit_lifecycle_events(self, event_emitter) -> None:
+        """Emit a standard retrieval lifecycle sequence for tests."""
+        if not callable(event_emitter):
+            return
+        search_result_count = len(getattr(self.pack, "search_results", ()) or ())
+        fetched_source_count = len(getattr(self.pack, "fetched_sources", ()) or ())
+        usable_source_count = len(getattr(self.pack, "grounding_sources", ()) or ())
+        event_emitter(
+            "retrieval_fetch_start",
+            {"source_count": search_result_count},
+        )
+        event_emitter(
+            "retrieval_fetch_complete",
+            {
+                "fetched_count": fetched_source_count,
+                "usable_source_count": usable_source_count,
+            },
+        )
+        event_emitter(
+            "retrieval_complete",
+            {
+                "source_count": search_result_count,
+                "usable_source_count": usable_source_count,
+            },
+        )
+
+
+class _TopicAwareRetrievalService:
+    """Retrieval stub that returns topic-specific grounded outcomes."""
+
+    default_search_provider = "searxng"
+
+    def __init__(self, packs_by_topic: dict[str, GroundingPack]) -> None:
+        self.packs_by_topic = {
+            str(key).strip().lower(): value for key, value in packs_by_topic.items()
+        }
+        self.prompts: list[str] = []
+
+    def _pack_for_text(self, text: str) -> RetrievalOutcome:
+        lowered = str(text or "").lower()
+        if "ukraine" in lowered or "russia" in lowered or "kyiv" in lowered:
+            pack = self.packs_by_topic.get("ukraine")
+        elif "iran" in lowered or "tehran" in lowered or "hormuz" in lowered:
+            pack = self.packs_by_topic.get("iran")
+        elif "python" in lowered:
+            pack = self.packs_by_topic.get("python")
+        elif "searxng" in lowered:
+            pack = self.packs_by_topic.get("searxng")
+        elif "israel" in lowered or "gaza" in lowered:
+            pack = self.packs_by_topic.get("israel")
+        else:
+            pack = None
+
+        if pack is None:
+            return RetrievalOutcome(
+                requested=True,
+                status="no_relevant_sources",
+                message="I could not find online evidence relevant to that topic.",
+            )
+
+        return RetrievalOutcome(
+            requested=True,
+            status="ok",
+            message="Online evidence was retrieved for the request.",
+            grounding_pack=pack,
+        )
+
+    def build_grounding_outcome(self, prompt: str, *, event_emitter=None) -> RetrievalOutcome:
+        """Return a topic-aware retrieval outcome for a prompt."""
+        self.prompts.append(prompt)
+        if callable(event_emitter):
+            event_emitter("retrieval_fetch_start", {"source_count": 1})
+            event_emitter(
+                "retrieval_fetch_complete",
+                {"fetched_count": 1, "usable_source_count": 1},
+            )
+            event_emitter(
+                "retrieval_complete",
+                {"source_count": 1, "usable_source_count": 1},
+            )
+        return self._pack_for_text(prompt)
+
+    def build_grounding_outcome_for_request(
+        self,
+        request: SearchRequest,
+        *,
+        event_emitter=None,
+    ) -> RetrievalOutcome:
+        """Return a topic-aware retrieval outcome for a request."""
+        query = str(getattr(request, "query", "") or "")
+        self.prompts.append(query)
+        if callable(event_emitter):
+            event_emitter("retrieval_fetch_start", {"source_count": 1})
+            event_emitter(
+                "retrieval_fetch_complete",
+                {"fetched_count": 1, "usable_source_count": 1},
+            )
+            event_emitter(
+                "retrieval_complete",
+                {"source_count": 1, "usable_source_count": 1},
+            )
+        return self._pack_for_text(query)
+
+
+class _TopicSensitiveLLM:
+    """Returns topic-specific answers by inspecting the prompt evidence."""
+
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    def send_prompt_with_meta(
+        self,
+        prompt_type: str,
+        prompt: str,
+        stream: bool = False,
+        generation_options: dict | None = None,
+    ) -> dict[str, int | str]:
+        del prompt_type, stream, generation_options
+        self.prompts.append(prompt)
+        lowered = prompt.lower()
+        if "ukraine" in lowered or "kyiv" in lowered or "zelensky" in lowered:
+            text = "Ukraine-focused latest news answer."
+        elif "iran" in lowered or "tehran" in lowered or "hormuz" in lowered:
+            text = "Iran-focused latest news answer."
+        elif "python" in lowered:
+            text = "Python-focused latest release answer."
+        elif "searxng" in lowered:
+            text = "SearXNG-focused latest version answer."
+        else:
+            text = "General answer."
+        return {
+            "text": text,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+
+
+class _StaticRetrievalDecisionService:
+    """Decision stub that returns a preconfigured retrieval decision."""
+
+    def __init__(self, decision: RetrievalDecision) -> None:
+        self.decision = decision
+        self.prompts: list[str] = []
+
+    def decide(
+        self,
+        prompt: str,
+        *,
+        previous_context=None,
+    ) -> RetrievalDecision:
+        """Return the configured retrieval decision."""
+        del previous_context
+        self.prompts.append(prompt)
+        return self.decision
 
 
 class _MemoryContextManager:
@@ -944,6 +1159,19 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         orchestrator.plugin_manager = None
         orchestrator.plugin_router = plugin_router
         orchestrator.retrieval_service = None
+        orchestrator.retrieval_decision_service = RetrievalDecisionService(
+            settings=RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="searxng",
+                max_search_results=5,
+                max_sources_to_fetch=3,
+                cache_ttl_hours=1,
+                require_citations=True,
+            ),
+            logger=orac_module.logger,
+        )
+        orchestrator._retrieval_context_by_session = {}
         orchestrator.config_mgr = object()
         orchestrator._system_prompt_policy = {
             "title": "SYSTEM POLICY — ORAC PERSONA:",
@@ -1724,9 +1952,503 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("grounding pack", content.lower())
         self.assertNotIn("fetched sources", content.lower())
         self.assertNotIn("search results confirm", content.lower())
+        self.assertNotIn("reason_code", content.lower())
+        self.assertNotIn("retrievaldecisionservice", content.lower())
         self.assertEqual(
             retrieval_service.prompts,
             ["search the internet for Kevin Rowland's latest single"],
+        )
+
+    async def test_streaming_retrieval_emits_lifecycle_events_before_answer(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Oracle Database 23ai is the current release."],
+        )
+        request = SearchRequest(
+            query="What is the latest version of the Oracle Database?",
+            trigger_phrase="what is the latest",
+        )
+        pack = GroundingPackBuilder().build(
+            request,
+            [
+                SearchResult(
+                    title="Oracle Database",
+                    url="https://example.test/oracle-db",
+                )
+            ],
+            [
+                FetchedSource(
+                    url="https://example.test/oracle-db",
+                    title="Oracle Database",
+                    source_name="example.test",
+                    text="Oracle Database 23ai is the current release.",
+                    excerpt="Oracle Database 23ai is the current release.",
+                )
+            ],
+            require_citations=True,
+        )
+        orchestrator.retrieval_service = _SuccessfulRetrievalService(pack)
+
+        stream_frames: list[dict[str, object]] = []
+
+        async def _event_sink(event: dict[str, object]) -> None:
+            stream_frames.append(dict(event))
+
+        wire = await orchestrator.handle_request(
+            self._request(
+                "What is the latest version of the Oracle Database?",
+                req_id="req-oracle-db",
+                meta={"stream": True},
+            ),
+            event_sink=_event_sink,
+        )
+        response = json.loads(wire)
+
+        self.assertEqual(response["meta"]["status"], "ok")
+        self.assertEqual(
+            [frame["type"] for frame in stream_frames[:5]],
+            [
+                "retrieval_start",
+                "retrieval_query",
+                "retrieval_fetch_start",
+                "retrieval_fetch_complete",
+                "retrieval_complete",
+            ],
+        )
+        self.assertEqual(stream_frames[0]["payload"]["mode"], "internet")
+        self.assertEqual(stream_frames[1]["payload"]["provider"], "searxng")
+        self.assertEqual(
+            stream_frames[1]["payload"]["query"],
+            "What is the latest version of the Oracle Database?",
+        )
+        self.assertIn("stream_start", [frame["type"] for frame in stream_frames])
+        self.assertIn("stream_end", [frame["type"] for frame in stream_frames])
+        self.assertEqual(len(orchestrator.llm.prompts), 1)
+        self.assertIn("Current user message:", orchestrator.llm.prompts[0])
+        self.assertIn("What is the latest version of the Oracle Database?", orchestrator.llm.prompts[0])
+
+    async def test_streaming_retrieval_failure_emits_failed_event(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Fallback answer should not be used."],
+        )
+        orchestrator.retrieval_service = _UnavailableRetrievalService(
+            "I could not retrieve online evidence for that request."
+        )
+
+        stream_frames: list[dict[str, object]] = []
+
+        async def _event_sink(event: dict[str, object]) -> None:
+            stream_frames.append(dict(event))
+
+        wire = await orchestrator.handle_request(
+            self._request(
+                "What is the latest news on the war in Iran?",
+                req_id="req-news-fail",
+                meta={"stream": True},
+            ),
+            event_sink=_event_sink,
+        )
+        response = json.loads(wire)
+
+        self.assertEqual(
+            response["payload"]["content"],
+            "I could not retrieve online evidence for that request.",
+        )
+        self.assertIn("retrieval_failed", [frame["type"] for frame in stream_frames])
+        self.assertNotIn("retrieval_complete", [frame["type"] for frame in stream_frames])
+
+    async def test_streaming_disabled_retrieval_emits_skipped_event(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Disabled retrieval answer."],
+        )
+        orchestrator.retrieval_decision_service = _StaticRetrievalDecisionService(
+            RetrievalDecision(
+                should_retrieve=False,
+                retrieval_type="internet",
+                confidence="high",
+                reason_code="disabled",
+                user_visible_reason="Internet retrieval is disabled right now, so current information cannot be verified.",
+                explicit_request=True,
+                requires_user_confirmation=False,
+                search_query="latest news on the war in Iran",
+            )
+        )
+
+        stream_frames: list[dict[str, object]] = []
+
+        async def _event_sink(event: dict[str, object]) -> None:
+            stream_frames.append(dict(event))
+
+        wire = await orchestrator.handle_request(
+            self._request(
+                "What is the latest news on the war in Iran?",
+                req_id="req-news-disabled",
+                meta={"stream": True},
+            ),
+            event_sink=_event_sink,
+        )
+        response = json.loads(wire)
+
+        self.assertEqual(
+            response["payload"]["content"],
+            "Internet retrieval is disabled right now, so current information cannot be verified.",
+        )
+        self.assertEqual(stream_frames[0]["type"], "retrieval_skipped")
+        self.assertEqual(stream_frames[0]["payload"]["reason"], "retrieval_disabled")
+        self.assertNotIn("retrieval_start", [frame["type"] for frame in stream_frames])
+
+    async def test_streaming_local_answers_do_not_emit_retrieval_events(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Orac is structured around controller, model, and runtime services."],
+        )
+
+        stream_frames: list[dict[str, object]] = []
+
+        async def _event_sink(event: dict[str, object]) -> None:
+            stream_frames.append(dict(event))
+
+        wire = await orchestrator.handle_request(
+            self._request(
+                "Explain the Orac architecture.",
+                req_id="req-local-stream",
+                meta={"stream": True},
+            ),
+            event_sink=_event_sink,
+        )
+        response = json.loads(wire)
+
+        self.assertEqual(response["meta"]["status"], "ok")
+        self.assertFalse(
+            any(str(frame.get("type", "")).startswith("retrieval_") for frame in stream_frames)
+        )
+        self.assertEqual(
+            [frame["type"] for frame in stream_frames[:3]],
+            ["stream_start", "text_delta", "stream_end"],
+        )
+
+    async def test_retrieval_follow_up_reuses_previous_context(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=[
+                "The latest reports say the situation remains fluid.",
+                "Yes. The latest reports add that the situation remains fluid.",
+            ],
+        )
+        request = SearchRequest(
+            query="latest news on Iran",
+            trigger_phrase="search the internet for",
+        )
+        pack = GroundingPackBuilder().build(
+            request,
+            [SearchResult(title="Iran update", url="https://example.test/iran")],
+            [
+                FetchedSource(
+                    url="https://example.test/iran",
+                    title="Iran update",
+                    source_name="example.test",
+                    text="Iran-related reports remain fluid.",
+                    excerpt="Iran-related reports remain fluid.",
+                )
+            ],
+            require_citations=True,
+        )
+        retrieval_service = _SuccessfulRetrievalService(pack)
+        orchestrator.retrieval_service = retrieval_service
+
+        first_wire = await orchestrator.handle_request(
+            self._request("What is the latest news on Iran?", req_id="req-news-1")
+        )
+        first_response = json.loads(first_wire)
+        self.assertIn("The latest reports say", first_response["payload"]["content"])
+
+        second_wire = await orchestrator.handle_request(
+            self._request("Is there any more detail on that in the latest news?", req_id="req-news-2")
+        )
+        second_response = json.loads(second_wire)
+
+        self.assertIn("The latest reports add", second_response["payload"]["content"])
+        self.assertNotIn("did not explicitly request internet retrieval", second_response["payload"]["content"].lower())
+        self.assertGreaterEqual(len(retrieval_service.prompts), 2)
+        self.assertEqual(retrieval_service.prompts[0], "What is the latest news on Iran?")
+        self.assertEqual(retrieval_service.prompts[1], "Iran")
+        self.assertIn("clive", orchestrator._retrieval_context_by_session)
+
+    async def test_retrieval_topic_pivot_starts_fresh_context(self) -> None:
+        orchestrator = self._make_orac_stub(llm_responses=[])
+        orchestrator.llm = _TopicSensitiveLLM()
+        orchestrator._get_llm_connector = lambda **kwargs: orchestrator.llm
+
+        def _pack(topic: str, query: str, url: str, excerpt: str) -> GroundingPack:
+            return GroundingPackBuilder().build(
+                SearchRequest(query=query, trigger_phrase="search the internet for"),
+                [SearchResult(title=topic, url=url)],
+                [
+                    FetchedSource(
+                        url=url,
+                        title=topic,
+                        source_name=url.split("//", 1)[-1].split("/", 1)[0],
+                        text=excerpt,
+                        excerpt=excerpt,
+                    )
+                ],
+                require_citations=True,
+            )
+
+        retrieval_service = _TopicAwareRetrievalService(
+            {
+                "iran": _pack(
+                    "Iran update",
+                    "latest news on Iran",
+                    "https://example.test/iran",
+                    "Iran-related reports remain fluid.",
+                ),
+                "ukraine": _pack(
+                    "Ukraine update",
+                    "latest Ukraine-Russia war news",
+                    "https://example.test/ukraine",
+                    "Ukraine and Russia remain in active conflict.",
+                ),
+            }
+        )
+        orchestrator.retrieval_service = retrieval_service
+
+        first_wire = await orchestrator.handle_request(
+            self._request("What is the latest news on Iran?", req_id="req-iran")
+        )
+        first_response = json.loads(first_wire)
+        self.assertIn("Iran-focused latest news answer.", first_response["payload"]["content"])
+
+        second_wire = await orchestrator.handle_request(
+            self._request("What's the latest on the Ukraine-Russia war?", req_id="req-ukraine")
+        )
+        second_response = json.loads(second_wire)
+
+        self.assertIn("Ukraine-focused latest news answer.", second_response["payload"]["content"])
+        self.assertNotIn("Iran-focused latest news answer.", second_response["payload"]["content"])
+        self.assertGreaterEqual(len(retrieval_service.prompts), 2)
+        self.assertNotIn("Iran", retrieval_service.prompts[1])
+        self.assertIn("Ukraine", retrieval_service.prompts[1])
+        context = orchestrator._retrieval_context_by_session["clive"]
+        self.assertIn("ukraine", " ".join(context.topic_signature).lower())
+        self.assertNotIn("iran", " ".join(context.topic_signature).lower())
+
+    async def test_local_follow_up_does_not_trigger_internet_retrieval(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=[
+                "Orac is structured around controller, model, and runtime services.",
+                "The same core flow still applies here.",
+            ],
+        )
+        retrieval_service = _UnavailableRetrievalService(
+            "Internet retrieval should not run for local context."
+        )
+        orchestrator.retrieval_service = retrieval_service
+
+        first_wire = await orchestrator.handle_request(
+            self._request("Explain the Orac architecture", req_id="req-local-1")
+        )
+        first_response = json.loads(first_wire)
+        self.assertIn("Orac is structured around controller", first_response["payload"]["content"])
+
+        second_wire = await orchestrator.handle_request(
+            self._request("tell me more about that", req_id="req-local-2")
+        )
+        second_response = json.loads(second_wire)
+
+        self.assertIn("The same core flow", second_response["payload"]["content"])
+        self.assertEqual(retrieval_service.prompts, [])
+        self.assertNotIn(
+            "did not explicitly request internet retrieval",
+            second_response["payload"]["content"].lower(),
+        )
+        self.assertNotIn("retrievaldecisionservice", second_response["payload"]["content"].lower())
+
+    async def test_disabled_follow_up_returns_natural_disabled_message(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=[
+                "The latest reports say the situation remains fluid.",
+                "Fallback answer should not be used.",
+            ],
+        )
+        request = SearchRequest(
+            query="latest news on Iran",
+            trigger_phrase="search the internet for",
+        )
+        pack = GroundingPackBuilder().build(
+            request,
+            [SearchResult(title="Iran update", url="https://example.test/iran")],
+            [
+                FetchedSource(
+                    url="https://example.test/iran",
+                    title="Iran update",
+                    source_name="example.test",
+                    text="Iran-related reports remain fluid.",
+                    excerpt="Iran-related reports remain fluid.",
+                )
+            ],
+            require_citations=True,
+        )
+        orchestrator.retrieval_service = _SuccessfulRetrievalService(pack)
+
+        await orchestrator.handle_request(
+            self._request("What is the latest news on Iran?", req_id="req-news-1")
+        )
+        orchestrator.retrieval_decision_service = _StaticRetrievalDecisionService(
+            RetrievalDecision(
+                should_retrieve=False,
+                retrieval_type="internet",
+                confidence="high",
+                reason_code="disabled",
+                user_visible_reason="Internet retrieval is disabled, so I cannot check for more current information.",
+                explicit_request=False,
+                requires_user_confirmation=False,
+                search_query="latest news on Iran",
+            )
+        )
+
+        wire = await orchestrator.handle_request(
+            self._request("Is there any more detail on that in the latest news?", req_id="req-news-2")
+        )
+        response = json.loads(wire)
+
+        self.assertEqual(
+            response["payload"]["content"],
+            "Internet retrieval is disabled, so I cannot check for more current information.",
+        )
+        self.assertNotIn("did not explicitly request internet retrieval", response["payload"]["content"].lower())
+
+    async def test_latest_news_prompt_uses_retrieval_and_does_not_fall_back_to_general_knowledge(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["There is no active war in Iran."],
+        )
+        orchestrator.retrieval_decision_service = _StaticRetrievalDecisionService(
+            RetrievalDecision(
+                should_retrieve=True,
+                retrieval_type="internet",
+                confidence="high",
+                reason_code="current_news_request",
+                user_visible_reason="I’ll check that online.",
+                explicit_request=True,
+                requires_user_confirmation=False,
+                search_query="latest news on the war in Iran",
+            )
+        )
+        retrieval_service = _UnavailableRetrievalService(
+            "I could not retrieve online evidence for that request."
+        )
+        orchestrator.retrieval_service = retrieval_service
+
+        wire = await orchestrator.handle_request(
+            self._request("What is the latest news on the war in Iran?", req_id="req-news")
+        )
+        response = json.loads(wire)
+
+        self.assertEqual(
+            response["payload"]["content"],
+            "I could not retrieve online evidence for that request.",
+        )
+        self.assertEqual(orchestrator.llm.prompts, [])
+        self.assertEqual(
+            orchestrator.retrieval_decision_service.prompts,
+            ["What is the latest news on the war in Iran?"],
+        )
+        self.assertEqual(
+            retrieval_service.prompts,
+            ["What is the latest news on the war in Iran?"],
+        )
+
+    async def test_disabled_latest_news_prompt_returns_transparent_message(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["There is no active war in Iran."],
+        )
+        orchestrator.retrieval_decision_service = _StaticRetrievalDecisionService(
+            RetrievalDecision(
+                should_retrieve=False,
+                retrieval_type="internet",
+                confidence="high",
+                reason_code="disabled",
+                user_visible_reason="Internet retrieval is disabled right now, so current information cannot be verified.",
+                explicit_request=True,
+                requires_user_confirmation=False,
+                search_query="latest news on the war in Iran",
+            )
+        )
+
+        wire = await orchestrator.handle_request(
+            self._request("What is the latest news on the war in Iran?", req_id="req-news-disabled")
+        )
+        response = json.loads(wire)
+
+        self.assertEqual(
+            response["payload"]["content"],
+            "Internet retrieval is disabled right now, so current information cannot be verified.",
+        )
+        self.assertEqual(orchestrator.llm.prompts, [])
+        self.assertEqual(
+            orchestrator.retrieval_decision_service.prompts,
+            ["What is the latest news on the war in Iran?"],
+        )
+
+    async def test_suggest_search_announcement_returns_brief_prompt(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Fallback answer should not be used."],
+        )
+        orchestrator.retrieval_decision_service = _StaticRetrievalDecisionService(
+            RetrievalDecision(
+                should_retrieve=False,
+                retrieval_type="internet",
+                confidence="high",
+                reason_code="freshness_release_version",
+                user_visible_reason="That may have changed recently; I should check online.",
+                explicit_request=False,
+                requires_user_confirmation=True,
+                search_query="current Python release",
+            )
+        )
+
+        wire = await orchestrator.handle_request(
+            self._request("What is the current Python release?", req_id="req-decision")
+        )
+        response = json.loads(wire)
+
+        self.assertEqual(
+            response["payload"]["content"],
+            "That may have changed recently; I should check online.",
+        )
+        self.assertEqual(orchestrator.llm.prompts, [])
+        self.assertEqual(
+            orchestrator.retrieval_decision_service.prompts,
+            ["What is the current Python release?"],
+        )
+
+    async def test_disabled_retrieval_returns_clear_failure_without_llm(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Fallback answer should not be used."],
+        )
+        orchestrator.retrieval_decision_service = _StaticRetrievalDecisionService(
+            RetrievalDecision(
+                should_retrieve=False,
+                retrieval_type="internet",
+                confidence="high",
+                reason_code="disabled",
+                user_visible_reason="Internet retrieval is disabled right now.",
+                explicit_request=True,
+                requires_user_confirmation=False,
+                search_query="latest Python release",
+            )
+        )
+
+        wire = await orchestrator.handle_request(
+            self._request("search the internet for the latest Python release", req_id="req-disabled")
+        )
+        response = json.loads(wire)
+
+        self.assertEqual(
+            response["payload"]["content"],
+            "Internet retrieval is disabled right now.",
+        )
+        self.assertEqual(orchestrator.llm.prompts, [])
+        self.assertEqual(
+            orchestrator.retrieval_decision_service.prompts,
+            ["search the internet for the latest Python release"],
         )
 
     async def test_persistence_failures_are_recorded_and_logged(self) -> None:

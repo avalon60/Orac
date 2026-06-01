@@ -17,6 +17,13 @@
       "stream_end",
       "stream_error",
       "stream_cancelled",
+      "retrieval_start",
+      "retrieval_query",
+      "retrieval_fetch_start",
+      "retrieval_fetch_complete",
+      "retrieval_complete",
+      "retrieval_failed",
+      "retrieval_skipped",
       "tts_playback_started",
       "tts_playback_finished",
       "tts_playback_cancelled",
@@ -37,6 +44,7 @@
       { "$ref": "#/$defs/textChunkPayload" },
       { "$ref": "#/$defs/streamEndPayload" },
       { "$ref": "#/$defs/streamTerminalPayload" },
+      { "$ref": "#/$defs/retrievalEventPayload" },
       { "$ref": "#/$defs/ttsPlaybackEventPayload" },
       { "$ref": "#/$defs/voiceCancelRequestPayload" },
       { "$ref": "#/$defs/voiceCancelResponsePayload" },
@@ -96,6 +104,34 @@
     {
       "if": { "properties": { "type": { "const": "stream_cancelled" } }, "required": ["type"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/streamTerminalPayload" } }, "required": ["payload"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "retrieval_start" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/retrievalEventPayload" } }, "required": ["payload"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "retrieval_query" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/retrievalEventPayload" } }, "required": ["payload"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "retrieval_fetch_start" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/retrievalEventPayload" } }, "required": ["payload"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "retrieval_fetch_complete" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/retrievalEventPayload" } }, "required": ["payload"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "retrieval_complete" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/retrievalEventPayload" } }, "required": ["payload"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "retrieval_failed" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/retrievalEventPayload" } }, "required": ["payload"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "retrieval_skipped" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/retrievalEventPayload" } }, "required": ["payload"] }
     },
     {
       "if": { "properties": { "type": { "enum": [
@@ -270,6 +306,20 @@
         { "required": ["voice_session_id"] },
         { "required": ["turn_id"] }
       ]
+    },
+
+    "retrievalEventPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "type": "string" },
+        "reason": { "type": "string" },
+        "query": { "type": "string" },
+        "provider": { "type": "string" },
+        "source_count": { "type": "integer", "minimum": 0 },
+        "fetched_count": { "type": "integer", "minimum": 0 },
+        "usable_source_count": { "type": "integer", "minimum": 0 }
+      }
     },
 
     "ttsPlaybackEventPayload": {
