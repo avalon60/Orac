@@ -52,6 +52,27 @@ from lib.config_mgr import ConfigManager
 EventHandler = Callable[[VoiceEvent], None]
 VoiceEngineFactory = Callable[[dict[str, object] | None], TtsEngine]
 
+_MONTH_NAMES = (
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+)
+_SPOKEN_DATE_RE = re.compile(
+  r"\b([0-3]?\d)(?:st|nd|rd|th)?\s+("
+  + "|".join(_MONTH_NAMES)
+  + r")(\s+\d{4})?\b",
+  re.I,
+)
+
 
 @dataclass
 class _TurnLifecycle:
@@ -385,8 +406,31 @@ def speech_safe_text(text: str) -> str:
   clean_text = clean_text.replace("`", "")
   clean_text = re.sub(r"(?<!\w)[*_]{1,3}([^*_]+)[*_]{1,3}(?!\w)", r"\1", clean_text)
   clean_text = re.sub(r"[*_]{2,}", "", clean_text)
+  clean_text = _normalise_spoken_dates(clean_text)
   clean_text = re.sub(r"\s+", " ", clean_text)
   return clean_text.strip()
+
+
+def _normalise_spoken_dates(text: str) -> str:
+  """Return dates in a form that TTS engines pronounce more naturally."""
+
+  def _replace(match: re.Match[str]) -> str:
+    day = int(match.group(1))
+    if day < 1 or day > 31:
+      return match.group(0)
+
+    month = match.group(2)
+    year = match.group(3) or ""
+    return f"{day}{_ordinal_suffix(day)} of {month}{year}"
+
+  return _SPOKEN_DATE_RE.sub(_replace, text)
+
+
+def _ordinal_suffix(value: int) -> str:
+  """Return an English ordinal suffix for a positive integer."""
+  if 10 <= value % 100 <= 20:
+    return "th"
+  return {1: "st", 2: "nd", 3: "rd"}.get(value % 10, "th")
 
 
 def _has_speakable_content(text: str) -> bool:

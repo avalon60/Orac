@@ -102,6 +102,7 @@ from orac_voice.tts_coalescer import TtsChunkCoalescer
 from orac_voice.tts_kokoro import build_kokoro_speech_url
 from orac_voice.tts_kokoro import KokoroTtsEngine
 from orac_voice.tts_piper import PiperTtsEngine
+from orac_voice.tts_worker import speech_safe_text
 from orac_voice.tts_worker import TtsWorker
 import orac_voice.tts_kokoro as tts_kokoro_module
 import orac_voice.tts_worker as tts_worker_module
@@ -2472,6 +2473,25 @@ class OracVoiceTests(unittest.TestCase):
           "Romeo and Juliet, and King Lear.",
         )
       ],
+    )
+
+  def test_speech_safe_text_normalises_uk_style_dates_for_tts(self) -> None:
+    """Date text should be made more natural for speech synthesis."""
+    self.assertEqual(
+      speech_safe_text("Today is Monday, 1 June 2026."),
+      "Today is Monday, 1st of June 2026.",
+    )
+    self.assertEqual(
+      speech_safe_text("The date is 2 June 2026."),
+      "The date is 2nd of June 2026.",
+    )
+    self.assertEqual(
+      speech_safe_text("The date is 3 June 2026."),
+      "The date is 3rd of June 2026.",
+    )
+    self.assertEqual(
+      speech_safe_text("The date is 11 June 2026."),
+      "The date is 11th of June 2026.",
     )
 
   def test_tts_worker_cancel_session_discards_late_chunks(self) -> None:
