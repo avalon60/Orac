@@ -9,12 +9,12 @@ PROG="Orac: 020-setup-ords.sh"
 timestamp() { date +"%Y-%m-%d %H:%M:%S"; }
 echo "[$(timestamp)] ${PROG} Started"
 
-
-(
+orac_ords_setup() {
   set -Eeuo pipefail
 
   APEX_HOME=${APEX_HOME:-/home/oracle/orac/setup/apex/apex}
   ORACLE_SID=${ORACLE_SID:-FREE}
+  ORACLE_PDB=${ORACLE_PDB:-FREEPDB1}
   ORAC_HOME=${ORAC_HOME:-/home/oracle/orac}
   ORACLE_BASE=${ORACLE_BASE:-/opt/oracle}
   JAVA_HOME=/usr/lib/jvm/java-17-openjdk
@@ -23,55 +23,127 @@ echo "[$(timestamp)] ${PROG} Started"
   ORDS_HOME=${ORAC_HOME}/ords
   ORDS_CONF=${ORDS_HOME}/conf
   ORDS_LOG=${ORAC_HOME}/logs
+  ORDS_INIT_LOG=${ORDS_HOME}/init_ords.log
   ORDS_PWD_FILE=${ORDS_HOME}/install_pwd.txt
+  local ords_metadata_status
 
   pushd "${ORDS_HOME}" >/dev/null
 
   echo "ORDS_HOME = ${ORDS_HOME}"
   echo "APEX_HOME = ${APEX_HOME}"
 
-  : "${ORACLE_PWD:?ORACLE_PWD not set}"   # fail early if missing
+  if [[ -z "${ORACLE_PWD:-}" ]]; then
+    echo "ORAC_ORDS_SETUP_FAILED: ORACLE_PWD is not set."
+    return 1
+  fi
+
   echo "020-setup-ords.sh: Creating password file..."
   printf '%s\n%s\n' "${ORACLE_PWD}" "${ORACLE_PWD}" > "${ORDS_PWD_FILE}"
   ls -l ${ORDS_PWD_FILE}
   chmod 600 "${ORDS_PWD_FILE}"
 
   rm -f nohup.out 2>/dev/null || true
-  rm -rf "${ORDS_CONF}" "${ORDS_LOG}"
+  rm -rf "${ORDS_CONF}"
   mkdir -p "${ORDS_CONF}" "${ORDS_LOG}"
 
   ORDS_DB_HOSTNAME="localhost"
   ORDS_DB_PORT="1521"
-  ORDS_DB_SERVICENAME="${ORACLE_PDB:-FREEPDB1}"
-  ORDS_DB_ADMIN_USER="SYSTEM"
+  ORDS_DB_SERVICENAME="${ORACLE_PDB}"
+  ORDS_DB_ADMIN_USER="${ORDS_DB_ADMIN_USER:-SYS}"
 
-  INSTALL_CMD="./bin/ords --config ${ORDS_CONF} install \
-  --admin-user ${ORDS_DB_ADMIN_USER} \
-  --proxy-user \
-  --db-hostname ${ORDS_DB_HOSTNAME} \
-  --db-port ${ORDS_DB_PORT} \
-  --db-servicename ${ORDS_DB_SERVICENAME} \
-  --log-folder ${ORDS_LOG} \
-  --feature-rest-enabled-sql true \
-  --password-stdin"
+  INSTALL_CMD=(
+    ./bin/ords
+    --config "${ORDS_CONF}"
+    install
+    --admin-user "${ORDS_DB_ADMIN_USER}"
+    --proxy-user
+    --db-hostname "${ORDS_DB_HOSTNAME}"
+    --db-port "${ORDS_DB_PORT}"
+    --db-servicename "${ORDS_DB_SERVICENAME}"
+    --log-folder "${ORDS_LOG}"
+    --feature-rest-enabled-sql true
+    --password-stdin
+  )
 
   echo "ORDS initialisation starting, with:"
   echo "================================================================"
-  echo ${INSTALL_CMD}
+  printf '%q ' "${INSTALL_CMD[@]}"
+  echo
   echo "================================================================"
-  echo "Running ORDS Install:" > init_ords.log
-  echo "${INSTALL_CMD} < ${ORDS_PWD_FILE}" >> init_ords.log
+  echo "Running ORDS Install:" > "${ORDS_INIT_LOG}"
+  printf '%q ' "${INSTALL_CMD[@]}" >> "${ORDS_INIT_LOG}"
+  echo "< ${ORDS_PWD_FILE}" >> "${ORDS_INIT_LOG}"
 
   echo "${PROG}: ORDS installation launched."
-  ${INSTALL_CMD} < "${ORDS_PWD_FILE}" >> init_ords.log 2>&1
+  "${INSTALL_CMD[@]}" < "${ORDS_PWD_FILE}" >> "${ORDS_INIT_LOG}" 2>&1
+  if grep -Eiq 'ORA-[0-9]+|SP2-[0-9]+|ERROR at line|Error executing script|does not have the privileges to install ORDS' "${ORDS_INIT_LOG}"; then
+    echo "ORAC_ORDS_SETUP_FAILED: ORDS install log contains Oracle errors. See ${ORDS_INIT_LOG}."
+    return 1
+  fi
 
-  echo "Integrating APEX:" >> init_ords.log
-  ./bin/ords --config "${ORDS_CONF}" config set apex.templating.enabled true >> init_ords.log
+  echo "Integrating APEX:" >> "${ORDS_INIT_LOG}"
+  ./bin/ords --config "${ORDS_CONF}" config set apex.templating.enabled true >> "${ORDS_INIT_LOG}" 2>&1
+
+  echo "Validating ORDS metadata objects:" >> "${ORDS_INIT_LOG}"
+  ords_metadata_status=$(sqlplus -L -s / as sysdba <<SQL
+set heading off feedback off pagesize 0 verify off echo off
+whenever sqlerror exit failure rollback
+alter session set container=${ORACLE_PDB};
+select case
+         when exists (
+                select 1
+                  from dba_objects
+                 where owner = 'ORDS_METADATA'
+                   and object_name = 'ORDS'
+                   and object_type = 'PACKAGE'
+                   and status = 'VALID'
+              )
+          and not exists (
+                select 1
+                  from dba_objects
+                 where owner = 'ORDS_METADATA'
+                   and status <> 'VALID'
+              )
+         then 'VALID'
+         else 'INVALID'
+       end
+  from dual;
+exit
+SQL
+)
+  echo "${ords_metadata_status}" >> "${ORDS_INIT_LOG}"
+  if ! grep -Eq '(^|[[:space:]])VALID([[:space:]]|$)' <<<"${ords_metadata_status}"; then
+    echo "ORAC_ORDS_SETUP_FAILED: ORDS metadata objects are not VALID in ${ORACLE_PDB}."
+    return 1
+  fi
+
+  echo "Validating ORDS default pool:" >> "${ORDS_INIT_LOG}"
+  ./bin/ords --config "${ORDS_CONF}" config list >> "${ORDS_INIT_LOG}" 2>&1
+  if grep -Fq "does not contain database pool default" "${ORDS_INIT_LOG}"; then
+    echo "ORAC_ORDS_SETUP_FAILED: ORDS default database pool was not created."
+    return 1
+  fi
+
+  if [[ ! -d "${ORDS_CONF}" ]] || ! find "${ORDS_CONF}" -type f -print -quit | grep -q .; then
+    echo "ORAC_ORDS_SETUP_FAILED: ORDS config directory is missing or empty: ${ORDS_CONF}"
+    return 1
+  fi
 
   # rm -f "${ORDS_PWD_FILE}"
   popd >/dev/null
-) || { echo "${PROG}: FAILED"; return 1 2>/dev/null || exit 1; }
+}
 
-echo "${PROG}: Done."
+(
+  orac_ords_setup
+)
+ords_status=$?
+
+if [[ ${ords_status} -ne 0 ]]; then
+  echo "ORAC_ORDS_SETUP_FAILED: ${PROG} failed with status ${ords_status}."
+  return "${ords_status}" 2>/dev/null || false
+fi
+
+echo "ORAC_ORDS_SETUP_COMPLETE: ORDS default pool is configured."
 # IMPORTANT: no `exit` here; let the runner continue
-echo "[$(timestamp)] ${PROG}: Done." 
+echo "[$(timestamp)] ${PROG}: Done."
+return 0 2>/dev/null || true

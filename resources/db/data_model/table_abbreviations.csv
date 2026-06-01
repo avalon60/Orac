@@ -4,6 +4,7 @@ conversations, convs
 messages, messgs
 message_embeddings, megemb
 llm_registry, llmreg 
+tts_voices, tts_voice
 user_preferences, usrprf 
 user_prompt_elements, usrpre 
 user_synonyms, usrsyns

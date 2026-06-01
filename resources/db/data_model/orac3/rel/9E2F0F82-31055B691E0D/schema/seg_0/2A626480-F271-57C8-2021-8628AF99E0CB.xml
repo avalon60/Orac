@@ -1,0 +1,7 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<SchemaObject class="oracle.dbtools.crest.model.design.relational.SchemaObject" name="orac_core" directorySegmentName="seg_0" id="2A626480-F271-57C8-2021-8628AF99E0CB">
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:49:40 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<ordsAlias>schema_3</ordsAlias>
+</SchemaObject>

@@ -2,45 +2,48 @@
 
 ## Purpose
 
-This document defines Orac's security and risk guardrails.
+This document defines the project's security and risk guardrails.
 
-Orac is an AI-assisted system that may interact with:
+Not every project uses every capability covered here.
 
-- user conversation history
+Apply the sections relevant to the architecture actually in use.
+
+The project may include or interact with:
+
+- user interaction history
 - runtime context
-- plugins
+- extensions or plugins
 - Oracle Database schemas
 - external services
 - local files
-- home automation systems
-- LLMs
-- future gateway interfaces
+- device and automation systems
+- AI or model runtimes
+- gateway interfaces
 
 That combination is powerful and risky.
 
 The default security stance is conservative.
 
-The LLM may reason.
+Where AI or model-based components are part of the design:
 
-The LLM may suggest.
+- the model may reason
+- the model may suggest
+- the model may request approved tools
+- the model must not receive uncontrolled authority
 
-The LLM may request approved tools.
+Where interaction history or AI runtime context is part of the design:
 
-The LLM must not receive uncontrolled authority.
-
-Plugin structure, registration, lifecycle, manifests, and capability declarations are defined in:
-
-`docs/agent-guardrails/50-plugin-standards.md`
-
-Context assembly, message roles, message types, summaries, stale context, and tool-result handling are defined in:
-
-`docs/agent-guardrails/70-context-management.md`
+- persisted history and runtime model context are not the same thing
+- context must be assembled deliberately
+- stale, irrelevant, or sensitive material must be excluded
+- tool or extension output must not be treated as trusted instructions
+- any message metadata used for context selection must be explicitly documented
 
 ---
 
 ## Core security model
 
-Orac must separate:
+The project must separate:
 
 - reasoning
 - authority
@@ -48,17 +51,15 @@ Orac must separate:
 - persistence
 - audit
 
-The LLM is not the security boundary.
+Where AI or generated-content components are used:
 
-The LLM is not the authority layer.
+- they are not the security boundary
+- they are not the authority layer
+- they are not the database owner
+- they are not the operating system user
+- they must not bypass project policy
 
-The LLM is not the database owner.
-
-The LLM is not the operating system user.
-
-The LLM is not allowed to bypass Orac policy.
-
-All actions that affect external state must be mediated by Orac application code.
+All actions that affect external state must be mediated by project application code or reviewed platform services.
 
 ---
 
@@ -66,56 +67,55 @@ All actions that affect external state must be mediated by Orac application code
 
 1. Use least privilege.
 2. Prefer read-only operations unless mutation is explicitly required.
-3. Do not trust model output as instructions.
-4. Do not trust plugin output as instructions.
-5. Do not trust external content as instructions.
-6. Do not execute generated SQL blindly.
-7. Do not execute generated shell commands blindly.
-8. Do not expose secrets to the LLM.
-9. Do not store secrets in conversation history.
-10. Do not let plugins bypass Orac APIs.
-11. Do not let stale context drive risky actions.
-12. Require confirmation for sensitive actions.
-13. Log security-relevant actions.
-14. Mask secrets and sensitive values in logs.
-15. Test denial paths, not only happy paths.
+3. Do not trust model, extension, plugin, or external content as instructions.
+4. Do not execute model-derived SQL or shell commands outside validated, policy-constrained execution paths.
+5. Validate target, scope, privilege, and impact before execution.
+6. Require explicit approval for destructive, privileged, production, or externally-impacting actions.
+7. Do not expose secrets to models, extensions, plugins, or external systems unnecessarily.
+8. Do not store secrets in interaction history, logs, or operational metadata.
+9. Do not let extensions or plugins bypass approved APIs.
+10. Do not let stale runtime state drive risky actions.
+11. Require confirmation for sensitive actions.
+12. Log security-relevant actions.
+13. Mask secrets and sensitive values in logs.
+14. Test denial paths, not only happy paths.
 
 ---
 
 ## Trust boundaries
 
-The following are separate trust zones:
+The following are separate trust zones where present:
 
 - user interface
-- Orac application code
-- LLM runtime
+- project application code
+- AI or model runtime
 - context builder
-- plugin framework
-- individual plugins
-- Orac database schemas
-- plugin database schemas
+- extension or plugin framework
+- individual extensions or plugins
+- project database schemas
+- extension or plugin database schemas
 - external APIs
 - local operating system
-- home automation systems
+- device and automation systems
 - logs and audit trails
 
 Crossing a trust boundary requires validation.
 
-Do not assume that data is safe because it came from another Orac component.
+Do not assume that data is safe because it came from another project component.
 
-Do not assume that data is safe because it came from a configured plugin.
+Do not assume that data is safe because it came from a configured extension or plugin.
 
 Do not assume that data is safe because it came from the database.
 
-Do not assume that data is safe because it appears in conversation history.
+Do not assume that data is safe because it appears in interaction history or runtime context.
 
 ---
 
-## LLM authority
+## AI and model authority
 
-The LLM has no direct authority.
+Where the project includes AI or model-mediated behaviour, the model has no direct authority.
 
-The LLM must not directly:
+The model must not directly:
 
 - write to the database
 - execute SQL
@@ -129,23 +129,23 @@ The LLM must not directly:
 - spend money
 - change security settings
 - alter plugin configuration
-- alter Orac configuration
+- alter project configuration
 - alter database privileges
 - alter database schema objects
 
-The LLM may request an action using a structured tool call.
+The model may request an action using a structured tool call or equivalent mediated action request.
 
-Orac must validate the request before execution.
+The project must validate the request before execution.
 
-The LLM must not decide that validation can be skipped.
+The model must not decide that validation can be skipped.
 
 ---
 
-## Tool-call mediation
+## Tool, extension, and service-call mediation
 
-Every tool call must pass through Orac validation.
+Where the project uses tool calls, plugins, or mediated action requests, every such call must pass through project validation.
 
-Before invoking a tool, Orac must check:
+Before invoking a tool, extension, or equivalent mediated capability, the platform must check:
 
 - the tool exists
 - the plugin exists
@@ -162,13 +162,13 @@ Before invoking a tool, Orac must check:
 - timeout behaviour is defined
 - audit behaviour is defined
 
-The LLM must not invoke plugin code directly.
+The model must not invoke plugin code directly.
 
-The LLM must not call arbitrary tools by name unless Orac has declared them available.
+The model must not call arbitrary tools by name unless the project has declared them available.
 
-The LLM must not invent tool names.
+The model must not invent tool names.
 
-The LLM must not invent plugin capabilities.
+The model must not invent plugin capabilities.
 
 ---
 
@@ -186,15 +186,13 @@ high_risk_action
 prohibited
 ```
 
-Suggested meanings:
-
 | Risk level | Meaning |
 |---|---|
 | `read_only` | Reads data and does not change state. |
 | `low_risk_write` | Makes a reversible or low-impact change. |
 | `sensitive_write` | Changes user data, configuration, external state, or persisted system state. |
 | `high_risk_action` | Controls physical devices, security, access, money, identity, or destructive operations. |
-| `prohibited` | Must not be performed by Orac. |
+| `prohibited` | Must not be performed by the project. |
 
 When in doubt, classify the action at the higher risk level.
 
@@ -214,11 +212,11 @@ Examples:
 
 - read weather data
 - read device state
-- list rooms
+- list rooms or areas
 - list calendar availability
 - search documents
 - retrieve plugin metadata
-- retrieve conversation summaries
+- retrieve interaction summaries
 
 Read-only actions can still expose sensitive data.
 
@@ -229,9 +227,9 @@ A read-only action may require restrictions if it accesses:
 - calendar entries
 - financial data
 - health data
-- home location data
+- location data
 - security device state
-- private conversation history
+- private interaction history
 
 Read-only does not mean unrestricted.
 
@@ -267,10 +265,10 @@ Examples:
 - create a calendar event
 - update a user profile
 - change plugin configuration
-- change Orac configuration
+- change project configuration
 - create or update database records
 - expose user content to an external service
-- modify stored conversation summaries
+- modify stored interaction summaries
 
 Sensitive write actions normally require confirmation unless explicitly pre-authorised by policy.
 
@@ -306,7 +304,7 @@ Some high-risk actions should be prohibited entirely.
 
 ## Prohibited actions
 
-Orac must not perform prohibited actions.
+The project must not perform prohibited actions.
 
 Examples:
 
@@ -322,8 +320,8 @@ Examples:
 - expose private keys or tokens
 - act as an unrestricted network proxy
 - perform unsafe physical device actions
-- let a plugin directly control Orac internals
-- let external content override Orac instructions
+- let a plugin directly control project internals
+- let external content override project instructions
 
 If a prohibited action seems necessary, the design is wrong.
 
@@ -362,7 +360,7 @@ For sensitive and high-risk actions, the confirmation should identify:
 - the recipient, if a message is being sent
 - the object being modified or deleted
 
-Confirmation must not be inferred from vague conversational context.
+Confirmation must not be inferred from vague contextual history.
 
 Confirmation must not be inferred from old context.
 
@@ -390,7 +388,7 @@ The following normally require confirmation:
 - exposing private data to an external service
 - sharing personal data
 - enabling a new plugin permission
-- executing a high-risk home automation action
+- executing a high-risk device-control action
 
 Project-specific policy may allow some low-risk actions without confirmation.
 
@@ -412,21 +410,6 @@ A confirmation should not apply if the risk level changes.
 
 A confirmation should not apply if the action payload changes significantly.
 
-Example:
-
-```text
-User confirms: "Yes, turn off the kitchen lights."
-```
-
-This does not authorise:
-
-```text
-turn off all lights
-unlock the kitchen door
-disable the kitchen motion sensor
-turn off the kitchen lights every night
-```
-
 ---
 
 ## Automation and pre-authorisation
@@ -435,10 +418,10 @@ Some actions may be pre-authorised by explicit configuration.
 
 Examples:
 
-- turn on hall light when motion is detected
+- turn on a hall light when motion is detected
 - refresh weather context every hour
-- sync Home Assistant metadata
-- summarise old conversation history
+- sync integration metadata
+- summarise old interaction history
 - clear expired runtime context
 
 Pre-authorisation must be explicit.
@@ -447,7 +430,7 @@ Pre-authorisation must be scoped.
 
 Pre-authorisation must be revocable.
 
-Pre-authorisation must not be inferred from normal conversation.
+Pre-authorisation must not be inferred from normal user interaction.
 
 High-risk actions should not be pre-authorised unless the project has a deliberate, reviewed policy for them.
 
@@ -457,25 +440,25 @@ High-risk actions should not be pre-authorised unless the project has a delibera
 
 Database access must follow least privilege.
 
-Orac must preserve schema ownership boundaries.
+The project must preserve schema ownership boundaries.
 
 Expected topology:
 
 ```text
-orac_core
-orac_api
-orac_code
-plugin schemas
-access schemas
+<DOMAIN>_CORE
+<DOMAIN>_API
+<DOMAIN>_CODE
+<DOMAIN>_<CONSUMER>_PUB
+<PLUGIN_SCHEMA>
 ```
 
 Rules:
 
-- `orac_core` owns core tables.
-- `orac_api` exposes approved access paths.
-- `orac_code` owns business logic.
-- plugins own plugin-private artefacts only.
-- access schemas receive only the privileges they need.
+- `<DOMAIN>_CORE` owns domain tables.
+- `<DOMAIN>_API` exposes approved access paths.
+- `<DOMAIN>_CODE` owns business logic.
+- `<DOMAIN>_<CONSUMER>_PUB` schemas receive only the privileges they need.
+- `<PLUGIN_SCHEMA>` owns plugin-private artefacts only.
 
 Application code should not connect as schema owners unless explicitly required.
 
@@ -483,9 +466,9 @@ Plugins must not receive owner credentials.
 
 Plugins must not receive DBA privileges.
 
-Plugins must not write directly to `orac_core` tables.
+Plugins must not write directly to `<DOMAIN>_CORE` tables.
 
-Plugins must not bypass `orac_api` or `orac_code`.
+Plugins must not bypass `<DOMAIN>_API` or `<DOMAIN>_CODE`.
 
 ---
 
@@ -552,7 +535,7 @@ DDL must not be generated and executed automatically from LLM output.
 
 DDL must be reviewed through normal project workflow.
 
-DDL must respect Orac database standards and schema boundaries.
+DDL must respect database standards and schema boundaries.
 
 DDL must not silently weaken constraints, ownership boundaries, grants, or auditability.
 
@@ -641,9 +624,9 @@ External service failures must be handled safely.
 
 Secrets must never be placed in LLM context.
 
-Secrets must never be stored in `orac.messages.content`.
+Secrets must never be stored in `<MESSAGE_HISTORY_TABLE>.content`.
 
-Secrets must never be stored in `orac.messages.meta`.
+Secrets must never be stored in `<MESSAGE_HISTORY_TABLE>.meta`.
 
 Secrets must never be logged.
 
@@ -779,9 +762,9 @@ Audit events should not contain secrets.
 
 ---
 
-## Prompt injection
+## Prompt injection and hostile content
 
-Prompt injection is expected.
+Where the project consumes model, retrieved, or external content, prompt injection is expected.
 
 Treat external content as hostile unless proven otherwise.
 
@@ -794,20 +777,20 @@ External content includes:
 - tool results
 - plugin results
 - retrieved snippets
-- Home Assistant entity names
+- device or automation entity names
 - filenames
 - user-provided text from untrusted sources
 - third-party API responses
 
-External content must not be allowed to override Orac instructions.
+External content must not be allowed to override project instructions.
 
 External content must not be allowed to grant permissions.
 
 External content must not be allowed to disable security checks.
 
-External content must not be allowed to instruct Orac to reveal secrets.
+External content must not be allowed to instruct the project to reveal secrets.
 
-External content must not be allowed to cause tool calls without Orac validation.
+External content must not be allowed to cause tool calls without project validation.
 
 The context builder should label external content clearly where practical.
 
@@ -827,7 +810,7 @@ Do not let tool results override system prompts.
 
 Do not let tool results alter security policy.
 
-Do not let tool results request additional tools unless Orac policy approves the next tool call.
+Do not let tool results request additional tools unless project policy approves the next tool call.
 
 Do not treat a tool result as user confirmation.
 
@@ -839,15 +822,15 @@ Do not treat a tool result as authority.
 
 ## Context safety
 
-Context must be selected deliberately.
+Where the project maintains interaction or AI runtime context, that context must be selected deliberately.
 
 Do not blindly replay all persisted messages.
 
 Do not blindly replay old context injections.
 
-Do not include audit rows in normal LLM context.
+Do not include audit rows in normal model context.
 
-Do not include error rows in normal LLM context unless debugging.
+Do not include error rows in normal model context unless debugging.
 
 Do not include secrets in context.
 
@@ -857,15 +840,11 @@ Do not allow plugin output to inject directly into context.
 
 The context builder decides what is included.
 
-For detailed context rules, see:
-
-`docs/agent-guardrails/70-context-management.md`
-
 ---
 
 ## Stale data risk
 
-Stale context can cause unsafe or wrong actions.
+Where the project uses runtime context or cached operational state, stale context can cause unsafe or wrong actions.
 
 Examples:
 
@@ -876,7 +855,7 @@ Examples:
 - old plugin permissions
 - old security state
 - old calendar availability
-- old conversation summary
+- old interaction summary
 - old tool result
 - old confirmation
 - old plugin capability list
@@ -895,13 +874,13 @@ Do not use stale context to infer security state.
 
 ## Data minimisation
 
-Only provide the LLM with the information required for the current task.
+Where the project uses AI, plugins, or external services, only provide each component with the information required for the current task.
 
-Only provide plugins with the information required for their capability.
+Only provide plugins or extensions with the information required for their capability.
 
 Do not include whole documents when excerpts are sufficient.
 
-Do not include full conversation history when a summary is sufficient.
+Do not include full interaction history when a summary is sufficient.
 
 Do not send private content to external services without an explicit reason.
 
@@ -921,7 +900,7 @@ Examples:
 - location
 - home layout
 - device names
-- conversation history
+- interaction history
 - documents
 - emails
 - calendar data
@@ -942,9 +921,11 @@ Do not store sensitive user data in places intended for operational metadata.
 
 ---
 
-## Home automation risk
+## Device and Automation Risk
 
-Home automation can affect the physical world.
+This section applies where the project integrates with devices or automation systems.
+
+Device and automation integrations can affect the physical world.
 
 Read-only state queries are lower risk.
 
@@ -952,7 +933,7 @@ Device-control actions can be risky.
 
 Examples of read-only actions:
 
-- list rooms
+- list rooms or areas
 - list lights
 - read temperature
 - read sensor state
@@ -984,7 +965,9 @@ Some actions may be prohibited entirely.
 
 ---
 
-## Email, messaging, and communication risk
+## Email, Messaging, and Communication Risk
+
+This section applies where the project can send messages or communications to external recipients.
 
 Sending messages can expose private information or create external consequences.
 
@@ -1002,13 +985,15 @@ Drafting a message is lower risk than sending it.
 
 Creating a draft may still be sensitive if it includes private content.
 
-Sending must not occur merely because the LLM generated text.
+Sending must not occur merely because a model or drafting system generated text.
 
 The user must explicitly authorise sending.
 
 ---
 
-## Calendar and scheduling risk
+## Calendar and Scheduling Risk
+
+This section applies where the project can read or write calendar or scheduling data.
 
 Calendar operations may reveal personal information or affect commitments.
 
@@ -1035,30 +1020,32 @@ Do not silently invite people.
 
 ---
 
-## External data disclosure
+## External Data Disclosure
 
-Before sending user data to an external service, Orac must consider:
+Before sending user data to an external service, the project must consider:
 
 - what data is being sent
 - why it is needed
 - which service receives it
-- whether the plugin declared that service
+- whether the relevant integration, plugin, or extension declared that service
 - whether personal data is included
 - whether secrets are included
 - whether confirmation is required
 - whether the data can be minimised
 
-Do not send complete conversation history to external services unless explicitly required and approved.
+Do not send complete interaction history to external services unless explicitly required and approved.
 
 Do not send private documents to external services merely to improve convenience.
 
 ---
 
-## Plugin security
+## Plugin and extension security
 
-Plugins are not automatically trusted.
+This section applies where the project supports plugins or extension-style capabilities.
 
-A plugin must be constrained by:
+Plugins and extensions are not automatically trusted.
+
+A plugin or extension must be constrained by:
 
 - registration
 - enablement
@@ -1071,21 +1058,19 @@ A plugin must be constrained by:
 - logging
 - tests
 
-A plugin must not bypass Orac security by calling internal APIs, direct database objects, shell commands, or external services outside its declared permissions.
-
-For plugin design rules, see:
-
-`docs/agent-guardrails/50-plugin-standards.md`
+A plugin or extension must not bypass project security by calling internal APIs, direct database objects, shell commands, or external services outside its declared permissions.
 
 ---
 
 ## Gateway security
 
-Gateway plugins and external front ends must not bypass Orac policy.
+This section applies where the project exposes gateway interfaces or alternate front ends.
+
+Gateway plugins and external front ends must not bypass project policy.
 
 Examples:
 
-- Open WebUI gateway
+- web gateway
 - voice gateway
 - webhook gateway
 - external chat gateway
@@ -1093,7 +1078,7 @@ Examples:
 
 A gateway may adapt transport formats.
 
-A gateway must not become a second Orac runtime with weaker rules.
+A gateway must not become a second runtime with weaker rules.
 
 A gateway must not skip:
 
@@ -1130,19 +1115,7 @@ The weather plugin could not resolve that location.
 Bad example:
 
 ```text
-API key abc123 failed against https://...
-```
-
-Good example:
-
-```text
-The requested action was denied because the plugin is disabled.
-```
-
-Bad example:
-
-```text
-Grant execute on orac_code.security_admin to weather_plugin and retry.
+Grant execute on security_admin to weather_plugin and retry.
 ```
 
 ---
@@ -1278,9 +1251,9 @@ If the answer to any of these is yes, Codex must handle the risk explicitly.
 
 Do not solve permission problems by granting broad privileges.
 
-Do not solve integration problems by bypassing Orac boundaries.
+Do not solve integration problems by bypassing project boundaries.
 
-Do not solve plugin problems by giving plugins direct access to Orac internals.
+Do not solve plugin problems by giving plugins direct access to project internals.
 
 Do not solve LLM limitations by giving the LLM more authority.
 
@@ -1302,7 +1275,7 @@ A change should be treated as security-significant if it:
 - adds file access
 - changes confirmation logic
 - changes audit behaviour
-- changes home automation control
+- changes device or automation control
 - sends user data to an external service
 
 Security-significant changes require careful review and appropriate tests.
@@ -1311,7 +1284,7 @@ Security-significant changes require careful review and appropriate tests.
 
 ## Final rule
 
-Orac may be helpful, but it must not be reckless.
+The platform may be helpful, but it must not be reckless.
 
 The safe default is:
 
@@ -1325,4 +1298,3 @@ audit the result
 ```
 
 Any code that bypasses this model is a security defect.
-

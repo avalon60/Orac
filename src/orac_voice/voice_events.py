@@ -71,6 +71,7 @@ class VoiceTextChunk(VoiceEvent):
 
   utterance_id: str = ""
   text: str = ""
+  tts_voice: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

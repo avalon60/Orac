@@ -13,7 +13,24 @@ If unsure, read the stricter or more relevant document rather than guessing.
 - docs/agent-guardrails/00-project-principles.md
 - docs/agent-guardrails/10-architecture-boundaries.md
 
+## Guardrail drift check
+
+Run the lightweight guardrail structure and reference checks with:
+
+```bash
+poetry run python scripts/check_guardrails.py
+poetry run pytest tests/test_check_guardrails.py
+```
+
 ## Database, DDL, SQL, install scripts, grants, schemas
+
+When changing files under `resources/db/schema`, read:
+
+- resources/db/schema/AGENTS.md
+
+Also read the adjacent database context file when it exists:
+
+- resources/db/schema/AGENT_CONTEXT.md
 
 Read:
 
@@ -48,6 +65,19 @@ when changing:
 - tests
 - packaging code
 - plugin runtime code implemented in Python
+
+## Web applications
+
+When changing files under `web`, read:
+
+- web/AGENTS.md
+
+Also read the adjacent web application context file when it exists:
+
+- web/AGENT_CONTEXT.md
+
+APEX applications are not part of the `web` tree. Treat APEX exports and APEX
+workspace assets as database assets under `resources/db/schema`.
 
 ## Plugins
 

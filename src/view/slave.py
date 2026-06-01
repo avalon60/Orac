@@ -29,6 +29,7 @@ except ImportError:  # pragma: no cover - platform-dependent availability
 
 from lib.fsutils import project_home
 from lib.config_mgr import ConfigManager
+from lib.protocol_validation import disabled_protocol_validator
 # Icons / logging
 from lib.icons import Icons
 import shutil
@@ -51,12 +52,31 @@ HISTORY_LENGTH = 500
 logger.log_debug(f'LLM_TIMEOUT: {LLM_TIMEOUT} seconds')
 
 
-# Protocol validator (installed from Orac repo tag)
+# Protocol validator (installed from Orac repo tag; local schema fallback for dev tree)
 try:
     from orac_protocol import validate_frame, SCHEMA_VERSION as PROTOCOL_VERSION
-except Exception:  # if not installed yet
-    def validate_frame(_): ...
-    PROTOCOL_VERSION = "unknown"
+except Exception as e:  # if not installed yet
+    logger.log_warning(f"{Icons.warn} Protocol module unavailable; using local schema fallback: {e}")
+    try:
+        from jsonschema import Draft202012Validator
+
+        local_schema_path = (
+            APP_HOME / "protocol/orac_protocol/resources/json_schema/protocol.schema.json"
+        )
+        schema = json.loads(local_schema_path.read_text(encoding="utf-8-sig"))
+        _validator = Draft202012Validator(schema)
+
+        def validate_frame(env_obj: dict) -> None:
+            _validator.validate(env_obj)
+
+        PROTOCOL_VERSION = schema.get("$id", "local-schema")
+        logger.log_info(f"{Icons.tick} Using local protocol schema at {local_schema_path}")
+    except Exception as e2:
+        logger.log_warning(f"{Icons.warn} Local schema fallback failed: {e2}")
+        validate_frame, PROTOCOL_VERSION = disabled_protocol_validator(e2)
+        logger.log_warning(
+            f"{Icons.warn} Protocol validation disabled by explicit development override."
+        )
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765

@@ -15,7 +15,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from model.plugin_routing.discovery import PluginDiscovery
-from model.plugin_runtime import load_plugin_class
+from model.plugin_runtime import load_plugin_class, load_plugin_service_class
 
 
 class PluginRuntimeTests(unittest.TestCase):
@@ -29,6 +29,24 @@ class PluginRuntimeTests(unittest.TestCase):
         plugin_class = load_plugin_class(weather_manifest)
 
         self.assertEqual(plugin_class.__name__, "WeatherPlugin")
+        self.assertEqual(weather_manifest.execution_policy.action_type, "informational_read_only")
+        self.assertTrue(weather_manifest.execution_policy.allowed_by_default)
+        self.assertFalse(weather_manifest.execution_policy.requires_confirmation)
+
+    def test_home_assistant_service_entry_point_loads(self) -> None:
+        manifests, errors = PluginDiscovery(Path("plugins")).discover()
+        self.assertEqual(errors, [])
+        manifest = next(
+            manifest for manifest in manifests if manifest.plugin_id == "home_assistant"
+        )
+
+        plugin_class = load_plugin_service_class(manifest)
+
+        self.assertEqual(plugin_class.__name__, "HomeAssistantService")
+        self.assertEqual(manifest.execution_policy.action_type, "device_control")
+        self.assertTrue(manifest.execution_policy.requires_confirmation)
+        self.assertFalse(manifest.execution_policy.allowed_by_default)
+        self.assertTrue(manifest.execution_policy.scaffold)
 
 
 if __name__ == "__main__":

@@ -1,29 +1,30 @@
-# Orac Project Principles
+# Project Principles
 
-This document defines the core design principles of Orac.
+This document defines the core design principles for the project.
 
 These principles are non-negotiable.
 All code changes must comply with them.
 
 ---
 
-## 1. Orac is Architecture-First
+## 1. The Platform Is Architecture-First
 
-- Orac is a system, not a collection of scripts.
+- The platform is a system, not a collection of scripts.
 - All changes must preserve the existing architecture unless explicitly instructed otherwise.
 - Do not introduce shortcuts that bypass defined layers or boundaries.
 
 ---
 
-## 2. Separation of Concerns is Mandatory
+## 2. Separation of Concerns Is Mandatory
 
-- ORAC_CORE owns data structures only.
-- ORAC_API provides controlled access to ORAC_CORE.
-- ORAC_CODE implements business logic.
+- Each domain must preserve its least-privilege schema topology.
+- `<DOMAIN>_CORE` owns data structures only.
+- `<DOMAIN>_API` provides controlled access to `<DOMAIN>_CORE`.
+- `<DOMAIN>_CODE` implements business logic.
 
-- Do not:
-  - access ORAC_CORE tables directly from ORAC_CODE
-  - bypass ORAC_API with ad-hoc SQL
+- With the exception of approved materialized views, do not:
+  - access `<DOMAIN>_CORE` tables directly from `<DOMAIN>_CODE`
+  - bypass `<DOMAIN>_API` with ad-hoc SQL
   - duplicate logic across layers
 
 ---
@@ -36,34 +37,35 @@ All code changes must comply with them.
 
 ---
 
-## 4. Plugins Extend Orac — They Do Not Control It
+## 4. Plugins Extend the Platform - They Do Not Control It
 
-- Plugins are consumers of Orac capabilities.
+- Plugins are consumers of platform capabilities.
 - Plugins must not:
   - modify core schemas directly
-  - bypass Orac APIs
+  - bypass approved APIs
   - redefine orchestration or routing logic
 
 - All plugin interactions must go through defined interfaces.
 
 ---
 
-## 5. The Content Engine is the Control Point
+## 5. The Context Mediation Layer Is the Control Point
 
-- All conversational input and output must pass through the content engine.
-- Do not bypass or duplicate content handling logic.
-- Do not embed ad-hoc prompt logic outside the content engine.
+- Where conversational or AI context is part of the architecture, all model-facing input and output must pass through the context mediation layer.
+- Do not bypass or duplicate approved context handling logic.
+- Do not embed ad-hoc prompt or context assembly logic outside the documented control path.
 
 ---
 
-## 6. LLMs Are Constrained Components
+## 6. AI-Assisted Components Are Policy-Constrained
 
-- LLMs must not:
-  - generate or execute arbitrary SQL
-  - generate or execute shell commands
-  - perform privileged operations
+When AI-assisted components are part of the design:
 
-- LLMs provide interpretation and reasoning, not control.
+- They must operate within validated, policy-constrained execution paths.
+- They must not bypass schema, security, approval, or context boundaries.
+- They provide interpretation and generation, not authority.
+
+Detailed execution, SQL, shell, privilege, and approval rules belong in the security, database, and context guardrails.
 
 ---
 

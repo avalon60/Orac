@@ -1,0 +1,22 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<TriggerOraclev10g class="oracle.dbtools.crest.model.design.storage.oracle.v10g.TriggerOraclev10g" name="TMZONE_BU" directorySegmentName="seg_0" id="C4097EBA-BBF7-14D8-7007-1CD4F049E524">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>ORAC_CORE</sourceObjSchema>
+<sourceObjName>TMZONE_BU</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:21 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<actions>UPDATE</actions>
+<body><![CDATA[begin
+  :new.updated_on := systimestamp;
+  :new.updated_by := coalesce(
+    sys_context('apex$session', 'app_user'),
+    sys_context('userenv', 'proxy_user'),
+    sys_context('userenv', 'session_user'),
+    user
+  );
+  :new.row_version := nvl(:old.row_version, 0) + 1;
+end;]]></body>
+<triggerTime>BEFORE</triggerTime>
+<table>3DA4E1AA-AE42-7845-D19D-A8A266E8469D</table>
+</TriggerOraclev10g>

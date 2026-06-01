@@ -28,6 +28,8 @@ from orac_voice.audio_playback import NativeAudioPlayback
 from orac_voice.audio_playback import PlaybackFrameHandler
 from orac_voice.playback_reference_resampler import PlaybackReferenceResampler
 from orac_voice.tts_kokoro import KokoroTtsEngine
+from orac_voice.tts_voice_catalog import KOKORO_PROVIDER
+from orac_voice.tts_voice_catalog import PIPER_PROVIDER
 from orac_voice.tts_piper import TtsEngine
 from orac_voice.tts_piper import PiperTtsEngine
 from orac_voice.tts_piper import resolve_orac_home
@@ -48,6 +50,7 @@ from lib.config_mgr import ConfigManager
 
 
 EventHandler = Callable[[VoiceEvent], None]
+VoiceEngineFactory = Callable[[dict[str, object] | None], TtsEngine]
 
 
 @dataclass
@@ -403,12 +406,14 @@ def _create_piper_engine(
   config_path,
   voice_name: str | None,
   voice_dir: str | None,
+  voice_model_path: str | None = None,
 ) -> PiperTtsEngine:
   """Create the configured Piper engine."""
   return PiperTtsEngine.from_config(
     config_file_path=config_path,
     voice_name=voice_name,
     voice_dir=voice_dir,
+    voice_model_path=voice_model_path,
   )
 
 
@@ -484,6 +489,81 @@ def _create_tts_engine_from_config(
   raise RuntimeError(f"Unsupported voice TTS engine: {engine}")
 
 
+def _create_tts_engine_for_voice_selection(
+  *,
+  selection: dict[str, object] | None,
+  config_mgr: ConfigManager,
+  config_path,
+  voice_dir: str | None,
+) -> TtsEngine:
+  """Create a provider-specific TTS engine for a selected catalogue row."""
+  if not selection:
+    engine = config_mgr.config_value(
+      "voice",
+      "tts_engine",
+      default=PIPER_PROVIDER,
+    ).strip().lower()
+    return _create_tts_engine_from_config(
+      engine=engine,
+      config_mgr=config_mgr,
+      config_path=config_path,
+      voice_name=None,
+      voice_dir=voice_dir,
+    )
+
+  provider = str(selection.get("provider_code") or "").strip().lower()
+  voice_id = str(selection.get("provider_voice_id") or "").strip()
+  if provider == PIPER_PROVIDER:
+    logger.info("Local TTS backend selected from preference: piper {}", voice_id)
+    return _create_piper_engine(
+      config_path=config_path,
+      voice_name=voice_id,
+      voice_dir=voice_dir,
+      voice_model_path=str(selection.get("model_path") or "") or None,
+    )
+  if provider == KOKORO_PROVIDER:
+    primary = _create_kokoro_engine(
+      config_path=config_path,
+      voice_name=voice_id,
+    )
+    fallback_name = config_mgr.config_value(
+      "voice",
+      "tts_fallback_engine",
+      default=PIPER_PROVIDER,
+    ).strip().lower()
+    if fallback_name in {"", "none", "disabled"}:
+      logger.info(
+        "Local TTS backend selected from preference: kokoro {}",
+        voice_id,
+      )
+      return primary
+    if fallback_name != PIPER_PROVIDER:
+      raise RuntimeError(
+        f"Unsupported voice.tts_fallback_engine: {fallback_name}"
+      )
+    try:
+      fallback = _create_piper_engine(
+        config_path=config_path,
+        voice_name=None,
+        voice_dir=voice_dir,
+      )
+    except Exception as exc:
+      logger.warning(
+        "Kokoro selected from preference but Piper fallback failed: {}",
+        exc,
+      )
+      return primary
+    logger.info("Local TTS backend selected from preference: kokoro {}", voice_id)
+    return FallbackTtsEngine(
+      primary=primary,
+      fallback=fallback,
+      primary_name=KOKORO_PROVIDER,
+      fallback_name=PIPER_PROVIDER,
+    )
+
+  raise RuntimeError(f"Unsupported selected TTS provider: {provider}")
+
+
 def create_local_tts_worker_from_config(
   *,
   event_handler: EventHandler | None = None,
@@ -544,6 +624,12 @@ def create_local_tts_worker_from_config(
       voice_name=voice_name,
       voice_dir=voice_dir,
     ),
+    voice_engine_factory=lambda selection: _create_tts_engine_for_voice_selection(
+      selection=selection,
+      config_mgr=config_mgr,
+      config_path=config_path,
+      voice_dir=voice_dir,
+    ),
     audio_playback=audio_playback,
     event_handler=event_handler,
     aec_adapter=aec_adapter,
@@ -597,6 +683,7 @@ class TtsWorker:
     self,
     *,
     tts_engine: TtsEngine,
+    voice_engine_factory: VoiceEngineFactory | None = None,
     audio_playback: AudioPlayback,
     event_handler: EventHandler | None = None,
     aec_adapter: AcousticEchoCanceller | None = None,
@@ -605,12 +692,15 @@ class TtsWorker:
 
     Args:
       tts_engine (TtsEngine): TTS engine implementation.
+      voice_engine_factory (VoiceEngineFactory | None): Optional factory for
+        provider-specific engines selected from catalogue rows.
       audio_playback (AudioPlayback): Audio playback implementation.
       event_handler (EventHandler | None): Optional event callback.
       aec_adapter (AcousticEchoCanceller | None): Optional AEC adapter for
         playback reference frames.
     """
     self.tts_engine = tts_engine
+    self.voice_engine_factory = voice_engine_factory
     self.audio_playback = audio_playback
     self.event_handler = event_handler
     self._queue: queue.Queue[VoiceTextChunk | None] = queue.Queue()
@@ -620,6 +710,7 @@ class TtsWorker:
     self._cancelled_sessions: set[str] = set()
     self._cancelled_turns: set[tuple[str, str]] = set()
     self._active_chunk: VoiceTextChunk | None = None
+    self._voice_engine_cache: dict[str, TtsEngine] = {}
     self._turn_states: dict[tuple[str, str], _TurnLifecycle] = {}
     self._playback_reference_bridge: _PlaybackReferenceBridge | None = None
     self._aec_adapter = aec_adapter
@@ -666,13 +757,21 @@ class TtsWorker:
       self._thread.join(timeout=timeout)
     logger.info("TTS worker stopped cleanly")
 
-  def enqueue_text(self, *, session_id: str, turn_id: str, text: str) -> bool:
+  def enqueue_text(
+    self,
+    *,
+    session_id: str,
+    turn_id: str,
+    text: str,
+    tts_voice: dict[str, object] | None = None,
+  ) -> bool:
     """Queue a text chunk for speech without blocking the caller.
 
     Args:
       session_id (str): Session identifier.
       turn_id (str): Turn identifier.
       text (str): Speech-friendly text chunk.
+      tts_voice (dict[str, object] | None): Optional selected voice row.
 
     Returns:
       bool: True when a non-empty chunk was queued.
@@ -696,6 +795,7 @@ class TtsWorker:
         turn_id=turn_id,
         utterance_id=f"utt-{uuid.uuid4().hex[:12]}",
         text=clean_text,
+        tts_voice=tts_voice,
       )
     )
     self._mark_turn_queued(session_id=session_id, turn_id=turn_id)
@@ -984,12 +1084,37 @@ class TtsWorker:
 
   def _cancel_active_processes(self) -> None:
     """Interrupt active synthesis and playback processes."""
-    tts_cancel = getattr(self.tts_engine, "cancel", None)
-    if callable(tts_cancel):
-      tts_cancel()
+    for engine in self._all_tts_engines():
+      tts_cancel = getattr(engine, "cancel", None)
+      if callable(tts_cancel):
+        tts_cancel()
     playback_cancel = getattr(self.audio_playback, "cancel", None)
     if callable(playback_cancel):
       playback_cancel()
+
+  def _all_tts_engines(self) -> list[TtsEngine]:
+    """Return every engine that may currently own synthesis work."""
+    engines = [self.tts_engine]
+    engines.extend(self._voice_engine_cache.values())
+    return list(dict.fromkeys(engines))
+
+  def _tts_engine_for_chunk(self, chunk: VoiceTextChunk) -> TtsEngine:
+    """Return the selected TTS engine for a queued chunk."""
+    selection = chunk.tts_voice
+    if not selection or self.voice_engine_factory is None:
+      return self.tts_engine
+
+    voice_key = str(selection.get("tts_voice_key") or "").strip()
+    if not voice_key:
+      return self.tts_engine
+
+    cached = self._voice_engine_cache.get(voice_key)
+    if cached is not None:
+      return cached
+
+    engine = self.voice_engine_factory(selection)
+    self._voice_engine_cache[voice_key] = engine
+    return engine
 
   def wait_until_idle(self, *, timeout: float | None = None) -> bool:
     """Wait until all currently queued chunks have been processed.
@@ -1122,7 +1247,8 @@ class TtsWorker:
     try:
       if self._is_cancelled(session_id=chunk.session_id, turn_id=chunk.turn_id):
         return
-      wav_path = self.tts_engine.synthesise_to_wav(
+      tts_engine = self._tts_engine_for_chunk(chunk)
+      wav_path = tts_engine.synthesise_to_wav(
         chunk.text,
         session_id=chunk.session_id,
         turn_id=chunk.turn_id,

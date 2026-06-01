@@ -1,0 +1,394 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<Table class="oracle.dbtools.crest.model.design.relational.Table" directorySegmentName="seg_0" id="2BC65E38-89FC-1D6F-0998-2EE3ABCF0B33" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="MODEL_GENERATION_PRESETS">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>ORAC_CORE</sourceObjSchema>
+<sourceObjName>MODEL_GENERATION_PRESETS</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Reusable model generation presets controlling sampling and output limits for LLM requests.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>2662D72F-A947-D0AC-A0E7-7151B256F6C0</importedID>
+<allowColumnReorder>false</allowColumnReorder>
+<existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
+<parsed>true</parsed>
+<columns itemClass="oracle.dbtools.crest.model.design.relational.Column">
+<Column name="MODEL_PRESET_ID" id="CA155F1E-AFA6-8A2E-1618-6C9E2D15D898">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>MODEL_GENERATION_PRESETS</sourceObjSchema>
+<sourceObjName>MODEL_PRESET_ID</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Surrogate primary key for the model generation preset.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>57C45984-36B6-F202-7207-E1D0018CA2BF</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementColumn>true</autoIncrementColumn>
+<identityColumn>true</identityColumn>
+<defaultOntNull>true</defaultOntNull>
+<autoIncrementCycle>false</autoIncrementCycle>
+<autoIncrementDisableCache>false</autoIncrementDisableCache>
+<autoIncrementCache>20</autoIncrementCache>
+<autoIncrementOrder>false</autoIncrementOrder>
+</Column>
+<Column name="MODEL_PRESET_CODE" id="F10AE43D-2336-8ED4-CF19-82733FA08413">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>MODEL_GENERATION_PRESETS</sourceObjSchema>
+<sourceObjName>MODEL_PRESET_CODE</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Unique short code identifying the model generation preset.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>1267A654-6754-A0B9-7E09-C65CDA71DDE2</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>50 CHAR</dataTypeSize>
+<ownDataTypeParameters>50 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="MODEL_PRESET_NAME" id="37D9D2BE-B593-B571-3096-AC5351CFB256">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>MODEL_GENERATION_PRESETS</sourceObjSchema>
+<sourceObjName>MODEL_PRESET_NAME</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Display name for the model generation preset.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>6C9DC16E-C854-682A-0E4F-2DCA3C4A245A</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>100 CHAR</dataTypeSize>
+<ownDataTypeParameters>100 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="DESCRIPTION" id="CAD7B5F3-D00C-BAF9-CF1F-F0D45CDC65FD">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>MODEL_GENERATION_PRESETS</sourceObjSchema>
+<sourceObjName>DESCRIPTION</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Description of the preset intent and expected model-driving behaviour.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>35B554E5-81BC-BED3-9A8B-2415EDCE569C</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>4000 CHAR</dataTypeSize>
+<ownDataTypeParameters>4000 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="TEMPERATURE" id="A9D4EF2B-8719-54E9-DED0-BEB607C668A5">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>MODEL_GENERATION_PRESETS</sourceObjSchema>
+<sourceObjName>TEMPERATURE</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Sampling temperature used by providers that support it.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>266DCB41-364D-7490-0E5B-3F21F8BEE87C</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="TOP_P" id="D68A3767-1E9E-38FB-3DBD-6F3FF71C8907">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>MODEL_GENERATION_PRESETS</sourceObjSchema>
+<sourceObjName>TOP_P</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Nucleus sampling threshold used by providers that support it.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>9D3534D5-B428-07D5-DDE3-F33F7BE477BC</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="TOP_K" id="D8C96B50-469E-4E70-8A59-FF74EAABFC9C">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>MODEL_GENERATION_PRESETS</sourceObjSchema>
+<sourceObjName>TOP_K</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Top-k sampling limit used by providers that support it.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>76D5F09D-AD93-00C9-F964-DE5640B5A84C</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="REPEAT_PENALTY" id="D3741066-55F5-AE86-F082-30F659AB2A87">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>MODEL_GENERATION_PRESETS</sourceObjSchema>
+<sourceObjName>REPEAT_PENALTY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Repeat penalty used by providers that support it.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>D6099DB4-893D-7AC2-C89A-50AC12A2E2F8</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="NUM_PREDICT" id="901461DC-7473-B265-4A53-D7C1226CF4F8">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>MODEL_GENERATION_PRESETS</sourceObjSchema>
+<sourceObjName>NUM_PREDICT</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Requested maximum generated tokens, mapped per provider where supported.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>405D2C0D-9779-6D3B-0525-017D015F9640</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="SEED" id="C279C299-11B3-74AF-6BF3-78216EE50064">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>MODEL_GENERATION_PRESETS</sourceObjSchema>
+<sourceObjName>SEED</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Optional deterministic seed for providers that support seeded generation.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>9F8868AE-28D8-7674-6D6C-45E52C9BFC55</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="IS_SYSTEM_PRESET" id="3FE3CA5F-972C-9001-7A5B-CD7E2D2700C9">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>MODEL_GENERATION_PRESETS</sourceObjSchema>
+<sourceObjName>IS_SYSTEM_PRESET</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Indicates whether the preset is supplied by Orac rather than user-created.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>7FBF1D0D-6B03-FFA9-BDF2-1DDBB49B5D99</importedID>
+<constraintName>MODEL_GENERATION_PRESETS_CK1</constraintName>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>1 CHAR</dataTypeSize>
+<listOfValues>
+<valueDef value="&apos;N&apos;" description=""/>
+<valueDef value="&apos;Y&apos;" description=""/>
+</listOfValues>
+<defaultValue>&apos;Y&apos;</defaultValue>
+<ownDataTypeParameters>1 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="IS_ACTIVE" id="F6508274-734F-90A9-C2CB-E1FD0E27D430">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>MODEL_GENERATION_PRESETS</sourceObjSchema>
+<sourceObjName>IS_ACTIVE</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Indicates whether the preset is available for selection.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>EB5541F3-2CE5-8820-7B45-1E9C6BF54284</importedID>
+<constraintName>MODEL_GENERATION_PRESETS_CK2</constraintName>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>1 CHAR</dataTypeSize>
+<listOfValues>
+<valueDef value="&apos;N&apos;" description=""/>
+<valueDef value="&apos;Y&apos;" description=""/>
+</listOfValues>
+<defaultValue>&apos;Y&apos;</defaultValue>
+<ownDataTypeParameters>1 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_BY" id="8A52DF7F-ED32-8ED0-5141-49309EF274E5">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>MODEL_GENERATION_PRESETS</sourceObjSchema>
+<sourceObjName>CREATED_BY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[User or process that created the row.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>DFF597C9-F21E-979B-A815-2A496E321A4E</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>255 CHAR</dataTypeSize>
+<defaultValue>coalesce(
+                      sys_context(&apos;apex$session&apos;, &apos;app_user&apos;),
+                      sys_context(&apos;userenv&apos;, &apos;proxy_user&apos;),
+                      sys_context(&apos;userenv&apos;, &apos;session_user&apos;),
+                      user
+                    )</defaultValue>
+<ownDataTypeParameters>255 CHAR,,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_ON" id="CBCF1E3F-3C63-B6EB-FFFA-D857DFA1B2C2">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>MODEL_GENERATION_PRESETS</sourceObjSchema>
+<sourceObjName>CREATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Timestamp when the row was created.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>AC4D5F3A-2759-DA1F-79C6-91C922C9650A</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT047</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<defaultValue>systimestamp</defaultValue>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<defaultOntNull>true</defaultOntNull>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_BY" id="767E6B1D-8D2A-1085-47A9-91E607A9D0E5">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>MODEL_GENERATION_PRESETS</sourceObjSchema>
+<sourceObjName>UPDATED_BY</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[User or process that last updated the row.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>3969CBC4-5F01-9364-1C38-EDC8BEB20525</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>255 CHAR</dataTypeSize>
+<ownDataTypeParameters>255 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_ON" id="B17DF791-3A4E-1DFF-1074-92077A629D73">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>MODEL_GENERATION_PRESETS</sourceObjSchema>
+<sourceObjName>UPDATED_ON</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Timestamp when the row was last updated.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>A08231FF-501A-96DF-C178-4686E3D2D520</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT047</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="ROW_VERSION" id="F51FC822-6A82-2944-99DB-E1488503D51F">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>MODEL_GENERATION_PRESETS</sourceObjSchema>
+<sourceObjName>ROW_VERSION</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<commentInRDBMS><![CDATA[Row version number used for optimistic locking.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>EAC901FC-F1C5-5906-B768-D62E529F5532</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<defaultValue>1</defaultValue>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+</columns>
+<indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
+<ind_PK_UK id="458D7A12-6F45-A8E9-35F4-9F3CF5CD8AEC" name="MODEL_GENERATION_PRESETS_PK">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>ORAC_CORE</sourceObjSchema>
+<sourceObjName>MODEL_GENERATION_PRESETS_PK</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>4CDC61DC-9640-3372-29A4-5CD441B57D59</importedID>
+<pk>true</pk>
+<indexState>Primary Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="CA155F1E-AFA6-8A2E-1618-6C9E2D15D898"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="D36F2994-E9C1-FC6D-60C9-944CDF84C8C8" name="MODEL_GENERATION_PRESETS_UK1">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>ORAC_CORE</sourceObjSchema>
+<sourceObjName>MODEL_GENERATION_PRESETS_UK1</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>830287B4-8B9A-859A-83AA-3ECFC2BCE712</importedID>
+<indexState>Unique Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="F10AE43D-2336-8ED4-CF19-82733FA08413"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="4DC2C3DC-11EB-201A-9B89-D3207473860F" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="MODEL_GENERATION_PRESETS_PK">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>ORAC_CORE</sourceObjSchema>
+<sourceObjName>MODEL_GENERATION_PRESETS_PK</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>723B089E-46D6-E9BB-4A6E-16F7FBE494B0</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="CA155F1E-AFA6-8A2E-1618-6C9E2D15D898"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="1049476B-470C-7802-DABB-FDB4560A54F9" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="MODEL_GENERATION_PRESETS_UK1">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>ORAC_CORE</sourceObjSchema>
+<sourceObjName>MODEL_GENERATION_PRESETS_UK1</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>8303F532-4E92-C6CC-5417-A8CA3E73CF33</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="F10AE43D-2336-8ED4-CF19-82733FA08413"/>
+</indexColumnUsage>
+</ind_PK_UK>
+</indexes>
+<tableCheckConstraints itemClass="oracle.dbtools.crest.model.design.constraint.TableLevelConstraint">
+<tableCheckConstraint name="MODEL_GENERATION_PRESETS_CK3" directorySegmentName="seg_0" id="83D75211-A5FE-FC30-4292-6FBE5A2C34BB">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>ORAC_CORE</sourceObjSchema>
+<sourceObjName>MODEL_GENERATION_PRESETS_CK3</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>7A18B3B1-73E4-C930-3FC1-EFBB1112DF9A</importedID>
+<rule><![CDATA[
+    (temperature is null or temperature between 0 and 2)
+    and (top_p is null or top_p between 0 and 1)
+    and (top_k is null or top_k >= 1)
+    and (repeat_penalty is null or repeat_penalty > 0)
+    and (num_predict is null or num_predict >= 1)
+  ]]></rule>
+</tableCheckConstraint>
+</tableCheckConstraints>
+</Table>

@@ -2,9 +2,9 @@
 
 ## Non-negotiables
 
-- Orac core owns orchestration, routing, persistence, and security boundaries.
-- Plugins extend Orac; they do not redefine Orac.
-- Plugin code must not bypass Orac core APIs to access protected core state.
-- LLMs must not generate arbitrary SQL, shell commands, or privileged operations at runtime.
-- Home Assistant integration must remain optional unless explicitly required by a feature.
-- The content engine is on the critical path and must remain the central mediation layer for conversational context.
+- The core runtime owns orchestration, routing, persistence, and security boundaries.
+- Plugins extend the platform; they do not redefine it.
+- Plugin code must not bypass approved APIs to access protected state.
+- LLM-mediated SQL, shell, and privileged operations must remain within validated, policy-constrained execution paths.
+- Integration-specific capabilities must remain optional unless explicitly required by a feature.
+- Where conversational or AI context is part of the architecture, its mediation layer must not be bypassed, and its control path must be explicitly documented.

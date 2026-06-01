@@ -160,7 +160,7 @@ class WeatherPluginTests(unittest.TestCase):
 
     def test_weather_plugin_returns_graceful_failure_when_provider_errors(self) -> None:
         provider = Mock()
-        provider.resolve_location.return_value = ResolvedLocation(
+        location = ResolvedLocation(
             name="London",
             latitude=51.0,
             longitude=-0.1,
@@ -168,6 +168,8 @@ class WeatherPluginTests(unittest.TestCase):
             country="United Kingdom",
             admin1="England",
         )
+        provider.resolve_location.return_value = location
+        provider.search_locations.return_value = (location,)
         provider.get_weather.side_effect = RuntimeError("network down")
         plugin = WeatherPlugin(
             logger=_FakeLogger(),

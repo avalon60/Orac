@@ -6,9 +6,9 @@
 #   selection and fallback handling.
 
 import asyncio
-import subprocess
 import re
 import json
+import hashlib
 import threading
 import uuid
 import os
@@ -24,11 +24,12 @@ from zoneinfo import ZoneInfo
 import yaml
 
 from model.network import OracListener
-from model.llm_connector import LMStudioConnector, OllamaConnector
+from model.llm_connector import LLMUsageMetadata
 from lib.config_mgr import ConfigManager
 from lib.fsutils import project_home
 from lib.icons import Icons
 from lib.logutil import Logger
+from lib.protocol_validation import disabled_protocol_validator
 from model.orac_auth import FrameAuthChain, ZenFrameAuth
 from model.context_manager import OracContextManager
 from model.text_chunker import TextChunker
@@ -37,14 +38,32 @@ from orac_voice.tts_coalescer import DEFAULT_TTS_COALESCE_MAX_CHARS
 from orac_voice.tts_coalescer import DEFAULT_TTS_COALESCE_MIN_CHUNKS
 from orac_voice.tts_worker import TtsWorker
 from orac_voice.tts_worker import create_local_tts_worker_from_config
+from orac_voice.tts_voice_catalog import refresh_tts_voice_catalog
+from orac_voice.tts_voice_catalog import resolve_tts_voice_selection
 from orac_voice.voice_events import VoiceEvent
+from model.plugin_audit_adapter import PluginAuditAdapter
 from model.plugin_routing import (
     HashEmbeddingProvider,
     PluginManager,
     PluginRoutingHandoff,
     render_plugin_routing_hints,
 )
+from model.plugin_execution_service import PluginExecutionService
+from model.plugin_confirmation_broker import PluginConfirmationBroker
 from model.plugin_router import PluginRouter
+from model.plugin_service_manager import PluginServiceManager
+from model.provider_registry import ProviderRegistry
+from orac_core.retrieval import ExplicitRetrievalService
+from orac_core.retrieval import GroundingPack
+from orac_core.retrieval import GroundingPackBuilder
+from orac_core.retrieval import RetrievalOutcome
+from orac_core.retrieval import build_retrieval_response_guidance
+from orac_core.retrieval import SearXNGSearchProvider
+from orac_core.retrieval import SearchBroker
+from orac_core.retrieval import normalize_retrieval_response_style
+from orac_core.retrieval import polish_retrieval_response_text
+from orac_core.retrieval import SourceFetcher
+from orac_core.retrieval import detect_explicit_search_request
 from lib.session_manager import DBSession
 from lib.user_security import UserSecurity
 
@@ -110,10 +129,11 @@ except Exception as e:
         PROTOCOL_VERSION = schema.get("$id", "local-schema")
         logger.log_info(f"✅ Using local protocol schema at {local_schema_path}")
     except Exception as e2:
-        logger.log_warning(f"⚠️ Local schema fallback failed; validation disabled: {e2}")
-
-        def validate_frame(_): ...
-        PROTOCOL_VERSION = "unknown"
+        logger.log_warning(f"⚠️ Local schema fallback failed: {e2}")
+        validate_frame, PROTOCOL_VERSION = disabled_protocol_validator(e2)
+        logger.log_warning(
+            "⚠️ Protocol validation disabled by explicit development override."
+        )
 
 # --- Debug dump helper (module-level so it's always available) ----------------
 def _dump_debug_blob(name: str, content: str) -> None:
@@ -215,12 +235,23 @@ def system_clock_line(prefs: dict) -> str:
     lines = [
         f"Session timezone preference: {tz_name}.",
         f"User-facing local time: {local_str}; day: {dow}.",
+        "The user-facing local time is authoritative for the current turn; "
+        "do not infer the current time from conversation history or "
+        "client/request timestamps.",
         "When answering questions about the current time or date, use the "
         "user-facing local time above, not UTC.",
+        "For direct questions like 'what time is it?', answer with the exact "
+        "HH:MM value from the user-facing local time. Do not round to the "
+        "hour or omit minutes unless the user explicitly asks for an "
+        "approximate time.",
         f"Current UTC time for logs and technical timestamps only: {utc_iso}.",
     ]
     if weather_location:
         lines.append(f"Assume your current location is {weather_location}.")
+        lines.append(
+            "This weather location is the preferred location context; do not "
+            "replace it with a location inferred from the timezone."
+        )
         lines.append(
             "If asked where you are, where you are located, or similar, answer "
             "with this configured operational/home location. Do not answer that "
@@ -369,6 +400,34 @@ def _personality_rule_lines(personality: dict[str, Any]) -> list[str]:
     return lines
 
 
+SYSTEM_GENERATION_DEFAULTS: dict[str, Any] = {
+    "temperature": 0.2,
+    "repeat_penalty": 1.1,
+}
+
+GENERATION_PRESET_FIELDS = (
+    "TEMPERATURE",
+    "TOP_P",
+    "TOP_K",
+    "REPEAT_PENALTY",
+    "NUM_PREDICT",
+    "SEED",
+)
+
+
+def _generation_options_from_preset(preset: dict[str, Any]) -> dict[str, Any]:
+    """Extract provider-neutral generation options from a preset row."""
+    if not isinstance(preset, dict):
+        return {}
+
+    options: dict[str, Any] = {}
+    for field in GENERATION_PRESET_FIELDS:
+        value = preset.get(field)
+        if value is not None:
+            options[field.lower()] = value
+    return options
+
+
 def _normalise_discovered_model_names(models: list[Any]) -> list[str]:
     """Return a stable, de-duplicated list of discovered model names."""
     seen: set[str] = set()
@@ -396,16 +455,74 @@ def _orac_system_primer(meta: dict, policy: dict[str, Any]) -> str:
 
     identity = policy.get("identity", {})
     assistant_name = identity.get("assistant_name", "Orac")
-    vendor_claims = identity.get("disallowed_vendor_claims", [])
-    if vendor_claims:
-        claims_text = ", ".join(vendor_claims[:-1])
-        if len(vendor_claims) > 1:
-            claims_text = f"{claims_text}, or {vendor_claims[-1]}"
-        else:
-            claims_text = vendor_claims[0]
-        lines.append(
-            f"Your name is {assistant_name}. Never claim to be {claims_text}."
+    creator_profile = identity.get("creator_profile", {})
+    if not isinstance(creator_profile, dict):
+        creator_profile = {}
+    creator_name = str(creator_profile.get("name") or "").strip()
+    creator_role = str(creator_profile.get("role") or "").strip()
+    identity_answer = (
+        f"I am {assistant_name}, an extensible artificial intelligence system"
+    )
+    if creator_name:
+        identity_answer = f"{identity_answer}, created by {creator_name}"
+    identity_answer_policy = str(
+        identity.get("identity_answer_policy")
+        or (
+            "Your name is {assistant_name}. Only answer with the identity "
+            "statement when the user explicitly asks who or what you are, who "
+            "created you, or another direct identity/creator question. For "
+            "those questions, answer simply: \"{identity_answer}.\" Do not "
+            "include {assistant_name}'s identity or creator in replies to "
+            "ordinary factual requests such as date, time, weather, "
+            "calculations, or status questions unless the user asks for it."
         )
+    ).strip()
+    lines.append(
+        identity_answer_policy.replace(
+            "{assistant_name}",
+            assistant_name,
+        ).replace(
+            "{identity_answer}",
+            identity_answer,
+        )
+    )
+
+    if creator_name:
+        if creator_role:
+            lines.append(
+                f"{assistant_name} was created by "
+                f"{creator_name}, {creator_role}."
+            )
+        else:
+            lines.append(f"{assistant_name} was created by {creator_name}.")
+    lines.append(
+        "Do not volunteer details about Orac's implementation, underlying "
+        "model, runtime, training, or vendor provenance."
+    )
+    lines.append(
+        "If asked whether Orac was created, trained, or operated by a "
+        "third-party model vendor, answer no without listing vendor names."
+    )
+    lines.append(
+        "Only if asked specifically about technical implementation details, "
+        "say Orac is running on the configured local model/runtime."
+    )
+    lines.append(
+        "Do not infer or invent model provenance, and do not add vendor "
+        "denials to ordinary identity answers."
+    )
+
+    notable_works = creator_profile.get("notable_works", [])
+    if notable_works:
+        works_text = "; ".join(
+            str(item).strip() for item in notable_works if str(item).strip()
+        )
+        if works_text:
+            lines.append(f"Creator profile notable works: {works_text}.")
+
+    lines.extend(
+        str(rule) for rule in identity.get("rules", []) if str(rule).strip()
+    )
 
     for section_name in (
         "response_style",
@@ -435,6 +552,10 @@ def _orac_system_primer(meta: dict, policy: dict[str, Any]) -> str:
     return rendered
 
 
+def _system_prompt_fingerprint(primer: str) -> str:
+    """Return a stable fingerprint for a rendered system primer."""
+    return hashlib.sha256(primer.encode("utf-8")).hexdigest()
+
 
 # ==============================================================================
 # Orac Orchestrator
@@ -457,6 +578,7 @@ class Orac:
             self.llm_service_id = self.config_mgr.config_value("service", "llm_service_id")
             self.model_name = self.config_mgr.config_value("service", "default_model_name")
             self.service_url = self.config_mgr.config_value("service", "service_url")
+            self.provider_registry = ProviderRegistry(logger=logger)
             self.enable_prompt_dump = self.config_mgr.bool_config_value("context", "enable_prompt_dump", default=False)
             self._orac_run_dir = Path(os.environ.get("ORAC_RUN_DIR", "/run/orac"))
             self._dump_context_flag = self._orac_run_dir / "dump-context.once"
@@ -478,6 +600,17 @@ class Orac:
                 self.config_mgr.config_value("context", "history_turn_pairs", default="6")
             )
             self._reply_language = self.config_mgr.config_value("context", "reply_language", default="English")
+            self._default_timezone = (
+                self.config_mgr.config_value("context", "timezone", default="Europe/London").strip()
+                or "Europe/London"
+            )
+            self._retrieval_response_style = normalize_retrieval_response_style(
+                self.config_mgr.config_value(
+                    "retrieval",
+                    "retrieval_response_style",
+                    default="normal",
+                )
+            )
             self._persistence_failures: list[dict[str, str]] = []
             self._fail_on_persistence_error = False
 
@@ -540,20 +673,18 @@ class Orac:
             self._history_budget_reserve = int(
                 self.config_mgr.config_value('context', 'history_budget_reserve', default='300'))
 
-            service_map = {
-                "ollama": OllamaConnector,
-                "lmstudio": LMStudioConnector,
-            }
-
             self._validate_or_pull_model()
             try:
-                connector_cls = service_map[self.llm_service_id]
-            except KeyError:
+                self.llm = self.provider_registry.create_connector(
+                    provider_id=self.llm_service_id,
+                    service_url=self.service_url,
+                    model_name=self.model_name,
+                )
+            except ValueError as exc:
                 message = f"{Icons.error} LLM service not implemented: {self.llm_service_id}"
                 logger.log_critical(message)
-                raise NotImplementedError(message)
+                raise NotImplementedError(message) from exc
 
-            self.llm = connector_cls(service_url=self.service_url, model_name=self.model_name)
             self._llm_connector_cache: dict[tuple[str, str, str], Any] = {
                 (self.llm_service_id.strip().lower(), self.service_url.strip(), self.model_name.strip()): self.llm,
             }
@@ -609,6 +740,7 @@ class Orac:
             # Context manager + pruning policy
             self.ctx = OracContextManager(self.db_session, logger=logger)
             self._sync_llm_registry()
+            self._refresh_tts_voice_catalog()
             self._llm_probe_stop = threading.Event()
             self._llm_probe_thread: threading.Thread | None = None
             self._llm_probe_interval_secs = int(
@@ -636,8 +768,14 @@ class Orac:
             self._plugin_routing_min_score = float(min_score_raw) if min_score_raw else None
             self.plugin_manager: PluginManager | None = None
             self.plugin_router: PluginRouter | None = None
+            self.plugin_execution_service: PluginExecutionService | None = None
+            self.plugin_audit_adapter: PluginAuditAdapter | None = None
+            self.plugin_confirmation_broker: PluginConfirmationBroker | None = None
+            self.plugin_service_manager: PluginServiceManager | None = None
+            self.retrieval_service: ExplicitRetrievalService | None = None
             self._plugin_routing_ready = False
             self._init_plugin_routing()
+            self._init_retrieval()
             self._init_voice_output()
 
             logger.log_info(f"{Icons.robot} Orac orchestrator initialized with model: {self.model_name}")
@@ -663,6 +801,20 @@ class Orac:
             self._tts_worker = None
             self._tts_coalescer = None
             logger.log_error(f"{Icons.error} Local voice output unavailable: {exc}")
+
+    def _refresh_tts_voice_catalog(self) -> None:
+        """Refresh the runtime TTS voice catalogue without hiding failures."""
+        try:
+            rows = refresh_tts_voice_catalog(
+                db_session=self.db_session,
+                config_mgr=self.config_mgr,
+                orac_home=APP_HOME,
+            )
+            logger.log_info(
+                f"{Icons.tick} TTS voice catalogue refreshed: {len(rows)} voice(s)"
+            )
+        except Exception as exc:
+            _log_exception("TTS voice catalogue refresh failed", exc)
 
     def _create_tts_coalescer(self) -> TtsChunkCoalescer:
         """Create the local TTS chunk coalescer from configuration."""
@@ -839,6 +991,10 @@ class Orac:
                 "code": str(event_dict.get("code") or "TTS_PLAYBACK_ERROR"),
                 "message": str(event_dict.get("message") or "TTS playback failed"),
             }
+        self._validate_outbound_protocol_frame(
+            frame,
+            context="Voice playback event failed protocol validation",
+        )
         return frame
 
     def _publish_voice_playback_event(self, event: VoiceEvent) -> None:
@@ -900,6 +1056,13 @@ class Orac:
             or "unknown-turn"
         )
         coalescer = getattr(self, "_tts_coalescer", None)
+        request_meta = req_env.get("meta") if isinstance(req_env, dict) else {}
+        tts_voice = (
+            request_meta.get("tts_voice")
+            if isinstance(request_meta, dict)
+            and isinstance(request_meta.get("tts_voice"), dict)
+            else None
+        )
 
         if event_type == "text_chunk":
             chunk_text = str(event_payload.get("chunk") or "").strip()
@@ -910,6 +1073,7 @@ class Orac:
                     session_id=session_id,
                     turn_id=turn_id,
                     text=chunk_text,
+                    tts_voice=tts_voice,
                 )
                 if queued:
                     self._mark_voice_playback_queued(
@@ -930,6 +1094,7 @@ class Orac:
                     session_id=session_id,
                     turn_id=turn_id,
                     text=speech_text,
+                    tts_voice=tts_voice,
                 )
                 if queued:
                     self._mark_voice_playback_queued(
@@ -960,6 +1125,7 @@ class Orac:
                         session_id=session_id,
                         turn_id=terminal_turn_id,
                         text=speech_text,
+                        tts_voice=tts_voice,
                     )
                     if queued:
                         self._mark_voice_playback_queued(
@@ -1147,11 +1313,13 @@ class Orac:
         meta: dict,
         auth_user: str,
         plugin_routing_handoff: PluginRoutingHandoff | None = None,
+        retrieval_pack: GroundingPack | None = None,
     ) -> str:
         try:
             dump_prompt = self._should_dump_prompt()
+            default_timezone = getattr(self, "_default_timezone", "Europe/London")
             prefs = {
-                "timezone": meta.get("timezone", "Europe/London"),
+                "timezone": meta.get("timezone") or default_timezone,
                 "weather_location": meta.get("weather_location"),
                 "force_concise": meta.get("force_concise"),
             }
@@ -1172,8 +1340,29 @@ class Orac:
                 if user_profile.get("display_name"):
                     fact_lines.append(
                         f"- Display name: {user_profile['display_name']}"
-                    )
+                )
                 user_facts_block = "\n".join(fact_lines) + "\n\n"
+            retrieval_block = ""
+            if retrieval_pack is not None and retrieval_pack.evidence_block:
+                retrieval_block = (
+                    f"{retrieval_pack.evidence_block}\n\n"
+                )
+            retrieval_response_style = normalize_retrieval_response_style(
+                meta.get("retrieval_response_style")
+                or getattr(self, "_retrieval_response_style", "normal")
+            )
+            retrieval_directive = ""
+            if retrieval_pack is not None and retrieval_pack.evidence_block:
+                retrieval_directive = build_retrieval_response_guidance(
+                    response_style=retrieval_response_style,
+                    retrieval_pack=retrieval_pack,
+                )
+                if retrieval_directive:
+                    retrieval_directive = (
+                        "The user explicitly requested internet retrieval, and Orac has already "
+                        "retrieved web evidence above. "
+                        f"{retrieval_directive}\n"
+                    )
 
             primer_meta = {
                 "reply_language": meta.get("reply_language", self._reply_language),
@@ -1190,6 +1379,7 @@ class Orac:
                 final_directive = (
                     f"\nFINAL DIRECTIVE: For the CURRENT user message below, respond in {lang} ONLY. "
                     "Ignore any prior conversation for this reply. Keep the reply concise.\n"
+                    f"{retrieval_directive}"
                 )
                 preamble = (
                     f"{primer_inline}\n"
@@ -1197,6 +1387,7 @@ class Orac:
                     f"{clock}\n\n"
                     f"{user_facts_block}"
                     f"{routing_block}"
+                    f"{retrieval_block}"
                     "Current user message:\n"
                 )
                 full = f"{preamble}\n{prompt}\n{final_directive}"
@@ -1255,6 +1446,7 @@ class Orac:
                 "that interpretation; ask for clarification only when multiple plausible meanings remain. "
                 "For personal/session facts, only claim facts present in authenticated context or recent exchange. "
                 "Keep the reply concise.\n"
+                f"{retrieval_directive}"
             )
 
             preamble = (
@@ -1263,6 +1455,7 @@ class Orac:
                     f"{clock}\n\n"
                     f"{user_facts_block}"
                     f"{routing_block}"
+                    f"{retrieval_block}"
                     "Recent conversation context:\n"
                     + ("\n".join(history_lines) if history_lines else "")
                     + "\n\nCurrent user message:\n"
@@ -1911,11 +2104,26 @@ class Orac:
                 dimensions=embedding_dimensions,
             )
             self.plugin_manager = PluginManager(embedding_provider=embedding_provider, logger=logger)
+            self.plugin_service_manager = PluginServiceManager(
+                logger=logger,
+                config_mgr=self.config_mgr,
+            )
+            self.plugin_audit_adapter = PluginAuditAdapter(
+                db_session=self.db_session,
+                logger=logger,
+            )
+            self.plugin_confirmation_broker = PluginConfirmationBroker()
             self.plugin_router = PluginRouter(
                 plugin_manager=self.plugin_manager,
                 logger=logger,
                 config_mgr=self.config_mgr,
                 context_manager=self.ctx,
+                confirmation_broker=self.plugin_confirmation_broker,
+            )
+            self.plugin_execution_service = PluginExecutionService(
+                plugin_router=self.plugin_router,
+                logger=logger,
+                plugin_audit_adapter=self.plugin_audit_adapter,
             )
             logger.log_info(f"{Icons.info} Plugin routing bootstrap starting.")
             logger.log_info(
@@ -1927,8 +2135,67 @@ class Orac:
         except Exception as e:
             self.plugin_manager = None
             self.plugin_router = None
+            self.plugin_execution_service = None
+            self.plugin_audit_adapter = None
+            self.plugin_confirmation_broker = None
+            self.plugin_service_manager = None
             self._plugin_routing_ready = False
             _log_exception("Plugin routing initialisation failed (non-fatal)", e)
+
+    def _init_retrieval(self) -> None:
+        """Initialise explicit-only internet retrieval if configuration allows it."""
+        try:
+            searxng_base_url = self.config_mgr.config_value(
+                "retrieval.searxng",
+                "base_url",
+                default="http://127.0.0.1:8080",
+            )
+            searxng_timeout_seconds = self.config_mgr.float_config_value(
+                "retrieval.searxng",
+                "timeout_seconds",
+                default=5.0,
+            )
+            max_response_bytes = self.config_mgr.int_config_value(
+                "retrieval",
+                "max_response_bytes",
+                default=256_000,
+            )
+            max_redirects = self.config_mgr.int_config_value(
+                "retrieval",
+                "max_redirects",
+                default=3,
+            )
+            search_provider = SearXNGSearchProvider(
+                base_url=searxng_base_url,
+                timeout_seconds=searxng_timeout_seconds,
+                logger=logger,
+            )
+            broker = SearchBroker(
+                logger=logger,
+                config_mgr=self.config_mgr,
+                providers={"searxng": search_provider},
+            )
+            source_fetcher = SourceFetcher(
+                logger=logger,
+                timeout_seconds=searxng_timeout_seconds,
+                max_sources_to_fetch=broker.max_sources_to_fetch,
+                max_bytes=max_response_bytes,
+                max_redirects=max_redirects,
+            )
+            grounding_pack_builder = GroundingPackBuilder()
+            self.retrieval_service = ExplicitRetrievalService(
+                search_broker=broker,
+                source_fetcher=source_fetcher,
+                grounding_pack_builder=grounding_pack_builder,
+                logger=logger,
+            )
+            logger.log_info(
+                f"{Icons.info} Explicit retrieval subsystem initialised with provider "
+                f"'{broker.settings.default_search_provider}'."
+            )
+        except Exception as e:
+            self.retrieval_service = None
+            _log_exception("Explicit retrieval initialisation failed (non-fatal)", e)
 
     def refresh_plugin_routing(self) -> dict[str, Any] | None:
         """Bootstraps or refreshes plugin routing state on demand."""
@@ -1937,6 +2204,9 @@ class Orac:
             return None
         logger.log_info(f"{Icons.info} Plugin routing refresh requested.")
         report = self.plugin_manager.refresh()
+        service_status = self._refresh_plugin_services_from_discovery()
+        if service_status is not None:
+            report["service_lifecycle"] = service_status
         self._plugin_routing_ready = True
         logger.log_info(
             f"{Icons.info} Plugin routing refresh complete: "
@@ -1946,6 +2216,54 @@ class Orac:
             f"re_embedded={report.get('re_embedded', 0)}"
         )
         return report
+
+    def _refresh_plugin_services_from_discovery(self) -> dict[str, Any] | None:
+        """Register and auto-start service-capable plugins from the latest discovery."""
+        service_manager = getattr(self, "plugin_service_manager", None)
+        plugin_manager = getattr(self, "plugin_manager", None)
+        if service_manager is None or plugin_manager is None:
+            logger.log_debug("Plugin service lifecycle unavailable; skipping service refresh.")
+            return None
+
+        discovered_manifests = getattr(plugin_manager, "discovered_manifests", None)
+        manifests = (
+            list(discovered_manifests())
+            if callable(discovered_manifests)
+            else []
+        )
+        service_manifests = [
+            manifest
+            for manifest in manifests
+            if manifest.runtime_mode in {"service", "hybrid"}
+        ]
+        if service_manager.service_ids():
+            logger.log_info(f"{Icons.info} Plugin service refresh stopping previously managed services.")
+            service_manager.stop_all()
+
+        registration_status = service_manager.register_manifests(service_manifests)
+        service_manager.start_auto_services()
+        status = service_manager.status()
+        logger.log_info(
+            f"{Icons.info} Plugin service refresh complete: "
+            f"registered={status.get('registered', 0)} "
+            f"dependency_invalid={status.get('dependency_invalid', 0)}"
+        )
+        return status or registration_status
+
+    def shutdown_plugin_services(self) -> None:
+        """Stop all supervised plugin services owned by this Orac instance."""
+        service_manager = getattr(self, "plugin_service_manager", None)
+        if service_manager is None:
+            return
+        try:
+            logger.log_info(f"{Icons.info} Plugin service shutdown requested.")
+            service_manager.stop_all()
+        except Exception as exc:
+            _log_exception("Plugin service shutdown failed", exc)
+
+    def shutdown(self) -> None:
+        """Shut down runtime resources owned directly by this Orac instance."""
+        self.shutdown_plugin_services()
 
     def _ensure_plugin_routing_ready(self, *, force_refresh: bool = False) -> dict[str, Any] | None:
         """Ensures plugin routing is ready without rebuilding on every request."""
@@ -1999,6 +2317,35 @@ class Orac:
             refreshed=refreshed,
         )
 
+    def _execute_plugin_request(
+        self,
+        *,
+        prompt: str,
+        meta: dict[str, Any],
+        plugin_routing_handoff: PluginRoutingHandoff | None,
+        auth_user: str,
+        request_context: dict[str, Any] | None = None,
+    ) -> Any | None:
+        """Delegate plugin execution through the plugin execution service."""
+        plugin_execution_service = getattr(self, "plugin_execution_service", None)
+        if plugin_execution_service is None:
+            plugin_router = getattr(self, "plugin_router", None)
+            if plugin_router is None:
+                return None
+            plugin_execution_service = PluginExecutionService(
+                plugin_router=plugin_router,
+                logger=logger,
+                plugin_audit_adapter=getattr(self, "plugin_audit_adapter", None),
+            )
+            self.plugin_execution_service = plugin_execution_service
+        return plugin_execution_service.execute(
+            prompt=prompt,
+            meta=meta,
+            handoff=plugin_routing_handoff,
+            auth_user=auth_user,
+            request_context=request_context,
+        )
+
     def _apply_user_preference_meta(
         self,
         meta: dict[str, Any],
@@ -2027,6 +2374,42 @@ class Orac:
                 )
         if default_llm_id is not None:
             enriched_meta["default_llm_id"] = default_llm_id
+
+        try:
+            tts_voice_pref = self.ctx.get_user_preference_value(
+                username=auth_user,
+                pref_key="tts_voice",
+            )
+        except Exception as e:
+            _log_exception("Failed to load tts_voice preference", e)
+            tts_voice_pref = None
+
+        tts_voice_selection_checked = False
+        try:
+            tts_voice = resolve_tts_voice_selection(
+                db_session=self.db_session,
+                config_mgr=self.config_mgr,
+                preferred_voice_key=(
+                    str(tts_voice_pref).strip()
+                    if tts_voice_pref not in (None, "")
+                    else None
+                ),
+                username=auth_user,
+            )
+            tts_voice_selection_checked = True
+        except Exception as e:
+            _log_exception("Failed to resolve selected TTS voice", e)
+            tts_voice = None
+
+        if tts_voice is not None:
+            enriched_meta["tts_voice_key"] = tts_voice.tts_voice_key
+            enriched_meta["tts_voice"] = tts_voice.to_runtime_dict()
+        elif tts_voice_selection_checked:
+            enriched_meta["tts_voice"] = {
+                "tts_voice_key": "__unavailable__",
+                "provider_code": "unavailable",
+                "provider_voice_id": "",
+            }
 
         try:
             personality_pref = self.ctx.get_user_preference_value(
@@ -2090,6 +2473,75 @@ class Orac:
         enriched_meta["weather_location_pref"] = weather_pref
         return enriched_meta
 
+    def _load_model_generation_preset(
+        self,
+        *,
+        model_preset_id: Any = None,
+        model_preset_code: Any = None,
+    ) -> dict[str, Any]:
+        """Load an active model generation preset from the context layer."""
+        try:
+            return self.ctx.get_model_generation_preset(
+                model_preset_id=model_preset_id,
+                model_preset_code=(
+                    str(model_preset_code).strip().upper()
+                    if model_preset_code not in (None, "")
+                    else None
+                ),
+            )
+        except Exception as e:
+            _log_exception("Failed to load model generation preset", e)
+            return {}
+
+    def _resolve_generation_options(
+        self,
+        *,
+        meta: dict[str, Any],
+        provider: str,
+    ) -> dict[str, Any]:
+        """Resolve provider-neutral generation options for one request.
+
+        Personas reference a default preset, but do not own raw generation
+        fields. A request-supplied preset is treated as a selected/default
+        preset underneath the persona default. Provider adapters omit
+        unsupported fields.
+        """
+        del provider
+        resolved = dict(SYSTEM_GENERATION_DEFAULTS)
+        request_meta = meta if isinstance(meta, dict) else {}
+        personality = request_meta.get("orac_personality")
+        personality = personality if isinstance(personality, dict) else {}
+
+        selected_preset = {}
+        if request_meta.get("model_preset_id") not in (None, ""):
+            selected_preset = self._load_model_generation_preset(
+                model_preset_id=request_meta.get("model_preset_id"),
+            )
+        elif request_meta.get("model_preset_code") not in (None, ""):
+            selected_preset = self._load_model_generation_preset(
+                model_preset_code=request_meta.get("model_preset_code"),
+            )
+        resolved.update(_generation_options_from_preset(selected_preset))
+
+        persona_preset = {}
+        if personality.get("MODEL_PRESET_ID") not in (None, ""):
+            persona_preset = self._load_model_generation_preset(
+                model_preset_id=personality.get("MODEL_PRESET_ID"),
+            )
+        resolved.update(_generation_options_from_preset(persona_preset))
+
+        override = request_meta.get("generation_options_override")
+        if (
+            _as_bool(request_meta.get("admin_debug_generation_override")) is True
+            and isinstance(override, dict)
+        ):
+            for key in GENERATION_PRESET_FIELDS:
+                option_key = key.lower()
+                if option_key in override:
+                    resolved[option_key] = override[option_key]
+
+        return resolved
+
     def _get_llm_connector(
         self,
         *,
@@ -2107,15 +2559,18 @@ class Orac:
         if cached is not None:
             return cached
 
-        service_map = {
-            "ollama": OllamaConnector,
-            "lmstudio": LMStudioConnector,
-        }
-        connector_cls = service_map.get(key[0])
-        if connector_cls is None:
-            raise RuntimeError(f"Unsupported LLM service: {service_id}")
-
-        connector = connector_cls(service_url=key[1], model_name=key[2])
+        provider_registry = getattr(self, "provider_registry", None)
+        if provider_registry is None:
+            provider_registry = ProviderRegistry(logger=logger)
+            self.provider_registry = provider_registry
+        try:
+            connector = provider_registry.create_connector(
+                provider_id=key[0],
+                service_url=key[1],
+                model_name=key[2],
+            )
+        except ValueError as exc:
+            raise RuntimeError(f"Unsupported LLM service: {service_id}") from exc
         self._llm_connector_cache[key] = connector
         return connector
 
@@ -2128,15 +2583,17 @@ class Orac:
 
     def _backend_model_available(self, *, provider: str, model_name: str) -> bool:
         """Return whether the configured backend currently exposes a model."""
-        provider_norm = str(provider or "").strip().lower()
-        model_norm = str(model_name or "").strip()
-        if not provider_norm or not model_norm:
-            return False
-        if provider_norm != self.llm_service_id.strip().lower():
-            return False
-        if model_norm in self._available_backend_models:
-            return True
-        return model_norm == self.model_name.strip()
+        provider_registry = getattr(self, "provider_registry", None)
+        if provider_registry is None:
+            provider_registry = ProviderRegistry(logger=logger)
+            self.provider_registry = provider_registry
+        return provider_registry.backend_model_available(
+            active_provider_id=self.llm_service_id,
+            provider_id=provider,
+            model_name=model_name,
+            available_models=self._available_backend_models,
+            configured_model_name=self.model_name,
+        )
 
     def _configured_model_lookup_candidates(self) -> list[str]:
         """Return model-name candidates for resolving the configured fallback row."""
@@ -2144,22 +2601,14 @@ class Orac:
         if not configured_model:
             return []
 
-        candidates: list[str] = [configured_model]
-        provider = self.llm_service_id.strip().lower()
-
-        if provider == "ollama":
-            if ":" not in configured_model:
-                candidates.append(f"{configured_model}:latest")
-            elif configured_model.endswith(":latest"):
-                candidates.append(configured_model[: -len(":latest")])
-
-        deduped: list[str] = []
-        seen: set[str] = set()
-        for candidate in candidates:
-            if candidate and candidate not in seen:
-                seen.add(candidate)
-                deduped.append(candidate)
-        return deduped
+        provider_registry = getattr(self, "provider_registry", None)
+        if provider_registry is None:
+            provider_registry = ProviderRegistry(logger=logger)
+            self.provider_registry = provider_registry
+        return provider_registry.model_lookup_candidates(
+            provider_id=self.llm_service_id,
+            model_name=configured_model,
+        )
 
     def _configured_fallback_registry_row(self) -> dict[str, Any]:
         """Resolve the registry row for the configured fallback model, tolerating aliases."""
@@ -2401,48 +2850,15 @@ class Orac:
     # --- Model availability checks -------------------------------------------
     def _validate_or_pull_model(self):
         """Validates that the configured model is available (pulls for Ollama; checks LM Studio)."""
-        if self.llm_service_id == "ollama":
-            try:
-                output = subprocess.check_output(["ollama", "list"], text=True)
-                if self.model_name not in output:
-                    logger.log_warning(f"{Icons.warn} Model '{self.model_name}' not found in Ollama. Pulling it now...")
-                    subprocess.run(["ollama", "pull", self.model_name], check=True)
-                    logger.log_info(f"{Icons.tick} Model '{self.model_name}' pulled successfully.")
-                else:
-                    logger.log_info(f"{Icons.tick} Model '{self.model_name}' is already available in Ollama.")
-            except FileNotFoundError as e:
-                _log_exception(f"{Icons.error} Ollama not installed or not in PATH", e)
-                raise RuntimeError("Ollama is not installed or not in PATH.") from e
-            except subprocess.CalledProcessError as e:
-                _log_exception(f"{Icons.error} Failed to pull model '{self.model_name}'", e)
-                raise RuntimeError(f"Failed to pull model '{self.model_name}': {e}") from e
-
-        elif self.llm_service_id == "lmstudio":
-            import requests
-            try:
-                response = requests.get(f"{self.service_url}/v1/models", timeout=10)
-                response.raise_for_status()
-                models = response.json().get("data", [])
-                available_models = [m["id"] for m in models]
-                if self.model_name not in available_models:
-                    msg = (
-                        f"{Icons.error} Model '{self.model_name}' not loaded in LM Studio at {self.service_url}."
-                        f"\n{Icons.right_arrow} Please load it in LM Studio and try again."
-                    )
-                    logger.log_error(msg)
-                    raise RuntimeError(msg)
-                else:
-                    logger.log_info(f"{Icons.tick} Model '{self.model_name}' is loaded in LM Studio.")
-            except requests.exceptions.ConnectionError as e:
-                _log_exception(f"{Icons.error} Could not connect to LM Studio server at {self.service_url}", e)
-                raise RuntimeError(f"Could not connect to LM Studio server at {self.service_url}.") from e
-            except Exception as e:
-                _log_exception(f"{Icons.error} Error validating model in LM Studio", e)
-                raise RuntimeError(f"Error validating model in LM Studio: {e}") from e
-        else:
-            msg = f"{Icons.error} Unknown LLM service: {self.llm_service_id}"
-            logger.log_error(msg)
-            raise RuntimeError(msg)
+        provider_registry = getattr(self, "provider_registry", None)
+        if provider_registry is None:
+            provider_registry = ProviderRegistry(logger=logger)
+            self.provider_registry = provider_registry
+        provider_registry.validate_or_prepare_model(
+            provider_id=self.llm_service_id,
+            service_url=self.service_url,
+            model_name=self.model_name,
+        )
 
     # --- Output hygiene -------------------------------------------------------
     def _strip_reasoning_tags(self, text: str) -> str:
@@ -2599,6 +3015,7 @@ class Orac:
         show_reasoning: bool,
         llm_id: int | None = None,
         tokens_used: int | None = None,
+        provenance: dict[str, Any] | None = None,
         request_flags: dict[str, bool] | None = None,
     ) -> int:
         """Persists an assistant turn and returns the new turn index if available."""
@@ -2609,6 +3026,11 @@ class Orac:
             "req_id": req_id,
             "show_reasoning": show_reasoning,
         }
+        if provenance:
+            asst_meta["provenance"] = provenance
+            asst_meta["source"] = provenance.get("source", "plugin_execution")
+            asst_meta["plugin_id"] = provenance.get("plugin_id")
+            asst_meta["plugin_status"] = provenance.get("status")
         try:
             save_res_a = self.ctx.save_assistant_turn(
                 session_id,
@@ -2666,9 +3088,18 @@ class Orac:
                         prompt_tokens: int = 0,
                         completion_tokens: int = 0,
                         model_name: str | None = None,
-                        user_registration: str = "registered") -> dict:
+                        user_registration: str = "registered",
+                        provenance: dict[str, Any] | None = None) -> dict:
         """Build a protocol-compliant non-streaming response envelope."""
         response_model = str(model_name or self.model_name)
+        response_meta = self._runtime_response_meta(
+            req_env,
+            model_name=response_model,
+            user_registration=user_registration,
+        )
+        if provenance:
+            response_meta["provenance"] = provenance
+            response_meta["source"] = provenance.get("source", "plugin_execution")
         resp = {
             "v": 1,
             "type": "response",
@@ -2676,11 +3107,7 @@ class Orac:
             "reply_to": req_env.get("id"),
             "ts": iso_now(),
             "route": req_env.get("route", "orac.prompt"),
-            "meta": self._runtime_response_meta(
-                req_env,
-                model_name=response_model,
-                user_registration=user_registration,
-            ),
+            "meta": response_meta,
             "payload": {
                 "content": content,
                 "stop_reason": stop_reason,
@@ -2698,6 +3125,19 @@ class Orac:
             _log_exception("Response failed protocol validation (returning anyway)", e)
         return resp
 
+    def _validate_outbound_protocol_frame(
+        self,
+        frame: dict[str, Any],
+        *,
+        context: str,
+    ) -> None:
+        """Validate an outbound protocol frame and fail closed on errors."""
+        try:
+            validate_frame(frame)
+        except Exception as e:
+            _log_exception(context, e)
+            raise
+
     def _build_stream_event(
         self,
         req_env: dict,
@@ -2714,7 +3154,7 @@ class Orac:
         responses. The final ``response`` frame remains the compatibility
         terminator for clients that still need a complete answer.
         """
-        return {
+        frame = {
             "v": 1,
             "type": event_type,
             "id": new_id("evt"),
@@ -2730,6 +3170,11 @@ class Orac:
             "payload": payload or {},
             "error": error,
         }
+        self._validate_outbound_protocol_frame(
+            frame,
+            context="Stream event failed protocol validation",
+        )
+        return frame
 
     async def _emit_stream_event(
         self,
@@ -2743,19 +3188,18 @@ class Orac:
         error: dict[str, Any] | None = None,
     ) -> None:
         """Emit one stream event when a sink is available."""
+        frame = self._build_stream_event(
+            req_env,
+            event_type,
+            payload=payload,
+            model_name=model_name,
+            user_registration=user_registration,
+            error=error,
+        )
         self._route_stream_event_to_voice(req_env, event_type, payload)
         if event_sink is None:
             return
-        await event_sink(
-            self._build_stream_event(
-                req_env,
-                event_type,
-                payload=payload,
-                model_name=model_name,
-                user_registration=user_registration,
-                error=error,
-            )
-        )
+        await event_sink(frame)
 
     def _missing_stream_speech_suffix(
         self,
@@ -2965,6 +3409,35 @@ class Orac:
 
             loop.call_soon_threadsafe(_enqueue)
 
+        def synthesise_voice_turn_complete() -> dict[str, Any]:
+            """Build a fallback completion frame for a drained voice turn."""
+            timestamp = iso_now()
+            frame = {
+                "v": 1,
+                "type": "voice_turn_complete",
+                "id": new_id("evt"),
+                "reply_to": voice_turn_id,
+                "ts": timestamp,
+                "route": "orac.prompt",
+                "meta": {
+                    "status": "ok",
+                    "model": self.model_name,
+                    "req_id": voice_turn_id,
+                },
+                "payload": {
+                    "turn_id": voice_turn_id,
+                    "request_id": voice_turn_id,
+                    "timestamp": timestamp,
+                    "reason": "playback-drained",
+                },
+                "error": None,
+            }
+            self._validate_outbound_protocol_frame(
+                frame,
+                context="Synthesised voice turn completion failed protocol validation",
+            )
+            return frame
+
         if voice_session_id and voice_turn_id:
             voice_subscription = _VoicePlaybackSubscription(
                 callback=voice_event_sink
@@ -3012,8 +3485,21 @@ class Orac:
                     playback_wait_started_at = None
 
                 if response_task.done() and queue.empty() and not playback_pending:
-                    if voice_subscription is None or turn_complete_event is not None:
+                    if voice_subscription is None:
                         break
+                    if turn_complete_event is None:
+                        log_message = (
+                            f"Synthesising missing voice turn completion: "
+                            f"session={voice_session_id} turn={voice_turn_id} "
+                            f"queued={voice_subscription.playback_queued} "
+                            f"finished={voice_subscription.playback_finished}"
+                        )
+                        if voice_subscription.playback_expected:
+                            logger.log_warning(f"{Icons.warn} {log_message}")
+                        else:
+                            logger.log_debug(log_message)
+                        turn_complete_event = synthesise_voice_turn_complete()
+                    break
                 try:
                     yield await asyncio.wait_for(queue.get(), timeout=0.05)
                 except asyncio.TimeoutError:
@@ -3137,13 +3623,25 @@ class Orac:
             )
 
             session_id_base = self._derive_session_id(meta, auth_user)
-
-            session_id_base = self._derive_session_id(meta, auth_user)
             logger.log_debug(f"{Icons.tick} derived session_id_base='{session_id_base}'")
             new_conversation_selection = self._resolve_new_conversation_llm(
                 auth_user=auth_user,
                 meta=meta,
             )
+            force_new_conversation = (
+                _as_bool(meta.get("force_new_conversation")) is True
+            )
+            current_primer = _orac_system_primer(
+                {
+                    "reply_language": meta.get(
+                        "reply_language",
+                        self._reply_language,
+                    ),
+                    "orac_personality": meta.get("orac_personality"),
+                },
+                self._system_prompt_policy,
+            )
+            current_primer_fingerprint = _system_prompt_fingerprint(current_primer)
 
             # Prefer timeout-aware conversation rollover. If anything goes wrong,
             # fall back to the non-timeout path and keep going.
@@ -3224,6 +3722,44 @@ class Orac:
                         request_flags["anonymous_user"] = True
                     _log_exception("ensure_conversation fallback failed (non-fatal)", e2)
 
+            if force_new_conversation and not created_new_conversation:
+                logger.log_info(
+                    f"{Icons.info} force_new_conversation requested for "
+                    f"session '{session_id}'. Starting a new conversation."
+                )
+                try:
+                    if getattr(self, "_archive_on_rollover", False):
+                        self.ctx.archive_conversation(session_id)
+                        logger.log_info(
+                            f"{Icons.box} Archived prior conversation: "
+                            f"{session_id}"
+                        )
+                    elif getattr(self, "_close_on_rollover", True):
+                        self.ctx.close_conversation(session_id)
+                        logger.log_info(
+                            f"{Icons.stop} Closed prior conversation: "
+                            f"{session_id}"
+                        )
+                    else:
+                        logger.log_debug(
+                            f"{Icons.info} Prior conversation left 'open': "
+                            f"{session_id}"
+                        )
+                except Exception as e_state:
+                    _log_exception(
+                        "Failed to transition prior conversation during "
+                        "forced rollover",
+                        e_state,
+                    )
+
+                session_id = new_session_id(session_id_base)
+                self.ctx.ensure_conversation(
+                    user_name=auth_user,
+                    session_id=session_id,
+                    llm_id=new_conversation_selection.get("llm_id"),
+                )
+                created_new_conversation = True
+
             selected_default_llm_id = new_conversation_selection.get("llm_id")
             if (
                 not created_new_conversation
@@ -3275,7 +3811,10 @@ class Orac:
             selected_personality_code = str(
                 meta.get("personality_code") or "DEFAULT"
             ).strip().upper()
-            if not created_new_conversation:
+            if (
+                not created_new_conversation
+                and self.ctx.last_turn_index(session_id) > 0
+            ):
                 try:
                     conversation_personality_code = self.ctx.get_conversation_personality_code(
                         session_id
@@ -3314,6 +3853,63 @@ class Orac:
                     )
                     created_new_conversation = True
 
+            if (
+                not created_new_conversation
+                and self.ctx.last_turn_index(session_id) > 0
+            ):
+                try:
+                    conversation_prompt_fingerprint = (
+                        self.ctx.get_conversation_prompt_policy_fingerprint(
+                            session_id
+                        )
+                    )
+                except Exception as e:
+                    _log_exception(
+                        "Failed to read conversation prompt policy "
+                        "fingerprint for reuse check",
+                        e,
+                    )
+                    conversation_prompt_fingerprint = current_primer_fingerprint
+
+                if conversation_prompt_fingerprint != current_primer_fingerprint:
+                    logger.log_info(
+                        f"{Icons.info} System prompt policy change detected "
+                        f"for session '{session_id}'. Starting a new "
+                        "conversation."
+                    )
+                    try:
+                        if getattr(self, "_archive_on_rollover", False):
+                            self.ctx.archive_conversation(session_id)
+                            logger.log_info(
+                                f"{Icons.box} Archived prior conversation: "
+                                f"{session_id}"
+                            )
+                        elif getattr(self, "_close_on_rollover", True):
+                            self.ctx.close_conversation(session_id)
+                            logger.log_info(
+                                f"{Icons.stop} Closed prior conversation: "
+                                f"{session_id}"
+                            )
+                        else:
+                            logger.log_debug(
+                                f"{Icons.info} Prior conversation left "
+                                f"'open': {session_id}"
+                            )
+                    except Exception as e_state:
+                        _log_exception(
+                            "Failed to transition prior conversation during "
+                            "prompt policy rollover",
+                            e_state,
+                        )
+
+                    session_id = new_session_id(session_id_base)
+                    self.ctx.ensure_conversation(
+                        user_name=auth_user,
+                        session_id=session_id,
+                        llm_id=new_conversation_selection.get("llm_id"),
+                    )
+                    created_new_conversation = True
+
             effective_llm = self._resolve_effective_llm(
                 session_id=session_id,
                 auth_user=auth_user,
@@ -3337,28 +3933,31 @@ class Orac:
                 f"model='{effective_model_name}', provider='{effective_llm.get('provider')}', "
                 f"llm_id={effective_llm_id}, source='{effective_llm.get('source')}'"
             )
+            generation_options = self._resolve_generation_options(
+                meta=meta,
+                provider=str(effective_llm.get("provider") or self.llm_service_id),
+            )
 
             # --- Ensure a system primer is stored once per conversation ---------
             try:
                 if self.ctx.last_turn_index(session_id) == 0:
-                    primer = _orac_system_primer(
-                        {
-                            "reply_language": meta.get(
-                                "reply_language",
-                                self._reply_language,
+                    self.ctx.save_system_turn(
+                        session_id,
+                        auth_user,
+                        current_primer,
+                        meta={
+                            "kind": "primer",
+                            "ts": iso_now(),
+                            "protocol_version": PROTOCOL_VERSION,
+                            "prompt_policy_fingerprint": (
+                                current_primer_fingerprint
                             ),
-                            "orac_personality": meta.get("orac_personality"),
+                            "personality_code": str(
+                                meta.get("personality_code") or "DEFAULT"
+                            ).strip().upper(),
                         },
-                        self._system_prompt_policy,
+                        llm_id=effective_llm_id,
                     )
-                    self.ctx.save_system_turn(session_id, auth_user, primer, meta={
-                        "kind": "primer",
-                        "ts": iso_now(),
-                        "protocol_version": PROTOCOL_VERSION,
-                        "personality_code": str(
-                            meta.get("personality_code") or "DEFAULT"
-                        ).strip().upper(),
-                    }, llm_id=effective_llm_id)
             except Exception as e:
                 if self._is_unregistered_user_error(e):
                     request_flags["anonymous_user"] = True
@@ -3385,20 +3984,111 @@ class Orac:
                     request_flags["anonymous_user"] = True
                 self._handle_persistence_failure("user_turn", e)
 
-            plugin_routing_handoff = self._collect_plugin_routing_handoff(prompt, meta)
+            conversation_id = None
+            user_id = None
+            try:
+                conversation_lookup = getattr(self.ctx, "_conversation_id", None)
+                if callable(conversation_lookup):
+                    conversation_id = conversation_lookup(session_id)
+            except Exception:
+                conversation_id = None
+            try:
+                user_lookup = getattr(self.ctx, "_find_user_id", None)
+                if callable(user_lookup):
+                    user_id = user_lookup(auth_user)
+            except Exception:
+                user_id = None
+
+            explicit_search_request = detect_explicit_search_request(prompt)
+            retrieval_pack = None
+            retrieval_outcome: RetrievalOutcome | None = None
+            if explicit_search_request is not None:
+                try:
+                    retrieval_service = getattr(self, "retrieval_service", None)
+                    if retrieval_service is not None:
+                        build_outcome = getattr(
+                            retrieval_service,
+                            "build_grounding_outcome",
+                            None,
+                        )
+                        if callable(build_outcome):
+                            retrieval_outcome = build_outcome(prompt)
+                            retrieval_pack = retrieval_outcome.grounding_pack
+                        else:
+                            retrieval_pack = retrieval_service.build_grounding_pack(prompt)
+                except Exception as e:
+                    _log_exception("Explicit retrieval failed (non-fatal)", e)
+                    retrieval_pack = None
+
+                if retrieval_pack is None:
+                    content = (
+                        retrieval_outcome.message
+                        if retrieval_outcome is not None
+                        else "I could not retrieve online evidence for that request."
+                    )
+                    last_ti = self._save_assistant_turn(
+                        session_id,
+                        auth_user,
+                        content,
+                        client=client,
+                        req_id=req_env.get("id"),
+                        show_reasoning=show_reasoning,
+                        llm_id=effective_llm_id,
+                        request_flags=request_flags,
+                    )
+                    self._maybe_set_conversation_title(session_id, meta, llm_connector)
+                    self._maybe_prune(session_id, last_ti)
+                    resp_env = self._build_response(
+                        req_env,
+                        content,
+                        stop_reason="stop",
+                        prompt_tokens=0,
+                        completion_tokens=0,
+                        model_name=effective_model_name,
+                        user_registration=(
+                            "anonymous" if request_flags["anonymous_user"] else "registered"
+                        ),
+                    )
+                    if stream_requested:
+                        await self._emit_complete_text_as_stream(
+                            event_sink,
+                            req_env,
+                            content,
+                            model_name=effective_model_name,
+                            user_registration=(
+                                "anonymous"
+                                if request_flags["anonymous_user"]
+                                else "registered"
+                            ),
+                            session_id=session_id,
+                            turn_id=str(req_env.get("id") or ""),
+                            stop_reason="stop",
+                        )
+                    return json.dumps(resp_env, ensure_ascii=False)
+
+            plugin_routing_handoff = None
             plugin_execution_result = None
-            if self.plugin_router is not None:
-                plugin_execution_result = self.plugin_router.route(
-                    prompt,
-                    meta,
-                    plugin_routing_handoff,
-                    auth_user,
+            if explicit_search_request is None:
+                plugin_routing_handoff = self._collect_plugin_routing_handoff(prompt, meta)
+                plugin_execution_result = self._execute_plugin_request(
+                    prompt=prompt,
+                    meta=meta,
+                    plugin_routing_handoff=plugin_routing_handoff,
+                    auth_user=auth_user,
+                    request_context={
+                        "request_id": req_env.get("id"),
+                        "correlation_id": req_env.get("meta", {}).get("correlation_id") if isinstance(req_env.get("meta"), dict) else None,
+                        "turn_id": req_env.get("id"),
+                        "session_id": session_id,
+                        "conversation_id": conversation_id,
+                        "message_id": None,
+                        "user_id": user_id,
+                    },
                 )
 
             if plugin_execution_result is not None and plugin_execution_result.handled:
                 content = plugin_execution_result.content
-                # TODO: Persist plugin_result separately from assistant_response once
-                # context/message provenance is introduced explicitly.
+                plugin_provenance = plugin_execution_result.provenance
                 last_ti = self._save_assistant_turn(
                     session_id,
                     auth_user,
@@ -3407,6 +4097,7 @@ class Orac:
                     req_id=req_env.get("id"),
                     show_reasoning=show_reasoning,
                     llm_id=effective_llm_id,
+                    provenance=plugin_provenance,
                     request_flags=request_flags,
                 )
                 self._maybe_set_conversation_title(session_id, meta, llm_connector)
@@ -3421,6 +4112,7 @@ class Orac:
                     user_registration=(
                         "anonymous" if request_flags["anonymous_user"] else "registered"
                     ),
+                    provenance=plugin_provenance,
                 )
                 if stream_requested:
                     await self._emit_complete_text_as_stream(
@@ -3446,6 +4138,7 @@ class Orac:
                 meta,
                 auth_user,
                 plugin_routing_handoff=plugin_routing_handoff,
+                retrieval_pack=retrieval_pack,
             )
             short = (final_prompt[:1200] + " …") if len(final_prompt) > 1200 else final_prompt
             logger.log_info(f"{Icons.info} Final prompt (truncated): {short}")
@@ -3455,6 +4148,7 @@ class Orac:
             prompt_tokens = 0
             completion_tokens = 0
             total_tokens = 0
+            tokens_used: int | None = None
             stream_emitted_delta = False
             stream_cancelled = False
             voice_session_id = incoming_voice_session_id
@@ -3478,11 +4172,19 @@ class Orac:
                 chunker = TextChunker()
                 raw_parts: list[str] = []
                 speech_chunks: list[str] = []
+                stream_usage: LLMUsageMetadata | None = None
+
+                def _capture_stream_usage(usage: LLMUsageMetadata) -> None:
+                    """Capture final token metadata from a completed stream."""
+                    nonlocal stream_usage
+                    stream_usage = usage
 
                 try:
                     for delta in llm_connector.stream_prompt_deltas(
                         prompt_type="U",
                         prompt=final_prompt,
+                        generation_options=generation_options,
+                        on_usage_metadata=_capture_stream_usage,
                     ):
                         if self._is_voice_turn_cancelled(
                             session_id=voice_session_id,
@@ -3598,6 +4300,14 @@ class Orac:
                         ),
                     )
                 raw = "".join(raw_parts).strip()
+                if not stream_cancelled and stream_usage is not None:
+                    if stream_usage.prompt_tokens is not None:
+                        prompt_tokens = stream_usage.prompt_tokens
+                    if stream_usage.completion_tokens is not None:
+                        completion_tokens = stream_usage.completion_tokens
+                    if stream_usage.total_tokens is not None:
+                        total_tokens = stream_usage.total_tokens
+                        tokens_used = stream_usage.total_tokens
             else:
                 # === Call backend (non-streaming path) ===
                 try:
@@ -3605,6 +4315,7 @@ class Orac:
                         prompt_type="U",
                         prompt=final_prompt,
                         stream=False,
+                        generation_options=generation_options,
                     )
                 except Exception as e:
                     _log_exception("LLM backend call failed", e)
@@ -3622,6 +4333,7 @@ class Orac:
                 prompt_tokens = int(prompt_result.get("prompt_tokens") or 0)
                 completion_tokens = int(prompt_result.get("completion_tokens") or 0)
                 total_tokens = int(prompt_result.get("total_tokens") or 0)
+                tokens_used = total_tokens or None
 
             # Apply local reasoning-strip unless explicitly requested
             if show_reasoning:
@@ -3629,6 +4341,17 @@ class Orac:
             else:
                 stripped = self._strip_reasoning_tags(raw)
                 content = stripped if stripped else raw
+
+            if retrieval_pack is not None:
+                content = polish_retrieval_response_text(
+                    content,
+                    response_style=(
+                        meta.get("retrieval_response_style")
+                        or getattr(self, "_retrieval_response_style", "normal")
+                    ),
+                    retrieval_pack=retrieval_pack,
+                    retrieval_outcome=retrieval_outcome,
+                )
 
             if not content:
                 logger.log_warning("Backend returned empty content after stripping; using friendly fallback.")
@@ -3699,7 +4422,7 @@ class Orac:
                 req_id=req_env.get("id"),
                 show_reasoning=show_reasoning,
                 llm_id=effective_llm_id,
-                tokens_used=total_tokens or None,
+                tokens_used=tokens_used,
                 request_flags=request_flags,
             )
 
@@ -3763,6 +4486,7 @@ class Orac:
 
 # --- Module-level main() runner ----------------------------------------------
 async def main():
+    orchestrator = None
     try:
         orchestrator = Orac()
         listener = OracListener(orchestrator=orchestrator, host="127.0.0.1", port=8765)
@@ -3770,6 +4494,9 @@ async def main():
     except Exception as e:
         _log_exception("Fatal in main()", e)
         raise
+    finally:
+        if orchestrator is not None:
+            orchestrator.shutdown()
 
 
 # --- Entrypoint ---------------------------------------------------------------

@@ -1,27 +1,136 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "plugin_id": "home_assistant",
   "name": "Home Assistant",
   "description": "Controls Home Assistant devices, scenes, and state queries for the user's smart home.",
   "version": "1.0.0",
   "enabled": true,
   "capabilities": [
-    "home_automation.control",
-    "home_automation.state_query",
-    "home_automation.scene_activation"
+    "home_assistant.device_control",
+    "home_assistant.state_query",
+    "home_assistant.scene_activation",
+    "home_assistant.event_listener",
+    "home_assistant.health_status"
   ],
-  "entitlements": [],
+  "entitlements": [
+    "network.local_http",
+    "home_assistant.api_token",
+    "user_preferences.home_location"
+  ],
   "entities": [
-    "lights",
-    "switches",
-    "scenes",
-    "rooms",
-    "sensors"
+    "light",
+    "switch",
+    "scene",
+    "room",
+    "sensor",
+    "door",
+    "lock",
+    "state",
+    "temperature",
+    "motion",
+    "automation"
   ],
   "examples": [
     "Turn on the kitchen lights.",
+    "Turn off the office lamp.",
     "Is the front door locked?",
-    "Activate movie night."
+    "What is the temperature in the lounge?",
+    "Are any windows open?",
+    "Is there motion in the hallway?",
+    "Activate movie night.",
+    "Is Home Assistant online?",
+    "Is Orac reporting as healthy in Home Assistant?"
   ],
-  "entry_point": "plugin:HomeAssistantPlugin"
+  "entry_point": "plugin:HomeAssistantPlugin",
+  "execution": {
+    "action_type": "device_control",
+    "requires_confirmation": true,
+    "allowed_by_default": false,
+    "capabilities": [
+      "home_assistant.device_control",
+      "home_assistant.state_query",
+      "home_assistant.scene_activation",
+      "home_assistant.event_listener",
+      "home_assistant.health_status"
+    ],
+    "entitlements": [
+      "network.local_http",
+      "home_assistant.api_token",
+      "user_preferences.home_location"
+    ],
+    "scaffold": true,
+    "notes": "Scaffold-only placeholder; real Home Assistant control remains disabled until policy, credentials, entitlement checks and runtime behaviour are complete."
+  },
+  "runtime": {
+    "mode": "hybrid",
+    "service": {
+      "entry_point": "plugin:HomeAssistantService",
+      "execution_model": "long_running",
+      "start_policy": "auto",
+      "restart_policy": "on_failure",
+      "shutdown_timeout_seconds": 10,
+      "health_check": {
+        "enabled": true,
+        "method": "health",
+        "interval_seconds": 30,
+        "timeout_seconds": 5,
+        "failure_threshold": 3
+      }
+    }
+  },
+  "configuration": {
+    "required": [
+      {
+        "section": "home_assistant",
+        "key": "host",
+        "type": "string",
+        "description": "Home Assistant host name or IP address."
+      },
+      {
+        "section": "home_assistant",
+        "key": "port",
+        "type": "int",
+        "description": "Home Assistant HTTP API port."
+      },
+      {
+        "section": "home_assistant",
+        "key": "access_token_env",
+        "type": "string",
+        "description": "Environment variable name containing the Home Assistant long-lived access token."
+      }
+    ],
+    "optional": [
+      {
+        "section": "home_assistant",
+        "key": "enable_websocket",
+        "type": "bool",
+        "description": "Whether to subscribe to Home Assistant websocket state updates."
+      },
+      {
+        "section": "home_assistant",
+        "key": "structural_refresh_mode",
+        "type": "string",
+        "description": "Controls structural metadata refresh cadence."
+      }
+    ]
+  },
+  "database": {
+    "required": true,
+    "on_missing": "warn_disable",
+    "schemas": [
+      {
+        "schema_name": "orac_ha",
+        "purpose": "Stores Home Assistant integration state, cached entity metadata, event subscriptions and plugin-specific configuration.",
+        "managed_by": "orac",
+        "minimum_version": "1.0.0",
+        "version_check": {
+          "enabled": false
+        },
+        "backup": {
+          "include": true,
+          "export_mode": "schema"
+        }
+      }
+    ]
+  }
 }

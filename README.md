@@ -41,7 +41,9 @@
 - [Installation](#-installation)
 - [Prerequisites](#-prerequisites)
 - [Oracle Free Setup](#-oracle-free-setup)
+- [Internet Retrieval](#-internet-retrieval)
 - [APEX Administration](#-apex-administration)
+- [Backup and Restore](#-backup-and-restore)
 - [Usage](#-usage)
 - [License](#-license)
 
@@ -166,6 +168,101 @@ To edit an existing connection:
 ```bash
 bin/dbconn-mgr.sh -e orac
 ```
+
+## 🌐 Internet Retrieval
+
+Orac supports explicit-only internet retrieval for prompts such as:
+
+```text
+Search the internet for information on Neil Armstrong.
+What is the latest on the Artemis programme?
+```
+
+This is core Orac retrieval plumbing, not a normal user-facing plugin. Orac
+does not browse autonomously; it only searches when the user explicitly asks
+for online retrieval.
+
+The current retrieval provider is SearXNG. Orac expects a reachable SearXNG
+service and calls its JSON search endpoint:
+
+```text
+<base_url>/search?q=<query>&format=json
+```
+
+The default development configuration points to a local SearXNG service:
+
+```ini
+[retrieval]
+internet_search_enabled = true
+internet_search_mode = explicit_only
+default_search_provider = searxng
+max_search_results = 5
+max_sources_to_fetch = 3
+max_response_bytes = 256000
+max_redirects = 3
+cache_ttl_hours = 12
+require_citations = true
+
+[retrieval.searxng]
+base_url = http://127.0.0.1:8080
+timeout_seconds = 10
+```
+
+If no SearXNG service is running at that URL, Orac will fail closed with a
+message such as:
+
+```text
+I could not retrieve online evidence for that request.
+```
+
+### Run SearXNG locally with Docker
+
+For local development, start SearXNG on `127.0.0.1:8080`:
+
+```bash
+docker run -d \
+  --name orac-searxng \
+  -p 127.0.0.1:8080:8080 \
+  -e BASE_URL=http://127.0.0.1:8080/ \
+  searxng/searxng:latest
+```
+
+Verify the JSON search endpoint before testing through Orac:
+
+```bash
+curl 'http://127.0.0.1:8080/search?q=Neil%20Armstrong&format=json'
+```
+
+The response should be JSON containing a `results` array. Useful service
+commands:
+
+```bash
+docker logs orac-searxng
+docker stop orac-searxng
+docker start orac-searxng
+```
+
+If port `8080` is already in use, map another host port and update
+`resources/config/orac.ini`:
+
+```bash
+docker run -d \
+  --name orac-searxng \
+  -p 127.0.0.1:8888:8080 \
+  -e BASE_URL=http://127.0.0.1:8888/ \
+  searxng/searxng:latest
+```
+
+```ini
+[retrieval.searxng]
+base_url = http://127.0.0.1:8888
+timeout_seconds = 10
+```
+
+Fetched pages are treated as untrusted evidence, not instructions. Orac
+validates result URLs before fetching, rejects local/private/internal address
+ranges, validates redirect targets, limits response size, and only processes
+HTML or plain text content in this MVP.
 
 ### Configure Local Wake Word Activation
 
@@ -569,6 +666,158 @@ If you cannot access the Orac Admin application:
    ```
 
 > 🧠 *Tip: If the APEX listener doesn’t respond, restart the ORDS service or your container — it usually resolves transient startup timing issues.*
+
+---
+
+## 💾 Backup and Restore
+
+Orac provides host-level backup and restore commands for the local
+`db-local` deployment:
+
+```bash
+bin/orac-backup.sh /path/to/backup-directory
+bin/orac-restore.sh /path/to/orac-backup-YYYYMMDD-HHMMSS.tar.gz
+```
+
+The backup command creates an archive named like:
+
+```text
+orac-backup-YYYYMMDD-HHMMSS.tar.gz
+```
+
+By default, `bin/orac-backup.sh` backs up non-secret operational state:
+
+- Oracle Data Pump export for `orac_core`, `orac_api`, `orac_code`, and
+  plugin-declared database schemas.
+- Host configuration from `resources/config/*.ini`.
+- Plugin metadata and plugin versions.
+- Requested, exported, and missing schema lists.
+- Enabled foreign key metadata.
+- `backup_manifest.json`.
+
+The script reads plugin database schemas from `plugins/*.json`. If a
+manifest-declared schema is not present in the database, the backup records it
+as missing and continues exporting the schemas that do exist.
+
+Useful options:
+
+```bash
+bin/orac-backup.sh --dry-run /tmp/orac-backups
+bin/orac-backup.sh --skip-db /tmp/orac-backups
+bin/orac-backup.sh --container orac-db --pdb FREEPDB1 /tmp/orac-backups
+```
+
+`--skip-db` skips the Data Pump export and creates a metadata/config archive.
+
+### Vaults
+
+Vault files are not included by default. This keeps the default backup
+non-secret.
+
+To include the existing encrypted vault files as-is:
+
+```bash
+bin/orac-backup.sh --include-vaults /tmp/orac-backups
+```
+
+This copies only these allow-listed files, if they exist:
+
+- `dsn_credentials.ini`
+- `api_keys.ini`
+
+They are stored in the archive under:
+
+```text
+vaults/machine_bound/
+```
+
+These files remain encrypted with the original machine's local key material
+and may not be decryptable on another host.
+
+To create a portable vault export protected by a recovery passphrase:
+
+```bash
+bin/orac-backup.sh --export-vaults /tmp/orac-backups
+```
+
+The command prompts silently for:
+
+```text
+Vault export passphrase:
+Confirm vault export passphrase:
+```
+
+For automation, put the passphrase in a secure file and set the
+`ORAC_VAULT_EXPORT_PASSPHRASE_FILE` variable to the file path:
+
+```bash
+export ORAC_VAULT_EXPORT_PASSPHRASE_FILE=/secure/path/orac-vault-passphrase
+bin/orac-backup.sh --export-vaults /tmp/orac-backups
+```
+
+Do not pass the passphrase itself as a command-line argument or environment
+variable. The backup script only accepts a file path via
+`ORAC_VAULT_EXPORT_PASSPHRASE_FILE`.
+
+Portable vault exports are stored under:
+
+```text
+vaults/portable/
+  vault_export.json.enc
+  vault_export_manifest.json
+```
+
+The default vault directory is `~/.Orac`. Override it with:
+
+```bash
+export ORAC_VAULT_DIR=/path/to/vault-directory
+```
+
+`--include-vaults` and `--export-vaults` are mutually exclusive.
+
+### Restore
+
+Restore requires explicit confirmation:
+
+```bash
+bin/orac-restore.sh /tmp/orac-backups/orac-backup-YYYYMMDD-HHMMSS.tar.gz
+```
+
+The restore command:
+
+- Extracts and reads `backup_manifest.json`.
+- Warns if the backup Orac version or plugin versions differ from the current
+  checkout.
+- Requires you to type `RECOVER` before any Data Pump import starts.
+- Disables currently enabled foreign key constraints for the imported schemas.
+- Runs `impdp`.
+- Re-enables the foreign key constraints it disabled before import.
+
+The default Data Pump table handling is:
+
+```bash
+ORAC_RESTORE_TABLE_EXISTS_ACTION=replace
+```
+
+This passes `table_exists_action=replace` to `impdp`. Existing target tables
+are dropped and recreated from the dump before data is loaded, which avoids
+duplicate primary or unique key collisions after reinstalling Orac and
+restoring from backup.
+
+Advanced restore mode override:
+
+```bash
+ORAC_RESTORE_TABLE_EXISTS_ACTION=truncate \
+  bin/orac-restore.sh /tmp/orac-backups/orac-backup-YYYYMMDD-HHMMSS.tar.gz
+```
+
+Supported values are the Oracle Data Pump modes `skip`, `append`, `truncate`,
+and `replace`. Use `append` only with care because it can hit duplicate key
+errors when seed data already exists.
+
+Current limitation: `bin/orac-restore.sh` imports the database dump but does
+not yet restore `vaults/portable/vault_export.json.enc` back into `~/.Orac`.
+Keep the recovery passphrase safe for the future vault restore command.
 
 ---
 

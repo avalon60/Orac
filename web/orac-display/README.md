@@ -104,14 +104,24 @@ Supported transcript events:
 - `transcript.orac.delta`
 - `transcript.orac.final`
 
+Consumed payload fields:
+
+- transcript text is read from `text`, `message`, `delta`, `chunk`, or
+  `content`
+- runtime identity is read from `model`, `persona`, `personality_code`, and
+  `personality_name`
+- state updates read `state` and optional `message`
+- UI configuration reads `buttons_visible` and `show_transcript_panels`
+
 The display also accepts the current compatibility aliases used by the local
-voice path:
+voice path and older bridge payloads:
 
 - `voice_stt_final`
 - `stt_final`
 - `stream_start`
 - `text_delta`
 - `stream_end`
+- `response`
 
 ## Notes
 

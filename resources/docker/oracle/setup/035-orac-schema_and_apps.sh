@@ -23,7 +23,7 @@ SQLPLUS_CONN="${SQLPLUS_CONN:-/ as sysdba}"  # e.g. "user/pass@service" or "/ as
 LOG_ROOT="${LOG_ROOT:-$BASE_DIR/_logs}"
 STOP_ON_ERROR="${STOP_ON_ERROR:-1}"          # 1 = stop on first error, 0 = continue
 BUNDLE_ORDER=(
-  ha_core
+  orac_ha
   orac_core
   orac_api
   orac_code
@@ -85,7 +85,7 @@ ran_any=0
 # --- Validation --------------------------------------------------------------
 if [[ ! -d "$BASE_DIR" ]]; then
   echo "!! $(timestamp) :: BASE_DIR does not exist or is not a directory: $BASE_DIR"
-  exit 1
+  return 1 2>/dev/null || false
 fi
 
 # --- Runner ------------------------------------------------------------------
@@ -156,7 +156,7 @@ process_bundle_dir() {
         if [[ "$STOP_ON_ERROR" == "1" ]]; then
           echo "!! Halting due to STOP_ON_ERROR=1. See logs in: $LOG_DIR"
           echo
-          exit "$overall_rc"
+          return "$overall_rc" 2>/dev/null || false
         fi
       fi
     done

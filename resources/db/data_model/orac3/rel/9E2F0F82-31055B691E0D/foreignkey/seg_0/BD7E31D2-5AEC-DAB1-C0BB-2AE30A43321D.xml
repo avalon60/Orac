@@ -1,0 +1,20 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<FKIndexAssociation class="oracle.dbtools.crest.model.design.relational.FKIndexAssociation" directorySegmentName="seg_0" id="BD7E31D2-5AEC-DAB1-C0BB-2AE30A43321D" containerWithKeyObject="BB99E622-1EDD-66B0-C146-80588459E4AA" localFKIndex="DD804A8A-123F-7F08-D861-3602D5DA76F0" name="ORPERS_MODEL_PRESET_FK1">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>ORAC_CORE</sourceObjSchema>
+<sourceObjName>ORPERS_MODEL_PRESET_FK1</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>77E2F269-3D1E-1FF3-71D5-C5F5AD1718C2</importedID>
+<referredTableLongName>orac_core.MODEL_GENERATION_PRESETS</referredTableLongName>
+<deleteRule>NO ACTION</deleteRule>
+<referredTableID>2BC65E38-89FC-1D6F-0998-2EE3ABCF0B33</referredTableID>
+<keyObject>458D7A12-6F45-A8E9-35F4-9F3CF5CD8AEC</keyObject>
+<referredKeyID>458D7A12-6F45-A8E9-35F4-9F3CF5CD8AEC</referredKeyID>
+<mandatory>false</mandatory>
+<refColNames>MODEL_PRESET_ID</refColNames>
+<transferable>true</transferable>
+<rely>false</rely>
+<columnDependencyConstraintGenerateInDDL>true</columnDependencyConstraintGenerateInDDL>
+</FKIndexAssociation>

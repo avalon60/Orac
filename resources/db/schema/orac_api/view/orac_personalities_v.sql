@@ -16,6 +16,7 @@ create or replace force view orac_api.orac_personalities_v as
          , enforce_precision
          , admit_uncertainty
          , packaged_persona
+         , model_preset_id
          , system_prompt
          , style_prompt
          , is_active

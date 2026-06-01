@@ -14,6 +14,7 @@ from orac_voice.aec import AEC_SAMPLE_RATE
 from orac_voice.aec import AEC_SAMPLE_WIDTH_BYTES
 from orac_voice.aec import AEC_SAMPLES_PER_FRAME
 from orac_voice.aec import AcousticEchoCanceller
+from orac_voice.aec import LiveKitAcousticEchoCanceller
 from orac_voice.aec import NullAcousticEchoCanceller
 from orac_voice.aec import create_aec_adapter_from_config
 from orac_voice.aec import create_aec_backend
@@ -87,6 +88,7 @@ __all__ = [
   "FasterWhisperSttEngine",
   "KokoroTtsEngine",
   "LocalAudioPlayback",
+  "LiveKitAcousticEchoCanceller",
   "NativeAudioPlayback",
   "NullAcousticEchoCanceller",
   "OpenWakeWordActivationListener",

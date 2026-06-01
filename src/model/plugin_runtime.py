@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import importlib
 import inspect
 from pathlib import Path
@@ -29,6 +29,7 @@ class PluginExecutionResult:
     content: str
     handled: bool = True
     stop_reason: str = "stop"
+    provenance: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -102,12 +103,50 @@ def load_plugin_class(manifest: PluginManifest) -> type:
     """
     if not manifest.entry_point:
         raise PluginRuntimeError(f"Plugin '{manifest.plugin_id}' has no entry_point.")
+    return load_plugin_entry_point(
+        manifest=manifest,
+        entry_point=manifest.entry_point,
+        field_name="entry_point",
+    )
+
+
+def load_plugin_service_class(manifest: PluginManifest) -> type:
+    """Load the service class declared by a service-capable manifest.
+
+    Args:
+        manifest: Plugin manifest containing `runtime.service` metadata.
+
+    Returns:
+        The plugin service class referenced by the manifest.
+
+    Raises:
+        PluginRuntimeError: If the service entry point is missing or invalid.
+    """
+    if manifest.service_runtime is None:
+        raise PluginRuntimeError(
+            f"Plugin '{manifest.plugin_id}' has no runtime.service metadata."
+        )
+    return load_plugin_entry_point(
+        manifest=manifest,
+        entry_point=manifest.service_runtime.entry_point,
+        field_name="runtime.service.entry_point",
+    )
+
+
+def load_plugin_entry_point(
+    *,
+    manifest: PluginManifest,
+    entry_point: str,
+    field_name: str,
+) -> type:
+    """Load a plugin class from a manifest entry point string."""
 
     try:
-        module_name, class_name = manifest.entry_point.split(":", 1)
+        module_name, class_name = entry_point.split(":", 1)
     except ValueError as exc:
         raise PluginRuntimeError(
-            f"Plugin '{manifest.plugin_id}' entry_point must be in '<module>:<ClassName>' format."
+            f"Plugin '{manifest.plugin_id}' {field_name} must be in "
+            "'<module>:<ClassName>' format."
         ) from exc
 
     full_module_name = f"{manifest.plugin_id}.{module_name}"
@@ -120,11 +159,12 @@ def load_plugin_class(manifest: PluginManifest) -> type:
     plugin_class = getattr(module, class_name, None)
     if plugin_class is None:
         raise PluginRuntimeError(
-            f"Plugin '{manifest.plugin_id}' entry_point class '{class_name}' was not found."
+            f"Plugin '{manifest.plugin_id}' {field_name} class "
+            f"'{class_name}' was not found."
         )
     if not isinstance(plugin_class, type):
         raise PluginRuntimeError(
-            f"Plugin '{manifest.plugin_id}' entry_point '{class_name}' is not a class."
+            f"Plugin '{manifest.plugin_id}' {field_name} '{class_name}' is not a class."
         )
     return plugin_class
 

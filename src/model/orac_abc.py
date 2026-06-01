@@ -1,5 +1,6 @@
 # llm/base_connector.py
 from abc import ABC, abstractmethod
+from typing import Any
 
 MODEL_SERVICE_DESCRIPTORS = {
     "lmstudio": "LM Studio",
@@ -12,7 +13,12 @@ class LLMConnectorABC(ABC):
         self.model_interface_id = model_service_id
 
     @abstractmethod
-    def send_prompt(self, prompt_type: str, prompt: str) -> str:
+    def send_prompt(
+        self,
+        prompt_type: str,
+        prompt: str,
+        generation_options: dict[str, Any] | None = None,
+    ) -> str:
         """Send a prompt to the LLM and return the response.
 
         Args:
@@ -21,7 +27,13 @@ class LLMConnectorABC(ABC):
         """
 
     @abstractmethod
-    def send_prompt_with_meta(self, prompt_type: str, prompt: str, stream: bool = False) -> dict:
+    def send_prompt_with_meta(
+        self,
+        prompt_type: str,
+        prompt: str,
+        stream: bool = False,
+        generation_options: dict[str, Any] | None = None,
+    ) -> dict:
         """Send a prompt and return response text plus usage metadata."""
 
     @abstractmethod

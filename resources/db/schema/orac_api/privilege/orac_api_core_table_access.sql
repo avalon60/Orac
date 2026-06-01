@@ -10,7 +10,11 @@ grant select, insert, update, delete on orac_core.user_preferences to orac_api w
 grant select, insert, update, delete on orac_core.messages to orac_api with grant option;
 grant select, insert, update, delete on orac_core.conversations to orac_api with grant option;
 grant select, insert, update, delete on orac_core.llm_registry to orac_api with grant option;
+grant select, insert, update, delete on orac_core.tts_voices to orac_api with grant option;
+grant select, insert, update, delete on orac_core.model_generation_presets to orac_api with grant option;
 grant select, insert, update, delete on orac_core.devices to orac_api with grant option;
 grant select, insert, update, delete on orac_core.message_embeddings to orac_api with grant option;
 grant select, insert, update, delete on orac_core.user_prompt_elements to orac_api with grant option;
 grant select, insert, update, delete on orac_core.orac_personalities to orac_api with grant option;
+grant select, insert, update, delete on orac_core.plugin_invocations to orac_api with grant option;
+grant select, insert, update, delete on orac_core.plugin_audit_events to orac_api with grant option;

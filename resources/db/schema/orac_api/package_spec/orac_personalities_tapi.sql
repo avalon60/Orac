@@ -64,6 +64,7 @@ as
       , p_enforce_precision        in       orac_api.orac_personalities_v.enforce_precision%type                := true
       , p_admit_uncertainty        in       orac_api.orac_personalities_v.admit_uncertainty%type                := true
       , p_packaged_persona         in       orac_api.orac_personalities_v.packaged_persona%type                 := false
+      , p_model_preset_id          in       orac_api.orac_personalities_v.model_preset_id%type                  := null
       , p_system_prompt            in       orac_api.orac_personalities_v.system_prompt%type
       , p_style_prompt             in       orac_api.orac_personalities_v.style_prompt%type
       , p_is_active                in       orac_api.orac_personalities_v.is_active%type                        := true
@@ -100,6 +101,7 @@ as
       , p_enforce_precision           out   orac_api.orac_personalities_v.enforce_precision%type
       , p_admit_uncertainty           out   orac_api.orac_personalities_v.admit_uncertainty%type
       , p_packaged_persona            out   orac_api.orac_personalities_v.packaged_persona%type
+      , p_model_preset_id             out   orac_api.orac_personalities_v.model_preset_id%type
       , p_system_prompt               out   orac_api.orac_personalities_v.system_prompt%type
       , p_style_prompt                out   orac_api.orac_personalities_v.style_prompt%type
       , p_is_active                   out   orac_api.orac_personalities_v.is_active%type
@@ -140,6 +142,7 @@ as
       , p_enforce_precision        in       orac_api.orac_personalities_v.enforce_precision%type
       , p_admit_uncertainty        in       orac_api.orac_personalities_v.admit_uncertainty%type
       , p_packaged_persona         in       orac_api.orac_personalities_v.packaged_persona%type
+      , p_model_preset_id          in       orac_api.orac_personalities_v.model_preset_id%type                  := null
       , p_system_prompt            in       orac_api.orac_personalities_v.system_prompt%type
       , p_style_prompt             in       orac_api.orac_personalities_v.style_prompt%type
       , p_is_active                in       orac_api.orac_personalities_v.is_active%type

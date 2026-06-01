@@ -58,7 +58,7 @@ Orac must be able to discover, index, and route plugins using the manifest alone
 
 ## What The Manifest Is Used For
 
-The current manifest schema is aligned with the plugin-routing v1 subsystem.
+The current manifest schema is aligned with the plugin-routing v2 subsystem.
 
 Required fields:
 
@@ -69,17 +69,24 @@ Required fields:
 - `version`
 - `enabled`
 - `capabilities`
+- `entitlements`
+- `runtime`
 
 Optional fields:
 
 - `entities`
 - `examples`
 - `entry_point`
+- `execution`
+- `configuration`
+- `database`
 
 Important distinctions:
 
 - `description`, `capabilities`, `entities`, and `examples` are routing-semantic fields
 - `entry_point` is execution metadata, not routing metadata
+- `execution` is action-risk and provenance metadata, not routing text
+- `runtime`, `configuration`, and `database` are runtime/dependency metadata, not routing text
 - `version` is plugin/package metadata, not part of canonical routing text
 
 The `entry_point` value is expected to reference a Python module and class within the matching plugin directory, for example `plugin:WeatherPlugin`. The exact loading and execution mechanism is intentionally deferred.
@@ -97,8 +104,51 @@ The current canonical routing text does not include:
 
 - `version`
 - `entry_point`
+- `execution`
+- `runtime`
+- `configuration`
+- `database`
 
-Only plugins with `"enabled": true` are included in the routing index.
+Only plugins with `"enabled": true`, `runtime.mode` of `on_demand` or `hybrid`, and satisfied runtime dependencies are included in the routing index.
+
+## Execution Policy
+
+Plugin manifests may declare first-pass execution policy metadata under the
+optional `execution` object. This metadata lets Orac distinguish harmless
+informational plugins from future mutation, device-control, filesystem,
+external-service, or privileged actions before plugin code is imported.
+
+Required `execution` fields:
+
+- `action_type`: one of `informational_read_only`, `external_read`,
+  `local_mutation`, `external_mutation`, `device_control`, or
+  `privileged_system_action`
+- `requires_confirmation`: whether the action must be confirmed before
+  execution
+- `allowed_by_default`: whether Orac may execute the plugin without an
+  explicit allow policy
+
+Optional `execution` fields:
+
+- `capabilities`: the declared manifest capabilities covered by this policy
+- `entitlements`: the declared manifest entitlements covered by this policy
+- `scaffold`: marks an experimental or placeholder plugin as not executable
+  for real control
+- `notes`: human-readable policy context
+
+Current behaviour:
+
+- `informational_read_only` plugins with `allowed_by_default: true` may run.
+- Higher-risk actions are denied or returned as requiring confirmation unless
+  request policy metadata explicitly allows them.
+- Unknown action types fail closed.
+- Plugin-handled responses carry provenance metadata identifying the plugin,
+  action type, and policy result.
+
+The weather plugin is explicitly informational/read-only. The Home Assistant
+plugin is marked scaffold-only and device-control-capable in intent, but real
+control remains disabled until policy, entitlements, credentials and runtime
+behaviour are complete.
 
 ## Required Vs Optional Files
 
@@ -209,7 +259,7 @@ Some existing plugin-related files in this repository predate the current manife
 - `plugins/home_assistant.ini`
 - `plugins/home_assistant/manifest.ini`
 
-These should be treated as legacy or transitional artefacts unless and until Orac explicitly adopts them for another purpose. They are not the source of truth for routing discovery in the current plugin-routing v1 design.
+These should be treated as legacy or transitional artefacts unless and until Orac explicitly adopts them for another purpose. They are not the source of truth for routing discovery in the current plugin-routing design.
 
 ## Illustrative Template
 

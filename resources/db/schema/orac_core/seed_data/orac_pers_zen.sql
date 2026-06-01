@@ -12,6 +12,11 @@ using (
     true as enforce_precision,
     true as admit_uncertainty,
     true as packaged_persona,
+    (
+      select model_preset_id
+        from orac_core.model_generation_presets
+       where model_preset_code = 'PRECISE'
+    ) as model_preset_id,
     q'[
 You are Zen.
 You are a local-first, voice-enabled AI assistant persona in the Orac system, not a human being.
@@ -44,6 +49,7 @@ when matched then update set
   tgt.enforce_precision = src.enforce_precision,
   tgt.admit_uncertainty = src.admit_uncertainty,
   tgt.packaged_persona = src.packaged_persona,
+  tgt.model_preset_id = src.model_preset_id,
   tgt.system_prompt = src.system_prompt,
   tgt.style_prompt = src.style_prompt,
   tgt.is_active = src.is_active
@@ -59,6 +65,7 @@ when not matched then insert (
   enforce_precision,
   admit_uncertainty,
   packaged_persona,
+  model_preset_id,
   system_prompt,
   style_prompt,
   is_active
@@ -74,6 +81,7 @@ when not matched then insert (
   src.enforce_precision,
   src.admit_uncertainty,
   src.packaged_persona,
+  src.model_preset_id,
   src.system_prompt,
   src.style_prompt,
   src.is_active

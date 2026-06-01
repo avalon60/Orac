@@ -2,11 +2,11 @@
 
 ## Purpose
 
-This document defines Python coding standards for Orac.
+This document defines Python engineering foundations and coding standards for
+Orac.
 
-These standards apply to Python application code, command line tools,
-plugin framework code, plugin implementations, tests, and supporting
-scripts.
+These standards apply to Python application code, command line tools, plugin
+framework code, plugin implementations, tests, and supporting scripts.
 
 The goals are:
 
@@ -24,6 +24,265 @@ exists, preserve the existing working pattern unless explicitly asked to
 refactor it.
 
 ---
+
+## Project Configuration
+
+Configure Python projects through `pyproject.toml` wherever possible.
+
+This follows PEP 518 and provides a standard location for build systems, tool
+configuration, and project metadata.
+
+Supplemental configuration files are allowed where `pyproject.toml` is not
+enough.
+
+Examples of supplemental files:
+
+- `MANIFEST.in` for source-distribution file inclusion with setuptools
+- `setup.py` for build steps that cannot be expressed declaratively
+- `ocibuild.conf` when OCI build tooling needs extra configuration
+
+Keep supplemental files narrowly scoped. Do not duplicate configuration across
+tools unless the tool requires it.
+
+### Formatting and Linting
+
+Use the following tools as the project standard:
+
+| Tool | Purpose | Required |
+|---|---|---|
+| `black` | Python code formatting. | Yes |
+| `mypy` | Type checking and type consistency. | Yes |
+| `ruff` | Linting, import sorting, and import grouping. | Yes |
+
+Pin tool versions in project configuration or dependency lock files so local
+development and CI use the same rules.
+
+### Project Layout
+
+Use the `src/` layout recommended by the Python Packaging Authority.
+
+The `src/` layout is required for both packaged and non-packaged projects unless
+the Architecture Team approves an exception.
+
+Recommended layout:
+
+```text
+<project>/
+|-- .gitmodules
+|-- pyproject.toml
+|-- MANIFEST.in
+|-- resources/
+`-- src/
+    `-- <project>/
+        |-- __init__.py
+        |-- lib/
+        |   |-- .git
+        |   `-- <files from the lib repo>
+        |-- model/
+        |   `-- __init__.py
+        |-- view/
+        |   `-- __init__.py
+        `-- controller/
+            `-- __init__.py
+```
+
+The `model`, `view`, and `controller` directories are examples of namespacing
+for an MVC-style project. Use names that fit the actual architecture.
+
+The `src/` layout prevents Python from accidentally importing modules directly
+from the development tree. Code must be installed into the virtual environment
+before import, which exposes packaging mistakes earlier. Without this layout,
+local files can appear to work during development even when they are missing
+from the built package.
+
+### Poetry and Setuptools
+
+Poetry and setuptools are both acceptable build mechanisms.
+
+Use one build mechanism per project. Do not mix Poetry and setuptools as active
+project build systems unless there is a documented compatibility reason.
+
+Prefer Poetry where possible because it provides a modern workflow for
+dependency management, lock files, local development, and packaging.
+
+Use setuptools when:
+
+- the project already uses setuptools and migration is not in scope
+- deployment tooling requires setuptools
+- the build requires setuptools-specific behaviour
+- the package uses build steps that are awkward or unsupported in Poetry
+
+### Installing Poetry
+
+Poetry must be installed before it can be used from an IDE or local terminal.
+
+For macOS or Linux:
+
+```bash
+curl -sSL https://install.python-poetry.org | python3 -
+```
+
+Add Poetry to `PATH`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Add the `PATH` update to the relevant shell startup file, such as `.zshrc` on
+macOS or `.bashrc` on Linux. Open a new terminal, or source the startup file,
+before using Poetry.
+
+For Windows PowerShell:
+
+```powershell
+(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | python -
+```
+
+Add Poetry to the user `Path`:
+
+```powershell
+[Environment]::SetEnvironmentVariable(
+  "Path",
+  [Environment]::GetEnvironmentVariable("Path", "User") + ";C:\Users\$env:USERNAME\AppData\Roaming\Python\Scripts",
+  "User"
+)
+```
+
+Open a new terminal after updating `Path`. Rebooting can help IDEs pick up the
+new user environment.
+
+### Updating Poetry
+
+Update to the latest Poetry version:
+
+```bash
+poetry self update
+```
+
+Update to a specific version:
+
+```bash
+poetry self update 1.8.3
+```
+
+The same command can be used to move backwards to an earlier Poetry version
+when required for compatibility.
+
+### Initialising a Project Environment
+
+After the base project configuration is in place, install project dependencies
+into the local environment.
+
+For setuptools:
+
+```bash
+python3 -m pip install -e .
+```
+
+For Poetry:
+
+```bash
+poetry install
+```
+
+### Unit Testing
+
+Use `pytest` for Python unit tests.
+
+### Python Project Submodules
+
+For large projects, dependency sets for sub-areas can be managed centrally in
+`pyproject.toml`.
+
+Example project structure:
+
+```text
+src/
+|-- etl/
+|   `-- __init__.py
+|-- ml/
+|   `-- __init__.py
+`-- api/
+    `-- __init__.py
+```
+
+Example Poetry dependency groups:
+
+```toml
+[tool.poetry]
+name = "my_project"
+packages = [
+  { include = "api", from = "src" },
+  { include = "etl", from = "src" },
+  { include = "ml", from = "src" },
+]
+
+[tool.poetry.group.api.dependencies]
+fastapi = "^0.115"
+
+[tool.poetry.group.etl.dependencies]
+pandas = "^2.2"
+pyarrow = "^16.1"
+
+[tool.poetry.group.ml.dependencies]
+scikit-learn = "^1.5"
+```
+
+Install dependencies for one area:
+
+```bash
+poetry install --with api
+poetry install --with etl
+poetry install --with ml
+```
+
+Install dependencies for multiple areas:
+
+```bash
+poetry install --with api,etl,ml
+```
+
+### Sharing Modules Across Projects
+
+Artifactory is the default mechanism for sharing Python library modules across
+projects where package-style consumption is appropriate.
+
+This section is intentionally incomplete until the organisation-specific
+Artifactory publishing and consumption process is documented.
+
+Pending details:
+
+- Poetry configuration for internal package repositories
+- setuptools or pip configuration, such as `pip.conf`, where needed
+- authentication and secret handling for package publication and installation
+- versioning and release promotion policy
+
+Until this is complete, do not invent publishing steps. Use existing project or
+platform guidance, and escalate unclear package publication decisions.
+
+### Git Submodules
+
+Use Git submodules when multiple repositories must consume the same source tree
+and may need to contribute changes back to that source tree.
+
+Prefer an internal package index, such as private PyPI through Artifactory, when
+consumers only need read-only consumption and semantic version upgrades.
+
+#### Submodule Checklist
+
+- Prefer submodules when multiple repos must consume and contribute to the same
+  source tree.
+- Prefer internal packages when consumers only need read-only package usage.
+- Pin submodules to a specific commit or tag.
+- Do not leave release builds floating on a branch.
+- Clone with `--recurse-submodules`.
+- Update with `git submodule update --remote --merge -- <path>` and commit the
+  parent repository pointer.
+- In Poetry, add the submodule as a path dependency.
+- Use `develop = true` for editable local development.
+- In CI, ensure checkout pulls submodules recursively.
+- Tag shared library releases using SemVer, such as `vMAJOR.MINOR.PATCH`.
+- Sign tags where possible.
 
 ## Core rules
 
@@ -1431,4 +1690,3 @@ Only the plugin framework should use controlled dynamic imports.
 Any code that makes plugin execution, filesystem access, SQL execution,
 shell execution, or credential access easier by bypassing Orac guardrails
 is a design defect.
-

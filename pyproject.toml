@@ -16,7 +16,8 @@ dependencies = [
   "langchain-openai (>=1.2.1,<2.0.0)",
   "oracledb (>=4.0.0,<5.0.0)",
   "cryptography (>=47.0.0,<48.0.0)",
-  "customtkinter (>=5.2.2,<6.0.0)"
+  "customtkinter (>=5.2.2,<6.0.0)",
+  "pytest (>=9.0.3,<10.0.0)"
 ]
 
 [project.optional-dependencies]
@@ -29,6 +30,9 @@ voice-wake-openwakeword = [
 voice-wake-porcupine = [
   "pvporcupine (>=4.0.2,<5.0.0)",
   "pvrecorder (>=1.2.7,<2.0.0)"
+]
+voice-aec-livekit = [
+  "livekit (>=1.1.8,<2.0.0)"
 ]
 
 [build-system]

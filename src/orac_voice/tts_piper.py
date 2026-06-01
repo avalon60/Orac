@@ -117,6 +117,7 @@ class PiperTtsEngine:
     config_file_path: Path | None = None,
     voice_name: str | None = None,
     voice_dir: Path | str | None = None,
+    voice_model_path: Path | str | None = None,
     output_dir: Path | str | None = None,
     piper_bin: Path | str | None = None,
     timeout_seconds: int = DEFAULT_SYNTHESIS_TIMEOUT_SECONDS,
@@ -127,6 +128,7 @@ class PiperTtsEngine:
       config_file_path (Path | None): Optional Orac config path.
       voice_name (str | None): Optional voice override.
       voice_dir (Path | str | None): Optional voice directory override.
+      voice_model_path (Path | str | None): Optional direct model path.
       output_dir (Path | str | None): Optional WAV output directory.
       piper_bin (Path | str | None): Optional Piper executable path.
       timeout_seconds (int): Synthesis timeout.
@@ -170,7 +172,17 @@ class PiperTtsEngine:
       self.output_dir = expand_config_path(str(output_dir), orac_home=self.orac_home)
     self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    self.voice_model_path = self._resolve_voice_model_path()
+    if voice_model_path is None:
+      self.voice_model_path = self._resolve_voice_model_path()
+    else:
+      self.voice_model_path = expand_config_path(
+        str(voice_model_path),
+        orac_home=self.orac_home,
+      )
+      if not self.voice_model_path.exists():
+        raise RuntimeError(
+          f"Piper voice model was not found: {self.voice_model_path}"
+        )
     self.piper_bin = self._resolve_piper_bin(piper_bin=piper_bin)
     self._process_lock = threading.Lock()
     self._active_process: subprocess.Popen[str] | None = None
@@ -182,6 +194,7 @@ class PiperTtsEngine:
     config_file_path: Path | None = None,
     voice_name: str | None = None,
     voice_dir: Path | str | None = None,
+    voice_model_path: Path | str | None = None,
   ) -> "PiperTtsEngine":
     """Create a Piper engine from Orac configuration.
 
@@ -189,6 +202,7 @@ class PiperTtsEngine:
       config_file_path (Path | None): Optional config path.
       voice_name (str | None): Optional voice override.
       voice_dir (Path | str | None): Optional voice directory override.
+      voice_model_path (Path | str | None): Optional direct model path.
 
     Returns:
       PiperTtsEngine: Configured engine.
@@ -197,6 +211,7 @@ class PiperTtsEngine:
       config_file_path=config_file_path,
       voice_name=voice_name,
       voice_dir=voice_dir,
+      voice_model_path=voice_model_path,
     )
 
   def _resolve_piper_bin(self, *, piper_bin: Path | str | None) -> Path:

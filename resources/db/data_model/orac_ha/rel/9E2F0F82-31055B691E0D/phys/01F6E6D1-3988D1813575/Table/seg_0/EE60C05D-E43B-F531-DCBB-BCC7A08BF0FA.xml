@@ -1,0 +1,138 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<TableProxyOraclev20c class="oracle.dbtools.crest.model.design.storage.oracle.v20c.TableProxyOraclev20c" name="HA_AREAS" directorySegmentName="seg_0" id="EE60C05D-E43B-F531-DCBB-BCC7A08BF0FA">
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+<schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
+<logging>YES</logging>
+<partitionedRowMovement>DISABLE</partitionedRowMovement>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<temporaryChanged>false</temporaryChanged>
+<accessDriverType>oracle_loader</accessDriverType>
+<rejectLimit></rejectLimit>
+<inMemory>NO</inMemory>
+<columnProxies itemClass="oracle.dbtools.crest.model.design.storage.oracle.v12c.ColumnProxyOraclev12c">
+<ColumnProxy name="AREA_ID" id="0DC360EC-68D6-30D1-975C-A636FA314831">
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="CREATED_AT" id="1DB6EEFB-7E3E-02EE-482C-29F4382080BE">
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="MODIFIED_AT" id="1F75E0F4-5950-61DC-95FD-9E15F2EED00A">
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="HUMIDITY_ENTITY_ID" id="22529571-A67C-9AC3-5281-CC05EC2B49AE">
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="LABELS" id="3402D22F-85A8-2433-D05F-35E532BB9EE3">
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="ICON" id="404B88BE-E702-0C19-34BC-E33136CB08A6">
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="FLOOR_ID" id="5F5DFAAE-178F-5D47-55D0-9B0DEEF76B78">
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="ALIASES" id="7A88F74F-5CE3-DD2E-C154-DD9CB334DFF3">
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="PICTURE" id="86F36B46-FA0F-74B8-98EC-1D45A61ECB23">
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="UPDATED_ON" id="8C8B9E78-4D27-5852-92CD-F69F4FF01332">
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="NAME" id="9483DAED-9C04-B8E4-6727-91435BD221C5">
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="ROW_VERSION" id="974EF13A-B183-19DF-6EE9-406CD39911D3">
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="CREATED_ON" id="D290B54E-9AA5-1309-C90D-8597826C6974">
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="TEMPERATURE_ENTITY_ID" id="D33DD2EA-C3FB-D0FA-8D65-56BB2AD12318">
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+</ColumnProxy>
+</columnProxies>
+<indexProxies>
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="HA_AREAS_PK_IDX" id="09549587-BCF3-69D0-F15B-1284ADAFD978">
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+<schemaObject>0A0EFB75-031D-9FAD-6900-3D75372A603B</schemaObject>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+</IndexProxy>
+</indexProxies>
+<lobStorages>
+<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000077167C00008$$" id="DF40C4B8-A2C7-0CDA-26DD-BA77802CD740">
+<createdBy>clive</createdBy>
+<createdTime>2026-03-21 11:13:32 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+<cache>NOCACHE</cache>
+<chunk>8192</chunk>
+<column>ALIASES</column>
+<compression>NO</compression>
+<duplication>KEEP_DUPLICATES</duplication>
+<logging>YES</logging>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<lobStorageType>SECUREFILE</lobStorageType>
+</LobStorage>
+<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000077167C00009$$" id="DEAE901B-25DA-993A-A698-FFE264009CE2">
+<createdBy>clive</createdBy>
+<createdTime>2026-03-21 11:13:32 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+<cache>NOCACHE</cache>
+<chunk>8192</chunk>
+<column>LABELS</column>
+<compression>NO</compression>
+<duplication>KEEP_DUPLICATES</duplication>
+<logging>YES</logging>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<lobStorageType>SECUREFILE</lobStorageType>
+</LobStorage>
+</lobStorages>
+<primaryKeys>
+<PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="HA_AREAS_PK" id="BAD705F4-62D4-53CB-7EFA-4789253FE452">
+<createdBy>clive</createdBy>
+<createdTime>2025-12-26 10:13:18 UTC</createdTime>
+<ownerDesignName>orac_ha</ownerDesignName>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<existingIndex>09549587-BCF3-69D0-F15B-1284ADAFD978</existingIndex>
+<indexSegment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</indexSegment>
+<indexSort>SORTED</indexSort>
+<usingIndex>BY INDEX NAME</usingIndex>
+</PrimaryKey>
+</primaryKeys>
+</TableProxyOraclev20c>

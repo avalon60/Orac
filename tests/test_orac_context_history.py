@@ -53,7 +53,13 @@ if "oracledb" not in sys.modules:
 import controller.orac as orac_module
 from controller.orac import Orac
 from model.context_manager import OracContextManager
+from model.llm_connector import LLMUsageMetadata
 from model.plugin_runtime import PluginExecutionResult
+from orac_core.retrieval import FetchedSource
+from orac_core.retrieval import GroundingPackBuilder
+from orac_core.retrieval import RetrievalOutcome
+from orac_core.retrieval import SearchRequest
+from orac_core.retrieval import SearchResult
 
 
 class _FakeLogger:
@@ -104,10 +110,19 @@ class _FakeLLM:
     def __init__(self, responses: list[str]) -> None:
         self._responses = list(responses)
         self.prompts: list[str] = []
+        self.generation_options_seen: list[dict | None] = []
+        self.stream_usage_metadata: LLMUsageMetadata | None = None
 
-    def send_prompt(self, prompt_type: str, prompt: str, stream: bool = False) -> str:
+    def send_prompt(
+        self,
+        prompt_type: str,
+        prompt: str,
+        stream: bool = False,
+        generation_options: dict | None = None,
+    ) -> str:
         del prompt_type, stream
         self.prompts.append(prompt)
+        self.generation_options_seen.append(generation_options)
         if self._responses:
             return self._responses.pop(0)
         return "stubbed response"
@@ -117,14 +132,38 @@ class _FakeLLM:
         prompt_type: str,
         prompt: str,
         stream: bool = False,
+        generation_options: dict | None = None,
     ) -> dict[str, int | str]:
-        text = self.send_prompt(prompt_type=prompt_type, prompt=prompt, stream=stream)
+        text = self.send_prompt(
+            prompt_type=prompt_type,
+            prompt=prompt,
+            stream=stream,
+            generation_options=generation_options,
+        )
         return {
             "text": text,
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "total_tokens": 0,
         }
+
+    def stream_prompt_deltas(
+        self,
+        prompt_type: str,
+        prompt: str,
+        generation_options: dict | None = None,
+        on_usage_metadata=None,
+    ):
+        """Yield a queued response as one streaming delta."""
+        text = self.send_prompt(
+            prompt_type=prompt_type,
+            prompt=prompt,
+            stream=True,
+            generation_options=generation_options,
+        )
+        yield text
+        if self.stream_usage_metadata is not None and on_usage_metadata is not None:
+            on_usage_metadata(self.stream_usage_metadata)
 
 
 class _ProbeLLM:
@@ -138,10 +177,14 @@ class _ProbeLLM:
         prompt_type: str,
         prompt: str,
         stream: bool = False,
+        generation_options: dict | None = None,
     ) -> dict[str, int | str]:
-        del prompt_type, stream
+        del prompt_type, stream, generation_options
         self.prompts.append(prompt)
-        if "and nothing else" in prompt and "Recent exchange" not in prompt:
+        if (
+            "and nothing else" in prompt
+            and "Conversation context" not in prompt
+        ):
             return {
                 "text": "ACK",
                 "prompt_tokens": 0,
@@ -170,8 +213,9 @@ class _ProbeLLMShouldNotBeCalled:
         prompt_type: str,
         prompt: str,
         stream: bool = False,
+        generation_options: dict | None = None,
     ) -> dict[str, int | str]:
-        del prompt_type, prompt, stream
+        del prompt_type, prompt, stream, generation_options
         self.calls += 1
         raise AssertionError("chat probe should not run for non-chat models")
 
@@ -184,9 +228,45 @@ class _ProbeLLMBackendFailure:
         prompt_type: str,
         prompt: str,
         stream: bool = False,
+        generation_options: dict | None = None,
     ) -> dict[str, int | str]:
-        del prompt_type, prompt, stream
+        del prompt_type, prompt, stream, generation_options
         raise RuntimeError("404 Client Error: Not Found for url")
+
+
+class _UnavailableRetrievalService:
+    """Retrieval stub that reports explicit retrieval failure."""
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+        self.prompts: list[str] = []
+
+    def build_grounding_outcome(self, prompt: str) -> RetrievalOutcome:
+        """Return an unavailable retrieval outcome."""
+        self.prompts.append(prompt)
+        return RetrievalOutcome(
+            requested=True,
+            status="no_search_results",
+            message=self.message,
+        )
+
+
+class _SuccessfulRetrievalService:
+    """Retrieval stub that returns a grounded explicit retrieval outcome."""
+
+    def __init__(self, pack) -> None:
+        self.pack = pack
+        self.prompts: list[str] = []
+
+    def build_grounding_outcome(self, prompt: str) -> RetrievalOutcome:
+        """Return a successful retrieval outcome with grounded evidence."""
+        self.prompts.append(prompt)
+        return RetrievalOutcome(
+            requested=True,
+            status="ok",
+            message="Online evidence was retrieved for the explicit request.",
+            grounding_pack=self.pack,
+        )
 
 
 class _MemoryContextManager:
@@ -199,6 +279,7 @@ class _MemoryContextManager:
         self.conversation_llm_ids: dict[str, int | None] = {}
         self.closed_sessions: list[str] = []
         self.archived_sessions: list[str] = []
+        self.system_metas_by_session: dict[str, list[dict]] = {}
         self.user_preferences: dict[tuple[str, str], str] = {}
         self.llm_registry_entries: dict[int, dict[str, object]] = {
             1: {
@@ -208,6 +289,8 @@ class _MemoryContextManager:
                 "IS_ENABLED": "Y",
             }
         }
+        self.personalities: dict[str, dict[str, object]] = {}
+        self.model_generation_presets: dict[int, dict[str, object]] = {}
         self.titles: dict[str, str] = {}
         self.ensure_calls: list[tuple[str, str, int]] = []
         self.saved_events: list[tuple[str, str, str]] = []
@@ -249,12 +332,31 @@ class _MemoryContextManager:
             self.conversation_llm_ids[session_id] = llm_id
         return self.conversation_ids[session_id]
 
-    def _save(self, session_id: str, role: str, text: str) -> dict[str, int]:
+    def _save(
+        self,
+        session_id: str,
+        role: str,
+        text: str,
+        *,
+        meta: dict | None = None,
+        tokens_used=None,
+    ) -> dict[str, int]:
         if self.fail_role == role:
             raise RuntimeError(f"Simulated {role} persistence failure")
         bucket = self.messages_by_session.setdefault(session_id, [])
         turn_index = len(bucket) + 1
-        bucket.append({"role": role, "content": text})
+        bucket.append(
+            {
+                "role": role,
+                "content": text,
+                "meta": meta or {},
+                "tokens_used": tokens_used,
+            }
+        )
+        if role == "system":
+            self.system_metas_by_session.setdefault(session_id, []).append(
+                meta or {}
+            )
         self.saved_events.append((session_id, role, text))
         return {
             "conversation_id": self.conversation_ids.setdefault(session_id, self._next_conversation_id),
@@ -266,8 +368,8 @@ class _MemoryContextManager:
         return len(self.messages_by_session.get(session_id, []))
 
     def save_system_turn(self, session_id: str, user_name: str, text: str, *, meta=None, llm_id=None) -> dict[str, int]:
-        del user_name, meta, llm_id
-        return self._save(session_id, "system", text)
+        del user_name, llm_id
+        return self._save(session_id, "system", text, meta=meta)
 
     def save_user_turn(
         self,
@@ -279,8 +381,8 @@ class _MemoryContextManager:
         llm_id=None,
         tokens_used=None,
     ) -> dict[str, int]:
-        del user_name, meta, llm_id, tokens_used
-        return self._save(session_id, "user", text)
+        del user_name, llm_id
+        return self._save(session_id, "user", text, meta=meta, tokens_used=tokens_used)
 
     def save_assistant_turn(
         self,
@@ -292,8 +394,14 @@ class _MemoryContextManager:
         llm_id=None,
         tokens_used=None,
     ) -> dict[str, int]:
-        del user_name, meta, llm_id, tokens_used
-        return self._save(session_id, "assistant", text)
+        del user_name, llm_id
+        return self._save(
+            session_id,
+            "assistant",
+            text,
+            meta=meta,
+            tokens_used=tokens_used,
+        )
 
     def get_messages_for_prompt(self, session_id: str, limit: int = 20) -> list[dict[str, str]]:
         del limit
@@ -315,8 +423,18 @@ class _MemoryContextManager:
         return self.user_preferences.get((str(username), str(pref_key)))
 
     def get_orac_personality(self, personality_code: str) -> dict[str, str] | None:
-        del personality_code
-        return None
+        return self.personalities.get(str(personality_code).strip().upper())
+
+    def get_model_generation_preset(
+        self,
+        *,
+        model_preset_id=None,
+        model_preset_code=None,
+    ) -> dict[str, object]:
+        del model_preset_code
+        if model_preset_id in (None, ""):
+            return {}
+        return self.model_generation_presets.get(int(model_preset_id), {})
 
     def get_llm_registry_entry_by_provider_model(
         self,
@@ -354,6 +472,16 @@ class _MemoryContextManager:
     def get_conversation_personality_code(self, session_id: str) -> str:
         del session_id
         return "DEFAULT"
+
+    def get_conversation_prompt_policy_fingerprint(
+        self,
+        session_id: str,
+    ) -> str | None:
+        metas = self.system_metas_by_session.get(session_id) or []
+        if not metas:
+            return None
+        value = metas[0].get("prompt_policy_fingerprint")
+        return str(value).strip() if value else None
 
     def get_conversation_llm_id(self, session_id: str) -> int | None:
         return self.conversation_llm_ids.get(session_id)
@@ -442,8 +570,11 @@ class _ConditionalPluginRouter:
         meta: dict,
         handoff,
         auth_user: str | None = None,
+        *,
+        audit_adapter=None,
+        request_context=None,
     ) -> PluginExecutionResult | None:
-        del meta, handoff, auth_user
+        del meta, handoff, auth_user, audit_adapter, request_context
         self.calls.append(prompt)
         if prompt == "What is the weather like in Brigadoon?":
             return PluginExecutionResult(plugin_id="weather", content=self.weather_content)
@@ -606,6 +737,18 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             "use the user-facing local time above, not UTC",
             clock,
         )
+        self.assertIn(
+            "The user-facing local time is authoritative for the current turn",
+            clock,
+        )
+        self.assertIn(
+            "answer with the exact HH:MM value",
+            clock,
+        )
+        self.assertIn(
+            "Do not round to the hour or omit minutes",
+            clock,
+        )
 
     def test_clock_context_uses_weather_location_for_where_are_you(self) -> None:
         """Clock context should disambiguate location questions."""
@@ -621,11 +764,16 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             clock,
         )
         self.assertIn(
+            "This weather location is the preferred location context",
+            clock,
+        )
+        self.assertIn(
             "If asked where you are, where you are located, or similar, answer "
             "with this configured operational/home location.",
             clock,
         )
         self.assertIn("physical embodiment", clock)
+        self.assertNotIn("based on the session timezone", clock)
 
     def test_clock_context_disambiguates_inferred_location(self) -> None:
         """Clock context should also disambiguate timezone-derived location."""
@@ -641,6 +789,110 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             clock,
         )
         self.assertIn("physical embodiment", clock)
+
+    def test_system_primer_includes_creator_and_model_provenance_rules(self) -> None:
+        """System primer should constrain creator and vendor provenance."""
+        primer = orac_module._orac_system_primer(
+            {"reply_language": "English"},
+            {
+                "title": "SYSTEM POLICY — ORAC PERSONA:",
+                "identity": {
+                    "assistant_name": "Orac",
+                    "identity_answer_policy": (
+                        "Configured identity policy for {assistant_name}: Only "
+                        "answer with the identity statement when the user "
+                        "explicitly asks who or what you are, who created you, "
+                        "or another direct identity/creator question. For those "
+                        "questions, answer simply: \"{identity_answer}.\" Do "
+                        "not include {assistant_name}'s identity or creator in "
+                        "replies to ordinary factual requests such as date, "
+                        "time, weather, calculations, or status questions "
+                        "unless the user asks for it."
+                    ),
+                    "disallowed_vendor_claims": [
+                        "DeepSeek",
+                        "OpenAI",
+                        "Google",
+                    ],
+                    "creator_profile": {
+                        "name": "Clive Bostock",
+                        "role": "Orac's author and designer",
+                        "notable_works": ["OraTAPI"],
+                    },
+                    "rules": [
+                        "Treat the creator_profile facts as authoritative.",
+                    ],
+                },
+            },
+        )
+
+        self.assertIn(
+            "Configured identity policy for Orac: Only answer with the "
+            "identity statement when the user explicitly asks who or what you "
+            "are, who created you, or another direct identity/creator "
+            "question.",
+            primer,
+        )
+        self.assertIn(
+            "For those questions, answer simply: \"I am Orac, an extensible "
+            "artificial intelligence system, created by Clive Bostock.\"",
+            primer,
+        )
+        self.assertIn(
+            "Do not include Orac's identity or creator in replies to ordinary "
+            "factual requests such as date, time, weather, calculations, or "
+            "status questions unless the user asks for it.",
+            primer,
+        )
+        self.assertIn(
+            "Orac was created by Clive Bostock, Orac's author and designer.",
+            primer,
+        )
+        self.assertIn(
+            "Do not volunteer details about Orac's implementation, "
+            "underlying model, runtime, training, or vendor provenance.",
+            primer,
+        )
+        self.assertIn(
+            "If asked whether Orac was created, trained, or operated by a "
+            "third-party model vendor, answer no without listing vendor "
+            "names.",
+            primer,
+        )
+        self.assertIn(
+            "Only if asked specifically about technical implementation "
+            "details, say Orac is running on the configured local "
+            "model/runtime.",
+            primer,
+        )
+        self.assertIn(
+            "do not add vendor denials to ordinary identity answers.",
+            primer,
+        )
+        self.assertNotIn("Google", primer)
+        self.assertNotIn("OpenAI", primer)
+        self.assertNotIn("DeepSeek", primer)
+        self.assertNotIn("assistant application", primer)
+        self.assertNotIn("currently backed", primer)
+        self.assertNotIn("large language model", primer)
+        self.assertNotIn("LLM", primer)
+        self.assertIn("Creator profile notable works: OraTAPI.", primer)
+        self.assertIn(
+            "Treat the creator_profile facts as authoritative.",
+            primer,
+        )
+
+    def test_configured_policy_owns_identity_answer_policy_text(self) -> None:
+        """System prompt YAML should own the identity answer policy wording."""
+        policy = orac_module._load_system_prompt_policy(
+            PROJECT_ROOT / "resources" / "config" / "orac_system_prompt.yaml"
+        )
+
+        identity_policy = policy["identity"]["identity_answer_policy"]
+
+        self.assertIn("{assistant_name}", identity_policy)
+        self.assertIn("{identity_answer}", identity_policy)
+        self.assertIn("ordinary factual requests such as date", identity_policy)
 
     def setUp(self) -> None:
         self._original_logger = orac_module.logger
@@ -671,6 +923,8 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         orchestrator.strip_reasoning_tags = True
         orchestrator._history_turn_pairs = 24
         orchestrator._reply_language = "English"
+        orchestrator._default_timezone = "Europe/London"
+        orchestrator._retrieval_response_style = "normal"
         orchestrator._conversation_timeout_secs = 3600
         orchestrator._use_history = True
         orchestrator._economy_mode = "normal"
@@ -689,12 +943,31 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         orchestrator._plugin_routing_min_score = None
         orchestrator.plugin_manager = None
         orchestrator.plugin_router = plugin_router
+        orchestrator.retrieval_service = None
         orchestrator.config_mgr = object()
         orchestrator._system_prompt_policy = {
             "title": "SYSTEM POLICY — ORAC PERSONA:",
             "identity": {
                 "assistant_name": "Orac",
-                "disallowed_vendor_claims": ["DeepSeek", "OpenAI"],
+                "disallowed_vendor_claims": [
+                    "DeepSeek",
+                    "OpenAI",
+                    "Google",
+                    "Anthropic",
+                    "Meta",
+                ],
+                "creator_profile": {
+                    "name": "Clive Bostock",
+                    "role": "Orac's author and designer",
+                    "notable_works": [
+                        "CTk Theme Builder",
+                        "CTkFontAwesome",
+                        "OraTAPI",
+                    ],
+                },
+                "rules": [
+                    "Treat the creator_profile facts as authoritative.",
+                ],
             },
             "response_style": {
                 "rules": [
@@ -753,7 +1026,12 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         return orchestrator
 
     @staticmethod
-    def _request(prompt: str, *, req_id: str) -> str:
+    def _request(
+        prompt: str,
+        *,
+        req_id: str,
+        meta: dict | None = None,
+    ) -> str:
         return json.dumps(
             {
                 "v": 1,
@@ -761,11 +1039,133 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
                 "id": req_id,
                 "ts": "2026-04-26T10:00:00Z",
                 "route": "orac.prompt",
-                "meta": {"client": "apex"},
+                "meta": {"client": "apex", **(meta or {})},
                 "payload": {"messages": [{"role": "user", "content": prompt}]},
             },
             ensure_ascii=False,
         )
+
+    def test_contextual_prompt_uses_configured_timezone_by_default(self) -> None:
+        """Prompt context should use the configured runtime timezone."""
+        orchestrator = self._make_orac_stub(llm_responses=[])
+        orchestrator._default_timezone = "Europe/Paris"
+
+        prompt = orchestrator._build_contextual_prompt(
+            "session-1",
+            "What time is it?",
+            {},
+            "clive",
+        )
+
+        self.assertIn("Session timezone preference: Europe/Paris.", prompt)
+        self.assertIn("answer with the exact HH:MM value", prompt)
+
+    def test_contextual_prompt_allows_request_timezone_override(self) -> None:
+        """Request metadata may override the configured runtime timezone."""
+        orchestrator = self._make_orac_stub(llm_responses=[])
+        orchestrator._default_timezone = "Europe/Paris"
+
+        prompt = orchestrator._build_contextual_prompt(
+            "session-1",
+            "What time is it?",
+            {"timezone": "America/New_York"},
+            "clive",
+        )
+
+        self.assertIn("Session timezone preference: America/New_York.", prompt)
+        self.assertNotIn("Session timezone preference: Europe/Paris.", prompt)
+
+    def test_contextual_prompt_tells_model_retrieval_already_happened(self) -> None:
+        """Retrieved evidence should suppress generic no-internet disclaimers."""
+        orchestrator = self._make_orac_stub(llm_responses=[])
+        request = SearchRequest(
+            query="Kevin Rowland latest single",
+            trigger_phrase="search the internet for",
+        )
+        result = SearchResult(
+            title="Kevin Rowland release",
+            url="https://example.test/kevin-rowland",
+            snippet="Release information.",
+            source_name="example",
+        )
+        fetched = FetchedSource(
+            url="https://example.test/kevin-rowland",
+            title="Kevin Rowland release",
+            source_name="example",
+            text="Kevin Rowland released a new single according to this source.",
+            excerpt="Kevin Rowland released a new single according to this source.",
+        )
+        retrieval_pack = GroundingPackBuilder().build(
+            request,
+            [result],
+            [fetched],
+            require_citations=True,
+        )
+
+        prompt = orchestrator._build_contextual_prompt(
+            "session-1",
+            "Search the internet for Kevin Rowland's latest single.",
+            {},
+            "clive",
+            retrieval_pack=retrieval_pack,
+        )
+
+        self.assertIn("WEB RETRIEVAL EVIDENCE", prompt)
+        self.assertIn("Orac has already retrieved", prompt)
+        self.assertIn("Do not mention internal retrieval mechanics", prompt)
+        self.assertIn("cite the source URLs", prompt)
+
+    def test_contextual_prompt_suppresses_identity_for_date_questions(self) -> None:
+        """Date questions should not invite the standard Orac identity answer."""
+        orchestrator = self._make_orac_stub(llm_responses=[])
+
+        prompt = orchestrator._build_contextual_prompt(
+            "session-1",
+            "Wjat is today's date?",
+            {},
+            "clive",
+        )
+
+        self.assertIn(
+            "Do not include Orac's identity or creator in replies to ordinary "
+            "factual requests such as date, time, weather, calculations, or "
+            "status questions unless the user asks for it.",
+            prompt,
+        )
+        self.assertIn(
+            "When answering questions about the current time or date, use the "
+            "user-facing local time above, not UTC.",
+            prompt,
+        )
+        self.assertIn("Current user message:\n\nWjat is today's date?", prompt)
+
+    def test_contextual_prompt_prefers_weather_location_over_timezone_location(
+        self,
+    ) -> None:
+        """Weather location should outrank timezone-derived location."""
+        orchestrator = self._make_orac_stub(llm_responses=[])
+        orchestrator._default_timezone = "Europe/Paris"
+
+        prompt = orchestrator._build_contextual_prompt(
+            "session-1",
+            "Where are you?",
+            {
+                "timezone": "America/New_York",
+                "weather_location": "Thornton Dale, England, United Kingdom",
+            },
+            "clive",
+        )
+
+        self.assertIn(
+            "Assume your current location is Thornton Dale, England, United Kingdom.",
+            prompt,
+        )
+        self.assertIn(
+            "This weather location is the preferred location context",
+            prompt,
+        )
+        self.assertNotIn("Assume your current location is New York", prompt)
+        self.assertNotIn("based on the session timezone", prompt)
 
     async def test_two_normal_turns_replay_first_turn_in_second_prompt(self) -> None:
         orchestrator = self._make_orac_stub(
@@ -826,12 +1226,6 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             follow_up_prompt,
         )
         self.assertIn(
-            "Do not mention, label, summarise, or quote 'Recent exchange' "
-            "in the reply unless the user explicitly asks about Orac's "
-            "prompt or context.",
-            follow_up_prompt,
-        )
-        self.assertIn(
             "When the user asks for more detail about the previous answer, "
             "expand it with new information rather than restating the same "
             "summary.",
@@ -842,7 +1236,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             "ASSISTANT: The Battle of Agincourt was fought in 1415.",
             follow_up_prompt,
         )
-        self.assertIn("USER (new message):\nTell me more", follow_up_prompt)
+        self.assertIn("Current user message:\n\nTell me more", follow_up_prompt)
 
     async def test_follow_up_prompt_discourages_regreeting_mid_conversation(
         self,
@@ -918,7 +1312,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             follow_up_prompt,
         )
         self.assertIn(
-            "USER (new message):\nHow did king Henry manage to win?",
+            "Current user message:\n\nHow did king Henry manage to win?",
             follow_up_prompt,
         )
         self.assertIn(
@@ -968,7 +1362,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             "explicitly asks for repetition, clarification, or more detail.",
             reaction_prompt,
         )
-        self.assertIn("USER (new message):\nTis a miracle.", reaction_prompt)
+        self.assertIn("Current user message:\n\nTis a miracle.", reaction_prompt)
 
     async def test_authenticated_user_profile_is_injected_into_prompt(self) -> None:
         orchestrator = self._make_orac_stub(
@@ -982,6 +1376,44 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Known user facts:", prompt)
         self.assertIn("Authenticated username: clive", prompt)
         self.assertIn("Display name: Clive", prompt)
+
+    async def test_streaming_turn_persists_final_usage_metadata(self) -> None:
+        context_manager = _MemoryContextManager()
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Streaming answer."],
+            context_manager=context_manager,
+        )
+        orchestrator.llm.stream_usage_metadata = LLMUsageMetadata(
+            prompt_tokens=13,
+            completion_tokens=8,
+            total_tokens=21,
+            raw={"prompt_eval_count": 13, "eval_count": 8},
+        )
+
+        stream_events: list[dict] = []
+
+        async def _event_sink(event: dict) -> None:
+            stream_events.append(event)
+
+        await orchestrator.handle_request(
+            self._request(
+                "Stream this answer.",
+                req_id="req-stream-usage",
+                meta={"stream": True},
+            ),
+            event_sink=_event_sink,
+        )
+
+        assistant_rows = [
+            row
+            for row in context_manager.messages_by_session["clive"]
+            if row["role"] == "assistant"
+        ]
+        self.assertEqual(len(assistant_rows), 1)
+        self.assertEqual(assistant_rows[0]["tokens_used"], 21)
+        self.assertTrue(
+            any(event.get("type") == "text_delta" for event in stream_events)
+        )
 
     async def test_plugin_handled_turn_is_persisted_and_replayed_into_next_prompt(self) -> None:
         plugin_content = "In Brigadoon, Khomas Region, Namibia, it's currently 21°C and clear."
@@ -1025,6 +1457,170 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(user_turn_sessions, ["clive", "clive"])
         self.assertEqual(len(context_manager.conversation_ids), 1)
         self.assertEqual(context_manager.ensure_calls[0][2], context_manager.ensure_calls[1][2])
+        self.assertTrue(
+            context_manager.get_conversation_prompt_policy_fingerprint("clive")
+        )
+
+    async def test_default_generation_options_stay_on_system_defaults(self) -> None:
+        context_manager = _MemoryContextManager()
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Default preset answer."],
+            context_manager=context_manager,
+        )
+
+        await orchestrator.handle_request(
+            self._request("Use the default style.", req_id="req-default")
+        )
+
+        self.assertEqual(
+            orchestrator.llm.generation_options_seen[-1],
+            {
+                "temperature": 0.2,
+                "repeat_penalty": 1.1,
+            },
+        )
+
+    async def test_persona_model_preset_drives_generation_options(self) -> None:
+        context_manager = _MemoryContextManager()
+        context_manager.personalities["DEFAULT"] = {
+            "PERSONALITY_CODE": "DEFAULT",
+            "PERSONALITY_NAME": "Default",
+            "MODEL_PRESET_ID": 2,
+        }
+        context_manager.model_generation_presets[2] = {
+            "MODEL_PRESET_ID": 2,
+            "MODEL_PRESET_CODE": "PRECISE_DETAILED",
+            "TEMPERATURE": 0.15,
+            "TOP_P": 0.9,
+            "TOP_K": 40,
+            "REPEAT_PENALTY": 1.1,
+            "NUM_PREDICT": 3072,
+            "SEED": None,
+        }
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Preset answer."],
+            context_manager=context_manager,
+        )
+
+        await orchestrator.handle_request(
+            self._request("Use the persona preset.", req_id="req-preset")
+        )
+
+        self.assertEqual(
+            orchestrator.llm.generation_options_seen[-1],
+            {
+                "temperature": 0.15,
+                "repeat_penalty": 1.1,
+                "top_p": 0.9,
+                "top_k": 40,
+                "num_predict": 3072,
+            },
+        )
+
+    async def test_persona_model_preset_overrides_selected_default_preset(self) -> None:
+        context_manager = _MemoryContextManager()
+        context_manager.personalities["DEFAULT"] = {
+            "PERSONALITY_CODE": "DEFAULT",
+            "PERSONALITY_NAME": "Default",
+            "MODEL_PRESET_ID": 2,
+        }
+        context_manager.model_generation_presets[1] = {
+            "MODEL_PRESET_ID": 1,
+            "MODEL_PRESET_CODE": "CREATIVE",
+            "TEMPERATURE": 0.75,
+            "NUM_PREDICT": 2048,
+        }
+        context_manager.model_generation_presets[2] = {
+            "MODEL_PRESET_ID": 2,
+            "MODEL_PRESET_CODE": "PRECISE",
+            "TEMPERATURE": 0.1,
+            "NUM_PREDICT": 1536,
+        }
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Preset precedence answer."],
+            context_manager=context_manager,
+        )
+
+        await orchestrator.handle_request(
+            self._request(
+                "Use the persona preset.",
+                req_id="req-preset-precedence",
+                meta={"model_preset_id": 1},
+            )
+        )
+
+        self.assertEqual(
+            orchestrator.llm.generation_options_seen[-1],
+            {
+                "temperature": 0.1,
+                "repeat_penalty": 1.1,
+                "num_predict": 1536,
+            },
+        )
+
+    async def test_force_new_conversation_meta_starts_new_conversation(self) -> None:
+        context_manager = _MemoryContextManager()
+        orchestrator = self._make_orac_stub(
+            llm_responses=["First answer.", "Fresh answer."],
+            context_manager=context_manager,
+        )
+
+        await orchestrator.handle_request(self._request("First prompt", req_id="req1"))
+        await orchestrator.handle_request(
+            self._request(
+                "Fresh prompt",
+                req_id="req2",
+                meta={"force_new_conversation": True},
+            )
+        )
+
+        user_turn_sessions = [
+            session_id
+            for session_id, role, _text in context_manager.saved_events
+            if role == "user"
+        ]
+        self.assertEqual(context_manager.closed_sessions, ["clive"])
+        self.assertEqual(user_turn_sessions[0], "clive")
+        self.assertTrue(user_turn_sessions[1].startswith("clive#"))
+        fresh_user_meta = context_manager.messages_by_session[
+            user_turn_sessions[1]
+        ][1]["meta"]
+        self.assertNotIn("force_new_conversation", fresh_user_meta)
+
+    async def test_prompt_policy_fingerprint_change_starts_new_conversation(
+        self,
+    ) -> None:
+        context_manager = _MemoryContextManager()
+        orchestrator = self._make_orac_stub(
+            llm_responses=["First answer.", "Fresh policy answer."],
+            context_manager=context_manager,
+        )
+
+        await orchestrator.handle_request(self._request("First prompt", req_id="req1"))
+        old_fingerprint = (
+            context_manager.get_conversation_prompt_policy_fingerprint("clive")
+        )
+        orchestrator._system_prompt_policy["safety"]["rules"].append(
+            "New policy rule for test isolation."
+        )
+        await orchestrator.handle_request(
+            self._request("Second prompt", req_id="req2")
+        )
+
+        user_turn_sessions = [
+            session_id
+            for session_id, role, _text in context_manager.saved_events
+            if role == "user"
+        ]
+        self.assertEqual(context_manager.closed_sessions, ["clive"])
+        self.assertEqual(user_turn_sessions[0], "clive")
+        self.assertTrue(user_turn_sessions[1].startswith("clive#"))
+        new_fingerprint = (
+            context_manager.get_conversation_prompt_policy_fingerprint(
+                user_turn_sessions[1]
+            )
+        )
+        self.assertNotEqual(old_fingerprint, new_fingerprint)
 
     async def test_default_llm_preference_change_starts_new_conversation(self) -> None:
         context_manager = _MemoryContextManager()
@@ -1062,6 +1658,75 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             context_manager.conversation_llm_ids[user_turn_sessions[0]],
             2,
+        )
+
+    async def test_explicit_retrieval_failure_returns_clear_answer_without_llm(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Ungrounded current facts."],
+        )
+        retrieval_service = _UnavailableRetrievalService(
+            "I could not retrieve online evidence for that request."
+        )
+        orchestrator.retrieval_service = retrieval_service
+
+        wire = await orchestrator.handle_request(
+            self._request("search the web for latest Orac news", req_id="req-search")
+        )
+        response = json.loads(wire)
+
+        self.assertEqual(
+            response["payload"]["content"],
+            "I could not retrieve online evidence for that request.",
+        )
+        self.assertEqual(orchestrator.llm.prompts, [])
+        self.assertEqual(retrieval_service.prompts, ["search the web for latest Orac news"])
+
+    async def test_explicit_retrieval_success_keeps_response_natural(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=[
+                (
+                    "The song is 'My Life in England, Pt. 1' by Dexys Midnight Runners. "
+                    "The retrieved evidence confirms its existence and availability on platforms like "
+                    "YouTube and Spotify, though the specific lyrics or full track details were not "
+                    "fully extracted in the search results."
+                )
+            ],
+        )
+        request = SearchRequest(
+            query="Kevin Rowland latest single",
+            trigger_phrase="search the internet for",
+        )
+        pack = GroundingPackBuilder().build(
+            request,
+            [SearchResult(title="Dexys Midnight Runners", url="https://example.test/song")],
+            [
+                FetchedSource(
+                    url="https://example.test/song",
+                    title="Dexys Midnight Runners",
+                    source_name="example.test",
+                    text="My Life in England, Pt. 1 is a song by Dexys Midnight Runners.",
+                    excerpt="My Life in England, Pt. 1 is a song by Dexys Midnight Runners.",
+                )
+            ],
+            require_citations=True,
+        )
+        retrieval_service = _SuccessfulRetrievalService(pack)
+        orchestrator.retrieval_service = retrieval_service
+
+        wire = await orchestrator.handle_request(
+            self._request("search the internet for Kevin Rowland's latest single", req_id="req-search")
+        )
+        response = json.loads(wire)
+        content = response["payload"]["content"]
+
+        self.assertEqual(content, "The song is 'My Life in England, Pt. 1' by Dexys Midnight Runners.")
+        self.assertNotIn("retrieved evidence", content.lower())
+        self.assertNotIn("grounding pack", content.lower())
+        self.assertNotIn("fetched sources", content.lower())
+        self.assertNotIn("search results confirm", content.lower())
+        self.assertEqual(
+            retrieval_service.prompts,
+            ["search the internet for Kevin Rowland's latest single"],
         )
 
     async def test_persistence_failures_are_recorded_and_logged(self) -> None:

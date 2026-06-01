@@ -18,6 +18,7 @@ create table orac_core.orac_personalities
 
   -- Persona classification
   packaged_persona      boolean default false not null,
+  model_preset_id       number,
 
   -- Core instruction templates
   system_prompt         clob,

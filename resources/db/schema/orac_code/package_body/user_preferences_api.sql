@@ -160,6 +160,7 @@ create or replace package body orac_code.user_preferences_api as
     l_string_value      varchar2(4000);
     l_boolean_value     varchar2(10);
     l_serialised_value  varchar2(4000);
+    l_is_string_value   varchar2(1);
     l_number_value      number;
     l_allow_zero_lov    boolean := false;
   begin
@@ -191,10 +192,15 @@ create or replace package body orac_code.user_preferences_api as
 
     l_serialised_value := serialise_pref_value(p_pref_value);
 
-    select json_value(p_pref_value, '$' returning varchar2(4000) null on error),
+    select case
+             when json_exists(p_pref_value, '$?(@.type() == "string")') then 'Y'
+             else 'N'
+           end,
+           json_value(p_pref_value, '$' returning varchar2(4000) null on error),
            json_value(p_pref_value, '$' returning number null on error),
            lower(json_value(p_pref_value, '$' returning varchar2(10) null on error))
-      into l_string_value,
+      into l_is_string_value,
+           l_string_value,
            l_number_value,
            l_boolean_value
       from dual;
@@ -212,7 +218,9 @@ create or replace package body orac_code.user_preferences_api as
     end if;
 
     if l_value_type = 'string' then
-      if l_string_value is null and l_serialised_value is not null then
+      if l_string_value is null
+         and l_serialised_value is not null
+         and l_is_string_value <> 'Y' then
         return 'Preference "' || l_display_label || '" must be stored as text.';
       end if;
 

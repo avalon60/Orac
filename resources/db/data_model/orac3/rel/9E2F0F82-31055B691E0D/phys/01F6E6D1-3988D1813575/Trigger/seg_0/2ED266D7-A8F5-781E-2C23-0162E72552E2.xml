@@ -1,0 +1,17 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<TriggerOraclev10g class="oracle.dbtools.crest.model.design.storage.oracle.v10g.TriggerOraclev10g" name="MESG_EMB_BU" directorySegmentName="seg_0" id="2ED266D7-A8F5-781E-2C23-0162E72552E2">
+<sourceConnName>Orac</sourceConnName>
+<sourceObjSchema>ORAC_CORE</sourceObjSchema>
+<sourceObjName>MESG_EMB_BU</sourceObjName>
+<createdBy>clive</createdBy>
+<createdTime>2026-04-27 17:21:45 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<actions>UPDATE</actions>
+<body><![CDATA[begin
+  :new.updated_on := systimestamp;
+  :new.updated_by := sys_context('userenv', 'session_user');
+  :new.row_version := nvl(:old.row_version, 1) + 1;
+end;]]></body>
+<triggerTime>BEFORE</triggerTime>
+<table>405661E6-9DEB-D521-D058-03D79DCD1DAA</table>
+</TriggerOraclev10g>

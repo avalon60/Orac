@@ -39,6 +39,28 @@ select
         )
       , to_char(json_value(p.pref_value, '$' returning number null on error))
       )
+    when p.pref_key = 'tts_voice' then
+      coalesce(
+        (
+          select initcap(v.provider_code)
+                 || ' - '
+                 || v.display_name
+                 || ' ('
+                 || v.provider_voice_id
+                 || case
+                      when v.locale_code is not null then
+                        ', ' || v.locale_code
+                    end
+                 || case
+                      when v.voice_quality is not null then
+                        ', ' || v.voice_quality
+                    end
+                 || ')'
+            from orac_api.tts_voices_v v
+           where v.tts_voice_key = json_value(p.pref_value, '$' returning varchar2(300) null on error)
+        )
+      , json_value(p.pref_value, '$' returning varchar2(4000) null on error)
+      )
     when p.value_type = 'string' then
       json_value(p.pref_value, '$' returning varchar2(4000) null on error)
     when p.value_type = 'number' then
