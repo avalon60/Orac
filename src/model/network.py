@@ -45,7 +45,10 @@ class OracListener:
             self._cancel_voice_turns(voice_turns)
             try:
                 writer.close()
-                await writer.wait_closed()
+                try:
+                    await writer.wait_closed()
+                except ConnectionResetError:
+                    pass
             finally:
                 print(f"🔴 Connection closed: {addr}")
 
@@ -97,7 +100,7 @@ class OracListener:
     async def start_server(self):
         server = await asyncio.start_server(self.handle_client, self.host, self.port)
         addr = server.sockets[0].getsockname()
-        print(f"🚀 OracListener started on {addr}")
+        print(f"🚀 OracListener started on {addr}", flush=True)
         async with server:
             await server.serve_forever()
 

@@ -139,7 +139,7 @@ class VoiceTurnController:
     last_tts_finished_at: float | None = None
     timing_logged = False
     barge_in_min_speech_ms = 0
-    last_runtime_identity: tuple[str, str, str, str] | None = None
+    last_runtime_identity: tuple[str, str, str, str, str] | None = None
     if (
       barge_in_controller is not None
       and not isinstance(barge_in_controller, OpenWakeWordBargeInController)
@@ -399,7 +399,7 @@ class VoiceTurnController:
           and runtime_identity is not None
           and runtime_identity != last_runtime_identity
         ):
-          model, persona, personality_code, personality_name = runtime_identity
+          model, persona, personality_code, personality_name, llm_source = runtime_identity
           _send_display_event(
             self.display_sender,
             "runtime.identity",
@@ -409,6 +409,7 @@ class VoiceTurnController:
             persona=persona,
             personality_code=personality_code,
             personality_name=personality_name,
+            llm_source=llm_source or None,
           )
           last_runtime_identity = runtime_identity
 
@@ -661,7 +662,7 @@ def _send_display_event(
 
 def _display_runtime_identity_from_frame(
   frame: dict[str, object],
-) -> tuple[str, str, str, str] | None:
+) -> tuple[str, str, str, str, str] | None:
   """Extract the current LLM/persona identity from an Orac frame."""
   meta = frame.get("meta")
   if not isinstance(meta, dict):
@@ -670,10 +671,11 @@ def _display_runtime_identity_from_frame(
   model = str(meta.get("model") or "").strip()
   personality_code = str(meta.get("personality_code") or "").strip().upper()
   personality_name = str(meta.get("personality_name") or "").strip()
+  llm_source = str(meta.get("llm_source") or "").strip()
   persona = personality_name or personality_code
   if model and not persona:
     personality_code = "DEFAULT"
     persona = personality_code
   if not model and not persona:
     return None
-  return model, persona, personality_code, personality_name
+  return model, persona, personality_code, personality_name, llm_source

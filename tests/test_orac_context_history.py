@@ -1880,6 +1880,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response["meta"]["model"], "preferred-model")
         self.assertEqual(response["meta"]["personality_code"], "DEFAULT")
+        self.assertEqual(response["meta"]["llm_source"], "user_preference")
         self.assertEqual(context_manager.closed_sessions, ["clive"])
         self.assertEqual(len(user_turn_sessions), 1)
         self.assertTrue(user_turn_sessions[0].startswith("clive#"))
@@ -1887,6 +1888,59 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             context_manager.conversation_llm_ids[user_turn_sessions[0]],
             2,
         )
+
+    async def test_missing_default_llm_preference_uses_configured_default(self) -> None:
+        context_manager = _MemoryContextManager()
+        context_manager.conversation_ids["clive"] = 1
+        context_manager.conversation_llm_ids["clive"] = None
+        context_manager.messages_by_session["clive"] = []
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Configured default answer."],
+            context_manager=context_manager,
+        )
+
+        wire = await orchestrator.handle_request(
+            self._request("Use the configured model.", req_id="req-default")
+        )
+        response = json.loads(wire)
+
+        self.assertEqual(response["meta"]["model"], "test-model")
+        self.assertEqual(response["meta"]["llm_source"], "configured_default")
+
+    async def test_unavailable_default_llm_preference_falls_back_with_warning_source(
+        self,
+    ) -> None:
+        context_manager = _MemoryContextManager()
+        context_manager.user_preferences[("clive", "default_llm_id")] = "2"
+        context_manager.llm_registry_entries[2] = {
+            "LLM_ID": 2,
+            "PROVIDER": "ollama",
+            "MODEL": "preferred-model",
+            "IS_ENABLED": "Y",
+        }
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Fallback answer."],
+            context_manager=context_manager,
+        )
+        orchestrator._available_backend_models = {"test-model"}
+        context_manager.ensure_conversation_with_timeout = (
+            lambda *, user_name, session_id_base, llm_id, timeout_seconds: {
+                "conversation_id": 7,
+                "session_id": f"{session_id_base}#fresh",
+                "rolled_over": True,
+                "age_seconds": 7200.0,
+                "previous_conversation_id": 6,
+                "previous_session_id": session_id_base,
+            }
+        )
+
+        wire = await orchestrator.handle_request(
+            self._request("Use my preferred model.", req_id="req-fallback")
+        )
+        response = json.loads(wire)
+
+        self.assertEqual(response["meta"]["model"], "test-model")
+        self.assertEqual(response["meta"]["llm_source"], "configured_fallback")
 
     async def test_explicit_retrieval_failure_returns_clear_answer_without_llm(self) -> None:
         orchestrator = self._make_orac_stub(

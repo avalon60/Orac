@@ -4185,13 +4185,20 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
   def test_configured_runtime_identity_uses_default_model(self) -> None:
     """Startup identity should populate the display before the first turn."""
     sender = _FakeDisplaySender()
+    config_path = PROJECT_ROOT / "resources" / "config" / "orac.ini"
+    expected_model = ConfigManager(config_path).config_value(
+      "service",
+      "default_model_name",
+      default="",
+    ).strip()
 
     _send_configured_runtime_identity(sender, session_id="voice-session")
 
     self.assertEqual(len(sender.events), 1)
     self.assertEqual(sender.events[0]["event"], "runtime.identity")
-    self.assertEqual(sender.events[0]["model"], "llama3.1-64K")
+    self.assertEqual(sender.events[0]["model"], expected_model)
     self.assertEqual(sender.events[0]["persona"], "DEFAULT")
+    self.assertEqual(sender.events[0]["llm_source"], "configured_default")
     self.assertEqual(sender.events[0]["session_id"], "voice-session")
 
   async def test_voice_turn_controller_handles_non_streaming_response(
@@ -5340,6 +5347,7 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
           "model": "test-model",
           "personality_code": "DEFAULT",
           "personality_name": "Standard Orac",
+          "llm_source": "configured_fallback",
         },
         "payload": {},
       },
@@ -5351,6 +5359,7 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
           "model": "test-model",
           "personality_code": "DEFAULT",
           "personality_name": "Standard Orac",
+          "llm_source": "configured_fallback",
         },
         "payload": {"stop_reason": "stop"},
       },
@@ -5362,6 +5371,7 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
           "model": "test-model",
           "personality_code": "DEFAULT",
           "personality_name": "Standard Orac",
+          "llm_source": "configured_fallback",
         },
         "payload": {"content": "OK."},
       },
@@ -5388,6 +5398,7 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(len(runtime_events), 1)
     self.assertEqual(runtime_events[0]["model"], "test-model")
     self.assertEqual(runtime_events[0]["persona"], "Standard Orac")
+    self.assertEqual(runtime_events[0]["llm_source"], "configured_fallback")
 
   async def test_voice_prompt_stays_speaking_until_last_chunk_finishes(
     self,
@@ -5992,6 +6003,97 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     )
     self.assertEqual(sender.states[-1][0], "idle")
     self.assertEqual(sender.states[-1][1], "Listening for wake word")
+
+  async def test_voice_session_continues_after_backend_connection_refused(
+    self,
+  ) -> None:
+    """A refused backend connection should not terminate wake listening."""
+    args = build_parser().parse_args(
+      ["--voice-session", "--activation-mode", "openwakeword"]
+    )
+    sender = _FakeDisplaySender()
+    activation_listener = _FakeActivationListener(
+      [
+        types.SimpleNamespace(activated=True, exit_requested=False),
+        types.SimpleNamespace(activated=True, exit_requested=False),
+        types.SimpleNamespace(activated=False, exit_requested=True),
+      ]
+    )
+    reader = asyncio.StreamReader()
+    writer = _FakeStreamWriter()
+    prompt_calls: list[str] = []
+    transcriptions = iter([
+      ("voice-session", "turn-1", "First question"),
+      ("voice-session", "turn-2", "Second question"),
+    ])
+    connection_attempts = 0
+
+    async def _fake_open_connection(*_args, **_kwargs):
+      nonlocal connection_attempts
+      connection_attempts += 1
+      if connection_attempts == 1:
+        raise ConnectionRefusedError("backend unavailable")
+      return reader, writer
+
+    async def _fake_send_orac_prompt(**kwargs) -> int:
+      prompt_calls.append(str(kwargs["prompt_text"]))
+      return 0
+
+    def _fake_transcribe_once(*_args, **_kwargs):
+      return next(transcriptions)
+
+    with patch(
+      "orac_voice.voice_loop_local.SoundDeviceAudioCapture.from_config",
+      return_value=_FakeWakeCapture(
+        VadCaptureResult(wav_path=Path("/tmp/fake-voice-capture.wav"))
+      ),
+    ):
+      with patch(
+        "orac_voice.voice_loop_local.FasterWhisperSttEngine.from_config",
+        return_value=object(),
+      ):
+        with patch(
+          "orac_voice.voice_loop_local._create_barge_in_controller",
+          return_value=None,
+        ):
+          with patch(
+            "orac_voice.voice_loop_local.DisplayEventSender.from_config",
+            return_value=sender,
+          ):
+            with patch(
+              "orac_voice.voice_loop_local._create_activation_listener",
+              return_value=activation_listener,
+            ):
+              with patch(
+                "orac_voice.voice_loop_local._load_wake_rearm_seconds",
+                return_value=0.0,
+              ):
+                with patch(
+                  "orac_voice.voice_loop_local._transcribe_once",
+                  side_effect=_fake_transcribe_once,
+                ):
+                  with patch(
+                    "orac_voice.voice_loop_local._send_orac_prompt",
+                    side_effect=_fake_send_orac_prompt,
+                  ):
+                    with patch(
+                      "orac_voice.voice_loop_local.asyncio.open_connection",
+                      side_effect=_fake_open_connection,
+                    ):
+                      status = await _voice_session_async(args)
+
+    self.assertEqual(status, 0)
+    self.assertEqual(connection_attempts, 2)
+    self.assertEqual(prompt_calls, ["Second question"])
+    self.assertEqual(activation_listener.wait_calls, 3)
+    self.assertEqual(writer.close_calls, 1)
+    self.assertEqual(writer.wait_closed_calls, 1)
+    self.assertTrue(
+      any(
+        state[0] == "idle" and state[1] == "Listening for wake word"
+        for state in sender.states
+      )
+    )
 
   async def test_voice_prompt_waits_after_final_response_for_playback_end(self) -> None:
     """Final text response should not re-arm wake before playback finishes."""

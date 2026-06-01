@@ -2641,6 +2641,7 @@ class Orac:
     def _configured_fallback_selection(
         self,
         *,
+        source: str = "configured_fallback",
         warning_message: str | None = None,
     ) -> dict[str, Any]:
         """Return the configured runtime model selection, with registry row if present."""
@@ -2658,7 +2659,7 @@ class Orac:
             "provider": self.llm_service_id,
             "model_name": resolved_model_name,
             "service_url": self.service_url,
-            "source": "configured_fallback",
+            "source": source,
             "registry_row": fallback_row,
         }
         if not fallback_row:
@@ -2678,11 +2679,12 @@ class Orac:
         """Resolve the LLM to persist when creating a new conversation."""
         preferred_llm_id = meta.get("default_llm_id")
         if preferred_llm_id in (None, ""):
-            return self._configured_fallback_selection()
+            return self._configured_fallback_selection(source="configured_default")
 
         llm_row = self.ctx.get_llm_registry_entry(preferred_llm_id)
         if not llm_row:
             return self._configured_fallback_selection(
+                source="configured_fallback",
                 warning_message=(
                     f"{Icons.warn} User '{auth_user}' selected default_llm_id "
                     f"{preferred_llm_id}, but no registry row exists. "
@@ -2694,6 +2696,7 @@ class Orac:
         model_name = str(llm_row.get("MODEL") or "").strip()
         if not self._registry_row_enabled(llm_row):
             return self._configured_fallback_selection(
+                source="configured_fallback",
                 warning_message=(
                     f"{Icons.warn} User '{auth_user}' selected disabled LLM "
                     f"'{model_name}' (llm_id={llm_row.get('LLM_ID')}). "
@@ -2703,6 +2706,7 @@ class Orac:
 
         if not self._backend_model_available(provider=provider, model_name=model_name):
             return self._configured_fallback_selection(
+                source="configured_fallback",
                 warning_message=(
                     f"{Icons.warn} User '{auth_user}' selected unavailable LLM "
                     f"'{model_name}' (provider='{provider}', llm_id={llm_row.get('LLM_ID')}). "
@@ -2729,14 +2733,15 @@ class Orac:
     ) -> dict[str, Any]:
         """Resolve the effective runtime LLM for a concrete conversation session."""
         stored_llm_id = self.ctx.get_conversation_llm_id(session_id)
+        if created_new_conversation:
+            return dict(new_conversation_selection)
         if stored_llm_id is None:
-            if created_new_conversation:
-                return dict(new_conversation_selection)
-            return self._configured_fallback_selection()
+            return self._configured_fallback_selection(source="configured_default")
 
         llm_row = self.ctx.get_llm_registry_entry(stored_llm_id)
         if not llm_row:
             return self._configured_fallback_selection(
+                source="configured_fallback",
                 warning_message=(
                     f"{Icons.warn} Conversation '{session_id}' for user '{auth_user}' "
                     f"references missing llm_id={stored_llm_id}. "
@@ -2748,6 +2753,7 @@ class Orac:
         model_name = str(llm_row.get("MODEL") or "").strip()
         if not self._registry_row_enabled(llm_row):
             return self._configured_fallback_selection(
+                source="configured_fallback",
                 warning_message=(
                     f"{Icons.warn} Conversation '{session_id}' for user '{auth_user}' "
                     f"references disabled LLM '{model_name}' (llm_id={stored_llm_id}). "
@@ -2757,6 +2763,7 @@ class Orac:
 
         if not self._backend_model_available(provider=provider, model_name=model_name):
             return self._configured_fallback_selection(
+                source="configured_fallback",
                 warning_message=(
                     f"{Icons.warn} Conversation '{session_id}' for user '{auth_user}' "
                     f"references unavailable LLM '{model_name}' (provider='{provider}', llm_id={stored_llm_id}). "
@@ -3119,6 +3126,7 @@ class Orac:
         req_env: dict,
         *,
         model_name: str | None = None,
+        llm_source: str | None = None,
         user_registration: str = "registered",
         error: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -3142,6 +3150,11 @@ class Orac:
             "req_id": req_env.get("id"),
             "user_registration": user_registration,
         }
+        llm_source_value = str(
+            llm_source or getattr(self, "_active_llm_source", "") or ""
+        ).strip()
+        if llm_source_value:
+            response_meta["llm_source"] = llm_source_value
         if personality_code:
             response_meta["personality_code"] = personality_code
         if personality_name:
@@ -3153,6 +3166,7 @@ class Orac:
                         prompt_tokens: int = 0,
                         completion_tokens: int = 0,
                         model_name: str | None = None,
+                        llm_source: str | None = None,
                         user_registration: str = "registered",
                         provenance: dict[str, Any] | None = None) -> dict:
         """Build a protocol-compliant non-streaming response envelope."""
@@ -3160,6 +3174,7 @@ class Orac:
         response_meta = self._runtime_response_meta(
             req_env,
             model_name=response_model,
+            llm_source=llm_source,
             user_registration=user_registration,
         )
         if provenance:
@@ -3210,6 +3225,7 @@ class Orac:
         *,
         payload: dict[str, Any] | None = None,
         model_name: str | None = None,
+        llm_source: str | None = None,
         user_registration: str = "registered",
         error: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -3229,6 +3245,7 @@ class Orac:
             "meta": self._runtime_response_meta(
                 req_env,
                 model_name=model_name,
+                llm_source=llm_source,
                 user_registration=user_registration,
                 error=error,
             ),
@@ -3249,6 +3266,7 @@ class Orac:
         *,
         payload: dict[str, Any] | None = None,
         model_name: str | None = None,
+        llm_source: str | None = None,
         user_registration: str = "registered",
         error: dict[str, Any] | None = None,
     ) -> None:
@@ -3258,6 +3276,7 @@ class Orac:
             event_type,
             payload=payload,
             model_name=model_name,
+            llm_source=llm_source,
             user_registration=user_registration,
             error=error,
         )
@@ -3296,6 +3315,7 @@ class Orac:
         content: str,
         *,
         model_name: str,
+        llm_source: str | None,
         user_registration: str,
         session_id: str | None = None,
         turn_id: str | None = None,
@@ -3312,6 +3332,7 @@ class Orac:
                 "turn_id": turn_id or req_env.get("id"),
             },
             model_name=model_name,
+            llm_source=llm_source,
             user_registration=user_registration,
         )
         if content:
@@ -3321,6 +3342,7 @@ class Orac:
                 "text_delta",
                 payload={"delta": content},
                 model_name=model_name,
+                llm_source=llm_source,
                 user_registration=user_registration,
             )
             chunker = TextChunker()
@@ -3338,6 +3360,7 @@ class Orac:
                         "turn_id": turn_id or req_env.get("id"),
                     },
                     model_name=model_name,
+                    llm_source=llm_source,
                     user_registration=user_registration,
                 )
         await self._emit_stream_event(
@@ -3350,6 +3373,7 @@ class Orac:
                 "turn_id": turn_id or req_env.get("id"),
             },
             model_name=model_name,
+            llm_source=llm_source,
             user_registration=user_registration,
         )
 
@@ -3598,7 +3622,11 @@ class Orac:
             err_env = {
                 "v": 1, "type": "response", "id": new_id("res"),
                 "reply_to": None, "ts": iso_now(), "route": "orac.prompt",
-                "meta": {"status": "error", "model": self.model_name},
+                "meta": {
+                    "status": "error",
+                    "model": self.model_name,
+                    "llm_source": getattr(self, "_active_llm_source", None),
+                },
                 "payload": None, "error": {"code": "BAD_JSON", "message": str(e)},
             }
             return json.dumps(err_env, ensure_ascii=False)
@@ -3621,7 +3649,12 @@ class Orac:
                     "v": 1, "type": "response", "id": new_id("res"),
                     "reply_to": req_env.get("id"), "ts": iso_now(),
                     "route": req_env.get("route", "orac.prompt"),
-                    "meta": {"status": "error", "model": self.model_name, "req_id": req_env.get("id")},
+                    "meta": {
+                        "status": "error",
+                        "model": self.model_name,
+                        "req_id": req_env.get("id"),
+                        "llm_source": getattr(self, "_active_llm_source", None),
+                    },
                     "payload": None,
                     "error": {"code": "UNAUTHORISED", "message": auth_res.reason or "unauthorised"},
                 }
@@ -3636,7 +3669,12 @@ class Orac:
                     "v": 1, "type": "response", "id": new_id("res"),
                     "reply_to": req_env.get("id"), "ts": iso_now(),
                     "route": req_env.get("route", "orac.prompt"),
-                    "meta": {"status": "error", "model": self.model_name, "req_id": req_env.get("id")},
+                    "meta": {
+                        "status": "error",
+                        "model": self.model_name,
+                        "req_id": req_env.get("id"),
+                        "llm_source": getattr(self, "_active_llm_source", None),
+                    },
                     "payload": None,
                     "error": {"code": "INVALID_FRAME", "message": str(e)},
                 }
@@ -3993,10 +4031,14 @@ class Orac:
                 except Exception:
                     effective_llm_id = None
             effective_model_name = str(effective_llm.get("model_name") or self.model_name)
+            effective_llm_source = str(
+                effective_llm.get("source") or "configured_default"
+            ).strip() or "configured_default"
+            self._active_llm_source = effective_llm_source
             logger.log_info(
                 f"{Icons.info} Effective LLM for session '{session_id}': "
                 f"model='{effective_model_name}', provider='{effective_llm.get('provider')}', "
-                f"llm_id={effective_llm_id}, source='{effective_llm.get('source')}'"
+                f"llm_id={effective_llm_id}, source='{effective_llm_source}'"
             )
             generation_options = self._resolve_generation_options(
                 meta=meta,
@@ -4182,6 +4224,7 @@ class Orac:
                             req_env,
                             content,
                             model_name=effective_model_name,
+                            llm_source=effective_llm_source,
                             user_registration=(
                                 "anonymous"
                                 if request_flags["anonymous_user"]
@@ -4252,6 +4295,7 @@ class Orac:
                             req_env,
                             content,
                             model_name=effective_model_name,
+                            llm_source=effective_llm_source,
                             user_registration=(
                                 "anonymous"
                                 if request_flags["anonymous_user"]
@@ -4414,6 +4458,7 @@ class Orac:
                                 req_env,
                                 content,
                                 model_name=effective_model_name,
+                                llm_source=effective_llm_source,
                                 user_registration=(
                                     "anonymous"
                                     if request_flags["anonymous_user"]
@@ -4479,6 +4524,7 @@ class Orac:
                         req_env,
                         content,
                         model_name=effective_model_name,
+                        llm_source=effective_llm_source,
                         user_registration=(
                             "anonymous"
                             if request_flags["anonymous_user"]
@@ -4632,7 +4678,12 @@ class Orac:
                     err = {
                         "v": 1, "type": "response", "id": new_id("res"),
                         "reply_to": req_env.get("id"), "ts": iso_now(), "route": "orac.prompt",
-                        "meta": {"status": "error", "model": effective_model_name, "req_id": req_env.get("id")},
+                        "meta": {
+                            "status": "error",
+                            "model": effective_model_name,
+                            "req_id": req_env.get("id"),
+                            "llm_source": effective_llm_source,
+                        },
                         "payload": None,
                         "error": {"code": "LLM_BACKEND_ERROR", "message": str(e)},
                     }
@@ -4681,7 +4732,12 @@ class Orac:
                     err = {
                         "v": 1, "type": "response", "id": new_id("res"),
                         "reply_to": req_env.get("id"), "ts": iso_now(), "route": "orac.prompt",
-                        "meta": {"status": "error", "model": effective_model_name, "req_id": req_env.get("id")},
+                        "meta": {
+                            "status": "error",
+                            "model": effective_model_name,
+                            "req_id": req_env.get("id"),
+                            "llm_source": effective_llm_source,
+                        },
                         "payload": None,
                         "error": {"code": "LLM_BACKEND_ERROR", "message": str(e)},
                     }
@@ -4845,7 +4901,11 @@ class Orac:
                 "v": 1, "type": "response", "id": new_id("res"),
                 "reply_to": req_env.get("id") if isinstance(req_env, dict) else None,
                 "ts": iso_now(), "route": "orac.prompt",
-                "meta": {"status": "error", "model": self.model_name},
+                "meta": {
+                    "status": "error",
+                    "model": self.model_name,
+                    "llm_source": getattr(self, "_active_llm_source", None),
+                },
                 "payload": None, "error": {"code": "SERVER_ERROR", "message": str(e)},
             }
             return json.dumps(err_env, ensure_ascii=False)

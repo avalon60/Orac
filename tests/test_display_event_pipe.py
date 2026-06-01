@@ -195,6 +195,7 @@ class DisplayEventPipeTests(unittest.TestCase):
     for event_name in event_names | frontend_aliases:
       with self.subTest(event_name=event_name):
         self.assertIn(event_name, app_source)
+    self.assertIn("llm_source", app_source)
     for documented_name in (
       "runtime.identity",
       "transcript.turn.clear",
@@ -206,6 +207,7 @@ class DisplayEventPipeTests(unittest.TestCase):
       "text_delta",
       "stream_end",
       "response",
+      "llm_source",
     ):
       with self.subTest(documented_name=documented_name):
         self.assertIn(documented_name, readme_source)

@@ -110,6 +110,7 @@ Consumed payload fields:
   `content`
 - runtime identity is read from `model`, `persona`, `personality_code`, and
   `personality_name`
+- runtime identity source is read from `llm_source`
 - state updates read `state` and optional `message`
 - UI configuration reads `buttons_visible` and `show_transcript_panels`
 

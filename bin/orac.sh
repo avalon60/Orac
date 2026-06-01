@@ -29,6 +29,9 @@ SECRET_FILE="${RUN_DIR}/slave.secret"
 TOKEN_FILE="${RUN_DIR}/slave.token"   # only if you choose the simple-token path
 SOCK_FILE="${RUN_DIR}/orac.sock"    # if you later use UDS
 LOG_FILE="${LOG_DIR}/orac.log"
+LISTENER_HOST="${ORAC_LISTENER_HOST:-127.0.0.1}"
+LISTENER_PORT="${ORAC_LISTENER_PORT:-8765}"
+LISTENER_START_TIMEOUT="${ORAC_LISTENER_START_TIMEOUT:-60}"
 
 # --- Helpers ------------------------------------------------------------------
 setup_run_dir() {
@@ -97,6 +100,46 @@ is_running() {
   pid="$(cat "$PID_FILE" 2>/dev/null || echo "")"
   [[ -n "$pid" ]] || return 1
   _pid_matches_orac "$pid"
+}
+
+listener_ready() {
+  local python_bin="$1"
+  local host="$2"
+  local port="$3"
+
+  "$python_bin" -c 'import socket, sys
+host = sys.argv[1]
+port = int(sys.argv[2])
+with socket.create_connection((host, port), timeout=1.0):
+    pass
+' "$host" "$port" >/dev/null 2>&1
+}
+
+wait_for_listener() {
+  local python_bin="$1"
+  local pid="$2"
+  local deadline=$((SECONDS + LISTENER_START_TIMEOUT))
+
+  echo "⏳ Waiting for Orac TCP bridge at ${LISTENER_HOST}:${LISTENER_PORT}..."
+  while (( SECONDS < deadline )); do
+    if listener_ready "$python_bin" "$LISTENER_HOST" "$LISTENER_PORT"; then
+      echo "✅ Orac TCP bridge ready at ${LISTENER_HOST}:${LISTENER_PORT}"
+      return 0
+    fi
+
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "❌ orac.py exited before the TCP bridge became ready. Check logs: $LOG_FILE" >&2
+      rm -f "$PID_FILE" || true
+      return 1
+    fi
+
+    sleep 1
+  done
+
+  echo "❌ orac.py is running, but the TCP bridge did not become ready within ${LISTENER_START_TIMEOUT}s." >&2
+  echo "   Expected listener: ${LISTENER_HOST}:${LISTENER_PORT}" >&2
+  echo "   Check logs: $LOG_FILE" >&2
+  return 1
 }
 
 find_python() {
@@ -181,6 +224,8 @@ start_orac() {
     exit 1
   fi
 
+  wait_for_listener "$PYTHON" "$pid"
+
   echo "✅ Started orac.py as PID $pid"
   echo "📝 Logs: $LOG_FILE"
 }
@@ -223,6 +268,13 @@ stop_orac() {
 status_orac() {
   if is_running; then
     echo "✅ Orac running (PID $(cat "$PID_FILE"))"
+    local PYTHON
+    PYTHON="$(find_python)"
+    if [[ -n "$PYTHON" ]] && listener_ready "$PYTHON" "$LISTENER_HOST" "$LISTENER_PORT"; then
+      echo "✅ Orac TCP bridge listening at ${LISTENER_HOST}:${LISTENER_PORT}"
+    else
+      echo "🟨 Orac TCP bridge not reachable at ${LISTENER_HOST}:${LISTENER_PORT}"
+    fi
   else
     echo "🟨 Orac not running"
   fi

@@ -115,7 +115,7 @@ def _send_display_event(
 
 def _display_runtime_identity_from_frame(
   frame: dict[str, object],
-) -> tuple[str, str, str, str] | None:
+) -> tuple[str, str, str, str, str] | None:
   """Extract the current LLM/persona identity from an Orac frame."""
   meta = frame.get("meta")
   if not isinstance(meta, dict):
@@ -124,13 +124,14 @@ def _display_runtime_identity_from_frame(
   model = str(meta.get("model") or "").strip()
   personality_code = str(meta.get("personality_code") or "").strip().upper()
   personality_name = str(meta.get("personality_name") or "").strip()
+  llm_source = str(meta.get("llm_source") or "").strip()
   persona = personality_name or personality_code
   if model and not persona:
     personality_code = "DEFAULT"
     persona = personality_code
   if not model and not persona:
     return None
-  return model, persona, personality_code, personality_name
+  return model, persona, personality_code, personality_name, llm_source
 
 
 def _send_configured_runtime_identity(
@@ -157,6 +158,7 @@ def _send_configured_runtime_identity(
     persona=persona,
     personality_code=persona,
     personality_name=persona,
+    llm_source="configured_default",
   )
 
 
@@ -970,18 +972,39 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
         _console_line("Voice session closed.")
         return 0
 
-      if reader is None or writer is None:
-        reader, writer = await asyncio.open_connection(args.host, args.port)
-      status = await _send_orac_prompt(
-        reader=reader,
-        writer=writer,
-        prompt_text=recognised_text,
-        barge_in_controller=barge_in_controller,
-        voice_session_id=session_id,
-        cancel_host=args.host,
-        cancel_port=args.port,
-        display_sender=display_sender,
-      )
+      try:
+        if reader is None or writer is None:
+          reader, writer = await asyncio.open_connection(args.host, args.port)
+        status = await _send_orac_prompt(
+          reader=reader,
+          writer=writer,
+          prompt_text=recognised_text,
+          barge_in_controller=barge_in_controller,
+          voice_session_id=session_id,
+          cancel_host=args.host,
+          cancel_port=args.port,
+          display_sender=display_sender,
+        )
+      except ConnectionRefusedError:
+        _console_line(
+          f"Could not connect to Orac at {args.host}:{args.port}. Is it running?"
+        )
+        logger.warning(
+          "Voice session could not connect to Orac at {}:{}; returning to wake listening",
+          args.host,
+          args.port,
+        )
+        display_sender.send_state(
+          "idle",
+          message="Listening for wake word",
+          session_id=session_id,
+        )
+        if writer is not None:
+          writer.close()
+          await writer.wait_closed()
+        reader = None
+        writer = None
+        continue
       if barge_in_controller is not None and barge_in_controller.interrupted:
         if writer is not None:
           writer.close()

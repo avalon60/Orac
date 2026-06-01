@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { AlertTriangle } from 'lucide-react';
 
 import { OracDisplay } from './components/OracDisplay';
 import { OracStateControls } from './components/OracStateControls';
@@ -28,6 +29,7 @@ type BrowserUiConfig = {
 type RuntimeIdentity = {
   model: string;
   persona: string;
+  llm_source: string;
 };
 type BrowserDiagnosticEvent = CustomEvent<{
   timestamp: string;
@@ -56,6 +58,8 @@ function getRuntimeIdentity(data: Record<string, unknown>): RuntimeIdentity | nu
     typeof data.personality_name === 'string' ? data.personality_name.trim() : '';
   const personalityCode =
     typeof data.personality_code === 'string' ? data.personality_code.trim() : '';
+  const llmSource =
+    typeof data.llm_source === 'string' ? data.llm_source.trim() : '';
   const resolvedPersona = persona || personalityName || personalityCode || (
     model ? 'DEFAULT' : ''
   );
@@ -67,6 +71,7 @@ function getRuntimeIdentity(data: Record<string, unknown>): RuntimeIdentity | nu
   return {
     model,
     persona: resolvedPersona,
+    llm_source: llmSource,
   };
 }
 
@@ -379,6 +384,10 @@ function App() {
         .filter(Boolean)
         .join('/')
     : '';
+  const showRuntimeIdentityFallbackWarning =
+    runtimeIdentity?.llm_source === 'configured_fallback';
+  const runtimeIdentityWarning =
+    'Orac could not use the user default LLM and fell back to the configured model.';
 
   return (
     <div className="relative flex h-screen w-screen overflow-hidden bg-[#03070d] text-white">
@@ -402,8 +411,17 @@ function App() {
           </div>
         </div>
         {runtimeIdentityLabel && (
-          <div className="absolute left-1/2 top-12 max-w-[calc(100vw-2rem)] -translate-x-1/2 truncate rounded-full border border-[#4fc3f7]/20 bg-[#06131d]/72 px-4 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.28em] text-[#8fdcff]/80 shadow-[0_0_20px_rgba(79,195,247,0.12)] backdrop-blur-md sm:top-0 sm:max-w-[min(34rem,calc(100vw-21rem))] sm:px-5">
-            {runtimeIdentityLabel}
+          <div
+            className="absolute left-1/2 top-12 inline-flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center justify-center gap-2 rounded-full border border-[#4fc3f7]/20 bg-[#06131d]/72 px-4 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.28em] text-[#8fdcff]/80 shadow-[0_0_20px_rgba(79,195,247,0.12)] backdrop-blur-md sm:top-0 sm:max-w-[min(34rem,calc(100vw-21rem))] sm:px-5"
+            title={showRuntimeIdentityFallbackWarning ? runtimeIdentityWarning : undefined}
+          >
+            {showRuntimeIdentityFallbackWarning && (
+              <AlertTriangle
+                className="h-3.5 w-3.5 shrink-0 text-amber-300"
+                aria-hidden="true"
+              />
+            )}
+            <span className="truncate">{runtimeIdentityLabel}</span>
           </div>
         )}
       </div>
