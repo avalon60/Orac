@@ -311,6 +311,42 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
         self.assertTrue(decision.explicit_request)
         self.assertEqual(decision.reason_code, "current_news_request")
 
+    def test_local_date_time_questions_do_not_trigger_retrieval(self) -> None:
+        prompts = [
+            "What is today's date?",
+            "What's today's date?",
+            "What date is it?",
+            "What day is it?",
+            "What time is it?",
+            "Tell me the current date.",
+            "Give me the current time.",
+        ]
+
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                decision = self._service("auto_safe").decide(prompt)
+                self.assertFalse(decision.should_retrieve)
+                self.assertFalse(decision.explicit_request)
+                self.assertFalse(decision.requires_user_confirmation)
+                self.assertEqual(decision.retrieval_type, "none")
+                self.assertEqual(decision.confidence, "high")
+                self.assertEqual(decision.reason_code, "local_date_time_context")
+
+    def test_today_news_and_events_still_trigger_retrieval(self) -> None:
+        prompts = [
+            "What is today's news?",
+            "What news happened today?",
+            "What events happened today?",
+            "What announcements were made today?",
+        ]
+
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                decision = self._service("explicit_only").decide(prompt)
+                self.assertEqual(decision.retrieval_type, "internet")
+                self.assertNotEqual(decision.reason_code, "local_date_time_context")
+                self.assertNotEqual(decision.reason_code, "stable_general_knowledge")
+
     def test_latest_news_on_iran_triggers_retrieval_in_explicit_only(self) -> None:
         decision = self._service("explicit_only").decide("latest news on Iran")
 

@@ -224,6 +224,25 @@ _FOLLOW_UP_PRONOUN_MARKERS: tuple[str, ...] = (
 
 _RETRIEVAL_CONTEXT_TTL_SECONDS = 6 * 60 * 60
 
+_LOCAL_DATE_TIME_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\b(?:what(?:'s| is)?|tell me|give me|say)\s+(?:the\s+)?(?:current\s+)?(?:date|time)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:what(?:'s| is)?|tell me|give me|say)\s+(?:today(?:'s)?|the\s+day)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:what|which)\s+(?:day|date)\s+(?:is\s+)?(?:it|today)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:what(?:'s| is)?|tell me|give me|say)\s+(?:today(?:'s)?\s+date|the\s+date\s+today)\b",
+        re.I,
+    ),
+)
+
 _FRESHNESS_PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
     (
         "freshness_release_version",
@@ -358,6 +377,20 @@ class RetrievalDecisionService:
                 retrieval_type="none",
                 confidence="low",
                 reason_code="empty_prompt",
+                user_visible_reason="",
+                explicit_request=False,
+                requires_user_confirmation=False,
+                search_query=None,
+            )
+            self._log_decision(mode, decision)
+            return decision
+
+        if _is_local_date_time_question(normalized):
+            decision = RetrievalDecision(
+                should_retrieve=False,
+                retrieval_type="none",
+                confidence="high",
+                reason_code="local_date_time_context",
                 user_visible_reason="",
                 explicit_request=False,
                 requires_user_confirmation=False,
@@ -560,7 +593,7 @@ def normalize_internet_search_mode(value: str | None) -> str:
 def _classify_freshness_sensitive(prompt: str) -> _HeuristicMatch | None:
     """Return a high-confidence match for freshness-sensitive queries."""
     lowered = str(prompt or "").lower()
-    if _looks_local(lowered):
+    if _looks_local(lowered) or _is_local_date_time_question(lowered):
         return None
     for reason_code, user_visible_reason, pattern in _FRESHNESS_PATTERNS:
         if pattern.search(lowered) is None:
@@ -659,6 +692,29 @@ def _looks_local(prompt: str) -> bool:
 def _looks_fresh(prompt: str) -> bool:
     """Return whether the prompt looks freshness-sensitive."""
     return _classify_freshness_sensitive(prompt) is not None
+
+
+def _is_local_date_time_question(prompt: str) -> bool:
+    """Return whether the prompt asks for Orac's local clock/date context."""
+    normalized = " ".join(str(prompt or "").lower().split()).strip(" .?!")
+    if not normalized:
+        return False
+
+    if any(pattern.search(normalized) for pattern in _LOCAL_DATE_TIME_PATTERNS):
+        return not _mentions_external_freshness_topic(normalized)
+
+    return False
+
+
+def _mentions_external_freshness_topic(prompt: str) -> bool:
+    """Return whether date/time words are attached to external events/news."""
+    return bool(
+        re.search(
+            r"\b(?:news|events?|announcements?|release|version|score|scores|schedule|matches|games|war|conflict|election|market|price)\b",
+            prompt,
+            re.I,
+        )
+    )
 
 
 def _is_explicit_freshness_request(explicit_request: Any | None) -> bool:
