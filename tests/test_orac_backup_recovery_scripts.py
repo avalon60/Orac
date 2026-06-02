@@ -274,6 +274,328 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
             self.assertIn("Restore cancelled", combined_output)
             self.assertNotIn("Preparing Data Pump directory", combined_output)
 
+    def test_recovery_makes_copied_dump_readable_before_import(self) -> None:
+        """Recovery should fix dump ownership after docker cp and before impdp."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = self._write_recovery_archive(temp_path)
+            docker_log = temp_path / "docker.log"
+            fake_docker = temp_path / "docker"
+            self._write_fake_restore_docker(fake_docker)
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), str(archive_path)],
+                cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "ORAC_DOCKER_BIN": str(fake_docker),
+                    "ORAC_FAKE_DOCKER_LOG": str(docker_log),
+                    "ORAC_PYTHON_BIN": sys.executable,
+                },
+                input="RECOVER\n",
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            docker_calls = docker_log.read_text(encoding="utf-8").splitlines()
+            copy_index = self._first_call_index(docker_calls, " cp ")
+            chmod_index = self._first_call_index(docker_calls, "chmod 640")
+            import_index = self._first_call_index(docker_calls, " impdp ")
+
+            self.assertLess(copy_index, chmod_index)
+            self.assertLess(chmod_index, import_index)
+            self.assertIn("chown 54321:54321", docker_calls[chmod_index])
+            self.assertIn(
+                "/home/oracle/orac/datapump/orac-test.dmp",
+                docker_calls[chmod_index],
+            )
+            self.assertIn("content=data_only", docker_calls[import_index])
+            self.assertIn("table_exists_action=truncate", docker_calls[import_index])
+            self.assertIn("Restore import complete.", result.stdout)
+            self.assertIn("Restore validation complete.", result.stdout)
+
+    def test_recovery_exits_nonzero_when_validation_fails(self) -> None:
+        """Recovery should fail after import when core validation fails."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = self._write_recovery_archive(temp_path)
+            docker_log = temp_path / "docker.log"
+            fake_docker = temp_path / "docker"
+            self._write_fake_restore_docker(fake_docker)
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), str(archive_path)],
+                cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "ORAC_DOCKER_BIN": str(fake_docker),
+                    "ORAC_FAKE_DOCKER_LOG": str(docker_log),
+                    "ORAC_FAKE_INVALID_OBJECTS": "1",
+                    "ORAC_PYTHON_BIN": sys.executable,
+                },
+                input="RECOVER\n",
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            combined_output = result.stdout + result.stderr
+            self.assertIn("Restore import complete.", combined_output)
+            self.assertIn("## Restore validation summary", combined_output)
+            self.assertIn("Invalid objects", combined_output)
+            self.assertIn("ORAC_CODE", combined_output)
+            self.assertIn("BROKEN_API", combined_output)
+            self.assertIn("Restore validation failed", combined_output)
+            self.assertNotIn("Restore validation complete.", combined_output)
+
+    def test_recovery_exits_nonzero_when_fk_validation_fails(self) -> None:
+        """Recovery should fail after import when core FK validation fails."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = self._write_recovery_archive(temp_path)
+            docker_log = temp_path / "docker.log"
+            fake_docker = temp_path / "docker"
+            self._write_fake_restore_docker(fake_docker)
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), str(archive_path)],
+                cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "ORAC_DOCKER_BIN": str(fake_docker),
+                    "ORAC_FAKE_DOCKER_LOG": str(docker_log),
+                    "ORAC_FAKE_FK_ISSUES": "1",
+                    "ORAC_PYTHON_BIN": sys.executable,
+                },
+                input="RECOVER\n",
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            combined_output = result.stdout + result.stderr
+            self.assertIn("Disabled FK constraints", combined_output)
+            self.assertIn("Unvalidated FKs", combined_output)
+            self.assertIn("Foreign key constraint issues", combined_output)
+            self.assertIn("MSG_CONV_FK", combined_output)
+            self.assertIn("Restore validation failed", combined_output)
+
+    def test_recovery_compiles_and_validates_plugin_schemas(self) -> None:
+        """Recovery should normalize and validate plugin schemas from backup metadata."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = self._write_recovery_archive(
+                temp_path,
+                exported_schemas=[
+                    "orac_core",
+                    "orac_api",
+                    "orac_code",
+                    "orac_ha",
+                ],
+                plugins=[
+                    {
+                        "plugin_id": "home_assistant",
+                        "name": "Home Assistant",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "database_schemas": ["orac_ha"],
+                    }
+                ],
+            )
+            docker_log = temp_path / "docker.log"
+            fake_docker = temp_path / "docker"
+            self._write_fake_restore_docker(fake_docker)
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), str(archive_path)],
+                cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "ORAC_DOCKER_BIN": str(fake_docker),
+                    "ORAC_FAKE_DOCKER_LOG": str(docker_log),
+                    "ORAC_PYTHON_BIN": sys.executable,
+                },
+                input="RECOVER\n",
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            docker_log_text = docker_log.read_text(encoding="utf-8")
+            self.assertIn("dbms_utility.compile_schema(", docker_log_text)
+            self.assertIn("schema => 'ORAC_HA'", docker_log_text)
+            self.assertIn("enable validate constraint", docker_log_text)
+            self.assertIn("ORAC_HA", docker_log_text)
+            self.assertIn("Restore import complete.", result.stdout)
+            self.assertIn("Restore validation complete.", result.stdout)
+
+    def test_recovery_exits_nonzero_when_plugin_validation_fails(self) -> None:
+        """Recovery should fail when plugin schema invalid objects are present."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = self._write_recovery_archive(
+                temp_path,
+                exported_schemas=[
+                    "orac_core",
+                    "orac_api",
+                    "orac_code",
+                    "orac_ha",
+                ],
+                plugins=[
+                    {
+                        "plugin_id": "home_assistant",
+                        "name": "Home Assistant",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "database_schemas": ["orac_ha"],
+                    }
+                ],
+            )
+            docker_log = temp_path / "docker.log"
+            fake_docker = temp_path / "docker"
+            self._write_fake_restore_docker(fake_docker)
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), str(archive_path)],
+                cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "ORAC_DOCKER_BIN": str(fake_docker),
+                    "ORAC_FAKE_DOCKER_LOG": str(docker_log),
+                    "ORAC_FAKE_PLUGIN_INVALID_OBJECTS": "1",
+                    "ORAC_PYTHON_BIN": sys.executable,
+                },
+                input="RECOVER\n",
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            combined_output = result.stdout + result.stderr
+            self.assertIn("ORAC_HA", combined_output)
+            self.assertIn("BROKEN_PLUGIN", combined_output)
+            self.assertIn("Invalid objects", combined_output)
+            self.assertIn("Restore validation failed", combined_output)
+            self.assertNotIn("Restore validation complete.", combined_output)
+
+    def test_recovery_exits_nonzero_when_plugin_fk_validation_fails(self) -> None:
+        """Recovery should fail when plugin schema FKs are not validated."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = self._write_recovery_archive(
+                temp_path,
+                exported_schemas=[
+                    "orac_core",
+                    "orac_api",
+                    "orac_code",
+                    "orac_ha",
+                ],
+                plugins=[
+                    {
+                        "plugin_id": "home_assistant",
+                        "name": "Home Assistant",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "database_schemas": ["orac_ha"],
+                    }
+                ],
+            )
+            docker_log = temp_path / "docker.log"
+            fake_docker = temp_path / "docker"
+            self._write_fake_restore_docker(fake_docker)
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), str(archive_path)],
+                cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "ORAC_DOCKER_BIN": str(fake_docker),
+                    "ORAC_FAKE_DOCKER_LOG": str(docker_log),
+                    "ORAC_FAKE_PLUGIN_FK_ISSUES": "1",
+                    "ORAC_PYTHON_BIN": sys.executable,
+                },
+                input="RECOVER\n",
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            combined_output = result.stdout + result.stderr
+            self.assertIn("ORAC_HA", combined_output)
+            self.assertIn("BROKEN_PLUGIN_FK", combined_output)
+            self.assertIn("Foreign key constraint issues", combined_output)
+            self.assertIn("Restore validation failed", combined_output)
+            self.assertNotIn("Restore validation complete.", combined_output)
+
+    def test_recovery_rejects_replace_for_default_data_only_import(self) -> None:
+        """Data-only restore should reject replace because metadata is excluded."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = self._write_recovery_archive(temp_path)
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), str(archive_path)],
+                cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "ORAC_RESTORE_TABLE_EXISTS_ACTION": "replace",
+                    "ORAC_PYTHON_BIN": sys.executable,
+                },
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "ORAC_RESTORE_TABLE_EXISTS_ACTION=replace requires ORAC_RESTORE_CONTENT=all",
+                result.stderr,
+            )
+            self.assertNotIn("Type RECOVER to continue", result.stdout + result.stderr)
+
+    def test_recovery_script_contains_post_restore_validation(self) -> None:
+        """Restore validation should cover restored schemas and plugin-aware normalization."""
+        script_text = RECOVERY_SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn("normalize_restored_imported_state", script_text)
+        self.assertIn("run_restore_validation", script_text)
+        self.assertIn("compile_schema(", script_text)
+        self.assertIn("enable validate constraint", script_text)
+        self.assertIn("from all_objects", script_text)
+        self.assertIn("from all_constraints", script_text)
+        self.assertIn('query_invalid_objects "$schemas_path" "$invalid_objects_path"', script_text)
+        self.assertIn('query_fk_constraint_issues "$schemas_path" "$fk_issues_path"', script_text)
+        self.assertIn('recompile_schema_list "$schemas_path"', script_text)
+        self.assertIn('generate_fk_enable_sql "$schemas_path" "$fk_enable_sql"', script_text)
+        self.assertIn("status <> 'VALID'", script_text)
+        self.assertIn("status <> 'ENABLED'", script_text)
+        self.assertIn("validated <> 'VALIDATED'", script_text)
+        self.assertNotIn("ORAC_HA", script_text)
+
+    def test_recovery_validation_includes_key_core_row_counts(self) -> None:
+        """Restore validation should report key ORAC_CORE table counts."""
+        script_text = RECOVERY_SCRIPT.read_text(encoding="utf-8")
+
+        for table_name in (
+            "USERS",
+            "CONVERSATIONS",
+            "MESSAGES",
+            "USER_PREFERENCES",
+            "LLM_REGISTRY",
+            "TTS_VOICES",
+            "ORAC_PERSONALITIES",
+            "PREFERENCE_DEFINITIONS",
+            "MODEL_GENERATION_PRESETS",
+        ):
+            self.assertIn(f'query_core_table_count "{table_name}"', script_text)
+
     def _extract_single_backup_root(self, target_dir: Path, extract_dir: Path) -> Path:
         """Extract the only backup archive in a target directory."""
         archives = list(target_dir.glob("orac-backup-*.tar.gz"))
@@ -285,6 +607,114 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
         root_dirs = [path for path in extract_dir.iterdir() if path.is_dir()]
         self.assertEqual(len(root_dirs), 1)
         return root_dirs[0]
+
+    def _write_recovery_archive(
+        self,
+        temp_path: Path,
+        exported_schemas: list[str] | None = None,
+        plugins: list[dict[str, object]] | None = None,
+    ) -> Path:
+        """Create a minimal database restore archive."""
+        archive_root = temp_path / "orac-backup-test"
+        db_dir = archive_root / "db"
+        db_dir.mkdir(parents=True)
+        (db_dir / "orac-test.dmp").write_text("placeholder", encoding="utf-8")
+        if exported_schemas is None:
+            exported_schemas = ["orac_core"]
+        if plugins is None:
+            plugins = []
+        manifest = {
+            "backup_format_version": 1,
+            "orac_version": "0.0.0-test",
+            "database": {
+                "container_name": "orac-db",
+                "pdb": "FREEPDB1",
+                "skip_db": False,
+                "dump_file": "orac-test.dmp",
+                "log_file": "orac-test.log",
+                "requested_schemas": exported_schemas,
+                "exported_schemas": exported_schemas,
+                "missing_schemas": [],
+            },
+            "plugins": plugins,
+        }
+        (archive_root / "backup_manifest.json").write_text(
+            json.dumps(manifest),
+            encoding="utf-8",
+        )
+        archive_path = temp_path / "backup.tar.gz"
+        with tarfile.open(archive_path, "w:gz") as archive:
+            archive.add(archive_root, arcname=archive_root.name)
+        return archive_path
+
+    def _first_call_index(self, docker_calls: list[str], pattern: str) -> int:
+        """Return the first fake Docker call index containing a pattern."""
+        for index, call in enumerate(docker_calls):
+            if pattern in f" {call} ":
+                return index
+        self.fail(f"Fake Docker call not found: {pattern}")
+
+    def _write_fake_restore_docker(self, docker_path: Path) -> None:
+        """Write a fake Docker binary that simulates restore SQL calls."""
+        docker_path.write_text(
+            "\n".join(
+                [
+                    "#!/usr/bin/env bash",
+                    "set -euo pipefail",
+                    'printf "%s\\n" "$*" >> "$ORAC_FAKE_DOCKER_LOG"',
+                    'case "$1" in',
+                    "  exec)",
+                    '    if [[ "$*" == *"sqlplus"* ]]; then',
+                    "      sql_input=$(cat)",
+                    '      printf "%s\\n" "$sql_input" >> "$ORAC_FAKE_DOCKER_LOG"',
+                    '      if [[ "$sql_input" == *"from all_objects"* ]]; then',
+                    '        if [[ "${ORAC_FAKE_INVALID_OBJECTS:-0}" == "1" ]]; then',
+                    '          printf "ORAC_CODE\\tPACKAGE BODY\\tBROKEN_API\\tINVALID\\n"',
+                    "        fi",
+                    '        if [[ "${ORAC_FAKE_PLUGIN_INVALID_OBJECTS:-0}" == "1" ]]; then',
+                    '          printf "ORAC_HA\\tPACKAGE\\tBROKEN_PLUGIN\\tINVALID\\n"',
+                    "        fi",
+                    "      elif [[ \"$sql_input\" == *\"from all_constraints\"* && \"$sql_input\" == *\"validated\"* ]]; then",
+                    '        if [[ "${ORAC_FAKE_FK_ISSUES:-0}" == "1" ]]; then',
+                    '          printf "ORAC_CORE\\tMESSAGES\\tMSG_CONV_FK\\tDISABLED\\tNOT VALIDATED\\n"',
+                    "        fi",
+                    '        if [[ "${ORAC_FAKE_PLUGIN_FK_ISSUES:-0}" == "1" ]]; then',
+                    '          printf "ORAC_HA\\tHA_ENTITIES\\tBROKEN_PLUGIN_FK\\tDISABLED\\tNOT VALIDATED\\n"',
+                    "        fi",
+                    '      elif [[ "$sql_input" == *"from ORAC_CORE.USERS"* ]]; then',
+                    '        printf "1\\n"',
+                    '      elif [[ "$sql_input" == *"from ORAC_CORE.CONVERSATIONS"* ]]; then',
+                    '        printf "13\\n"',
+                    '      elif [[ "$sql_input" == *"from ORAC_CORE.MESSAGES"* ]]; then',
+                    '        printf "209\\n"',
+                    '      elif [[ "$sql_input" == *"from ORAC_CORE.USER_PREFERENCES"* ]]; then',
+                    '        printf "19\\n"',
+                    '      elif [[ "$sql_input" == *"from ORAC_CORE.LLM_REGISTRY"* ]]; then',
+                    '        printf "18\\n"',
+                    '      elif [[ "$sql_input" == *"from ORAC_CORE.TTS_VOICES"* ]]; then',
+                    '        printf "78\\n"',
+                    '      elif [[ "$sql_input" == *"from ORAC_CORE.ORAC_PERSONALITIES"* ]]; then',
+                    '        printf "6\\n"',
+                    '      elif [[ "$sql_input" == *"from ORAC_CORE.PREFERENCE_DEFINITIONS"* ]]; then',
+                    '        printf "19\\n"',
+                    '      elif [[ "$sql_input" == *"from ORAC_CORE.MODEL_GENERATION_PRESETS"* ]]; then',
+                    '        printf "8\\n"',
+                    "      fi",
+                    "      exit 0",
+                    "    fi",
+                    "    exit 0",
+                    "    ;;",
+                    "  cp)",
+                    "    exit 0",
+                    "    ;;",
+                    "esac",
+                    "exit 0",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        docker_path.chmod(0o755)
 
     def _write_sample_vaults(self, vault_dir: Path) -> None:
         """Write decryptable sample vault files."""

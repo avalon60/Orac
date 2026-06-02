@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import socket
 import subprocess
 import time
 import uuid
@@ -68,6 +69,10 @@ DEFAULT_RECORD_MODE = "fixed"
 DEFAULT_WAKE_REARM_SECONDS = 1.0
 DEFAULT_CONSOLE_TIMESTAMPS = True
 DEFAULT_DISPLAY_BRIDGE_SCRIPT = "web/orac-display/bridge.js"
+ORAC_BACKEND_UNAVAILABLE_MESSAGE = (
+  "Python stack is not running. Start it with bin/orac-ctl.sh start "
+  "or bin/orac.sh start, then try again."
+)
 
 
 class NoSpeechDetectedError(RuntimeError):
@@ -115,7 +120,7 @@ def _send_display_event(
 
 def _display_runtime_identity_from_frame(
   frame: dict[str, object],
-) -> tuple[str, str, str, str] | None:
+) -> tuple[str, str, str, str, str] | None:
   """Extract the current LLM/persona identity from an Orac frame."""
   meta = frame.get("meta")
   if not isinstance(meta, dict):
@@ -124,13 +129,14 @@ def _display_runtime_identity_from_frame(
   model = str(meta.get("model") or "").strip()
   personality_code = str(meta.get("personality_code") or "").strip().upper()
   personality_name = str(meta.get("personality_name") or "").strip()
+  llm_source = str(meta.get("llm_source") or "").strip()
   persona = personality_name or personality_code
   if model and not persona:
     personality_code = "DEFAULT"
     persona = personality_code
   if not model and not persona:
     return None
-  return model, persona, personality_code, personality_name
+  return model, persona, personality_code, personality_name, llm_source
 
 
 def _send_configured_runtime_identity(
@@ -157,6 +163,7 @@ def _send_configured_runtime_identity(
     persona=persona,
     personality_code=persona,
     personality_name=persona,
+    llm_source="configured_default",
   )
 
 
@@ -187,6 +194,37 @@ def _console_start(message: str) -> None:
   """Print the start of a streaming console line."""
   prefix = _console_prefix() if _load_console_timestamps() else ""
   print(f"{prefix}{message}", end="", flush=True)
+
+
+def _send_backend_unavailable_state(
+  display_sender: DisplayEventSender | None,
+  *,
+  session_id: str | None = None,
+  turn_id: str | None = None,
+) -> None:
+  """Display a clear local-controller startup failure message."""
+  if display_sender is None:
+    return
+  display_sender.send_state(
+    "idle",
+    message=ORAC_BACKEND_UNAVAILABLE_MESSAGE,
+    session_id=session_id,
+    turn_id=turn_id,
+  )
+
+
+def _orac_backend_reachable(
+  host: str,
+  port: int,
+  *,
+  timeout_seconds: float = 0.2,
+) -> bool:
+  """Return whether the local Orac controller TCP port accepts connections."""
+  try:
+    with socket.create_connection((host, port), timeout=timeout_seconds):
+      return True
+  except OSError:
+    return False
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -848,7 +886,13 @@ async def _send_voice_cancel_request(
       await writer.wait_closed()
 
 
-async def _stream_orac_prompt(*, host: str, port: int, prompt_text: str) -> int:
+async def _stream_orac_prompt(
+  *,
+  host: str,
+  port: int,
+  prompt_text: str,
+  display_sender: DisplayEventSender | None = None,
+) -> int:
   """Submit recognised text to Orac using the same TCP prompt route as slave.py."""
   reader, writer = await asyncio.open_connection(host, port)
   try:
@@ -856,6 +900,7 @@ async def _stream_orac_prompt(*, host: str, port: int, prompt_text: str) -> int:
       reader=reader,
       writer=writer,
       prompt_text=prompt_text,
+      display_sender=display_sender,
     )
   finally:
     writer.close()
@@ -911,6 +956,18 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
   reader: asyncio.StreamReader | None = None
   writer: asyncio.StreamWriter | None = None
   capture_next_command = False
+  next_idle_message = "Listening for wake word"
+  if not _orac_backend_reachable(args.host, args.port):
+    next_idle_message = ORAC_BACKEND_UNAVAILABLE_MESSAGE
+    _console_line(
+      f"Could not connect to Orac at {args.host}:{args.port}. "
+      f"{ORAC_BACKEND_UNAVAILABLE_MESSAGE}"
+    )
+    logger.warning(
+      "Voice session started while Orac backend was unavailable at {}:{}",
+      args.host,
+      args.port,
+    )
 
   try:
     while True:
@@ -918,9 +975,10 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
         if not capture_next_command:
           display_sender.send_state(
             "idle",
-            message="Listening for wake word",
+            message=next_idle_message,
             session_id=session_id,
           )
+          next_idle_message = "Listening for wake word"
           activation = activation_listener.wait_for_activation(
             session_id=session_id
           )
@@ -970,18 +1028,37 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
         _console_line("Voice session closed.")
         return 0
 
-      if reader is None or writer is None:
-        reader, writer = await asyncio.open_connection(args.host, args.port)
-      status = await _send_orac_prompt(
-        reader=reader,
-        writer=writer,
-        prompt_text=recognised_text,
-        barge_in_controller=barge_in_controller,
-        voice_session_id=session_id,
-        cancel_host=args.host,
-        cancel_port=args.port,
-        display_sender=display_sender,
-      )
+      try:
+        if reader is None or writer is None:
+          reader, writer = await asyncio.open_connection(args.host, args.port)
+        status = await _send_orac_prompt(
+          reader=reader,
+          writer=writer,
+          prompt_text=recognised_text,
+          barge_in_controller=barge_in_controller,
+          voice_session_id=session_id,
+          cancel_host=args.host,
+          cancel_port=args.port,
+          display_sender=display_sender,
+        )
+      except ConnectionRefusedError:
+        _console_line(
+          f"Could not connect to Orac at {args.host}:{args.port}. "
+          f"{ORAC_BACKEND_UNAVAILABLE_MESSAGE}"
+        )
+        logger.warning(
+          "Voice session could not connect to Orac at {}:{}; returning to wake listening",
+          args.host,
+          args.port,
+        )
+        next_idle_message = ORAC_BACKEND_UNAVAILABLE_MESSAGE
+        _send_backend_unavailable_state(display_sender, session_id=session_id)
+        if writer is not None:
+          writer.close()
+          await writer.wait_closed()
+        reader = None
+        writer = None
+        continue
       if barge_in_controller is not None and barge_in_controller.interrupted:
         if writer is not None:
           writer.close()
@@ -1043,7 +1120,8 @@ def _voice_session(args: argparse.Namespace) -> int:
     return asyncio.run(_voice_session_async(args))
   except ConnectionRefusedError:
     _console_line(
-      f"Could not connect to Orac at {args.host}:{args.port}. Is it running?"
+      f"Could not connect to Orac at {args.host}:{args.port}. "
+      f"{ORAC_BACKEND_UNAVAILABLE_MESSAGE}"
     )
     return 1
   except VoiceActivationError as exc:
@@ -1104,8 +1182,10 @@ def _voice_turn(args: argparse.Namespace) -> int:
     )
   except ConnectionRefusedError:
     _console_line(
-      f"Could not connect to Orac at {args.host}:{args.port}. Is it running?"
+      f"Could not connect to Orac at {args.host}:{args.port}. "
+      f"{ORAC_BACKEND_UNAVAILABLE_MESSAGE}"
     )
+    _send_backend_unavailable_state(display_sender)
     return 1
   except KeyboardInterrupt:
     _console_line("Voice turn cancelled.")

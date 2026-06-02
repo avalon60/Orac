@@ -76,12 +76,13 @@ load_stack_env() {
   : "${SEARXNG_CONTAINER_NAME:=orac-searxng}"
   : "${SEARXNG_HOST:=127.0.0.1}"
   : "${SEARXNG_PORT:=8888}"
+  : "${SEARXNG_SECRET:=orac-local-searxng-change-me}"
 
   export COMPOSE_PROJECT_NAME ORAC_IMAGE_NAME ORAC_IMAGE_TAG
   export ORAC_DB_CONTAINER_NAME CONTAINER_NAME ORADATA_DIR
   export PORT_SQLNET PORT_HTTP PORT_EM
   export KOKORO_CONTAINER_NAME KOKORO_HOST KOKORO_PORT
-  export SEARXNG_CONTAINER_NAME SEARXNG_HOST SEARXNG_PORT
+  export SEARXNG_CONTAINER_NAME SEARXNG_HOST SEARXNG_PORT SEARXNG_SECRET
 }
 
 load_stack_env_if_present() {
@@ -714,7 +715,7 @@ start_orac_stack() {
   echo "📄 Compose file    : $ORAC_COMPOSE_FILE"
   echo "📄 Env file        : $ORAC_ENV_FILE"
   echo "🧩 Profiles        : $(compose_profiles_text)"
-  compose_cmd "${COMPOSE_PROFILE_ARGS[@]}" up -d
+  compose_cmd "${COMPOSE_PROFILE_ARGS[@]}" up -d --no-recreate
 
   "$SCRIPT_DIR/dbwait.sh"
   check_kokoro_readiness_if_configured

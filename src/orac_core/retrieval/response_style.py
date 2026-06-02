@@ -19,6 +19,11 @@ _MECHANICAL_SENTENCE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bsearch results confirm(?:s|ed)?\b", re.I),
     re.compile(r"\bsearch results\b", re.I),
 )
+_ACK_ONLY_RESPONSE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^\s*i\s+(?:will|'ll|’ll)\s+check\s+(?:that\s+)?online(?:\s+for\s+.+)?[.!]?\s*$", re.I),
+    re.compile(r"^\s*i\s+(?:will|'ll|’ll)\s+search\s+(?:the\s+)?(?:web|internet)(?:\s+for\s+.+)?[.!]?\s*$", re.I),
+    re.compile(r"^\s*searching[.!]?\s*$", re.I),
+)
 
 
 def normalize_retrieval_response_style(value: str | None) -> str:
@@ -36,6 +41,16 @@ def build_retrieval_response_guidance(
     if retrieval_pack is None:
         return ""
 
+    snippet_only = any(
+        getattr(source, "fetch_status", "") == "snippet_only"
+        for source in getattr(retrieval_pack, "fetched_sources", ()) or ()
+    )
+    snippet_guidance = (
+        " The available evidence is search-result snippet metadata only, so answer cautiously "
+        "and do not present it as fully verified fetched source text."
+        if snippet_only
+        else ""
+    )
     style = normalize_retrieval_response_style(response_style)
     if style == "debug":
         return (
@@ -50,14 +65,15 @@ def build_retrieval_response_guidance(
             "references to it, but not enough reliable detail to confirm the full answer.' "
             "If citations are required, cite the source URLs naturally in the answer. "
             "Do not mention internal retrieval mechanics such as search results, fetched "
-            "sources, grounding packs, or retrieved evidence."
+            "sources, grounding packs, reason codes, service names, or retrieved evidence."
         )
     return (
         "Answer naturally and directly. If the evidence is sufficient, give just the answer. "
         "If it only partially supports the answer, mention that briefly in ordinary language. "
         "If citations are required, cite the source URLs naturally in the answer. "
         "Do not mention internal retrieval mechanics such as search results, fetched sources, "
-        "grounding packs, or retrieved evidence."
+        "grounding packs, reason codes, service names, or retrieved evidence."
+        f"{snippet_guidance}"
     )
 
 
@@ -69,7 +85,7 @@ def polish_retrieval_response_text(
     retrieval_outcome: RetrievalOutcome | None = None,
 ) -> str:
     """Remove mechanical retrieval phrasing from the final answer."""
-    del retrieval_pack, retrieval_outcome
+    del retrieval_outcome
     raw_text = str(text or "").strip()
     if not raw_text:
         return raw_text
@@ -77,6 +93,8 @@ def polish_retrieval_response_text(
     style = normalize_retrieval_response_style(response_style)
     if style == "debug":
         return raw_text
+    if retrieval_pack is not None and _is_ack_only_response(raw_text):
+        return "I checked online, but I couldn't produce a reliable answer from the retrieved sources."
 
     sentences = _split_sentences(raw_text)
     kept_sentences = [
@@ -126,6 +144,11 @@ def _contains_mechanical_phrase(text: str) -> bool:
     """Return whether a sentence contains retrieval implementation phrasing."""
     lowered = str(text or "")
     return any(pattern.search(lowered) is not None for pattern in _MECHANICAL_SENTENCE_PATTERNS)
+
+
+def _is_ack_only_response(text: str) -> bool:
+    """Return whether text is only a retrieval action acknowledgement."""
+    return any(pattern.search(str(text or "")) is not None for pattern in _ACK_ONLY_RESPONSE_PATTERNS)
 
 
 def _split_sentences(text: str) -> Sequence[str]:

@@ -19,6 +19,8 @@ CTL_SCRIPT = PROJECT_ROOT / "bin" / "orac-ctl.sh"
 DB_DEPLOY_SCRIPT = PROJECT_ROOT / "bin" / "orac-db-deploy.sh"
 ORACLE_SETUP_DIR = PROJECT_ROOT / "resources" / "docker" / "oracle" / "setup"
 ORACLE_STARTUP_DIR = PROJECT_ROOT / "resources" / "docker" / "oracle" / "startup"
+ORACLE_COMPOSE_FILE = PROJECT_ROOT / "resources" / "docker" / "oracle" / "docker-compose.yaml"
+SEARXNG_SETTINGS_FILE = PROJECT_ROOT / "resources" / "docker" / "oracle" / "searxng" / "settings.yml"
 
 
 class OracCtlComposeTests(unittest.TestCase):
@@ -181,6 +183,18 @@ class OracCtlComposeTests(unittest.TestCase):
             self.assertIn("Missing Compose file", result.stdout)
             self.assertIn("Missing Compose env file", result.stdout)
             self.assertIn("validation-failed", result.stdout)
+
+    def test_orac_searxng_compose_mount_enables_json_format(self) -> None:
+        """Compose-managed SearXNG should allow Orac's JSON search endpoint."""
+        compose_text = ORACLE_COMPOSE_FILE.read_text(encoding="utf-8")
+        settings_text = SEARXNG_SETTINGS_FILE.read_text(encoding="utf-8")
+
+        self.assertIn("./searxng/settings.yml:/etc/searxng/settings.yml", compose_text)
+        self.assertIn("formats:", settings_text)
+        self.assertIn("- html", settings_text)
+        self.assertIn("- json", settings_text)
+        self.assertIn("secret_key:", settings_text)
+        self.assertIn("SEARXNG_SECRET", compose_text)
 
     def _run_helper(
         self,
@@ -460,6 +474,15 @@ class OracleSetupScriptContractTests(unittest.TestCase):
         self.assertIn("ORDS_METADATA", script)
         self.assertIn("ORDS metadata objects are not VALID", script)
         self.assertIn("APEX_APP_ID: 1042", script)
+
+    def test_startup_refreshes_listener_after_container_recreation(self) -> None:
+        """Startup should repair persisted listener hostnames before dbwait."""
+        script = (ORACLE_STARTUP_DIR / "005-refresh-listener.sh").read_text(encoding="utf-8")
+
+        self.assertIn("ORAC_LISTENER_REFRESH_COMPLETE", script)
+        self.assertIn("sed -i -E", script)
+        self.assertIn("lsnrctl start LISTENER", script)
+        self.assertIn("alter system register", script)
 
     def _shell_lines_outside_heredocs(self, path: Path) -> list[tuple[int, str]]:
         """Return shell-source lines, ignoring SQL heredoc bodies."""

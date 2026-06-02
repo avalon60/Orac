@@ -97,6 +97,41 @@ class ProtocolContractTests(unittest.TestCase):
                 {"content_type": "text", "voice_session_id": "voice-1", "turn_id": "turn-1"},
                 None,
             ),
+            (
+                "retrieval_start",
+                {"mode": "internet", "reason": "explicit_freshness_request"},
+                None,
+            ),
+            (
+                "retrieval_query",
+                {"query": "latest Oracle Database version", "provider": "searxng"},
+                None,
+            ),
+            (
+                "retrieval_fetch_start",
+                {"source_count": 4},
+                None,
+            ),
+            (
+                "retrieval_fetch_complete",
+                {"fetched_count": 4, "usable_source_count": 2},
+                None,
+            ),
+            (
+                "retrieval_complete",
+                {"source_count": 4, "usable_source_count": 2},
+                None,
+            ),
+            (
+                "retrieval_failed",
+                {"mode": "internet", "reason": "no_usable_sources"},
+                None,
+            ),
+            (
+                "retrieval_skipped",
+                {"mode": "internet", "reason": "retrieval_disabled"},
+                None,
+            ),
             ("text_delta", {"delta": "Hel"}, None),
             (
                 "text_chunk",

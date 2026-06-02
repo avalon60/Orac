@@ -83,6 +83,13 @@ DEFAULT_PORT = 8765
 WRAP_WIDTH = 100
 STREAM_EVENT_TYPES = {
     "stream_start",
+    "retrieval_start",
+    "retrieval_query",
+    "retrieval_fetch_start",
+    "retrieval_fetch_complete",
+    "retrieval_complete",
+    "retrieval_failed",
+    "retrieval_skipped",
     "text_delta",
     "text_chunk",
     "stream_end",
@@ -541,7 +548,11 @@ async def tcp_client(host=DEFAULT_HOST, port=DEFAULT_PORT):
 # --- Main ---
 
     except ConnectionRefusedError:
-        print(f"{Icons.error} Could not connect to Orac at {host}:{port}. Is it running?")
+        print(
+            f"{Icons.error} Could not connect to Orac at {host}:{port}. "
+            "The Python stack is not running. Start it with "
+            "bin/orac-ctl.sh start or bin/orac.sh start, then try again."
+        )
         logger.log_error(f"Could not connect to Orac at {host}:{port}.")
     except KeyboardInterrupt:
         print(f"\n{Icons.wave} Client terminated by user.")

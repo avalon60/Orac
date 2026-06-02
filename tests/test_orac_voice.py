@@ -102,6 +102,7 @@ from orac_voice.tts_coalescer import TtsChunkCoalescer
 from orac_voice.tts_kokoro import build_kokoro_speech_url
 from orac_voice.tts_kokoro import KokoroTtsEngine
 from orac_voice.tts_piper import PiperTtsEngine
+from orac_voice.tts_worker import speech_safe_text
 from orac_voice.tts_worker import TtsWorker
 import orac_voice.tts_kokoro as tts_kokoro_module
 import orac_voice.tts_worker as tts_worker_module
@@ -122,8 +123,10 @@ from orac_voice.voice_loop_local import _load_wake_rearm_seconds
 from orac_voice.voice_loop_local import _send_configured_runtime_identity
 from orac_voice.voice_loop_local import _send_orac_prompt
 from orac_voice.voice_loop_local import _transcribe_once
+from orac_voice.voice_loop_local import _voice_turn
 from orac_voice.voice_loop_local import _voice_session_async
 from orac_voice.voice_loop_local import build_parser
+from orac_voice.voice_loop_local import ORAC_BACKEND_UNAVAILABLE_MESSAGE
 from orac_voice.voice_turn_controller import VoiceTurnController
 
 
@@ -2474,6 +2477,25 @@ class OracVoiceTests(unittest.TestCase):
       ],
     )
 
+  def test_speech_safe_text_normalises_uk_style_dates_for_tts(self) -> None:
+    """Date text should be made more natural for speech synthesis."""
+    self.assertEqual(
+      speech_safe_text("Today is Monday, 1 June 2026."),
+      "Today is Monday, 1st of June 2026.",
+    )
+    self.assertEqual(
+      speech_safe_text("The date is 2 June 2026."),
+      "The date is 2nd of June 2026.",
+    )
+    self.assertEqual(
+      speech_safe_text("The date is 3 June 2026."),
+      "The date is 3rd of June 2026.",
+    )
+    self.assertEqual(
+      speech_safe_text("The date is 11 June 2026."),
+      "The date is 11th of June 2026.",
+    )
+
   def test_tts_worker_cancel_session_discards_late_chunks(self) -> None:
     """Session cancellation should discard queued and late chunks."""
     with tempfile.TemporaryDirectory() as tmp_name:
@@ -4185,13 +4207,20 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
   def test_configured_runtime_identity_uses_default_model(self) -> None:
     """Startup identity should populate the display before the first turn."""
     sender = _FakeDisplaySender()
+    config_path = PROJECT_ROOT / "resources" / "config" / "orac.ini"
+    expected_model = ConfigManager(config_path).config_value(
+      "service",
+      "default_model_name",
+      default="",
+    ).strip()
 
     _send_configured_runtime_identity(sender, session_id="voice-session")
 
     self.assertEqual(len(sender.events), 1)
     self.assertEqual(sender.events[0]["event"], "runtime.identity")
-    self.assertEqual(sender.events[0]["model"], "llama3.1-64K")
+    self.assertEqual(sender.events[0]["model"], expected_model)
     self.assertEqual(sender.events[0]["persona"], "DEFAULT")
+    self.assertEqual(sender.events[0]["llm_source"], "configured_default")
     self.assertEqual(sender.events[0]["session_id"], "voice-session")
 
   async def test_voice_turn_controller_handles_non_streaming_response(
@@ -4234,6 +4263,139 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
       ["transcript.orac.start", "transcript.orac.final"],
     )
     self.assertEqual([state[0] for state in sender.states], ["thinking", "idle"])
+
+  async def test_voice_turn_controller_maps_retrieval_frames_to_display_states(
+    self,
+  ) -> None:
+    """Retrieval lifecycle frames should surface as visible UI states."""
+    reader = self._reader_with_frames(
+      [
+        {
+          "v": 1,
+          "type": "retrieval_start",
+          "reply_to": "req_current",
+          "payload": {"mode": "internet", "reason": "explicit_freshness_request"},
+        },
+        {
+          "v": 1,
+          "type": "retrieval_query",
+          "reply_to": "req_current",
+          "payload": {
+            "query": "What is the latest version of the Oracle Database?",
+            "provider": "searxng",
+          },
+        },
+        {
+          "v": 1,
+          "type": "retrieval_fetch_start",
+          "reply_to": "req_current",
+          "payload": {"source_count": 4},
+        },
+        {
+          "v": 1,
+          "type": "retrieval_fetch_complete",
+          "reply_to": "req_current",
+          "payload": {"fetched_count": 4, "usable_source_count": 2},
+        },
+        {
+          "v": 1,
+          "type": "retrieval_complete",
+          "reply_to": "req_current",
+          "payload": {"source_count": 4, "usable_source_count": 2},
+        },
+        {
+          "v": 1,
+          "type": "stream_start",
+          "reply_to": "req_current",
+          "payload": {},
+        },
+        {
+          "v": 1,
+          "type": "text_delta",
+          "reply_to": "req_current",
+          "payload": {"delta": "Oracle Database 23ai is current."},
+        },
+        {
+          "v": 1,
+          "type": "text_chunk",
+          "reply_to": "req_current",
+          "payload": {
+            "chunk": "Oracle Database 23ai is current.",
+            "turn_id": "req_current",
+          },
+        },
+        {
+          "v": 1,
+          "type": "stream_end",
+          "reply_to": "req_current",
+          "payload": {"stop_reason": "stop"},
+        },
+        {
+          "v": 1,
+          "type": "response",
+          "reply_to": "req_current",
+          "payload": {"content": "Oracle Database 23ai is current."},
+        },
+        {
+          "v": 1,
+          "type": "tts_playback_started",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+        },
+        {
+          "v": 1,
+          "type": "tts_playback_finished",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+        },
+        {
+          "v": 1,
+          "type": "voice_turn_complete",
+          "reply_to": "req_current",
+          "payload": {
+            "turn_id": "req_current",
+            "request_id": "req_current",
+            "timestamp": "2026-05-25T10:00:00+00:00",
+          },
+        },
+      ]
+    )
+    writer = _FakeStreamWriter()
+    sender = _FakeDisplaySender()
+    controller = VoiceTurnController(
+      reader=reader,
+      writer=writer,
+      prompt_text="What is the latest version of the Oracle Database?",
+      voice_session_id="voice-session",
+      display_sender=sender,
+    )
+
+    from view import slave as slave_client
+
+    patched_stream_events = set(slave_client.STREAM_EVENT_TYPES)
+    patched_stream_events.update(
+      {
+        "retrieval_start",
+        "retrieval_query",
+        "retrieval_fetch_start",
+        "retrieval_fetch_complete",
+        "retrieval_complete",
+        "retrieval_failed",
+        "retrieval_skipped",
+      }
+    )
+
+    output = io.StringIO()
+    with patch.object(slave_client, "STREAM_EVENT_TYPES", patched_stream_events):
+      with contextlib.redirect_stdout(output):
+        status = await controller.run()
+
+    state_names = [state[0] for state in sender.states]
+    self.assertIn("checking_online", state_names)
+    self.assertIn("reading_sources", state_names)
+    self.assertIn("speaking", state_names)
+    self.assertIn("thinking", state_names)
+    self.assertGreaterEqual(len(state_names), 4)
 
   async def test_voice_turn_contract_normal_stream_routes_text_and_playback(
     self,
@@ -5207,6 +5369,7 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
           "model": "test-model",
           "personality_code": "DEFAULT",
           "personality_name": "Standard Orac",
+          "llm_source": "configured_fallback",
         },
         "payload": {},
       },
@@ -5218,6 +5381,7 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
           "model": "test-model",
           "personality_code": "DEFAULT",
           "personality_name": "Standard Orac",
+          "llm_source": "configured_fallback",
         },
         "payload": {"stop_reason": "stop"},
       },
@@ -5229,6 +5393,7 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
           "model": "test-model",
           "personality_code": "DEFAULT",
           "personality_name": "Standard Orac",
+          "llm_source": "configured_fallback",
         },
         "payload": {"content": "OK."},
       },
@@ -5255,6 +5420,7 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(len(runtime_events), 1)
     self.assertEqual(runtime_events[0]["model"], "test-model")
     self.assertEqual(runtime_events[0]["persona"], "Standard Orac")
+    self.assertEqual(runtime_events[0]["llm_source"], "configured_fallback")
 
   async def test_voice_prompt_stays_speaking_until_last_chunk_finishes(
     self,
@@ -5859,6 +6025,180 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     )
     self.assertEqual(sender.states[-1][0], "idle")
     self.assertEqual(sender.states[-1][1], "Listening for wake word")
+
+  async def test_voice_session_continues_after_backend_connection_refused(
+    self,
+  ) -> None:
+    """A refused backend connection should not terminate wake listening."""
+    args = build_parser().parse_args(
+      ["--voice-session", "--activation-mode", "openwakeword"]
+    )
+    sender = _FakeDisplaySender()
+    activation_listener = _FakeActivationListener(
+      [
+        types.SimpleNamespace(activated=True, exit_requested=False),
+        types.SimpleNamespace(activated=True, exit_requested=False),
+        types.SimpleNamespace(activated=False, exit_requested=True),
+      ]
+    )
+    reader = asyncio.StreamReader()
+    writer = _FakeStreamWriter()
+    prompt_calls: list[str] = []
+    transcriptions = iter([
+      ("voice-session", "turn-1", "First question"),
+      ("voice-session", "turn-2", "Second question"),
+    ])
+    connection_attempts = 0
+
+    async def _fake_open_connection(*_args, **_kwargs):
+      nonlocal connection_attempts
+      connection_attempts += 1
+      if connection_attempts == 1:
+        raise ConnectionRefusedError("backend unavailable")
+      return reader, writer
+
+    async def _fake_send_orac_prompt(**kwargs) -> int:
+      prompt_calls.append(str(kwargs["prompt_text"]))
+      return 0
+
+    def _fake_transcribe_once(*_args, **_kwargs):
+      return next(transcriptions)
+
+    with patch(
+      "orac_voice.voice_loop_local.SoundDeviceAudioCapture.from_config",
+      return_value=_FakeWakeCapture(
+        VadCaptureResult(wav_path=Path("/tmp/fake-voice-capture.wav"))
+      ),
+    ):
+      with patch(
+        "orac_voice.voice_loop_local.FasterWhisperSttEngine.from_config",
+        return_value=object(),
+      ):
+        with patch(
+          "orac_voice.voice_loop_local._create_barge_in_controller",
+          return_value=None,
+        ):
+          with patch(
+            "orac_voice.voice_loop_local.DisplayEventSender.from_config",
+            return_value=sender,
+          ):
+            with patch(
+              "orac_voice.voice_loop_local._create_activation_listener",
+              return_value=activation_listener,
+            ):
+              with patch(
+                "orac_voice.voice_loop_local._load_wake_rearm_seconds",
+                return_value=0.0,
+              ):
+                with patch(
+                  "orac_voice.voice_loop_local._transcribe_once",
+                  side_effect=_fake_transcribe_once,
+                ):
+                  with patch(
+                    "orac_voice.voice_loop_local._send_orac_prompt",
+                    side_effect=_fake_send_orac_prompt,
+                  ):
+                    with patch(
+                      "orac_voice.voice_loop_local.asyncio.open_connection",
+                      side_effect=_fake_open_connection,
+                    ):
+                      status = await _voice_session_async(args)
+
+    self.assertEqual(status, 0)
+    self.assertEqual(connection_attempts, 2)
+    self.assertEqual(prompt_calls, ["Second question"])
+    self.assertEqual(activation_listener.wait_calls, 3)
+    self.assertEqual(writer.close_calls, 1)
+    self.assertEqual(writer.wait_closed_calls, 1)
+    self.assertTrue(
+      any(
+        state[0] == "idle" and state[1] == "Listening for wake word"
+        for state in sender.states
+      )
+    )
+    self.assertTrue(
+      any(
+        state[0] == "idle" and state[1] == ORAC_BACKEND_UNAVAILABLE_MESSAGE
+        for state in sender.states
+      )
+    )
+
+  async def test_voice_session_displays_backend_unavailable_on_startup(
+    self,
+  ) -> None:
+    """Starting voice mode without the Python stack should update the UI."""
+    args = build_parser().parse_args(
+      ["--voice-session", "--activation-mode", "openwakeword"]
+    )
+    sender = _FakeDisplaySender()
+    activation_listener = _FakeActivationListener(
+      [types.SimpleNamespace(activated=False, exit_requested=True)]
+    )
+
+    with patch(
+      "orac_voice.voice_loop_local.SoundDeviceAudioCapture.from_config",
+      return_value=_FakeWakeCapture(
+        VadCaptureResult(wav_path=Path("/tmp/fake-voice-capture.wav"))
+      ),
+    ):
+      with patch(
+        "orac_voice.voice_loop_local.FasterWhisperSttEngine.from_config",
+        return_value=object(),
+      ):
+        with patch(
+          "orac_voice.voice_loop_local._create_barge_in_controller",
+          return_value=None,
+        ):
+          with patch(
+            "orac_voice.voice_loop_local.DisplayEventSender.from_config",
+            return_value=sender,
+          ):
+            with patch(
+              "orac_voice.voice_loop_local._create_activation_listener",
+              return_value=activation_listener,
+            ):
+              with patch(
+                "orac_voice.voice_loop_local._orac_backend_reachable",
+                return_value=False,
+              ):
+                status = await _voice_session_async(args)
+
+    self.assertEqual(status, 0)
+    self.assertTrue(
+      any(
+        state[0] == "idle" and state[1] == ORAC_BACKEND_UNAVAILABLE_MESSAGE
+        for state in sender.states
+      )
+    )
+
+  def test_voice_turn_displays_backend_unavailable_message(self) -> None:
+    """A refused one-shot backend connection should be visible in the UI."""
+    args = build_parser().parse_args(["--voice-turn"])
+    sender = _FakeDisplaySender()
+
+    def _fake_transcribe_once(*_args, **_kwargs):
+      return "voice-turn", "turn-1", "Are you running?"
+
+    async def _fake_open_connection(*_args, **_kwargs):
+      raise ConnectionRefusedError("backend unavailable")
+
+    with patch(
+      "orac_voice.voice_loop_local.DisplayEventSender.from_config",
+      return_value=sender,
+    ):
+      with patch(
+        "orac_voice.voice_loop_local._transcribe_once",
+        side_effect=_fake_transcribe_once,
+      ):
+        with patch(
+          "orac_voice.voice_loop_local.asyncio.open_connection",
+          side_effect=_fake_open_connection,
+        ):
+          status = _voice_turn(args)
+
+    self.assertEqual(status, 1)
+    self.assertEqual(sender.states[-1][0], "idle")
+    self.assertEqual(sender.states[-1][1], ORAC_BACKEND_UNAVAILABLE_MESSAGE)
 
   async def test_voice_prompt_waits_after_final_response_for_playback_end(self) -> None:
     """Final text response should not re-arm wake before playback finishes."""

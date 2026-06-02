@@ -111,6 +111,8 @@ const STATE_CONFIGS: Record<OracState, StateConfig> = {
   listening: { color: '#7af7ff', bloomIntensity: 0.22, rotationSpeed: 0.4, distortion: 0.2, pulseRate: 2, scale: 1.1, transmission: 0.34 },
   transcribing: { color: '#b8f2ff', bloomIntensity: 1.1, rotationSpeed: 1.2, distortion: 0.4, pulseRate: 4, scale: 1.05, transmission: 0.8 },
   thinking: { color: '#8ed3e8', bloomIntensity: 1.45, rotationSpeed: 0.8, distortion: 0.42, pulseRate: 1, scale: 1.15, transmission: 0.7 },
+  checking_online: { color: '#71cfff', bloomIntensity: 1.0, rotationSpeed: 0.62, distortion: 0.28, pulseRate: 0.75, scale: 1.08, transmission: 0.66 },
+  reading_sources: { color: '#98ddff', bloomIntensity: 1.18, rotationSpeed: 0.72, distortion: 0.32, pulseRate: 0.95, scale: 1.12, transmission: 0.7 },
   tool_calling: { color: '#31e6d0', bloomIntensity: 2.1, rotationSpeed: 1.8, distortion: 0.3, pulseRate: 6, scale: 1.2, transmission: 0.6 },
   speaking: { color: '#9be7ff', bloomIntensity: 1.6, rotationSpeed: 0.54, distortion: 0.2, pulseRate: 3, scale: 1.15, transmission: 0.8 },
   interrupted: { color: '#ffb02e', bloomIntensity: 2.5, rotationSpeed: 2.0, distortion: 1.0, pulseRate: 8, scale: 0.95, transmission: 0.4, glitchIntensity: 1 },
@@ -124,6 +126,8 @@ const CORE_PALETTES: Record<OracState, CorePalette> = {
   listening: { color: '#eefcff', glowColor: '#dff7ff', highlightColor: '#ffffff' },
   transcribing: { color: '#eefaff', glowColor: '#d7f3ff', highlightColor: '#ffffff' },
   thinking: { color: '#f4fbff', glowColor: '#d8edf7', highlightColor: '#ffffff' },
+  checking_online: { color: '#f3fcff', glowColor: '#d7f0ff', highlightColor: '#ffffff' },
+  reading_sources: { color: '#f4fdff', glowColor: '#d2eefc', highlightColor: '#ffffff' },
   tool_calling: { color: '#f8f1dd', glowColor: '#f0deaf', highlightColor: '#fff8e8' },
   speaking: { color: '#f1cd82', glowColor: '#ffdea0', highlightColor: '#fff2cf' },
   interrupted: { color: '#ffe0ab', glowColor: '#ffd186', highlightColor: '#fff3d4' },
@@ -358,6 +362,7 @@ const WaveHalo = ({ state }: { state: OracState }) => {
   const ref = useRef<THREE.Group>(null);
   const config = STATE_CONFIGS[state];
   const isListening = state === 'listening' || state === 'wake_detected';
+  const isRetrieval = state === 'checking_online' || state === 'reading_sources';
   const isSpeaking = state === 'speaking';
   const waveCount = isSpeaking ? 3 : 2;
   const waveGeometries = useMemo(
@@ -392,6 +397,15 @@ const WaveHalo = ({ state }: { state: OracState }) => {
         const line = child.children[0] as THREE.LineLoop;
         const material = line.material as THREE.LineBasicMaterial;
         material.opacity = (1 - eased) * (0.055 - index * 0.008);
+      } else if (isRetrieval) {
+        const progress = ((t * 0.1) + index * 0.22) % 1;
+        const eased = progress * progress * (3 - 2 * progress);
+        const scale = 1.86 - eased * (0.7 + index * 0.04);
+        child.scale.setScalar(scale);
+        child.rotation.z = Math.sin(t * 0.08 + index * 0.52) * 0.004;
+        const line = child.children[0] as THREE.LineLoop;
+        const material = line.material as THREE.LineBasicMaterial;
+        material.opacity = (1 - eased) * (0.018 - index * 0.0025);
       } else if (isListening) {
         const progress = ((t * 0.12) + index * 0.26) % 1;
         const eased = progress * progress * (3 - 2 * progress);
@@ -726,6 +740,8 @@ const Tesseract = ({ state }: { state: OracState }) => {
         coreHighlightOpacity = 0.14;
         break;
       case 'thinking':
+      case 'checking_online':
+      case 'reading_sources':
         // Out of phase breathing
         const thinkT = t * 3;
         innerScale *= (1.1 + Math.sin(thinkT) * 0.1);
@@ -1017,7 +1033,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
 const Scene = ({ state }: { state: OracState }) => {
   const config = STATE_CONFIGS[state];
   const isIdle = state === 'idle';
-  const isThinking = state === 'thinking';
+  const isThinking = state === 'thinking' || state === 'checking_online' || state === 'reading_sources';
   const isSpeaking = state === 'speaking';
   const isError = state === 'error' || state === 'interrupted';
   const isListening = state === 'listening' || state === 'wake_detected';
@@ -1093,13 +1109,19 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
   onRenderRecovery,
 }) => {
   const config = STATE_CONFIGS[state];
+  const isBackendUnavailableMessage =
+    typeof message === 'string' &&
+    message.includes('Python stack is not running');
   const isIdle = state === 'idle';
   const isListening = state === 'listening' || state === 'wake_detected';
+  const isRetrieval = state === 'checking_online' || state === 'reading_sources';
   const isTurnActive =
     state === 'wake_detected' ||
     state === 'listening' ||
     state === 'transcribing' ||
     state === 'thinking' ||
+    state === 'checking_online' ||
+    state === 'reading_sources' ||
     state === 'tool_calling' ||
     state === 'speaking';
   const leftTranscript =
@@ -1114,12 +1136,12 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
       <motion.div 
         className="absolute inset-0 transition-colors duration-1000 pointer-events-none"
         style={{
-          background: `radial-gradient(circle at center, ${config.color}${isListening ? '28' : '18'} 0%, transparent ${isListening ? '66%' : '72%'})`,
+          background: `radial-gradient(circle at center, ${config.color}${isListening || isRetrieval ? '28' : '18'} 0%, transparent ${isListening || isRetrieval ? '66%' : '72%'})`,
         }}
         animate={{
-          opacity: isListening ? [0.42, 0.62, 0.42] : [0.18, 0.26, 0.18],
+          opacity: isListening || isRetrieval ? [0.42, 0.62, 0.42] : [0.18, 0.26, 0.18],
         }}
-        transition={{ duration: isListening ? 8.5 : 5, repeat: Infinity, ease: "easeInOut" }}
+        transition={{ duration: isListening || isRetrieval ? 8.5 : 5, repeat: Infinity, ease: "easeInOut" }}
       />
 
       <div className="absolute top-8 z-10 flex flex-col items-center opacity-85">
@@ -1192,7 +1214,13 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
             {state.replace('_', ' ')}
           </div>
           {message && (
-            <div className="text-[#72899a] text-[11px] font-medium tracking-[0.15em] text-center max-w-sm opacity-40 leading-relaxed border-t border-[#1b5f91]/20 pt-5 px-10">
+            <div
+              className={`max-w-sm border-t pt-5 px-10 text-center text-[11px] font-medium tracking-[0.15em] leading-relaxed ${
+                isBackendUnavailableMessage
+                  ? 'border-amber-300/30 text-amber-200 opacity-95'
+                  : 'border-[#1b5f91]/20 text-[#72899a] opacity-40'
+              }`}
+            >
               {message}
             </div>
           )}

@@ -62,6 +62,8 @@ class SearXNGSearchProvider:
             headers={
                 "Accept": "application/json",
                 "User-Agent": "Orac/1.0 (+https://github.com/openai/openai)",
+                "X-Forwarded-For": "127.0.0.1",
+                "X-Real-IP": "127.0.0.1",
             },
             method="GET",
         )

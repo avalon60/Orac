@@ -139,7 +139,7 @@ class VoiceTurnController:
     last_tts_finished_at: float | None = None
     timing_logged = False
     barge_in_min_speech_ms = 0
-    last_runtime_identity: tuple[str, str, str, str] | None = None
+    last_runtime_identity: tuple[str, str, str, str, str] | None = None
     if (
       barge_in_controller is not None
       and not isinstance(barge_in_controller, OpenWakeWordBargeInController)
@@ -226,6 +226,40 @@ class VoiceTurnController:
         _format_timing(time.perf_counter() - request_sent_at),
         playback_started_count,
       )
+
+    def _update_retrieval_display_state(frame_type: str) -> None:
+      """Map retrieval lifecycle frames to the display state rail."""
+      if self.display_sender is None:
+        return
+
+      if frame_type in {"retrieval_start", "retrieval_query"}:
+        self.display_sender.send_state(
+          "checking_online",
+          message="Checking online...",
+          session_id=self.voice_session_id,
+          turn_id=req_id,
+        )
+      elif frame_type in {"retrieval_fetch_start", "retrieval_fetch_complete"}:
+        self.display_sender.send_state(
+          "reading_sources",
+          message="Reading sources...",
+          session_id=self.voice_session_id,
+          turn_id=req_id,
+        )
+      elif frame_type == "retrieval_complete":
+        self.display_sender.send_state(
+          "thinking",
+          message="Thinking...",
+          session_id=self.voice_session_id,
+          turn_id=req_id,
+        )
+      elif frame_type == "retrieval_failed":
+        self.display_sender.send_state(
+          "error",
+          message="Could not retrieve online evidence.",
+          session_id=self.voice_session_id,
+          turn_id=req_id,
+        )
 
     def _maybe_finish_turn() -> int | None:
       """Return the final status once the answer and playback are complete."""
@@ -365,7 +399,7 @@ class VoiceTurnController:
           and runtime_identity is not None
           and runtime_identity != last_runtime_identity
         ):
-          model, persona, personality_code, personality_name = runtime_identity
+          model, persona, personality_code, personality_name, llm_source = runtime_identity
           _send_display_event(
             self.display_sender,
             "runtime.identity",
@@ -375,11 +409,22 @@ class VoiceTurnController:
             persona=persona,
             personality_code=personality_code,
             personality_name=personality_name,
+            llm_source=llm_source or None,
           )
           last_runtime_identity = runtime_identity
 
         frame_type = env.get("type")
         if frame_type in slave_client.STREAM_EVENT_TYPES:
+          if frame_type in {
+            "retrieval_start",
+            "retrieval_query",
+            "retrieval_fetch_start",
+            "retrieval_fetch_complete",
+            "retrieval_complete",
+            "retrieval_failed",
+          }:
+            _update_retrieval_display_state(str(frame_type))
+            continue
           if frame_type == "tts_playback_error":
             if not interruption_policy.accept_output_event(output_turn_id=req_id):
               logger.debug(
@@ -617,7 +662,7 @@ def _send_display_event(
 
 def _display_runtime_identity_from_frame(
   frame: dict[str, object],
-) -> tuple[str, str, str, str] | None:
+) -> tuple[str, str, str, str, str] | None:
   """Extract the current LLM/persona identity from an Orac frame."""
   meta = frame.get("meta")
   if not isinstance(meta, dict):
@@ -626,10 +671,11 @@ def _display_runtime_identity_from_frame(
   model = str(meta.get("model") or "").strip()
   personality_code = str(meta.get("personality_code") or "").strip().upper()
   personality_name = str(meta.get("personality_name") or "").strip()
+  llm_source = str(meta.get("llm_source") or "").strip()
   persona = personality_name or personality_code
   if model and not persona:
     personality_code = "DEFAULT"
     persona = personality_code
   if not model and not persona:
     return None
-  return model, persona, personality_code, personality_name
+  return model, persona, personality_code, personality_name, llm_source
