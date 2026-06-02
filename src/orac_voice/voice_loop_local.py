@@ -67,6 +67,7 @@ DEFAULT_PORT = 8765
 DEFAULT_SESSION_EXIT_PHRASES = ("exit", "quit", "stop listening", "goodbye")
 DEFAULT_RECORD_MODE = "fixed"
 DEFAULT_WAKE_REARM_SECONDS = 1.0
+DEFAULT_WAKE_CAPTURE_DELAY_SECONDS = 0.1
 DEFAULT_CONSOLE_TIMESTAMPS = True
 DEFAULT_DISPLAY_BRIDGE_SCRIPT = "web/orac-display/bridge.js"
 ORAC_BACKEND_UNAVAILABLE_MESSAGE = (
@@ -409,6 +410,21 @@ def _load_wake_rearm_seconds() -> float:
         "voice",
         "wake_rearm_seconds",
         default=str(DEFAULT_WAKE_REARM_SECONDS),
+      )
+    ),
+  )
+
+
+def _load_wake_capture_delay_seconds() -> float:
+  """Load the delay between wake detection and command capture."""
+  config_mgr = _voice_config_manager()
+  return max(
+    0.0,
+    float(
+      config_mgr.config_value(
+        "voice",
+        "wake_capture_delay_seconds",
+        default=str(DEFAULT_WAKE_CAPTURE_DELAY_SECONDS),
       )
     ),
   )
@@ -934,6 +950,7 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
   session_id = f"local-voice-session-{uuid.uuid4().hex[:12]}"
   exit_phrases = _load_exit_phrases()
   wake_rearm_seconds = _load_wake_rearm_seconds()
+  wake_capture_delay_seconds = _load_wake_capture_delay_seconds()
   capture = SoundDeviceAudioCapture.from_config(record_seconds=args.record_seconds)
   stt_engine = FasterWhisperSttEngine.from_config()
   barge_in_controller = _create_barge_in_controller()
@@ -993,8 +1010,9 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
             message="Wake word detected",
             session_id=session_id,
           )
-          # Brief delay to allow the "wake_detected" animation to play
-          time.sleep(0.4)
+          if wake_capture_delay_seconds > 0:
+            # Keep this short so fast follow-up speech is not missed.
+            time.sleep(wake_capture_delay_seconds)
         else:
           logger.info("Barge-in return mode: command_capture")
           capture_next_command = False

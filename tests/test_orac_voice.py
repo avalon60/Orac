@@ -120,6 +120,7 @@ from orac_voice.voice_loop_local import _create_barge_in_controller
 from orac_voice.voice_loop_local import _load_activation_mode
 from orac_voice.voice_loop_local import _load_record_mode
 from orac_voice.voice_loop_local import _load_wake_rearm_seconds
+from orac_voice.voice_loop_local import _load_wake_capture_delay_seconds
 from orac_voice.voice_loop_local import _send_configured_runtime_identity
 from orac_voice.voice_loop_local import _send_orac_prompt
 from orac_voice.voice_loop_local import _transcribe_once
@@ -1544,6 +1545,11 @@ class OracVoiceTests(unittest.TestCase):
   def test_wake_rearm_delay_uses_configured_default(self) -> None:
     """Voice sessions should pause briefly before listening again."""
     self.assertGreaterEqual(_load_wake_rearm_seconds(), 0.0)
+
+  def test_wake_capture_delay_uses_configured_default(self) -> None:
+    """Voice sessions should minimise delay before command capture."""
+    self.assertGreaterEqual(_load_wake_capture_delay_seconds(), 0.0)
+    self.assertLessEqual(_load_wake_capture_delay_seconds(), 0.2)
 
   def test_porcupine_activation_reports_missing_dependency(self) -> None:
     """Porcupine mode should fail clearly when dependency is unavailable."""

@@ -1019,8 +1019,12 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
                         "answer with the identity statement when the user "
                         "explicitly asks who or what you are, who created you, "
                         "or another direct identity/creator question. For those "
-                        "questions, answer simply: \"{identity_answer}.\" Do "
-                        "not include {assistant_name}'s identity or creator in "
+                        "questions, answer from {assistant_name}'s own "
+                        "perspective, for example: \"{identity_answer}.\" For "
+                        "creator-only questions, say \"Clive Bostock is my "
+                        "creator\" or \"I was created by Clive Bostock\"; "
+                        "never say Clive Bostock is the user's creator. Do not "
+                        "include {assistant_name}'s identity or creator in "
                         "replies to ordinary factual requests such as date, "
                         "time, weather, calculations, or status questions "
                         "unless the user asks for it."
@@ -1050,8 +1054,15 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             primer,
         )
         self.assertIn(
-            "For those questions, answer simply: \"I am Orac, an extensible "
-            "artificial intelligence system, created by Clive Bostock.\"",
+            "For those questions, answer from Orac's own perspective, for "
+            "example: \"I am Orac, an extensible artificial intelligence "
+            "system, created by Clive Bostock.\"",
+            primer,
+        )
+        self.assertIn(
+            "For creator-only questions, say \"Clive Bostock is my creator\" "
+            "or \"I was created by Clive Bostock\"; never say Clive Bostock "
+            "is the user's creator.",
             primer,
         )
         self.assertIn(
@@ -1062,6 +1073,12 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn(
             "Orac was created by Clive Bostock, Orac's author and designer.",
+            primer,
+        )
+        self.assertIn(
+            "When answering direct creator questions, speak as Orac: say "
+            "\"Clive Bostock is my creator\" or \"I was created by Clive "
+            "Bostock\"; never say the creator is the user's creator.",
             primer,
         )
         self.assertIn(
@@ -1108,6 +1125,8 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("{assistant_name}", identity_policy)
         self.assertIn("{identity_answer}", identity_policy)
+        self.assertIn("Clive Bostock is my creator", identity_policy)
+        self.assertIn("never say Clive Bostock is the user's creator", identity_policy)
         self.assertIn("ordinary factual requests such as date", identity_policy)
 
     def setUp(self) -> None:

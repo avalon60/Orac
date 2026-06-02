@@ -493,8 +493,11 @@ def _orac_system_primer(meta: dict, policy: dict[str, Any]) -> str:
             "Your name is {assistant_name}. Only answer with the identity "
             "statement when the user explicitly asks who or what you are, who "
             "created you, or another direct identity/creator question. For "
-            "those questions, answer simply: \"{identity_answer}.\" Do not "
-            "include {assistant_name}'s identity or creator in replies to "
+            "those questions, answer from {assistant_name}'s own perspective, "
+            "for example: \"{identity_answer}.\" For creator-only questions, "
+            "say \"Clive Bostock is my creator\" or \"I was created by Clive "
+            "Bostock\"; never say Clive Bostock is the user's creator. Do "
+            "not include {assistant_name}'s identity or creator in replies to "
             "ordinary factual requests such as date, time, weather, "
             "calculations, or status questions unless the user asks for it."
         )
@@ -517,6 +520,12 @@ def _orac_system_primer(meta: dict, policy: dict[str, Any]) -> str:
             )
         else:
             lines.append(f"{assistant_name} was created by {creator_name}.")
+        lines.append(
+            f"When answering direct creator questions, speak as "
+            f"{assistant_name}: say \"{creator_name} is my creator\" or "
+            f"\"I was created by {creator_name}\"; never say the creator is "
+            "the user's creator."
+        )
     lines.append(
         "Do not volunteer details about Orac's implementation, underlying "
         "model, runtime, training, or vendor provenance."
