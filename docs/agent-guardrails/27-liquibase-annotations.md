@@ -877,7 +877,7 @@ Standard shell:
     xmlns:ora="http://www.oracle.com/xml/ns/dbchangelog-ext"
     xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.17.xsd"
 >
-  <changeSet id="productController_setup_environment" author="aes-ace" runOnChange="true" runAlways="true" failOnError="false">
+  <changeSet id="productController_setup_environment" author="project-template" runOnChange="true" runAlways="true" failOnError="false">
     <sql>
         set define off
         set sqlblanklines on
@@ -913,7 +913,7 @@ Example:
     xmlns:ora="http://www.oracle.com/xml/ns/dbchangelog-ext"
     xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.17.xsd"
 >
-  <changeSet id="productController_setup_environment" author="aes-ace" runOnChange="true" runAlways="true" failOnError="false">
+  <changeSet id="productController_setup_environment" author="project-template" runOnChange="true" runAlways="true" failOnError="false">
     <!-- As of SQLcl 24.4.1 only define and sqlblanklines persists across changesets for sqlcl settings -->
     <sql>
         set define off
@@ -979,7 +979,7 @@ Standard shell:
     xmlns:ora="http://www.oracle.com/xml/ns/dbchangelog-ext"
     xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.17.xsd"
 >
-  <changeSet id="nonProdController_setup_environment" author="aes-ace" runOnChange="true" runAlways="true" failOnError="false">
+  <changeSet id="nonProdController_setup_environment" author="project-template" runOnChange="true" runAlways="true" failOnError="false">
     <sql>
         set define off
         set sqlblanklines on

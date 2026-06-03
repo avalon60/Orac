@@ -348,11 +348,11 @@ documentation in the style of the public Oracle Product Documentation
 
 ## 4.1. Package Level Comments
 
-The Ace Extension provides Liquibase snippets which in turn provide
-standard package body and spec.  When the Ace snippets are not available
-the same notation can be added manually.  We should use these to help
-denote the purpose of the packaged logic in addition to in logic
-comments.  This notation should be updated manually 
+Approved development tooling may provide Liquibase snippets which in turn
+provide standard package body and spec templates. When those snippets are not
+available the same notation can be added manually. We should use these to help
+denote the purpose of the packaged logic in addition to in-logic comments.
+This notation should be updated manually.
 
 **Example lb-package-body-changeset snippet** Expand source
 
@@ -506,19 +506,18 @@ l_b64_decoded);
 
 \-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\--
 
-## 4.3.  Ace Extension
+## 4.3. AI-Assisted Comment Tooling
 
-There is an Ace Extension which provides some default AI driven comments
-to your code.  You can use this extension to initialize the comments. 
-Always comment to describe the logic, the AI generated comments give you
-a start.
+Approved AI-assisted comment tooling may provide default generated comments for
+your code. You can use this tooling to initialize the comments. Always comment
+to describe the logic; generated comments only give you a start.
 
 To apply the comments select the code you want to comment e.g. a
-procedure in VS Code then select the ace extension \"ACE: Add AI
-Comments (SQL)\" from the Command Palette action in the View menu.
+procedure in VS Code then select the approved SQL comment-generation action
+from the Command Palette action in the View menu.
 
 +----------------------------------+-----------------------------------+
-| **Procedure before Ace           | **Procedure after Ace             |
+| **Procedure before generated     | **Procedure after generated       |
 | Comments** Expand source         | Comments** Expand source          |
 |                                  |                                   |
 | procedure upd (                  | procedure upd (                   |
