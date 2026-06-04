@@ -673,9 +673,8 @@ def _display_runtime_identity_from_frame(
   personality_name = str(meta.get("personality_name") or "").strip()
   llm_source = str(meta.get("llm_source") or "").strip()
   persona = personality_name or personality_code
-  if model and not persona:
-    personality_code = "DEFAULT"
-    persona = personality_code
   if not model and not persona:
+    return None
+  if model and not persona:
     return None
   return model, persona, personality_code, personality_name, llm_source

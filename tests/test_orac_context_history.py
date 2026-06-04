@@ -2069,6 +2069,62 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("would be 123", content)
         self.assertEqual(orchestrator.llm.prompts, [])
 
+    async def test_george_michael_cause_of_death_uses_retrieved_evidence(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=[
+                (
+                    "George Michael died of lung cancer exacerbated by smoking, "
+                    "confirmed after a concert collapse in 2015."
+                )
+            ],
+        )
+        request = SearchRequest(
+            query="George Michael cause of death",
+            trigger_phrase="factual_risk_cause_of_death",
+        )
+        pack = GroundingPackBuilder().build(
+            request,
+            [
+                SearchResult(
+                    title="George Michael died of natural causes, coroner says",
+                    url="https://example.test/george-michael-cause",
+                )
+            ],
+            [
+                FetchedSource(
+                    url="https://example.test/george-michael-cause",
+                    title="George Michael died of natural causes, coroner says",
+                    source_name="example.test",
+                    text=(
+                        "The official cause of death was dilated cardiomyopathy "
+                        "with myocarditis and fatty liver."
+                    ),
+                    excerpt=(
+                        "The official cause of death was dilated cardiomyopathy "
+                        "with myocarditis and fatty liver."
+                    ),
+                )
+            ],
+            require_citations=True,
+        )
+        retrieval_service = _SuccessfulRetrievalService(pack)
+        orchestrator.retrieval_service = retrieval_service
+
+        wire = await orchestrator.handle_request(
+            self._request("What did George Michael die of?", req_id="req-george-cause")
+        )
+        response = json.loads(wire)
+
+        content = response["payload"]["content"]
+        self.assertIn(
+            "dilated cardiomyopathy with myocarditis and fatty liver",
+            content,
+        )
+        self.assertNotIn("lung cancer", content.lower())
+        self.assertNotIn("smoking", content.lower())
+        self.assertNotIn("concert collapse", content.lower())
+        self.assertEqual(retrieval_service.prompts, ["What did George Michael die of?"])
+
     async def test_explicit_retrieval_success_keeps_response_natural(self) -> None:
         orchestrator = self._make_orac_stub(
             llm_responses=[
@@ -2804,12 +2860,8 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         await orchestrator.handle_request(
             self._request("What is the current version of codecs?", req_id="req-codecs")
         )
-        self.assertEqual(
-            orchestrator._pending_retrieval_by_session["clive"].search_query,
-            "current version of Codex",
-        )
-        await orchestrator.handle_request(self._request("yes", req_id="req-codecs-yes"))
 
+        self.assertNotIn("clive", orchestrator._pending_retrieval_by_session)
         self.assertEqual(retrieval_service.prompts, ["current version of Codex"])
 
     async def test_disabled_retrieval_returns_clear_failure_without_llm(self) -> None:

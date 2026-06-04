@@ -129,6 +129,7 @@ from orac_voice.voice_loop_local import _voice_session_async
 from orac_voice.voice_loop_local import build_parser
 from orac_voice.voice_loop_local import ORAC_BACKEND_UNAVAILABLE_MESSAGE
 from orac_voice.voice_turn_controller import VoiceTurnController
+from orac_voice.voice_turn_controller import _display_runtime_identity_from_frame
 
 
 class _FakeTtsEngine:
@@ -4229,6 +4230,19 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(sender.events[0]["llm_source"], "configured_default")
     self.assertEqual(sender.events[0]["session_id"], "voice-session")
 
+  def test_model_only_runtime_frame_does_not_reset_persona(self) -> None:
+    """Model-only protocol frames should not imply the DEFAULT persona."""
+    identity = _display_runtime_identity_from_frame(
+      {
+        "meta": {
+          "model": "qwen3.5-48K:latest",
+          "llm_source": "conversation",
+        },
+      }
+    )
+
+    self.assertIsNone(identity)
+
   async def test_voice_turn_controller_handles_non_streaming_response(
     self,
   ) -> None:
@@ -5402,6 +5416,16 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
           "llm_source": "configured_fallback",
         },
         "payload": {"content": "OK."},
+      },
+      {
+        "v": 1,
+        "type": "voice_turn_complete",
+        "reply_to": "req_current",
+        "meta": {
+          "model": "test-model",
+          "llm_source": "configured_fallback",
+        },
+        "payload": {"turn_id": "req_current", "request_id": "req_current"},
       },
     ]
     for frame in frames:
