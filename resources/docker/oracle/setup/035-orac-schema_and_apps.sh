@@ -23,12 +23,14 @@ SQLPLUS_CONN="${SQLPLUS_CONN:-/ as sysdba}"  # e.g. "user/pass@service" or "/ as
 LOG_ROOT="${LOG_ROOT:-$BASE_DIR/_logs}"
 STOP_ON_ERROR="${STOP_ON_ERROR:-1}"          # 1 = stop on first error, 0 = continue
 BUNDLE_ORDER=(
-  orac_ha
   orac_core
   orac_api
   orac_code
   orac_apx_pub
   orac
+)
+EXCLUDED_BUNDLES=(
+  orac_ha
 )
 
 # Ordered execution list (directories under each schema bundle)
@@ -89,6 +91,19 @@ if [[ ! -d "$BASE_DIR" ]]; then
 fi
 
 # --- Runner ------------------------------------------------------------------
+is_excluded_bundle() {
+  local bundle_name="$1"
+  local excluded_bundle
+
+  for excluded_bundle in "${EXCLUDED_BUNDLES[@]}"; do
+    if [[ "$bundle_name" == "$excluded_bundle" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 run_sql_file() {
   local file="$1"
   local bundle="$2"
@@ -182,6 +197,10 @@ for bundle_dir in "$BASE_DIR"/*; do
 
   bundle_name="$(basename "$bundle_dir")"
   if [[ "$bundle_name" == "_logs" || -n "${seen_bundles[$bundle_name]:-}" ]]; then
+    continue
+  fi
+  if is_excluded_bundle "$bundle_name"; then
+    echo "-- $(timestamp) :: Skipping excluded schema bundle: $bundle_name"
     continue
   fi
 

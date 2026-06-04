@@ -158,12 +158,16 @@ bin/dbconn-mgr.sh -c orac
 ```
 
 You will be prompted for:
-- **Username**: `ORAC`
-- **Password**: Choose a password (this will be used for both `ORAC` and `ORAC_PLUGIN` database users)
+- **Username**: `SYSTEM`
+- **Password**: Choose the Oracle administrator password for the local database deployment
 - **DSN**: The database connection string (e.g., `localhost:1521/FREEPDB1`)
 - **Wallet ZIP path**: Optional, press Enter to skip if not using Oracle wallet
 
-> ⚠️ The password you enter here is used by the container setup scripts to create the `ORAC` and `ORAC_PLUGIN` database users automatically.
+> ⚠️ Preserve the saved `orac` connection. Orac uses it as the local database
+> installer/provisioning credential during `bin/orac-db-deploy.sh` and later
+> plugin-owned database deployment. Do not repurpose it as the least-privilege
+> `ORAC` runtime schema connection unless a separate provisioning credential is
+> introduced.
 
 To list configured connections:
 ```bash

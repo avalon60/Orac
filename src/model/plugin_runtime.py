@@ -14,6 +14,7 @@ from pathlib import Path
 import sys
 from typing import Any, Iterator
 
+from model.plugin_config import PluginConfigManager
 from model.plugin_routing.models import PluginManifest
 
 
@@ -175,12 +176,14 @@ def instantiate_plugin(
     logger: Any,
     config_mgr: Any,
     data_access: PluginDataAccess,
+    runtime_context: PluginRuntimeContext | None = None,
 ) -> Any:
     """Instantiate a plugin class with supported runtime dependencies."""
     kwargs = {
         "logger": logger,
         "config_mgr": config_mgr,
         "data_access": data_access,
+        "runtime_context": runtime_context,
     }
     try:
         signature = inspect.signature(plugin_class)
@@ -256,3 +259,57 @@ _ENTITLEMENT_RESOLVERS = {
         )
     ),
 }
+
+
+@dataclass(frozen=True)
+class PluginRuntimeContext:
+    """Narrow Orac-owned runtime context exposed to on-demand plugins."""
+
+    manifest: PluginManifest
+    logger: Any
+    config_mgr: Any
+    auth_user: str
+    plugin_db_session_factory: Any | None = None
+    plugin_service_manager: Any | None = None
+    plugin_config_manager: PluginConfigManager | None = None
+
+    @property
+    def plugin_id(self) -> str:
+        """Return the current plugin identifier."""
+        return self.manifest.plugin_id
+
+    def plugin_db_session(self) -> Any:
+        """Return a managed ORAC_PLUGIN database session for plugin runtime use."""
+        if self.plugin_db_session_factory is None:
+            raise PluginRuntimeError(
+                f"Plugin '{self.plugin_id}' requested database access, but no "
+                "managed plugin database session factory is configured."
+            )
+        return self.plugin_db_session_factory()
+
+    def plugin_config(self) -> PluginConfigManager:
+        """Return this plugin's scoped configuration manager."""
+        if self.plugin_config_manager is None:
+            raise PluginRuntimeError(
+                f"Plugin '{self.plugin_id}' requested configuration access, but no "
+                "plugin configuration manager is configured."
+            )
+        return self.plugin_config_manager
+
+    def run_service_command(
+        self,
+        plugin_id: str,
+        command: str,
+        payload: dict[str, Any] | None = None,
+    ) -> Any:
+        """Dispatch a plugin command to an Orac-managed service instance."""
+        if self.plugin_service_manager is None:
+            raise PluginRuntimeError(
+                "Plugin service manager is unavailable for service command dispatch."
+            )
+        run_command = getattr(self.plugin_service_manager, "run_service_command", None)
+        if not callable(run_command):
+            raise PluginRuntimeError(
+                "Plugin service manager does not support service command dispatch."
+            )
+        return run_command(plugin_id, command, payload or {})

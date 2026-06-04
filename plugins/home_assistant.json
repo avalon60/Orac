@@ -6,6 +6,7 @@
   "version": "1.0.0",
   "enabled": true,
   "capabilities": [
+    "home_assistant.resync",
     "home_assistant.device_control",
     "home_assistant.state_query",
     "home_assistant.scene_activation",
@@ -38,15 +39,19 @@
     "Are any windows open?",
     "Is there motion in the hallway?",
     "Activate movie night.",
+    "Resync devices.",
+    "Sync devices.",
+    "Resync Home Assistant.",
     "Is Home Assistant online?",
     "Is Orac reporting as healthy in Home Assistant?"
   ],
   "entry_point": "plugin:HomeAssistantPlugin",
   "execution": {
-    "action_type": "device_control",
-    "requires_confirmation": true,
-    "allowed_by_default": false,
+    "action_type": "local_mutation",
+    "requires_confirmation": false,
+    "allowed_by_default": true,
     "capabilities": [
+      "home_assistant.resync",
       "home_assistant.device_control",
       "home_assistant.state_query",
       "home_assistant.scene_activation",
@@ -58,13 +63,13 @@
       "home_assistant.api_token",
       "user_preferences.home_location"
     ],
-    "scaffold": true,
-    "notes": "Scaffold-only placeholder; real Home Assistant control remains disabled until policy, credentials, entitlement checks and runtime behaviour are complete."
+    "scaffold": false,
+    "notes": "On-demand execution is currently limited to the narrow Home Assistant resync command. Device control remains unimplemented in this plugin entry point."
   },
   "runtime": {
     "mode": "hybrid",
     "service": {
-      "entry_point": "plugin:HomeAssistantService",
+      "entry_point": "service:HomeAssistantService",
       "execution_model": "long_running",
       "start_policy": "auto",
       "restart_policy": "on_failure",

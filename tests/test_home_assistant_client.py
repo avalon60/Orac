@@ -1,0 +1,193 @@
+"""Tests for the Home Assistant API client."""
+# Author: Clive Bostock
+# Date: 04-Jun-2026
+# Description: Verifies Home Assistant REST and WebSocket usage without network calls.
+
+from __future__ import annotations
+
+from pathlib import Path
+import sys
+import unittest
+
+import requests
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+SRC_ROOT = PROJECT_ROOT / "src"
+PLUGINS_ROOT = PROJECT_ROOT / "plugins"
+for path in (SRC_ROOT, PLUGINS_ROOT):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
+
+from home_assistant.client import HomeAssistantClient
+from home_assistant.client import HomeAssistantClientConfig
+from home_assistant.client import HomeAssistantClientError
+
+
+class _FakeResponse:
+    def __init__(self, payload, *, fail: bool = False) -> None:
+        self.payload = payload
+        self.fail = fail
+
+    def raise_for_status(self) -> None:
+        if self.fail:
+            raise requests.HTTPError("http failed")
+
+    def json(self):
+        return self.payload
+
+
+class _FakeSession:
+    def __init__(self, responses: dict[str, _FakeResponse]) -> None:
+        self.headers: dict[str, str] = {}
+        self.responses = responses
+        self.calls: list[dict] = []
+        self.closed = False
+
+    def get(self, url: str, *, timeout: float, verify: bool):
+        self.calls.append({"url": url, "timeout": timeout, "verify": verify})
+        return self.responses[url]
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeWebSocketSession:
+    def __init__(self, responses: dict[str, object]) -> None:
+        self.responses = responses
+        self.commands: list[str] = []
+        self.closed = False
+
+    def command(self, command: str):
+        self.commands.append(command)
+        response = self.responses[command]
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _client(
+    session: _FakeSession,
+    websocket_session: _FakeWebSocketSession | None = None,
+) -> HomeAssistantClient:
+    return HomeAssistantClient(
+        HomeAssistantClientConfig(
+            protocol="http",
+            host="ha.local",
+            port=8123,
+            token="secret-token",
+            verify_ssl=False,
+        ),
+        session=session,
+        websocket_session=websocket_session,
+    )
+
+
+class HomeAssistantClientTests(unittest.TestCase):
+    """Tests Home Assistant REST client behaviour."""
+
+    def test_builds_base_url_and_authorization_headers(self) -> None:
+        session = _FakeSession({})
+
+        client = _client(session)
+
+        self.assertEqual(client.base_url, "http://ha.local:8123")
+        self.assertEqual(session.headers["Authorization"], "Bearer secret-token")
+        self.assertEqual(session.headers["Content-Type"], "application/json")
+
+    def test_check_api_success_uses_api_endpoint(self) -> None:
+        session = _FakeSession(
+            {"http://ha.local:8123/api/": _FakeResponse({"message": "API running."})}
+        )
+        client = _client(session)
+
+        self.assertTrue(client.check_api())
+
+        self.assertEqual(session.calls[0]["url"], "http://ha.local:8123/api/")
+        self.assertFalse(session.calls[0]["verify"])
+
+    def test_check_api_failure_raises_clean_error(self) -> None:
+        session = _FakeSession(
+            {"http://ha.local:8123/api/": _FakeResponse({}, fail=True)}
+        )
+        client = _client(session)
+
+        with self.assertRaises(HomeAssistantClientError):
+            client.check_api()
+
+    def test_fetches_structural_data_through_websocket_commands(self) -> None:
+        session = _FakeSession({})
+        websocket_session = _FakeWebSocketSession(
+            {
+                "config/area_registry/list": [{"area_id": "kitchen"}],
+                "config/device_registry/list": [{"id": "device-1"}],
+                "config/entity_registry/list": [{"entity_id": "light.kitchen"}],
+            }
+        )
+        client = _client(session, websocket_session)
+
+        self.assertEqual(client.fetch_areas(), [{"area_id": "kitchen"}])
+        self.assertEqual(client.fetch_devices(), [{"id": "device-1"}])
+        self.assertEqual(client.fetch_entities(), [{"entity_id": "light.kitchen"}])
+        self.assertEqual(
+            websocket_session.commands,
+            [
+                "config/area_registry/list",
+                "config/device_registry/list",
+                "config/entity_registry/list",
+            ],
+        )
+        self.assertEqual(session.calls, [])
+
+    def test_fetches_states_endpoint_using_rest(self) -> None:
+        session = _FakeSession(
+            {
+                "http://ha.local:8123/api/states": _FakeResponse(
+                    [{"entity_id": "light.kitchen", "state": "on"}]
+                ),
+            }
+        )
+        client = _client(session)
+
+        self.assertEqual(
+            client.fetch_states(),
+            [{"entity_id": "light.kitchen", "state": "on"}],
+        )
+
+    def test_unexpected_list_payload_raises(self) -> None:
+        session = _FakeSession(
+            {
+                "http://ha.local:8123/api/states": _FakeResponse(
+                    {"entity_id": "light.kitchen"}
+                )
+            }
+        )
+        client = _client(session)
+
+        with self.assertRaises(HomeAssistantClientError):
+            client.fetch_states()
+
+    def test_unexpected_websocket_list_payload_raises(self) -> None:
+        client = _client(
+            _FakeSession({}),
+            _FakeWebSocketSession({"config/area_registry/list": {"area_id": "kitchen"}}),
+        )
+
+        with self.assertRaises(HomeAssistantClientError):
+            client.fetch_areas()
+
+    def test_close_closes_websocket_session(self) -> None:
+        session = _FakeSession({})
+        websocket_session = _FakeWebSocketSession({})
+        client = _client(session, websocket_session)
+
+        client.close()
+
+        self.assertTrue(session.closed)
+        self.assertTrue(websocket_session.closed)
+
+
+if __name__ == "__main__":
+    unittest.main()

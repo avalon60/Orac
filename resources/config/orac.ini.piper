@@ -21,6 +21,7 @@ num_predict_incr_pct = 100
 
 [database]
 connection_name = orac-service
+plugin_connection_name = orac-plugin
 
 [client]
 llm_timeout = 120

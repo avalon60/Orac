@@ -1,6 +1,7 @@
 schema_name,table_name,table_abbreviation
 orac_core,plugin_invocations,plg_inv
 orac_core,plugin_audit_events,plg_audevt
+orac_core,plugin_db_deployments,plg_dbdep
 orac_core,preference_definitions,prfdfn
 orac_core,timezones,tmzone
 orac_core,conversations,convs

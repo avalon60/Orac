@@ -15,6 +15,10 @@ import time
 from typing import Any, Callable, Protocol
 
 from lib.fsutils import project_home
+from model.plugin_config import PluginConfigManager
+from model.plugin_database_deployment import plugin_schema_payload_path
+from model.plugin_database_session import OracPluginDatabaseSession
+from model.plugin_database_session import OracPluginDatabaseSessionFactory
 from model.plugin_routing.models import PluginManifest
 from model.plugin_runtime import PluginRuntimeError, load_plugin_service_class
 
@@ -53,6 +57,26 @@ class PluginServiceContext:
     stop_event: threading.Event
     manifest: PluginManifest
     config_mgr: Any | None = None
+    plugin_config_manager: PluginConfigManager | None = None
+    _plugin_db_session_factory: Callable[[], OracPluginDatabaseSession] | None = None
+
+    def plugin_db_session(self) -> OracPluginDatabaseSession:
+        """Return a managed ORAC_PLUGIN database session for plugin runtime use."""
+        if self._plugin_db_session_factory is None:
+            raise PluginRuntimeError(
+                f"Plugin '{self.plugin_id}' requested database access, but no "
+                "managed plugin database session factory is configured."
+            )
+        return self._plugin_db_session_factory()
+
+    def plugin_config(self) -> PluginConfigManager:
+        """Return this plugin's scoped configuration manager."""
+        if self.plugin_config_manager is None:
+            raise PluginRuntimeError(
+                f"Plugin '{self.plugin_id}' requested configuration access, but no "
+                "plugin configuration manager is configured."
+            )
+        return self.plugin_config_manager
 
 
 @dataclass
@@ -81,6 +105,7 @@ class PluginServiceManager:
         config_mgr: Any | None = None,
         database_schema_root: Path | None = None,
         service_loader: Callable[[PluginManifest], type] = load_plugin_service_class,
+        plugin_db_session_factory: Callable[[], OracPluginDatabaseSession] | None = None,
         max_restart_attempts: int = 1,
     ) -> None:
         self._logger = logger
@@ -92,6 +117,13 @@ class PluginServiceManager:
             else self._project_root / "resources" / "db" / "schema"
         )
         self._service_loader = service_loader
+        self._plugin_db_session_factory = (
+            plugin_db_session_factory
+            or OracPluginDatabaseSessionFactory(
+                config_mgr=config_mgr,
+                logger=logger,
+            ).create
+        )
         self._max_restart_attempts = max_restart_attempts
         self._records: dict[str, _ServiceRecord] = {}
         self._dependency_invalid: dict[str, PluginManifest] = {}
@@ -112,6 +144,21 @@ class PluginServiceManager:
             if manifest.service_runtime is None:
                 self._log_error(
                     f"Plugin service '{manifest.plugin_id}' skipped because runtime.service is missing."
+                )
+                continue
+            config_result = PluginConfigManager(
+                manifest,
+                logger=self._logger,
+            ).validate()
+            if not config_result.eligible:
+                self._dependency_invalid[manifest.plugin_id] = manifest
+                detail_keys = config_result.missing_keys or config_result.uninitialised_keys
+                detail_text = ", ".join(detail_keys) if detail_keys else "unknown"
+                self._log_warning(
+                    "Plugin service skipped enabled plugin "
+                    f"'{manifest.plugin_id}' because plugin configuration status is "
+                    f"{config_result.status}: {config_result.message} "
+                    f"Affected key(s): {detail_text}"
                 )
                 continue
             if self._has_missing_database_schema(manifest):
@@ -238,6 +285,32 @@ class PluginServiceManager:
         self._log_warning(f"Plugin service '{plugin_id}' reported unhealthy.")
         return False
 
+    def run_service_command(
+        self,
+        plugin_id: str,
+        command: str,
+        payload: dict[str, Any] | None = None,
+    ) -> Any:
+        """Run a command on a registered Orac-managed plugin service."""
+        record = self._records.get(plugin_id)
+        if record is None:
+            raise PluginRuntimeError(f"Plugin service '{plugin_id}' was not registered.")
+        if record.instance is None or record.context is None:
+            raise PluginRuntimeError(f"Plugin service '{plugin_id}' is not started.")
+        if record.state not in {"running", "unhealthy"}:
+            raise PluginRuntimeError(
+                f"Plugin service '{plugin_id}' is not commandable while {record.state}."
+            )
+        handle_command = getattr(record.instance, "handle_command", None)
+        if not callable(handle_command):
+            raise PluginRuntimeError(
+                f"Plugin service '{plugin_id}' does not expose handle_command."
+            )
+        self._log_info(
+            f"Plugin service '{plugin_id}' handling command '{command}'."
+        )
+        return handle_command(record.context, command, payload or {})
+
     def get_state(self, plugin_id: str) -> str | None:
         """Return the current state for a registered service."""
         record = self._records.get(plugin_id)
@@ -275,6 +348,11 @@ class PluginServiceManager:
             stop_event=threading.Event(),
             manifest=record.manifest,
             config_mgr=self._config_mgr,
+            plugin_config_manager=PluginConfigManager(
+                record.manifest,
+                logger=self._logger,
+            ),
+            _plugin_db_session_factory=self._plugin_db_session_factory,
         )
         self._validate_service_contract(instance, record.manifest)
         record.instance = instance
@@ -399,12 +477,7 @@ class PluginServiceManager:
         return plugin_class(**kwargs)
 
     def _has_missing_database_schema(self, manifest: PluginManifest) -> bool:
-        if not manifest.database_required:
-            return False
-        for schema in manifest.database_schemas:
-            if not (self._database_schema_root / schema.schema_name).is_dir():
-                return True
-        return False
+        return manifest.database_required and not plugin_schema_payload_path(manifest).is_dir()
 
     def _transition(self, record: _ServiceRecord, state: str) -> None:
         if state not in PLUGIN_SERVICE_STATES:

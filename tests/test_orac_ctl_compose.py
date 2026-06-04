@@ -420,6 +420,12 @@ class OracleSetupScriptContractTests(unittest.TestCase):
             f"Missing setup scripts: {sorted(expected_scripts - actual_scripts)}",
         )
 
+    def test_home_assistant_schema_user_is_not_created_by_core_setup(self) -> None:
+        """Plugin-owned schemas must be provisioned by plugin deployment."""
+        actual_scripts = {path.name for path in ORACLE_SETUP_DIR.glob("*.sh")}
+
+        self.assertNotIn("032-orac-ha-user.sh", actual_scripts)
+
     def test_duplicate_copy_setup_scripts_are_rejected(self) -> None:
         """Accidental editor-copy scripts must not be copied into Oracle setup."""
         duplicate_scripts = sorted(ORACLE_SETUP_DIR.glob("* (copy).sh"))
@@ -456,6 +462,19 @@ class OracleSetupScriptContractTests(unittest.TestCase):
         self.assertRegex(script, r"grep\s+-Eiq .*ORA-\[0-9\]")
         self.assertIn("owner = 'ORDS_METADATA'", script)
         self.assertIn("ORDS metadata objects are not VALID", script)
+
+    def test_core_schema_setup_excludes_plugin_owned_home_assistant_bundle(self) -> None:
+        """Core Docker schema setup must not deploy the legacy orac_ha bundle."""
+        script = (ORACLE_SETUP_DIR / "035-orac-schema_and_apps.sh").read_text(
+            encoding="utf-8"
+        )
+        bundle_order = re.search(r"BUNDLE_ORDER=\(\n(?P<body>.*?)\n\)", script, re.S)
+        self.assertIsNotNone(bundle_order)
+
+        self.assertNotIn("orac_ha", bundle_order.group("body"))
+        self.assertIn("EXCLUDED_BUNDLES=(", script)
+        self.assertIn("orac_ha", script)
+        self.assertIn('if is_excluded_bundle "$bundle_name"; then', script)
 
     def test_completion_requires_valid_ords_metadata(self) -> None:
         """The final deployment marker must require valid ORDS metadata."""

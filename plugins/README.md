@@ -111,6 +111,38 @@ The current canonical routing text does not include:
 
 Only plugins with `"enabled": true`, `runtime.mode` of `on_demand` or `hybrid`, and satisfied runtime dependencies are included in the routing index.
 
+## Plugin Configuration
+
+Plugin-specific runtime configuration belongs beside the plugin implementation
+in:
+
+```text
+plugins/<plugin_id>/plugin.ini
+```
+
+The file is optional. If a manifest declares required configuration keys,
+Orac validates the owning plugin's `plugin.ini` before database deployment,
+routing eligibility, or service registration. Missing required keys keep the
+plugin disabled until configuration is initialised.
+
+Plugin code must access configuration through the Orac-provided plugin runtime
+or service context. It must not read arbitrary files directly, and the public
+configuration API does not allow one plugin to request another plugin's
+configuration.
+
+Do not store secrets in `plugin.ini`. Store references such as environment
+variable names instead. For example, Home Assistant uses
+`access_token_env = ORAC_HA_TOKEN`, and Orac reads the token value from that
+environment variable at runtime.
+
+Raw template placeholders such as `%protocol%` or `%host%` are treated as
+uninitialised configuration. Plugins with unresolved placeholders are not
+deployed, routed, or service-started. The log will advise running:
+
+```text
+plugin_init.sh <plugin-name>
+```
+
 ## Execution Policy
 
 Plugin manifests may declare first-pass execution policy metadata under the
@@ -166,6 +198,7 @@ Optional when needed:
 
 - `plugins/<plugin-id>/__init__.py`
 - `plugins/<plugin-id>/resources/`
+- `plugins/<plugin-id>/db/schema/`
 - `plugins/<plugin-id>/tests/`
 
 ## Recommended Minimal Plugin Structure
@@ -227,6 +260,45 @@ Use these conventions consistently:
 - keep filenames simple and predictable
 - prefer `plugin.py` as the main implementation module for now
 
+## Plugin Database Payloads
+
+Plugins that declare a manifest `database` section may ship plugin-owned
+database assets under:
+
+```text
+plugins/
+  <plugin-id>.json
+  <plugin-id>/
+    db/
+      schema/
+        table/
+        index/
+        constraint_pk/
+        package_spec/
+        package_body/
+        ...
+```
+
+The `db/schema` directory uses the same ordered object-directory convention as
+the core Orac schema deployment runner. Required database plugins are validated,
+packaged, staged into the Oracle container, and deployed during plugin routing
+refresh before they become routable or service-startable.
+
+Plugin database schemas are plugin-private. They must not target or directly
+reference protected Orac schemas:
+
+```text
+orac
+orac_apx_pub
+orac_core
+orac_api
+orac_code
+```
+
+The validation is intentionally conservative. Any SQL or PL/SQL file under
+`db/schema` that contains schema-qualified references such as `orac_core.` or
+`orac_api.` is rejected before packaging or deployment.
+
 Examples of good ids:
 
 - `weather`
@@ -256,7 +328,6 @@ Developers should not place routing cache files under plugin directories.
 
 Some existing plugin-related files in this repository predate the current manifest-driven routing approach, for example:
 
-- `plugins/home_assistant.ini`
 - `plugins/home_assistant/manifest.ini`
 
 These should be treated as legacy or transitional artefacts unless and until Orac explicitly adopts them for another purpose. They are not the source of truth for routing discovery in the current plugin-routing design.

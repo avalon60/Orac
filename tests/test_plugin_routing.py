@@ -18,10 +18,31 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from model.plugin_routing.discovery import PluginDiscovery
+from model.plugin_database_deployment import PluginDatabaseDeploymentResult
 from model.plugin_routing.embeddings import HashEmbeddingProvider
 from model.plugin_routing.index import PluginIntentIndex
 from model.plugin_routing.intent_text import INTENT_TEXT_VERSION, build_canonical_intent_text
 from model.plugin_routing.manager import PluginManager
+
+
+class _SuccessfulDatabaseDeployer:
+    def deploy_if_needed(self, manifest):
+        status = "deployed" if manifest.database_required else "not_required"
+        return PluginDatabaseDeploymentResult(
+            plugin_id=manifest.plugin_id,
+            status=status,
+            eligible=True,
+            message="test deployment allowed",
+        )
+
+
+class _CountingDatabaseDeployer(_SuccessfulDatabaseDeployer):
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def deploy_if_needed(self, manifest):
+        self.calls.append(manifest.plugin_id)
+        return super().deploy_if_needed(manifest)
 
 
 class PluginRoutingTests(unittest.TestCase):
@@ -758,6 +779,7 @@ class PluginRoutingTests(unittest.TestCase):
             embedding_provider=provider,
             plugins_dir=Path("plugins"),
             cache_dir=Path(tempfile.mkdtemp()),
+            database_deployer=_SuccessfulDatabaseDeployer(),
         )
 
         report = manager.refresh()
@@ -863,6 +885,115 @@ class PluginRoutingTests(unittest.TestCase):
             self.assertEqual(report["dependency_disabled"], 1)
             self.assertEqual(report["indexed_plugin_count"], 0)
             self.assertIsNone(manager.get_manifest("alpha"))
+
+    def test_missing_required_plugin_config_disables_before_database_deployment(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins_dir, tempfile.TemporaryDirectory() as temp_cache_dir:
+            plugins_dir = Path(temp_plugins_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Configured database-backed plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.query"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
+                        "configuration": {
+                            "required": [
+                                {
+                                    "section": "alpha",
+                                    "key": "host",
+                                    "type": "string",
+                                    "description": "Alpha host.",
+                                }
+                            ],
+                            "optional": [],
+                        },
+                        "database": {
+                            "required": True,
+                            "on_missing": "warn_disable",
+                            "schemas": [
+                                {
+                                    "schema_name": "orac_alpha",
+                                    "purpose": "Alpha plugin storage.",
+                                    "managed_by": "orac",
+                                    "minimum_version": "1.0.0",
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            deployer = _CountingDatabaseDeployer()
+            manager = PluginManager(
+                embedding_provider=HashEmbeddingProvider(),
+                plugins_dir=plugins_dir,
+                cache_dir=Path(temp_cache_dir),
+                database_deployer=deployer,
+            )
+
+            report = manager.refresh()
+
+            self.assertEqual(report["dependency_disabled"], 1)
+            self.assertEqual(report["indexed_plugin_count"], 0)
+            self.assertEqual(report["configuration_status"]["alpha"], "missing_required")
+            self.assertEqual(report["deployment_status"], {})
+            self.assertEqual(deployer.calls, [])
+
+    def test_uninitialised_plugin_config_disables_before_database_deployment(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins_dir, tempfile.TemporaryDirectory() as temp_cache_dir:
+            plugins_dir = Path(temp_plugins_dir)
+            plugin_dir = plugins_dir / "alpha"
+            plugin_dir.mkdir()
+            (plugin_dir / "plugin.ini").write_text(
+                "[alpha]\nhost = %host%\n",
+                encoding="utf-8",
+            )
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Configured plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.query"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
+                        "configuration": {
+                            "required": [
+                                {
+                                    "section": "alpha",
+                                    "key": "host",
+                                    "type": "string",
+                                    "description": "Alpha host.",
+                                }
+                            ],
+                            "optional": [],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            deployer = _CountingDatabaseDeployer()
+            manager = PluginManager(
+                embedding_provider=HashEmbeddingProvider(),
+                plugins_dir=plugins_dir,
+                cache_dir=Path(temp_cache_dir),
+                database_deployer=deployer,
+            )
+
+            report = manager.refresh()
+
+            self.assertEqual(report["dependency_disabled"], 1)
+            self.assertEqual(report["configuration_status"]["alpha"], "uninitialised")
+            self.assertEqual(deployer.calls, [])
 
     def test_cache_invalidation_uses_manifest_hash(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins_dir, tempfile.TemporaryDirectory() as temp_cache_dir:

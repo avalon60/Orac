@@ -22,9 +22,10 @@ from model.plugin_routing.models import (
     PluginServiceSchedule,
     PluginServiceRuntime,
 )
+from model.plugin_database_deployment import PROTECTED_ORAC_SCHEMAS
 
 PLUGIN_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
-DATABASE_SCHEMA_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+DATABASE_SCHEMA_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$", re.IGNORECASE)
 MANIFEST_SCHEMA_VERSION = 2
 RUNTIME_MODES = {"on_demand", "service", "hybrid"}
 CONFIG_VALUE_TYPES = {"string", "bool", "int", "float", "path", "list"}
@@ -556,7 +557,12 @@ class PluginDiscovery:
             self._reject_unknown_fields(item, required_fields | optional_fields, item_name)
             self._require_fields(item, required_fields, item_name)
 
-            schema_name = self._require_non_empty_string(item["schema_name"], f"{item_name}.schema_name")
+            raw_schema_name = self._require_non_empty_string(item["schema_name"], f"{item_name}.schema_name")
+            schema_name = raw_schema_name.lower()
+            if schema_name in PROTECTED_ORAC_SCHEMAS:
+                raise PluginManifestError(
+                    f"{item_name}.schema_name must not target protected Orac schema '{raw_schema_name}'"
+                )
             if not DATABASE_SCHEMA_PATTERN.fullmatch(schema_name):
                 raise PluginManifestError(
                     f"{item_name}.schema_name must match ^[a-z][a-z0-9_]*$"

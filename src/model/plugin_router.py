@@ -19,15 +19,18 @@ from model.plugin_execution_policy import (
     evaluate_plugin_policy,
     plugin_policy_message,
 )
+from model.plugin_config import PluginConfigManager
 from model.plugin_routing.models import PluginManifest
 from model.plugin_routing.handoff import PluginRoutingHandoff
 from model.plugin_runtime import (
     PluginDataAccess,
     PluginExecutionResult,
+    PluginRuntimeContext,
     PluginRuntimeError,
     instantiate_plugin,
     load_plugin_class,
 )
+from model.plugin_database_session import OracPluginDatabaseSessionFactory
 
 
 _STOPWORDS = {
@@ -95,6 +98,8 @@ class PluginRouter:
         config_mgr,
         context_manager,
         confirmation_broker=None,
+        plugin_service_manager=None,
+        plugin_db_session_factory=None,
         execution_timeout_seconds: float | None = None,
     ):
         self._plugin_manager = plugin_manager
@@ -102,6 +107,14 @@ class PluginRouter:
         self._config_mgr = config_mgr
         self._context_manager = context_manager
         self._confirmation_broker = confirmation_broker
+        self._plugin_service_manager = plugin_service_manager
+        self._plugin_db_session_factory = (
+            plugin_db_session_factory
+            or OracPluginDatabaseSessionFactory(
+                config_mgr=config_mgr,
+                logger=logger,
+            ).create
+        )
         self._execution_timeout_seconds = _resolve_execution_timeout_seconds(
             config_mgr,
             explicit_timeout=execution_timeout_seconds,
@@ -300,11 +313,24 @@ class PluginRouter:
                 auth_user=auth_user,
                 logger=self._logger,
             )
+            runtime_context = PluginRuntimeContext(
+                manifest=manifest,
+                logger=self._logger,
+                config_mgr=self._config_mgr,
+                auth_user=auth_user,
+                plugin_db_session_factory=self._plugin_db_session_factory,
+                plugin_service_manager=self._plugin_service_manager,
+                plugin_config_manager=PluginConfigManager(
+                    manifest,
+                    logger=self._logger,
+                ),
+            )
             plugin_instance = instantiate_plugin(
                 plugin_class,
                 logger=self._logger,
                 config_mgr=self._config_mgr,
                 data_access=data_access,
+                runtime_context=runtime_context,
             )
         except BaseException as exc:
             raise _PluginInvocationError("instantiate", exc) from exc

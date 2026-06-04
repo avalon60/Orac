@@ -2153,6 +2153,7 @@ class Orac:
                 config_mgr=self.config_mgr,
                 context_manager=self.ctx,
                 confirmation_broker=self.plugin_confirmation_broker,
+                plugin_service_manager=self.plugin_service_manager,
             )
             self.plugin_execution_service = PluginExecutionService(
                 plugin_router=self.plugin_router,
@@ -2264,7 +2265,13 @@ class Orac:
             logger.log_debug("Plugin service lifecycle unavailable; skipping service refresh.")
             return None
 
-        discovered_manifests = getattr(plugin_manager, "discovered_manifests", None)
+        discovered_manifests = getattr(
+            plugin_manager,
+            "deployment_eligible_manifests",
+            None,
+        )
+        if not callable(discovered_manifests):
+            discovered_manifests = getattr(plugin_manager, "discovered_manifests", None)
         manifests = (
             list(discovered_manifests())
             if callable(discovered_manifests)
