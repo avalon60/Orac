@@ -71,6 +71,66 @@ _STOPWORDS = {
     "you",
 }
 
+_ACTION_INTENT_REQUIRED_TYPES = {
+    "local_mutation",
+    "external_mutation",
+    "device_control",
+    "privileged_system_action",
+}
+
+_ACTION_INTENT_TERMS = {
+    "activate",
+    "adjust",
+    "brighten",
+    "change",
+    "close",
+    "control",
+    "deactivate",
+    "dim",
+    "disable",
+    "down",
+    "enable",
+    "execute",
+    "increase",
+    "launch",
+    "lower",
+    "mute",
+    "off",
+    "on",
+    "open",
+    "pause",
+    "play",
+    "raise",
+    "resume",
+    "run",
+    "select",
+    "set",
+    "skip",
+    "start",
+    "stop",
+    "switch",
+    "turn",
+    "unmute",
+    "up",
+}
+
+_FACTUAL_QUESTION_STARTERS = {
+    "are",
+    "did",
+    "do",
+    "does",
+    "how",
+    "is",
+    "was",
+    "were",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "why",
+}
+
 
 DEFAULT_PLUGIN_EXECUTION_TIMEOUT_SECONDS = 10.0
 _DECLINED = object()
@@ -156,12 +216,9 @@ class PluginRouter:
                 confirmation_broker=self._confirmation_broker,
             )
             if not policy_decision.allowed:
-                if not self._candidate_matches_prompt(manifest, prompt):
-                    self._logger.log_debug(
-                        "Plugin execution denial skipped for "
-                        f"'{candidate.plugin_id}' because the prompt did not "
-                        "match manifest-declared routing terms."
-                    )
+                denial_skip_reason = self._denied_candidate_skip_reason(manifest, prompt)
+                if denial_skip_reason is not None:
+                    self._logger.log_debug(denial_skip_reason)
                     continue
                 self._logger.log_warning(
                     "Plugin execution blocked for "
@@ -613,6 +670,30 @@ class PluginRouter:
         )
         return bool(prompt_tokens.intersection(_significant_tokens(manifest_text)))
 
+    @staticmethod
+    def _denied_candidate_skip_reason(manifest: PluginManifest, prompt: str) -> str | None:
+        """Return the reason a denied candidate should not be user-visible."""
+        if not PluginRouter._candidate_matches_prompt(manifest, prompt):
+            return (
+                "Plugin execution denial skipped for "
+                f"'{manifest.plugin_id}' because the prompt did not "
+                "match manifest-declared routing terms."
+            )
+
+        action_type = (
+            manifest.execution_policy.action_type
+            if manifest.execution_policy is not None
+            else None
+        )
+        if action_type in _ACTION_INTENT_REQUIRED_TYPES and not _has_action_intent(prompt):
+            return (
+                "Plugin execution denial skipped for "
+                f"'{manifest.plugin_id}' because the prompt matched manifest terms "
+                "but did not contain an explicit action intent."
+            )
+
+        return None
+
 
 def _significant_tokens(text: str) -> set[str]:
     """Return normalized non-trivial words for manifest-level routing checks."""
@@ -628,6 +709,16 @@ def _significant_tokens(text: str) -> set[str]:
         elif token.endswith("s") and len(token) > 3:
             expanded.add(token[:-1])
     return expanded
+
+
+def _has_action_intent(text: str) -> bool:
+    """Return whether text contains an explicit command-style action verb."""
+    ordered_tokens = re.findall(r"[a-z0-9]+", str(text or "").lower())
+    if ordered_tokens and ordered_tokens[0] in _FACTUAL_QUESTION_STARTERS:
+        return False
+
+    tokens = set(ordered_tokens)
+    return bool(tokens.intersection(_ACTION_INTENT_TERMS))
 
 
 def _resolve_execution_timeout_seconds(

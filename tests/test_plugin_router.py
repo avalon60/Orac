@@ -879,6 +879,112 @@ class PluginRouterTests(unittest.TestCase):
             logger.messages,
         )
 
+    def test_natural_history_question_does_not_trigger_media_confirmation(self) -> None:
+        logger = _FakeLogger()
+        manifest = self._media_control_manifest()
+        router = PluginRouter(
+            plugin_manager=_FakePluginManager(manifest),
+            logger=logger,
+            config_mgr=object(),
+            context_manager=object(),
+        )
+
+        with patch.object(
+            plugin_router_module,
+            "load_plugin_class",
+            side_effect=AssertionError("factual question must not import media plugin code"),
+        ):
+            result = router.route(
+                "When the meteorite struck earth and wiped out the dinosaurs, "
+                "did any of them die of a heart attack?",
+                {},
+                PluginRoutingHandoff(
+                    candidates=(PluginCandidate(plugin_id="media_control", score=0.91),),
+                    refreshed=False,
+                ),
+                auth_user="unit_user",
+            )
+
+        self.assertIsNone(result)
+        self.assertIn(
+            (
+                "debug",
+                "Plugin execution denial skipped for 'media_control' because the prompt did not "
+                "match manifest-declared routing terms.",
+            ),
+            logger.messages,
+        )
+
+    def test_factual_question_with_media_term_does_not_trigger_confirmation(self) -> None:
+        logger = _FakeLogger()
+        manifest = self._media_control_manifest()
+        router = PluginRouter(
+            plugin_manager=_FakePluginManager(manifest),
+            logger=logger,
+            config_mgr=object(),
+            context_manager=object(),
+        )
+
+        with patch.object(
+            plugin_router_module,
+            "load_plugin_class",
+            side_effect=AssertionError("factual question must not import media plugin code"),
+        ):
+            result = router.route(
+                "What is the volume of a dinosaur's heart?",
+                {},
+                PluginRoutingHandoff(
+                    candidates=(PluginCandidate(plugin_id="media_control", score=0.91),),
+                    refreshed=False,
+                ),
+                auth_user="unit_user",
+            )
+
+        self.assertIsNone(result)
+        self.assertIn(
+            (
+                "debug",
+                "Plugin execution denial skipped for 'media_control' because the prompt matched "
+                "manifest terms but did not contain an explicit action intent.",
+            ),
+            logger.messages,
+        )
+
+    def test_factual_question_with_media_action_word_does_not_trigger_confirmation(self) -> None:
+        logger = _FakeLogger()
+        manifest = self._media_control_manifest()
+        router = PluginRouter(
+            plugin_manager=_FakePluginManager(manifest),
+            logger=logger,
+            config_mgr=object(),
+            context_manager=object(),
+        )
+
+        with patch.object(
+            plugin_router_module,
+            "load_plugin_class",
+            side_effect=AssertionError("factual question must not import media plugin code"),
+        ):
+            result = router.route(
+                "Did the lounge playlist stop when dinosaurs died of a heart attack?",
+                {},
+                PluginRoutingHandoff(
+                    candidates=(PluginCandidate(plugin_id="media_control", score=0.91),),
+                    refreshed=False,
+                ),
+                auth_user="unit_user",
+            )
+
+        self.assertIsNone(result)
+        self.assertIn(
+            (
+                "debug",
+                "Plugin execution denial skipped for 'media_control' because the prompt matched "
+                "manifest terms but did not contain an explicit action intent.",
+            ),
+            logger.messages,
+        )
+
     def test_unmatched_risky_candidate_falls_through_to_safe_plugin(self) -> None:
         logger = _FakeLogger()
         media_manifest = self._media_control_manifest()
