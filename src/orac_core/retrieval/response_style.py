@@ -70,6 +70,9 @@ def build_retrieval_response_guidance(
     return (
         "Answer naturally and directly. If the evidence is sufficient, give just the answer. "
         "If it only partially supports the answer, mention that briefly in ordinary language. "
+        "For high-risk factual questions, use only facts stated in the retrieved evidence; "
+        "do not add causes, dates, ages, prices, office holders, legal, medical, or financial "
+        "details unless the evidence explicitly supports them. "
         "If citations are required, cite the source URLs naturally in the answer. "
         "Do not mention internal retrieval mechanics such as search results, fetched sources, "
         "grounding packs, reason codes, service names, or retrieved evidence."

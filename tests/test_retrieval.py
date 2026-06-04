@@ -12,6 +12,8 @@ import sys
 import json
 import unittest
 from unittest.mock import patch
+from urllib.parse import parse_qs
+from urllib.parse import urlparse
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -20,13 +22,16 @@ if str(SRC_ROOT) not in sys.path:
 
 from orac_core.retrieval import ExplicitRetrievalService
 from orac_core.retrieval import FetchedSource
+from orac_core.retrieval import FactualRiskMatch
 from orac_core.retrieval import GroundingPackBuilder
+from orac_core.retrieval import RetrievalDecision
 from orac_core.retrieval import RetrievalDecisionService
 from orac_core.retrieval import RetrievalSettings
 from orac_core.retrieval import RetrievalTurnContext
 from orac_core.retrieval import SearchBroker
 from orac_core.retrieval import SearchRequest
 from orac_core.retrieval import SearchResult
+from orac_core.retrieval import PersonFactResolver
 from orac_core.retrieval import build_topic_signature
 from orac_core.retrieval import SearXNGSearchProvider
 from orac_core.retrieval import SourceFetcher
@@ -34,9 +39,12 @@ from orac_core.retrieval import answer_from_stable_bio
 from orac_core.retrieval import build_retrieval_response_guidance
 from orac_core.retrieval import detect_explicit_search_request
 from orac_core.retrieval import calculate_age
+from orac_core.retrieval import detect_factual_risk
+from orac_core.retrieval import enforce_high_risk_factual_grounding
 from orac_core.retrieval import normalize_retrieval_response_style
 from orac_core.retrieval import parse_person_age_or_status_query
 from orac_core.retrieval import polish_retrieval_response_text
+from orac_core.retrieval import should_force_retrieval
 import orac_core.retrieval.fetcher as retrieval_fetcher
 from orac_core.retrieval import providers as retrieval_providers
 
@@ -92,6 +100,26 @@ class _FakeHeaders:
         if key.lower() == "content-type":
             return self._content_type
         return default
+
+
+class _JsonResponse:
+    """Minimal JSON response stub for urlopen patching."""
+
+    def __init__(self, payload: dict, *, url: str) -> None:
+        self._payload = json.dumps(payload).encode("utf-8")
+        self.headers = _FakeHeaders("application/json; charset=utf-8")
+        self.url = url
+
+    def __enter__(self) -> "_JsonResponse":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def read(self, size: int = -1) -> bytes:
+        if size < 0:
+            return self._payload
+        return self._payload[:size]
 
 
 class PersonStatusHelperTests(unittest.TestCase):
@@ -162,6 +190,809 @@ class PersonStatusHelperTests(unittest.TestCase):
         self.assertIn("born in April 1564", answer or "")
         self.assertIn("died on 23 April 1616", answer or "")
         self.assertIn("exact birth date is uncertain", answer or "")
+
+    def test_parse_person_age_at_death_query(self) -> None:
+        query = parse_person_age_or_status_query("How old was Bing Crosby when he died?")
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        self.assertEqual(query.person_name, "Bing Crosby")
+        self.assertEqual(query.query_type, "age_at_death")
+
+    def test_parse_person_cause_of_death_query(self) -> None:
+        query = parse_person_age_or_status_query("What was Kelly Curtis's cause of death?")
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        self.assertEqual(query.person_name, "Kelly Curtis")
+        self.assertEqual(query.query_type, "cause")
+
+    def test_parse_corrects_common_person_name_misspelling(self) -> None:
+        query = parse_person_age_or_status_query("When did George Micheal die?")
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        self.assertEqual(query.person_name, "George Michael")
+        self.assertEqual(query.query_type, "death")
+
+class PersonFactResolverTests(unittest.TestCase):
+    """Tests preferred person fact resolution through structured sources."""
+
+    def _resolver(self, **overrides) -> PersonFactResolver:
+        settings_values = {
+            "internet_search_enabled": True,
+            "internet_search_mode": "explicit_only",
+            "default_search_provider": "searxng",
+            "max_search_results": 5,
+            "max_sources_to_fetch": 3,
+            "cache_ttl_hours": 1,
+            "require_citations": True,
+            "prefer_wikidata": True,
+            "prefer_wikipedia": True,
+            "require_corroboration_for_recent_deaths": True,
+            "recent_death_days": 90,
+        }
+        settings_values.update(overrides)
+        settings = RetrievalSettings(**settings_values)
+        return PersonFactResolver(settings=settings, logger=_FakeLogger())
+
+    def _wikidata_search_payload(self, entity_id: str, label: str, description: str) -> dict:
+        return {
+            "search": [
+                {
+                    "id": entity_id,
+                    "label": label,
+                    "description": description,
+                }
+            ]
+        }
+
+    def _wikidata_entity_payload(
+        self,
+        entity_id: str,
+        *,
+        label: str,
+        description: str,
+        birth: str | None = None,
+        death: str | None = None,
+        cause_id: str | None = None,
+        aliases: tuple[str, ...] = (),
+        wikipedia_title: str | None = None,
+    ) -> dict:
+        claims: dict[str, list[dict]] = {}
+        if birth is not None:
+            claims["P569"] = [
+                {
+                    "mainsnak": {
+                        "datavalue": {
+                            "value": {
+                                "time": birth,
+                                "precision": 11,
+                            }
+                        }
+                    }
+                }
+            ]
+        if death is not None:
+            claims["P570"] = [
+                {
+                    "mainsnak": {
+                        "datavalue": {
+                            "value": {
+                                "time": death,
+                                "precision": 11,
+                            }
+                        }
+                    }
+                }
+            ]
+        if cause_id is not None:
+            claims["P509"] = [
+                {
+                    "mainsnak": {
+                        "datavalue": {"value": {"id": cause_id}},
+                    }
+                }
+            ]
+        payload = {
+            "entities": {
+                entity_id: {
+                    "id": entity_id,
+                    "labels": {"en": {"value": label}},
+                    "descriptions": {"en": {"value": description}},
+                    "aliases": {
+                        "en": [
+                            {"language": "en", "value": alias}
+                            for alias in aliases
+                        ]
+                    },
+                    "claims": claims,
+                    "sitelinks": {},
+                }
+            }
+        }
+        if wikipedia_title is not None:
+            payload["entities"][entity_id]["sitelinks"]["enwiki"] = {"title": wikipedia_title}
+        return payload
+
+    def test_resolves_bing_crosby_from_wikidata(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload("Q1", "Bing Crosby", "American singer and actor"),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q1":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q1",
+                        label="Bing Crosby",
+                        description="American singer and actor",
+                        birth="+1903-05-03T00:00:00Z",
+                        death="+1977-10-14T00:00:00Z",
+                        wikipedia_title="Bing Crosby",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("When did Bing Crosby die?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertIn("14 October 1977", resolution.answer or "")
+        self.assertIn("Bing Crosby", resolution.answer or "")
+        self.assertEqual(resolution.source_kind, "wikidata")
+
+    def test_known_male_description_uses_he_pronoun(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload("Q42", "Gene Hackman", "American actor"),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q42":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q42",
+                        label="Gene Hackman",
+                        description="American actor",
+                        birth="+1930-01-30T00:00:00Z",
+                        death="+2025-02-18T00:00:00Z",
+                        wikipedia_title="Gene Hackman",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Gene Hackman?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertIn("Gene Hackman was 95 when he died.", resolution.answer or "")
+        self.assertIn("He was born on 30 January 1930", resolution.answer or "")
+        self.assertIn("Had Gene Hackman still been alive today, he would be 96.", resolution.answer or "")
+        self.assertNotIn("they", (resolution.answer or "").lower())
+
+    def test_unknown_pronoun_repeats_name_instead_of_they(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload("Q43", "Example Person", "notable person"),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q43":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q43",
+                        label="Example Person",
+                        description="notable person",
+                        birth="+1930-01-30T00:00:00Z",
+                        death="+2025-02-18T00:00:00Z",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Example Person?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertIn("Example Person was 95 when Example Person died.", resolution.answer or "")
+        self.assertIn("Example Person was born on 30 January 1930", resolution.answer or "")
+        self.assertIn(
+            "Had Example Person still been alive today, Example Person would be 96.",
+            resolution.answer or "",
+        )
+        self.assertNotIn("they", (resolution.answer or "").lower())
+
+    def test_uses_wikipedia_to_find_wikidata_entity(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse({"search": []}, url=url)
+            if "action=query" in url and params.get("list", [""])[0] == "search":
+                return _JsonResponse(
+                    {
+                        "query": {
+                            "search": [
+                                {
+                                    "title": "Kelly Curtis",
+                                }
+                            ]
+                        }
+                    },
+                    url=url,
+                )
+            if "api/rest_v1/page/summary" in url:
+                return _JsonResponse(
+                    {
+                        "title": "Kelly Curtis",
+                        "description": "American actress",
+                        "extract": "Kelly Curtis is an American actress.",
+                        "wikibase_item": "Q9",
+                        "content_urls": {
+                            "desktop": {
+                                "page": "https://en.wikipedia.org/wiki/Kelly_Curtis",
+                            }
+                        },
+                    },
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q9":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q9",
+                        label="Kelly Curtis",
+                        description="American actress",
+                        birth="+1956-06-13T00:00:00Z",
+                        wikipedia_title="Kelly Curtis",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Kelly Curtis?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertIn("Kelly Curtis is", resolution.answer or "")
+        self.assertIn("13 June 1956", resolution.answer or "")
+        self.assertEqual(resolution.source_kind, "wikipedia")
+
+    def test_ambiguous_name_asks_for_clarification(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    {
+                        "search": [
+                            {
+                                "id": "Q10",
+                                "label": "Kelly Curtis",
+                                "description": "American actress",
+                            },
+                            {
+                                "id": "Q11",
+                                "label": "Kelly Curtis",
+                                "description": "British journalist",
+                            },
+                        ]
+                    },
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q10":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q10",
+                        label="Kelly Curtis",
+                        description="American actress",
+                        birth="+1956-06-13T00:00:00Z",
+                        death="+2026-05-30T00:00:00Z",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q11":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q11",
+                        label="Kelly Curtis",
+                        description="British journalist",
+                        birth="+1970-01-01T00:00:00Z",
+                        death="+2026-05-30T00:00:00Z",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("When did Kelly Curtis die?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "ambiguous")
+        self.assertIn("Do you mean", resolution.clarification or "")
+
+    def test_multiple_same_name_candidates_ask_for_clarification(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    {
+                        "search": [
+                            {
+                                "id": "Q20",
+                                "label": "George Michael",
+                                "description": "English singer (1963-2016)",
+                            },
+                            {
+                                "id": "Q21",
+                                "label": "George Michael",
+                                "description": "American business executive",
+                            },
+                        ]
+                    },
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q20":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q20",
+                        label="George Michael",
+                        description="English singer (1963-2016)",
+                        birth="+1963-06-25T00:00:00Z",
+                        death="+2016-12-25T00:00:00Z",
+                        wikipedia_title="George Michael",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q21":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q21",
+                        label="George Michael",
+                        description="American business executive",
+                        birth="+1939-03-24T00:00:00Z",
+                        death="+2009-12-24T00:00:00Z",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("When did George Michael die?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "ambiguous")
+        self.assertTrue(resolution.disambiguation_required)
+        self.assertIn("Do you mean George Michael", resolution.clarification or "")
+
+    def test_exact_name_age_fact_uses_pronoun_not_repeated_name(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload(
+                        "Q20",
+                        "George Michael",
+                        "English singer (1963-2016)",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q20":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q20",
+                        label="George Michael",
+                        description="English singer (1963-2016)",
+                        birth="+1963-06-25T00:00:00Z",
+                        death="+2016-12-25T00:00:00Z",
+                        wikipedia_title="George Michael",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is George Michael?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertIn("George Michael was 53 when he died.", resolution.answer or "")
+        self.assertIn("He was born on 25 June 1963", resolution.answer or "")
+        self.assertIn("Had George Michael still been alive today, he would be 62.", resolution.answer or "")
+        self.assertEqual((resolution.answer or "").count("George Michael"), 2)
+
+    def test_stable_historical_person_falls_back_to_local_bio(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            if "wbsearchentities" in url or "action=query" in url or "api/rest_v1/page/summary" in url:
+                return _JsonResponse({"search": []}, url=url)
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Shakespeare?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertIn("William Shakespeare", resolution.answer or "")
+        self.assertIn("exact birth date is uncertain", resolution.answer or "")
+
+    def test_cause_of_death_without_source_support_falls_back_to_generic_search(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload("Q1", "Kelly Curtis", "American actress"),
+                    url=url,
+                )
+            if "wbgetentities" in url and "ids=Q1" in url:
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q1",
+                        label="Kelly Curtis",
+                        description="American actress",
+                        birth="+1956-06-13T00:00:00Z",
+                        wikipedia_title="Kelly Curtis",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("What was Kelly Curtis's cause of death?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "needs_generic")
+        self.assertTrue(resolution.needs_generic_retrieval)
+        self.assertIn("cause of death", resolution.failure_message or "")
+        self.assertNotIn("I will check", resolution.failure_message or "")
+
+    def test_unresolved_person_failure_names_structured_lookup(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            if "wbsearchentities" in url:
+                return _JsonResponse({"search": []}, url=url)
+            if "action=query" in url:
+                return _JsonResponse({"query": {"search": []}}, url=url)
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("When did Fictional Example die?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "needs_generic")
+        self.assertIn("Wikidata or Wikipedia", resolution.failure_message or "")
+        self.assertNotIn("I will check", resolution.failure_message or "")
+
+    def test_entity_drift_candidate_without_alias_is_not_answered(self) -> None:
+        resolver = self._resolver(prefer_wikipedia=False)
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload(
+                        "Q100",
+                        "Jay Wheeler",
+                        "Puerto Rican singer",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q100":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q100",
+                        label="Jay Wheeler",
+                        description="Puerto Rican singer",
+                        birth="+1994-04-25T00:00:00Z",
+                        wikipedia_title="Jay Wheeler",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Nelson Lopez?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "ambiguous")
+        self.assertIsNone(resolution.answer)
+        self.assertEqual(resolution.identity_confidence, "low")
+        self.assertEqual(resolution.identity_match_type, "none")
+        self.assertIn("cannot confirm", resolution.clarification or "")
+        self.assertNotIn("Jay Wheeler is", resolution.clarification or "")
+
+    def test_alias_approved_stage_name_can_answer(self) -> None:
+        resolver = self._resolver(prefer_wikipedia=False)
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload(
+                        "Q200",
+                        "Elton John",
+                        "English singer and pianist",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q200":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q200",
+                        label="Elton John",
+                        description="English singer and pianist",
+                        birth="+1947-03-25T00:00:00Z",
+                        aliases=("Reginald Dwight",),
+                        wikipedia_title="Elton John",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Reginald Dwight?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertEqual(resolution.identity_confidence, "high")
+        self.assertEqual(resolution.identity_match_type, "alias")
+        self.assertIn("Elton John, born Reginald Dwight is 79", resolution.answer or "")
+        self.assertNotIn("identity_confidence", resolution.answer or "")
+
+    def test_middle_name_tolerant_match_resolves(self) -> None:
+        resolver = self._resolver(prefer_wikipedia=False)
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload(
+                        "Q300",
+                        "Kelly Lee Curtis",
+                        "American actress",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q300":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q300",
+                        label="Kelly Lee Curtis",
+                        description="American actress",
+                        birth="+1956-06-13T00:00:00Z",
+                        aliases=("Kelly Curtis",),
+                        wikipedia_title="Kelly Lee Curtis",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Kelly Curtis?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertEqual(resolution.identity_confidence, "high")
+        self.assertIn(
+            resolution.identity_match_type,
+            {"alias", "context"},
+        )
+        self.assertIn("Kelly Lee Curtis is", resolution.answer or "")
+
+    def test_reversed_name_is_rejected_without_alias(self) -> None:
+        resolver = self._resolver(prefer_wikipedia=False)
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload(
+                        "Q301",
+                        "Curtis Kelly",
+                        "American actor",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q301":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q301",
+                        label="Curtis Kelly",
+                        description="American actor",
+                        birth="+1956-06-13T00:00:00Z",
+                        wikipedia_title="Curtis Kelly",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Kelly Curtis?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "ambiguous")
+        self.assertEqual(resolution.identity_confidence, "low")
+        self.assertIsNone(resolution.answer)
+
+    def test_accent_normalisation_matches_same_person(self) -> None:
+        resolver = self._resolver(prefer_wikipedia=False)
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload(
+                        "Q302",
+                        "Nelson López",
+                        "Puerto Rican musician",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q302":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q302",
+                        label="Nelson López",
+                        description="Puerto Rican musician",
+                        birth="+1994-04-25T00:00:00Z",
+                        wikipedia_title="Nelson López",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Nelson Lopez?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertEqual(resolution.identity_confidence, "high")
+        self.assertEqual(resolution.identity_match_type, "exact_name")
+        self.assertIn("Nelson López is 32", resolution.answer or "")
+
+    def test_normal_answer_does_not_leak_internal_diagnostics(self) -> None:
+        resolver = self._resolver(prefer_wikipedia=False)
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload(
+                        "Q303",
+                        "Kelly Curtis",
+                        "American actress",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q303":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q303",
+                        label="Kelly Curtis",
+                        description="American actress",
+                        birth="+1956-06-13T00:00:00Z",
+                        wikipedia_title="Kelly Curtis",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Kelly Curtis?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        answer = resolution.answer or ""
+        self.assertEqual(resolution.status, "resolved")
+        for forbidden in (
+            "identity_confidence",
+            "reason_code",
+            "RetrievalDecisionService",
+            "grounding pack",
+            "raw resolver diagnostics",
+        ):
+            self.assertNotIn(forbidden, answer)
 
 
 class RetrievalTriggerTests(unittest.TestCase):
@@ -358,7 +1189,69 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
         self.assertTrue(decision.explicit_request)
         self.assertEqual(decision.retrieval_type, "internet")
         self.assertEqual(decision.confidence, "high")
-        self.assertEqual(decision.reason_code, "explicit_request")
+        self.assertEqual(decision.reason_code, "factual_risk_current_latest")
+
+    def test_factual_risk_detector_forces_required_prompts(self) -> None:
+        prompts = [
+            "What did George Michael die of?",
+            "How did George Michael die?",
+            "When did George Michael die?",
+            "Is Kelly Curtis dead?",
+            "Who is the current CEO of Oracle?",
+            "What is the current UK capital gains tax allowance?",
+            "How much is the Seeed reTerminal E1003?",
+            "Is Mellum2 available for Ollama?",
+            "What is the latest version of ORDS?",
+        ]
+
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                self.assertTrue(should_force_retrieval(prompt))
+                self.assertIsInstance(detect_factual_risk(prompt), FactualRiskMatch)
+
+    def test_factual_risk_detector_ignores_stable_non_risky_prompts(self) -> None:
+        prompts = [
+            "What does hobo mean?",
+            "Explain the left-hand rule for escaping a maze.",
+            "Write a Python script to parse a JSON file.",
+            "Rewrite this paragraph in clearer English.",
+        ]
+
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                self.assertFalse(should_force_retrieval(prompt))
+                self.assertIsNone(detect_factual_risk(prompt))
+
+    def test_high_risk_prompts_force_retrieval_in_explicit_only(self) -> None:
+        prompts = [
+            ("What did George Michael die of?", "person_age_or_status"),
+            ("How did George Michael die?", "person_age_or_status"),
+            ("When did George Michael die?", "person_age_or_status"),
+            ("Is Kelly Curtis dead?", "person_age_or_status"),
+            ("Who is the current CEO of Oracle?", "factual_risk_current_role"),
+            ("What is the current UK capital gains tax allowance?", "factual_risk_law_policy"),
+            ("How much is the Seeed reTerminal E1003?", "factual_risk_price_availability"),
+            ("Is Mellum2 available for Ollama?", "factual_risk_price_availability"),
+            ("What is the latest version of ORDS?", "factual_risk_current_latest"),
+        ]
+
+        for prompt, reason_code in prompts:
+            with self.subTest(prompt=prompt):
+                decision = self._service("explicit_only").decide(prompt)
+                self.assertTrue(decision.should_retrieve)
+                self.assertTrue(decision.explicit_request)
+                self.assertFalse(decision.requires_user_confirmation)
+                self.assertEqual(decision.retrieval_type, "internet")
+                self.assertEqual(decision.reason_code, reason_code)
+
+    def test_factual_risk_disabled_mode_does_not_retrieve(self) -> None:
+        decision = self._service("disabled").decide("What did George Michael die of?")
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertTrue(decision.explicit_request)
+        self.assertEqual(decision.retrieval_type, "internet")
+        self.assertEqual(decision.reason_code, "disabled")
+        self.assertIn("current information cannot be verified", decision.user_visible_reason.lower())
 
     def test_explicit_only_retrieves_explicit_current_query(self) -> None:
         decision = self._service("explicit_only").decide(
@@ -369,7 +1262,7 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
         self.assertTrue(decision.explicit_request)
         self.assertEqual(decision.retrieval_type, "internet")
         self.assertEqual(decision.confidence, "high")
-        self.assertEqual(decision.reason_code, "freshness_release_version")
+        self.assertEqual(decision.reason_code, "factual_risk_current_latest")
 
     def test_latest_news_triggers_retrieval_in_explicit_only(self) -> None:
         decision = self._service("explicit_only").decide(
@@ -492,12 +1385,12 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
             "What is the current Python release?"
         )
 
-        self.assertFalse(decision.should_retrieve)
-        self.assertTrue(decision.requires_user_confirmation)
+        self.assertTrue(decision.should_retrieve)
+        self.assertFalse(decision.requires_user_confirmation)
         self.assertEqual(decision.retrieval_type, "internet")
         self.assertEqual(
             decision.user_visible_reason,
-            "That may have changed recently. Shall I check online?",
+            "I'll verify that from current sources.",
         )
 
     def test_auto_safe_retrieves_high_confidence_freshness_query(self) -> None:
@@ -528,13 +1421,13 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
 
     def test_auto_safe_retrieves_broader_current_information_categories(self) -> None:
         prompts = [
-            ("What is the latest version of the Oracle Database?", "freshness_release_version"),
+            ("What is the latest version of the Oracle Database?", "factual_risk_current_latest"),
             ("Does SearXNG still use search.formats for JSON output?", "freshness_docs_api"),
-            ("Is this product still available?", "freshness_price_availability"),
-            ("What is the current price of X?", "freshness_price_availability"),
-            ("Who is the current CEO of OpenAI?", "freshness_public_role"),
-            ("Who is president of Iran?", "freshness_public_role"),
-            ("What changed in the latest SearXNG release?", "freshness_release_version"),
+            ("Is this product still available?", "factual_risk_price_availability"),
+            ("What is the current price of X?", "factual_risk_price_availability"),
+            ("Who is the current CEO of OpenAI?", "factual_risk_current_role"),
+            ("Who is president of Iran?", "factual_risk_current_role"),
+            ("What changed in the latest SearXNG release?", "factual_risk_current_latest"),
         ]
 
         for prompt, reason_code in prompts:
@@ -562,7 +1455,6 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
                 self.assertTrue(decision.explicit_request)
                 self.assertEqual(decision.reason_code, "person_age_or_status")
                 self.assertIn("Kelly Curtis", decision.search_query or "")
-                self.assertIn("actress", decision.search_query or "")
 
     def test_person_age_status_queries_trigger_retrieval_for_modern_people(self) -> None:
         prompts = [
@@ -585,6 +1477,7 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
     def test_person_age_status_historical_exceptions_use_structured_bio(self) -> None:
         prompts = [
             "How old is Bing Crosby?",
+            "How old was Bing Crosby when he died?",
             "How old is Elvis Presley?",
             "How old is Shakespeare?",
             "When did Shakespeare die?",
@@ -606,6 +1499,14 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
         self.assertEqual(decision.retrieval_type, "structured_bio")
         self.assertEqual(decision.reason_code, "person_age_or_status")
 
+    def test_disabled_mode_blocks_modern_person_age_status_verification(self) -> None:
+        decision = self._service("disabled").decide("How old is Kelly Curtis?")
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertEqual(decision.retrieval_type, "internet")
+        self.assertEqual(decision.reason_code, "disabled")
+        self.assertIn("current information cannot be verified", decision.user_visible_reason.lower())
+
     def test_forced_person_death_search_uses_disambiguating_query(self) -> None:
         decision = self._service("explicit_only").decide(
             "do an internet search for the death of Kelly Curtis."
@@ -614,7 +1515,6 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
         self.assertTrue(decision.should_retrieve)
         self.assertEqual(decision.reason_code, "person_age_or_status")
         self.assertIn("Kelly Curtis", decision.search_query or "")
-        self.assertIn("actress", decision.search_query or "")
 
     def test_local_latest_change_does_not_trigger_internet_retrieval(self) -> None:
         prompts = [
@@ -1374,3 +2274,62 @@ class RetrievalServiceTests(unittest.TestCase):
         self.assertTrue(outcome.diagnostics["snippet_only"])
         self.assertIn("could not retrieve enough readable source text", outcome.message)
         self.assertEqual(outcome.grounding_pack.fetched_sources[0].fetch_status, "snippet_only")
+
+    def test_george_michael_cause_answer_uses_retrieved_evidence_only(self) -> None:
+        request = SearchRequest(
+            query="George Michael cause of death",
+            trigger_phrase="factual_risk_cause_of_death",
+        )
+        pack = GroundingPackBuilder().build(
+            request,
+            [
+                SearchResult(
+                    title="George Michael died of natural causes, coroner says",
+                    url="https://example.test/george-michael-cause",
+                )
+            ],
+            [
+                FetchedSource(
+                    url="https://example.test/george-michael-cause",
+                    title="George Michael died of natural causes, coroner says",
+                    source_name="example.test",
+                    text=(
+                        "The official cause of death was dilated cardiomyopathy "
+                        "with myocarditis and fatty liver."
+                    ),
+                    excerpt=(
+                        "The official cause of death was dilated cardiomyopathy "
+                        "with myocarditis and fatty liver."
+                    ),
+                )
+            ],
+            require_citations=True,
+        )
+        decision = RetrievalDecision(
+            should_retrieve=True,
+            retrieval_type="internet",
+            confidence="high",
+            reason_code="factual_risk_cause_of_death",
+            user_visible_reason="",
+            explicit_request=True,
+            requires_user_confirmation=False,
+            search_query="George Michael cause of death",
+        )
+
+        answer = enforce_high_risk_factual_grounding(
+            (
+                "George Michael died of lung cancer exacerbated by smoking, "
+                "confirmed after a concert collapse in 2015."
+            ),
+            user_query="What did George Michael die of?",
+            retrieval_decision=decision,
+            retrieval_pack=pack,
+        )
+
+        self.assertIn(
+            "dilated cardiomyopathy with myocarditis and fatty liver",
+            answer,
+        )
+        self.assertNotIn("lung cancer", answer.lower())
+        self.assertNotIn("smoking", answer.lower())
+        self.assertNotIn("concert collapse", answer.lower())

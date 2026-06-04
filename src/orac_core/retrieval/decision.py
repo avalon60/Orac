@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .broker import RetrievalSettings
+from .factual_risk import detect_factual_risk
 from .models import RetrievalDecision
 from .models import RetrievalTurnContext
 from .person_status import is_stable_historical_person
@@ -384,6 +385,19 @@ class RetrievalDecisionService:
         news_query = _match_current_news_request(normalized)
         current_affairs_reason = _match_current_affairs_request(normalized)
         person_status_match = parse_person_age_or_status_query(normalized)
+        explicit_person_status_match = (
+            parse_person_age_or_status_query(search_query)
+            if explicit_request is not None
+            else None
+        )
+        effective_person_status_match = (
+            person_status_match
+            if person_status_match is not None
+            else explicit_person_status_match
+        )
+        factual_risk_match = detect_factual_risk(normalized)
+        if factual_risk_match is None and explicit_request is not None:
+            factual_risk_match = detect_factual_risk(explicit_request.query)
         follow_up_match = _classify_follow_up_request(
             normalized,
             previous_context,
@@ -419,8 +433,8 @@ class RetrievalDecisionService:
             return decision
 
         if (
-            person_status_match is not None
-            and is_stable_historical_person(person_status_match.person_name)
+            effective_person_status_match is not None
+            and is_stable_historical_person(effective_person_status_match.person_name)
         ):
             decision = RetrievalDecision(
                 should_retrieve=False,
@@ -430,7 +444,7 @@ class RetrievalDecisionService:
                 user_visible_reason="",
                 explicit_request=True,
                 requires_user_confirmation=False,
-                search_query=person_status_match.search_query,
+                search_query=effective_person_status_match.search_query,
             )
             self._log_decision(mode, decision)
             return decision
@@ -439,9 +453,10 @@ class RetrievalDecisionService:
             explicit_freshness_request = _is_explicit_freshness_request(explicit_request)
             explicit_freshness_prompt = _is_explicit_freshness_prompt(normalized)
             current_like = (
-                news_query is not None
+                factual_risk_match is not None
+                or news_query is not None
                 or current_affairs_reason is not None
-                or person_status_match is not None
+                or effective_person_status_match is not None
                 or follow_up_match is not None
                 or explicit_freshness_request
                 or explicit_freshness_prompt
@@ -449,9 +464,10 @@ class RetrievalDecisionService:
             )
             if (
                 explicit_request_found
+                or factual_risk_match is not None
                 or news_query is not None
                 or current_affairs_reason is not None
-                or person_status_match is not None
+                or effective_person_status_match is not None
                 or follow_up_match is not None
                 or _looks_fresh(normalized)
             ):
@@ -468,8 +484,9 @@ class RetrievalDecisionService:
                     ),
                     explicit_request=(
                         explicit_request_found
+                        or factual_risk_match is not None
                         or news_query is not None
-                        or person_status_match is not None
+                        or effective_person_status_match is not None
                         or follow_up_match is not None
                         or explicit_freshness_request
                         or explicit_freshness_prompt
@@ -479,9 +496,13 @@ class RetrievalDecisionService:
                         follow_up_match.search_query
                         if follow_up_match is not None
                         else (
-                            person_status_match.search_query
-                            if person_status_match is not None
-                            else search_query
+                            effective_person_status_match.search_query
+                            if effective_person_status_match is not None
+                            else (
+                                factual_risk_match.search_query
+                                if factual_risk_match is not None
+                                else search_query
+                            )
                         )
                     ),
                 )
@@ -496,6 +517,40 @@ class RetrievalDecisionService:
                     requires_user_confirmation=False,
                     search_query=None,
                 )
+            self._log_decision(mode, decision)
+            return decision
+
+        if effective_person_status_match is not None:
+            should_retrieve = mode in {"explicit_only", "auto_safe"}
+            decision = RetrievalDecision(
+                should_retrieve=should_retrieve,
+                retrieval_type="internet",
+                confidence=effective_person_status_match.confidence,
+                reason_code="person_age_or_status",
+                user_visible_reason=(
+                    "I’ll check that online."
+                    if should_retrieve
+                    else _PERSON_STATUS_CONFIRMATION_MESSAGE
+                ),
+                explicit_request=True,
+                requires_user_confirmation=mode == "suggest_search",
+                search_query=effective_person_status_match.search_query,
+            )
+            self._log_decision(mode, decision)
+            return decision
+
+        if factual_risk_match is not None:
+            decision = RetrievalDecision(
+                should_retrieve=True,
+                retrieval_type="internet",
+                confidence=factual_risk_match.confidence,
+                reason_code=factual_risk_match.reason_code,
+                user_visible_reason="I'll verify that from current sources.",
+                explicit_request=True,
+                requires_user_confirmation=False,
+                search_query=factual_risk_match.search_query,
+            )
+            self._log_forced_factual_risk(mode, decision)
             self._log_decision(mode, decision)
             return decision
 
@@ -514,25 +569,6 @@ class RetrievalDecisionService:
                 explicit_request=False,
                 requires_user_confirmation=False,
                 search_query=follow_up_match.search_query,
-            )
-            self._log_decision(mode, decision)
-            return decision
-
-        if person_status_match is not None:
-            should_retrieve = mode in {"explicit_only", "auto_safe"}
-            decision = RetrievalDecision(
-                should_retrieve=should_retrieve,
-                retrieval_type="internet",
-                confidence=person_status_match.confidence,
-                reason_code="person_age_or_status",
-                user_visible_reason=(
-                    "I’ll check that online."
-                    if should_retrieve
-                    else _PERSON_STATUS_CONFIRMATION_MESSAGE
-                ),
-                explicit_request=True,
-                requires_user_confirmation=mode == "suggest_search",
-                search_query=person_status_match.search_query,
             )
             self._log_decision(mode, decision)
             return decision
@@ -684,6 +720,19 @@ class RetrievalDecisionService:
         )
         log_debug = getattr(self._logger, "log_debug", None)
         if callable(log_debug):
+            log_debug(message)
+
+    def _log_forced_factual_risk(self, mode: str, decision: RetrievalDecision) -> None:
+        """Log when retrieval is forced for high-risk factual safety."""
+        log_info = getattr(self._logger, "log_info", None)
+        log_debug = getattr(self._logger, "log_debug", None)
+        message = (
+            "Forced internet retrieval for high-risk factual query: "
+            f"mode={mode} reason={decision.reason_code} query={decision.search_query!r}"
+        )
+        if callable(log_info):
+            log_info(message)
+        elif callable(log_debug):
             log_debug(message)
 
 
