@@ -5,8 +5,11 @@ import { WebSocketServer, WebSocket } from 'ws';
 // Bridge display pipe events to browser WebSocket clients.
 const TCP_PORT = 8766;
 const WS_PORT = 8767;
+const BROWSER_RECONNECT_GRACE_MS = 1_000;
 let latestMessage = null;
 let latestRuntimeIdentity = null;
+let activeBrowserClients = 0;
+let browserDisconnectTimer = null;
 
 function timestamp() {
   return new Date().toLocaleTimeString('en-GB', { hour12: false });
@@ -45,7 +48,14 @@ const wss = new WebSocketServer({ port: WS_PORT });
 log(`🚀 WebSocket Bridge: Listening for browser connections on ws://localhost:${WS_PORT}`);
 
 wss.on('connection', (ws) => {
-  log('💻 Browser connected to bridge');
+  activeBrowserClients += 1;
+  if (browserDisconnectTimer) {
+    clearTimeout(browserDisconnectTimer);
+    browserDisconnectTimer = null;
+    log('💻 Browser reconnected to bridge');
+  } else {
+    log('💻 Browser connected to bridge');
+  }
   ws.send(uiConfigMessage());
   if (latestRuntimeIdentity) {
     ws.send(latestRuntimeIdentity);
@@ -53,7 +63,19 @@ wss.on('connection', (ws) => {
   if (latestMessage) {
     ws.send(latestMessage);
   }
-  ws.on('close', () => log('❌ Browser disconnected'));
+  ws.on('close', () => {
+    activeBrowserClients = Math.max(0, activeBrowserClients - 1);
+    if (activeBrowserClients > 0) {
+      return;
+    }
+
+    browserDisconnectTimer = setTimeout(() => {
+      browserDisconnectTimer = null;
+      if (activeBrowserClients === 0) {
+        log('Browser disconnected from bridge');
+      }
+    }, BROWSER_RECONNECT_GRACE_MS);
+  });
 });
 
 function broadcast(data) {
