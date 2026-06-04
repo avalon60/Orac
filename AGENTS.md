@@ -57,7 +57,7 @@ Read:
 
 - docs/agent-guardrails/30-python-standards.md
 
-when changing:
+when creating or changing:
 
 - Python application code
 - Python scripts

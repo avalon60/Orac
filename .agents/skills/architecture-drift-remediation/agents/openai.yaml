@@ -1,0 +1,4 @@
+interface:
+  display_name: "Architecture Drift Remediation"
+  short_description: "Add lightweight drift guardrails and checks"
+  default_prompt: "Use $architecture-drift-remediation to implement lightweight architecture drift controls from the previous audit."
