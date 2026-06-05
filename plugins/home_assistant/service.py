@@ -7,8 +7,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-import os
-import re
 import threading
 from typing import Any, Callable
 
@@ -21,9 +19,6 @@ from .sync import SyncResult
 __author__ = "Clive Bostock"
 __date__ = "04-Jun-2026"
 __description__ = "Runs Home Assistant startup sync inside Orac's plugin service lifecycle."
-
-_ENV_VAR_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
 
 class HomeAssistantServiceError(RuntimeError):
     """Raised when the Home Assistant managed service cannot start safely."""
@@ -52,7 +47,6 @@ class HomeAssistantRuntimeConfig:
     protocol: str
     host: str
     port: int
-    access_token_env: str
     access_token: str
     verify_ssl: bool
     websocket_path: str
@@ -149,10 +143,7 @@ class HomeAssistantService:
 
             self._close_resources()
             runtime_config = self._load_config(context)
-            self._log_info(
-                "Home Assistant access token will be read from environment "
-                f"variable '{runtime_config.access_token_env}'."
-            )
+            self._log_info("Home Assistant access token loaded from plugin PAT vault.")
             self._client = self._client_factory(
                 HomeAssistantClientConfig(
                     protocol=runtime_config.protocol,
@@ -216,22 +207,11 @@ class HomeAssistantService:
 
         host = self._required_config(config_mgr, "home_assistant", "host")
         port = self._required_int_config(config_mgr, "home_assistant", "port")
-        access_token_env = self._required_config(
-            config_mgr,
-            "home_assistant",
-            "access_token_env",
-        )
-        if not _ENV_VAR_NAME_PATTERN.fullmatch(access_token_env):
-            raise HomeAssistantServiceError(
-                "Invalid Home Assistant access_token_env configuration. Set "
-                "plugin.ini [home_assistant].access_token_env to an environment variable "
-                "name such as ORAC_HA_TOKEN, not to the token value."
-            )
-        access_token = os.environ.get(access_token_env, "").strip()
+        access_token = self._secret_vault(context).get().strip()
         if not access_token:
             raise HomeAssistantServiceError(
-                "Home Assistant access token environment variable "
-                f"'{access_token_env}' is not set."
+                "Home Assistant access token is missing. Create it with: "
+                "bin/plugin-pat-mgr.sh --plugin home_assistant --set access_token"
             )
 
         protocol = self._config_value(config_mgr, "home_assistant", "protocol", "http") or "http"
@@ -253,7 +233,6 @@ class HomeAssistantService:
             protocol=str(protocol).strip().lower(),
             host=host,
             port=port,
-            access_token_env=access_token_env,
             access_token=access_token,
             verify_ssl=verify_ssl,
             websocket_path=websocket_path,
@@ -265,6 +244,16 @@ class HomeAssistantService:
         if callable(plugin_config):
             return plugin_config()
         return None
+
+    def _secret_vault(self, context: Any) -> Any:
+        """Return the scoped Home Assistant secret vault from context."""
+        vault = getattr(context, "secret_vault", None)
+        if vault is None:
+            raise HomeAssistantServiceError(
+                "Home Assistant access token vault is unavailable. Create the token with: "
+                "bin/plugin-pat-mgr.sh --plugin home_assistant --set access_token"
+            )
+        return vault
 
     def _required_config(self, config_mgr: Any, section: str, key: str) -> str:
         """Return a required non-empty string config value."""

@@ -554,7 +554,7 @@ class PersonFactResolverTests(unittest.TestCase):
         self.assertEqual(resolution.status, "ambiguous")
         self.assertIn("Do you mean", resolution.clarification or "")
 
-    def test_multiple_same_name_candidates_ask_for_clarification(self) -> None:
+    def test_canonical_same_name_biography_candidate_answers_directly(self) -> None:
         resolver = self._resolver()
 
         def _open(request, timeout=None):
@@ -611,9 +611,10 @@ class PersonFactResolverTests(unittest.TestCase):
         with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
             resolution = resolver.resolve(query, today=date(2026, 6, 1))
 
-        self.assertEqual(resolution.status, "ambiguous")
-        self.assertTrue(resolution.disambiguation_required)
-        self.assertIn("Do you mean George Michael", resolution.clarification or "")
+        self.assertEqual(resolution.status, "resolved")
+        self.assertFalse(resolution.disambiguation_required)
+        self.assertEqual(resolution.display_name, "George Michael")
+        self.assertIn("George Michael died on 25 December 2016.", resolution.answer or "")
 
     def test_exact_name_age_fact_uses_pronoun_not_repeated_name(self) -> None:
         resolver = self._resolver()
@@ -1379,6 +1380,25 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
             decision.user_visible_reason,
             "That may have changed recently. Shall I check online?",
         )
+
+    def test_subjective_historical_event_question_does_not_trigger_freshness(self) -> None:
+        decision = self._service("suggest_search").decide(
+            "Do you consider it a sad event that the dinosaurs were wiped out?"
+        )
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertFalse(decision.requires_user_confirmation)
+        self.assertEqual(decision.retrieval_type, "none")
+        self.assertEqual(decision.reason_code, "stable_general_knowledge")
+
+    def test_current_event_wording_still_triggers_freshness(self) -> None:
+        decision = self._service("suggest_search").decide(
+            "Are there any current events in Iran?"
+        )
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertTrue(decision.requires_user_confirmation)
+        self.assertEqual(decision.reason_code, "freshness_news_events")
 
     def test_suggest_search_requests_confirmation_for_natural_current_query(self) -> None:
         decision = self._service("suggest_search").decide(

@@ -31,6 +31,7 @@ from model.plugin_runtime import (
     load_plugin_class,
 )
 from model.plugin_database_session import OracPluginDatabaseSessionFactory
+from model.plugin_secret_vault import PluginSecretVault
 
 
 _STOPWORDS = {
@@ -381,6 +382,7 @@ class PluginRouter:
                     manifest,
                     logger=self._logger,
                 ),
+                _secret_vault=PluginSecretVault(plugin_id=manifest.plugin_id),
             )
             plugin_instance = instantiate_plugin(
                 plugin_class,

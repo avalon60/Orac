@@ -16,6 +16,7 @@ from typing import Any, Iterator
 
 from model.plugin_config import PluginConfigManager
 from model.plugin_routing.models import PluginManifest
+from model.plugin_secret_vault import PluginSecretVault
 
 
 class PluginRuntimeError(RuntimeError):
@@ -272,6 +273,7 @@ class PluginRuntimeContext:
     plugin_db_session_factory: Any | None = None
     plugin_service_manager: Any | None = None
     plugin_config_manager: PluginConfigManager | None = None
+    _secret_vault: PluginSecretVault | None = None
 
     @property
     def plugin_id(self) -> str:
@@ -295,6 +297,13 @@ class PluginRuntimeContext:
                 "plugin configuration manager is configured."
             )
         return self.plugin_config_manager
+
+    @property
+    def secret_vault(self) -> PluginSecretVault:
+        """Return this plugin's scoped personal access token vault."""
+        if self._secret_vault is None:
+            return PluginSecretVault(plugin_id=self.plugin_id)
+        return self._secret_vault
 
     def run_service_command(
         self,

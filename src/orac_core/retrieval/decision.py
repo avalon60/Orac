@@ -291,7 +291,7 @@ _FRESHNESS_PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
         "freshness_news_events",
         _CONFIRMATION_MESSAGE,
         re.compile(
-            r"\b(?:news|recent event|events?|announcement|announced|today|today's|this week|this month|breaking)\b",
+            r"\b(?:news|announcement|announced|today|today's|this week|this month|breaking)\b|\b(?:current|latest|recent|breaking)\b.*\bevents?\b|\bevents?\b.*\b(?:current|latest|recent|breaking|news)\b",
             re.I,
         ),
     ),

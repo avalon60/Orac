@@ -111,6 +111,38 @@ class PluginDatabaseSchema:
 
 
 @dataclass(frozen=True)
+class PluginSecretKey:
+    """Represents one plugin secret key declared by a manifest."""
+
+    key: str
+    required: bool
+    description: str
+    setup_hint: str | None = None
+    rotation_supported: bool = False
+
+
+@dataclass(frozen=True)
+class PluginSecrets:
+    """Represents plugin secret vault metadata declared by a manifest."""
+
+    vault: str = "pat_vault"
+    default_key: str = "access_token"
+    allow_custom_keys: bool = False
+    keys: tuple[PluginSecretKey, ...] = ()
+
+    def key_names(self) -> tuple[str, ...]:
+        """Return declared secret key names."""
+        return tuple(secret.key for secret in self.keys)
+
+    def get_key(self, key: str) -> PluginSecretKey | None:
+        """Return declared metadata for one key when present."""
+        for secret in self.keys:
+            if secret.key == key:
+                return secret
+        return None
+
+
+@dataclass(frozen=True)
 class PluginManifest:
     """Represents a validated plugin manifest and its discovery metadata."""
 
@@ -136,6 +168,7 @@ class PluginManifest:
     database_required: bool = False
     database_on_missing: PluginDatabaseOnMissing = "warn_disable"
     database_schemas: tuple[PluginDatabaseSchema, ...] = ()
+    secrets: PluginSecrets | None = None
 
 
 @dataclass(frozen=True)

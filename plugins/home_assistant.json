@@ -96,12 +96,6 @@
         "key": "port",
         "type": "int",
         "description": "Home Assistant HTTP API port."
-      },
-      {
-        "section": "home_assistant",
-        "key": "access_token_env",
-        "type": "string",
-        "description": "Environment variable name containing the Home Assistant long-lived access token."
       }
     ],
     "optional": [
@@ -118,6 +112,19 @@
         "description": "Controls structural metadata refresh cadence."
       }
     ]
+  },
+  "secrets": {
+    "vault": "pat_vault",
+    "default_key": "access_token",
+    "allow_custom_keys": false,
+    "keys": {
+      "access_token": {
+        "required": true,
+        "description": "Long-lived Home Assistant access token.",
+        "setup_hint": "Create a long-lived access token in Home Assistant and store it with plugin-pat-mgr.sh.",
+        "rotation_supported": true
+      }
+    }
   },
   "database": {
     "required": true,

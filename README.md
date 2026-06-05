@@ -179,6 +179,71 @@ To edit an existing connection:
 bin/dbconn-mgr.sh -e orac
 ```
 
+### Configure Plugin Personal Access Tokens
+
+Plugin-specific personal access tokens are managed separately from database
+credentials and normal plugin configuration. Orac stores them encrypted in:
+
+```text
+~/.Orac/pat_vault.ini
+```
+
+Use `bin/plugin-pat-mgr.sh` to create and manage these values. Secret values
+are entered through a hidden prompt and must not be placed in `plugin.ini`,
+`orac.ini`, shell history, or command-line arguments.
+
+For Home Assistant, create the required `access_token` like this:
+
+```bash
+bin/plugin-pat-mgr.sh --plugin home_assistant --set access_token
+```
+
+Because `access_token` is declared as the Home Assistant plugin's default secret
+key, this shorter form is equivalent:
+
+```bash
+bin/plugin-pat-mgr.sh --plugin home_assistant --set
+```
+
+Useful inspection commands:
+
+```bash
+# List plugins that currently have PAT vault entries
+bin/plugin-pat-mgr.sh --list-plugins
+
+# List secret keys expected by a plugin manifest
+bin/plugin-pat-mgr.sh --plugin home_assistant --list-expected
+
+# List configured key names without showing values
+bin/plugin-pat-mgr.sh --plugin home_assistant --list-keys
+
+# Check whether a key exists without revealing it
+bin/plugin-pat-mgr.sh --plugin home_assistant --check access_token
+```
+
+Retrieving a decrypted token is intentionally explicit and should be used only
+for local scripting or diagnostics:
+
+```bash
+bin/plugin-pat-mgr.sh --plugin home_assistant --get access_token --reveal
+```
+
+To rotate a token, set it again:
+
+```bash
+bin/plugin-pat-mgr.sh --plugin home_assistant --set access_token
+```
+
+To remove a key or all secrets for a plugin:
+
+```bash
+bin/plugin-pat-mgr.sh --plugin home_assistant --delete-key access_token
+bin/plugin-pat-mgr.sh --plugin home_assistant --delete-plugin
+```
+
+Plugin manifests declare which secret keys are expected. Undeclared keys are
+rejected unless the manifest explicitly allows custom keys.
+
 ## 🌐 Internet Retrieval
 
 Orac supports explicit-only internet retrieval for prompts such as:

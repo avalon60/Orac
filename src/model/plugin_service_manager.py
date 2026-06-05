@@ -21,6 +21,7 @@ from model.plugin_database_session import OracPluginDatabaseSession
 from model.plugin_database_session import OracPluginDatabaseSessionFactory
 from model.plugin_routing.models import PluginManifest
 from model.plugin_runtime import PluginRuntimeError, load_plugin_service_class
+from model.plugin_secret_vault import PluginSecretVault
 
 
 PLUGIN_SERVICE_STATES = {
@@ -59,6 +60,7 @@ class PluginServiceContext:
     config_mgr: Any | None = None
     plugin_config_manager: PluginConfigManager | None = None
     _plugin_db_session_factory: Callable[[], OracPluginDatabaseSession] | None = None
+    _secret_vault: PluginSecretVault | None = None
 
     def plugin_db_session(self) -> OracPluginDatabaseSession:
         """Return a managed ORAC_PLUGIN database session for plugin runtime use."""
@@ -77,6 +79,13 @@ class PluginServiceContext:
                 "plugin configuration manager is configured."
             )
         return self.plugin_config_manager
+
+    @property
+    def secret_vault(self) -> PluginSecretVault:
+        """Return this plugin's scoped personal access token vault."""
+        if self._secret_vault is None:
+            return PluginSecretVault(plugin_id=self.plugin_id)
+        return self._secret_vault
 
 
 @dataclass
@@ -353,6 +362,7 @@ class PluginServiceManager:
                 logger=self._logger,
             ),
             _plugin_db_session_factory=self._plugin_db_session_factory,
+            _secret_vault=PluginSecretVault(plugin_id=record.manifest.plugin_id),
         )
         self._validate_service_contract(instance, record.manifest)
         record.instance = instance

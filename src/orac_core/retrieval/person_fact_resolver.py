@@ -730,6 +730,13 @@ class PersonFactResolver:
         if len(high_matches) == 1:
             return high_matches[0][0], False
         if len(high_matches) > 1:
+            canonical_matches = [
+                (candidate, identity)
+                for candidate, identity in high_matches
+                if self._is_canonical_exact_biography_match(query, candidate, identity)
+            ]
+            if len(canonical_matches) == 1:
+                return canonical_matches[0][0], False
             ranked_high = sorted(
                 high_matches,
                 key=lambda item: (
@@ -1238,6 +1245,26 @@ class PersonFactResolver:
         if query.query_type == "cause":
             score += 50 if candidate.cause_of_death else 0
         return score
+
+    def _is_canonical_exact_biography_match(
+        self,
+        query: PersonStatusQuery,
+        candidate: _BiographyRecord,
+        identity: _IdentityMatch,
+    ) -> bool:
+        """Return whether one exact-name candidate is safe to prefer."""
+        if identity.match_type != "exact_name":
+            return False
+        requested_key = self._normalise_identity_name(query.person_name)
+        if self._normalise_identity_name(candidate.display_name) != requested_key:
+            return False
+        if self._normalise_identity_name(candidate.wikipedia_title or "") != requested_key:
+            return False
+        if candidate.date_of_birth is None:
+            return False
+        if query.query_type in {"death", "status", "age", "age_at_death"}:
+            return candidate.date_of_death is not None
+        return True
 
     def _description_has_lifespan(self, description: str) -> bool:
         """Return whether a description includes explicit birth/death years."""

@@ -425,7 +425,23 @@ class PluginAuditAdapter:
             raise RuntimeError("Plugin audit DB session is unavailable.")
 
         block = """
+declare
+  l_capabilities    json;
+  l_entitlements    json;
+  l_provenance_json json;
 begin
+  if :capabilities is not null then
+    l_capabilities := json(:capabilities);
+  end if;
+
+  if :entitlements is not null then
+    l_entitlements := json(:entitlements);
+  end if;
+
+  if :provenance_json is not null then
+    l_provenance_json := json(:provenance_json);
+  end if;
+
   orac_code.plugin_audit_api.begin_invocation(
     p_plugin_invocation_id => :plugin_invocation_id,
     p_row_version => :row_version,
@@ -438,9 +454,9 @@ begin
     p_conversation_id => :conversation_id,
     p_message_id => :message_id,
     p_user_id => :user_id,
-    p_capabilities => :capabilities,
-    p_entitlements => :entitlements,
-    p_provenance_json => :provenance_json
+    p_capabilities => l_capabilities,
+    p_entitlements => l_entitlements,
+    p_provenance_json => l_provenance_json
   );
 end;
 """
@@ -495,34 +511,52 @@ end;
         """Return the PL/SQL block used to call the package procedure."""
         if method_name == "record_policy_decision":
             return """
+declare
+  l_provenance_json json;
 begin
+  if :provenance_json is not null then
+    l_provenance_json := json(:provenance_json);
+  end if;
+
   orac_code.plugin_audit_api.record_policy_decision(
     p_plugin_invocation_id => :plugin_invocation_id,
     p_policy_decision => :policy_decision,
     p_policy_reason => :policy_reason,
     p_event_message => :event_message,
-    p_provenance_json => :provenance_json,
+    p_provenance_json => l_provenance_json,
     p_row_version => :row_version
   );
 end;
 """
         if method_name == "record_confirmation_event":
             return """
+declare
+  l_event_payload_json json;
 begin
+  if :event_payload_json is not null then
+    l_event_payload_json := json(:event_payload_json);
+  end if;
+
   orac_code.plugin_audit_api.record_confirmation_event(
     p_plugin_invocation_id => :plugin_invocation_id,
     p_event_type => :event_type,
     p_confirmation_id => :confirmation_id,
     p_confirmation_status => :confirmation_status,
     p_event_message => :event_message,
-    p_event_payload_json => :event_payload_json,
+    p_event_payload_json => l_event_payload_json,
     p_row_version => :row_version
   );
 end;
 """
         if method_name == "record_execution_event":
             return """
+declare
+  l_provenance_json json;
 begin
+  if :provenance_json is not null then
+    l_provenance_json := json(:provenance_json);
+  end if;
+
   orac_code.plugin_audit_api.record_execution_event(
     p_plugin_invocation_id => :plugin_invocation_id,
     p_event_type => :event_type,
@@ -530,7 +564,7 @@ begin
     p_timeout_seconds => :timeout_seconds,
     p_failure_type => :failure_type,
     p_failure_message => :failure_message,
-    p_provenance_json => :provenance_json,
+    p_provenance_json => l_provenance_json,
     p_row_version => :row_version
   );
 end;

@@ -111,8 +111,9 @@ If Home Assistant credentials are missing:
 - device control must remain denied;
 - audit should record configuration failure once durable audit exists.
 
-The access token should remain in the configured environment variable and must
-not be stored in conversation history, plugin provenance, or audit details.
+The access token should be stored in Orac's encrypted plugin PAT vault under the
+`home_assistant` plugin section and must not be stored in `plugin.ini`,
+conversation history, plugin provenance, or audit details.
 
 ## Offline Home Assistant
 

@@ -2995,6 +2995,13 @@ class Orac:
             self._persistence_failures = []
             failures = self._persistence_failures
         failures.append(failure)
+        if self._is_unregistered_user_error(exc):
+            logger.log_warning(f"{Icons.warn} Persistence skipped for {phase}: {exc}")
+            if getattr(self, "_fail_on_persistence_error", False):
+                raise RuntimeError(
+                    f"Persistence failure during {phase}: {exc}"
+                ) from exc
+            return
         _log_exception(f"Failed to persist {phase}", exc)
         if self._is_recoverable_db_disconnect(exc):
             try:
@@ -3952,28 +3959,40 @@ class Orac:
             except Exception as e:
                 if self._is_unregistered_user_error(e):
                     request_flags["anonymous_user"] = True
-                _log_exception("ensure_conversation_with_timeout failed (non-fatal)", e)
-                session_id = session_id_base
-                created_new_conversation = False
-                try:
-                    existing_llm_id = self.ctx.get_conversation_llm_id(session_id)
-                    if existing_llm_id is None:
-                        self.ctx.ensure_conversation(
-                            user_name=auth_user,
-                            session_id=session_id,
-                            llm_id=new_conversation_selection.get("llm_id"),
-                        )
-                        created_new_conversation = True
-                    else:
-                        self.ctx.ensure_conversation(
-                            user_name=auth_user,
-                            session_id=session_id,
-                            llm_id=existing_llm_id,
-                        )
-                except Exception as e2:
-                    if self._is_unregistered_user_error(e2):
-                        request_flags["anonymous_user"] = True
-                    _log_exception("ensure_conversation fallback failed (non-fatal)", e2)
+                    logger.log_warning(
+                        f"{Icons.warn} Context persistence disabled for "
+                        f"unregistered user '{auth_user}': {e}"
+                    )
+                    session_id = session_id_base
+                    created_new_conversation = False
+                else:
+                    _log_exception("ensure_conversation_with_timeout failed (non-fatal)", e)
+                    session_id = session_id_base
+                    created_new_conversation = False
+                    try:
+                        existing_llm_id = self.ctx.get_conversation_llm_id(session_id)
+                        if existing_llm_id is None:
+                            self.ctx.ensure_conversation(
+                                user_name=auth_user,
+                                session_id=session_id,
+                                llm_id=new_conversation_selection.get("llm_id"),
+                            )
+                            created_new_conversation = True
+                        else:
+                            self.ctx.ensure_conversation(
+                                user_name=auth_user,
+                                session_id=session_id,
+                                llm_id=existing_llm_id,
+                            )
+                    except Exception as e2:
+                        if self._is_unregistered_user_error(e2):
+                            request_flags["anonymous_user"] = True
+                            logger.log_warning(
+                                f"{Icons.warn} Context fallback skipped for "
+                                f"unregistered user '{auth_user}': {e2}"
+                            )
+                        else:
+                            _log_exception("ensure_conversation fallback failed (non-fatal)", e2)
 
             if force_new_conversation and not created_new_conversation:
                 logger.log_info(

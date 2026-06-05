@@ -2924,8 +2924,11 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["meta"]["status"], "ok")
         self.assertEqual(response["meta"]["user_registration"], "anonymous")
         self.assertGreaterEqual(len(orchestrator._persistence_failures), 2)
+        warnings = "\n".join(message for level, message in orac_module.logger.messages if level == "warning")
         errors = "\n".join(message for level, message in orac_module.logger.messages if level == "error")
-        self.assertIn("ensure_conversation_with_timeout failed", errors)
+        self.assertIn("Context persistence disabled for unregistered user", warnings)
+        self.assertNotIn("ensure_conversation_with_timeout failed", errors)
+        self.assertNotIn("user 'alice' is not registered", errors.lower())
 
     async def test_request_start_reconnects_stale_oracle_session(self) -> None:
         orchestrator = self._make_orac_stub(

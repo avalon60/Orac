@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-import os
 from pathlib import Path
 import sys
 import tempfile
@@ -60,11 +59,31 @@ class _FakeConfigManager:
         return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+class _FakeSecretVault:
+    def __init__(self, token: str | None = "secret-token") -> None:
+        self.token = token
+        self.keys_requested: list[str] = []
+
+    def get(self, key: str = "access_token") -> str:
+        self.keys_requested.append(key)
+        if self.token is None:
+            raise RuntimeError(
+                "Plugin personal access token is not configured. Create it with: "
+                "bin/plugin-pat-mgr.sh --plugin home_assistant --set access_token"
+            )
+        return self.token
+
+
 class _FakeContext:
-    def __init__(self, config_mgr: _FakeConfigManager | None = None) -> None:
+    def __init__(
+        self,
+        config_mgr: _FakeConfigManager | None = None,
+        secret_vault: _FakeSecretVault | None = None,
+    ) -> None:
         self.stop_event = threading.Event()
         self.repository_session_requested = False
         self.config_mgr = config_mgr or _valid_config()
+        self.secret_vault = secret_vault or _FakeSecretVault()
 
     def plugin_db_session(self):
         self.repository_session_requested = True
@@ -135,7 +154,6 @@ def _valid_config() -> _FakeConfigManager:
         {
             ("home_assistant", "host"): "ha.local",
             ("home_assistant", "port"): "8123",
-            ("home_assistant", "access_token_env"): "ORAC_HA_TEST_TOKEN",
             ("home_assistant", "protocol"): "http",
             ("home_assistant", "verify_ssl"): False,
         }
@@ -161,36 +179,27 @@ class HomeAssistantServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(HomeAssistantServiceError, "port"):
             service.run(_FakeContext(config))
 
-    def test_refuses_to_start_when_access_token_env_is_missing(self) -> None:
-        config = _valid_config()
-        config.values[("home_assistant", "access_token_env")] = ""
+    def test_refuses_to_start_when_pat_vault_is_missing(self) -> None:
         service = HomeAssistantService()
 
-        with self.assertRaisesRegex(HomeAssistantServiceError, "access_token_env"):
-            service.run(_FakeContext(config))
+        context = _FakeContext()
+        delattr(context, "secret_vault")
+        with self.assertRaisesRegex(HomeAssistantServiceError, "plugin-pat-mgr.sh"):
+            service.run(context)
 
-    def test_refuses_to_start_when_named_token_env_var_is_unset(self) -> None:
-        service = HomeAssistantService()
-
-        with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaisesRegex(HomeAssistantServiceError, "ORAC_HA_TEST_TOKEN"):
-                service.run(_FakeContext())
-
-    def test_refuses_token_value_in_access_token_env_without_logging_token(self) -> None:
+    def test_refuses_to_start_when_pat_token_is_missing(self) -> None:
         logger = _FakeLogger()
-        config = _valid_config()
-        token_value = "header.payload.signature"
-        config.values[("home_assistant", "access_token_env")] = token_value
         service = HomeAssistantService(logger=logger)
 
-        with self.assertRaisesRegex(HomeAssistantServiceError, "not to the token value"):
-            service.run(_FakeContext(config))
+        with self.assertRaisesRegex(RuntimeError, "plugin-pat-mgr.sh"):
+            service.run(_FakeContext(secret_vault=_FakeSecretVault(None)))
 
         log_text = "\n".join(logger.info + logger.error)
-        self.assertNotIn(token_value, log_text)
+        self.assertNotIn("secret-token", log_text)
 
     def test_token_value_is_not_logged(self) -> None:
         logger = _FakeLogger()
+        secret_value = "super-secret-ha-token"
         service = HomeAssistantService(
             logger=logger,
             client_factory=lambda config: _FakeClient(config, fail_check=True),
@@ -198,13 +207,12 @@ class HomeAssistantServiceTests(unittest.TestCase):
             sync_coordinator_factory=lambda **kwargs: _FakeSyncCoordinator(**kwargs),
         )
 
-        with patch.dict(os.environ, {"ORAC_HA_TEST_TOKEN": "secret-token"}, clear=False):
-            with self.assertRaisesRegex(RuntimeError, "api unavailable"):
-                service.run(_FakeContext())
+        with self.assertRaisesRegex(RuntimeError, "api unavailable"):
+            service.run(_FakeContext(secret_vault=_FakeSecretVault(secret_value)))
 
         log_text = "\n".join(logger.info + logger.error)
-        self.assertIn("ORAC_HA_TEST_TOKEN", log_text)
-        self.assertNotIn("secret-token", log_text)
+        self.assertIn("PAT vault", log_text)
+        self.assertNotIn(secret_value, log_text)
 
     def test_successful_startup_sync_blocks_until_stopped_and_reports_health(self) -> None:
         context = _FakeContext()
@@ -242,13 +250,12 @@ class HomeAssistantServiceTests(unittest.TestCase):
             except BaseException as exc:
                 errors.append(exc)
 
-        with patch.dict(os.environ, {"ORAC_HA_TEST_TOKEN": "secret-token"}, clear=False):
-            thread = threading.Thread(target=run_service)
-            thread.start()
-            self.assertTrue(_wait_until(lambda: service.state.started))
-            self.assertTrue(service.health(context))
-            service.stop(context)
-            thread.join(timeout=1)
+        thread = threading.Thread(target=run_service)
+        thread.start()
+        self.assertTrue(_wait_until(lambda: service.state.started))
+        self.assertTrue(service.health(context))
+        service.stop(context)
+        thread.join(timeout=1)
 
         self.assertFalse(thread.is_alive())
         self.assertEqual(errors, [])
@@ -279,8 +286,7 @@ class HomeAssistantServiceTests(unittest.TestCase):
             sync_coordinator_factory=lambda **kwargs: _FakeSyncCoordinator(**kwargs),
         )
 
-        with patch.dict(os.environ, {"ORAC_HA_TEST_TOKEN": "secret-token"}, clear=False):
-            service.handle_command(_FakeContext(context_config), "resync", {"source": "unit"})
+        service.handle_command(_FakeContext(context_config), "resync", {"source": "unit"})
 
         self.assertEqual(client_holder["client"].config.host, "context-ha.local")
 
@@ -294,9 +300,8 @@ class HomeAssistantServiceTests(unittest.TestCase):
             ),
         )
 
-        with patch.dict(os.environ, {"ORAC_HA_TEST_TOKEN": "secret-token"}, clear=False):
-            with self.assertRaisesRegex(RuntimeError, "sync failed"):
-                service.run(_FakeContext())
+        with self.assertRaisesRegex(RuntimeError, "sync failed"):
+            service.run(_FakeContext())
 
         self.assertFalse(service.state.started)
         self.assertIn("sync failed", service.state.last_error)
@@ -318,8 +323,7 @@ class HomeAssistantServiceTests(unittest.TestCase):
             sync_coordinator_factory=sync_factory,
         )
 
-        with patch.dict(os.environ, {"ORAC_HA_TEST_TOKEN": "secret-token"}, clear=False):
-            result = service.handle_command(context, "resync", {"source": "unit"})
+        result = service.handle_command(context, "resync", {"source": "unit"})
 
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["structural_rows"], 3)

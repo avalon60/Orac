@@ -50,6 +50,11 @@ class PluginRuntimeTests(unittest.TestCase):
         self.assertTrue(manifest.execution_policy.allowed_by_default)
         self.assertFalse(manifest.execution_policy.scaffold)
         self.assertIn("home_assistant.resync", manifest.capabilities)
+        self.assertIsNotNone(manifest.secrets)
+        self.assertEqual(manifest.secrets.default_key, "access_token")
+        self.assertFalse(manifest.secrets.allow_custom_keys)
+        self.assertEqual(manifest.secrets.key_names(), ("access_token",))
+        self.assertTrue(manifest.secrets.get_key("access_token").required)
 
     def test_runtime_context_exposes_current_plugin_config_only(self) -> None:
         manifests, errors = PluginDiscovery(Path("plugins")).discover()

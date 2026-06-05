@@ -66,6 +66,43 @@ class _FailingDBSession:
         return None
 
 
+class _OutVar:
+    def __init__(self, value: int) -> None:
+        self._value = value
+
+    def getvalue(self) -> int:
+        return self._value
+
+
+class _RecordingCursor:
+    def __init__(self) -> None:
+        self.executed: list[tuple[str, dict]] = []
+
+    def __enter__(self) -> "_RecordingCursor":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def var(self, *_args, **_kwargs) -> _OutVar:
+        return _OutVar(1)
+
+    def execute(self, block: str, binds: dict) -> None:
+        self.executed.append((block, binds))
+
+
+class _RecordingDBSession:
+    def __init__(self) -> None:
+        self.cursor_obj = _RecordingCursor()
+        self.commits = 0
+
+    def cursor(self) -> _RecordingCursor:
+        return self.cursor_obj
+
+    def commit(self) -> None:
+        self.commits += 1
+
+
 class PluginAuditPayloadTests(unittest.TestCase):
     """Tests plugin audit payload normalisation from provenance."""
 
@@ -219,6 +256,32 @@ class PluginAuditPayloadTests(unittest.TestCase):
 
 class PluginAuditAdapterTests(unittest.TestCase):
     """Tests the runtime adapter's best-effort behaviour."""
+
+    def test_begin_invocation_converts_json_text_binds_in_plsql(self) -> None:
+        db_session = _RecordingDBSession()
+        adapter = PluginAuditAdapter(db_session=db_session, logger=_FakeLogger())
+
+        session = adapter.create_session(
+            provenance={
+                "plugin_id": "weather",
+                "plugin_name": "Weather",
+                "action_type": "informational_read_only",
+                "status": "allowed",
+                "capabilities": ("weather.current_conditions",),
+                "entitlements": ("user_preferences.weather_location",),
+            },
+            request_context={"request_id": "req-5"},
+        )
+
+        self.assertEqual(session.plugin_invocation_id, 1)
+        block, binds = db_session.cursor_obj.executed[0]
+        self.assertIn("l_capabilities := json(:capabilities);", block)
+        self.assertIn("l_entitlements := json(:entitlements);", block)
+        self.assertIn("l_provenance_json := json(:provenance_json);", block)
+        self.assertIn("p_capabilities => l_capabilities", block)
+        self.assertIsInstance(binds["capabilities"], str)
+        self.assertIsInstance(binds["entitlements"], str)
+        self.assertIsInstance(binds["provenance_json"], str)
 
     def test_audit_adapter_failure_does_not_break_best_effort_execution(self) -> None:
         logger = _FakeLogger()

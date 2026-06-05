@@ -130,10 +130,16 @@ or service context. It must not read arbitrary files directly, and the public
 configuration API does not allow one plugin to request another plugin's
 configuration.
 
-Do not store secrets in `plugin.ini`. Store references such as environment
-variable names instead. For example, Home Assistant uses
-`access_token_env = ORAC_HA_TOKEN`, and Orac reads the token value from that
-environment variable at runtime.
+Do not store secrets in `plugin.ini`. Plugin personal access tokens belong in
+the encrypted PAT vault at `~/.Orac/pat_vault.ini`, and manifests declare the
+expected secret keys under their `secrets` block. For example:
+
+```text
+bin/plugin-pat-mgr.sh --plugin home_assistant --set access_token
+```
+
+Plugin code receives only a plugin-scoped `secret_vault` from the Orac runtime
+context, so it cannot request another plugin's secrets.
 
 Raw template placeholders such as `%protocol%` or `%host%` are treated as
 uninitialised configuration. Plugins with unresolved placeholders are not

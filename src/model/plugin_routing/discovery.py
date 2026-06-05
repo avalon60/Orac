@@ -19,6 +19,8 @@ from model.plugin_routing.models import (
     PluginExecutionPolicy,
     PluginHealthCheck,
     PluginManifest,
+    PluginSecretKey,
+    PluginSecrets,
     PluginServiceSchedule,
     PluginServiceRuntime,
 )
@@ -26,6 +28,7 @@ from model.plugin_database_deployment import PROTECTED_ORAC_SCHEMAS
 
 PLUGIN_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 DATABASE_SCHEMA_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$", re.IGNORECASE)
+SECRET_KEY_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 MANIFEST_SCHEMA_VERSION = 2
 RUNTIME_MODES = {"on_demand", "service", "hybrid"}
 CONFIG_VALUE_TYPES = {"string", "bool", "int", "float", "path", "list"}
@@ -62,6 +65,7 @@ OPTIONAL_FIELDS = {
     "execution",
     "configuration",
     "database",
+    "secrets",
 }
 ALLOWED_FIELDS = REQUIRED_FIELDS | OPTIONAL_FIELDS
 
@@ -170,6 +174,7 @@ class PluginDiscovery:
         database_required, database_on_missing, database_schemas = self._load_database(
             data.get("database", {})
         )
+        secrets = self._load_secrets(data.get("secrets"))
 
         manifest_hash = hashlib.sha256(manifest_text.encode("utf-8")).hexdigest()
 
@@ -196,6 +201,7 @@ class PluginDiscovery:
             database_required=database_required,
             database_on_missing=database_on_missing,
             database_schemas=tuple(database_schemas),
+            secrets=secrets,
         )
 
     def _load_runtime(self, value: Any) -> tuple[str, PluginServiceRuntime | None]:
@@ -538,6 +544,74 @@ class PluginDiscovery:
 
         return required, on_missing, schemas
 
+    def _load_secrets(self, value: Any) -> PluginSecrets | None:
+        """Load plugin secret vault metadata."""
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise PluginManifestError("secrets must be an object")
+
+        required_fields = {"vault", "default_key", "allow_custom_keys", "keys"}
+        self._reject_unknown_fields(value, required_fields, "secrets")
+        self._require_fields(value, required_fields, "secrets")
+
+        vault = self._require_enum(value["vault"], "secrets.vault", {"pat_vault"})
+        default_key = self._require_secret_key(value["default_key"], "secrets.default_key")
+        allow_custom_keys = self._require_bool(
+            value["allow_custom_keys"],
+            "secrets.allow_custom_keys",
+        )
+        keys = self._load_secret_keys(value["keys"])
+        key_names = {secret.key for secret in keys}
+        if default_key not in key_names and not allow_custom_keys:
+            raise PluginManifestError(
+                "secrets.default_key must be declared in secrets.keys when "
+                "secrets.allow_custom_keys is false"
+            )
+
+        return PluginSecrets(
+            vault=vault,
+            default_key=default_key,
+            allow_custom_keys=allow_custom_keys,
+            keys=tuple(keys),
+        )
+
+    def _load_secret_keys(self, value: Any) -> list[PluginSecretKey]:
+        """Load the declared plugin secret keys."""
+        if not isinstance(value, dict):
+            raise PluginManifestError("secrets.keys must be an object")
+
+        result: list[PluginSecretKey] = []
+        for raw_key, metadata in sorted(value.items()):
+            key_name = self._require_secret_key(raw_key, f"secrets.keys.{raw_key}")
+            if not isinstance(metadata, dict):
+                raise PluginManifestError(f"secrets.keys.{key_name} must be an object")
+            required_fields = {"required", "description", "setup_hint", "rotation_supported"}
+            self._reject_unknown_fields(metadata, required_fields, f"secrets.keys.{key_name}")
+            self._require_fields(metadata, {"required", "description"}, f"secrets.keys.{key_name}")
+            result.append(
+                PluginSecretKey(
+                    key=key_name,
+                    required=self._require_bool(
+                        metadata["required"],
+                        f"secrets.keys.{key_name}.required",
+                    ),
+                    description=self._require_non_empty_string(
+                        metadata["description"],
+                        f"secrets.keys.{key_name}.description",
+                    ),
+                    setup_hint=self._require_optional_string(
+                        metadata.get("setup_hint"),
+                        f"secrets.keys.{key_name}.setup_hint",
+                    ),
+                    rotation_supported=self._require_bool(
+                        metadata.get("rotation_supported", False),
+                        f"secrets.keys.{key_name}.rotation_supported",
+                    ),
+                )
+            )
+        return result
+
     def _load_database_schemas(self, value: Any) -> list[PluginDatabaseSchema]:
         if not isinstance(value, list):
             raise PluginManifestError("database.schemas must be a list")
@@ -630,6 +704,16 @@ class PluginDiscovery:
         if value is None:
             return None
         return PluginDiscovery._require_non_empty_string(value, field_name)
+
+    @staticmethod
+    def _require_secret_key(value: Any, field_name: str) -> str:
+        """Return a validated plugin secret key name."""
+        cleaned = PluginDiscovery._require_non_empty_string(value, field_name)
+        if not SECRET_KEY_PATTERN.fullmatch(cleaned):
+            raise PluginManifestError(
+                f"{field_name} must start with a letter and contain only letters, numbers and underscores"
+            )
+        return cleaned
 
     @staticmethod
     def _require_bool(value: Any, field_name: str) -> bool:
