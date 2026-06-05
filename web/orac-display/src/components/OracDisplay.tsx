@@ -108,8 +108,8 @@ const SHOW_TRANSCRIPT_PANELS =
 
 const STATE_CONFIGS: Record<OracState, StateConfig> = {
   idle: { color: '#4fc3f7', bloomIntensity: 0.45, rotationSpeed: 0.15, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
-  wake_detected: { color: '#8fdcff', bloomIntensity: 0.15, rotationSpeed: 1.5, distortion: 0.1, pulseRate: 10, scale: 1.25, transmission: 0.28 },
-  listening: { color: '#7af7ff', bloomIntensity: 0.22, rotationSpeed: 0.4, distortion: 0.2, pulseRate: 2, scale: 1.1, transmission: 0.34 },
+  wake_detected: { color: '#4fc3f7', bloomIntensity: 0.45, rotationSpeed: 0.15, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
+  listening: { color: '#4fc3f7', bloomIntensity: 0.45, rotationSpeed: 0.15, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
   transcribing: { color: '#b8f2ff', bloomIntensity: 1.1, rotationSpeed: 1.2, distortion: 0.4, pulseRate: 4, scale: 1.05, transmission: 0.8 },
   thinking: { color: '#8ed3e8', bloomIntensity: 1.45, rotationSpeed: 0.8, distortion: 0.42, pulseRate: 1, scale: 1.15, transmission: 0.7 },
   checking_online: { color: '#71cfff', bloomIntensity: 1.0, rotationSpeed: 0.62, distortion: 0.28, pulseRate: 0.75, scale: 1.08, transmission: 0.66 },
@@ -123,8 +123,8 @@ const STATE_CONFIGS: Record<OracState, StateConfig> = {
 
 const CORE_PALETTES: Record<OracState, CorePalette> = {
   idle: { color: '#edf8ff', glowColor: '#d7ecff', highlightColor: '#ffffff' },
-  wake_detected: { color: '#fff3d3', glowColor: '#ffe2a8', highlightColor: '#fff9ec' },
-  listening: { color: '#eefcff', glowColor: '#dff7ff', highlightColor: '#ffffff' },
+  wake_detected: { color: '#edf8ff', glowColor: '#d7ecff', highlightColor: '#ffffff' },
+  listening: { color: '#edf8ff', glowColor: '#d7ecff', highlightColor: '#ffffff' },
   transcribing: { color: '#eefaff', glowColor: '#d7f3ff', highlightColor: '#ffffff' },
   thinking: { color: '#f4fbff', glowColor: '#d8edf7', highlightColor: '#ffffff' },
   checking_online: { color: '#f3fcff', glowColor: '#d7f0ff', highlightColor: '#ffffff' },
@@ -362,7 +362,7 @@ const GlassEnvironment = () => (
 const WaveHalo = ({ state }: { state: OracState }) => {
   const ref = useRef<THREE.Group>(null);
   const config = STATE_CONFIGS[state];
-  const isListening = state === 'listening' || state === 'wake_detected';
+  const isListening = false;
   const isRetrieval = state === 'checking_online' || state === 'reading_sources';
   const isSpeaking = state === 'speaking';
   const waveCount = isSpeaking ? 3 : 2;
@@ -468,8 +468,8 @@ const OrbitalRings = ({
     }
 
     const t = sceneState.clock.elapsedTime;
-    const isIdle = state === 'idle';
-    const isListening = state === 'listening' || state === 'wake_detected';
+    const isIdle = state === 'idle' || state === 'wake_detected' || state === 'listening';
+    const isListening = false;
     const isSpeaking = state === 'speaking';
     const coreRadius = coreRadiusRef.current;
     const ringRadius = coreRadius * ORBITAL_RING_BASE_MULTIPLIER;
@@ -666,9 +666,6 @@ const Tesseract = ({ state }: { state: OracState }) => {
   const coreHighlightRef = useRef<THREE.Mesh>(null);
   const connectorRef = useRef<THREE.LineSegments>(null);
   const orbitalCoreRadiusRef = useRef<number>(coreBaseRadius);
-  const stateEnteredAtRef = useRef<number>(0);
-  const previousStateRef = useRef<OracState>(state);
-  
   const config = STATE_CONFIGS[state];
   const corePalette = CORE_PALETTES[state];
   const coreGlowTexture = useMemo(() => createCoreGlowTexture(), []);
@@ -686,12 +683,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
     }
 
     const t = sceneState.clock.elapsedTime;
-    if (previousStateRef.current !== state) {
-      previousStateRef.current = state;
-      stateEnteredAtRef.current = t;
-    }
-    const stateAge = Math.max(0, t - stateEnteredAtRef.current);
-    
+
     // 1. Shared rotation for the whole tesseract
     const rotSpeed = config.rotationSpeed;
     groupRef.current.rotation.y += delta * rotSpeed;
@@ -704,7 +696,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
     let outerOpacity = OUTER_CUBE_SURFACE.opacity;
     let innerOpacity = 0.16;
     let connectorOpacity = 0.45;
-    let coreScale = coreBaseRadius * (state === 'idle' ? 1 : 2);
+    let coreScale = coreBaseRadius * (state === 'idle' || state === 'wake_detected' || state === 'listening' ? 1 : 2);
     let coreOpacity = 0.12;
     let coreGlow = 0.45;
     let coreHighlightOpacity = 0.2;
@@ -714,6 +706,8 @@ const Tesseract = ({ state }: { state: OracState }) => {
 
     switch (state) {
       case 'idle':
+      case 'wake_detected':
+      case 'listening':
         // 3% breathing for inner cube
         innerScale *= (1 + Math.sin(t * 1.5) * 0.03);
         outerOpacity = 0.16;
@@ -728,17 +722,6 @@ const Tesseract = ({ state }: { state: OracState }) => {
           coreGlowColor = new THREE.Color(corePalette.glowColor).lerp(new THREE.Color('#f9fdff'), 0.35 + idlePulse * 0.2);
           coreHighlightColor = new THREE.Color(corePalette.highlightColor).lerp(new THREE.Color('#ffffff'), 0.22 + idlePulse * 0.2);
         }
-        break;
-      case 'listening':
-        // Expanded + gentle pulse
-        innerScale *= (1.1 + Math.sin(t * 4) * 0.05);
-        outerOpacity = 0.21;
-        innerOpacity = 0.16;
-        connectorOpacity = 0.55;
-        coreScale *= (1 + Math.sin(t * 2.5) * 0.04);
-        coreOpacity = 0.16;
-        coreGlow = 0.65;
-        coreHighlightOpacity = 0.14;
         break;
       case 'thinking':
       case 'checking_online':
@@ -783,18 +766,6 @@ const Tesseract = ({ state }: { state: OracState }) => {
           coreGlowColor = peakGlowColor;
           coreHighlightColor = peakHighlightColor;
         }
-        break;
-      case 'wake_detected':
-        // Sharp expansion
-        innerScale *= 1.4;
-        outerOpacity = 0.2;
-        innerOpacity = 0.16;
-        connectorOpacity = 0.85;
-        const wakePulse = Math.max(0, Math.min(1, 1 - stateAge * 1.6));
-        coreScale *= 1 + wakePulse * 0.06;
-        coreOpacity = 0.18 + wakePulse * 0.12;
-        coreGlow = 0.95 + wakePulse * 0.35;
-        coreHighlightOpacity = 0.16 + wakePulse * 0.06;
         break;
       case 'error':
         // Reduced scale and dimmed connectors
@@ -1033,11 +1004,11 @@ const Tesseract = ({ state }: { state: OracState }) => {
 
 const Scene = ({ state }: { state: OracState }) => {
   const config = STATE_CONFIGS[state];
-  const isIdle = state === 'idle';
+  const isIdle = state === 'idle' || state === 'wake_detected' || state === 'listening';
   const isThinking = state === 'thinking' || state === 'checking_online' || state === 'reading_sources';
   const isSpeaking = state === 'speaking';
   const isError = state === 'error' || state === 'interrupted';
-  const isListening = state === 'listening' || state === 'wake_detected';
+  const isListening = false;
   const sparkleCount = isThinking ? 52 : 28;
   const sparkleSize = isThinking ? 1.8 : 1.55;
   const sparkleSpeed = config.pulseRate * (isIdle ? 0.28 : isThinking ? 0.24 : 0.18);
@@ -1114,8 +1085,8 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
   const isBackendUnavailableMessage =
     typeof message === 'string' &&
     message.includes('Python stack is not running');
-  const isIdle = state === 'idle';
-  const isListening = state === 'listening' || state === 'wake_detected';
+  const isIdle = state === 'idle' || state === 'wake_detected' || state === 'listening';
+  const isListening = false;
   const isRetrieval = state === 'checking_online' || state === 'reading_sources';
   const isTurnActive =
     state === 'wake_detected' ||
@@ -1201,7 +1172,7 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
 
       <AnimatePresence mode="wait">
         <motion.div
-          key={state}
+          key={state === 'wake_detected' || state === 'listening' ? 'idle' : state}
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 1.05 }}
