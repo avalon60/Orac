@@ -140,6 +140,7 @@ class VoiceTurnController:
     timing_logged = False
     barge_in_min_speech_ms = 0
     last_runtime_identity: tuple[str, str, str, str, str] | None = None
+    last_user_identity: tuple[str, str] | None = None
     if (
       barge_in_controller is not None
       and not isinstance(barge_in_controller, OpenWakeWordBargeInController)
@@ -413,6 +414,23 @@ class VoiceTurnController:
           )
           last_runtime_identity = runtime_identity
 
+        user_identity = _display_user_identity_from_frame(env)
+        if (
+          self.display_sender is not None
+          and user_identity is not None
+          and user_identity != last_user_identity
+        ):
+          user_registration, user_display_name = user_identity
+          _send_display_event(
+            self.display_sender,
+            "user.identity",
+            session_id=self.voice_session_id,
+            turn_id=req_id,
+            user_registration=user_registration,
+            user_display_name=user_display_name or None,
+          )
+          last_user_identity = user_identity
+
         frame_type = env.get("type")
         if frame_type in slave_client.STREAM_EVENT_TYPES:
           if frame_type in {
@@ -678,3 +696,20 @@ def _display_runtime_identity_from_frame(
   if model and not persona:
     return None
   return model, persona, personality_code, personality_name, llm_source
+
+
+def _display_user_identity_from_frame(
+  frame: dict[str, object],
+) -> tuple[str, str] | None:
+  """Extract display-safe user identity from an Orac frame."""
+  meta = frame.get("meta")
+  if not isinstance(meta, dict):
+    return None
+
+  user_registration = str(meta.get("user_registration") or "").strip()
+  user_display_name = str(meta.get("user_display_name") or "").strip()
+  if user_registration == "registered" and user_display_name:
+    return user_registration, user_display_name
+  if user_registration == "anonymous":
+    return user_registration, ""
+  return None

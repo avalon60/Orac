@@ -3307,6 +3307,11 @@ class Orac:
             "req_id": req_env.get("id"),
             "user_registration": user_registration,
         }
+        user_display_name = str(
+            request_meta.get("user_display_name") or ""
+        ).strip()
+        if user_registration == "registered" and user_display_name:
+            response_meta["user_display_name"] = user_display_name
         llm_source_value = str(
             llm_source or getattr(self, "_active_llm_source", "") or ""
         ).strip()
@@ -3867,6 +3872,22 @@ class Orac:
                 _log_exception("Oracle session validation failed (non-fatal)", e)
 
             meta = self._apply_user_preference_meta(meta, auth_user)
+            profile_lookup = getattr(self.ctx, "get_user_profile", None)
+            if callable(profile_lookup):
+                try:
+                    user_profile = profile_lookup(auth_user)
+                except PermissionError:
+                    user_profile = {}
+                except Exception as e:
+                    _log_exception("Failed to load authenticated user profile", e)
+                    user_profile = {}
+                if isinstance(user_profile, dict):
+                    display_name = str(
+                        user_profile.get("display_name") or ""
+                    ).strip()
+                    if display_name:
+                        meta = dict(meta)
+                        meta["user_display_name"] = display_name
             req_env["meta"] = meta
 
             logger.log_info(f"{Icons.info} [{client}] user={auth_user} Prompt received")

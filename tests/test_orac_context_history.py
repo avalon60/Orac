@@ -2930,6 +2930,18 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("ensure_conversation_with_timeout failed", errors)
         self.assertNotIn("user 'alice' is not registered", errors.lower())
 
+    async def test_registered_user_response_meta_includes_display_name(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Hello Clive."],
+            context_manager=_MemoryContextManager(),
+        )
+
+        wire = await orchestrator.handle_request(self._request("Hello there.", req_id="req1"))
+        response = json.loads(wire)
+
+        self.assertEqual(response["meta"]["user_registration"], "registered")
+        self.assertEqual(response["meta"]["user_display_name"], "Clive")
+
     async def test_request_start_reconnects_stale_oracle_session(self) -> None:
         orchestrator = self._make_orac_stub(
             llm_responses=["Hello after reconnect."],

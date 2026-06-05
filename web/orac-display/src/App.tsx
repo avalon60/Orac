@@ -82,6 +82,27 @@ function getRuntimeIdentity(data: Record<string, unknown>): RuntimeIdentity | nu
   };
 }
 
+function getUserDisplayName(data: Record<string, unknown>): string | null {
+  const registration =
+    typeof data.user_registration === 'string'
+      ? data.user_registration.trim().toLowerCase()
+      : '';
+  const displayName =
+    typeof data.user_display_name === 'string'
+      ? data.user_display_name.trim()
+      : '';
+
+  if (registration === 'registered' && displayName) {
+    return displayName;
+  }
+
+  if (registration === 'anonymous') {
+    return '';
+  }
+
+  return null;
+}
+
 function useMediaQuery(query: string) {
   const [matches, setMatches] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.matchMedia(query).matches : false,
@@ -127,6 +148,7 @@ function App() {
   );
   const [runtimeIdentity, setRuntimeIdentity] =
     useState<RuntimeIdentity | null>(null);
+  const [userDisplayName, setUserDisplayName] = useState('');
   const [userTranscript, setUserTranscript] = useState('');
   const [oracTranscript, setOracTranscript] = useState('');
   const [railExpanded, setRailExpanded] = useState(false);
@@ -299,6 +321,8 @@ function App() {
             persona?: string;
             personality_code?: string;
             personality_name?: string;
+            user_registration?: string;
+            user_display_name?: string;
           };
           const transcriptText = getTranscriptText(
             data as Record<string, unknown>,
@@ -329,6 +353,14 @@ function App() {
             const identity = getRuntimeIdentity(data as Record<string, unknown>);
             if (identity) {
               setRuntimeIdentity(identity);
+            }
+            setConnectionState('connected');
+          } else if (data.event === 'user.identity') {
+            const displayName = getUserDisplayName(
+              data as Record<string, unknown>,
+            );
+            if (displayName !== null) {
+              setUserDisplayName(displayName);
             }
             setConnectionState('connected');
           } else if (
@@ -514,6 +546,7 @@ function App() {
                 message={message}
                 showTranscriptPanels={showTranscriptPanels}
                 userTranscript={userTranscript}
+                userDisplayName={userDisplayName}
                 oracTranscript={oracTranscript}
                 renderResetKey={renderResetNonce}
                 onRenderRecovery={requestDisplayRecovery}

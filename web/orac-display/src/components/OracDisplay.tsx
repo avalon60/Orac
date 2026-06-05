@@ -43,6 +43,7 @@ interface OracDisplayProps {
   message?: string;
   showTranscriptPanels?: boolean;
   userTranscript?: string;
+  userDisplayName?: string;
   oracTranscript?: string;
   renderResetKey?: number;
   onRenderRecovery?: (reason: DisplayRecoveryReason) => void;
@@ -1104,6 +1105,7 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
   message,
   showTranscriptPanels = SHOW_TRANSCRIPT_PANELS,
   userTranscript = '',
+  userDisplayName = '',
   oracTranscript = '',
   renderResetKey = 0,
   onRenderRecovery,
@@ -1128,6 +1130,7 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
     userTranscript.trim() || 'No recent utterance';
   const rightTranscript =
     oracTranscript.trim() || 'Waiting for response';
+  const userPanelTitle = userDisplayName.trim() || 'You (unverified)';
   const leftPanelEmphasis = isIdle ? 0.98 : isTurnActive ? 1.01 : 1;
   const rightPanelEmphasis = isIdle ? 0.98 : state === 'speaking' ? 1.03 : 1.01;
 
@@ -1161,7 +1164,7 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
         {showTranscriptPanels && (
           <div className="hidden min-h-0 xl:flex">
             <TranscriptPanel
-              title="You"
+              title={userPanelTitle}
               text={leftTranscript}
               placeholder="Listening for wake word"
               accentColor="#8fdcff"

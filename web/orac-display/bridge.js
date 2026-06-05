@@ -8,6 +8,7 @@ const WS_PORT = 8767;
 const BROWSER_RECONNECT_GRACE_MS = 1_000;
 let latestMessage = null;
 let latestRuntimeIdentity = null;
+let latestUserIdentity = null;
 let activeBrowserClients = 0;
 let browserDisconnectTimer = null;
 
@@ -60,6 +61,9 @@ wss.on('connection', (ws) => {
   if (latestRuntimeIdentity) {
     ws.send(latestRuntimeIdentity);
   }
+  if (latestUserIdentity) {
+    ws.send(latestUserIdentity);
+  }
   if (latestMessage) {
     ws.send(latestMessage);
   }
@@ -84,6 +88,8 @@ function broadcast(data) {
     const payload = JSON.parse(message);
     if (payload?.event === 'runtime.identity') {
       latestRuntimeIdentity = message;
+    } else if (payload?.event === 'user.identity') {
+      latestUserIdentity = message;
     }
   } catch {
     // Keep forwarding malformed payloads for diagnostic parity.

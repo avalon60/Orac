@@ -130,6 +130,7 @@ from orac_voice.voice_loop_local import build_parser
 from orac_voice.voice_loop_local import ORAC_BACKEND_UNAVAILABLE_MESSAGE
 from orac_voice.voice_turn_controller import VoiceTurnController
 from orac_voice.voice_turn_controller import _display_runtime_identity_from_frame
+from orac_voice.voice_turn_controller import _display_user_identity_from_frame
 
 
 class _FakeTtsEngine:
@@ -4243,6 +4244,32 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
 
     self.assertIsNone(identity)
 
+  def test_display_user_identity_uses_registered_display_name(self) -> None:
+    """Registered user metadata should expose only the display-safe name."""
+    identity = _display_user_identity_from_frame(
+      {
+        "meta": {
+          "user_registration": "registered",
+          "user_display_name": "Clive",
+        },
+      }
+    )
+
+    self.assertEqual(identity, ("registered", "Clive"))
+
+  def test_display_user_identity_treats_anonymous_as_unverified(self) -> None:
+    """Anonymous user metadata should clear any display name."""
+    identity = _display_user_identity_from_frame(
+      {
+        "meta": {
+          "user_registration": "anonymous",
+          "user_display_name": "Ignored",
+        },
+      }
+    )
+
+    self.assertEqual(identity, ("anonymous", ""))
+
   async def test_voice_turn_controller_handles_non_streaming_response(
     self,
   ) -> None:
@@ -5451,6 +5478,48 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(runtime_events[0]["model"], "test-model")
     self.assertEqual(runtime_events[0]["persona"], "Standard Orac")
     self.assertEqual(runtime_events[0]["llm_source"], "configured_fallback")
+
+  async def test_voice_prompt_forwards_user_identity_to_display(self) -> None:
+    """Prompt handling should expose registered user display metadata."""
+    reader = asyncio.StreamReader()
+    writer = _FakeStreamWriter()
+    frames = [
+      {
+        "v": 1,
+        "type": "response",
+        "reply_to": "req_current",
+        "meta": {
+          "model": "test-model",
+          "personality_code": "DEFAULT",
+          "personality_name": "Standard Orac",
+          "user_registration": "registered",
+          "user_display_name": "Clive",
+        },
+        "payload": {"content": "OK."},
+      },
+    ]
+    for frame in frames:
+      reader.feed_data((json.dumps(frame) + "\n").encode("utf-8"))
+    reader.feed_eof()
+
+    sender = _FakeDisplaySender()
+    with contextlib.redirect_stdout(io.StringIO()):
+      status = await _send_orac_prompt(
+        reader=reader,
+        writer=writer,
+        prompt_text="current",
+        voice_session_id="voice-session",
+        display_sender=sender,
+      )
+
+    user_events = [
+      event for event in sender.events
+      if event.get("event") == "user.identity"
+    ]
+    self.assertEqual(status, 0)
+    self.assertEqual(len(user_events), 1)
+    self.assertEqual(user_events[0]["user_registration"], "registered")
+    self.assertEqual(user_events[0]["user_display_name"], "Clive")
 
   async def test_voice_prompt_stays_speaking_until_last_chunk_finishes(
     self,
