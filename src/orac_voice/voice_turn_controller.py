@@ -527,6 +527,7 @@ class VoiceTurnController:
             )
             if delta_text:
               orac_transcript_parts.append(delta_text)
+              _notify_final_text()
               _send_display_event(
                 self.display_sender,
                 "transcript.orac.delta",
@@ -547,6 +548,7 @@ class VoiceTurnController:
             ).strip()
             if chunk_text:
               orac_spoken_parts.append(chunk_text)
+              _notify_final_text()
             logger.debug("Speech text chunk received for existing TTS path")
             playback_expected = True
           elif frame_type in {"stream_end", "stream_cancelled"}:

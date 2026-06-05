@@ -1043,19 +1043,34 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
   writer: asyncio.StreamWriter | None = None
   capture_next_command = False
   next_idle_message = WAKE_LISTENING_MESSAGE
-  last_orac_response_text = ""
-  last_orac_response_at: float | None = None
+  recent_orac_responses: list[tuple[str, float]] = []
 
   def _remember_orac_response(text: str) -> None:
-    nonlocal last_orac_response_text, last_orac_response_at
-    last_orac_response_text = text
-    last_orac_response_at = time.perf_counter()
+    text = str(text or "").strip()
+    if not text:
+      return
+    now = time.perf_counter()
+    recent_orac_responses[:] = [
+      (known_text, known_at)
+      for known_text, known_at in recent_orac_responses
+      if now - known_at <= DEFAULT_TTS_ECHO_SUPPRESSION_SECONDS
+    ]
+    if recent_orac_responses and recent_orac_responses[-1][0] == text:
+      recent_orac_responses[-1] = (text, now)
+    else:
+      recent_orac_responses.append((text, now))
+    del recent_orac_responses[:-6]
 
   def _accept_user_transcript(text: str) -> bool:
-    return not _is_probable_tts_echo(
-      text,
-      last_orac_response_text,
-      reference_finished_at=last_orac_response_at,
+    now = time.perf_counter()
+    return not any(
+      _is_probable_tts_echo(
+        text,
+        known_text,
+        reference_finished_at=known_at,
+        now=now,
+      )
+      for known_text, known_at in recent_orac_responses
     )
 
   if not _orac_backend_reachable(args.host, args.port):

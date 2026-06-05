@@ -4450,6 +4450,79 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
       ["Des O'Connor was 88 when he died."],
     )
 
+  async def test_voice_turn_controller_reports_text_before_voice_complete(
+    self,
+  ) -> None:
+    """Assistant text should be available early for echo filtering."""
+    reader = self._reader_with_frames(
+      [
+        {
+          "v": 1,
+          "type": "stream_start",
+          "reply_to": "req_current",
+          "payload": {},
+        },
+        {
+          "v": 1,
+          "type": "text_delta",
+          "reply_to": "req_current",
+          "payload": {"delta": "I found results, "},
+        },
+        {
+          "v": 1,
+          "type": "text_delta",
+          "reply_to": "req_current",
+          "payload": {"delta": "but they did not appear relevant."},
+        },
+        {
+          "v": 1,
+          "type": "text_chunk",
+          "reply_to": "req_current",
+          "payload": {
+            "chunk": "I found results, but they did not appear relevant.",
+            "turn_id": "req_current",
+          },
+        },
+        {
+          "v": 1,
+          "type": "tts_playback_started",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+        },
+        {
+          "v": 1,
+          "type": "tts_playback_finished",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+        },
+        {
+          "v": 1,
+          "type": "voice_turn_complete",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current"},
+        },
+      ]
+    )
+    writer = _FakeStreamWriter()
+    final_texts: list[str] = []
+    controller = VoiceTurnController(
+      reader=reader,
+      writer=writer,
+      prompt_text="Check that.",
+      voice_session_id="voice-session",
+      display_sender=_FakeDisplaySender(),
+      on_final_text=final_texts.append,
+    )
+
+    status = await controller.run()
+
+    self.assertEqual(status, 0)
+    self.assertIn("I found results,", final_texts)
+    self.assertIn(
+      "I found results, but they did not appear relevant.",
+      final_texts,
+    )
+
   async def test_voice_turn_controller_maps_retrieval_frames_to_display_states(
     self,
   ) -> None:

@@ -1020,10 +1020,29 @@ const Scene = ({ state }: { state: OracState }) => {
   const isListening = false;
   const sparkleCount = isThinking ? 52 : 28;
   const sparkleSize = isThinking ? 1.8 : 1.55;
-  const sparkleSpeed = config.pulseRate * (isIdle ? 0.28 : isThinking ? 0.24 : 0.18);
+  const idleSparkleSpeed = STATE_CONFIGS.idle.pulseRate * 0.28;
+  const sparkleSpeed = isThinking
+    ? idleSparkleSpeed * 6
+    : isSpeaking
+      ? idleSparkleSpeed * 2
+      : isIdle
+        ? idleSparkleSpeed
+        : config.pulseRate * 0.18;
   const sparkleOpacity = isError ? 0.14 : isIdle ? 0.28 : isSpeaking ? 0.5 : isThinking ? 0.58 : 0.42;
   const pointLightIntensity = isListening ? 0.04 : isSpeaking ? 0.22 : isThinking ? 0.18 : 0.1;
   const spotLightIntensity = isListening ? 0.08 : isSpeaking ? 0.42 : isThinking ? 0.34 : 0.18;
+  const bloomIntensity = state === 'thinking'
+    ? config.bloomIntensity * 3
+    : state === 'speaking'
+      ? config.bloomIntensity * 2
+      : config.bloomIntensity;
+  const bloomRadius = state === 'thinking'
+    ? 1.2
+    : state === 'speaking'
+      ? 0.8
+      : isListening
+        ? 0.24
+        : 0.4;
 
   const glitchDelay = useMemo(() => new THREE.Vector2(0.1, 0.3), []);
   const glitchDuration = useMemo(() => new THREE.Vector2(0.1, 0.2), []);
@@ -1064,8 +1083,8 @@ const Scene = ({ state }: { state: OracState }) => {
         <Bloom 
           luminanceThreshold={0.8} 
           mipmapBlur 
-          intensity={config.bloomIntensity} 
-          radius={isListening ? 0.24 : 0.4} 
+          intensity={bloomIntensity}
+          radius={bloomRadius}
         />
         <Noise opacity={0.05} />
         {state === 'interrupted' ? (
