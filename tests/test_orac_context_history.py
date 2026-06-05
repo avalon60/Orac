@@ -1006,6 +1006,31 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("physical embodiment", clock)
 
+    def test_direct_time_query_has_deterministic_answer(self) -> None:
+        """Direct local time questions should not depend on model reasoning."""
+        answer = orac_module.answer_local_date_time_query(
+            "What time is it?",
+            {
+                "timezone": "Europe/London",
+                "weather_location": "Thornton Dale, England, United Kingdom",
+            },
+        )
+
+        self.assertIsNotNone(answer)
+        self.assertRegex(
+            answer or "",
+            r"^It's \d{2}:\d{2} in Thornton Dale, England, United Kingdom\.$",
+        )
+
+    def test_non_time_question_has_no_deterministic_time_answer(self) -> None:
+        """Only direct local date/time questions should use this shortcut."""
+        answer = orac_module.answer_local_date_time_query(
+            "What is the time signature of Money by Pink Floyd?",
+            {"timezone": "Europe/London"},
+        )
+
+        self.assertIsNone(answer)
+
     def test_system_primer_includes_creator_and_model_provenance_rules(self) -> None:
         """System primer should constrain creator and vendor provenance."""
         primer = orac_module._orac_system_primer(
@@ -1308,6 +1333,33 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("Session timezone preference: Europe/Paris.", prompt)
         self.assertIn("answer with the exact HH:MM value", prompt)
+
+    async def test_direct_time_query_bypasses_llm(self) -> None:
+        """Direct local time questions should be answered from runtime clock data."""
+        orchestrator = self._make_orac_stub(
+            llm_responses=[
+                "I do not have access to your current location or time zone. Please check your device."
+            ]
+        )
+
+        wire = await orchestrator.handle_request(
+            self._request(
+                "What time is it?",
+                req_id="req-time",
+                meta={
+                    "timezone": "Europe/London",
+                    "weather_location": "Thornton Dale, England, United Kingdom",
+                },
+            )
+        )
+        response = json.loads(wire)
+        content = response["payload"]["content"]
+
+        self.assertRegex(
+            content,
+            r"^It's \d{2}:\d{2} in Thornton Dale, England, United Kingdom\.$",
+        )
+        self.assertEqual(orchestrator.llm.prompts, [])
 
     def test_contextual_prompt_allows_request_timezone_override(self) -> None:
         """Request metadata may override the configured runtime timezone."""

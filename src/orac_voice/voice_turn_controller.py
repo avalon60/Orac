@@ -24,6 +24,7 @@ from view.display_event_pipe import DisplayEventSender
 
 ConsoleLineWriter = Callable[[str], None]
 ConsoleStartWriter = Callable[[str], None]
+FinalTextCallback = Callable[[str], None]
 
 
 class VoiceCancelRequester(Protocol):
@@ -60,6 +61,7 @@ class VoiceTurnController:
     console_line: ConsoleLineWriter | None = None,
     console_start: ConsoleStartWriter | None = None,
     completion_idle_message: str = "Listening for wake word",
+    on_final_text: FinalTextCallback | None = None,
   ) -> None:
     """Initialise a voice turn controller.
 
@@ -78,6 +80,8 @@ class VoiceTurnController:
       console_start (ConsoleStartWriter | None): Console prefix writer.
       completion_idle_message (str): Display message emitted when this turn
         has finished and the caller is resuming its idle lifecycle.
+      on_final_text (FinalTextCallback | None): Optional callback receiving
+        final assistant text for echo-suppression or diagnostics.
     """
     self.reader = reader
     self.writer = writer
@@ -91,6 +95,7 @@ class VoiceTurnController:
     self.console_line = console_line or print
     self.console_start = console_start or self._default_console_start
     self.completion_idle_message = completion_idle_message
+    self.on_final_text = on_final_text
 
   async def run(self) -> int:
     """Send the prompt and process protocol frames until the turn finishes."""
@@ -135,6 +140,8 @@ class VoiceTurnController:
     playback_cancelled = False
     final_response_status: int | None = None
     orac_transcript_parts: list[str] = []
+    orac_spoken_parts: list[str] = []
+    last_final_text_notified = ""
     stream_start_at: float | None = None
     first_text_delta_at: float | None = None
     first_text_chunk_at: float | None = None
@@ -232,6 +239,26 @@ class VoiceTurnController:
         playback_started_count,
       )
 
+    def _current_orac_text() -> str:
+      """Return the best currently known assistant text for this turn."""
+      transcript_text = "".join(orac_transcript_parts).strip()
+      if transcript_text:
+        return transcript_text
+      return " ".join(part.strip() for part in orac_spoken_parts if part.strip())
+
+    def _notify_final_text(text: str | None = None) -> None:
+      """Notify the caller of final assistant text at most once per value."""
+      nonlocal last_final_text_notified
+      final_text_value = (text or _current_orac_text()).strip()
+      if (
+        not final_text_value
+        or self.on_final_text is None
+        or final_text_value == last_final_text_notified
+      ):
+        return
+      last_final_text_notified = final_text_value
+      self.on_final_text(final_text_value)
+
     def _update_retrieval_display_state(frame_type: str) -> None:
       """Map retrieval lifecycle frames to the display state rail."""
       if self.display_sender is None:
@@ -285,6 +312,7 @@ class VoiceTurnController:
       if not stream_finished:
         return None
       interruption_policy.mark_turn_complete(output_turn_id=req_id)
+      _notify_final_text()
       if self.display_sender is not None:
         self.display_sender.send_state(
           "idle",
@@ -514,6 +542,11 @@ class VoiceTurnController:
           elif frame_type == "text_chunk":
             if first_text_chunk_at is None:
               first_text_chunk_at = time.perf_counter()
+            chunk_text = slave_client.strip_reasoning_tags(
+              str(payload.get("chunk") or "")
+            ).strip()
+            if chunk_text:
+              orac_spoken_parts.append(chunk_text)
             logger.debug("Speech text chunk received for existing TTS path")
             playback_expected = True
           elif frame_type in {"stream_end", "stream_cancelled"}:
@@ -573,6 +606,7 @@ class VoiceTurnController:
             interruption_policy.mark_turn_complete(output_turn_id=req_id)
             if last_tts_finished_at is None:
               last_tts_finished_at = time.perf_counter()
+            _notify_final_text()
             if self.display_sender is not None:
               self.display_sender.send_state(
                 "idle",
@@ -613,6 +647,7 @@ class VoiceTurnController:
           final_text = "".join(orac_transcript_parts).strip()
         if stream_end_at is None and not stream_rendered:
           stream_end_at = time.perf_counter()
+        _notify_final_text(final_text)
         _send_display_event(
           self.display_sender,
           "transcript.orac.final",

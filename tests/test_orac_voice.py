@@ -117,6 +117,7 @@ from orac_voice.wake_stt_phrase import _matches_wake_phrase
 from orac_voice.voice_loop_local import _is_exit_phrase
 from orac_voice.voice_loop_local import _create_activation_listener
 from orac_voice.voice_loop_local import _create_barge_in_controller
+from orac_voice.voice_loop_local import _is_probable_tts_echo
 from orac_voice.voice_loop_local import _load_activation_mode
 from orac_voice.voice_loop_local import _load_record_mode
 from orac_voice.voice_loop_local import _load_wake_rearm_seconds
@@ -1151,6 +1152,83 @@ class OracVoiceTests(unittest.TestCase):
       ["transcript.turn.clear", "transcript.user.final"],
     )
     self.assertEqual(transcript_events[-1]["text"], "Turn the lights on")
+
+  def test_tts_echo_detection_matches_recent_spoken_answer(self) -> None:
+    """Recent STT text matching Orac's own answer should be treated as echo."""
+    reference = (
+      "Val Doonican was 88 when he died. He was born on 3 February "
+      "1927 and died on 2 July 2015."
+    )
+    recognised = (
+      "Valdunican was 88 when he died he was born on 3rd of February "
+      "1927 and died on 2nd of July 2015"
+    )
+
+    self.assertTrue(
+      _is_probable_tts_echo(
+        recognised,
+        reference,
+        reference_finished_at=10.0,
+        now=11.0,
+      )
+    )
+
+  def test_tts_echo_detection_does_not_match_unrelated_command(self) -> None:
+    """Unrelated commands should not be suppressed as output echo."""
+    self.assertFalse(
+      _is_probable_tts_echo(
+        "turn the kitchen light on",
+        "Val Doonican was 88 when he died.",
+        reference_finished_at=10.0,
+        now=11.0,
+      )
+    )
+
+  def test_transcribe_once_can_suppress_echo_user_transcript_event(self) -> None:
+    """Suppressed echo text should not be displayed as a user utterance."""
+
+    class _FixedCapture:
+      def __init__(self) -> None:
+        self.record_seconds = None
+
+      def record_to_wav(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        record_seconds: float | None,
+      ) -> Path:
+        return Path("/tmp/fake-stt.wav")
+
+      def cancel(self) -> None:
+        return None
+
+    args = build_parser().parse_args(["--listen-once"])
+    sender = _FakeDisplaySender()
+
+    with patch(
+      "orac_voice.voice_loop_local._load_record_mode",
+      return_value="fixed",
+    ):
+      _session_id, _turn_id, recognised_text = _transcribe_once(
+        args,
+        capture=_FixedCapture(),
+        stt_engine=_FakeWakeStt("Val Doonican was 88 when he died."),
+        prompt=None,
+        display_sender=sender,
+        transcript_filter=lambda _text: False,
+      )
+
+    self.assertEqual(recognised_text, "Val Doonican was 88 when he died.")
+    transcript_events = [
+      event
+      for event in sender.events
+      if str(event.get("event", "")).startswith("transcript.")
+    ]
+    self.assertEqual(
+      [event["event"] for event in transcript_events],
+      ["transcript.turn.clear"],
+    )
 
   def test_voice_cli_accepts_record_mode_override(self) -> None:
     """Voice CLI should expose fixed and VAD recording modes."""
@@ -4311,6 +4389,66 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
       ["transcript.orac.start", "transcript.orac.final"],
     )
     self.assertEqual([state[0] for state in sender.states], ["thinking", "idle"])
+
+  async def test_voice_turn_controller_reports_spoken_text_on_voice_complete(
+    self,
+  ) -> None:
+    """Spoken text chunks should be available for post-playback echo filtering."""
+    reader = self._reader_with_frames(
+      [
+        {
+          "v": 1,
+          "type": "stream_start",
+          "reply_to": "req_current",
+          "payload": {},
+        },
+        {
+          "v": 1,
+          "type": "text_chunk",
+          "reply_to": "req_current",
+          "payload": {
+            "chunk": "Des O'Connor was 88 when he died.",
+            "turn_id": "req_current",
+          },
+        },
+        {
+          "v": 1,
+          "type": "tts_playback_started",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+        },
+        {
+          "v": 1,
+          "type": "tts_playback_finished",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+        },
+        {
+          "v": 1,
+          "type": "voice_turn_complete",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current"},
+        },
+      ]
+    )
+    writer = _FakeStreamWriter()
+    final_texts: list[str] = []
+    controller = VoiceTurnController(
+      reader=reader,
+      writer=writer,
+      prompt_text="How old was Des O'Connor?",
+      voice_session_id="voice-session",
+      display_sender=_FakeDisplaySender(),
+      on_final_text=final_texts.append,
+    )
+
+    status = await controller.run()
+
+    self.assertEqual(status, 0)
+    self.assertEqual(
+      final_texts,
+      ["Des O'Connor was 88 when he died."],
+    )
 
   async def test_voice_turn_controller_maps_retrieval_frames_to_display_states(
     self,

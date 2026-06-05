@@ -301,6 +301,65 @@ def system_clock_line(prefs: dict) -> str:
     return "\n".join(lines)
 
 
+def answer_local_date_time_query(prompt: str, prefs: dict) -> str | None:
+    """Return a deterministic answer for direct local date/time questions.
+
+    Args:
+        prompt: Current user prompt.
+        prefs: Runtime preferences containing at least ``timezone`` and
+            optionally ``weather_location``.
+
+    Returns:
+        A concise local date/time answer, or ``None`` when the prompt is not a
+        direct local date/time query.
+    """
+    text = re.sub(r"[^a-z0-9'\s]", " ", str(prompt or "").lower())
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+
+    time_patterns = {
+        "what time is it",
+        "what's the time",
+        "whats the time",
+        "what is the time",
+        "tell me the time",
+        "tell me current time",
+        "tell me the current time",
+        "give me the time",
+        "give me current time",
+        "give me the current time",
+    }
+    date_patterns = {
+        "what date is it",
+        "what's today's date",
+        "whats today's date",
+        "what is today's date",
+        "tell me today's date",
+        "tell me the date",
+        "give me today's date",
+        "what day is it",
+    }
+    asks_time = text in time_patterns
+    asks_date = text in date_patterns
+    if not asks_time and not asks_date:
+        return None
+
+    tz_name = str((prefs or {}).get("timezone") or "Europe/London").strip()
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+        tz_name = "UTC"
+    now_local = datetime.now(timezone.utc).astimezone(tz)
+    location = str((prefs or {}).get("weather_location") or "").strip()
+    location_suffix = f" in {location}" if location else f" in {tz_name}"
+
+    if asks_time:
+        return f"It's {now_local.strftime('%H:%M')}{location_suffix}."
+    return f"Today is {now_local.strftime('%A, %-d %B %Y')}{location_suffix}."
+
+
 def _load_system_prompt_policy(policy_path: Path) -> dict[str, Any]:
     """Load the Orac system prompt policy from YAML."""
     with policy_path.open("r", encoding="utf-8") as policy_file:
@@ -4449,6 +4508,17 @@ class Orac:
                 return await return_simple_response(
                     "Internet retrieval is disabled right now, so current information cannot be verified."
                 )
+
+            local_date_time_answer = answer_local_date_time_query(
+                prompt,
+                {
+                    "timezone": meta.get("timezone")
+                    or getattr(self, "_default_timezone", "Europe/London"),
+                    "weather_location": meta.get("weather_location"),
+                },
+            )
+            if local_date_time_answer is not None:
+                return await return_simple_response(local_date_time_answer)
 
             date_reasoning_answer = answer_date_reasoning_query(prompt)
             if date_reasoning_answer is not None:

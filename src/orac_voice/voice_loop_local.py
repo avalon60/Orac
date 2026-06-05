@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from difflib import SequenceMatcher
 from datetime import datetime
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import socket
 import subprocess
 import time
+from typing import Callable
 import uuid
 
 from loguru import logger
@@ -70,6 +73,9 @@ DEFAULT_WAKE_REARM_SECONDS = 0.2
 DEFAULT_WAKE_CAPTURE_DELAY_SECONDS = 0.1
 DEFAULT_CONSOLE_TIMESTAMPS = True
 DEFAULT_DISPLAY_BRIDGE_SCRIPT = "web/orac-display/bridge.js"
+DEFAULT_TTS_ECHO_SUPPRESSION_SECONDS = 8.0
+TTS_ECHO_MIN_WORDS = 5
+TTS_ECHO_SIMILARITY_THRESHOLD = 0.72
 WAKE_LISTENING_MESSAGE = "Listening for wake word"
 WAKE_REARMING_MESSAGE = "Re-arming wake word"
 ORAC_BACKEND_UNAVAILABLE_MESSAGE = (
@@ -119,6 +125,59 @@ def _send_display_event(
     if value is not None:
       event_payload[key] = value
   display_sender.send(event_payload)
+
+
+def _normalise_echo_text(text: str) -> str:
+  """Return a conservative normal form for comparing STT echo text."""
+  return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def _is_probable_tts_echo(
+  recognised_text: str,
+  reference_text: str,
+  *,
+  reference_finished_at: float | None = None,
+  now: float | None = None,
+  suppression_seconds: float = DEFAULT_TTS_ECHO_SUPPRESSION_SECONDS,
+) -> bool:
+  """Return whether recognised speech is likely Orac's own recent TTS output.
+
+  Args:
+    recognised_text: Text just returned by speech-to-text.
+    reference_text: Last assistant response spoken by Orac.
+    reference_finished_at: Monotonic timestamp when the reference response was
+      observed, or ``None`` when no timing guard should be applied.
+    now: Current monotonic timestamp. Supplying this keeps tests deterministic.
+    suppression_seconds: Maximum age for echo suppression.
+
+  Returns:
+    ``True`` when the recognised text closely matches recent Orac output.
+  """
+  recognised = _normalise_echo_text(recognised_text)
+  reference = _normalise_echo_text(reference_text)
+  if not recognised or not reference:
+    return False
+
+  if reference_finished_at is not None:
+    current_time = time.perf_counter() if now is None else now
+    if current_time - reference_finished_at > suppression_seconds:
+      return False
+
+  recognised_words = recognised.split()
+  reference_words = reference.split()
+  if len(recognised_words) < TTS_ECHO_MIN_WORDS:
+    return False
+
+  recognised_set = set(recognised_words)
+  reference_set = set(reference_words)
+  overlap = len(recognised_set & reference_set) / max(1, len(recognised_set))
+  similarity = SequenceMatcher(None, recognised, reference).ratio()
+  return (
+    recognised in reference
+    or reference in recognised
+    or similarity >= TTS_ECHO_SIMILARITY_THRESHOLD
+    or (overlap >= 0.7 and len(recognised_words) >= 8)
+  )
 
 
 def _display_runtime_identity_from_frame(
@@ -637,6 +696,7 @@ def _transcribe_once(
   session_id: str | None = None,
   prompt: str | None = "Press Enter to record speech.",
   display_sender: DisplayEventSender | None = None,
+  transcript_filter: Callable[[str], bool] | None = None,
 ) -> tuple[str, str, str]:
   """Capture and transcribe one local microphone sample.
 
@@ -647,6 +707,9 @@ def _transcribe_once(
     session_id (str | None): Optional stable voice session id.
     prompt (str): Prompt shown before recording.
     display_sender (DisplayEventSender | None): Optional display event sender.
+    transcript_filter (Callable[[str], bool] | None): Optional predicate used
+      to suppress display of recognised text that should not become a user
+      turn, such as recent TTS echo.
 
   Returns:
     tuple[str, str, str]: Session id, turn id, and recognised text.
@@ -756,13 +819,14 @@ def _transcribe_once(
       ),
       transcribe_finished_at - timing_started_at,
     )
-    _send_display_event(
-      display_sender,
-      "transcript.user.final",
-      session_id=session_id,
-      turn_id=turn_id,
-      text=recognised_text,
-    )
+    if transcript_filter is None or transcript_filter(recognised_text):
+      _send_display_event(
+        display_sender,
+        "transcript.user.final",
+        session_id=session_id,
+        turn_id=turn_id,
+        text=recognised_text,
+      )
     return session_id, turn_id, recognised_text
   except KeyboardInterrupt:
     capture.cancel()
@@ -846,6 +910,7 @@ async def _send_orac_prompt(
   cancel_port: int | None = None,
   display_sender: DisplayEventSender | None = None,
   completion_idle_message: str = WAKE_LISTENING_MESSAGE,
+  on_final_text: Callable[[str], None] | None = None,
 ) -> int:
   """Send one prompt on an existing Orac TCP connection."""
   controller = VoiceTurnController(
@@ -861,6 +926,7 @@ async def _send_orac_prompt(
     console_line=_console_line,
     console_start=_console_start,
     completion_idle_message=completion_idle_message,
+    on_final_text=on_final_text,
   )
   return await controller.run()
 
@@ -977,6 +1043,21 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
   writer: asyncio.StreamWriter | None = None
   capture_next_command = False
   next_idle_message = WAKE_LISTENING_MESSAGE
+  last_orac_response_text = ""
+  last_orac_response_at: float | None = None
+
+  def _remember_orac_response(text: str) -> None:
+    nonlocal last_orac_response_text, last_orac_response_at
+    last_orac_response_text = text
+    last_orac_response_at = time.perf_counter()
+
+  def _accept_user_transcript(text: str) -> bool:
+    return not _is_probable_tts_echo(
+      text,
+      last_orac_response_text,
+      reference_finished_at=last_orac_response_at,
+    )
+
   if not _orac_backend_reachable(args.host, args.port):
     next_idle_message = ORAC_BACKEND_UNAVAILABLE_MESSAGE
     _console_line(
@@ -1027,6 +1108,7 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
           session_id=session_id,
           prompt=None,
           display_sender=display_sender,
+          transcript_filter=_accept_user_transcript,
         )
       except NoSpeechDetectedError as exc:
         _console_line(str(exc))
@@ -1042,6 +1124,18 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
 
       if not recognised_text.strip():
         _console_line("No speech recognised.")
+        continue
+      if not _accept_user_transcript(recognised_text):
+        logger.warning(
+          "Suppressing probable TTS echo as user turn: session={} words={}",
+          session_id,
+          len(recognised_text.split()),
+        )
+        display_sender.send_state(
+          "idle",
+          message=WAKE_LISTENING_MESSAGE,
+          session_id=session_id,
+        )
         continue
 
       _console_line(f"You: {recognised_text}")
@@ -1062,6 +1156,7 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
           cancel_port=args.port,
           display_sender=display_sender,
           completion_idle_message=WAKE_REARMING_MESSAGE,
+          on_final_text=_remember_orac_response,
         )
       except ConnectionRefusedError:
         _console_line(

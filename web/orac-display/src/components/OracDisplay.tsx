@@ -136,6 +136,15 @@ const CORE_PALETTES: Record<OracState, CorePalette> = {
   error: { color: '#d3deea', glowColor: '#b9cadf', highlightColor: '#edf4fb' },
 };
 
+const TESSERACT_VISUAL_STATE_OVERRIDES: Partial<Record<OracState, OracState>> = {
+  wake_detected: 'idle',
+  listening: 'idle',
+  tool_calling: 'idle',
+};
+
+const tesseractVisualState = (state: OracState): OracState =>
+  TESSERACT_VISUAL_STATE_OVERRIDES[state] || state;
+
 const OUTER_CUBE_SURFACE = {
   color: '#d7f4ff',
   clearcoat: 0.95,
@@ -1082,6 +1091,8 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
   onRenderRecovery,
 }) => {
   const config = STATE_CONFIGS[state];
+  const visualState = tesseractVisualState(state);
+  const visualConfig = STATE_CONFIGS[visualState];
   const isBackendUnavailableMessage =
     typeof message === 'string' &&
     message.includes('Python stack is not running');
@@ -1110,7 +1121,7 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
       <motion.div 
         className="absolute inset-0 transition-colors duration-1000 pointer-events-none"
         style={{
-          background: `radial-gradient(circle at center, ${config.color}${isListening || isRetrieval ? '28' : '18'} 0%, transparent ${isListening || isRetrieval ? '66%' : '72%'})`,
+          background: `radial-gradient(circle at center, ${visualConfig.color}${isListening || isRetrieval ? '28' : '18'} 0%, transparent ${isListening || isRetrieval ? '66%' : '72%'})`,
         }}
         animate={{
           opacity: isListening || isRetrieval ? [0.42, 0.62, 0.42] : [0.18, 0.26, 0.18],
@@ -1149,7 +1160,7 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
           <CanvasErrorBoundary resetKey={renderResetKey}>
             <Canvas key={renderResetKey} gl={{ antialias: false }} dpr={[1, 1.5]}>
               <CanvasDiagnostics onRecovery={onRenderRecovery} />
-              <Scene state={state} />
+              <Scene state={visualState} />
             </Canvas>
           </CanvasErrorBoundary>
         </div>
