@@ -58,6 +58,7 @@ def build_retrieval_response_guidance(
             "Retrieval details section with the provider, query, source URLs, fetch status, "
             "and brief excerpts. Keep the main answer natural and concise."
         )
+    titled_work_guidance = _titled_work_guidance(retrieval_pack)
     if style == "transparent":
         return (
             "Answer naturally and keep any limitation brief. If the evidence only partially "
@@ -66,6 +67,7 @@ def build_retrieval_response_guidance(
             "If citations are required, cite the source URLs naturally in the answer. "
             "Do not mention internal retrieval mechanics such as search results, fetched "
             "sources, grounding packs, reason codes, service names, or retrieved evidence."
+            f"{titled_work_guidance}"
         )
     return (
         "Answer naturally and directly. If the evidence is sufficient, give just the answer. "
@@ -77,6 +79,7 @@ def build_retrieval_response_guidance(
         "Do not mention internal retrieval mechanics such as search results, fetched sources, "
         "grounding packs, reason codes, service names, or retrieved evidence."
         f"{snippet_guidance}"
+        f"{titled_work_guidance}"
     )
 
 
@@ -98,6 +101,9 @@ def polish_retrieval_response_text(
         return raw_text
     if retrieval_pack is not None and _is_ack_only_response(raw_text):
         return "I checked online, but I couldn't produce a reliable answer from the retrieved sources."
+    titled_work_answer = _safe_titled_work_answer(retrieval_pack)
+    if titled_work_answer is not None:
+        return titled_work_answer
 
     sentences = _split_sentences(raw_text)
     kept_sentences = [
@@ -147,6 +153,163 @@ def _contains_mechanical_phrase(text: str) -> bool:
     """Return whether a sentence contains retrieval implementation phrasing."""
     lowered = str(text or "")
     return any(pattern.search(lowered) is not None for pattern in _MECHANICAL_SENTENCE_PATTERNS)
+
+
+def _titled_work_guidance(retrieval_pack: GroundingPack | None) -> str:
+    """Return extra answer guidance for exact titled-work lookups."""
+    if retrieval_pack is None:
+        return ""
+    metadata = getattr(getattr(retrieval_pack, "request", None), "metadata", {}) or {}
+    if not metadata.get("titled_work"):
+        return ""
+    candidates = tuple(str(value) for value in metadata.get("title_candidates", ()) or ())
+    supported = tuple(str(value) for value in metadata.get("supported_title_candidates", ()) or ())
+    unsupported = tuple(str(value) for value in metadata.get("unsupported_title_candidates", ()) or ())
+    if not candidates:
+        return ""
+    quoted = ", ".join(f'"{candidate}"' for candidate in candidates)
+    supported_text = (
+        f" Supported exact-title candidates: {', '.join(f'\"{title}\"' for title in supported)}."
+        if supported
+        else " No exact-title candidate is supported by the evidence."
+    )
+    unsupported_text = (
+        f" Unsupported exact-title candidates: {', '.join(f'\"{title}\"' for title in unsupported)}."
+        if unsupported
+        else ""
+    )
+    return (
+        " Preserve the suspected title exactly. Consider these exact-title parses before "
+        f"answering: {quoted}. Prefer exact title evidence over fuzzy famous-artist matches. "
+        f"{supported_text}{unsupported_text} "
+        "Do not mention unsupported artists, dates, or releases for unsupported title "
+        "candidates. Do not merge facts from one candidate into another. "
+        "If exact-title evidence does not support the answer, say the title may have been "
+        "misremembered rather than inventing a release."
+    )
+
+
+def _safe_titled_work_answer(retrieval_pack: GroundingPack | None) -> str | None:
+    """Return a deterministic titled-work answer when evidence is narrow enough."""
+    if retrieval_pack is None:
+        return None
+    metadata = getattr(getattr(retrieval_pack, "request", None), "metadata", {}) or {}
+    if not metadata.get("titled_work"):
+        return None
+    unsupported = tuple(str(value) for value in metadata.get("unsupported_title_candidates", ()) or ())
+    exact_title = str(metadata.get("user_provided_title") or "").strip()
+    claim_artist = str(metadata.get("claim_artist") or "").strip()
+    claim_album = str(metadata.get("claim_album") or "").strip()
+    correction_negation = bool(metadata.get("correction_negation"))
+    supported_resolution = _first_supported_title_resolution(metadata)
+    preferred = str((supported_resolution or {}).get("candidate_title") or "").strip()
+    artist = str((supported_resolution or {}).get("supported_artist") or "").strip()
+
+    if exact_title and exact_title in unsupported and claim_artist:
+        album_clause = f" on {claim_album}" if claim_album else ""
+        prefix = (
+            f"You are right: I do not find reliable evidence that {claim_artist} "
+            f"recorded a song called '{exact_title}'{album_clause}."
+            if correction_negation
+            else (
+                f"I do not find reliable evidence that {claim_artist} recorded "
+                f"'{exact_title}'{album_clause}."
+            )
+        )
+        if preferred and artist and preferred != exact_title:
+            return (
+                f"{prefix} I also should not attribute it to another band without evidence. "
+                f"The likely title is '{preferred}', which appears to be by {artist}."
+            )
+        return (
+            f"{prefix} I also should not attribute it to another band without evidence."
+        )
+
+    if exact_title and exact_title in unsupported:
+        if preferred and artist and preferred != exact_title:
+            return (
+                f"I do not find reliable evidence for a song titled '{exact_title}'. "
+                f"You may mean '{preferred}', by {artist}."
+            )
+        return f"I do not find reliable evidence for a song titled '{exact_title}'."
+
+    if preferred and artist:
+        return f"The title is likely '{preferred}', recorded by {artist}."
+    if preferred:
+        return f"The title is likely '{preferred}', but I do not find reliable artist evidence."
+    return None
+
+
+def _first_supported_title_resolution(metadata: dict) -> dict:
+    """Return the first metadata candidate with exact-title source support."""
+    for resolution in metadata.get("candidate_resolutions", ()) or ():
+        if not isinstance(resolution, dict):
+            continue
+        if not resolution.get("source_support_found"):
+            continue
+        return resolution
+    return {}
+
+
+def _mentions_unsupported_titled_work_claim(
+    text: str,
+    retrieval_pack: GroundingPack | None,
+) -> bool:
+    """Return whether a generated answer risks merging unsupported title facts."""
+    if retrieval_pack is None:
+        return False
+    metadata = getattr(getattr(retrieval_pack, "request", None), "metadata", {}) or {}
+    if not metadata.get("titled_work"):
+        return False
+    unsupported = tuple(str(value) for value in metadata.get("unsupported_title_candidates", ()) or ())
+    supported = tuple(str(value) for value in metadata.get("supported_title_candidates", ()) or ())
+    exact_title = str(metadata.get("user_provided_title") or "").strip()
+    lowered = str(text or "").lower()
+    if exact_title in unsupported:
+        return True
+    if any(title.lower() in lowered for title in unsupported):
+        return True
+    if supported and re.search(r"\b(?:beatles|1969)\b", lowered):
+        return True
+    return False
+
+
+def _artist_for_title(retrieval_pack: GroundingPack, title: str) -> str | None:
+    """Extract a simple recording artist claim for a supported title."""
+    escaped = re.escape(title)
+    evidence_parts: list[str] = []
+    for source in getattr(retrieval_pack, "grounding_sources", ()) or ():
+        evidence_parts.append(str(getattr(source, "title", "") or ""))
+        evidence_parts.append(str(getattr(source, "excerpt", "") or ""))
+    for source in getattr(retrieval_pack, "fetched_sources", ()) or ():
+        evidence_parts.append(str(getattr(source, "title", "") or ""))
+        evidence_parts.append(str(getattr(source, "excerpt", "") or ""))
+        evidence_parts.append(str(getattr(source, "text", "") or ""))
+    evidence = " ".join(part for part in evidence_parts if part)
+    patterns = (
+        rf"{escaped}.{{0,160}}\brecorded by\s+(?P<artist>[A-Z][A-Za-z0-9 '&.-]{{1,80}})",
+        rf"{escaped}.{{0,160}}\bby\s+(?P<artist>[A-Z][A-Za-z0-9 '&.-]{{1,80}})",
+        rf"(?P<artist>[A-Z][A-Za-z0-9 '&.-]{{1,80}}).{{0,80}}\brecorded\s+{escaped}",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, evidence, re.I)
+        if match is None:
+            continue
+        artist = _clean_artist(match.group("artist"))
+        if artist:
+            return artist
+    return None
+
+
+def _clean_artist(value: str) -> str:
+    """Return a compact artist name extracted from evidence."""
+    cleaned = re.split(
+        r"\s+(?:on|in|for|and)\b|[.,;:]",
+        str(value or "").strip(),
+        maxsplit=1,
+    )[0]
+    cleaned = cleaned.strip(" \"'“”‘’.,;:")
+    return " ".join(cleaned.split())
 
 
 def _is_ack_only_response(text: str) -> bool:

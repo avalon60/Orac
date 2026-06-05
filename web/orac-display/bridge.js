@@ -11,6 +11,10 @@ let latestRuntimeIdentity = null;
 let latestUserIdentity = null;
 let activeBrowserClients = 0;
 let browserDisconnectTimer = null;
+const logBrowserConnections = envBoolean(
+  'ORAC_DISPLAY_LOG_BROWSER_CONNECTIONS',
+  false,
+);
 
 function timestamp() {
   return new Date().toLocaleTimeString('en-GB', { hour12: false });
@@ -53,9 +57,13 @@ wss.on('connection', (ws) => {
   if (browserDisconnectTimer) {
     clearTimeout(browserDisconnectTimer);
     browserDisconnectTimer = null;
-    log('💻 Browser reconnected to bridge');
+    if (logBrowserConnections) {
+      log('💻 Browser reconnected to bridge');
+    }
   } else {
-    log('💻 Browser connected to bridge');
+    if (logBrowserConnections) {
+      log('💻 Browser connected to bridge');
+    }
   }
   ws.send(uiConfigMessage());
   if (latestRuntimeIdentity) {
@@ -76,7 +84,9 @@ wss.on('connection', (ws) => {
     browserDisconnectTimer = setTimeout(() => {
       browserDisconnectTimer = null;
       if (activeBrowserClients === 0) {
-        log('Browser disconnected from bridge');
+        if (logBrowserConnections) {
+          log('Browser disconnected from bridge');
+        }
       }
     }, BROWSER_RECONNECT_GRACE_MS);
   });

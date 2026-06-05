@@ -432,6 +432,20 @@ class RetrievalDecisionService:
             self._log_decision(mode, decision)
             return decision
 
+        if _is_historical_event_result_question(normalized):
+            decision = RetrievalDecision(
+                should_retrieve=False,
+                retrieval_type="none",
+                confidence="high",
+                reason_code="stable_historical_event_result",
+                user_visible_reason="",
+                explicit_request=False,
+                requires_user_confirmation=False,
+                search_query=None,
+            )
+            self._log_decision(mode, decision)
+            return decision
+
         if (
             effective_person_status_match is not None
             and is_stable_historical_person(effective_person_status_match.person_name)
@@ -747,6 +761,8 @@ def _classify_freshness_sensitive(prompt: str) -> _HeuristicMatch | None:
     lowered = str(prompt or "").lower()
     if _looks_local(lowered) or _is_local_date_time_question(lowered):
         return None
+    if _is_historical_event_result_question(prompt):
+        return None
     for reason_code, user_visible_reason, pattern in _FRESHNESS_PATTERNS:
         if pattern.search(lowered) is None:
             continue
@@ -855,6 +871,42 @@ def _is_local_date_time_question(prompt: str) -> bool:
     if any(pattern.search(normalized) for pattern in _LOCAL_DATE_TIME_PATTERNS):
         return not _mentions_external_freshness_topic(normalized)
 
+    return False
+
+
+def _is_historical_event_result_question(prompt: str) -> bool:
+    """Return whether a dated sports/event result question is historical."""
+    normalized = " ".join(str(prompt or "").lower().split()).strip(" .?!")
+    if not normalized:
+        return False
+    if re.search(
+        r"\b(?:current|latest|today|tonight|tomorrow|yesterday|upcoming|next|this\s+(?:week|month|season|year))\b",
+        normalized,
+        re.I,
+    ):
+        return False
+    if re.search(
+        r"\b(?:final\s+score|score|result|winner|who\s+won|beat|defeated)\b",
+        normalized,
+        re.I,
+    ) is None:
+        return False
+    if re.search(
+        r"\b(?:world cup|fifa|olympics?|super bowl|final|championship|tournament|match|game|fixture|race|grand prix|election)\b",
+        normalized,
+        re.I,
+    ) is None:
+        return False
+    return _contains_fixed_past_date(normalized)
+
+
+def _contains_fixed_past_date(prompt: str) -> bool:
+    """Return whether the prompt contains a fixed date before the current year."""
+    current_year = datetime.now(timezone.utc).year
+    for match in re.finditer(r"\b(1[5-9]\d{2}|20\d{2})\b", prompt):
+        year = int(match.group(1))
+        if year < current_year:
+            return True
     return False
 
 

@@ -1547,6 +1547,7 @@ class OracVoiceTests(unittest.TestCase):
   def test_wake_rearm_delay_uses_configured_default(self) -> None:
     """Voice sessions should pause briefly before listening again."""
     self.assertGreaterEqual(_load_wake_rearm_seconds(), 0.0)
+    self.assertLessEqual(_load_wake_rearm_seconds(), 0.2)
 
   def test_wake_capture_delay_uses_configured_default(self) -> None:
     """Voice sessions should minimise delay before command capture."""
@@ -6124,6 +6125,96 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     )
     self.assertEqual(sender.states[-1][0], "idle")
     self.assertEqual(sender.states[-1][1], "Listening for wake word")
+
+  async def test_voice_session_marks_rearm_before_wake_listener_is_ready(
+    self,
+  ) -> None:
+    """The display should not claim wake listening during the rearm pause."""
+    args = build_parser().parse_args(
+      ["--voice-session", "--activation-mode", "openwakeword"]
+    )
+    sender = _FakeDisplaySender()
+    activation_listener = _FakeActivationListener(
+      [
+        types.SimpleNamespace(activated=True, exit_requested=False),
+        types.SimpleNamespace(activated=False, exit_requested=True),
+      ]
+    )
+    transcriptions = iter([
+      ("voice-session", "turn-1", "First question"),
+    ])
+    sleep_calls: list[float] = []
+
+    async def _fake_open_connection(*_args, **_kwargs):
+      return asyncio.StreamReader(), _FakeStreamWriter()
+
+    async def _fake_send_orac_prompt(**_kwargs) -> int:
+      return 0
+
+    def _fake_transcribe_once(*_args, **_kwargs):
+      return next(transcriptions)
+
+    def _fake_sleep(seconds: float) -> None:
+      sleep_calls.append(seconds)
+
+    with patch(
+      "orac_voice.voice_loop_local.SoundDeviceAudioCapture.from_config",
+      return_value=_FakeWakeCapture(
+        VadCaptureResult(wav_path=Path("/tmp/fake-voice-capture.wav"))
+      ),
+    ):
+      with patch(
+        "orac_voice.voice_loop_local.FasterWhisperSttEngine.from_config",
+        return_value=object(),
+      ):
+        with patch(
+          "orac_voice.voice_loop_local._create_barge_in_controller",
+          return_value=None,
+        ):
+          with patch(
+            "orac_voice.voice_loop_local.DisplayEventSender.from_config",
+            return_value=sender,
+          ):
+            with patch(
+              "orac_voice.voice_loop_local._create_activation_listener",
+              return_value=activation_listener,
+            ):
+              with patch(
+                "orac_voice.voice_loop_local._load_wake_rearm_seconds",
+                return_value=0.2,
+              ):
+                with patch(
+                  "orac_voice.voice_loop_local._load_wake_capture_delay_seconds",
+                  return_value=0.0,
+                ):
+                  with patch(
+                    "orac_voice.voice_loop_local._transcribe_once",
+                    side_effect=_fake_transcribe_once,
+                  ):
+                    with patch(
+                      "orac_voice.voice_loop_local._send_orac_prompt",
+                      side_effect=_fake_send_orac_prompt,
+                    ):
+                      with patch(
+                        "orac_voice.voice_loop_local.asyncio.open_connection",
+                        side_effect=_fake_open_connection,
+                      ):
+                        with patch(
+                          "orac_voice.voice_loop_local.time.sleep",
+                          side_effect=_fake_sleep,
+                        ):
+                          status = await _voice_session_async(args)
+
+    self.assertEqual(status, 0)
+    self.assertEqual(sleep_calls, [0.2])
+    state_pairs = [(state[0], state[1]) for state in sender.states]
+    rearm_index = state_pairs.index(("idle", "Re-arming wake word"))
+    next_idle_index = state_pairs.index(
+      ("idle", "Listening for wake word"),
+      rearm_index + 1,
+    )
+    self.assertLess(rearm_index, next_idle_index)
+    self.assertNotIn(("listening", "Listening for wake word"), state_pairs)
 
   async def test_voice_session_continues_after_backend_connection_refused(
     self,

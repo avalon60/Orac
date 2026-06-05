@@ -66,10 +66,12 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 DEFAULT_SESSION_EXIT_PHRASES = ("exit", "quit", "stop listening", "goodbye")
 DEFAULT_RECORD_MODE = "fixed"
-DEFAULT_WAKE_REARM_SECONDS = 1.0
+DEFAULT_WAKE_REARM_SECONDS = 0.2
 DEFAULT_WAKE_CAPTURE_DELAY_SECONDS = 0.1
 DEFAULT_CONSOLE_TIMESTAMPS = True
 DEFAULT_DISPLAY_BRIDGE_SCRIPT = "web/orac-display/bridge.js"
+WAKE_LISTENING_MESSAGE = "Listening for wake word"
+WAKE_REARMING_MESSAGE = "Re-arming wake word"
 ORAC_BACKEND_UNAVAILABLE_MESSAGE = (
   "Python stack is not running. Start it with bin/orac-ctl.sh start "
   "or bin/orac.sh start, then try again."
@@ -843,6 +845,7 @@ async def _send_orac_prompt(
   cancel_host: str | None = None,
   cancel_port: int | None = None,
   display_sender: DisplayEventSender | None = None,
+  completion_idle_message: str = WAKE_LISTENING_MESSAGE,
 ) -> int:
   """Send one prompt on an existing Orac TCP connection."""
   controller = VoiceTurnController(
@@ -857,6 +860,7 @@ async def _send_orac_prompt(
     cancel_request=_send_voice_cancel_request,
     console_line=_console_line,
     console_start=_console_start,
+    completion_idle_message=completion_idle_message,
   )
   return await controller.run()
 
@@ -972,7 +976,7 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
   reader: asyncio.StreamReader | None = None
   writer: asyncio.StreamWriter | None = None
   capture_next_command = False
-  next_idle_message = "Listening for wake word"
+  next_idle_message = WAKE_LISTENING_MESSAGE
   if not _orac_backend_reachable(args.host, args.port):
     next_idle_message = ORAC_BACKEND_UNAVAILABLE_MESSAGE
     _console_line(
@@ -994,7 +998,7 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
             message=next_idle_message,
             session_id=session_id,
           )
-          next_idle_message = "Listening for wake word"
+          next_idle_message = WAKE_LISTENING_MESSAGE
           activation = activation_listener.wait_for_activation(
             session_id=session_id
           )
@@ -1028,7 +1032,7 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
         _console_line(str(exc))
         display_sender.send_state(
           "idle",
-          message="Listening for wake word",
+          message=WAKE_LISTENING_MESSAGE,
           session_id=session_id,
         )
         continue
@@ -1057,6 +1061,7 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
           cancel_host=args.host,
           cancel_port=args.port,
           display_sender=display_sender,
+          completion_idle_message=WAKE_REARMING_MESSAGE,
         )
       except ConnectionRefusedError:
         _console_line(
@@ -1095,7 +1100,7 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
         if display_sender is not None:
           display_sender.send_state(
             "idle",
-            message="Listening for wake word",
+            message=WAKE_LISTENING_MESSAGE,
             session_id=session_id,
           )
         if writer is not None:
@@ -1112,13 +1117,18 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
         _console_line(
           f"Re-arming wake word in {wake_rearm_seconds:.1f}s..."
         )
+        display_sender.send_state(
+          "idle",
+          message=WAKE_REARMING_MESSAGE,
+          session_id=session_id,
+        )
         time.sleep(wake_rearm_seconds)
   finally:
     display_sender.send(
       DisplayEvent(
         event="state_changed",
         state="idle",
-        message="Listening for wake word",
+        message=WAKE_LISTENING_MESSAGE,
         session_id=session_id,
       )
     )

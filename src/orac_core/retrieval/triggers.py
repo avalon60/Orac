@@ -117,7 +117,7 @@ _NATURAL_FRESHNESS_TRIGGER_PREFIXES: tuple[str, ...] = (
 )
 
 _TRAILING_TRIGGER_PATTERN = re.compile(
-    r"(?:[,.;:?!]\s*)?(?P<trigger>search(?: the)? (?:internet|web|online)|check online|look (?:it|this) up online)\??\s*$",
+    r"(?:[,.;:?!]\s*)?(?P<trigger>search(?: the)? (?:internet|web|online)|check online|look (?:it|this) up online)[.?!]?\s*$",
     re.I,
 )
 

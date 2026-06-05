@@ -59,6 +59,7 @@ class VoiceTurnController:
     cancel_request: VoiceCancelRequester | None = None,
     console_line: ConsoleLineWriter | None = None,
     console_start: ConsoleStartWriter | None = None,
+    completion_idle_message: str = "Listening for wake word",
   ) -> None:
     """Initialise a voice turn controller.
 
@@ -75,6 +76,8 @@ class VoiceTurnController:
       cancel_request (VoiceCancelRequester | None): Cancellation transport.
       console_line (ConsoleLineWriter | None): Console line writer.
       console_start (ConsoleStartWriter | None): Console prefix writer.
+      completion_idle_message (str): Display message emitted when this turn
+        has finished and the caller is resuming its idle lifecycle.
     """
     self.reader = reader
     self.writer = writer
@@ -87,6 +90,7 @@ class VoiceTurnController:
     self.cancel_request = cancel_request
     self.console_line = console_line or print
     self.console_start = console_start or self._default_console_start
+    self.completion_idle_message = completion_idle_message
 
   async def run(self) -> int:
     """Send the prompt and process protocol frames until the turn finishes."""
@@ -269,7 +273,7 @@ class VoiceTurnController:
         if self.display_sender is not None:
           self.display_sender.send_state(
             "idle",
-            message="Listening for wake word",
+            message=self.completion_idle_message,
             session_id=self.voice_session_id,
             turn_id=req_id,
           )
@@ -284,7 +288,7 @@ class VoiceTurnController:
       if self.display_sender is not None:
         self.display_sender.send_state(
           "idle",
-          message="Listening for wake word",
+          message=self.completion_idle_message,
           session_id=self.voice_session_id,
           turn_id=req_id,
         )
@@ -367,7 +371,7 @@ class VoiceTurnController:
             if self.display_sender is not None:
               self.display_sender.send_state(
                 "idle",
-                message="Listening for wake word",
+                message=self.completion_idle_message,
                 session_id=self.voice_session_id,
                 turn_id=req_id,
               )
@@ -572,7 +576,7 @@ class VoiceTurnController:
             if self.display_sender is not None:
               self.display_sender.send_state(
                 "idle",
-                message="Listening for wake word",
+                message=self.completion_idle_message,
                 session_id=self.voice_session_id,
                 turn_id=req_id,
               )
@@ -638,7 +642,7 @@ class VoiceTurnController:
         if self.display_sender is not None:
           self.display_sender.send_state(
             "idle",
-            message="Listening for wake word",
+            message=self.completion_idle_message,
             session_id=self.voice_session_id,
             turn_id=req_id,
           )

@@ -19,6 +19,13 @@ from .models import RetrievalOutcome
 from .models import SearchRequest
 from .person_status import build_person_status_search_query
 from .person_status import parse_person_age_or_status_query
+from .titled_work import TitleCandidateResolution
+from .titled_work import build_titled_work_query_variants
+from .titled_work import build_titled_work_search_query
+from .titled_work import is_reliable_music_source
+from .titled_work import music_source_type
+from .titled_work import parse_titled_work_question
+from .titled_work import titled_work_text_matches
 from .triggers import detect_explicit_search_request
 
 
@@ -58,20 +65,30 @@ class ExplicitRetrievalService:
         """Return retrieval status and grounding for a supplied search request."""
         try:
             request = _normalise_request(request)
+            if _is_titled_work_request(request):
+                return self._build_titled_work_grounding_outcome(
+                    request,
+                    event_emitter=event_emitter,
+                )
             results = self._search_broker.search(request)
             diagnostics = _diagnostics(request=request, search_results=results)
             if not results:
-                diagnostics["failure_reason"] = "no_search_results"
+                reason = (
+                    "no_exact_title_match"
+                    if _is_titled_work_request(request)
+                    else "no_search_results"
+                )
+                diagnostics["failure_reason"] = reason
                 self._log_debug("Retrieval request produced no search results.")
                 self._emit_event(
                     event_emitter,
                     "retrieval_failed",
-                    {"mode": "internet", "reason": "no_search_results"},
+                    {"mode": "internet", "reason": reason},
                 )
                 return RetrievalOutcome(
                     requested=True,
-                    status="no_search_results",
-                    message=_failure_message("no_search_results"),
+                    status=reason,
+                    message=_failure_message(reason),
                     request=request,
                     diagnostics=diagnostics,
                 )
@@ -143,7 +160,11 @@ class ExplicitRetrievalService:
                         "usable_source_count": 0,
                     },
                 )
-                reason = _no_readable_reason(fetched_sources)
+                reason = (
+                    "no_exact_title_match"
+                    if _is_titled_work_request(request)
+                    else _no_readable_reason(fetched_sources)
+                )
                 diagnostics["failure_reason"] = reason
                 self._emit_event(
                     event_emitter,
@@ -206,7 +227,12 @@ class ExplicitRetrievalService:
                         diagnostics=diagnostics,
                     )
                 self._log_debug("Retrieval request fetched no relevant readable sources.")
-                diagnostics["failure_reason"] = "no_relevant_sources"
+                reason = (
+                    "no_exact_title_match"
+                    if _is_titled_work_request(request)
+                    else "no_relevant_sources"
+                )
+                diagnostics["failure_reason"] = reason
                 self._emit_event(
                     event_emitter,
                     "retrieval_fetch_complete",
@@ -218,12 +244,12 @@ class ExplicitRetrievalService:
                 self._emit_event(
                     event_emitter,
                     "retrieval_failed",
-                    {"mode": "internet", "reason": "no_relevant_sources"},
+                    {"mode": "internet", "reason": reason},
                 )
                 return RetrievalOutcome(
                     requested=True,
-                    status="no_relevant_sources",
-                    message=_failure_message("no_relevant_sources"),
+                    status=reason,
+                    message=_failure_message(reason),
                     request=request,
                     diagnostics=diagnostics,
                 )
@@ -278,6 +304,173 @@ class ExplicitRetrievalService:
                 request=request,
                 diagnostics={"failure_reason": "provider_error", "error": str(exc)},
             )
+
+    def _build_titled_work_grounding_outcome(
+        self,
+        request: SearchRequest,
+        *,
+        event_emitter: Callable[[str, dict[str, Any]], None] | None = None,
+    ) -> RetrievalOutcome:
+        """Resolve titled-work candidates independently and keep supported evidence."""
+        metadata = dict(request.metadata or {})
+        title_candidates = tuple(str(value) for value in metadata.get("title_candidates", ()) or ())
+        query_variants = tuple(str(value) for value in metadata.get("query_variants", ()) or ())
+        if not title_candidates or len(title_candidates) != len(query_variants):
+            return RetrievalOutcome(
+                requested=True,
+                status="no_exact_title_match",
+                message=_failure_message("no_exact_title_match"),
+                request=request,
+                diagnostics={"failure_reason": "no_exact_title_match"},
+            )
+
+        all_results: list[Any] = []
+        supported_sources: list[FetchedSource] = []
+        supported_titles: list[str] = []
+        candidate_resolutions: list[TitleCandidateResolution] = []
+        diagnostics: dict[str, Any] = {
+            "query": request.query,
+            "query_variants": query_variants,
+            "provider": request.provider_name,
+        }
+
+        for title, variant_query in zip(title_candidates, query_variants, strict=True):
+            candidate_metadata = dict(metadata)
+            candidate_metadata["active_title_candidate"] = title
+            candidate_request = replace(
+                request,
+                query=variant_query,
+                metadata=candidate_metadata,
+            )
+            results = self._search_broker.search(candidate_request)
+            all_results.extend(results)
+            if not results:
+                candidate_resolutions.append(
+                    TitleCandidateResolution(
+                        candidate_title=title,
+                        source_support_found=False,
+                    )
+                )
+                continue
+            fetched = self._source_fetcher.fetch_sources(
+                results,
+                max_sources=self._search_broker.max_sources_to_fetch,
+            )
+            readable_sources = tuple(
+                source
+                for source in fetched
+                if _has_usable_text(source)
+                and _titled_work_source_relevant_to_title(source, title)
+                and _titled_work_source_reliable(source, request=candidate_request)
+            )
+            snippet_sources = _snippet_sources_for_title(
+                results,
+                title,
+                request=candidate_request,
+            )
+            title_sources = (*readable_sources, *snippet_sources)
+            if not title_sources:
+                candidate_resolutions.append(
+                    TitleCandidateResolution(
+                        candidate_title=title,
+                        source_support_found=False,
+                    )
+                )
+                continue
+            artist = _artist_for_title_sources(title_sources, title)
+            supported_titles.append(title)
+            supported_sources.extend(title_sources)
+            candidate_resolutions.append(
+                TitleCandidateResolution(
+                    candidate_title=title,
+                    source_support_found=True,
+                    supported_artist=artist,
+                    confidence="medium"
+                    if all(source.fetch_status == "snippet_only" for source in title_sources)
+                    else "high",
+                    evidence_urls=tuple(
+                        str(source.url)
+                        for source in title_sources
+                        if str(source.url or "").strip()
+                    ),
+                    evidence_source_types=tuple(
+                        dict.fromkeys(
+                            music_source_type(source.url, source.source_name)
+                            for source in title_sources
+                        )
+                    ),
+                )
+            )
+
+        if not supported_sources:
+            diagnostics.update(
+                {
+                    "failure_reason": "no_exact_title_match",
+                    "search_result_count": len(all_results),
+                    "supported_title_candidates": (),
+                    "candidate_resolutions": tuple(
+                        resolution.as_metadata()
+                        for resolution in candidate_resolutions
+                    ),
+                }
+            )
+            self._emit_event(
+                event_emitter,
+                "retrieval_failed",
+                {"mode": "internet", "reason": "no_exact_title_match"},
+            )
+            return RetrievalOutcome(
+                requested=True,
+                status="no_exact_title_match",
+                message=_failure_message("no_exact_title_match"),
+                request=request,
+                diagnostics=diagnostics,
+            )
+
+        supported_tuple = tuple(dict.fromkeys(supported_titles))
+        enriched_metadata = dict(metadata)
+        enriched_metadata["supported_title_candidates"] = supported_tuple
+        enriched_metadata["unsupported_title_candidates"] = tuple(
+            title for title in title_candidates if title not in supported_tuple
+        )
+        enriched_metadata["candidate_resolutions"] = tuple(
+            resolution.as_metadata()
+            for resolution in candidate_resolutions
+        )
+        exact_title = str(metadata.get("user_provided_title") or "").strip()
+        enriched_metadata["exact_title_supported"] = exact_title in supported_tuple
+        enriched_request = replace(request, metadata=enriched_metadata)
+        pack = self._grounding_pack_builder.build(
+            enriched_request,
+            tuple(all_results),
+            tuple(supported_sources),
+            require_citations=self._search_broker.settings.require_citations,
+        )
+        diagnostics.update(
+            {
+                "search_result_count": len(all_results),
+                "usable_source_count": len(supported_sources),
+                "supported_title_candidates": supported_tuple,
+            }
+        )
+        self._emit_event(
+            event_emitter,
+            "retrieval_complete",
+            {
+                "source_count": len(all_results),
+                "usable_source_count": len(supported_sources),
+            },
+        )
+        return RetrievalOutcome(
+            requested=True,
+            status="snippet_only"
+            if all(source.fetch_status == "snippet_only" for source in supported_sources)
+            else "ok",
+            message="Online evidence was retrieved for the titled-work request.",
+            grounding_pack=pack,
+            request=enriched_request,
+            diagnostics=diagnostics,
+        )
 
     def build_grounding_outcome(
         self,
@@ -358,6 +551,10 @@ def _is_relevant_to_request(
     topic_signature: tuple[str, ...],
 ) -> bool:
     """Return whether a fetched source is relevant to the requested topic."""
+    if _is_titled_work_request(request):
+        return _titled_work_source_relevant(source, request=request)
+    if _is_music_claim_request(request):
+        return _music_claim_source_relevant(source, request=request)
     if _is_person_status_request(request):
         return _person_status_text_relevant(
             " ".join(
@@ -395,7 +592,44 @@ def _is_relevant_to_topic(source: FetchedSource, *, topic_signature: tuple[str, 
 
 
 def _normalise_request(request: SearchRequest) -> SearchRequest:
-    """Return a request with person-status search metadata when applicable."""
+    """Return a request enriched with structured retrieval metadata."""
+    titled_work_query = parse_titled_work_question(request.query)
+    if titled_work_query is not None:
+        variants = build_titled_work_query_variants(titled_work_query)
+        metadata = dict(request.metadata or {})
+        metadata.update(
+            {
+                "titled_work": True,
+                "work_type": titled_work_query.work_type,
+                "user_provided_title": titled_work_query.user_provided_title,
+                "claim_artist": titled_work_query.claim_artist,
+                "claim_album": titled_work_query.claim_album,
+                "correction_negation": titled_work_query.correction_negation,
+                "title_candidates": titled_work_query.title_candidates,
+                "query_variants": variants,
+                "original_question": titled_work_query.question_text,
+            }
+        )
+        return replace(
+            request,
+            query=build_titled_work_search_query(titled_work_query),
+            trigger_phrase=request.trigger_phrase or "factual_risk_titled_work",
+            metadata=metadata,
+        )
+
+    if _looks_like_music_claim_query(request.query, request.trigger_phrase):
+        metadata = dict(request.metadata or {})
+        metadata["music_claim"] = True
+        query = request.query
+        if "musicbrainz" not in query.lower() and "discogs" not in query.lower():
+            query = f"{query} MusicBrainz Discogs"
+        return replace(
+            request,
+            query=query,
+            trigger_phrase=request.trigger_phrase or "factual_risk_music_claim",
+            metadata=metadata,
+        )
+
     parsed = parse_person_age_or_status_query(request.query)
     extracted_person = _person_from_query(request.query)
     person = parsed.person_name if parsed is not None else extracted_person
@@ -530,6 +764,176 @@ def _is_person_status_request(request: SearchRequest) -> bool:
     return bool((request.metadata or {}).get("person_status"))
 
 
+def _is_titled_work_request(request: SearchRequest) -> bool:
+    """Return whether a request is an exact titled-work lookup."""
+    return bool((request.metadata or {}).get("titled_work"))
+
+
+def _is_music_claim_request(request: SearchRequest) -> bool:
+    """Return whether a request is a music factual claim lookup."""
+    return bool((request.metadata or {}).get("music_claim"))
+
+
+def _looks_like_music_claim_query(query: str, trigger_phrase: str | None) -> bool:
+    """Return whether a query is a music claim requiring reliable sources."""
+    lowered = f"{query} {trigger_phrase or ''}".lower()
+    if "factual_risk_music_claim" in lowered:
+        return True
+    if "musicbrainz" in lowered and "discogs" in lowered:
+        return True
+    return bool(
+        re.search(r"\b(?:was|were|is|are)\s+.+?\s+(?:a\s+)?member\s+of\s+", lowered)
+        or re.search(r"\bwho\s+played\s+.+?\s+on\s+", lowered)
+        or re.search(
+            r"\bdid\s+.+?\s+(?:record|release|write|produce|play|sing|perform)\s+",
+            lowered,
+        )
+    )
+
+
+def _music_claim_source_relevant(
+    source: FetchedSource,
+    *,
+    request: SearchRequest,
+) -> bool:
+    """Return whether a source can ground a music factual claim."""
+    if not is_reliable_music_source(source.url, source.source_name):
+        return False
+    topic_signature = build_topic_signature(
+        str(request.query or "")
+        .replace("MusicBrainz", "")
+        .replace("Discogs", "")
+    )
+    return _is_relevant_to_topic(source, topic_signature=topic_signature)
+
+
+def _titled_work_source_relevant(source: FetchedSource, *, request: SearchRequest) -> bool:
+    """Return whether a source contains an exact suspected work title."""
+    candidates = tuple(str(value) for value in (request.metadata or {}).get("title_candidates", ()) or ())
+    text = " ".join(
+        part
+        for part in (
+            source.title or "",
+            source.source_name or "",
+            source.excerpt or "",
+            source.text or "",
+        )
+        if str(part or "").strip()
+    )
+    return titled_work_text_matches(text, candidates)
+
+
+def _titled_work_source_relevant_to_title(source: FetchedSource, title: str) -> bool:
+    """Return whether a source contains one exact titled-work candidate."""
+    text = " ".join(
+        part
+        for part in (
+            source.title or "",
+            source.source_name or "",
+            source.excerpt or "",
+            source.text or "",
+        )
+        if str(part or "").strip()
+    )
+    return titled_work_text_matches(text, (title,))
+
+
+def _titled_work_source_reliable(
+    source: FetchedSource,
+    *,
+    request: SearchRequest,
+) -> bool:
+    """Return whether a titled-work source can support the requested claim."""
+    if str((request.metadata or {}).get("work_type") or "") not in {"song", "album"}:
+        return True
+    return is_reliable_music_source(source.url, source.source_name)
+
+
+def _snippet_sources_for_title(
+    results: tuple[Any, ...],
+    title: str,
+    *,
+    request: SearchRequest,
+) -> tuple[FetchedSource, ...]:
+    """Return snippet-only sources that mention one exact title candidate."""
+    sources: list[FetchedSource] = []
+    for index, result in enumerate(results, start=1):
+        source_url = str(getattr(result, "url", "") or "")
+        source_name = str(getattr(result, "source_name", "") or "")
+        if str((request.metadata or {}).get("work_type") or "") in {"song", "album"}:
+            if not is_reliable_music_source(source_url, source_name):
+                continue
+        text = " ".join(
+            str(part or "").strip()
+            for part in (
+                getattr(result, "title", ""),
+                getattr(result, "snippet", ""),
+                getattr(result, "content", ""),
+            )
+            if str(part or "").strip()
+        )
+        if not titled_work_text_matches(text, (title,)):
+            continue
+        sources.append(
+            FetchedSource(
+                url=str(getattr(result, "url", "") or ""),
+                title=str(getattr(result, "title", "") or "Search result"),
+                source_name=source_name,
+                text=(
+                    "Snippet-only evidence. Treat this as lower confidence because "
+                    f"the page content could not be fetched. {text}"
+                ),
+                excerpt=text,
+                source_rank=index,
+                fetch_status="snippet_only",
+                content_type="search-result/snippet",
+            )
+        )
+    return tuple(sources)
+
+
+def _artist_for_title_sources(
+    sources: tuple[FetchedSource, ...],
+    title: str,
+) -> str | None:
+    """Extract a simple supported artist claim for one title candidate."""
+    escaped = re.escape(title)
+    evidence = " ".join(
+        part
+        for source in sources
+        for part in (
+            str(source.title or ""),
+            str(source.excerpt or ""),
+            str(source.text or ""),
+        )
+        if part
+    )
+    patterns = (
+        rf"{escaped}.{{0,160}}\brecorded by\s+(?P<artist>[A-Z][A-Za-z0-9 '&.-]{{1,80}})",
+        rf"{escaped}.{{0,160}}\bby\s+(?P<artist>[A-Z][A-Za-z0-9 '&.-]{{1,80}})",
+        rf"(?P<artist>[A-Z][A-Za-z0-9 '&.-]{{1,80}}).{{0,80}}\brecorded\s+{escaped}",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, evidence, re.I)
+        if match is None:
+            continue
+        artist = _clean_titled_work_artist(match.group("artist"))
+        if artist:
+            return artist
+    return None
+
+
+def _clean_titled_work_artist(value: str) -> str:
+    """Return a compact artist extracted from title evidence."""
+    cleaned = re.split(
+        r"\s+(?:on|in|for|and)\b|[.,;:]",
+        str(value or "").strip(),
+        maxsplit=1,
+    )[0]
+    cleaned = cleaned.strip(" \"'“”‘’.,;:")
+    return " ".join(cleaned.split())
+
+
 def _person_status_text_relevant(text: str, *, request: SearchRequest) -> bool:
     """Return whether text identifies the intended person-status subject."""
     lowered = str(text or "").lower()
@@ -569,6 +973,45 @@ def _snippet_sources_for_request(
     results: tuple[Any, ...],
 ) -> tuple[FetchedSource, ...]:
     """Return lower-confidence snippet-only sources when snippets are relevant."""
+    if _is_titled_work_request(request):
+        sources: list[FetchedSource] = []
+        candidates = tuple(
+            str(value)
+            for value in (request.metadata or {}).get("title_candidates", ()) or ()
+        )
+        for index, result in enumerate(results, start=1):
+            text = " ".join(
+                str(part or "").strip()
+                for part in (
+                    getattr(result, "title", ""),
+                    getattr(result, "snippet", ""),
+                    getattr(result, "content", ""),
+                )
+                if str(part or "").strip()
+            )
+            if not titled_work_text_matches(text, candidates):
+                continue
+            source_url = str(getattr(result, "url", "") or "")
+            source_name = str(getattr(result, "source_name", "") or "")
+            if str((request.metadata or {}).get("work_type") or "") in {"song", "album"}:
+                if not is_reliable_music_source(source_url, source_name):
+                    continue
+            sources.append(
+                FetchedSource(
+                    url=source_url,
+                    title=str(getattr(result, "title", "") or "Search result"),
+                    source_name=source_name,
+                    text=(
+                        "Snippet-only evidence. Treat this as lower confidence because "
+                        f"the page content could not be fetched. {text}"
+                    ),
+                    excerpt=text,
+                    source_rank=index,
+                    fetch_status="snippet_only",
+                    content_type="search-result/snippet",
+                )
+            )
+        return tuple(sources)
     if not _is_person_status_request(request):
         return ()
     sources: list[FetchedSource] = []
@@ -662,6 +1105,7 @@ def _failure_message(reason: str) -> str:
         "all_sources_blocked": "I found results, but all source URLs were blocked by the safety policy.",
         "all_sources_fetch_failed": "I found results, but could not retrieve readable source content from them.",
         "no_relevant_sources": "I found results, but they did not appear relevant enough to verify that safely.",
+        "no_exact_title_match": "I could not find reliable exact-title evidence for that work. The title may have been misremembered.",
         "no_usable_grounding": "I found some references, but not enough usable evidence to verify the details.",
         "ambiguous_entity": "I found references to more than one person with that name, so I cannot safely confirm which person you mean.",
         "retrieval_disabled": "Internet retrieval is disabled right now, so current verification cannot be performed.",

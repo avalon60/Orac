@@ -43,6 +43,7 @@ from orac_core.retrieval import detect_factual_risk
 from orac_core.retrieval import enforce_high_risk_factual_grounding
 from orac_core.retrieval import normalize_retrieval_response_style
 from orac_core.retrieval import parse_person_age_or_status_query
+from orac_core.retrieval import parse_titled_work_question
 from orac_core.retrieval import polish_retrieval_response_text
 from orac_core.retrieval import should_force_retrieval
 import orac_core.retrieval.fetcher as retrieval_fetcher
@@ -659,6 +660,80 @@ class PersonFactResolverTests(unittest.TestCase):
         self.assertIn("Had George Michael still been alive today, he would be 62.", resolution.answer or "")
         self.assertEqual((resolution.answer or "").count("George Michael"), 2)
 
+    def test_weak_wikidata_match_does_not_block_wikipedia_identity_resolution(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload(
+                        "QVB",
+                        "Victoria Beckham",
+                        "English fashion designer and singer",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "QVB":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "QVB",
+                        label="Victoria Beckham",
+                        description="English fashion designer and singer",
+                        birth="+1974-04-17T00:00:00Z",
+                        wikipedia_title="Victoria Beckham",
+                    ),
+                    url=url,
+                )
+            if "action=query" in url and params.get("list", [""])[0] == "search":
+                return _JsonResponse(
+                    {"query": {"search": [{"title": "David Beckham"}]}},
+                    url=url,
+                )
+            if "api/rest_v1/page/summary" in url:
+                return _JsonResponse(
+                    {
+                        "title": "David Beckham",
+                        "description": "English footballer",
+                        "extract": "David Beckham is an English former footballer.",
+                        "wikibase_item": "QDB",
+                        "content_urls": {
+                            "desktop": {
+                                "page": "https://en.wikipedia.org/wiki/David_Beckham",
+                            }
+                        },
+                    },
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "QDB":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "QDB",
+                        label="David Beckham",
+                        description="English footballer",
+                        birth="+1975-05-02T00:00:00Z",
+                        wikipedia_title="David Beckham",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is David Beckham?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertEqual(resolution.display_name, "David Beckham")
+        self.assertEqual(resolution.identity_confidence, "high")
+        self.assertEqual(resolution.identity_match_type, "exact_name")
+        self.assertIn("David Beckham is 51.", resolution.answer or "")
+        self.assertNotIn("Victoria Beckham", resolution.answer or "")
+
     def test_stable_historical_person_falls_back_to_local_bio(self) -> None:
         resolver = self._resolver()
 
@@ -776,7 +851,8 @@ class PersonFactResolverTests(unittest.TestCase):
         self.assertIsNone(resolution.answer)
         self.assertEqual(resolution.identity_confidence, "low")
         self.assertEqual(resolution.identity_match_type, "none")
-        self.assertIn("cannot confirm", resolution.clarification or "")
+        self.assertIn("could not confirm", resolution.clarification or "")
+        self.assertNotIn("Jay Wheeler", resolution.clarification or "")
         self.assertNotIn("Jay Wheeler is", resolution.clarification or "")
 
     def test_alias_approved_stage_name_can_answer(self) -> None:
@@ -1164,6 +1240,69 @@ class SearchBrokerTests(unittest.TestCase):
         self.assertEqual(provider.calls[0].max_results, 2)
 
 
+class TitledWorkQueryTests(unittest.TestCase):
+    """Tests exact title parsing for titled-work questions."""
+
+    def test_final_word_ambiguity_keeps_both_title_parses(self) -> None:
+        query = parse_titled_work_question(
+            "Which band recorded the song She Moved the Dishes first?"
+        )
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        self.assertEqual(query.work_type, "song")
+        self.assertEqual(
+            query.title_candidates,
+            ("She Moved the Dishes", "She Moved the Dishes First"),
+        )
+
+    def test_unambiguous_titled_work_preserves_title_exactly(self) -> None:
+        query = parse_titled_work_question("Who wrote the book The Left Hand of Darkness?")
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        self.assertEqual(query.work_type, "book")
+        self.assertEqual(query.title_candidates, ("The Left Hand of Darkness",))
+
+    def test_recording_question_adds_nearby_terminal_title_candidate(self) -> None:
+        query = parse_titled_work_question(
+            "Which band recorded the song She Moved the Dishes?"
+        )
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        self.assertEqual(
+            query.title_candidates,
+            ("She Moved the Dishes", "She Moved the Dishes First"),
+        )
+
+    def test_correction_statement_preserves_song_called_title(self) -> None:
+        query = parse_titled_work_question(
+            "The Beatles never recorded a song called She Moved the Dishes"
+        )
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        self.assertEqual(query.user_provided_title, "She Moved the Dishes")
+        self.assertEqual(query.claim_artist, "The Beatles")
+        self.assertTrue(query.correction_negation)
+        self.assertEqual(
+            query.title_candidates,
+            ("She Moved the Dishes", "She Moved the Dishes First"),
+        )
+
+    def test_record_claim_preserves_album_as_claim_context(self) -> None:
+        query = parse_titled_work_question(
+            "Did The Rolling Stones record She Moved the Dishes on Sticky Fingers?"
+        )
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        self.assertEqual(query.user_provided_title, "She Moved the Dishes")
+        self.assertEqual(query.claim_artist, "The Rolling Stones")
+        self.assertEqual(query.claim_album, "Sticky Fingers")
+
+
 class RetrievalDecisionServiceTests(unittest.TestCase):
     """Tests controlled retrieval decisioning."""
 
@@ -1203,6 +1342,9 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
             "How much is the Seeed reTerminal E1003?",
             "Is Mellum2 available for Ollama?",
             "What is the latest version of ORDS?",
+            "Was Ronnie Wood a member of The Rolling Stones?",
+            "Who played guitar on Sticky Fingers?",
+            "Which band recorded the song She Moved the Dishes first?",
         ]
 
         for prompt in prompts:
@@ -1234,6 +1376,18 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
             ("How much is the Seeed reTerminal E1003?", "factual_risk_price_availability"),
             ("Is Mellum2 available for Ollama?", "factual_risk_price_availability"),
             ("What is the latest version of ORDS?", "factual_risk_current_latest"),
+            (
+                "Was Ronnie Wood a member of The Rolling Stones?",
+                "factual_risk_music_claim",
+            ),
+            (
+                "Who played guitar on Sticky Fingers?",
+                "factual_risk_music_claim",
+            ),
+            (
+                "Which band recorded the song She Moved the Dishes first?",
+                "factual_risk_titled_work",
+            ),
         ]
 
         for prompt, reason_code in prompts:
@@ -1253,6 +1407,36 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
         self.assertEqual(decision.retrieval_type, "internet")
         self.assertEqual(decision.reason_code, "disabled")
         self.assertIn("current information cannot be verified", decision.user_visible_reason.lower())
+
+    def test_titled_work_question_forces_exact_title_retrieval(self) -> None:
+        decision = self._service("explicit_only").decide(
+            "Which band recorded the song She Moved the Dishes first?"
+        )
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertTrue(decision.explicit_request)
+        self.assertEqual(decision.reason_code, "factual_risk_titled_work")
+        self.assertIn('"She Moved the Dishes"', decision.search_query or "")
+
+    def test_music_claim_search_prefers_music_specific_sources(self) -> None:
+        decision = self._service("explicit_only").decide(
+            "Was Ronnie Wood a member of The Rolling Stones?"
+        )
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertEqual(decision.reason_code, "factual_risk_music_claim")
+        self.assertIn("MusicBrainz", decision.search_query or "")
+        self.assertIn("Discogs", decision.search_query or "")
+
+    def test_music_claim_check_forces_exact_title_retrieval(self) -> None:
+        decision = self._service("explicit_only").decide(
+            "Did The Rolling Stones record She Moved the Dishes on Sticky Fingers?"
+        )
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertTrue(decision.explicit_request)
+        self.assertEqual(decision.reason_code, "factual_risk_titled_work")
+        self.assertIn('"She Moved the Dishes"', decision.search_query or "")
 
     def test_explicit_only_retrieves_explicit_current_query(self) -> None:
         decision = self._service("explicit_only").decide(
@@ -1391,6 +1575,27 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
         self.assertEqual(decision.retrieval_type, "none")
         self.assertEqual(decision.reason_code, "stable_general_knowledge")
 
+    def test_historical_sports_result_does_not_use_changed_recently_confirmation(self) -> None:
+        decision = self._service("suggest_search").decide(
+            "What was the final score of the 1966 FIFA World Cup?"
+        )
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertFalse(decision.requires_user_confirmation)
+        self.assertEqual(decision.retrieval_type, "none")
+        self.assertEqual(decision.reason_code, "stable_historical_event_result")
+        self.assertNotIn("changed recently", decision.user_visible_reason.lower())
+
+    def test_current_score_question_still_triggers_freshness_confirmation(self) -> None:
+        decision = self._service("suggest_search").decide(
+            "What is the current score of the England game?"
+        )
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertTrue(decision.requires_user_confirmation)
+        self.assertEqual(decision.reason_code, "freshness_schedule_scores")
+        self.assertIn("changed recently", decision.user_visible_reason.lower())
+
     def test_current_event_wording_still_triggers_freshness(self) -> None:
         decision = self._service("suggest_search").decide(
             "Are there any current events in Iran?"
@@ -1493,6 +1698,22 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
                 self.assertTrue(decision.explicit_request)
                 self.assertEqual(decision.reason_code, "person_age_or_status")
                 self.assertIn("Kelly Curtis", decision.search_query or "")
+
+    def test_historical_event_gate_does_not_perturb_biography_age_queries(self) -> None:
+        prompts = [
+            "How old is David Beckham?",
+            "How old is Daveid Beckham?",
+        ]
+
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                decision = self._service("explicit_only").decide(prompt)
+                self.assertTrue(decision.should_retrieve)
+                self.assertTrue(decision.explicit_request)
+                self.assertFalse(decision.requires_user_confirmation)
+                self.assertEqual(decision.reason_code, "person_age_or_status")
+                self.assertIn("date of birth", decision.search_query or "")
+                self.assertIn("date of death", decision.search_query or "")
 
     def test_person_age_status_historical_exceptions_use_structured_bio(self) -> None:
         prompts = [
@@ -1882,6 +2103,41 @@ class RetrievalResponseStyleTests(unittest.TestCase):
         self.assertIn("Answer naturally and directly.", guidance)
         self.assertIn("Do not mention internal retrieval mechanics", guidance)
 
+    def test_guidance_preserves_titled_work_parse_candidates(self) -> None:
+        request = SearchRequest(
+            query='"She Moved the Dishes" OR "She Moved the Dishes first" song recorded artist first',
+            trigger_phrase="factual_risk_titled_work",
+            metadata={
+                "titled_work": True,
+                "work_type": "song",
+                "title_candidates": (
+                    "She Moved the Dishes",
+                    "She Moved the Dishes first",
+                ),
+            },
+        )
+        pack = GroundingPackBuilder(max_excerpt_chars=120).build(
+            request,
+            [SearchResult(title="Example", url="https://example.com/1", snippet="Snippet")],
+            [
+                FetchedSource(
+                    url="https://example.com/1",
+                    text="She Moved the Dishes is a song.",
+                    excerpt="She Moved the Dishes is a song.",
+                )
+            ],
+            require_citations=True,
+        )
+
+        guidance = build_retrieval_response_guidance(
+            response_style="normal",
+            retrieval_pack=pack,
+        )
+
+        self.assertIn("Preserve the suspected title exactly", guidance)
+        self.assertIn('"She Moved the Dishes"', guidance)
+        self.assertIn('"She Moved the Dishes first"', guidance)
+
     def test_polishes_mechanical_success_phrasing(self) -> None:
         raw = (
             "The song is 'My Life in England, Pt. 1' by Dexys Midnight Runners. "
@@ -1946,6 +2202,306 @@ class RetrievalResponseStyleTests(unittest.TestCase):
 
         self.assertNotIn("I will check online", polished)
         self.assertIn("couldn't produce a reliable answer", polished)
+
+    def test_polishes_unsupported_titled_work_merge_to_likely_correction(self) -> None:
+        request = SearchRequest(
+            query='"She Moved the Dishes" OR "She Moved the Dishes First" song recorded artist',
+            trigger_phrase="factual_risk_titled_work",
+            metadata={
+                "titled_work": True,
+                "work_type": "song",
+                "user_provided_title": "She Moved the Dishes",
+                "claim_artist": None,
+                "claim_album": None,
+                "correction_negation": False,
+                "title_candidates": (
+                    "She Moved the Dishes",
+                    "She Moved the Dishes First",
+                ),
+                "supported_title_candidates": ("She Moved the Dishes First",),
+                "unsupported_title_candidates": ("She Moved the Dishes",),
+                "candidate_resolutions": (
+                    {
+                        "candidate_title": "She Moved the Dishes",
+                        "source_support_found": False,
+                        "supported_artist": None,
+                        "supported_album": None,
+                        "supported_year": None,
+                        "confidence": "low",
+                        "evidence_urls": (),
+                    },
+                    {
+                        "candidate_title": "She Moved the Dishes First",
+                        "source_support_found": True,
+                        "supported_artist": "Supercharge",
+                        "supported_album": None,
+                        "supported_year": None,
+                        "confidence": "high",
+                        "evidence_urls": ("https://musicbrainz.org/recording/she-moved-the-dishes-first",),
+                    },
+                ),
+            },
+        )
+        pack = GroundingPackBuilder(max_excerpt_chars=300).build(
+            request,
+            [
+                SearchResult(
+                    title="She Moved the Dishes First",
+                    url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                    snippet="She Moved the Dishes First was recorded by Supercharge.",
+                )
+            ],
+            [
+                FetchedSource(
+                    url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                    title="She Moved the Dishes First",
+                    text="She Moved the Dishes First was recorded by Supercharge.",
+                    excerpt="She Moved the Dishes First was recorded by Supercharge.",
+                )
+            ],
+            require_citations=True,
+        )
+
+        polished = polish_retrieval_response_text(
+            (
+                "The song 'She Moved the Dishes' was first recorded by The Beatles "
+                "in 1969. However, the specific track title 'She Moved the Dishes First' "
+                "was recorded by Supercharge."
+            ),
+            response_style="normal",
+            retrieval_pack=pack,
+        )
+
+        self.assertEqual(
+            polished,
+            (
+                "I do not find reliable evidence for a song titled 'She Moved the Dishes'. "
+                "You may mean 'She Moved the Dishes First', by Supercharge."
+            ),
+        )
+
+    def test_polishes_correction_prompt_without_inventing_replacement_artist(self) -> None:
+        request = SearchRequest(
+            query='"She Moved the Dishes" OR "She Moved the Dishes First" song recorded artist',
+            trigger_phrase="factual_risk_titled_work",
+            metadata={
+                "titled_work": True,
+                "work_type": "song",
+                "user_provided_title": "She Moved the Dishes",
+                "claim_artist": "The Beatles",
+                "claim_album": None,
+                "correction_negation": True,
+                "title_candidates": (
+                    "She Moved the Dishes",
+                    "She Moved the Dishes First",
+                ),
+                "supported_title_candidates": ("She Moved the Dishes First",),
+                "unsupported_title_candidates": ("She Moved the Dishes",),
+                "candidate_resolutions": (
+                    {
+                        "candidate_title": "She Moved the Dishes",
+                        "source_support_found": False,
+                        "supported_artist": None,
+                        "supported_album": None,
+                        "supported_year": None,
+                        "confidence": "low",
+                        "evidence_urls": (),
+                    },
+                    {
+                        "candidate_title": "She Moved the Dishes First",
+                        "source_support_found": True,
+                        "supported_artist": "Supercharge",
+                        "supported_album": None,
+                        "supported_year": None,
+                        "confidence": "high",
+                        "evidence_urls": ("https://musicbrainz.org/recording/she-moved-the-dishes-first",),
+                    },
+                ),
+            },
+        )
+        pack = GroundingPackBuilder(max_excerpt_chars=300).build(
+            request,
+            [
+                SearchResult(
+                    title="She Moved the Dishes First",
+                    url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                    snippet="She Moved the Dishes First was recorded by Supercharge.",
+                )
+            ],
+            [
+                FetchedSource(
+                    url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                    title="She Moved the Dishes First",
+                    text="She Moved the Dishes First was recorded by Supercharge.",
+                    excerpt="She Moved the Dishes First was recorded by Supercharge.",
+                )
+            ],
+            require_citations=True,
+        )
+
+        polished = polish_retrieval_response_text(
+            (
+                "The Beatles did not record a song called 'She Moved the Dishes.' "
+                "That track was released by The Rolling Stones on their 1970 album "
+                "Sticky Fingers."
+            ),
+            response_style="normal",
+            retrieval_pack=pack,
+        )
+
+        self.assertIn("You are right", polished)
+        self.assertIn("The Beatles", polished)
+        self.assertIn("She Moved the Dishes First", polished)
+        self.assertIn("Supercharge", polished)
+        self.assertNotIn("Rolling Stones", polished)
+        self.assertNotIn("Sticky Fingers", polished)
+
+    def test_polishes_unsupported_album_claim_without_treating_album_as_track_support(self) -> None:
+        request = SearchRequest(
+            query='"She Moved the Dishes" OR "She Moved the Dishes First" song recorded artist',
+            trigger_phrase="factual_risk_titled_work",
+            metadata={
+                "titled_work": True,
+                "work_type": "song",
+                "user_provided_title": "She Moved the Dishes",
+                "claim_artist": "The Rolling Stones",
+                "claim_album": "Sticky Fingers",
+                "correction_negation": False,
+                "title_candidates": (
+                    "She Moved the Dishes",
+                    "She Moved the Dishes First",
+                ),
+                "supported_title_candidates": ("She Moved the Dishes First",),
+                "unsupported_title_candidates": ("She Moved the Dishes",),
+                "candidate_resolutions": (
+                    {
+                        "candidate_title": "She Moved the Dishes",
+                        "source_support_found": False,
+                        "supported_artist": None,
+                        "supported_album": None,
+                        "supported_year": None,
+                        "confidence": "low",
+                        "evidence_urls": (),
+                    },
+                    {
+                        "candidate_title": "She Moved the Dishes First",
+                        "source_support_found": True,
+                        "supported_artist": "Supercharge",
+                        "supported_album": None,
+                        "supported_year": None,
+                        "confidence": "high",
+                        "evidence_urls": ("https://musicbrainz.org/recording/she-moved-the-dishes-first",),
+                    },
+                ),
+            },
+        )
+        pack = GroundingPackBuilder(max_excerpt_chars=300).build(
+            request,
+            [
+                SearchResult(
+                    title="Sticky Fingers track listing",
+                    url="https://example.com/sticky",
+                    snippet="Sticky Fingers is a Rolling Stones album.",
+                ),
+                SearchResult(
+                    title="She Moved the Dishes First",
+                    url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                    snippet="She Moved the Dishes First was recorded by Supercharge.",
+                ),
+            ],
+            [
+                FetchedSource(
+                    url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                    title="She Moved the Dishes First",
+                    text="She Moved the Dishes First was recorded by Supercharge.",
+                    excerpt="She Moved the Dishes First was recorded by Supercharge.",
+                )
+            ],
+            require_citations=True,
+        )
+
+        polished = polish_retrieval_response_text(
+            "The Rolling Stones recorded it on Sticky Fingers.",
+            response_style="normal",
+            retrieval_pack=pack,
+        )
+
+        self.assertIn(
+            "I do not find reliable evidence that The Rolling Stones recorded",
+            polished,
+        )
+        self.assertIn("on Sticky Fingers", polished)
+        self.assertNotIn("The Rolling Stones recorded it", polished)
+
+    def test_polishes_supported_terminal_title_to_likely_title_answer(self) -> None:
+        request = SearchRequest(
+            query='"She Moved the Dishes" OR "She Moved the Dishes First" song recorded artist first',
+            trigger_phrase="factual_risk_titled_work",
+            metadata={
+                "titled_work": True,
+                "work_type": "song",
+                "user_provided_title": "She Moved the Dishes First",
+                "claim_artist": None,
+                "claim_album": None,
+                "correction_negation": False,
+                "title_candidates": (
+                    "She Moved the Dishes",
+                    "She Moved the Dishes First",
+                ),
+                "supported_title_candidates": ("She Moved the Dishes First",),
+                "unsupported_title_candidates": ("She Moved the Dishes",),
+                "candidate_resolutions": (
+                    {
+                        "candidate_title": "She Moved the Dishes",
+                        "source_support_found": False,
+                        "supported_artist": None,
+                        "supported_album": None,
+                        "supported_year": None,
+                        "confidence": "low",
+                        "evidence_urls": (),
+                    },
+                    {
+                        "candidate_title": "She Moved the Dishes First",
+                        "source_support_found": True,
+                        "supported_artist": "Supercharge",
+                        "supported_album": None,
+                        "supported_year": None,
+                        "confidence": "high",
+                        "evidence_urls": ("https://musicbrainz.org/recording/she-moved-the-dishes-first",),
+                    },
+                ),
+            },
+        )
+        pack = GroundingPackBuilder(max_excerpt_chars=300).build(
+            request,
+            [
+                SearchResult(
+                    title="She Moved the Dishes First",
+                    url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                    snippet="She Moved the Dishes First was recorded by Supercharge.",
+                )
+            ],
+            [
+                FetchedSource(
+                    url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                    title="She Moved the Dishes First",
+                    text="She Moved the Dishes First was recorded by Supercharge.",
+                    excerpt="She Moved the Dishes First was recorded by Supercharge.",
+                )
+            ],
+            require_citations=True,
+        )
+
+        polished = polish_retrieval_response_text(
+            "The track was recorded by Supercharge.",
+            response_style="normal",
+            retrieval_pack=pack,
+        )
+
+        self.assertEqual(
+            polished,
+            "The title is likely 'She Moved the Dishes First', recorded by Supercharge.",
+        )
 
 
 class RetrievalServiceTests(unittest.TestCase):
@@ -2183,6 +2739,414 @@ class RetrievalServiceTests(unittest.TestCase):
         self.assertEqual(request.metadata["person_name"], "Kelly Curtis")
         self.assertEqual(request.query, "Kelly Curtis actress age born died")
         self.assertIn('"Kelly Curtis" date of birth', request.metadata["query_variants"])
+
+    def test_titled_work_search_enriches_exact_title_metadata(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def __init__(self) -> None:
+                self.requests: list[SearchRequest] = []
+
+            def search(self, request: SearchRequest):
+                self.requests.append(request)
+                return ()
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del results, max_sources
+                return ()
+
+        broker = _FakeBroker()
+        service = ExplicitRetrievalService(
+            search_broker=broker,
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome_for_request(
+            SearchRequest(query="Which band recorded the song She Moved the Dishes first?")
+        )
+
+        self.assertEqual(outcome.status, "no_exact_title_match")
+        self.assertIn("may have been misremembered", outcome.message)
+        self.assertEqual(len(broker.requests), 2)
+        request = outcome.request
+        assert request is not None
+        self.assertTrue(request.metadata["titled_work"])
+        self.assertEqual(
+            request.metadata["title_candidates"],
+            ("She Moved the Dishes", "She Moved the Dishes First"),
+        )
+        self.assertIn('"She Moved the Dishes"', request.query)
+        self.assertIn('"She Moved the Dishes First"', request.query)
+        self.assertIn('"She Moved the Dishes"', broker.requests[0].query)
+        self.assertIn('"She Moved the Dishes First"', broker.requests[1].query)
+
+    def test_titled_work_rejects_fuzzy_artist_result_without_exact_title(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def search(self, request: SearchRequest):
+                del request
+                return (
+                    SearchResult(
+                        title="Famous band discography",
+                        url="https://example.com/band",
+                        snippet="A famous band recorded many songs.",
+                    ),
+                )
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del results, max_sources
+                return (
+                    FetchedSource(
+                        url="https://example.com/band",
+                        title="Famous band discography",
+                        text="A famous band recorded many songs.",
+                        excerpt="A famous band recorded many songs.",
+                    ),
+                )
+
+        service = ExplicitRetrievalService(
+            search_broker=_FakeBroker(),
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome_for_request(
+            SearchRequest(query="Which band recorded the song She Moved the Dishes first?")
+        )
+
+        self.assertEqual(outcome.status, "no_exact_title_match")
+        self.assertIsNone(outcome.grounding_pack)
+
+    def test_titled_work_rejects_unknown_exact_title_snippet_for_music(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def search(self, request: SearchRequest):
+                del request
+                return (
+                    SearchResult(
+                        title="She Moved the Dishes",
+                        url="https://example.com/song",
+                        snippet="She Moved the Dishes is listed as a song by Example Band.",
+                    ),
+                )
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del results, max_sources
+                return ()
+
+        service = ExplicitRetrievalService(
+            search_broker=_FakeBroker(),
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome_for_request(
+            SearchRequest(query="Which band recorded the song She Moved the Dishes first?")
+        )
+
+        self.assertEqual(outcome.status, "no_exact_title_match")
+        self.assertIsNone(outcome.grounding_pack)
+
+    def test_titled_work_accepts_musicbrainz_exact_title_snippet(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def search(self, request: SearchRequest):
+                del request
+                return (
+                    SearchResult(
+                        title="She Moved the Dishes",
+                        url="https://musicbrainz.org/recording/example",
+                        snippet="She Moved the Dishes is listed as a recording by Example Band.",
+                        source_name="MusicBrainz",
+                    ),
+                )
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del results, max_sources
+                return ()
+
+        service = ExplicitRetrievalService(
+            search_broker=_FakeBroker(),
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome_for_request(
+            SearchRequest(query="Which band recorded the song She Moved the Dishes first?")
+        )
+
+        self.assertEqual(outcome.status, "snippet_only")
+        self.assertIsNotNone(outcome.grounding_pack)
+        assert outcome.grounding_pack is not None
+        self.assertTrue(outcome.grounding_pack.request.metadata["titled_work"])
+
+    def test_titled_work_correction_check_online_resolves_candidates_independently(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def __init__(self) -> None:
+                self.requests: list[SearchRequest] = []
+
+            def search(self, request: SearchRequest):
+                self.requests.append(request)
+                if "She Moved the Dishes First" in request.query:
+                    return (
+                        SearchResult(
+                            title="She Moved the Dishes First",
+                            url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                            snippet="She Moved the Dishes First was recorded by Supercharge.",
+                        ),
+                    )
+                return (
+                    SearchResult(
+                        title="The Beatles discography",
+                        url="https://example.com/beatles",
+                        snippet="The Beatles recorded many songs.",
+                    ),
+                )
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del max_sources
+                fetched = []
+                for result in results:
+                    if "She Moved the Dishes First" in result.title:
+                        fetched.append(
+                            FetchedSource(
+                                url=result.url,
+                                title=result.title,
+                                text="She Moved the Dishes First was recorded by Supercharge.",
+                                excerpt="She Moved the Dishes First was recorded by Supercharge.",
+                            )
+                        )
+                    else:
+                        fetched.append(
+                            FetchedSource(
+                                url=result.url,
+                                title=result.title,
+                                text="The Beatles recorded many songs.",
+                                excerpt="The Beatles recorded many songs.",
+                            )
+                        )
+                return tuple(fetched)
+
+        broker = _FakeBroker()
+        service = ExplicitRetrievalService(
+            search_broker=broker,
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome(
+            "The Beatles never recorded a song called She Moved the Dishes. Check online."
+        )
+
+        self.assertEqual(outcome.status, "ok")
+        self.assertEqual(len(broker.requests), 2)
+        self.assertIsNotNone(outcome.grounding_pack)
+        assert outcome.grounding_pack is not None
+        metadata = outcome.grounding_pack.request.metadata
+        self.assertEqual(metadata["claim_artist"], "The Beatles")
+        self.assertTrue(metadata["correction_negation"])
+        self.assertEqual(metadata["supported_title_candidates"], ("She Moved the Dishes First",))
+        self.assertEqual(metadata["unsupported_title_candidates"], ("She Moved the Dishes",))
+        self.assertEqual(
+            metadata["candidate_resolutions"][1]["supported_artist"],
+            "Supercharge",
+        )
+
+        polished = polish_retrieval_response_text(
+            "The Rolling Stones recorded it on Sticky Fingers.",
+            response_style="normal",
+            retrieval_pack=outcome.grounding_pack,
+        )
+
+        self.assertIn("You are right", polished)
+        self.assertIn("The Beatles", polished)
+        self.assertIn("Supercharge", polished)
+        self.assertNotIn("Rolling Stones", polished)
+        self.assertNotIn("Sticky Fingers", polished)
+
+    def test_music_claim_rejects_unknown_source_grounding(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def search(self, request: SearchRequest):
+                del request
+                return (
+                    SearchResult(
+                        title="Rolling Stones facts",
+                        url="https://example.com/rolling-stones",
+                        snippet="Ronnie Wood was a member of The Rolling Stones.",
+                    ),
+                )
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del results, max_sources
+                return (
+                    FetchedSource(
+                        url="https://example.com/rolling-stones",
+                        title="Rolling Stones facts",
+                        text="Ronnie Wood was a member of The Rolling Stones.",
+                        excerpt="Ronnie Wood was a member of The Rolling Stones.",
+                    ),
+                )
+
+        service = ExplicitRetrievalService(
+            search_broker=_FakeBroker(),
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome_for_request(
+            SearchRequest(query="Was Ronnie Wood a member of The Rolling Stones?")
+        )
+
+        self.assertEqual(outcome.status, "no_relevant_sources")
+        self.assertIsNone(outcome.grounding_pack)
+
+    def test_music_claim_accepts_musicbrainz_grounding(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def search(self, request: SearchRequest):
+                del request
+                return (
+                    SearchResult(
+                        title="Ron Wood - MusicBrainz",
+                        url="https://musicbrainz.org/artist/example",
+                        snippet="Ronnie Wood is associated with The Rolling Stones.",
+                        source_name="MusicBrainz",
+                    ),
+                )
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del results, max_sources
+                return (
+                    FetchedSource(
+                        url="https://musicbrainz.org/artist/example",
+                        title="Ron Wood - MusicBrainz",
+                        source_name="MusicBrainz",
+                        text="Ronnie Wood is associated with The Rolling Stones.",
+                        excerpt="Ronnie Wood is associated with The Rolling Stones.",
+                    ),
+                )
+
+        service = ExplicitRetrievalService(
+            search_broker=_FakeBroker(),
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome_for_request(
+            SearchRequest(query="Was Ronnie Wood a member of The Rolling Stones?")
+        )
+
+        self.assertEqual(outcome.status, "ok")
+        self.assertIsNotNone(outcome.grounding_pack)
+        assert outcome.grounding_pack is not None
+        self.assertTrue(outcome.grounding_pack.request.metadata["music_claim"])
 
     def test_unrelated_person_death_results_are_rejected(self) -> None:
         class _FakeBroker:

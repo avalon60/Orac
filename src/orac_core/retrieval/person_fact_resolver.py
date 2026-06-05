@@ -43,6 +43,7 @@ _PERSON_DESCRIPTION_HINTS = (
     "comedian",
     "dancer",
     "director",
+    "footballer",
     "human",
     "journalist",
     "mathematician",
@@ -149,7 +150,7 @@ class PersonFactResolver:
             if resolution is not None:
                 if resolution.status == "resolved":
                     return resolution
-                if resolution.status == "ambiguous":
+                elif resolution.status == "ambiguous":
                     if stable_bio is not None and query.query_type != "cause":
                         answer = answer_from_stable_bio(query, today=today)
                         if answer:
@@ -166,15 +167,24 @@ class PersonFactResolver:
                                 confidence="high",
                                 search_query=query_text,
                             )
-                    return resolution
-                fallback_resolution = resolution
+                    if not self._requires_immediate_disambiguation(resolution):
+                        fallback_resolution = resolution
+                        self._log_debug(
+                            "Continuing biography lookup after weak Wikidata "
+                            f"identity match for '{query.person_name}'."
+                        )
+                        resolution = None
+                    else:
+                        return resolution
+                elif resolution is not None:
+                    fallback_resolution = resolution
 
         if self._settings.prefer_wikipedia:
             resolution = self._resolve_via_wikipedia(query, today=today)
             if resolution is not None:
                 if resolution.status == "resolved":
                     return resolution
-                if resolution.status == "ambiguous":
+                elif resolution.status == "ambiguous":
                     if stable_bio is not None and query.query_type != "cause":
                         answer = answer_from_stable_bio(query, today=today)
                         if answer:
@@ -191,8 +201,17 @@ class PersonFactResolver:
                                 confidence="high",
                                 search_query=query_text,
                             )
-                    return resolution
-                if fallback_resolution is None:
+                    if not self._requires_immediate_disambiguation(resolution):
+                        if fallback_resolution is None:
+                            fallback_resolution = resolution
+                        self._log_debug(
+                            "Keeping weak Wikipedia identity match as fallback "
+                            f"for '{query.person_name}'."
+                        )
+                        resolution = None
+                    else:
+                        return resolution
+                elif fallback_resolution is None:
                     fallback_resolution = resolution
 
         if stable_bio is not None and query.query_type != "cause":
@@ -243,6 +262,17 @@ class PersonFactResolver:
                 "I could not resolve that person in Wikidata or Wikipedia."
             ),
             needs_generic_retrieval=True,
+        )
+
+    def _requires_immediate_disambiguation(
+        self,
+        resolution: PersonFactResolution,
+    ) -> bool:
+        """Return whether an ambiguous result should stop source fallback."""
+        return (
+            resolution.disambiguation_required
+            and resolution.identity_confidence == "high"
+            and resolution.identity_match_type in {"exact_name", "alias", "context"}
         )
 
     def _resolve_via_wikidata(
@@ -777,7 +807,18 @@ class PersonFactResolver:
         """Return a clarification question for an ambiguous person match."""
         if candidate is None:
             return f"Do you mean {query.person_name}?"
-        if identity is not None and identity.confidence in {"low", "medium"}:
+        if (
+            identity is not None
+            and (
+                identity.confidence == "low"
+                or identity.match_type in {"none", "weak"}
+            )
+        ):
+            return (
+                f"I could not confirm which {query.person_name} you mean. "
+                f"Which {query.person_name} do you mean?"
+            )
+        if identity is not None and identity.confidence == "medium":
             return (
                 f"I found a possible match, {candidate.display_name}, but I cannot "
                 f"confirm that this is the {query.person_name} you mean. "

@@ -33,6 +33,8 @@ from .person_fact_resolver import resolve_person_fact
 from .response_style import build_retrieval_response_guidance
 from .response_style import normalize_retrieval_response_style
 from .response_style import polish_retrieval_response_text
+from .titled_work import TitledWorkQuery
+from .titled_work import parse_titled_work_question
 from .providers import SearXNGSearchProvider
 from .providers import SearchProvider
 from .service import ExplicitRetrievalService
@@ -61,6 +63,7 @@ __all__ = [
     "SearchRequest",
     "SearchResult",
     "SourceFetcher",
+    "TitledWorkQuery",
     "answer_from_stable_bio",
     "build_retrieval_response_guidance",
     "build_topic_signature",
@@ -70,6 +73,7 @@ __all__ = [
     "detect_explicit_search_request",
     "normalize_retrieval_response_style",
     "parse_person_age_or_status_query",
+    "parse_titled_work_question",
     "polish_retrieval_response_text",
     "should_force_retrieval",
     "resolve_person_fact",

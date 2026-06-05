@@ -9,6 +9,8 @@ from dataclasses import dataclass
 import re
 
 from .person_status import is_stable_historical_person
+from .titled_work import build_titled_work_search_query
+from .titled_work import parse_titled_work_question
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,7 +106,25 @@ _PERSON_AGE_PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
     ),
 )
 
+_MUSIC_CLAIM_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(?:was|were|is|are)\s+.+?\s+(?:a\s+)?member\s+of\s+.+\??$", re.I),
+    re.compile(r"\bwho\s+played\s+.+?\s+on\s+.+\??$", re.I),
+    re.compile(r"\bwho\s+(?:wrote|produced|sang|recorded|performed)\s+.+\??$", re.I),
+    re.compile(r"\bdid\s+.+?\s+(?:record|release|write|produce|play|sing|perform)\s+.+\??$", re.I),
+    re.compile(r"\bwhich\s+(?:band|artist|label)\s+.+?\b(?:recorded|released|credited|issued)\b", re.I),
+)
+
 _QUESTION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "factual_risk_music_claim",
+        re.compile(
+            r"\b(?:musicbrainz|discogs|song|album|single|record|recording|release|discography|band|artist|label|track|credited|credits|lineup|line-up|member|members|played|sang|singer|guitar|bass|drums|keyboard|producer|writer|songwriter)\b"
+            r".*\b(?:recorded|released|credited|credits|wrote|written|played|sang|performed|produced|member|members|lineup|line-up|label|version|country|first)\b"
+            r"|"
+            r"\b(?:who|which|did|was|were|is|are)\b.*\b(?:in|member of|played on|credited on|recorded by|released by|written by|produced by)\b.*\b(?:band|artist|song|album|single|record|release|track|label|discography)\b",
+            re.I,
+        ),
+    ),
     (
         "factual_risk_current_role",
         re.compile(
@@ -156,6 +176,13 @@ def detect_factual_risk(user_query: str) -> FactualRiskMatch | None:
     if _looks_local(normalized):
         return None
 
+    titled_work_query = parse_titled_work_question(normalized)
+    if titled_work_query is not None:
+        return FactualRiskMatch(
+            reason_code="factual_risk_titled_work",
+            search_query=build_titled_work_search_query(titled_work_query),
+        )
+
     for reason_code, pattern, template in (*_PERSON_DEATH_PATTERNS, *_PERSON_AGE_PATTERNS):
         match = pattern.match(normalized)
         if match is None:
@@ -178,6 +205,15 @@ def detect_factual_risk(user_query: str) -> FactualRiskMatch | None:
             search_query=_build_general_search_query(normalized, reason_code),
         )
 
+    if any(pattern.search(normalized) is not None for pattern in _MUSIC_CLAIM_PATTERNS):
+        return FactualRiskMatch(
+            reason_code="factual_risk_music_claim",
+            search_query=_build_general_search_query(
+                normalized,
+                "factual_risk_music_claim",
+            ),
+        )
+
     return None
 
 
@@ -185,6 +221,8 @@ def _build_general_search_query(prompt: str, reason_code: str) -> str:
     """Return a compact search query for a factual-risk prompt."""
     cleaned = _clean_query(prompt)
     lowered = cleaned.lower()
+    if reason_code == "factual_risk_music_claim":
+        return f"{cleaned} MusicBrainz Discogs"
     current_match = re.match(
         r"^(?:what(?:'s| is)?|which is|name)\s+(?:the\s+)?(?P<topic>(?:current|latest|newest)\s+.+)$",
         cleaned,

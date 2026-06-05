@@ -401,9 +401,9 @@ wake_engine = openwakeword
 openwakeword_model_names = hey_jarvis
 openwakeword_threshold = 0.75
 openwakeword_inference_framework = auto
-wake_rearm_seconds = 1.0
+wake_rearm_seconds = 0.2
 console_timestamps = true
-openwakeword_refractory_seconds = 2.0
+openwakeword_refractory_seconds = 0.2
 ```
 
 To use a future custom Hey Orac model, place the model under the runtime tree
