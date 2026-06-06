@@ -3317,3 +3317,60 @@ class RetrievalServiceTests(unittest.TestCase):
         self.assertNotIn("lung cancer", answer.lower())
         self.assertNotIn("smoking", answer.lower())
         self.assertNotIn("concert collapse", answer.lower())
+
+    def test_music_membership_grounding_rejects_invented_lineup(self) -> None:
+        request = SearchRequest(
+            query="Who were the members of Swing Out Sister?",
+            metadata={"music_claim": True},
+        )
+        pack = GroundingPackBuilder().build(
+            request,
+            [
+                SearchResult(
+                    title="Swing Out Sister overview",
+                    url="https://example.test/swing-out-sister",
+                    snippet="Swing Out Sister are a British pop group formed in 1985.",
+                )
+            ],
+            [
+                FetchedSource(
+                    url="https://example.test/swing-out-sister",
+                    title="Swing Out Sister overview",
+                    source_name="example.test",
+                    text="Swing Out Sister are a British pop group formed in 1985.",
+                    excerpt="Swing Out Sister are a British pop group formed in 1985.",
+                )
+            ],
+            require_citations=True,
+        )
+        decision = RetrievalDecision(
+            should_retrieve=True,
+            retrieval_type="internet",
+            confidence="high",
+            reason_code="factual_risk_music_claim",
+            user_visible_reason="",
+            explicit_request=True,
+            requires_user_confirmation=False,
+            search_query="Swing Out Sister members",
+        )
+
+        answer = enforce_high_risk_factual_grounding(
+            (
+                "Swing Out Sister were Kirsty MacAskill, Sue Quinn, Liz Rhodes, "
+                "Sue Jones, Sue Jones, and Sue Jones."
+            ),
+            user_query="Who were the members of Swing Out Sister?",
+            retrieval_decision=decision,
+            retrieval_pack=pack,
+        )
+
+        self.assertIn(
+            "I do not find reliable evidence for the members of Swing Out Sister.",
+            answer,
+        )
+        self.assertIn(
+            "I found results, but they did not appear relevant enough to verify that safely.",
+            answer,
+        )
+        self.assertNotIn("Kirsty MacAskill", answer)
+        self.assertNotIn("Sue Quinn", answer)

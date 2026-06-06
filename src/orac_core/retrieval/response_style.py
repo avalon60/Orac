@@ -59,6 +59,7 @@ def build_retrieval_response_guidance(
             "and brief excerpts. Keep the main answer natural and concise."
         )
     titled_work_guidance = _titled_work_guidance(retrieval_pack)
+    music_claim_guidance = _music_claim_guidance(retrieval_pack)
     if style == "transparent":
         return (
             "Answer naturally and keep any limitation brief. If the evidence only partially "
@@ -68,6 +69,7 @@ def build_retrieval_response_guidance(
             "Do not mention internal retrieval mechanics such as search results, fetched "
             "sources, grounding packs, reason codes, service names, or retrieved evidence."
             f"{titled_work_guidance}"
+            f"{music_claim_guidance}"
         )
     return (
         "Answer naturally and directly. If the evidence is sufficient, give just the answer. "
@@ -80,6 +82,7 @@ def build_retrieval_response_guidance(
         "grounding packs, reason codes, service names, or retrieved evidence."
         f"{snippet_guidance}"
         f"{titled_work_guidance}"
+        f"{music_claim_guidance}"
     )
 
 
@@ -299,6 +302,21 @@ def _artist_for_title(retrieval_pack: GroundingPack, title: str) -> str | None:
         if artist:
             return artist
     return None
+
+
+def _music_claim_guidance(retrieval_pack: GroundingPack | None) -> str:
+    """Return extra answer guidance for music factual-claim lookups."""
+    if retrieval_pack is None:
+        return ""
+    metadata = getattr(getattr(retrieval_pack, "request", None), "metadata", {}) or {}
+    if not metadata.get("music_claim"):
+        return ""
+    return (
+        " If the question asks about band members, line-ups, credits, or personnel, "
+        "use only names explicitly present in the retrieved evidence. If the evidence "
+        "does not clearly ground the membership claim, say you cannot verify it safely "
+        "instead of inventing a line-up."
+    )
 
 
 def _clean_artist(value: str) -> str:

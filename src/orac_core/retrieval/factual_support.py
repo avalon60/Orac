@@ -26,6 +26,25 @@ _CAUSE_PATTERNS: tuple[re.Pattern[str], ...] = (
     ),
 )
 
+_MUSIC_MEMBERSHIP_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\b(?:who\s+(?:were|are)\s+the\s+members|who\s+(?:was|is)\s+in|who\s+is\s+in|who\s+were\s+in|members?\s+of|line[- ]?up|lineup|original\s+members?|founding\s+members?)\b",
+        re.I,
+    ),
+)
+_MUSIC_MEMBERSHIP_FALLBACK = (
+    "I found results, but they did not appear relevant enough to verify that safely."
+)
+_MUSIC_MEMBERSHIP_EVIDENCE_MARKERS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\b(?:member|members|line[- ]?up|lineup|formed|consists of|consisted of|comprised|comprises|includes|include|original members?|founding members?)\b",
+        re.I,
+    ),
+)
+_PROPER_NAME_PATTERN = re.compile(
+    r"\b(?:[A-Z][a-z]+(?:['-][A-Z][a-z]+)?(?:\s+[A-Z][a-z]+(?:['-][A-Z][a-z]+)?){1,3})\b"
+)
+
 
 def enforce_high_risk_factual_grounding(
     text: str,
@@ -40,7 +59,13 @@ def enforce_high_risk_factual_grounding(
 
     reason_code = str(getattr(retrieval_decision, "reason_code", "") or "")
     if reason_code != "factual_risk_cause_of_death":
-        return text
+        if reason_code != "factual_risk_music_claim":
+            return text
+        return _constrain_music_membership_answer(
+            text,
+            user_query=user_query,
+            retrieval_pack=retrieval_pack,
+        )
 
     subject = _subject_from_cause_query(user_query)
     causes = _extract_causes(retrieval_pack)
@@ -59,6 +84,27 @@ def enforce_high_risk_factual_grounding(
     if source_url and getattr(retrieval_pack, "require_citations", False):
         answer = f"{answer} Source: {source_url}"
     return answer
+
+
+def _constrain_music_membership_answer(
+    text: str,
+    *,
+    user_query: str,
+    retrieval_pack: GroundingPack,
+) -> str:
+    """Return a music-membership answer constrained to explicit evidence."""
+    if _looks_like_music_refusal(text):
+        return text
+
+    subject = _subject_from_music_membership_query(user_query)
+    evidence_text = _evidence_text(retrieval_pack)
+    if not subject or not _music_membership_evidence_is_explicit(evidence_text, subject):
+        return _music_membership_fallback(subject)
+
+    supported_phrases = _supported_name_phrases(text, evidence_text, subject=subject)
+    if not supported_phrases:
+        return _music_membership_fallback(subject)
+    return text
 
 
 def _extract_causes(retrieval_pack: GroundingPack) -> list[str]:
@@ -119,3 +165,71 @@ def _first_source_url(retrieval_pack: GroundingPack) -> str:
         if url:
             return url
     return ""
+
+
+def _subject_from_music_membership_query(user_query: str) -> str:
+    """Extract the band or group name from a membership query."""
+    normalized = " ".join(str(user_query or "").strip(" .?!").split())
+    patterns = (
+        r"^who\s+(?:were|are)\s+the\s+members\s+of\s+(?:the\s+group\s+|the\s+band\s+|the\s+act\s+)?(?P<subject>.+?)$",
+        r"^who\s+(?:were|are)\s+members\s+of\s+(?:the\s+group\s+|the\s+band\s+|the\s+act\s+)?(?P<subject>.+?)$",
+        r"^who\s+(?:was|is)\s+in\s+(?:the\s+group\s+|the\s+band\s+|the\s+act\s+)?(?P<subject>.+?)$",
+        r"^who\s+is\s+in\s+(?:the\s+group\s+|the\s+band\s+|the\s+act\s+)?(?P<subject>.+?)$",
+        r"^members?\s+of\s+(?:the\s+group\s+|the\s+band\s+|the\s+act\s+)?(?P<subject>.+?)$",
+    )
+    for pattern in patterns:
+        match = re.match(pattern, normalized, re.I)
+        if match is None:
+            continue
+        subject = " ".join(match.group("subject").strip(" .?!").split())
+        if subject:
+            return subject
+    return ""
+
+
+def _music_membership_evidence_is_explicit(evidence_text: str, subject: str) -> bool:
+    """Return whether retrieved evidence explicitly grounds a membership claim."""
+    lowered = evidence_text.lower()
+    if subject.lower() not in lowered:
+        return False
+    return any(pattern.search(evidence_text) is not None for pattern in _MUSIC_MEMBERSHIP_EVIDENCE_MARKERS)
+
+
+def _supported_name_phrases(text: str, evidence_text: str, *, subject: str) -> list[str]:
+    """Return supported proper-name phrases from the candidate answer."""
+    evidence_lower = evidence_text.lower()
+    subject_lower = subject.lower()
+    supported: list[str] = []
+    for phrase in _PROPER_NAME_PATTERN.findall(str(text or "")):
+        lowered = phrase.lower()
+        if lowered == subject_lower:
+            continue
+        if lowered not in evidence_lower:
+            return []
+        supported.append(phrase)
+    return supported
+
+
+def _looks_like_music_refusal(text: str) -> bool:
+    """Return whether the answer is already a conservative refusal."""
+    lowered = " ".join(str(text or "").lower().split())
+    return any(
+        marker in lowered
+        for marker in (
+            "i found results, but they did not appear relevant enough to verify that safely.",
+            "i do not find reliable evidence",
+            "i cannot verify",
+            "i can't verify",
+            "i do not have reliable evidence",
+        )
+    )
+
+
+def _music_membership_fallback(subject: str) -> str:
+    """Return a conservative fallback for unverifiable music membership claims."""
+    if subject:
+        return (
+            f"I do not find reliable evidence for the members of {subject}. "
+            f"{_MUSIC_MEMBERSHIP_FALLBACK}"
+        )
+    return _MUSIC_MEMBERSHIP_FALLBACK
