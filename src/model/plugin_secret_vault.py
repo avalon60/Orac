@@ -41,6 +41,7 @@ class PluginPatVaultStore:
         vault_path: Path | None = None,
         plugins_dir: Path | None = None,
         allowed_plugins: Iterable[str] | None = None,
+        manifests: Iterable[PluginManifest] | None = None,
     ) -> None:
         """Initialise the encrypted PAT vault store.
 
@@ -54,6 +55,11 @@ class PluginPatVaultStore:
         self._allowed_plugins = (
             frozenset(_normalise_plugin_id(plugin_id) for plugin_id in allowed_plugins)
             if allowed_plugins is not None
+            else None
+        )
+        self._manifests = (
+            {manifest.plugin_id: manifest for manifest in manifests}
+            if manifests is not None
             else None
         )
 
@@ -171,6 +177,8 @@ class PluginPatVaultStore:
 
     def _known_manifests(self) -> dict[str, PluginManifest]:
         """Return known plugin manifests from the allow-list or discovery."""
+        if self._manifests is not None:
+            return dict(self._manifests)
         if self._allowed_plugins is not None:
             return {
                 plugin_id: _manifest_stub(plugin_id)
@@ -251,10 +259,13 @@ class PluginSecretVault:
         *,
         plugin_id: str,
         store: PluginPatVaultStore | None = None,
+        manifest: PluginManifest | None = None,
     ) -> None:
         """Initialise a plugin-scoped vault facade."""
         self._plugin_id = _normalise_plugin_id(plugin_id)
-        self._store = store or PluginPatVaultStore()
+        self._store = store or PluginPatVaultStore(
+            manifests=(manifest,) if manifest is not None else None
+        )
 
     @property
     def plugin_id(self) -> str:

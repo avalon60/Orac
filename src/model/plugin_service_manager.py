@@ -84,7 +84,7 @@ class PluginServiceContext:
     def secret_vault(self) -> PluginSecretVault:
         """Return this plugin's scoped personal access token vault."""
         if self._secret_vault is None:
-            return PluginSecretVault(plugin_id=self.plugin_id)
+            return PluginSecretVault(plugin_id=self.plugin_id, manifest=self.manifest)
         return self._secret_vault
 
 
@@ -362,7 +362,10 @@ class PluginServiceManager:
                 logger=self._logger,
             ),
             _plugin_db_session_factory=self._plugin_db_session_factory,
-            _secret_vault=PluginSecretVault(plugin_id=record.manifest.plugin_id),
+            _secret_vault=PluginSecretVault(
+                plugin_id=record.manifest.plugin_id,
+                manifest=record.manifest,
+            ),
         )
         self._validate_service_contract(instance, record.manifest)
         record.instance = instance

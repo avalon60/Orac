@@ -52,6 +52,7 @@ class PluginConfigManager:
         self,
         manifest: PluginManifest,
         *,
+        config_path: Path | None = None,
         logger: Any | None = None,
     ) -> None:
         """Initialise a plugin-scoped config manager.
@@ -62,7 +63,11 @@ class PluginConfigManager:
         """
         self._manifest = manifest
         self._logger = logger
-        self._config_path = manifest.plugin_dir / "plugin.ini"
+        self._config_path = (
+            Path(config_path)
+            if config_path
+            else manifest.config_path or manifest.plugin_dir / "plugin.ini"
+        )
         self._config = ConfigParser(interpolation=None)
         self._loaded = False
 

@@ -12,3 +12,4 @@ grant execute on orac_code.user_preferences_api to orac_apx_pub;
 grant execute on orac_code.user_preferences_api to orac;
 grant execute on orac_code.plugin_audit_api to orac;
 grant execute on orac_code.plugin_db_deployment_api to orac;
+grant execute on orac_code.plugin_registry_api to orac;

@@ -4,6 +4,9 @@
   "name": "Home Assistant",
   "description": "Controls Home Assistant devices, scenes, and state queries for the user's smart home.",
   "version": "1.0.0",
+  "python_dependencies": [
+    "requests>=2.32,<3"
+  ],
   "enabled": true,
   "capabilities": [
     "home_assistant.resync",

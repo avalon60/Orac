@@ -93,7 +93,6 @@ SQL
     return 1
   fi
 
-  echo "==================  ORAC deployment complete =================="
 }
 
 (

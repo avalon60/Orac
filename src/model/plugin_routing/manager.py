@@ -19,6 +19,8 @@ from model.plugin_routing.embeddings import EmbeddingProvider
 from model.plugin_routing.index import PluginIntentIndex
 from model.plugin_routing.intent_text import INTENT_TEXT_VERSION, build_canonical_intent_text
 from model.plugin_routing.models import PluginCandidate, PluginManifest
+from model.plugin_registry import PluginRegistryError
+from model.plugin_registry import PluginRegistryStore
 
 
 class PluginManager:
@@ -32,9 +34,15 @@ class PluginManager:
         logger=None,
         database_schema_root: Path | None = None,
         database_deployer: PluginDatabaseDeployer | None = None,
+        registry_store: PluginRegistryStore | None = None,
+        require_registry: bool | None = None,
     ):
         self._project_root = project_home()
         self._plugins_dir = Path(plugins_dir) if plugins_dir else self._project_root / "plugins"
+        self._require_registry = (
+            plugins_dir is None if require_registry is None else require_registry
+        )
+        self._registry_store = registry_store or PluginRegistryStore(logger=logger)
         self._database_schema_root = (
             Path(database_schema_root)
             if database_schema_root
@@ -61,8 +69,25 @@ class PluginManager:
     def refresh(self) -> dict[str, Any]:
         """Refreshes manifests, cache, embeddings, and the in-memory index."""
         self._log_info(f"Plugin routing refresh starting for root {self._plugins_dir}")
-        discovered_count = len(list(self._plugins_dir.glob("*.json"))) if self._plugins_dir.exists() else 0
-        manifests, errors = self._discovery.discover()
+        if self._require_registry:
+            try:
+                manifests = self._registry_store.enabled_manifests()
+                errors: list[str] = []
+            except PluginRegistryError as exc:
+                manifests = []
+                errors = [str(exc)]
+                self._log_error(
+                    "Plugin registry is unavailable; plugin routing is disabled "
+                    f"while core Orac remains operational: {exc}"
+                )
+            discovered_count = len(manifests)
+        else:
+            discovered_count = (
+                len(list(self._plugins_dir.glob("*.json")))
+                if self._plugins_dir.exists()
+                else 0
+            )
+            manifests, errors = self._discovery.discover()
         self._discovered_manifests = tuple(manifests)
         valid_count = len(manifests)
         invalid_count = len(errors)
@@ -71,9 +96,18 @@ class PluginManager:
         configuration_eligible_manifests, configuration_disabled_manifests = (
             self._configuration_eligible_manifests_for(enabled_manifests)
         )
-        deployment_eligible_manifests, deployment_disabled_manifests = self._deployment_eligible_manifests_for(
-            configuration_eligible_manifests
-        )
+        if self._require_registry:
+            deployment_eligible_manifests = self._registry_eligible_manifests_for(
+                configuration_eligible_manifests
+            )
+            deployment_disabled_manifests: list[PluginManifest] = []
+        else:
+            (
+                deployment_eligible_manifests,
+                deployment_disabled_manifests,
+            ) = self._deployment_eligible_manifests_for(
+                configuration_eligible_manifests
+            )
         self._deployment_eligible_manifests = tuple(deployment_eligible_manifests)
         runtime_manifests, runtime_disabled_manifests = self._runtime_eligible_manifests(
             deployment_eligible_manifests
@@ -111,7 +145,8 @@ class PluginManager:
                     cache_misses += 1
                 else:
                     self._log_debug(
-                        f"Plugin routing cache entry stale for plugin '{manifest.plugin_id}'; re-embedding."
+                        "Plugin routing cache entry stale for plugin "
+                        f"'{manifest.plugin_id}'; re-embedding."
                     )
                 try:
                     vector = self._embedding_provider.embed_text(canonical_text)
@@ -292,6 +327,24 @@ class PluginManager:
             )
 
         return eligible, dependency_disabled
+
+    def _registry_eligible_manifests_for(
+        self,
+        manifests: list[PluginManifest],
+    ) -> list[PluginManifest]:
+        """Trust the install registry's database gate without redeploying at runtime."""
+        self._deployment_results = {}
+        for manifest in manifests:
+            status = "already_deployed" if manifest.database_required else "not_required"
+            self._deployment_results[manifest.plugin_id] = (
+                PluginDatabaseDeploymentResult(
+                    plugin_id=manifest.plugin_id,
+                    status=status,
+                    eligible=True,
+                    message="Plugin database eligibility was verified at installation.",
+                )
+            )
+        return list(manifests)
 
     def _has_missing_database_schema(self, manifest: PluginManifest) -> bool:
         """Return whether a manifest declares a required schema with no local bundle."""

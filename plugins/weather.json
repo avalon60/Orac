@@ -4,6 +4,9 @@
   "name": "Weather",
   "description": "Answers current weather and short forecast questions for the user's configured or supported locations.",
   "version": "1.0.0",
+  "python_dependencies": [
+    "requests>=2.32,<3"
+  ],
   "enabled": true,
   "capabilities": [
     "weather.current_conditions",

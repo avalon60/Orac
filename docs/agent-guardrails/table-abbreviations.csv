@@ -19,3 +19,4 @@ orac_core,user_preferences,user_pref
 orac_core,user_prompt_elements,user_pe
 orac_core,user_synonyms,user_syns
 orac_core,users,users
+orac_core,plugin_registry,plgreg

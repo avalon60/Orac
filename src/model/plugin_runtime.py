@@ -9,9 +9,11 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 import importlib
+from importlib.machinery import ModuleSpec
 import inspect
 from pathlib import Path
 import sys
+from types import ModuleType
 from typing import Any, Iterator
 
 from model.plugin_config import PluginConfigManager
@@ -154,9 +156,17 @@ def load_plugin_entry_point(
     full_module_name = f"{manifest.plugin_id}.{module_name}"
     plugins_root = manifest.manifest_path.parent
 
-    with _temporary_sys_path(plugins_root):
-        importlib.invalidate_caches()
-        module = importlib.import_module(full_module_name)
+    if manifest.plugin_dir.name == manifest.plugin_id:
+        with _temporary_sys_path(plugins_root):
+            importlib.invalidate_caches()
+            module = importlib.import_module(full_module_name)
+    else:
+        with _temporary_plugin_package(
+            manifest.plugin_id,
+            manifest.plugin_dir,
+        ):
+            importlib.invalidate_caches()
+            module = importlib.import_module(full_module_name)
 
     plugin_class = getattr(module, class_name, None)
     if plugin_class is None:
@@ -217,6 +227,33 @@ def _temporary_sys_path(path: Path) -> Iterator[None]:
                 sys.path.remove(path_str)
             except ValueError:
                 pass
+
+
+@contextmanager
+def _temporary_plugin_package(plugin_id: str, plugin_dir: Path) -> Iterator[None]:
+    """Expose an installed generic ``plugin/`` directory as its plugin ID."""
+    prefix = f"{plugin_id}."
+    previous_modules = {
+        name: module
+        for name, module in tuple(sys.modules.items())
+        if name == plugin_id or name.startswith(prefix)
+    }
+    for name in previous_modules:
+        sys.modules.pop(name, None)
+
+    package = ModuleType(plugin_id)
+    package.__package__ = plugin_id
+    package.__path__ = [str(plugin_dir)]
+    package.__spec__ = ModuleSpec(plugin_id, loader=None, is_package=True)
+    package.__spec__.submodule_search_locations = [str(plugin_dir)]
+    sys.modules[plugin_id] = package
+    try:
+        yield
+    finally:
+        for name in tuple(sys.modules):
+            if name == plugin_id or name.startswith(prefix):
+                sys.modules.pop(name, None)
+        sys.modules.update(previous_modules)
 
 
 def _resolve_user_preference(context_manager: Any, username: str, pref_key: str) -> Any | None:
@@ -302,7 +339,7 @@ class PluginRuntimeContext:
     def secret_vault(self) -> PluginSecretVault:
         """Return this plugin's scoped personal access token vault."""
         if self._secret_vault is None:
-            return PluginSecretVault(plugin_id=self.plugin_id)
+            return PluginSecretVault(plugin_id=self.plugin_id, manifest=self.manifest)
         return self._secret_vault
 
     def run_service_command(

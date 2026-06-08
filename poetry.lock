@@ -1596,10 +1596,9 @@ test = ["flake8 (>=5.0,<7.1)", "mock (>=5.1,<6)", "pytest (>=7.2.0,<8)", "pytest
 name = "platypush-speexdsp-ns"
 version = "0.1.2"
 description = "Python bindings of speexdsp noise suppression library"
-optional = true
+optional = false
 python-versions = "*"
 groups = ["main"]
-markers = "extra == \"voice-wake\" or extra == \"voice-wake-openwakeword\""
 files = [
     {file = "platypush_speexdsp_ns-0.1.2.tar.gz", hash = "sha256:aacb6da72051135b00ec4ea3cffd508ba7818a950e07b1a72f565146bb8f47a8"},
 ]
@@ -3086,4 +3085,4 @@ voice-wake-porcupine = ["pvporcupine", "pvrecorder"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<4.0"
-content-hash = "0c035969d9b06d990718b5cce360ff7e0eb03a30ab45c5f060ea3b3e557e3125"
+content-hash = "088ff8b67b79bac1e156fb35b889e3fd202db24df30bb3c479a30d830b47dc16"

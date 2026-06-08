@@ -79,12 +79,9 @@ Do not scatter one-off shell scripts across unrelated source directories.
 Scripts must run under Bash on:
 
 - Linux
-- Windows WSL
-- Windows Git Bash
 - macOS
 
-Do not depend on a platform-specific shell such as PowerShell, `cmd.exe`, or
-`zsh` unless the script is explicitly scoped to that platform and documented as
+Do not depend on a platform-specific shell such as `zsh` unless the script is explicitly scoped to that platform and documented as
 such.
 
 When platform-specific support is required, isolate it in a small function and
@@ -225,3 +222,191 @@ For material Bash changes, test at least:
 
 When changing portability-sensitive logic, test or reason explicitly about
 Linux, WSL, Git Bash, and macOS behaviour.
+
+## Operational commentary
+
+Some Bash scripts need operational commentary in addition to the required script
+header.
+
+The script header describes the purpose of the script. Operational comments
+explain non-obvious design decisions inside the script.
+
+Operational commentary is required when a Bash script coordinates lifecycle
+steps, external tools, environment selection, filesystem changes, destructive
+operations, cleanup, fallback behaviour, or security-sensitive actions.
+
+Examples include:
+
+* project bootstrap scripts
+* Docker build or startup scripts
+* database setup scripts
+* APEX, ORDS, or SQLcl wrappers
+* plugin installation wrappers
+* virtual environment selection
+* Poetry, pip, sqlplus, SQLcl, Docker, or Git calls
+* temporary directory creation
+* trap-based cleanup
+* path normalisation
+* archive creation or extraction
+* recursive copy, move, or delete operations
+* credential or token lookup
+* scripts that write configuration files
+* scripts that modify source-controlled files
+* scripts that call Python, PL/SQL, or other deployment tools
+
+Use operational comments to explain:
+
+* why this step exists
+* why the order of operations matters
+* what external assumption is being relied on
+* what state is being changed
+* what cleanup is guaranteed
+* what happens if the step fails
+* why a fallback exists
+* why a higher-level tool is bypassed
+* why a command is safe to run
+* why a path has been validated
+* why a potentially destructive command cannot escape its target area
+
+Do not comment obvious Bash syntax.
+
+Good:
+
+```bash
+# Prefer the project-local virtual environment when it exists. Poetry owns
+# and maintains this environment, but invoking Python directly avoids an
+# extra Poetry process for each plugin command. This means the wrapper relies
+# on the existing .venv being dependency-consistent.
+```
+
+Bad:
+
+```bash
+# Check if .venv/bin/python exists.
+```
+
+Good:
+
+```bash
+# Resolve the project directory before changing any state so later path checks
+# can confirm destructive operations remain inside the repository.
+```
+
+Bad:
+
+```bash
+# Set PROJECT_DIR.
+```
+
+Good:
+
+```bash
+# Keep the temporary staging directory until the install has either activated
+# successfully or failed with diagnostics. Cleanup is registered immediately so
+# interrupted installs do not leave partial state behind.
+```
+
+Bad:
+
+```bash
+# Create temp directory.
+```
+
+Good:
+
+```bash
+# Refuse to delete unless the resolved target is inside the managed plugin
+# directory. This prevents an empty or malformed variable from expanding into a
+# wider recursive delete.
+```
+
+Bad:
+
+```bash
+# Delete old plugin files.
+```
+
+Good:
+
+```bash
+# Use an argument array rather than a command string so paths and user-supplied
+# values cannot be reinterpreted by the shell.
+```
+
+Bad:
+
+```bash
+# Run command.
+```
+
+### Commentary trigger checklist
+
+Add operational commentary when a Bash block answers "yes" to any of these
+questions:
+
+* Does this code perform more than one side-effecting step?
+* Does the order of operations matter?
+* Does this code call Poetry, pip, Python, Docker, Git, sqlplus, SQLcl, ORDS,
+  APEX, curl, tar, unzip, rsync, or ssh?
+* Does this code select between multiple tools or fallback paths?
+* Does this code deliberately bypass a higher-level tool?
+* Does this code create, copy, move, delete, archive, or extract files?
+* Does this code use a temporary directory or trap cleanup?
+* Does this code depend on environment variables?
+* Does this code read or write credentials, tokens, or configuration files?
+* Could a failure here leave partial state behind?
+* Could a future maintainer reasonably ask "why is this done this way?"
+* Could a coding agent plausibly simplify this in a dangerous way?
+
+When in doubt, add a short comment explaining the design constraint. Keep it
+close to the code it explains.
+
+### Commentary density
+
+Do not add comments to every line.
+
+Prefer one short comment before each meaningful phase of a script or function.
+
+For lifecycle scripts, use phase comments such as:
+
+```bash
+# Resolve all paths before performing validation or changing state.
+```
+
+```bash
+# Validate the target before any recursive copy or delete operation.
+```
+
+```bash
+# Register cleanup immediately after creating temporary state.
+```
+
+```bash
+# Delegate to the Python controller only after the environment has been
+# selected and PYTHONPATH has been constrained to this checkout.
+```
+
+If a Bash function needs many operational comments, consider whether it should
+be split into smaller functions.
+
+### Agent rules for Bash commentary
+
+When generating or modifying Bash scripts, agents must:
+
+1. Preserve existing useful comments.
+2. Remove or update comments that no longer match the script.
+3. Add operational commentary for lifecycle, deployment, bootstrap, plugin,
+   database, Docker, Poetry, virtual environment, filesystem, network,
+   credential, and destructive-operation logic.
+4. Explain non-obvious ordering, fallbacks, side effects, cleanup, and failure
+   handling.
+5. Explain why a command is safe when it uses recursive copy, recursive delete,
+   archive extraction, environment variables, or external tool output.
+6. Explain why a higher-level tool is bypassed when invoking a lower-level
+   executable directly.
+7. Avoid comments that simply restate the command.
+8. Avoid commented-out commands.
+9. Avoid using comments to justify unsafe shortcuts.
+10. Treat missing commentary around side-effecting orchestration as a review
+    finding.
+

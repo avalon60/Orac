@@ -382,7 +382,10 @@ class PluginRouter:
                     manifest,
                     logger=self._logger,
                 ),
-                _secret_vault=PluginSecretVault(plugin_id=manifest.plugin_id),
+                _secret_vault=PluginSecretVault(
+                    plugin_id=manifest.plugin_id,
+                    manifest=manifest,
+                ),
             )
             plugin_instance = instantiate_plugin(
                 plugin_class,

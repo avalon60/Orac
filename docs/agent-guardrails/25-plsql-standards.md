@@ -618,6 +618,188 @@ from the Command Palette action in the View menu.
 +==================================+===================================+
 +----------------------------------+-----------------------------------+
 
+
+## 4.4. Operational commentary
+
+Some PL/SQL code needs operational commentary in addition to package,
+procedure, and function header comments.
+
+Header comments describe the purpose and public contract of a package,
+procedure, or function. Operational comments explain non-obvious logic inside
+the implementation.
+
+Operational commentary is required when PL/SQL code coordinates side effects,
+transactional state, dynamic SQL, cross-schema calls, security checks, logging,
+or framework-level lifecycle behaviour.
+
+Examples include:
+
+* package install and upgrade scripts
+* deployment bootstrap logic
+* schema migration logic
+* data correction scripts
+* dynamic SQL
+* dbms_sql usage
+* generated TAPI or XAPI code
+* plugin registry APIs
+* plugin audit APIs
+* optimistic locking
+* soft-delete handling
+* row-version checks
+* retry logic
+* exception translation
+* autonomous transactions
+* explicit commit or rollback boundaries
+* bulk processing
+* merge/upsert logic
+* cross-schema API calls
+* code that writes audit records
+* code that reads or writes credentials
+* code that evaluates predicates or expressions supplied as data
+
+Use operational comments to explain:
+
+* why this step exists
+* why the order of operations matters
+* what state is being changed
+* what transaction boundary is being relied on
+* what must happen before or after the step
+* why dynamic SQL is required
+* why dbms_sql is used instead of execute immediate
+* what assumptions are being made about API views, TAPIs, triggers, or
+  grants
+* what happens if the step fails
+* what is logged, and what is deliberately not logged
+* why an exception is translated, swallowed, ignored, or re-raised
+* why a value is truncated, normalised, defaulted, or converted
+
+Do not comment obvious SQL or PL/SQL syntax.
+
+Good:
+
+```sql
+-- Validate the registry payload before calling the TAPI so any size or
+-- mandatory-field problem is reported against the plugin registry API,
+-- rather than surfacing as a lower-level rowtype assignment failure.
+```
+
+Bad:
+
+```sql
+-- Insert into plugin registry.
+```
+
+Good:
+
+```sql
+-- Use dbms_sql here because the predicate can contain a variable number of
+-- bind names. execute immediate cannot bind an unknown set of names safely.
+```
+
+Bad:
+
+```sql
+-- Run dynamic SQL.
+```
+
+Good:
+
+```sql
+-- Record the audit event before raising the exception so failed plugin
+-- installs remain traceable even when the caller rolls back its own work.
+```
+
+Bad:
+
+```sql
+-- Log error.
+```
+
+Good:
+
+```sql
+-- Do not log the manifest body here. It can contain large JSON values and
+-- plugin configuration summaries; log only the plugin id, version, and
+-- calculated hash.
+```
+
+Bad:
+
+```sql
+-- Add logger params.
+```
+
+### Commentary trigger checklist
+
+Add operational commentary when a PL/SQL block answers "yes" to any of these
+questions:
+
+* Does this code perform more than one side-effecting step?
+* Does the order of operations matter?
+* Does this code call another schema, API view, TAPI, XAPI, trigger-driven
+  object, scheduler job, or external package?
+* Does this code use dynamic SQL or dbms_sql?
+* Does this code depend on row_version, soft-delete flags, audit columns, or
+  generated trigger behaviour?
+* Does this code insert audit, registry, history, or diagnostic rows?
+* Does this code deliberately catch and re-raise exceptions?
+* Does this code deliberately ignore an exception?
+* Could a failure here leave partial data behind?
+* Could a future maintainer reasonably ask "why is this done this way?"
+* Could a coding agent plausibly simplify this code in a dangerous way?
+
+When in doubt, add a short comment explaining the design constraint. Keep it
+close to the logic it explains.
+
+### Commentary density
+
+Do not add comments to every line.
+
+Prefer one short comment before each meaningful phase of a procedure or
+function.
+
+For lifecycle procedures, use phase comments such as:
+
+```sql
+-- Validate the incoming registry payload before any database changes.
+```
+
+```sql
+-- Persist the registry row only after dependency and readiness checks have
+-- passed, so disabled or failed plugins cannot be selected for execution.
+```
+
+```sql
+-- Re-raise after logging so callers keep the original transactional and error
+-- handling semantics.
+```
+
+If a procedure needs many operational comments, consider whether it should be
+split into smaller private procedures.
+
+### Agent rules for PL/SQL commentary
+
+When generating or modifying PL/SQL, agents must:
+
+1. Preserve existing useful comments.
+2. Remove or update comments that no longer match the code.
+3. Add operational commentary for dynamic SQL, dbms_sql, deployment,
+   migration, plugin registry, plugin audit, TAPI/XAPI orchestration,
+   exception handling, logging, transaction-sensitive, and security-sensitive
+   code.
+4. Explain non-obvious ordering, side effects, failure handling, and
+   transaction assumptions.
+5. Explain why exceptions are caught, translated, ignored, logged, or
+   re-raised.
+6. Explain why dynamic SQL is needed, especially when bind variables are
+   discovered or bound at runtime.
+7. Avoid comments that simply restate the SQL or PL/SQL statement.
+8. Avoid commented-out code.
+9. Avoid using comments to justify unsafe shortcuts.
+10. Treat missing commentary around side-effecting orchestration as a review
+    finding.
+
+
 # 5. Code
 
 ## 5.1. Constants

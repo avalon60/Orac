@@ -169,6 +169,8 @@ class PluginManifest:
     database_on_missing: PluginDatabaseOnMissing = "warn_disable"
     database_schemas: tuple[PluginDatabaseSchema, ...] = ()
     secrets: PluginSecrets | None = None
+    python_dependencies: tuple[str, ...] = ()
+    config_path: Path | None = None
 
 
 @dataclass(frozen=True)

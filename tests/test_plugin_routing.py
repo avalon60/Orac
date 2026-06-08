@@ -23,6 +23,7 @@ from model.plugin_routing.embeddings import HashEmbeddingProvider
 from model.plugin_routing.index import PluginIntentIndex
 from model.plugin_routing.intent_text import INTENT_TEXT_VERSION, build_canonical_intent_text
 from model.plugin_routing.manager import PluginManager
+from model.plugin_registry import PluginRegistryError
 
 
 class _SuccessfulDatabaseDeployer:
@@ -45,6 +46,19 @@ class _CountingDatabaseDeployer(_SuccessfulDatabaseDeployer):
         return super().deploy_if_needed(manifest)
 
 
+class _ManifestRegistry:
+    def __init__(self, manifests):
+        self.manifests = list(manifests)
+
+    def enabled_manifests(self):
+        return list(self.manifests)
+
+
+class _FailingRegistry:
+    def enabled_manifests(self):
+        raise PluginRegistryError("registry unavailable")
+
+
 class PluginRoutingTests(unittest.TestCase):
     """Tests the first working version of the plugin routing scaffold."""
 
@@ -63,6 +77,66 @@ class PluginRoutingTests(unittest.TestCase):
 
         def log_error(self, message: str) -> None:
             self.messages.append(("error", message))
+
+    def test_registry_gated_refresh_does_not_redeploy_database_payloads(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins_dir,
+            tempfile.TemporaryDirectory() as temp_cache_dir,
+        ):
+            plugins_dir = Path(temp_plugins_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Test plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.control"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+            self.assertEqual(errors, [])
+            deployer = _CountingDatabaseDeployer()
+            manager = PluginManager(
+                embedding_provider=HashEmbeddingProvider(),
+                plugins_dir=plugins_dir,
+                cache_dir=Path(temp_cache_dir),
+                database_deployer=deployer,
+                registry_store=_ManifestRegistry(manifests),
+                require_registry=True,
+            )
+
+            report = manager.refresh()
+
+            self.assertEqual(report["indexed_plugin_count"], 1)
+            self.assertEqual(deployer.calls, [])
+
+    def test_registry_failure_disables_plugins_without_breaking_refresh(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logger = self._FakeLogger()
+            manager = PluginManager(
+                embedding_provider=HashEmbeddingProvider(),
+                plugins_dir=Path(temp_dir) / "plugins",
+                cache_dir=Path(temp_dir) / "cache",
+                registry_store=_FailingRegistry(),
+                require_registry=True,
+                logger=logger,
+            )
+
+            report = manager.refresh()
+
+            self.assertEqual(report["indexed_plugin_count"], 0)
+            self.assertEqual(report["invalid"], 1)
+            self.assertTrue(
+                any("plugin routing is disabled" in message for _, message in logger.messages)
+            )
 
     def test_discovery_rejects_mismatched_plugin_id(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

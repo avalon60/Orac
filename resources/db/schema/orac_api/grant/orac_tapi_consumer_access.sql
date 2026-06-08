@@ -69,6 +69,7 @@ grant select on orac_api.user_prompt_elements_v to orac_code with grant option;
 grant select on orac_api.plugin_invocations_v to orac_code with grant option;
 grant select on orac_api.plugin_audit_events_v to orac_code with grant option;
 grant select, insert, update, delete on orac_api.plugin_db_deployments_v to orac_code with grant option;
+grant select, insert, update, delete on orac_api.plugin_registry_v to orac_code with grant option;
 
 grant read on orac_api.preference_definitions_v to orac_code with grant option;
 grant read on orac_api.users_v to orac_code with grant option;
@@ -85,6 +86,7 @@ grant read on orac_api.user_prompt_elements_v to orac_code with grant option;
 grant read on orac_api.plugin_invocations_v to orac_code with grant option;
 grant read on orac_api.plugin_audit_events_v to orac_code with grant option;
 grant read on orac_api.plugin_db_deployments_v to orac_code with grant option;
+grant read on orac_api.plugin_registry_v to orac_code with grant option;
 
 grant execute on orac_api.preference_definitions_tapi to orac_code;
 grant execute on orac_api.users_tapi to orac_code;
@@ -100,3 +102,4 @@ grant execute on orac_api.user_prompt_elements_tapi to orac_code;
 grant execute on orac_api.plugin_invocations_tapi to orac_code;
 grant execute on orac_api.plugin_audit_events_tapi to orac_code;
 grant execute on orac_api.plugin_db_deployments_tapi to orac_code;
+grant execute on orac_api.plugin_registry_tapi to orac_code;

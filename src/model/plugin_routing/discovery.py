@@ -25,6 +25,8 @@ from model.plugin_routing.models import (
     PluginServiceRuntime,
 )
 from model.plugin_database_deployment import PROTECTED_ORAC_SCHEMAS
+from model.plugin_dependencies import PluginDependencyError
+from model.plugin_dependencies import normalise_requirements
 
 PLUGIN_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 DATABASE_SCHEMA_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$", re.IGNORECASE)
@@ -66,6 +68,7 @@ OPTIONAL_FIELDS = {
     "configuration",
     "database",
     "secrets",
+    "python_dependencies",
 }
 ALLOWED_FIELDS = REQUIRED_FIELDS | OPTIONAL_FIELDS
 
@@ -96,7 +99,36 @@ class PluginDiscovery:
 
         return manifests, errors
 
-    def _load_manifest(self, manifest_path: Path) -> PluginManifest:
+    def load_manifest(
+        self,
+        manifest_path: Path,
+        *,
+        plugin_dir: Path | None = None,
+        enforce_filename: bool = True,
+    ) -> PluginManifest:
+        """Load one manifest, optionally using a packaged plugin directory.
+
+        Args:
+            manifest_path: JSON manifest to validate.
+            plugin_dir: Explicit implementation directory for package installs.
+            enforce_filename: Whether the filename stem must match ``plugin_id``.
+
+        Returns:
+            A validated plugin manifest.
+        """
+        return self._load_manifest(
+            Path(manifest_path),
+            plugin_dir=plugin_dir,
+            enforce_filename=enforce_filename,
+        )
+
+    def _load_manifest(
+        self,
+        manifest_path: Path,
+        *,
+        plugin_dir: Path | None = None,
+        enforce_filename: bool = True,
+    ) -> PluginManifest:
         try:
             manifest_text = manifest_path.read_text(encoding="utf-8")
         except OSError as exc:
@@ -131,17 +163,17 @@ class PluginDiscovery:
             )
 
         manifest_stem = manifest_path.stem
-        if plugin_id != manifest_stem:
+        if enforce_filename and plugin_id != manifest_stem:
             raise PluginManifestError(
                 f"plugin_id '{plugin_id}' must exactly match manifest filename stem '{manifest_stem}'"
             )
 
-        plugin_dir = self._plugins_dir / plugin_id
+        plugin_dir = Path(plugin_dir) if plugin_dir else self._plugins_dir / plugin_id
         if not plugin_dir.exists() or not plugin_dir.is_dir():
             raise PluginManifestError(
                 f"Matching plugin directory is required: {plugin_dir}"
             )
-        if plugin_dir.name != plugin_id:
+        if enforce_filename and plugin_dir.name != plugin_id:
             raise PluginManifestError(
                 f"Plugin directory name '{plugin_dir.name}' must exactly match plugin_id '{plugin_id}'"
             )
@@ -175,6 +207,12 @@ class PluginDiscovery:
             data.get("database", {})
         )
         secrets = self._load_secrets(data.get("secrets"))
+        try:
+            python_dependencies = normalise_requirements(
+                data.get("python_dependencies", [])
+            )
+        except PluginDependencyError as exc:
+            raise PluginManifestError(f"python_dependencies: {exc}") from exc
 
         manifest_hash = hashlib.sha256(manifest_text.encode("utf-8")).hexdigest()
 
@@ -202,6 +240,7 @@ class PluginDiscovery:
             database_on_missing=database_on_missing,
             database_schemas=tuple(database_schemas),
             secrets=secrets,
+            python_dependencies=python_dependencies,
         )
 
     def _load_runtime(self, value: Any) -> tuple[str, PluginServiceRuntime | None]:

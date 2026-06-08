@@ -19,3 +19,4 @@ grant select on orac_code.message_role_breakdown_v to orac;
 grant select, insert, update, delete on orac_code.user_preferences_v to orac;
 grant read on orac_code.user_preferences_v to orac;
 grant select on orac_code.user_preferences_display_v to orac;
+grant read on orac_code.plugin_registry_v to orac;

@@ -1,14 +1,18 @@
-# Home Assistant Plugin
+# Home Assistant Plugin Source
 
-This directory contains the runtime implementation for the `home_assistant` plugin.
+User and operator documentation is in
+[`docs/home-assistant.md`](../../docs/home-assistant.md). The data ownership and
+freshness contract is in
+[`docs/home-assistant-data-lifecycle.md`](../../docs/home-assistant-data-lifecycle.md).
 
-Runtime configuration is loaded from `plugin.ini` in this directory. The file
-may contain non-secret connection details such as host, port, protocol, and TLS
-verification settings.
+This directory contains the runtime implementation, plugin-local configuration,
+and plugin-owned database assets for `home_assistant`.
 
-Do not store the Home Assistant token value in `plugin.ini`. Store the long-lived
+Non-secret connection settings belong in `plugin.ini`. Store the long-lived
 access token in Orac's encrypted plugin PAT vault:
 
 ```bash
 bin/plugin-pat-mgr.sh --plugin home_assistant --set access_token
 ```
+
+Do not store the token in `plugin.ini` or other repository files.
