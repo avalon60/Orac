@@ -301,6 +301,26 @@ class PluginAuditAdapterTests(unittest.TestCase):
         self.assertIsNone(session.plugin_invocation_id)
         self.assertTrue(any(level == "error" for level, _message in logger.messages))
 
+    def test_replacing_db_session_routes_future_writes_to_new_session(self) -> None:
+        stale_session = _RecordingDBSession()
+        current_session = _RecordingDBSession()
+        adapter = PluginAuditAdapter(db_session=stale_session, logger=_FakeLogger())
+
+        adapter.set_db_session(current_session)
+        session = adapter.create_session(
+            provenance={
+                "plugin_id": "home_assistant",
+                "plugin_name": "Home Assistant",
+                "action_type": "metadata_synchronisation",
+                "status": "allowed",
+            },
+            request_context={"request_id": "req-resync"},
+        )
+
+        self.assertEqual(session.plugin_invocation_id, 1)
+        self.assertEqual(stale_session.cursor_obj.executed, [])
+        self.assertEqual(len(current_session.cursor_obj.executed), 1)
+
     def test_plugins_do_not_write_audit_records_directly(self) -> None:
         plugin_root = PROJECT_ROOT / "plugins"
         forbidden_tokens = (

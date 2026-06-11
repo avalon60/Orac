@@ -283,6 +283,15 @@ class PluginAuditAdapter:
         self._logger = logger
         self._strict = bool(strict)
 
+    def set_db_session(self, db_session: Any | None) -> None:
+        """Replace the Oracle session used for subsequent audit writes.
+
+        Args:
+            db_session: Current Orac database session, or ``None`` when audit
+                persistence is unavailable.
+        """
+        self._db_session = db_session
+
     def create_session(
         self,
         *,

@@ -16,6 +16,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 import types
 import unittest
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -3022,6 +3023,28 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(orchestrator.db_session, healthy_session)
         self.assertIs(orchestrator.ctx.db, healthy_session)
         self.assertGreaterEqual(healthy_session.health_checks, 1)
+
+    def test_refresh_db_session_rebinds_plugin_audit_adapter(self) -> None:
+        orchestrator = Orac.__new__(Orac)
+        stale_session = _HealthCheckDBSession()
+        healthy_session = _HealthCheckDBSession()
+        rebound_sessions: list[object] = []
+        audit_adapter = types.SimpleNamespace(
+            set_db_session=rebound_sessions.append,
+        )
+        orchestrator.db_session = stale_session
+        orchestrator.ctx = types.SimpleNamespace(db=stale_session)
+        orchestrator.plugin_audit_adapter = audit_adapter
+        orchestrator._user = "svc"
+        orchestrator._password = "secret"
+        orchestrator._dsn = "db"
+
+        with patch.object(orac_module, "DBSession", return_value=healthy_session):
+            orchestrator._refresh_db_session()
+
+        self.assertIs(orchestrator.db_session, healthy_session)
+        self.assertIs(orchestrator.ctx.db, healthy_session)
+        self.assertEqual(rebound_sessions, [healthy_session])
 
     def test_llm_registry_sync_preserves_existing_probe_metadata(self) -> None:
         orchestrator = Orac.__new__(Orac)

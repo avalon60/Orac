@@ -3112,6 +3112,9 @@ class Orac:
         self.db_session = new_session
         if getattr(self, "ctx", None) is not None:
             self.ctx.db = new_session
+        plugin_audit_adapter = getattr(self, "plugin_audit_adapter", None)
+        if plugin_audit_adapter is not None:
+            plugin_audit_adapter.set_db_session(new_session)
         if old_session is not None:
             try:
                 old_session.close()
