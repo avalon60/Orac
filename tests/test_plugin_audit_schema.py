@@ -196,7 +196,11 @@ class PluginAuditSchemaTests(unittest.TestCase):
             1,
         )
         self.assertIn(
-            "current provenance remains preserved on the event row below",
+            "Workaround for Oracle 23.26 ORA-07445 [kohfrem] crash",
+            package_body,
+        )
+        self.assertIn(
+            "retesting on the target Oracle database patch level",
             package_body,
         )
 

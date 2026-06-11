@@ -114,9 +114,12 @@ create or replace package body orac_code.plugin_audit_api as
     l_row.policy_reason := p_policy_reason;
     l_row.execution_status := l_execution_status;
 
-    -- Invocation provenance is captured by begin_invocation. Reassigning a
-    -- JSON formal during an update crashes Oracle 23.26 in kohfrem(). The
-    -- current provenance remains preserved on the event row below.
+    -- Workaround for Oracle 23.26 ORA-07445 [kohfrem] crash observed when
+    -- updating JSON provenance in-place. Avoid the crashing JSON update path
+    -- while preserving audit provenance on event rows.
+    --
+    -- Do not simplify this back to the previous JSON update form without
+    -- retesting on the target Oracle database patch level.
 
     orac_api.plugin_invocations_tapi.upd(p_plugin_invocation_id, l_row);
     p_row_version := l_row.row_version;
@@ -195,8 +198,8 @@ create or replace package body orac_code.plugin_audit_api as
     l_row.failure_message := p_failure_message;
 
     -- Keep the invocation's original provenance and record this lifecycle
-    -- snapshot on the event row. See record_policy_decision for the Oracle
-    -- 23.26 JSON update restriction.
+    -- snapshot on the event row. See the Oracle 23.26 workaround in
+    -- record_policy_decision.
 
     orac_api.plugin_invocations_tapi.upd(p_plugin_invocation_id, l_row);
     p_row_version := l_row.row_version;
