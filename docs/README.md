@@ -20,8 +20,9 @@ to complete.
 
 - [Plugins](plugins.md): plugin manifests, lifecycle, policy, configuration,
   secrets, services, database payloads, and audit boundaries.
-- [Home Assistant](home-assistant.md): configure credentials, synchronise
-  inventory, run resync, and understand current control limits.
+- [Home Assistant](../plugins/home_assistant/docs/home-assistant.md): configure
+  credentials, synchronise inventory, control approved devices and scenes, and
+  list devices by area.
 - [Internet Retrieval](retrieval.md): configure SearXNG and Orac retrieval
   policy.
 - [Voice Pipeline](voice-pipeline.md): wake word, recording, STT, TTS,
@@ -33,7 +34,7 @@ to complete.
 
 - [Architecture Overview](../detailed-architecture.md)
 - [Voice Turn Lifecycle](voice-turn-lifecycle.md)
-- [Home Assistant Data Lifecycle](home-assistant-data-lifecycle.md)
+- [Home Assistant Data Lifecycle](../plugins/home_assistant/docs/home-assistant-data-lifecycle.md)
 - [Plugin Execution Boundaries](plugin-execution-boundaries.md)
 - [Plugin Audit Persistence](plugin-audit-persistence.md)
 - [Plugin Audit Database/API Design](plugin-audit-db-api-design.md)

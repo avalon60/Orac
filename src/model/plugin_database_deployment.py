@@ -1084,6 +1084,7 @@ def expected_deployment_objects(
     }
     objects: set[tuple[str, str, str]] = set()
     grants: set[tuple[str, str, str, str]] = set()
+    columns: set[tuple[str, str, str]] = set()
 
     for path in sorted(schema_payload_path.rglob("*")):
         if not path.is_file():
@@ -1103,6 +1104,7 @@ def expected_deployment_objects(
                     _DEPLOYED_OBJECT_FOLDERS[folder],
                 )
             )
+            columns.update(_extract_expected_columns(path, owner, object_name))
         elif folder == "grant":
             grants.update(_extract_grants(path, declared_schemas))
 
@@ -1119,6 +1121,10 @@ def expected_deployment_objects(
                 "grantee": grantee,
             }
             for owner, object_name, privilege, grantee in sorted(grants)
+        ],
+        "columns": [
+            {"owner": owner, "object_name": object_name, "column_name": column_name}
+            for owner, object_name, column_name in sorted(columns)
         ],
     }
 
@@ -1149,6 +1155,21 @@ def _payload_objects_deployed_sql(
                 f"     and object_name = {_sql_literal(expected_object['object_name'])}",
                 f"     and object_type = {_sql_literal(expected_object['object_type'])}",
                 "     and status = 'VALID';",
+                "  if l_count = 0",
+                "  then",
+                "    l_all_present := 'N';",
+                "  end if;",
+            ]
+        )
+    for column in expected.get("columns", []):
+        lines.extend(
+            [
+                "  select count(*)",
+                "    into l_count",
+                "    from dba_tab_columns",
+                f"   where owner = {_sql_literal(column['owner'])}",
+                f"     and table_name = {_sql_literal(column['object_name'])}",
+                f"     and column_name = {_sql_literal(column['column_name'])};",
                 "  if l_count = 0",
                 "  then",
                 "    l_all_present := 'N';",
@@ -1199,6 +1220,26 @@ def _extract_qualified_object(path: Path) -> tuple[str, str] | None:
     if match is None:
         return None
     return match.group(1), match.group(2)
+
+
+def _extract_expected_columns(
+    path: Path,
+    owner: str,
+    object_name: str,
+) -> set[tuple[str, str, str]]:
+    """Extract explicitly declared deployment-verification columns from DDL."""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    columns: set[tuple[str, str, str]] = set()
+    for match in re.finditer(
+        r"^\s*--\s*orac-expected-columns\s*:\s*(.+?)\s*$",
+        text,
+        re.IGNORECASE | re.MULTILINE,
+    ):
+        for column_name in match.group(1).split(","):
+            normalized_name = column_name.strip()
+            if re.fullmatch(r"[a-z][a-z0-9_$#]*", normalized_name, re.IGNORECASE):
+                columns.add((owner.upper(), object_name.upper(), normalized_name.upper()))
+    return columns
 
 
 def _extract_grants(

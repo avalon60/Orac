@@ -15,6 +15,10 @@ if str(PLUGINS_ROOT) not in sys.path:
     sys.path.insert(0, str(PLUGINS_ROOT))
 
 from home_assistant.control import HomeAssistantControlError
+from home_assistant.control import list_areas
+from home_assistant.control import list_area_devices
+from home_assistant.control import parse_area_inventory_command
+from home_assistant.control import parse_area_list_command
 from home_assistant.control import parse_control_command
 from home_assistant.control import resolve_control_target
 
@@ -47,6 +51,7 @@ class HomeAssistantControlTests(unittest.TestCase):
             "Switch off office lamp": ("turn_off", "office lamp", "light"),
             "Switch office lamp off.": ("turn_off", "office lamp", "light"),
             "Turn the desk lamp on": ("turn_on", "desk lamp", "light"),
+            "Desk lamp off": ("turn_off", "desk lamp", "light"),
             "Off the desk lamp.": ("turn_off", "desk lamp", "light"),
             "Toggle desk switch": ("toggle", "desk switch", "switch"),
             "Activate movie night": ("activate", "movie night", "scene"),
@@ -63,7 +68,105 @@ class HomeAssistantControlTests(unittest.TestCase):
 
     def test_parser_ignores_non_control_phrases(self) -> None:
         self.assertIsNone(parse_control_command("Is the kitchen light on?"))
+        self.assertIsNone(parse_control_command("Are the kitchen lights on?"))
         self.assertIsNone(parse_control_command("Sync devices"))
+
+    def test_parser_maps_area_listing_phrases(self) -> None:
+        cases = {
+            "List devices in the office": ("office", None),
+            "What devices are in the office?": ("office", None),
+            "Which lights are in the kitchen?": ("kitchen", "light"),
+            "List switches in lounge": ("lounge", "switch"),
+            "List scenes in the cinema": ("cinema", "scene"),
+        }
+        for prompt, expected in cases.items():
+            with self.subTest(prompt=prompt):
+                request = parse_area_list_command(prompt)
+                self.assertIsNotNone(request)
+                self.assertEqual((request.area, request.requested_domain), expected)
+
+    def test_parser_maps_area_inventory_phrases(self) -> None:
+        for prompt in ("List areas", "What areas are there?", "Which rooms do we have?"):
+            with self.subTest(prompt=prompt):
+                self.assertIsNotNone(parse_area_inventory_command(prompt))
+
+    def test_area_listing_groups_entities_by_device(self) -> None:
+        rows = [
+            _row(
+                "switch.desk_lamp",
+                device_name="Desk Lamp",
+                area_name="Office",
+                area_aliases='["Study"]',
+            ),
+            _row(
+                "sensor.desk_lamp_power",
+                device_name="Desk Lamp",
+                area_name="Office",
+                area_aliases='["Study"]',
+            ),
+            _row(
+                "light.ceiling",
+                device_name="Ceiling Light",
+                area_name="Office",
+                area_aliases='["Study"]',
+            ),
+        ]
+
+        result = list_area_devices(parse_area_list_command("List devices in study"), rows)
+
+        self.assertEqual(result.area_name, "office")
+        self.assertEqual(
+            tuple(device.name for device in result.devices),
+            ("ceiling light", "desk lamp"),
+        )
+        self.assertEqual(result.devices[1].domains, ("sensor", "switch"))
+
+    def test_area_listing_filters_lights_and_switch_backed_lamps(self) -> None:
+        rows = [
+            _row(
+                "switch.desk_lamp",
+                device_name="Desk Lamp",
+                area_name="Office",
+            ),
+            _row(
+                "switch.printer",
+                device_name="Printer",
+                area_name="Office",
+            ),
+            _row("light.ceiling", friendly_name="Ceiling", area_name="Office"),
+        ]
+
+        result = list_area_devices(
+            parse_area_list_command("List lights in office"),
+            rows,
+        )
+
+        self.assertEqual(
+            tuple(device.name for device in result.devices),
+            ("ceiling", "desk lamp"),
+        )
+
+    def test_area_listing_refuses_unknown_and_ambiguous_areas(self) -> None:
+        request = parse_area_list_command("List devices in work")
+        with self.assertRaisesRegex(HomeAssistantControlError, "not found"):
+            list_area_devices(request, [_row("light.one", area_name="Office")])
+        with self.assertRaisesRegex(HomeAssistantControlError, "ambiguous"):
+            list_area_devices(
+                request,
+                [
+                    _row("light.one", area_name="Office", area_aliases='["Work"]'),
+                    _row("light.two", area_name="Studio", area_aliases='["Work"]'),
+                ],
+            )
+
+    def test_area_inventory_returns_distinct_area_names(self) -> None:
+        rows = [
+            _row("light.one", area_name="Office"),
+            _row("switch.two", area_name="office"),
+            _row("sensor.three", area_name="Kitchen"),
+        ]
+
+        self.assertEqual(list_areas(rows), ("kitchen", "office"))
 
     def test_parser_refuses_whole_home_commands(self) -> None:
         with self.assertRaisesRegex(HomeAssistantControlError, "Whole-home"):

@@ -12,9 +12,13 @@ from typing import Any, Callable
 
 from .client import HomeAssistantClient
 from .client import HomeAssistantClientConfig
+from .control import AreaInventoryRequest
+from .control import AreaListRequest
 from .control import ControlRequest
 from .control import HomeAssistantControlError
 from .repository import HomeAssistantRepository
+from .sensor_query import DEFAULT_STALE_HOURS
+from .sensor_query import SensorQueryRequest
 from .sync import HomeAssistantSyncCoordinator
 from .sync import SyncResult
 
@@ -23,6 +27,7 @@ __date__ = "04-Jun-2026"
 __description__ = "Runs Home Assistant startup sync inside Orac's plugin service lifecycle."
 
 CONTROL_TIMEOUT_SECONDS = 5.0
+SENSOR_QUERY_TIMEOUT_SECONDS = 5.0
 
 class HomeAssistantServiceError(RuntimeError):
     """Raised when the Home Assistant managed service cannot start safely."""
@@ -124,6 +129,12 @@ class HomeAssistantService:
         """Handle a command dispatched through the Orac plugin service manager."""
         if command == "control":
             return self._control(context, payload or {})
+        if command == "list_area":
+            return self._list_area(context, payload or {})
+        if command == "list_areas":
+            return self._list_areas(context)
+        if command == "sensor_query":
+            return self._sensor_query(context, payload or {})
         if command != "resync":
             raise HomeAssistantServiceError(
                 f"Unsupported Home Assistant service command '{command}'."
@@ -198,6 +209,141 @@ class HomeAssistantService:
                     for service_call in resolved.service_calls
                 ],
                 "resolution": resolved.resolution,
+            }
+        finally:
+            for resource in (repository, client):
+                close = getattr(resource, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass
+
+    def _list_area(self, context: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        """Return a read-only device listing for one exact Home Assistant area."""
+        area = str(payload.get("area") or "").strip()
+        requested_domain = str(payload.get("requested_domain") or "").strip() or None
+        if not area:
+            raise HomeAssistantControlError(
+                "invalid_request",
+                "Home Assistant area listing requires an area name.",
+            )
+
+        repository = None
+        try:
+            repository = self._repository_factory(context)
+            result = repository.list_area(
+                AreaListRequest(area=area, requested_domain=requested_domain)
+            )
+            return {
+                "status": "complete",
+                "area_name": result.area_name,
+                "requested_domain": result.requested_domain,
+                "devices": [
+                    {
+                        "name": device.name,
+                        "entity_ids": list(device.entity_ids),
+                        "domains": list(device.domains),
+                    }
+                    for device in result.devices
+                ],
+            }
+        finally:
+            close = getattr(repository, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
+
+    def _list_areas(self, context: Any) -> dict[str, Any]:
+        """Return the known Home Assistant areas from synchronised shadow data."""
+        repository = None
+        try:
+            repository = self._repository_factory(context)
+            areas = repository.list_areas(AreaInventoryRequest())
+            return {
+                "status": "complete",
+                "areas": list(areas),
+            }
+        finally:
+            close = getattr(repository, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
+
+    def _sensor_query(self, context: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        """Execute one sensor query using current read-only HA state."""
+        intent = str(payload.get("intent") or "").strip()
+        areas = tuple(
+            str(area).strip()
+            for area in payload.get("areas", ())
+            if str(area).strip()
+        )
+        sensor_role = str(payload.get("sensor_role") or "").strip() or None
+        if not intent:
+            raise HomeAssistantServiceError(
+                "Home Assistant sensor query requires an intent."
+            )
+
+        repository = None
+        client = None
+        try:
+            repository = self._repository_factory(context)
+            config = context.plugin_config()
+            stale_after_hours = float(
+                config.config_value(
+                    section="home_assistant",
+                    key="sensor_stale_hours",
+                    default=str(DEFAULT_STALE_HOURS),
+                )
+            )
+            runtime_config = self._load_config(context)
+            client = self._client_factory(
+                HomeAssistantClientConfig(
+                    protocol=runtime_config.protocol,
+                    host=runtime_config.host,
+                    port=runtime_config.port,
+                    token=runtime_config.access_token,
+                    verify_ssl=runtime_config.verify_ssl,
+                    timeout_seconds=SENSOR_QUERY_TIMEOUT_SECONDS,
+                    websocket_path=runtime_config.websocket_path,
+                )
+            )
+            request = SensorQueryRequest(
+                intent=intent,
+                areas=areas,
+                sensor_role=sensor_role,
+            )
+            entity_ids = repository.resolve_sensor_entities(request)
+            try:
+                live_states = [client.fetch_state(entity_id) for entity_id in entity_ids]
+            except Exception as exc:
+                self._log_error(f"Home Assistant live sensor read failed: {exc}")
+                cached_result = repository.query_cached_sensors(
+                    request,
+                    stale_after_hours=max(0.1, stale_after_hours),
+                )
+                return {
+                    "status": cached_result.status,
+                    "source": "cached_shadow",
+                    "content": cached_result.content,
+                    "entity_ids": list(cached_result.entity_ids),
+                    "areas": list(cached_result.areas),
+                }
+            result = repository.query_sensors(
+                request,
+                stale_after_hours=max(0.1, stale_after_hours),
+                live_states=live_states,
+            )
+            return {
+                "status": result.status,
+                "source": "live_home_assistant",
+                "content": f"Live Home Assistant reading: {result.content}",
+                "entity_ids": list(result.entity_ids),
+                "areas": list(result.areas),
             }
         finally:
             for resource in (repository, client):

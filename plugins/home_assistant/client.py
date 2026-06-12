@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import os
+import re
 import socket
 import ssl
 import struct
@@ -89,6 +90,23 @@ class HomeAssistantClient:
     def fetch_states(self) -> list[dict[str, Any]]:
         """Fetch current Home Assistant entity states."""
         return self._get_list("/api/states")
+
+    def fetch_state(self, entity_id: str) -> dict[str, Any]:
+        """Fetch current state for one resolved Home Assistant entity."""
+        safe_entity_id = str(entity_id or "").strip().lower()
+        if not re.fullmatch(r"[a-z0-9_]+\.[a-z0-9_]+", safe_entity_id):
+            raise HomeAssistantClientError("Invalid Home Assistant entity ID.")
+        payload = self._get_json(f"/api/states/{safe_entity_id}")
+        if not isinstance(payload, dict):
+            raise HomeAssistantClientError(
+                f"Home Assistant state for '{safe_entity_id}' returned unexpected payload."
+            )
+        returned_entity_id = str(payload.get("entity_id") or "").strip().lower()
+        if returned_entity_id != safe_entity_id:
+            raise HomeAssistantClientError(
+                f"Home Assistant returned the wrong entity for '{safe_entity_id}'."
+            )
+        return payload
 
     def call_service(
         self,

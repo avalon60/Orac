@@ -27,6 +27,8 @@ from model.plugin_database_deployment import PluginDatabaseDeploymentResult
 from model.plugin_database_deployment import PluginDatabaseArchive
 from model.plugin_database_deployment import PluginDatabaseSchemaProvisioner
 from model.plugin_database_deployment import PROTECTED_ORAC_SCHEMAS
+from model.plugin_database_deployment import _payload_objects_deployed_sql
+from model.plugin_database_deployment import expected_deployment_objects
 from model.plugin_database_deployment import scan_protected_schema_references
 from model.plugin_database_deployment import validate_declared_database_schemas
 from model.plugin_database_deployment import validate_schema_payload
@@ -208,6 +210,66 @@ def _discover_one(plugins_dir: Path):
 
 class PluginDatabaseDeploymentTests(unittest.TestCase):
     """Tests plugin-owned database deployment behaviour."""
+
+    def test_expected_view_columns_are_collected_for_deployment_verification(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest("alpha", database=_database()),
+            )
+            manifest = _discover_one(plugins_dir)
+            schema_path = plugins_dir / "alpha" / "db" / "schema"
+            view_path = schema_path / "view" / "example_v.sql"
+            view_path.parent.mkdir(parents=True)
+            view_path.write_text(
+                "-- orac-expected-columns: entity_id, last_updated\n"
+                "create or replace view orac_ha.example_v as\n"
+                "select entity_id, last_updated from orac_ha.example_table;\n",
+                encoding="utf-8",
+            )
+
+            expected = expected_deployment_objects(
+                manifest=manifest,
+                schema_payload_path=schema_path,
+            )
+
+            self.assertEqual(
+                expected["columns"],
+                [
+                    {
+                        "owner": "ORAC_HA",
+                        "object_name": "EXAMPLE_V",
+                        "column_name": "ENTITY_ID",
+                    },
+                    {
+                        "owner": "ORAC_HA",
+                        "object_name": "EXAMPLE_V",
+                        "column_name": "LAST_UPDATED",
+                    },
+                ],
+            )
+
+    def test_payload_verification_sql_checks_expected_columns(self) -> None:
+        sql = _payload_objects_deployed_sql(
+            expected={
+                "objects": [],
+                "grants": [],
+                "columns": [
+                    {
+                        "owner": "ORAC_HA",
+                        "object_name": "HA_CONTROL_RESOLUTION_V",
+                        "column_name": "LAST_UPDATED",
+                    }
+                ],
+            },
+            oracle_pdb="FREEPDB1",
+        )
+
+        self.assertIn("from dba_tab_columns", sql)
+        self.assertIn("table_name = 'HA_CONTROL_RESOLUTION_V'", sql)
+        self.assertIn("column_name = 'LAST_UPDATED'", sql)
 
     def test_protected_schema_list_is_centralised(self) -> None:
         self.assertIn("orac_core", PROTECTED_ORAC_SCHEMAS)
@@ -406,6 +468,11 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
         self.assertIn("primary key (alias_name, entity_id)", primary_key_text)
         self.assertNotIn("device_aliases", all_foreign_keys)
         self.assertIn("create or replace view orac_ha.ha_control_resolution_v", view_text)
+        self.assertIn("json_value(sta.attributes, '$.device_class')", view_text)
+        self.assertIn("json_value(sta.attributes, '$.unit_of_measurement')", view_text)
+        self.assertIn("sta.last_changed", view_text)
+        self.assertIn("sta.last_updated", view_text)
+        self.assertIn("ent.disabled_by", view_text)
         self.assertIn("dal.enabled_flag = 'Y'", view_text)
         self.assertIn("coalesce(ent.area_id, dev.area_id)", view_text)
         self.assertEqual(

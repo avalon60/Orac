@@ -200,3 +200,10 @@ enabled installation is eligible for routing or service startup.
 
 Repository-level implementation standards remain in
 [`docs/agent-guardrails/50-plugin-standards.md`](agent-guardrails/50-plugin-standards.md).
+
+## Supplementary Documentation
+
+Documentation outside a plugin's `plugins/<plugin-name>/README.md` should be
+located in its `plugins/<plugin-name>/docs/` directory.
+
+The plugin README should link to its supplementary documents.

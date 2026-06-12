@@ -106,6 +106,39 @@ class ControlRequest:
 
 
 @dataclass(frozen=True)
+class AreaListRequest:
+    """Parsed read-only request to list devices in a Home Assistant area."""
+
+    area: str
+    requested_domain: str | None = None
+
+
+@dataclass(frozen=True)
+class AreaInventoryRequest:
+    """Parsed read-only request to list known Home Assistant areas."""
+
+    pass
+
+
+@dataclass(frozen=True)
+class AreaDevice:
+    """One device or standalone entity listed for a Home Assistant area."""
+
+    name: str
+    entity_ids: tuple[str, ...]
+    domains: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class AreaDeviceList:
+    """Resolved read-only device listing for one Home Assistant area."""
+
+    area_name: str
+    devices: tuple[AreaDevice, ...]
+    requested_domain: str | None = None
+
+
+@dataclass(frozen=True)
 class ControlServiceCall:
     """One allowlisted Home Assistant service call."""
 
@@ -154,12 +187,13 @@ def parse_control_command(prompt: str) -> ControlRequest | None:
         (r"^(?:please )?(on|off) (?:the )?(.+)$", None),
         (r"^(?:please )?toggle (?:the )?(.+)$", "toggle"),
         (r"^(?:please )?(?:activate|enable) (?:the )?(.+)$", "activate"),
+        (r"^(?:please )?(.+?) (on|off)$", "terse"),
     )
     for pattern, fixed_action in patterns:
         match = re.fullmatch(pattern, command)
         if match is None:
             continue
-        if fixed_action == "trailing":
+        if fixed_action in {"trailing", "terse"}:
             action = "turn_on" if match.group(2) == "on" else "turn_off"
             target = match.group(1)
         elif fixed_action is None:
@@ -169,6 +203,8 @@ def parse_control_command(prompt: str) -> ControlRequest | None:
             action = fixed_action
             target = match.group(1)
         target = _normalise_target(target)
+        if fixed_action == "terse" and _looks_like_question(target):
+            return None
         if target in _WHOLE_HOME_TARGETS:
             raise HomeAssistantControlError(
                 "whole_home_refused",
@@ -185,6 +221,101 @@ def parse_control_command(prompt: str) -> ControlRequest | None:
             requested_domain=requested_domain,
         )
     return None
+
+
+def parse_area_list_command(prompt: str) -> AreaListRequest | None:
+    """Parse a deterministic read-only Home Assistant area-list command."""
+    command = _normalise_target(prompt)
+    patterns = (
+        r"^(?:please )?list (devices|lights?|lamps?|switches|scenes) in (?:the )?(.+)$",
+        r"^(?:what|which) (devices|lights?|lamps?|switches|scenes) are in (?:the )?(.+)$",
+    )
+    for pattern in patterns:
+        match = re.fullmatch(pattern, command)
+        if match is None:
+            continue
+        noun = match.group(1)
+        requested_domain = None if noun == "devices" else _DOMAIN_TERMS[noun]
+        return AreaListRequest(
+            area=_normalise_target(match.group(2)),
+            requested_domain=requested_domain,
+        )
+    return None
+
+
+def parse_area_inventory_command(prompt: str) -> AreaInventoryRequest | None:
+    """Parse a deterministic read-only Home Assistant area inventory command."""
+    command = _normalise_target(prompt)
+    patterns = (
+        r"^(?:please )?list areas$",
+        r"^(?:please )?list all areas$",
+        r"^(?:what|which) areas (?:are|do we have)(?: there)?(?:\?)?$",
+        r"^(?:what|which) rooms (?:are|do we have)(?: there)?(?:\?)?$",
+    )
+    for pattern in patterns:
+        if re.fullmatch(pattern, command):
+            return AreaInventoryRequest()
+    return None
+
+
+def list_area_devices(
+    request: AreaListRequest,
+    rows: Iterable[Mapping[str, Any]],
+) -> AreaDeviceList:
+    """List synced devices for one exact Home Assistant area or area alias."""
+    entities = _normalise_rows(rows)
+    area_matches = [row for row in entities if _row_matches_area_name(row, request.area)]
+    matched_areas = {row["area_name"] for row in area_matches if row["area_name"]}
+    if not matched_areas:
+        raise HomeAssistantControlError(
+            "unknown_area",
+            f"Home Assistant area '{request.area}' was not found.",
+        )
+    if len(matched_areas) > 1:
+        raise HomeAssistantControlError(
+            "ambiguous_area",
+            f"Home Assistant area '{request.area}' is ambiguous.",
+        )
+
+    if request.requested_domain is not None:
+        area_matches = [
+            row
+            for row in area_matches
+            if _domain_matches(row, request.requested_domain)
+        ]
+
+    grouped: dict[str, dict[str, set[str]]] = {}
+    for row in area_matches:
+        name = (
+            row["device_name"]
+            or row["friendly_name"]
+            or row["entity_name"]
+            or row["object_id"].replace("_", " ")
+        )
+        key = _normalise(name)
+        item = grouped.setdefault(key, {"entity_ids": set(), "domains": set()})
+        item["entity_ids"].add(row["entity_id"])
+        item["domains"].add(row["domain"])
+
+    return AreaDeviceList(
+        area_name=next(iter(matched_areas)),
+        devices=tuple(
+            AreaDevice(
+                name=name,
+                entity_ids=tuple(sorted(values["entity_ids"])),
+                domains=tuple(sorted(values["domains"])),
+            )
+            for name, values in sorted(grouped.items())
+        ),
+        requested_domain=request.requested_domain,
+    )
+
+
+def list_areas(rows: Iterable[Mapping[str, Any]]) -> tuple[str, ...]:
+    """Return the distinct Home Assistant area names from resolved rows."""
+    entities = _normalise_rows(rows)
+    areas = sorted({row["area_name"] for row in entities if row["area_name"]})
+    return tuple(areas)
 
 
 def resolve_control_target(
@@ -348,8 +479,16 @@ def _matches_exact_name(row: Mapping[str, Any], request: ControlRequest) -> bool
 def _matches_area(row: Mapping[str, Any], request: ControlRequest) -> bool:
     """Return whether a row belongs to an exact requested area."""
     target = _area_target(request.target, request.requested_domain)
+    return _row_matches_area_name(row, target) and _domain_matches(
+        row,
+        request.requested_domain,
+    )
+
+
+def _row_matches_area_name(row: Mapping[str, Any], target: str) -> bool:
+    """Return whether a row has the exact area name or one exact area alias."""
     area_names = {row["area_name"], *row["area_aliases"]}
-    return target in area_names and _domain_matches(row, request.requested_domain)
+    return _normalise(target) in area_names
 
 
 def _domain_matches(row: Mapping[str, Any], requested_domain: str | None) -> bool:
@@ -392,6 +531,27 @@ def _area_target(target: str, requested_domain: str | None) -> str:
     if words and _DOMAIN_TERMS.get(words[-1]) == requested_domain:
         words.pop()
     return " ".join(words)
+
+
+def _looks_like_question(target: str) -> bool:
+    """Return whether a terse control target is actually a state question."""
+    first_word = _normalise(target).partition(" ")[0]
+    return first_word in {
+        "are",
+        "can",
+        "could",
+        "did",
+        "do",
+        "does",
+        "is",
+        "should",
+        "was",
+        "were",
+        "what",
+        "which",
+        "will",
+        "would",
+    }
 
 
 def _json_names(value: Any) -> set[str]:

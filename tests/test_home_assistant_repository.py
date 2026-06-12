@@ -17,7 +17,9 @@ for path in (SRC_ROOT, PLUGINS_ROOT):
         sys.path.insert(0, str(path))
 
 from home_assistant.repository import HomeAssistantRepository
+from home_assistant.control import AreaListRequest
 from home_assistant.control import ControlRequest
+from home_assistant.sensor_query import SensorQueryRequest
 
 
 class _FakePluginDatabaseSession:
@@ -196,6 +198,129 @@ class HomeAssistantRepositoryTests(unittest.TestCase):
 
         self.assertEqual(resolved.entity_ids, ("light.office",))
         self.assertIn("orac_ha.ha_control_resolution_v", session.fetch_queries[0])
+
+    def test_area_listing_reads_only_the_granted_view(self) -> None:
+        session = _FakePluginDatabaseSession()
+        session.fetch_rows = [
+            {
+                "ENTITY_ID": "switch.desk_lamp",
+                "DOMAIN": "switch",
+                "OBJECT_ID": "desk_lamp",
+                "DEVICE_NAME": "Desk Lamp",
+                "AREA_NAME": "Office",
+                "AREA_ALIASES": '["Study"]',
+            }
+        ]
+        repository = HomeAssistantRepository(_FakeContext(session))
+
+        result = repository.list_area(AreaListRequest("study"))
+
+        self.assertEqual(result.area_name, "office")
+        self.assertEqual(result.devices[0].name, "desk lamp")
+        self.assertIn("orac_ha.ha_control_resolution_v", session.fetch_queries[0])
+
+    def test_sensor_query_reads_only_the_granted_view(self) -> None:
+        session = _FakePluginDatabaseSession()
+        session.fetch_rows = [
+            {
+                "ENTITY_ID": "sensor.lounge_temperature",
+                "DOMAIN": "sensor",
+                "OBJECT_ID": "lounge_temperature",
+                "FRIENDLY_NAME": "Lounge Temperature",
+                "AREA_NAME": "Lounge",
+                "CURRENT_STATE": "21.4",
+                "DEVICE_CLASS": "temperature",
+                "UNIT_OF_MEASUREMENT": "°C",
+                "LAST_UPDATED": "2026-06-12T11:48:00+00:00",
+            }
+        ]
+        repository = HomeAssistantRepository(_FakeContext(session))
+
+        result = repository.query_sensors(
+            SensorQueryRequest(
+                intent="area_temperature",
+                areas=("lounge",),
+                sensor_role="temperature",
+            ),
+            stale_after_hours=6,
+            live_states=[
+                {
+                    "entity_id": "sensor.lounge_temperature",
+                    "state": "19.8",
+                    "attributes": {
+                        "device_class": "temperature",
+                        "unit_of_measurement": "°C",
+                    },
+                    "last_changed": "2026-06-12T12:00:00+00:00",
+                    "last_updated": "2026-06-12T12:00:00+00:00",
+                }
+            ],
+        )
+
+        self.assertIn("Lounge temperature is 19.8°C", result.content)
+        self.assertIn("device_class", session.fetch_queries[0])
+        self.assertIn("last_updated", session.fetch_queries[0])
+        self.assertIn("orac_ha.ha_control_resolution_v", session.fetch_queries[0])
+        self.assertEqual(session.procedure_calls, [])
+
+    def test_sensor_query_does_not_use_shadow_reading_missing_from_live_states(self) -> None:
+        session = _FakePluginDatabaseSession()
+        session.fetch_rows = [
+            {
+                "ENTITY_ID": "sensor.lounge_temperature",
+                "DOMAIN": "sensor",
+                "OBJECT_ID": "lounge_temperature",
+                "AREA_NAME": "Lounge",
+                "CURRENT_STATE": "21.4",
+                "DEVICE_CLASS": "temperature",
+                "UNIT_OF_MEASUREMENT": "°C",
+            }
+        ]
+        repository = HomeAssistantRepository(_FakeContext(session))
+
+        result = repository.query_sensors(
+            SensorQueryRequest(
+                intent="area_temperature",
+                areas=("lounge",),
+                sensor_role="temperature",
+            ),
+            stale_after_hours=6,
+            live_states=[],
+        )
+
+        self.assertIn("sensor is unavailable", result.content)
+        self.assertNotIn("21.4", result.content)
+        self.assertEqual(session.procedure_calls, [])
+
+    def test_cached_sensor_fallback_is_explicitly_labelled(self) -> None:
+        session = _FakePluginDatabaseSession()
+        session.fetch_rows = [
+            {
+                "ENTITY_ID": "sensor.lounge_temperature",
+                "DOMAIN": "sensor",
+                "OBJECT_ID": "lounge_temperature",
+                "AREA_NAME": "Lounge",
+                "CURRENT_STATE": "21.4",
+                "DEVICE_CLASS": "temperature",
+                "UNIT_OF_MEASUREMENT": "°C",
+                "LAST_UPDATED": "2026-06-12T11:48:00+00:00",
+            }
+        ]
+        repository = HomeAssistantRepository(_FakeContext(session))
+
+        result = repository.query_cached_sensors(
+            SensorQueryRequest(
+                intent="area_temperature",
+                areas=("lounge",),
+                sensor_role="temperature",
+            ),
+            stale_after_hours=6,
+        )
+
+        self.assertEqual(result.status, "cached")
+        self.assertIn("cannot get a live reading", result.content)
+        self.assertIn("Cached Home Assistant data", result.content)
+        self.assertIn("21.4°C", result.content)
 
 
 if __name__ == "__main__":

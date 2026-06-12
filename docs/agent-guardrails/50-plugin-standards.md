@@ -126,6 +126,98 @@ The plugin display name may change.
 The plugin code should not change once released.
 
 ---
+## Plugin file layout
+
+Plugins must be located under the project-level `plugins` directory.
+
+Each plugin must have a manifest file in the form:
+
+```text
+plugins/<plugin-code>.json
+```
+
+The manifest file stem must match the plugin source directory name.
+
+For example, the Home Assistant plugin must use:
+
+```text
+plugins/home_assistant.json
+plugins/home_assistant/
+```
+
+The plugin source directory must contain the plugin implementation and any plugin-specific supporting assets.
+
+Example structure:
+
+```text
+plugins/
+|-- home_assistant.json        <- manifest
+`-- home_assistant/            <- source directory
+    |-- README.md
+    |-- Python files
+    |-- db/
+    |   `-- schema/
+    |       |-- comment/
+    |       |-- constraint_fk/
+    |       |-- constraint_other/
+    |       |-- constraint_pk/
+    |       |-- constraint_uc/
+    |       |-- context/
+    |       |-- function/
+    |       |-- grant/
+    |       |-- index/
+    |       |-- job/
+    |       |-- materialized_view/
+    |       |-- package_body/
+    |       |-- package_spec/
+    |       |-- post_install/
+    |       |-- pre_install/
+    |       |-- privilege/
+    |       |-- procedure/
+    |       |-- rest_module/
+    |       |-- role/
+    |       |-- schedule/
+    |       |-- seed_data/
+    |       |-- sequence/
+    |       |-- synonym/
+    |       |-- table/
+    |       |-- trigger/
+    |       |-- type_body/
+    |       |-- type_spec/
+    |       `-- view/
+    `-- docs/
+```
+
+The `db` directory is optional. It must only be provided for plugins that need plugin-owned database artefacts to be created, installed, upgraded, or maintained as part of the plugin lifecycle.
+
+Where plugin database deployment files are required, they must be located under:
+
+```text
+plugins/<plugin-code>/db/schema/
+```
+
+Plugin-specific database deployment files must not be placed in the main project-level `resources/db/schema` directory unless they define generic Orac platform objects rather than plugin-specific objects.
+
+Each plugin should include a plugin-level README file:
+
+```text
+plugins/<plugin-code>/README.md
+```
+
+The README should describe the purpose of the plugin, its configuration requirements, installation behaviour, runtime behaviour, and any relevant operational notes.
+
+Supplementary plugin documentation must be located under the plugin's own `docs` directory:
+
+```text
+plugins/<plugin-code>/docs/
+```
+
+Plugin-specific documentation must not be placed in the main project-level `docs` directory.
+
+The main project-level `docs` directory should only contain generic Orac documentation, shared standards, architecture notes, platform-level guidance, and documentation that applies across multiple plugins.
+
+Where supplementary plugin documentation exists, the plugin README must include links to those documents.
+---
 
 ## Plugin registration
 

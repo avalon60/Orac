@@ -174,5 +174,5 @@ Continue with:
 - [APEX Administration](apex-administration.md)
 - [Internet Retrieval](retrieval.md)
 - [Voice Pipeline](voice-pipeline.md)
-- [Home Assistant](home-assistant.md)
+- [Home Assistant](../plugins/home_assistant/docs/home-assistant.md)
 - [Docker Compose Deployment](docker-compose-deployment.md)

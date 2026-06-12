@@ -25,10 +25,14 @@ from model.plugin_database_deployment import PluginDatabaseDeploymentResult
 from model.plugin_routing.embeddings import HashEmbeddingProvider
 from model.plugin_routing.manager import PluginManager
 from home_assistant.client import HomeAssistantClientConfig
+from home_assistant.control import AreaDevice
+from home_assistant.control import AreaDeviceList
+from home_assistant.control import AreaInventoryRequest
 from home_assistant.control import ControlServiceCall
 from home_assistant.control import ResolvedControl
 from home_assistant.service import HomeAssistantService
 from home_assistant.service import HomeAssistantServiceError
+from home_assistant.sensor_query import SensorQueryResult
 from home_assistant.sync import SyncResult
 
 
@@ -101,14 +105,17 @@ class _FakeClient:
         config: HomeAssistantClientConfig,
         *,
         fail_check: bool = False,
+        fail_fetch_states: bool = False,
         confirmation: list[dict] | None = None,
     ) -> None:
         self.config = config
         self.fail_check = fail_check
+        self.fail_fetch_states = fail_fetch_states
         self.confirmation = confirmation
         self.checked = False
         self.closed = False
         self.service_calls: list[tuple[str, str, tuple[str, ...]]] = []
+        self.fetch_state_calls: list[str] = []
 
     def check_api(self) -> bool:
         self.checked = True
@@ -130,12 +137,33 @@ class _FakeClient:
             return self.confirmation
         return [{"entity_id": entity_id} for entity_id in entity_ids]
 
+    def fetch_state(self, entity_id: str) -> dict:
+        """Return a current sensor state without issuing a service call."""
+        self.fetch_state_calls.append(entity_id)
+        if self.fail_fetch_states:
+            raise RuntimeError("state fetch unavailable")
+        return {
+            "entity_id": entity_id,
+            "state": "21.4",
+            "attributes": {
+                "device_class": "temperature",
+                "unit_of_measurement": "°C",
+            },
+            "last_changed": "2026-06-12T11:48:00+00:00",
+            "last_updated": "2026-06-12T11:48:00+00:00",
+        }
+
 
 class _FakeRepository:
     def __init__(self, context: _FakeContext) -> None:
         self.context = context
         self.closed = False
         self.control_requests: list = []
+        self.area_list_requests: list = []
+        self.area_inventory_requests: list = []
+        self.sensor_query_requests: list = []
+        self.sensor_resolution_requests: list = []
+        self.cached_sensor_query_requests: list = []
 
     def close(self) -> None:
         self.closed = True
@@ -153,6 +181,68 @@ class _FakeRepository:
             ),
             target=request.target,
             resolution="entity",
+        )
+
+    def list_area(self, request) -> AreaDeviceList:
+        self.area_list_requests.append(request)
+        return AreaDeviceList(
+            area_name=request.area,
+            requested_domain=request.requested_domain,
+            devices=(
+                AreaDevice(
+                    name="desk lamp",
+                    entity_ids=("switch.desk_lamp",),
+                    domains=("switch",),
+                ),
+            ),
+        )
+
+    def list_areas(self, request: AreaInventoryRequest) -> tuple[str, ...]:
+        self.area_inventory_requests.append(request)
+        return ("office", "kitchen")
+
+    def query_sensors(
+        self,
+        request,
+        *,
+        stale_after_hours: float,
+        live_states: list[dict],
+    ) -> SensorQueryResult:
+        self.sensor_query_requests.append((request, stale_after_hours, live_states))
+        return SensorQueryResult(
+            content=(
+                "The Lounge temperature is 21.4°C. That is comfortable. "
+                "Home Assistant reports it last updated 12 minutes ago."
+            ),
+            entity_ids=("sensor.lounge_temperature",),
+            areas=("lounge",),
+        )
+
+    def resolve_sensor_entities(self, request) -> tuple[str, ...]:
+        self.sensor_resolution_requests.append(request)
+        if request.intent == "compare_area_temperature":
+            return (
+                "sensor.lounge_temperature",
+                "sensor.landing_temperature",
+            )
+        return ("sensor.lounge_temperature",)
+
+    def query_cached_sensors(
+        self,
+        request,
+        *,
+        stale_after_hours: float,
+    ) -> SensorQueryResult:
+        self.cached_sensor_query_requests.append((request, stale_after_hours))
+        return SensorQueryResult(
+            content=(
+                "I cannot get a live reading from Home Assistant right now. "
+                "Cached Home Assistant data from Orac: The Lounge temperature "
+                "is 20.1°C."
+            ),
+            entity_ids=("sensor.lounge_temperature",),
+            areas=("lounge",),
+            status="cached",
         )
 
 
@@ -429,6 +519,180 @@ class HomeAssistantServiceTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "action and target"):
             service.handle_command(_FakeContext(), "control", {"action": "turn_on"})
+
+    def test_area_listing_uses_only_ephemeral_repository(self) -> None:
+        repositories: list[_FakeRepository] = []
+        clients: list[_FakeClient] = []
+
+        def repository_factory(context: _FakeContext) -> _FakeRepository:
+            repository = _FakeRepository(context)
+            repositories.append(repository)
+            return repository
+
+        def client_factory(config: HomeAssistantClientConfig) -> _FakeClient:
+            client = _FakeClient(config)
+            clients.append(client)
+            return client
+
+        service = HomeAssistantService(
+            client_factory=client_factory,
+            repository_factory=repository_factory,
+        )
+
+        result = service.handle_command(
+            _FakeContext(),
+            "list_area",
+            {"area": "office", "requested_domain": "light"},
+        )
+
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["devices"][0]["name"], "desk lamp")
+        self.assertEqual(repositories[0].area_list_requests[0].area, "office")
+        self.assertTrue(repositories[0].closed)
+        self.assertEqual(clients, [])
+
+    def test_area_listing_validates_required_area(self) -> None:
+        service = HomeAssistantService()
+
+        with self.assertRaisesRegex(ValueError, "area name"):
+            service.handle_command(_FakeContext(), "list_area", {})
+
+    def test_area_inventory_uses_only_shadow_inventory(self) -> None:
+        repositories: list[_FakeRepository] = []
+
+        def repository_factory(context: _FakeContext) -> _FakeRepository:
+            repository = _FakeRepository(context)
+            repositories.append(repository)
+            return repository
+
+        service = HomeAssistantService(repository_factory=repository_factory)
+
+        result = service.handle_command(_FakeContext(), "list_areas", {})
+
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["areas"], ["office", "kitchen"])
+        self.assertEqual(len(repositories[0].area_inventory_requests), 1)
+        self.assertTrue(repositories[0].closed)
+
+    def test_sensor_query_fetches_live_states_without_service_call(self) -> None:
+        repositories: list[_FakeRepository] = []
+        clients: list[_FakeClient] = []
+
+        def repository_factory(context: _FakeContext) -> _FakeRepository:
+            repository = _FakeRepository(context)
+            repositories.append(repository)
+            return repository
+
+        def client_factory(config: HomeAssistantClientConfig) -> _FakeClient:
+            client = _FakeClient(config)
+            clients.append(client)
+            return client
+
+        service = HomeAssistantService(
+            client_factory=client_factory,
+            repository_factory=repository_factory,
+        )
+
+        result = service.handle_command(
+            _FakeContext(),
+            "sensor_query",
+            {
+                "intent": "area_temperature",
+                "areas": ["lounge"],
+                "sensor_role": "temperature",
+            },
+        )
+
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["source"], "live_home_assistant")
+        self.assertIn("Live Home Assistant reading", result["content"])
+        self.assertIn("Lounge temperature", result["content"])
+        self.assertIn("Home Assistant reports it last updated", result["content"])
+        request, stale_hours, live_states = repositories[0].sensor_query_requests[0]
+        self.assertEqual(request.intent, "area_temperature")
+        self.assertEqual(stale_hours, 6.0)
+        self.assertEqual(live_states[0]["state"], "21.4")
+        self.assertTrue(repositories[0].closed)
+        self.assertEqual(
+            clients[0].fetch_state_calls,
+            ["sensor.lounge_temperature"],
+        )
+        self.assertEqual(clients[0].service_calls, [])
+        self.assertEqual(clients[0].config.timeout_seconds, 5.0)
+        self.assertTrue(clients[0].closed)
+
+    def test_sensor_query_does_not_fall_back_when_live_fetch_fails(self) -> None:
+        repositories: list[_FakeRepository] = []
+        clients: list[_FakeClient] = []
+
+        def repository_factory(context: _FakeContext) -> _FakeRepository:
+            repository = _FakeRepository(context)
+            repositories.append(repository)
+            return repository
+
+        def client_factory(config: HomeAssistantClientConfig) -> _FakeClient:
+            client = _FakeClient(config, fail_fetch_states=True)
+            clients.append(client)
+            return client
+
+        service = HomeAssistantService(
+            client_factory=client_factory,
+            repository_factory=repository_factory,
+        )
+
+        result = service.handle_command(
+            _FakeContext(),
+            "sensor_query",
+            {
+                "intent": "area_temperature",
+                "areas": ["lounge"],
+                "sensor_role": "temperature",
+            },
+        )
+
+        self.assertEqual(repositories[0].sensor_query_requests, [])
+        self.assertEqual(result["status"], "cached")
+        self.assertEqual(result["source"], "cached_shadow")
+        self.assertIn("cannot get a live reading", result["content"])
+        self.assertIn("Cached", result["content"])
+        self.assertTrue(repositories[0].closed)
+        self.assertTrue(clients[0].closed)
+        self.assertEqual(clients[0].service_calls, [])
+
+    def test_comparison_query_fetches_both_resolved_sensor_states(self) -> None:
+        clients: list[_FakeClient] = []
+
+        def client_factory(config: HomeAssistantClientConfig) -> _FakeClient:
+            client = _FakeClient(config)
+            clients.append(client)
+            return client
+
+        service = HomeAssistantService(
+            client_factory=client_factory,
+            repository_factory=lambda context: _FakeRepository(context),
+        )
+
+        service.handle_command(
+            _FakeContext(),
+            "sensor_query",
+            {
+                "intent": "compare_area_temperature",
+                "areas": ["lounge", "landing"],
+                "sensor_role": "temperature",
+            },
+        )
+
+        self.assertEqual(
+            clients[0].fetch_state_calls,
+            ["sensor.lounge_temperature", "sensor.landing_temperature"],
+        )
+        self.assertEqual(clients[0].service_calls, [])
+
+    def test_sensor_query_validates_required_intent(self) -> None:
+        service = HomeAssistantService()
+
+        with self.assertRaisesRegex(HomeAssistantServiceError, "requires an intent"):
+            service.handle_command(_FakeContext(), "sensor_query", {})
 
     def test_plugin_manager_refresh_does_not_call_home_assistant_api(self) -> None:
         with tempfile.TemporaryDirectory() as temp_cache:

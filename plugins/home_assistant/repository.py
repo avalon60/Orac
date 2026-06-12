@@ -6,15 +6,25 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import timedelta
 import json
 from typing import Any, Callable
 from uuid import uuid4
 
 from model.plugin_database_session import ORAC_PLUGIN_DATABASE_USER
 
+from .control import AreaDeviceList
+from .control import list_areas
+from .control import AreaListRequest
+from .control import AreaInventoryRequest
 from .control import ControlRequest
 from .control import ResolvedControl
+from .control import list_area_devices
 from .control import resolve_control_target
+from .sensor_query import SensorQueryRequest
+from .sensor_query import SensorQueryResult
+from .sensor_query import execute_sensor_query
+from .sensor_query import resolve_sensor_query_entity_ids
 
 __author__ = "Clive Bostock"
 __date__ = "04-Jun-2026"
@@ -95,7 +105,62 @@ class HomeAssistantRepository:
 
     def resolve_control(self, request: ControlRequest) -> ResolvedControl:
         """Resolve a device-control target through the granted read-only view."""
-        rows = self._db_session.fetch_dicts(
+        return resolve_control_target(request, self._control_resolution_rows())
+
+    def list_area(self, request: AreaListRequest) -> AreaDeviceList:
+        """List devices for an exact area through the granted read-only view."""
+        return list_area_devices(request, self._control_resolution_rows())
+
+    def list_areas(self, request: AreaInventoryRequest) -> tuple[str, ...]:
+        """List the known Home Assistant areas from the granted view."""
+        return list_areas(self._control_resolution_rows())
+
+    def query_sensors(
+        self,
+        request: SensorQueryRequest,
+        *,
+        stale_after_hours: float,
+        live_states: list[dict[str, Any]],
+    ) -> SensorQueryResult:
+        """Resolve a sensor query using shadow metadata and live HA states."""
+        return execute_sensor_query(
+            request,
+            _overlay_live_states(self._control_resolution_rows(), live_states),
+            stale_after=timedelta(hours=stale_after_hours),
+        )
+
+    def resolve_sensor_entities(self, request: SensorQueryRequest) -> tuple[str, ...]:
+        """Resolve sensor entities using only shadow structural metadata."""
+        return resolve_sensor_query_entity_ids(
+            request,
+            self._control_resolution_rows(),
+        )
+
+    def query_cached_sensors(
+        self,
+        request: SensorQueryRequest,
+        *,
+        stale_after_hours: float,
+    ) -> SensorQueryResult:
+        """Render explicitly labelled cached sensor data after a live failure."""
+        result = execute_sensor_query(
+            request,
+            self._control_resolution_rows(),
+            stale_after=timedelta(hours=stale_after_hours),
+        )
+        return SensorQueryResult(
+            content=(
+                "I cannot get a live reading from Home Assistant right now. "
+                f"Cached Home Assistant data from Orac: {result.content}"
+            ),
+            entity_ids=result.entity_ids,
+            areas=result.areas,
+            status="cached",
+        )
+
+    def _control_resolution_rows(self) -> list[dict[str, Any]]:
+        """Return rows from the Home Assistant control-resolution view."""
+        return self._db_session.fetch_dicts(
             """
             select alias_name,
                    entity_id,
@@ -103,15 +168,19 @@ class HomeAssistantRepository:
                    object_id,
                    entity_name,
                    original_name,
+                   disabled_by,
                    friendly_name,
+                   device_class,
+                   unit_of_measurement,
                    device_name,
                    area_name,
                    area_aliases,
-                   current_state
+                   current_state,
+                   last_changed,
+                   last_updated
               from orac_ha.ha_control_resolution_v
             """
         )
-        return resolve_control_target(request, rows)
 
     def commit(self) -> None:
         """Commit the current repository transaction."""
@@ -145,3 +214,37 @@ def _json_payload(payload: Mapping[str, Any]) -> str:
 def _safe_error_message(error_message: str) -> str:
     """Return a bounded, single-line error message for database logging."""
     return str(error_message or "").replace("\r", " ").replace("\n", " ")[:4000]
+
+
+def _overlay_live_states(
+    metadata_rows: list[dict[str, Any]],
+    live_states: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Overlay current HA state onto shadow rows without persisting it."""
+    states_by_entity = {
+        str(state.get("entity_id") or "").strip().lower(): state
+        for state in live_states
+        if str(state.get("entity_id") or "").strip()
+    }
+    rows: list[dict[str, Any]] = []
+    for source in metadata_rows:
+        row = {str(key).lower(): value for key, value in source.items()}
+        entity_id = str(row.get("entity_id") or "").strip().lower()
+        state = states_by_entity.get(entity_id)
+        if state is None:
+            row["current_state"] = "unavailable"
+            row["last_changed"] = None
+            row["last_updated"] = None
+            rows.append(row)
+            continue
+        attributes = state.get("attributes")
+        if not isinstance(attributes, Mapping):
+            attributes = {}
+        row["current_state"] = state.get("state")
+        row["last_changed"] = state.get("last_changed")
+        row["last_updated"] = state.get("last_updated")
+        for key in ("friendly_name", "device_class", "unit_of_measurement"):
+            if attributes.get(key) is not None:
+                row[key] = attributes[key]
+        rows.append(row)
+    return rows

@@ -63,6 +63,19 @@ class WeatherPlugin:
         text = (prompt or "").strip().lower()
         if not text:
             return False
+        generic_temperature_question = re.fullmatch(
+            r"(?:what is|what's) (?:the )?temperature\??",
+            text,
+        )
+        if (
+            generic_temperature_question is None
+            and "temperature" in text
+            and "weather" not in text
+            and "outside" not in text
+            and not re.search(r"\btemperature in\b", text)
+            and re.search(r"\b(?:what is|what's) (?:the )?.+ temperature\b", text)
+        ):
+            return False
         keywords = (
             "weather",
             "temperature",
@@ -98,10 +111,7 @@ class WeatherPlugin:
             location_name = resolved_location
             location = self._lookup_named_location(location_name)
             if location is None:
-                return PluginExecutionResult(
-                    plugin_id="weather",
-                    content=f"I couldn't find a supported location for '{location_name}'.",
-                )
+                return None
 
         try:
             snapshot = self._provider.get_weather(location)

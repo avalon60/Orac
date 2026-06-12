@@ -170,6 +170,46 @@ class HomeAssistantClientTests(unittest.TestCase):
             [{"entity_id": "light.kitchen", "state": "on"}],
         )
 
+    def test_fetches_one_resolved_entity_state_using_rest(self) -> None:
+        url = "http://ha.local:8123/api/states/sensor.lounge_temperature"
+        session = _FakeSession(
+            {
+                url: _FakeResponse(
+                    {
+                        "entity_id": "sensor.lounge_temperature",
+                        "state": "18.9",
+                    }
+                )
+            }
+        )
+        client = _client(session)
+
+        result = client.fetch_state("sensor.lounge_temperature")
+
+        self.assertEqual(result["state"], "18.9")
+        self.assertEqual(session.calls[0]["url"], url)
+
+    def test_fetch_state_rejects_untrusted_entity_id(self) -> None:
+        client = _client(_FakeSession({}))
+
+        with self.assertRaisesRegex(HomeAssistantClientError, "Invalid"):
+            client.fetch_state("sensor.lounge/temperature")
+
+    def test_fetch_state_rejects_mismatched_entity_response(self) -> None:
+        url = "http://ha.local:8123/api/states/sensor.lounge_temperature"
+        client = _client(
+            _FakeSession(
+                {
+                    url: _FakeResponse(
+                        {"entity_id": "sensor.other_temperature", "state": "18.9"}
+                    )
+                }
+            )
+        )
+
+        with self.assertRaisesRegex(HomeAssistantClientError, "wrong entity"):
+            client.fetch_state("sensor.lounge_temperature")
+
     def test_unexpected_list_payload_raises(self) -> None:
         session = _FakeSession(
             {

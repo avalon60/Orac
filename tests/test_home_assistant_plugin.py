@@ -75,6 +75,39 @@ class _FakeRuntimeContext:
                 "status": "confirmed",
                 "entity_ids": ["light.kitchen"],
             }
+        if command == "list_area":
+            return {
+                "status": "complete",
+                "area_name": "office",
+                "requested_domain": None,
+                "devices": [
+                    {
+                        "name": "desk lamp",
+                        "entity_ids": ["switch.desk_lamp"],
+                        "domains": ["switch"],
+                    },
+                    {
+                        "name": "printer",
+                        "entity_ids": ["switch.printer"],
+                        "domains": ["switch"],
+                    },
+                ],
+            }
+        if command == "list_areas":
+            return {
+                "status": "complete",
+                "areas": ["office", "kitchen"],
+            }
+        if command == "sensor_query":
+            return {
+                "status": "complete",
+                "content": (
+                    "The Lounge temperature is 21.4°C. That is comfortable. "
+                    "It last updated 12 minutes ago."
+                ),
+                "entity_ids": ["sensor.lounge_temperature"],
+                "areas": ["lounge"],
+            }
         return {"status": "complete"}
 
 
@@ -150,6 +183,15 @@ class HomeAssistantPluginTests(unittest.TestCase):
                 self.assertFalse(plugin.can_handle(phrase))
                 self.assertIsNone(plugin.execute(phrase))
 
+    def test_area_inventory_dispatches_structured_service_command(self) -> None:
+        runtime_context = _FakeRuntimeContext()
+        plugin = HomeAssistantPlugin(runtime_context=runtime_context)
+
+        result = plugin.execute("List areas")
+
+        self.assertIn("Home Assistant areas", result.content)
+        self.assertEqual(runtime_context.commands[0]["command"], "list_areas")
+
     def test_device_control_dispatches_structured_service_command(self) -> None:
         runtime_context = _FakeRuntimeContext()
         plugin = HomeAssistantPlugin(runtime_context=runtime_context)
@@ -181,6 +223,74 @@ class HomeAssistantPluginTests(unittest.TestCase):
                 "target": "desk lamp",
                 "requested_domain": "light",
             },
+        )
+
+    def test_terse_target_control_dispatches_structured_service_command(self) -> None:
+        runtime_context = _FakeRuntimeContext()
+        plugin = HomeAssistantPlugin(runtime_context=runtime_context)
+
+        result = plugin.execute("Desk lamp off")
+
+        self.assertIn("Home Assistant confirmed", result.content)
+        self.assertEqual(
+            runtime_context.commands[0]["payload"],
+            {
+                "action": "turn_off",
+                "target": "desk lamp",
+                "requested_domain": "light",
+            },
+        )
+
+    def test_area_listing_dispatches_read_only_service_command(self) -> None:
+        runtime_context = _FakeRuntimeContext()
+        plugin = HomeAssistantPlugin(runtime_context=runtime_context)
+
+        result = plugin.execute("What devices are in the office?")
+
+        self.assertEqual(
+            runtime_context.commands[0],
+            {
+                "plugin_id": "home_assistant",
+                "command": "list_area",
+                "payload": {"area": "office", "requested_domain": None},
+            },
+        )
+        self.assertEqual(
+            result.content,
+            "Home Assistant devices in Office: Desk Lamp, Printer.",
+        )
+        self.assertEqual(result.provenance["command"], "home_assistant.area_list")
+
+    def test_filtered_area_listing_uses_correct_plural(self) -> None:
+        runtime_context = _FakeRuntimeContext()
+        plugin = HomeAssistantPlugin(runtime_context=runtime_context)
+
+        result = plugin.execute("List switches in the office")
+
+        self.assertIn("Home Assistant switches in Office", result.content)
+
+    def test_sensor_query_dispatches_read_only_structured_service_command(self) -> None:
+        runtime_context = _FakeRuntimeContext()
+        plugin = HomeAssistantPlugin(runtime_context=runtime_context)
+
+        result = plugin.execute("What's the temperature in the lounge?")
+
+        self.assertIn("Lounge temperature is 21.4°C", result.content)
+        self.assertEqual(
+            runtime_context.commands[0],
+            {
+                "plugin_id": "home_assistant",
+                "command": "sensor_query",
+                "payload": {
+                    "intent": "area_temperature",
+                    "areas": ["lounge"],
+                    "sensor_role": "temperature",
+                },
+            },
+        )
+        self.assertEqual(
+            result.provenance["command"],
+            "home_assistant.sensor_query",
         )
 
     def test_whole_home_control_is_refused_without_service_dispatch(self) -> None:
@@ -230,11 +340,17 @@ class HomeAssistantPluginTests(unittest.TestCase):
     def test_router_dispatches_recognised_phrases_to_home_assistant_plugin(self) -> None:
         manifest = _home_assistant_manifest()
 
-        for phrase in (
-            "Resync devices",
-            "Sync devices",
-            "Resync Home Assistant",
-        ):
+        cases = {
+            "Resync devices": "resync",
+            "Sync devices": "resync",
+            "Resync Home Assistant": "resync",
+            "Desk lamp off": "control",
+            "List devices in the office": "list_area",
+            "What lights are in the kitchen?": "list_area",
+            "What's the temperature in the lounge?": "sensor_query",
+            "Are any sensors unavailable?": "sensor_query",
+        }
+        for phrase, expected_command in cases.items():
             with self.subTest(phrase=phrase):
                 service_manager = _FakeServiceManager()
                 router = PluginRouter(
@@ -266,7 +382,7 @@ class HomeAssistantPluginTests(unittest.TestCase):
                 self.assertEqual(result.plugin_id, "home_assistant")
                 self.assertEqual(
                     service_manager.commands[0]["command"],
-                    "resync",
+                    expected_command,
                 )
 
 
