@@ -90,6 +90,56 @@ class HomeAssistantClient:
         """Fetch current Home Assistant entity states."""
         return self._get_list("/api/states")
 
+    def call_service(
+        self,
+        domain: str,
+        service: str,
+        entity_ids: tuple[str, ...],
+    ) -> list[dict[str, Any]]:
+        """Call one prevalidated Home Assistant service.
+
+        Args:
+            domain: Allowlisted Home Assistant domain.
+            service: Allowlisted Home Assistant service.
+            entity_ids: Resolved entity IDs to address.
+
+        Returns:
+            Home Assistant state objects confirming the service call.
+
+        Raises:
+            HomeAssistantClientError: If the request fails or payload is invalid.
+        """
+        path = f"/api/services/{domain}/{service}"
+        url = f"{self.base_url}{path}"
+        try:
+            response = self._session.post(
+                url,
+                json={"entity_id": list(entity_ids)},
+                timeout=self._config.timeout_seconds,
+                verify=self._config.verify_ssl,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except requests.Timeout as exc:
+            raise HomeAssistantClientError(
+                f"Home Assistant service call timed out for '{domain}.{service}'."
+            ) from exc
+        except requests.RequestException as exc:
+            raise HomeAssistantClientError(
+                f"Home Assistant service call failed for '{domain}.{service}'."
+            ) from exc
+        except ValueError as exc:
+            raise HomeAssistantClientError(
+                f"Home Assistant service '{domain}.{service}' returned invalid JSON."
+            ) from exc
+        if not isinstance(payload, list) or any(
+            not isinstance(item, dict) for item in payload
+        ):
+            raise HomeAssistantClientError(
+                f"Home Assistant service '{domain}.{service}' returned unexpected payload."
+            )
+        return payload
+
     def close(self) -> None:
         """Close the underlying HTTP session when supported."""
         close = getattr(self._session, "close", None)

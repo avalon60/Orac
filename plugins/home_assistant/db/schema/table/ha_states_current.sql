@@ -1,3 +1,15 @@
+declare
+  l_count number;
+begin
+  select count(*)
+    into l_count
+    from all_tables
+   where owner = 'ORAC_HA'
+     and table_name = 'HA_STATES_CURRENT';
+
+  if l_count = 0
+  then
+    execute immediate q'~
 -- __author__: clive
 -- __date__: 2026-03-21
 -- __description__: generated/synchronised by split_ddl; one object per file
@@ -27,4 +39,7 @@ lob (attributes) store as securefile
   enable storage in row
   nocache logging
 )
-;
+    ~';
+  end if;
+end;
+/

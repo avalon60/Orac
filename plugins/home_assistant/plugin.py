@@ -10,6 +10,10 @@ from typing import Any
 
 from model.plugin_runtime import PluginExecutionResult
 
+from .control import ControlRequest
+from .control import HomeAssistantControlError
+from .control import parse_control_command
+
 __author__ = "Clive Bostock"
 __date__ = "04-Jun-2026"
 __description__ = "Dispatches narrow Home Assistant commands to managed services."
@@ -39,7 +43,12 @@ class HomeAssistantPlugin:
 
     def can_handle(self, prompt: str) -> bool:
         """Return whether the prompt is a supported Home Assistant command."""
-        return _normalise_command(prompt) in _RESYNC_COMMANDS
+        if _normalise_command(prompt) in _RESYNC_COMMANDS:
+            return True
+        try:
+            return parse_control_command(prompt) is not None
+        except HomeAssistantControlError:
+            return True
 
     def execute(
         self,
@@ -47,11 +56,20 @@ class HomeAssistantPlugin:
         meta: dict[str, Any] | None = None,
     ) -> PluginExecutionResult | None:
         """Execute a supported Home Assistant command."""
-        if not self.can_handle(prompt):
+        normalised = _normalise_command(prompt)
+        try:
+            control_request = parse_control_command(prompt)
+        except HomeAssistantControlError as exc:
+            return self._control_failure_response(exc.code, str(exc))
+
+        if normalised not in _RESYNC_COMMANDS and control_request is None:
             return None
 
         if self._runtime_context is None:
             return self._failure_response("Home Assistant runtime context is unavailable.")
+
+        if control_request is not None:
+            return self._execute_control(control_request)
 
         self._log_info("Home Assistant resync command accepted.")
         try:
@@ -71,6 +89,60 @@ class HomeAssistantPlugin:
                 "Home Assistant sync complete."
             ),
             provenance={"command": "home_assistant.resync"},
+        )
+
+    def _execute_control(self, request: ControlRequest) -> PluginExecutionResult:
+        """Dispatch one parsed control request to the managed service."""
+        self._log_info("Home Assistant device-control command accepted.")
+        try:
+            result = self._runtime_context.run_service_command(
+                "home_assistant",
+                "control",
+                {
+                    "action": request.action,
+                    "target": request.target,
+                    "requested_domain": request.requested_domain,
+                },
+            )
+        except HomeAssistantControlError as exc:
+            return self._control_failure_response(exc.code, str(exc))
+        except Exception as exc:
+            self._log_error(f"Home Assistant device control failed: {exc}")
+            return self._control_failure_response("execution_failed", str(exc))
+
+        status = str(result.get("status") or "")
+        entity_ids = tuple(result.get("entity_ids") or ())
+        if status != "confirmed":
+            return self._control_failure_response(
+                "unconfirmed",
+                "Home Assistant accepted the request but did not confirm the change.",
+            )
+        return PluginExecutionResult(
+            plugin_id="home_assistant",
+            content=(
+                "Home Assistant confirmed "
+                f"{request.action.replace('_', ' ')} for {request.target}."
+            ),
+            provenance={
+                "command": "home_assistant.device_control",
+                "action": request.action,
+                "entity_ids": list(entity_ids),
+                "status": "confirmed",
+            },
+        )
+
+    @staticmethod
+    def _control_failure_response(code: str, message: str) -> PluginExecutionResult:
+        """Return an explicit user-facing control refusal or failure."""
+        return PluginExecutionResult(
+            plugin_id="home_assistant",
+            content=f"Home Assistant control was not performed: {message}",
+            provenance={
+                "command": "home_assistant.device_control",
+                "status": "failed",
+                "failure_type": code,
+                "failure_message": message,
+            },
         )
 
     @staticmethod

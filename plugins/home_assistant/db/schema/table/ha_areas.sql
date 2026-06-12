@@ -1,3 +1,15 @@
+declare
+  l_count number;
+begin
+  select count(*)
+    into l_count
+    from all_tables
+   where owner = 'ORAC_HA'
+     and table_name = 'HA_AREAS';
+
+  if l_count = 0
+  then
+    execute immediate q'~
 create table orac_ha.ha_areas
 (
   area_id               varchar2(64 char) not null,
@@ -31,4 +43,7 @@ lob (labels) store as securefile
   enable storage in row
   nocache logging
 )
-;
+    ~';
+  end if;
+end;
+/

@@ -12,6 +12,8 @@ from typing import Any, Callable
 
 from .client import HomeAssistantClient
 from .client import HomeAssistantClientConfig
+from .control import ControlRequest
+from .control import HomeAssistantControlError
 from .repository import HomeAssistantRepository
 from .sync import HomeAssistantSyncCoordinator
 from .sync import SyncResult
@@ -19,6 +21,8 @@ from .sync import SyncResult
 __author__ = "Clive Bostock"
 __date__ = "04-Jun-2026"
 __description__ = "Runs Home Assistant startup sync inside Orac's plugin service lifecycle."
+
+CONTROL_TIMEOUT_SECONDS = 5.0
 
 class HomeAssistantServiceError(RuntimeError):
     """Raised when the Home Assistant managed service cannot start safely."""
@@ -118,6 +122,8 @@ class HomeAssistantService:
         payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Handle a command dispatched through the Orac plugin service manager."""
+        if command == "control":
+            return self._control(context, payload or {})
         if command != "resync":
             raise HomeAssistantServiceError(
                 f"Unsupported Home Assistant service command '{command}'."
@@ -128,6 +134,79 @@ class HomeAssistantService:
             "structural_rows": structural_result.rows_processed,
             "state_rows": state_result.rows_processed,
         }
+
+    def _control(self, context: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        """Resolve and execute one isolated low-risk Home Assistant control."""
+        action = str(payload.get("action") or "").strip()
+        target = str(payload.get("target") or "").strip()
+        requested_domain = str(payload.get("requested_domain") or "").strip() or None
+        if not action or not target:
+            raise HomeAssistantControlError(
+                "invalid_request",
+                "Home Assistant control requires an action and target.",
+            )
+
+        repository = None
+        client = None
+        try:
+            repository = self._repository_factory(context)
+            resolved = repository.resolve_control(
+                ControlRequest(
+                    action=action,
+                    target=target,
+                    requested_domain=requested_domain,
+                )
+            )
+            runtime_config = self._load_config(context)
+            client = self._client_factory(
+                HomeAssistantClientConfig(
+                    protocol=runtime_config.protocol,
+                    host=runtime_config.host,
+                    port=runtime_config.port,
+                    token=runtime_config.access_token,
+                    verify_ssl=runtime_config.verify_ssl,
+                    timeout_seconds=CONTROL_TIMEOUT_SECONDS,
+                    websocket_path=runtime_config.websocket_path,
+                )
+            )
+            confirmed_ids: set[str] = set()
+            for service_call in resolved.service_calls:
+                confirmation = client.call_service(
+                    service_call.domain,
+                    service_call.service,
+                    service_call.entity_ids,
+                )
+                confirmed_ids.update(
+                    str(item.get("entity_id") or "").strip().lower()
+                    for item in confirmation
+                )
+            status = (
+                "confirmed"
+                if set(resolved.entity_ids).issubset(confirmed_ids)
+                else "unconfirmed"
+            )
+            return {
+                "status": status,
+                "action": resolved.action,
+                "entity_ids": list(resolved.entity_ids),
+                "service_calls": [
+                    {
+                        "domain": service_call.domain,
+                        "service": service_call.service,
+                        "entity_ids": list(service_call.entity_ids),
+                    }
+                    for service_call in resolved.service_calls
+                ],
+                "resolution": resolved.resolution,
+            }
+        finally:
+            for resource in (repository, client):
+                close = getattr(resource, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass
 
     def resync(self, context: Any) -> tuple[SyncResult, SyncResult]:
         """Run the managed Home Assistant structural and state synchronisation."""

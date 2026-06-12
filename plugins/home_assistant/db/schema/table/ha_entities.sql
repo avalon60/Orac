@@ -1,3 +1,15 @@
+declare
+  l_count number;
+begin
+  select count(*)
+    into l_count
+    from all_tables
+   where owner = 'ORAC_HA'
+     and table_name = 'HA_ENTITIES';
+
+  if l_count = 0
+  then
+    execute immediate q'~
 --------------------------------------------------------------------------------
 -- ha_entities
 --------------------------------------------------------------------------------
@@ -26,4 +38,8 @@ create table orac_ha.ha_entities (
   row_version          number not null,
   created_on           timestamp with time zone not null,
   updated_on           timestamp with time zone not null
-);
+)
+    ~';
+  end if;
+end;
+/

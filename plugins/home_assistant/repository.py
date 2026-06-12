@@ -12,6 +12,10 @@ from uuid import uuid4
 
 from model.plugin_database_session import ORAC_PLUGIN_DATABASE_USER
 
+from .control import ControlRequest
+from .control import ResolvedControl
+from .control import resolve_control_target
+
 __author__ = "Clive Bostock"
 __date__ = "04-Jun-2026"
 __description__ = "Calls Home Assistant plugin database package APIs through ORAC_PLUGIN."
@@ -88,6 +92,26 @@ class HomeAssistantRepository:
     def merge_state(self, state: Mapping[str, Any]) -> None:
         """Merge one Home Assistant current-state payload."""
         self._call_json_payload("merge_state", state)
+
+    def resolve_control(self, request: ControlRequest) -> ResolvedControl:
+        """Resolve a device-control target through the granted read-only view."""
+        rows = self._db_session.fetch_dicts(
+            """
+            select alias_name,
+                   entity_id,
+                   domain,
+                   object_id,
+                   entity_name,
+                   original_name,
+                   friendly_name,
+                   device_name,
+                   area_name,
+                   area_aliases,
+                   current_state
+              from orac_ha.ha_control_resolution_v
+            """
+        )
+        return resolve_control_target(request, rows)
 
     def commit(self) -> None:
         """Commit the current repository transaction."""

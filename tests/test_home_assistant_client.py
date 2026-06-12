@@ -47,6 +47,20 @@ class _FakeSession:
         self.calls.append({"url": url, "timeout": timeout, "verify": verify})
         return self.responses[url]
 
+    def post(self, url: str, *, json: dict, timeout: float, verify: bool):
+        self.calls.append(
+            {
+                "url": url,
+                "json": json,
+                "timeout": timeout,
+                "verify": verify,
+            }
+        )
+        response = self.responses[url]
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
     def close(self) -> None:
         self.closed = True
 
@@ -187,6 +201,35 @@ class HomeAssistantClientTests(unittest.TestCase):
 
         self.assertTrue(session.closed)
         self.assertTrue(websocket_session.closed)
+
+    def test_service_call_uses_authorised_post_and_entity_body(self) -> None:
+        url = "http://ha.local:8123/api/services/light/turn_on"
+        session = _FakeSession(
+            {url: _FakeResponse([{"entity_id": "light.kitchen", "state": "on"}])}
+        )
+        client = _client(session)
+
+        result = client.call_service("light", "turn_on", ("light.kitchen",))
+
+        self.assertEqual(result[0]["entity_id"], "light.kitchen")
+        self.assertEqual(session.calls[0]["url"], url)
+        self.assertEqual(
+            session.calls[0]["json"],
+            {"entity_id": ["light.kitchen"]},
+        )
+        self.assertEqual(session.headers["Authorization"], "Bearer secret-token")
+
+    def test_service_http_failure_and_timeout_raise_clean_errors(self) -> None:
+        url = "http://ha.local:8123/api/services/switch/turn_off"
+        for response in (_FakeResponse([], fail=True), requests.Timeout("slow")):
+            with self.subTest(response=type(response).__name__):
+                client = _client(_FakeSession({url: response}))
+                with self.assertRaises(HomeAssistantClientError):
+                    client.call_service(
+                        "switch",
+                        "turn_off",
+                        ("switch.office",),
+                    )
 
 
 if __name__ == "__main__":

@@ -25,6 +25,8 @@ from model.plugin_database_deployment import PluginDatabaseDeploymentResult
 from model.plugin_routing.embeddings import HashEmbeddingProvider
 from model.plugin_routing.manager import PluginManager
 from home_assistant.client import HomeAssistantClientConfig
+from home_assistant.control import ControlServiceCall
+from home_assistant.control import ResolvedControl
 from home_assistant.service import HomeAssistantService
 from home_assistant.service import HomeAssistantServiceError
 from home_assistant.sync import SyncResult
@@ -94,11 +96,19 @@ class _FakeContext:
 
 
 class _FakeClient:
-    def __init__(self, config: HomeAssistantClientConfig, *, fail_check: bool = False) -> None:
+    def __init__(
+        self,
+        config: HomeAssistantClientConfig,
+        *,
+        fail_check: bool = False,
+        confirmation: list[dict] | None = None,
+    ) -> None:
         self.config = config
         self.fail_check = fail_check
+        self.confirmation = confirmation
         self.checked = False
         self.closed = False
+        self.service_calls: list[tuple[str, str, tuple[str, ...]]] = []
 
     def check_api(self) -> bool:
         self.checked = True
@@ -109,14 +119,41 @@ class _FakeClient:
     def close(self) -> None:
         self.closed = True
 
+    def call_service(
+        self,
+        domain: str,
+        service: str,
+        entity_ids: tuple[str, ...],
+    ) -> list[dict]:
+        self.service_calls.append((domain, service, entity_ids))
+        if self.confirmation is not None:
+            return self.confirmation
+        return [{"entity_id": entity_id} for entity_id in entity_ids]
+
 
 class _FakeRepository:
     def __init__(self, context: _FakeContext) -> None:
         self.context = context
         self.closed = False
+        self.control_requests: list = []
 
     def close(self) -> None:
         self.closed = True
+
+    def resolve_control(self, request) -> ResolvedControl:
+        self.control_requests.append(request)
+        return ResolvedControl(
+            action=request.action,
+            service_calls=(
+                ControlServiceCall(
+                    domain="light",
+                    service=request.action,
+                    entity_ids=("light.kitchen",),
+                ),
+            ),
+            target=request.target,
+            resolution="entity",
+        )
 
 
 class _FakeSyncCoordinator:
@@ -332,6 +369,66 @@ class HomeAssistantServiceTests(unittest.TestCase):
         self.assertTrue(service.state.started)
         self.assertEqual(service.state.structural_sync_status, "complete")
         self.assertEqual(service.state.state_sync_status, "complete")
+
+    def test_control_uses_ephemeral_client_and_closes_resources(self) -> None:
+        client_holder: dict[str, _FakeClient] = {}
+        repository_holder: dict[str, _FakeRepository] = {}
+
+        def client_factory(config: HomeAssistantClientConfig) -> _FakeClient:
+            client = _FakeClient(config)
+            client_holder["client"] = client
+            return client
+
+        def repository_factory(context: _FakeContext) -> _FakeRepository:
+            repository = _FakeRepository(context)
+            repository_holder["repository"] = repository
+            return repository
+
+        service = HomeAssistantService(
+            client_factory=client_factory,
+            repository_factory=repository_factory,
+        )
+
+        result = service.handle_command(
+            _FakeContext(),
+            "control",
+            {
+                "action": "turn_on",
+                "target": "kitchen light",
+                "requested_domain": "light",
+            },
+        )
+
+        self.assertEqual(result["status"], "confirmed")
+        self.assertEqual(
+            client_holder["client"].service_calls,
+            [("light", "turn_on", ("light.kitchen",))],
+        )
+        self.assertEqual(client_holder["client"].config.timeout_seconds, 5.0)
+        self.assertTrue(client_holder["client"].closed)
+        self.assertTrue(repository_holder["repository"].closed)
+        self.assertFalse(service.state.started)
+
+    def test_control_reports_unconfirmed_without_changing_shadow_state(self) -> None:
+        service = HomeAssistantService(
+            client_factory=lambda config: _FakeClient(config, confirmation=[]),
+            repository_factory=lambda context: _FakeRepository(context),
+        )
+
+        result = service.handle_command(
+            _FakeContext(),
+            "control",
+            {"action": "turn_off", "target": "kitchen light"},
+        )
+
+        self.assertEqual(result["status"], "unconfirmed")
+        self.assertFalse(service.state.started)
+
+    def test_control_validates_required_payload(self) -> None:
+        service = HomeAssistantService()
+
+        with self.assertRaisesRegex(ValueError, "action and target"):
+            service.handle_command(_FakeContext(), "control", {"action": "turn_on"})
 
     def test_plugin_manager_refresh_does_not_call_home_assistant_api(self) -> None:
         with tempfile.TemporaryDirectory() as temp_cache:

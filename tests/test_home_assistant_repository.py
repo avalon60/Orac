@@ -17,6 +17,7 @@ for path in (SRC_ROOT, PLUGINS_ROOT):
         sys.path.insert(0, str(path))
 
 from home_assistant.repository import HomeAssistantRepository
+from home_assistant.control import ControlRequest
 
 
 class _FakePluginDatabaseSession:
@@ -26,6 +27,8 @@ class _FakePluginDatabaseSession:
         self.committed = False
         self.rolled_back = False
         self.closed = False
+        self.fetch_rows: list[dict] = []
+        self.fetch_queries: list[str] = []
 
     def call_procedure(
         self,
@@ -45,6 +48,10 @@ class _FakePluginDatabaseSession:
 
     def close(self) -> None:
         self.closed = True
+
+    def fetch_dicts(self, sql_query: str, bind_vars=None) -> list[dict]:
+        self.fetch_queries.append(sql_query)
+        return self.fetch_rows
 
 
 class _FakeContext:
@@ -170,6 +177,25 @@ class HomeAssistantRepositoryTests(unittest.TestCase):
 
         self.assertFalse(hasattr(session, "execute"))
         self.assertFalse(hasattr(session, "cursor"))
+
+    def test_control_resolution_reads_only_the_granted_view(self) -> None:
+        session = _FakePluginDatabaseSession()
+        session.fetch_rows = [
+            {
+                "ENTITY_ID": "light.office",
+                "DOMAIN": "light",
+                "OBJECT_ID": "office",
+                "FRIENDLY_NAME": "Office Light",
+            }
+        ]
+        repository = HomeAssistantRepository(_FakeContext(session))
+
+        resolved = repository.resolve_control(
+            ControlRequest("turn_on", "office light", "light")
+        )
+
+        self.assertEqual(resolved.entity_ids, ("light.office",))
+        self.assertIn("orac_ha.ha_control_resolution_v", session.fetch_queries[0])
 
 
 if __name__ == "__main__":

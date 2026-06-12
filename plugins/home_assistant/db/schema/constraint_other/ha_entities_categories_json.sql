@@ -1,4 +1,19 @@
+declare
+  l_count number;
+begin
+  select count(*)
+    into l_count
+    from all_constraints
+   where owner = 'ORAC_HA'
+     and constraint_name = 'HA_ENTITIES_CATEGORIES_JSON';
+
+  if l_count = 0
+  then
+    execute immediate q'~
 alter table orac_ha.ha_entities
   add constraint ha_entities_categories_json
   check (categories is json)
-;
+    ~';
+  end if;
+end;
+/

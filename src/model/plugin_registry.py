@@ -5,12 +5,15 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
-from model.plugin_routing.discovery import PluginDiscovery
-from model.plugin_routing.models import PluginManifest
+import oracledb
+
+if TYPE_CHECKING:
+    from model.plugin_routing.models import PluginManifest
 
 
 class PluginRegistryError(RuntimeError):
@@ -43,6 +46,12 @@ class PluginRegistryStore:
         session = self._connect()
         try:
             with session.cursor() as cursor:
+                cursor.setinputsizes(
+                    capabilities_summary=oracledb.DB_TYPE_JSON,
+                    entitlements_summary=oracledb.DB_TYPE_JSON,
+                    database_schemas_summary=oracledb.DB_TYPE_JSON,
+                    dependency_declarations=oracledb.DB_TYPE_JSON,
+                )
                 cursor.execute(
                     _UPSERT_BLOCK,
                     {
@@ -56,13 +65,17 @@ class PluginRegistryStore:
                         "install_source_ref": values["install_source_ref"],
                         "installed_path": values.get("installed_path"),
                         "config_path": values.get("config_path"),
-                        "capabilities_summary": values.get("capabilities_summary"),
-                        "entitlements_summary": values.get("entitlements_summary"),
-                        "database_schemas_summary": values.get(
-                            "database_schemas_summary"
+                        "capabilities_summary": _json_bind_value(
+                            values.get("capabilities_summary")
                         ),
-                        "dependency_declarations": values.get(
-                            "dependency_declarations"
+                        "entitlements_summary": _json_bind_value(
+                            values.get("entitlements_summary")
+                        ),
+                        "database_schemas_summary": _json_bind_value(
+                            values.get("database_schemas_summary")
+                        ),
+                        "dependency_declarations": _json_bind_value(
+                            values.get("dependency_declarations")
                         ),
                         "dependency_fingerprint": values["dependency_fingerprint"],
                         "install_status": values["install_status"],
@@ -109,6 +122,8 @@ class PluginRegistryStore:
 
     def enabled_manifests(self) -> list[PluginManifest]:
         """Load validated manifests for active installed plugin versions."""
+        from model.plugin_routing.discovery import PluginDiscovery
+
         manifests: list[PluginManifest] = []
         for row in self.list_enabled():
             installed_path = Path(str(row["installed_path"] or ""))
@@ -196,26 +211,15 @@ def _close_quietly(session: Any) -> None:
         pass
 
 
-_UPSERT_BLOCK = """
-declare
-  l_capabilities_summary     json;
-  l_entitlements_summary     json;
-  l_database_schemas_summary json;
-  l_dependency_declarations  json;
-begin
-  if :capabilities_summary is not null then
-    l_capabilities_summary := json(:capabilities_summary);
-  end if;
-  if :entitlements_summary is not null then
-    l_entitlements_summary := json(:entitlements_summary);
-  end if;
-  if :database_schemas_summary is not null then
-    l_database_schemas_summary := json(:database_schemas_summary);
-  end if;
-  if :dependency_declarations is not null then
-    l_dependency_declarations := json(:dependency_declarations);
-  end if;
+def _json_bind_value(value: Any) -> Any:
+    """Return a Python value suitable for an Oracle native JSON bind."""
+    if value is None or isinstance(value, (dict, list, bool, int, float)):
+        return value
+    return json.loads(str(value))
 
+
+_UPSERT_BLOCK = """
+begin
   orac_code.plugin_registry_api.upsert_plugin(
     p_plugin_id                => :plugin_id,
     p_plugin_name              => :plugin_name,
@@ -227,10 +231,10 @@ begin
     p_install_source_ref       => :install_source_ref,
     p_installed_path           => :installed_path,
     p_config_path              => :config_path,
-    p_capabilities_summary     => l_capabilities_summary,
-    p_entitlements_summary     => l_entitlements_summary,
-    p_database_schemas_summary => l_database_schemas_summary,
-    p_dependency_declarations  => l_dependency_declarations,
+    p_capabilities_summary     => :capabilities_summary,
+    p_entitlements_summary     => :entitlements_summary,
+    p_database_schemas_summary => :database_schemas_summary,
+    p_dependency_declarations  => :dependency_declarations,
     p_dependency_fingerprint   => :dependency_fingerprint,
     p_install_status           => :install_status,
     p_configuration_status     => :configuration_status,

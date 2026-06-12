@@ -1,3 +1,15 @@
+declare
+  l_count number;
+begin
+  select count(*)
+    into l_count
+    from all_tables
+   where owner = 'ORAC_HA'
+     and table_name = 'HA_SYNC_RUNS';
+
+  if l_count = 0
+  then
+    execute immediate q'~
 create table orac_ha.ha_sync_runs
 (
   sync_run_id    varchar2(36 char) not null,
@@ -14,4 +26,7 @@ create table orac_ha.ha_sync_runs
 )
 logging
 no inmemory
-;
+    ~';
+  end if;
+end;
+/

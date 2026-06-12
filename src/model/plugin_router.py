@@ -333,6 +333,16 @@ class PluginRouter:
                 self._logger.log_debug(
                     f"Plugin '{candidate.plugin_id}' declined prompt after execution-time handle check."
                 )
+                if self._declined_mutation_requires_failure(manifest, prompt):
+                    return self._failure_result(
+                        manifest=manifest,
+                        policy_provenance=policy_decision.provenance,
+                        status="failed",
+                        failure_type="can_handle_declined",
+                        failure_message=(
+                            "A matching mutation plugin declined the action request."
+                        ),
+                    )
                 continue
 
             if result is not None and result.handled:
@@ -698,6 +708,23 @@ class PluginRouter:
             )
 
         return None
+
+    @staticmethod
+    def _declined_mutation_requires_failure(
+        manifest: PluginManifest,
+        prompt: str,
+    ) -> bool:
+        """Return whether a declined action must not fall through to the LLM."""
+        action_type = (
+            manifest.execution_policy.action_type
+            if manifest.execution_policy is not None
+            else None
+        )
+        return (
+            action_type in _ACTION_INTENT_REQUIRED_TYPES
+            and _has_action_intent(prompt)
+            and PluginRouter._candidate_matches_prompt(manifest, prompt)
+        )
 
 
 def _significant_tokens(text: str) -> set[str]:

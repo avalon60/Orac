@@ -70,6 +70,11 @@ class _FakeRuntimeContext:
         )
         if self.fail:
             raise RuntimeError("sync failed")
+        if command == "control":
+            return {
+                "status": "confirmed",
+                "entity_ids": ["light.kitchen"],
+            }
         return {"status": "complete"}
 
 
@@ -139,12 +144,54 @@ class HomeAssistantPluginTests(unittest.TestCase):
         for phrase in (
             "sync",
             "sync music",
-            "turn on the kitchen lights",
             "resync calendar",
         ):
             with self.subTest(phrase=phrase):
                 self.assertFalse(plugin.can_handle(phrase))
                 self.assertIsNone(plugin.execute(phrase))
+
+    def test_device_control_dispatches_structured_service_command(self) -> None:
+        runtime_context = _FakeRuntimeContext()
+        plugin = HomeAssistantPlugin(runtime_context=runtime_context)
+
+        result = plugin.execute("Turn on the kitchen lights")
+
+        self.assertIn("Home Assistant confirmed", result.content)
+        self.assertEqual(runtime_context.commands[0]["command"], "control")
+        self.assertEqual(
+            runtime_context.commands[0]["payload"],
+            {
+                "action": "turn_on",
+                "target": "kitchen lights",
+                "requested_domain": "light",
+            },
+        )
+
+    def test_voice_punctuation_and_dropped_switch_verb_are_handled(self) -> None:
+        runtime_context = _FakeRuntimeContext()
+        plugin = HomeAssistantPlugin(runtime_context=runtime_context)
+
+        result = plugin.execute("Off the desk lamp.")
+
+        self.assertIn("Home Assistant confirmed", result.content)
+        self.assertEqual(
+            runtime_context.commands[0]["payload"],
+            {
+                "action": "turn_off",
+                "target": "desk lamp",
+                "requested_domain": "light",
+            },
+        )
+
+    def test_whole_home_control_is_refused_without_service_dispatch(self) -> None:
+        runtime_context = _FakeRuntimeContext()
+        plugin = HomeAssistantPlugin(runtime_context=runtime_context)
+
+        result = plugin.execute("Turn off all lights")
+
+        self.assertIn("not performed", result.content)
+        self.assertEqual(result.provenance["failure_type"], "whole_home_refused")
+        self.assertEqual(runtime_context.commands, [])
 
     def test_successful_command_calls_managed_service_path(self) -> None:
         runtime_context = _FakeRuntimeContext()

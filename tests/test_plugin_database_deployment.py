@@ -377,6 +377,61 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             grant_text,
         )
 
+    def test_home_assistant_payload_contains_persistent_alias_contract(self) -> None:
+        schema_dir = Path("plugins") / "home_assistant" / "db" / "schema"
+        table_text = (schema_dir / "table" / "device_aliases.sql").read_text(
+            encoding="utf-8"
+        )
+        primary_key_text = (schema_dir / "constraint_pk" / "dalias_pk.sql").read_text(
+            encoding="utf-8"
+        )
+        all_foreign_keys = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (schema_dir / "constraint_fk").glob("*.sql")
+        )
+        view_text = (
+            schema_dir / "view" / "ha_control_resolution_v.sql"
+        ).read_text(encoding="utf-8")
+        grant_text = (
+            schema_dir / "grant" / "ha_control_resolution_v_to_orac_plugin.sql"
+        ).read_text(encoding="utf-8")
+        abbreviation_text = Path(
+            "resources/db/data_model/table_abbreviations.csv"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("create table orac_ha.device_aliases", table_text)
+        self.assertIn("alias_name", table_text)
+        self.assertIn("enabled_flag", table_text)
+        self.assertIn("row_version", table_text)
+        self.assertIn("primary key (alias_name, entity_id)", primary_key_text)
+        self.assertNotIn("device_aliases", all_foreign_keys)
+        self.assertIn("create or replace view orac_ha.ha_control_resolution_v", view_text)
+        self.assertIn("dal.enabled_flag = 'Y'", view_text)
+        self.assertIn("coalesce(ent.area_id, dev.area_id)", view_text)
+        self.assertEqual(
+            grant_text.strip(),
+            "grant select on orac_ha.ha_control_resolution_v to orac_plugin\n;",
+        )
+        self.assertIn("device_aliases,dalias", abbreviation_text)
+
+    def test_home_assistant_object_creation_payload_is_safely_rerunnable(self) -> None:
+        schema_dir = Path("plugins") / "home_assistant" / "db" / "schema"
+        expected_guards = {
+            "table": "from all_tables",
+            "index": "from all_indexes",
+            "constraint_fk": "from all_constraints",
+            "constraint_other": "from all_constraints",
+            "constraint_pk": "from all_constraints",
+            "constraint_uc": "from all_constraints",
+        }
+        for folder, expected_guard in expected_guards.items():
+            for path in (schema_dir / folder).glob("*.sql"):
+                with self.subTest(path=path):
+                    text = path.read_text(encoding="utf-8").lower()
+                    self.assertIn(expected_guard, text)
+                    self.assertIn("if l_count = 0", text)
+                    self.assertIn("execute immediate", text)
+
     def test_valid_schema_name_orac_ha_is_allowed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:
             plugins_dir = Path(temp_plugins)

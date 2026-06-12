@@ -524,6 +524,54 @@ class PluginRouterTests(unittest.TestCase):
             )
         )
 
+    def test_declined_matching_mutation_does_not_fall_through_to_llm(self) -> None:
+        manifest = self._manifest(
+            plugin_id="home_assistant",
+            action_type="device_control",
+            capabilities=("home_assistant.device_control",),
+            entities=("light", "lamp", "switch"),
+        )
+        router = PluginRouter(
+            plugin_manager=_FakePluginManager(manifest),
+            logger=_FakeLogger(),
+            config_mgr=object(),
+            context_manager=object(),
+        )
+
+        class _DecliningPlugin:
+            def can_handle(self, prompt: str) -> bool:
+                return False
+
+        with patch.object(
+            plugin_router_module,
+            "load_plugin_class",
+            return_value=_DecliningPlugin,
+        ):
+            for prompt in (
+                "Switch off the desk lamp.",
+                "Switch office lamp off.",
+            ):
+                with self.subTest(prompt=prompt):
+                    result = router.route(
+                        prompt,
+                        {},
+                        PluginRoutingHandoff(
+                            candidates=(
+                                PluginCandidate(plugin_id="home_assistant", score=0.91),
+                            ),
+                            refreshed=False,
+                        ),
+                        auth_user="unit_user",
+                    )
+
+                    self.assertIsNotNone(result)
+                    self.assertEqual(result.plugin_id, "home_assistant")
+                    self.assertEqual(result.provenance["status"], "failed")
+                    self.assertEqual(
+                        result.provenance["failure_type"],
+                        "can_handle_declined",
+                    )
+
     def test_router_records_audit_event_for_load_failure(self) -> None:
         logger = _FakeLogger()
         manifest = self._manifest()

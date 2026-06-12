@@ -67,7 +67,7 @@
       "user_preferences.home_location"
     ],
     "scaffold": false,
-    "notes": "On-demand execution is currently limited to the narrow Home Assistant resync command. Device control remains unimplemented in this plugin entry point."
+    "notes": "On-demand execution supports resync plus deterministic low-risk light, switch, and scene control through the managed Home Assistant service."
   },
   "runtime": {
     "mode": "hybrid",

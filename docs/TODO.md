@@ -92,6 +92,8 @@ Next actions:
 * Confirm restart policy behaviour under real failure.
 * Ensure stop events are used rather than unmanaged sleeps.
 * Surface plugin service status through APEX and/or React.
+* Design a general versioned, idempotent plugin database migration mechanism.
+  Home Assistant currently uses payload-local rerunnable DDL compatibility.
 
 ---
 
@@ -953,4 +955,3 @@ Satellite Pi:
 * heartbeat/status
 * no local LLM
 * no local plugin logic
-
