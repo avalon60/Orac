@@ -23,12 +23,18 @@ import type { OracState } from '../types/oracState';
 interface StateConfig {
   color: string;
   bloomIntensity: number;
-  rotationSpeed: number;
   distortion: number;
   pulseRate: number;
   scale: number;
   transmission: number;
   glitchIntensity?: number;
+}
+
+interface TesseractMotionConfig {
+  rotationDamping: number;
+  floatSpeed: number;
+  floatIntensity: number;
+  rotationSpeedByState: Record<OracState, number>;
 }
 
 interface CorePalette {
@@ -135,18 +141,38 @@ const SHOW_TRANSCRIPT_PANELS =
     .toLowerCase() === 'true';
 
 const STATE_CONFIGS: Record<OracState, StateConfig> = {
-  idle: { color: '#72d7f1', bloomIntensity: 0.45, rotationSpeed: 0.15, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
-  wake_detected: { color: '#72d7f1', bloomIntensity: 0.45, rotationSpeed: 0.15, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
-  listening: { color: '#72d7f1', bloomIntensity: 0.45, rotationSpeed: 0.15, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
-  transcribing: { color: '#b8f2ff', bloomIntensity: 1.1, rotationSpeed: 1.2, distortion: 0.4, pulseRate: 4, scale: 1.05, transmission: 0.8 },
-  thinking: { color: '#8ed3e8', bloomIntensity: 1.45, rotationSpeed: 0.8, distortion: 0.42, pulseRate: 1, scale: 1.15, transmission: 0.7 },
-  checking_online: { color: '#71cfff', bloomIntensity: 1.0, rotationSpeed: 0.62, distortion: 0.28, pulseRate: 0.75, scale: 1.08, transmission: 0.66 },
-  reading_sources: { color: '#98ddff', bloomIntensity: 1.18, rotationSpeed: 0.72, distortion: 0.32, pulseRate: 0.95, scale: 1.12, transmission: 0.7 },
-  tool_calling: { color: '#31e6d0', bloomIntensity: 2.1, rotationSpeed: 1.8, distortion: 0.3, pulseRate: 6, scale: 1.2, transmission: 0.6 },
-  speaking: { color: '#9be7ff', bloomIntensity: 1.9, rotationSpeed: 0.66, distortion: 0.2, pulseRate: 3.4, scale: 1.15, transmission: 0.8 },
-  interrupted: { color: '#ffb02e', bloomIntensity: 2.5, rotationSpeed: 2.0, distortion: 1.0, pulseRate: 8, scale: 0.95, transmission: 0.4, glitchIntensity: 1 },
-  complete: { color: '#72d7f1', bloomIntensity: 1.0, rotationSpeed: 0.15, distortion: 0.1, pulseRate: 0.2, scale: 1.05, transmission: 0.95 },
-  error: { color: '#ff5b4f', bloomIntensity: 1.5, rotationSpeed: 0.05, distortion: 0.5, pulseRate: 12, scale: 1.0, transmission: 0.5 },
+  idle: { color: '#72d7f1', bloomIntensity: 0.45, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
+  wake_detected: { color: '#72d7f1', bloomIntensity: 0.45, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
+  listening: { color: '#72d7f1', bloomIntensity: 0.45, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
+  transcribing: { color: '#b8f2ff', bloomIntensity: 1.1, distortion: 0.4, pulseRate: 4, scale: 1.05, transmission: 0.8 },
+  thinking: { color: '#8ed3e8', bloomIntensity: 1.45, distortion: 0.42, pulseRate: 1, scale: 1.15, transmission: 0.7 },
+  checking_online: { color: '#71cfff', bloomIntensity: 1.0, distortion: 0.28, pulseRate: 0.75, scale: 1.08, transmission: 0.66 },
+  reading_sources: { color: '#98ddff', bloomIntensity: 1.18, distortion: 0.32, pulseRate: 0.95, scale: 1.12, transmission: 0.7 },
+  tool_calling: { color: '#31e6d0', bloomIntensity: 2.1, distortion: 0.3, pulseRate: 6, scale: 1.2, transmission: 0.6 },
+  speaking: { color: '#9be7ff', bloomIntensity: 1.9, distortion: 0.2, pulseRate: 3.4, scale: 1.15, transmission: 0.8 },
+  interrupted: { color: '#ffb02e', bloomIntensity: 2.5, distortion: 1.0, pulseRate: 8, scale: 0.95, transmission: 0.4, glitchIntensity: 1 },
+  complete: { color: '#72d7f1', bloomIntensity: 1.0, distortion: 0.1, pulseRate: 0.2, scale: 1.05, transmission: 0.95 },
+  error: { color: '#ff5b4f', bloomIntensity: 1.5, distortion: 0.5, pulseRate: 12, scale: 1.0, transmission: 0.5 },
+};
+
+const TESSERACT_MOTION: TesseractMotionConfig = {
+  rotationDamping: 2.4,
+  floatSpeed: 0.24,
+  floatIntensity: 0.28,
+  rotationSpeedByState: {
+    idle: 0.012,
+    wake_detected: 0.07,
+    listening: 0.1,
+    transcribing: 0.55,
+    thinking: 0.46,
+    checking_online: 0.38,
+    reading_sources: 0.42,
+    tool_calling: 0.8,
+    speaking: 0.68,
+    interrupted: 0.9,
+    complete: 0.03,
+    error: 0.015,
+  },
 };
 
 const TESSERACT_THEME: TesseractTheme = {
@@ -697,7 +723,15 @@ const TranscriptPanel = ({
   );
 };
 
-const Tesseract = ({ state }: { state: OracState }) => {
+const Tesseract = ({
+  state,
+  motionState,
+  prefersReducedMotion,
+}: {
+  state: OracState;
+  motionState: OracState;
+  prefersReducedMotion: boolean;
+}) => {
   // Base sizes
   const outerBaseSize = 2;
   const innerBaseSize = 1.3;
@@ -720,6 +754,9 @@ const Tesseract = ({ state }: { state: OracState }) => {
   const connectorMaterialRef = useRef<THREE.LineBasicMaterial>(null);
   const cornerFlaresRef = useRef<THREE.InstancedMesh>(null);
   const orbitalCoreRadiusRef = useRef<number>(coreBaseRadius);
+  const rotationSpeedRef = useRef(
+    prefersReducedMotion ? 0 : TESSERACT_MOTION.rotationSpeedByState[motionState],
+  );
   const cornerDummy = useMemo(() => new THREE.Object3D(), []);
   const config = STATE_CONFIGS[state];
   const corePalette = CORE_PALETTES[state];
@@ -772,7 +809,16 @@ const Tesseract = ({ state }: { state: OracState }) => {
       : new THREE.Color(TESSERACT_THEME.idleGlow);
 
     // 1. Shared rotation for the whole tesseract
-    const rotSpeed = config.rotationSpeed;
+    const targetRotationSpeed = prefersReducedMotion
+      ? 0
+      : TESSERACT_MOTION.rotationSpeedByState[motionState];
+    rotationSpeedRef.current = THREE.MathUtils.damp(
+      rotationSpeedRef.current,
+      targetRotationSpeed,
+      TESSERACT_MOTION.rotationDamping,
+      delta,
+    );
+    const rotSpeed = rotationSpeedRef.current;
     groupRef.current.rotation.y += delta * rotSpeed;
     groupRef.current.rotation.x += delta * (rotSpeed * 0.5);
     groupRef.current.rotation.z += delta * (rotSpeed * 0.25);
@@ -1180,7 +1226,15 @@ const Tesseract = ({ state }: { state: OracState }) => {
   );
 };
 
-const Scene = ({ state }: { state: OracState }) => {
+const Scene = ({
+  state,
+  motionState,
+  prefersReducedMotion,
+}: {
+  state: OracState;
+  motionState: OracState;
+  prefersReducedMotion: boolean;
+}) => {
   const config = STATE_CONFIGS[state];
   const isIdle = state === 'idle' || state === 'wake_detected' || state === 'listening';
   const isThinking = state === 'thinking' || state === 'checking_online' || state === 'reading_sources';
@@ -1225,18 +1279,22 @@ const Scene = ({ state }: { state: OracState }) => {
       <spotLight position={[-10, 10, 10]} angle={0.2} penumbra={1} intensity={spotLightIntensity} color={config.color} />
       
       <Float
-        speed={state === 'speaking' ? 1.5 * config.pulseRate * 1.08 : 1.5 * config.pulseRate}
-        rotationIntensity={state === 'speaking' ? 0.36 : 0.3}
-        floatIntensity={0.5}
+        speed={prefersReducedMotion ? 0 : TESSERACT_MOTION.floatSpeed}
+        rotationIntensity={0}
+        floatIntensity={prefersReducedMotion ? 0 : TESSERACT_MOTION.floatIntensity}
       >
         <group>
-          <Tesseract state={state} />
+          <Tesseract
+            state={state}
+            motionState={motionState}
+            prefersReducedMotion={prefersReducedMotion}
+          />
           {isSpeaking ? (
             <Sparkles
               count={14}
               scale={1.85}
               size={0.7}
-              speed={0.24}
+              speed={prefersReducedMotion ? 0 : 0.24}
               color="#f3feff"
               opacity={0.56}
             />
@@ -1246,7 +1304,7 @@ const Scene = ({ state }: { state: OracState }) => {
             count={sparkleCount} 
             scale={2.6} 
             size={sparkleSize} 
-            speed={sparkleSpeed} 
+            speed={prefersReducedMotion ? 0 : sparkleSpeed}
             color={config.color} 
             opacity={sparkleOpacity}
           />
@@ -1445,7 +1503,11 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
               dpr={[1, 1.5]}
             >
               <CanvasDiagnostics onRecovery={onRenderRecovery} />
-              <Scene state={visualState} />
+              <Scene
+                state={visualState}
+                motionState={state}
+                prefersReducedMotion={prefersReducedMotion === true}
+              />
             </Canvas>
           </CanvasErrorBoundary>
         </div>
