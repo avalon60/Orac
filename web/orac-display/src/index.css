@@ -47,20 +47,20 @@ canvas {
   mix-blend-mode: var(--orac-aura-blend-mode, screen);
   filter:
     brightness(var(--orac-aura-brightness, 1))
-    blur(var(--orac-aura-blur, 6px))
-    saturate(1.16)
-    contrast(1.08);
+    blur(var(--orac-aura-blur, 4px))
+    saturate(1.18)
+    contrast(1.12);
   will-change: transform, opacity, filter;
   background: radial-gradient(
     circle at center,
     transparent 0,
-    transparent calc(var(--orac-aura-inner-hole, 34%) - 0.75%),
-    rgba(130, 224, 248, 0.08) var(--orac-aura-inner-hole, 34%),
-    rgba(162, 241, 255, 0.52) calc(var(--orac-aura-inner-hole, 34%) + 4%),
-    rgba(104, 202, 239, 0.3) calc(var(--orac-aura-inner-hole, 34%) + 11%),
-    rgba(84, 151, 224, 0.38) calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%)),
-    rgba(94, 72, 190, 0.13) calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) + 4%),
-    transparent calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) + 10%)
+    transparent calc(var(--orac-aura-inner-hole, 34%) - 0.4%),
+    rgba(130, 224, 248, 0.04) var(--orac-aura-inner-hole, 34%),
+    rgba(168, 244, 255, 0.54) calc(var(--orac-aura-inner-hole, 34%) + 3%),
+    rgba(103, 199, 239, 0.22) calc(var(--orac-aura-inner-hole, 34%) + 8%),
+    rgba(79, 148, 225, 0.42) calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 15%)),
+    rgba(105, 82, 201, 0.12) calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 15%) + 2.5%),
+    transparent calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 15%) + 6%)
   );
 }
 
@@ -74,7 +74,7 @@ canvas {
 }
 
 .orac-tesseract-aura-ring::before {
-  opacity: 0.42;
+  opacity: 0.46;
   background: conic-gradient(
     from 18deg,
     rgba(92, 194, 239, 0.12),
@@ -89,28 +89,28 @@ canvas {
   );
   -webkit-mask: radial-gradient(
     circle,
-    transparent 0 calc(var(--orac-aura-inner-hole, 34%) + 2%),
-    #000 calc(var(--orac-aura-inner-hole, 34%) + 5%),
-    #000 calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) + 3%),
-    transparent calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) + 8%)
+    transparent 0 calc(var(--orac-aura-inner-hole, 34%) + 2.5%),
+    #000 calc(var(--orac-aura-inner-hole, 34%) + 4%),
+    #000 calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 15%) + 1.5%),
+    transparent calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 15%) + 4.5%)
   );
   mask: radial-gradient(
     circle,
-    transparent 0 calc(var(--orac-aura-inner-hole, 34%) + 2%),
-    #000 calc(var(--orac-aura-inner-hole, 34%) + 5%),
-    #000 calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) + 3%),
-    transparent calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) + 8%)
+    transparent 0 calc(var(--orac-aura-inner-hole, 34%) + 2.5%),
+    #000 calc(var(--orac-aura-inner-hole, 34%) + 4%),
+    #000 calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 15%) + 1.5%),
+    transparent calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 15%) + 4.5%)
   );
-  filter: blur(1.5px);
+  filter: blur(1px);
 }
 
 .orac-tesseract-aura-ring::after {
   background: radial-gradient(
     circle,
-    transparent 0 calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) - 1%),
-    rgba(153, 232, 255, 0.38) calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%)),
-    rgba(82, 133, 222, 0.2) calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) + 1.5%),
-    transparent calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) + 4%)
+    transparent 0 calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 15%) - 0.8%),
+    rgba(164, 238, 255, 0.5) calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 15%)),
+    rgba(75, 130, 226, 0.28) calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 15%) + 1%),
+    transparent calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 15%) + 2.75%)
   );
 }
 
