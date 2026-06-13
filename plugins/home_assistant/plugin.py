@@ -15,6 +15,8 @@ from .control import parse_area_inventory_command
 from .control import HomeAssistantControlError
 from .control import parse_area_list_command
 from .control import parse_control_command
+from .light_control import parse_light_control_command
+from .light_state_query import parse_light_state_query
 from .sensor_query import HomeAssistantSensorQueryError
 from .sensor_query import parse_sensor_query
 
@@ -51,7 +53,9 @@ class HomeAssistantPlugin:
             return True
         try:
             return (
-                parse_control_command(prompt) is not None
+                parse_light_control_command(prompt) is not None
+                or parse_light_state_query(prompt) is not None
+                or parse_control_command(prompt) is not None
                 or parse_area_inventory_command(prompt) is not None
                 or parse_area_list_command(prompt) is not None
                 or parse_sensor_query(prompt) is not None
@@ -67,6 +71,8 @@ class HomeAssistantPlugin:
         """Execute a supported Home Assistant command."""
         normalised = _normalise_command(prompt)
         try:
+            light_control_request = parse_light_control_command(prompt)
+            light_state_request = parse_light_state_query(prompt)
             control_request = parse_control_command(prompt)
             area_inventory_request = parse_area_inventory_command(prompt)
             area_list_request = parse_area_list_command(prompt)
@@ -76,6 +82,8 @@ class HomeAssistantPlugin:
 
         if (
             normalised not in _RESYNC_COMMANDS
+            and light_control_request is None
+            and light_state_request is None
             and control_request is None
             and area_inventory_request is None
             and area_list_request is None
@@ -86,6 +94,10 @@ class HomeAssistantPlugin:
         if self._runtime_context is None:
             return self._failure_response("Home Assistant runtime context is unavailable.")
 
+        if light_control_request is not None:
+            return self._execute_light_control(light_control_request)
+        if light_state_request is not None:
+            return self._execute_light_state_query(light_state_request)
         if control_request is not None:
             return self._execute_control(control_request)
         if area_inventory_request is not None:
@@ -280,22 +292,80 @@ class HomeAssistantPlugin:
 
         status = str(result.get("status") or "")
         entity_ids = tuple(result.get("entity_ids") or ())
-        if status != "confirmed":
-            return self._control_failure_response(
-                "unconfirmed",
-                "Home Assistant accepted the request but did not confirm the change.",
-            )
+        action_text = request.action.replace("_", " ")
+        content = (
+            f"Home Assistant confirmed {action_text} for {request.target}."
+            if status == "confirmed"
+            else f"Home Assistant accepted {action_text} for {request.target}."
+        )
         return PluginExecutionResult(
             plugin_id="home_assistant",
-            content=(
-                "Home Assistant confirmed "
-                f"{request.action.replace('_', ' ')} for {request.target}."
-            ),
+            content=content,
             provenance={
                 "command": "home_assistant.device_control",
                 "action": request.action,
                 "entity_ids": list(entity_ids),
-                "status": "confirmed",
+                "status": status or "accepted",
+            },
+        )
+
+    def _execute_light_control(self, request) -> PluginExecutionResult:
+        """Dispatch one parsed rich light-control request to the managed service."""
+        self._log_info("Home Assistant light-control command accepted.")
+        try:
+            result = self._runtime_context.run_service_command(
+                "home_assistant",
+                "light_control",
+                request.to_payload(),
+            )
+        except HomeAssistantControlError as exc:
+            return self._control_failure_response(exc.code, str(exc))
+        except Exception as exc:
+            self._log_error(f"Home Assistant light control failed: {exc}")
+            return self._control_failure_response("execution_failed", str(exc))
+
+        status = str(result.get("status") or "")
+        entity_ids = tuple(result.get("entity_ids") or ())
+        content = (
+            str(result.get("content") or "Home Assistant confirmed the light change.")
+            if status == "confirmed"
+            else str(result.get("content") or "Home Assistant accepted the light change.")
+        )
+        return PluginExecutionResult(
+            plugin_id="home_assistant",
+            content=content,
+            provenance={
+                "command": "home_assistant.light_control",
+                "entity_ids": list(entity_ids),
+                "status": status or "accepted",
+            },
+        )
+
+    def _execute_light_state_query(self, request) -> PluginExecutionResult:
+        """Dispatch one parsed live light-state query to the managed service."""
+        self._log_info("Home Assistant light-state query accepted.")
+        try:
+            result = self._runtime_context.run_service_command(
+                "home_assistant",
+                "light_state_query",
+                request.to_payload(),
+            )
+        except HomeAssistantControlError as exc:
+            return self._light_state_failure_response(exc.code, str(exc))
+        except Exception as exc:
+            self._log_error(f"Home Assistant light-state query failed: {exc}")
+            return self._light_state_failure_response("execution_failed", str(exc))
+
+        return PluginExecutionResult(
+            plugin_id="home_assistant",
+            content=str(result.get("content") or "Home Assistant light-state query failed."),
+            provenance={
+                "command": "home_assistant.light_state_query",
+                "intent": request.intent,
+                "entity_ids": list(result.get("entity_ids") or ()),
+                "areas": list(result.get("areas") or ()),
+                "status": str(result.get("status") or "complete"),
+                "source": str(result.get("source") or "unknown"),
             },
         )
 
@@ -307,6 +377,20 @@ class HomeAssistantPlugin:
             content=f"Home Assistant control was not performed: {message}",
             provenance={
                 "command": "home_assistant.device_control",
+                "status": "failed",
+                "failure_type": code,
+                "failure_message": message,
+            },
+        )
+
+    @staticmethod
+    def _light_state_failure_response(code: str, message: str) -> PluginExecutionResult:
+        """Return an explicit user-facing light-state query failure."""
+        return PluginExecutionResult(
+            plugin_id="home_assistant",
+            content=f"Home Assistant light-state query failed: {message}",
+            provenance={
+                "command": "home_assistant.light_state_query",
                 "status": "failed",
                 "failure_type": code,
                 "failure_message": message,

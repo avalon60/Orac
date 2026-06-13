@@ -108,6 +108,20 @@ class _FakeRuntimeContext:
                 "entity_ids": ["sensor.lounge_temperature"],
                 "areas": ["lounge"],
             }
+        if command == "light_control":
+            return {
+                "status": "confirmed",
+                "content": "TV light set to 50 percent.",
+                "entity_ids": ["light.tv_light"],
+            }
+        if command == "light_state_query":
+            return {
+                "status": "complete",
+                "content": "The TV light is on.",
+                "entity_ids": ["light.tv_light"],
+                "areas": [],
+                "source": "live_home_assistant",
+            }
         return {"status": "complete"}
 
 
@@ -241,6 +255,28 @@ class HomeAssistantPluginTests(unittest.TestCase):
             },
         )
 
+    def test_terse_target_control_accepts_unconfirmed_service_response(self) -> None:
+        class _UnconfirmedRuntimeContext(_FakeRuntimeContext):
+            def run_service_command(
+                self,
+                plugin_id: str,
+                command: str,
+                payload: dict | None = None,
+            ) -> dict:
+                result = super().run_service_command(plugin_id, command, payload)
+                if command == "control":
+                    return {"status": "unconfirmed", "entity_ids": ["light.tv_light"]}
+                return result
+
+        runtime_context = _UnconfirmedRuntimeContext()
+        plugin = HomeAssistantPlugin(runtime_context=runtime_context)
+
+        result = plugin.execute("TV light on.")
+
+        self.assertEqual(runtime_context.commands[0]["command"], "control")
+        self.assertIn("accepted turn on for tv light", result.content.lower())
+        self.assertNotIn("not performed", result.content.lower())
+
     def test_area_listing_dispatches_read_only_service_command(self) -> None:
         runtime_context = _FakeRuntimeContext()
         plugin = HomeAssistantPlugin(runtime_context=runtime_context)
@@ -260,6 +296,70 @@ class HomeAssistantPluginTests(unittest.TestCase):
             "Home Assistant devices in Office: Desk Lamp, Printer.",
         )
         self.assertEqual(result.provenance["command"], "home_assistant.area_list")
+
+    def test_area_first_listing_dispatches_the_exact_area_name(self) -> None:
+        runtime_context = _FakeRuntimeContext()
+        plugin = HomeAssistantPlugin(runtime_context=runtime_context)
+
+        plugin.execute("List living room devices")
+
+        self.assertEqual(
+            runtime_context.commands[0],
+            {
+                "plugin_id": "home_assistant",
+                "command": "list_area",
+                "payload": {
+                    "area": "living room",
+                    "requested_domain": None,
+                },
+            },
+        )
+
+    def test_light_control_dispatches_structured_service_command(self) -> None:
+        runtime_context = _FakeRuntimeContext()
+        plugin = HomeAssistantPlugin(runtime_context=runtime_context)
+
+        result = plugin.execute("Set the TV light to 50 percent")
+
+        self.assertEqual(
+            runtime_context.commands[0],
+            {
+                "plugin_id": "home_assistant",
+                "command": "light_control",
+                "payload": {
+                    "target": "tv light",
+                    "kind": "brightness_pct",
+                    "value": 50,
+                    "label": None,
+                    "turn_on": True,
+                },
+            },
+        )
+        self.assertIn("TV light set to 50 percent.", result.content)
+        self.assertEqual(result.provenance["command"], "home_assistant.light_control")
+
+    def test_light_state_query_dispatches_structured_service_command(self) -> None:
+        runtime_context = _FakeRuntimeContext()
+        plugin = HomeAssistantPlugin(runtime_context=runtime_context)
+
+        result = plugin.execute("Is the TV light on?")
+
+        self.assertEqual(
+            runtime_context.commands[0],
+            {
+                "plugin_id": "home_assistant",
+                "command": "light_state_query",
+                "payload": {
+                    "intent": "state",
+                    "target": "tv light",
+                    "scope": "entity",
+                    "requested_domain": "light",
+                    "requested_label": None,
+                },
+            },
+        )
+        self.assertIn("TV light is on.", result.content)
+        self.assertEqual(result.provenance["command"], "home_assistant.light_state_query")
 
     def test_filtered_area_listing_uses_correct_plural(self) -> None:
         runtime_context = _FakeRuntimeContext()
@@ -345,7 +445,11 @@ class HomeAssistantPluginTests(unittest.TestCase):
             "Sync devices": "resync",
             "Resync Home Assistant": "resync",
             "Desk lamp off": "control",
+            "Set the TV light to 50 percent": "light_control",
+            "Is the TV light on?": "light_state_query",
+            "How bright is the TV light?": "light_state_query",
             "List devices in the office": "list_area",
+            "List living room devices": "list_area",
             "What lights are in the kitchen?": "list_area",
             "What's the temperature in the lounge?": "sensor_query",
             "Are any sensors unavailable?": "sensor_query",

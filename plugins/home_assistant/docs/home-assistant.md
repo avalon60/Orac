@@ -17,6 +17,9 @@ Supported now:
 - startup synchronisation of areas, devices, entities, and current states
 - on-demand structural and state resynchronisation
 - `turn_on`, `turn_off`, and `toggle` for `light` and `switch` entities
+- brightness, colour, and colour-temperature control for supported `light`
+  entities using live Home Assistant state
+- live on/off, brightness, and colour read-back for supported lights
 - scene activation through `scene.turn_on`
 - exact Home Assistant area and area-alias targeting
 - read-only device, light, switch, and scene listings by area
@@ -120,12 +123,84 @@ Switch off the kitchen switches
 names identify them as lamps or lights. Area matching is exact; fuzzy room-name
 matching is not used. Whole-home targets remain blocked.
 
+### Rich Light Controls
+
+Accepted forms:
+
+```text
+[please] set [the] <light> to <1-100> percent
+[please] set [the] <light> brightness to <1-100> percent
+[please] turn on [the] <light> at <1-100> percent
+[please] turn on [the] <light> to <1-100> percent
+[please] dim [the] <light>
+[please] brighten [the] <light>
+[please] make [the] <light> a bit dimmer/brighter
+[please] set/make/turn on [the] <light> to <colour>
+[please] set/make/turn on [the] <light> <colour>
+[please] set/make/turn on [the] <light> to <colour temperature>
+[please] reset [the] <light> to <colour temperature>
+[please] make [the] <light> warmer/cooler
+```
+
+Supported colour names:
+
+- blue
+- cyan
+- green
+- magenta
+- orange
+- pink
+- purple
+- red
+- teal
+- yellow
+
+Supported colour-temperature presets:
+
+- warm white: 2700 K
+- soft white: 3000 K
+- normal white / neutral white: 4000 K
+- cool white: 5000 K
+- daylight: 6500 K
+- toasty: 2700 K
+
+Rich light control uses live Home Assistant state for capability validation and
+relative adjustments. It only targets `light` entities. Switch-domain lamps
+remain limited to on/off. Unsupported colour, brightness, or colour-temperature
+requests are refused cleanly when the Home Assistant state does not expose the
+required capability.
+
+Effect control is not implemented in this pass.
+
+### Live Light Read-Back
+
+Accepted forms include:
+
+```text
+Is [the] <light or lamp> on/off?
+What state is [the] <light or lamp> in?
+How bright is [the] <light>?
+What brightness is [the] <light> set to?
+What colour is [the] <light>?
+What colour temperature is [the] <light>?
+What brightness and colour is [the] <light>?
+Are any <area> lights on?
+Which <area> lights are on?
+Are all <area> lights off?
+```
+
+Read-back queries fetch live state from Home Assistant only. They do not use
+shadow-table state as current truth. `light` entities may report brightness,
+colour, and colour temperature when Home Assistant exposes enough attributes.
+`switch`-domain lamps can report only on/off state.
+
 ### List Devices in an Area
 
 Accepted forms:
 
 ```text
 [please] list devices/lights/lamps/switches/scenes in [the] <area>
+[please] list [the] <area> devices/lights/lamps/switches/scenes
 what devices/lights/lamps/switches/scenes are in [the] <area>
 which devices/lights/lamps/switches/scenes are in [the] <area>
 ```
@@ -134,6 +209,7 @@ Examples:
 
 ```text
 List devices in the office
+List living room devices
 What devices are in the office?
 Which lights are in the kitchen?
 List switches in the lounge

@@ -78,6 +78,9 @@ class HomeAssistantControlTests(unittest.TestCase):
             "Which lights are in the kitchen?": ("kitchen", "light"),
             "List switches in lounge": ("lounge", "switch"),
             "List scenes in the cinema": ("cinema", "scene"),
+            "List living room devices": ("living room", None),
+            "List the office lights": ("office", "light"),
+            "List living room devices.": ("living room", None),
         }
         for prompt, expected in cases.items():
             with self.subTest(prompt=prompt):
@@ -120,6 +123,31 @@ class HomeAssistantControlTests(unittest.TestCase):
             ("ceiling light", "desk lamp"),
         )
         self.assertEqual(result.devices[1].domains, ("sensor", "switch"))
+
+    def test_area_first_listing_uses_only_devices_in_the_requested_area(self) -> None:
+        rows = [
+            _row(
+                "light.tv_light",
+                device_name="TV Light",
+                area_name="Living Room",
+            ),
+            _row(
+                "switch.desk_lamp",
+                device_name="Desk Lamp",
+                area_name="Office",
+            ),
+        ]
+
+        result = list_area_devices(
+            parse_area_list_command("List living room devices"),
+            rows,
+        )
+
+        self.assertEqual(result.area_name, "living room")
+        self.assertEqual(
+            tuple(device.name for device in result.devices),
+            ("tv light",),
+        )
 
     def test_area_listing_filters_lights_and_switch_backed_lamps(self) -> None:
         rows = [

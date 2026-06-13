@@ -26,6 +26,7 @@ from model.plugin_routing.embeddings import HashEmbeddingProvider
 from model.plugin_routing.manager import PluginManager
 from home_assistant.client import HomeAssistantClientConfig
 from home_assistant.control import AreaDevice
+from home_assistant.control import HomeAssistantControlError
 from home_assistant.control import AreaDeviceList
 from home_assistant.control import AreaInventoryRequest
 from home_assistant.control import ControlServiceCall
@@ -107,14 +108,17 @@ class _FakeClient:
         fail_check: bool = False,
         fail_fetch_states: bool = False,
         confirmation: list[dict] | None = None,
+        states: dict[str, dict] | None = None,
     ) -> None:
         self.config = config
         self.fail_check = fail_check
         self.fail_fetch_states = fail_fetch_states
         self.confirmation = confirmation
+        self.states = states or {}
         self.checked = False
         self.closed = False
         self.service_calls: list[tuple[str, str, tuple[str, ...]]] = []
+        self.service_call_payloads: list[dict | None] = []
         self.fetch_state_calls: list[str] = []
 
     def check_api(self) -> bool:
@@ -131,8 +135,10 @@ class _FakeClient:
         domain: str,
         service: str,
         entity_ids: tuple[str, ...],
+        data: dict | None = None,
     ) -> list[dict]:
         self.service_calls.append((domain, service, entity_ids))
+        self.service_call_payloads.append(data)
         if self.confirmation is not None:
             return self.confirmation
         return [{"entity_id": entity_id} for entity_id in entity_ids]
@@ -142,6 +148,8 @@ class _FakeClient:
         self.fetch_state_calls.append(entity_id)
         if self.fail_fetch_states:
             raise RuntimeError("state fetch unavailable")
+        if entity_id in self.states:
+            return self.states[entity_id]
         return {
             "entity_id": entity_id,
             "state": "21.4",
@@ -519,6 +527,308 @@ class HomeAssistantServiceTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "action and target"):
             service.handle_command(_FakeContext(), "control", {"action": "turn_on"})
+
+    def test_light_control_sets_brightness_using_live_state(self) -> None:
+        client_holder: dict[str, _FakeClient] = {}
+
+        def client_factory(config: HomeAssistantClientConfig) -> _FakeClient:
+            client = _FakeClient(
+                config,
+                states={
+                    "light.kitchen": {
+                        "entity_id": "light.kitchen",
+                        "state": "on",
+                        "attributes": {
+                            "supported_color_modes": ["brightness"],
+                            "brightness": 128,
+                            "friendly_name": "Kitchen Light",
+                        },
+                    }
+                },
+            )
+            client_holder["client"] = client
+            return client
+
+        service = HomeAssistantService(
+            client_factory=client_factory,
+            repository_factory=lambda context: _FakeRepository(context),
+        )
+
+        result = service.handle_command(
+            _FakeContext(),
+            "light_control",
+            {
+                "target": "kitchen light",
+                "kind": "brightness_pct",
+                "value": 50,
+                "turn_on": True,
+            },
+        )
+
+        self.assertEqual(result["status"], "confirmed")
+        self.assertEqual(client_holder["client"].fetch_state_calls, ["light.kitchen"])
+        self.assertEqual(
+            client_holder["client"].service_call_payloads,
+            [{"brightness_pct": 50}],
+        )
+        self.assertEqual(
+            client_holder["client"].service_calls,
+            [("light", "turn_on", ("light.kitchen",))],
+        )
+        self.assertIn("Kitchen Light set to 50 percent.", result["content"])
+
+    def test_light_control_uses_live_state_for_relative_brightness(self) -> None:
+        client_holder: dict[str, _FakeClient] = {}
+
+        def client_factory(config: HomeAssistantClientConfig) -> _FakeClient:
+            client = _FakeClient(
+                config,
+                states={
+                    "light.kitchen": {
+                        "entity_id": "light.kitchen",
+                        "state": "on",
+                        "attributes": {
+                            "supported_color_modes": ["brightness"],
+                            "brightness": 76,
+                            "friendly_name": "Kitchen Light",
+                        },
+                    }
+                },
+            )
+            client_holder["client"] = client
+            return client
+
+        service = HomeAssistantService(
+            client_factory=client_factory,
+            repository_factory=lambda context: _FakeRepository(context),
+        )
+
+        result = service.handle_command(
+            _FakeContext(),
+            "light_control",
+            {
+                "target": "kitchen light",
+                "kind": "brightness_step",
+                "value": 10,
+                "turn_on": True,
+            },
+        )
+
+        self.assertEqual(result["status"], "confirmed")
+        self.assertEqual(
+            client_holder["client"].service_call_payloads,
+            [{"brightness_pct": 40}],
+        )
+        self.assertIn("Kitchen Light brightened to 40 percent.", result["content"])
+
+    def test_light_control_refuses_colour_for_brightness_only_light(self) -> None:
+        client_holder: dict[str, _FakeClient] = {}
+
+        def client_factory(config: HomeAssistantClientConfig) -> _FakeClient:
+            client = _FakeClient(
+                config,
+                states={
+                    "light.kitchen": {
+                        "entity_id": "light.kitchen",
+                        "state": "on",
+                        "attributes": {
+                            "supported_color_modes": ["brightness"],
+                            "brightness": 128,
+                            "friendly_name": "Kitchen Light",
+                        },
+                    }
+                },
+            )
+            client_holder["client"] = client
+            return client
+
+        service = HomeAssistantService(
+            client_factory=client_factory,
+            repository_factory=lambda context: _FakeRepository(context),
+        )
+
+        with self.assertRaisesRegex(HomeAssistantControlError, "colour control"):
+            service.handle_command(
+                _FakeContext(),
+                "light_control",
+                {
+                    "target": "kitchen light",
+                    "kind": "color_name",
+                    "value": "blue",
+                    "turn_on": True,
+                },
+            )
+
+        self.assertEqual(client_holder["client"].service_calls, [])
+        self.assertEqual(client_holder["client"].fetch_state_calls, ["light.kitchen"])
+
+    def test_light_control_refuses_switch_domain_lamps_for_richer_commands(self) -> None:
+        class _SwitchRepository(_FakeRepository):
+            def resolve_control(self, request):
+                self.control_requests.append(request)
+                return ResolvedControl(
+                    action=request.action,
+                    service_calls=(
+                        ControlServiceCall(
+                            domain="switch",
+                            service="turn_on",
+                            entity_ids=("switch.desk_lamp",),
+                        ),
+                    ),
+                    target=request.target,
+                    resolution="entity",
+                )
+
+        service = HomeAssistantService(
+            client_factory=lambda config: _FakeClient(config),
+            repository_factory=lambda context: _SwitchRepository(context),
+        )
+
+        with self.assertRaisesRegex(HomeAssistantControlError, "switch"):
+            service.handle_command(
+                _FakeContext(),
+                "light_control",
+                {
+                    "target": "desk lamp",
+                    "kind": "brightness_pct",
+                    "value": 50,
+                    "turn_on": True,
+                },
+            )
+
+    def test_light_state_query_reports_live_brightness_and_colour(self) -> None:
+        class _TVRepository(_FakeRepository):
+            def resolve_control(self, request):
+                self.control_requests.append(request)
+                return ResolvedControl(
+                    action=request.action,
+                    service_calls=(
+                        ControlServiceCall(
+                            domain="light",
+                            service="turn_on",
+                            entity_ids=("light.tv_light",),
+                        ),
+                    ),
+                    target=request.target,
+                    resolution="entity",
+                )
+
+        client_holder: dict[str, _FakeClient] = {}
+
+        def client_factory(config: HomeAssistantClientConfig) -> _FakeClient:
+            client = _FakeClient(
+                config,
+                states={
+                    "light.tv_light": {
+                        "entity_id": "light.tv_light",
+                        "state": "on",
+                        "attributes": {
+                            "supported_color_modes": ["hs"],
+                            "brightness": 107,
+                            "rgb_color": [0, 0, 255],
+                            "friendly_name": "TV Light",
+                        },
+                    }
+                },
+            )
+            client_holder["client"] = client
+            return client
+
+        service = HomeAssistantService(
+            client_factory=client_factory,
+            repository_factory=lambda context: _TVRepository(context),
+        )
+
+        result = service.handle_command(
+            _FakeContext(),
+            "light_state_query",
+            {
+                "intent": "setting",
+                "target": "tv light",
+                "scope": "entity",
+                "requested_domain": "light",
+            },
+        )
+
+        self.assertEqual(result["status"], "complete")
+        self.assertIn("TV Light is on", result["content"])
+        self.assertIn("brightness", result["content"])
+        self.assertEqual(client_holder["client"].fetch_state_calls, ["light.tv_light"])
+        self.assertEqual(client_holder["client"].service_calls, [])
+
+    def test_light_state_query_reports_area_summary_from_live_states(self) -> None:
+        class _AreaRepository(_FakeRepository):
+            def resolve_control(self, request):
+                self.control_requests.append(request)
+                return ResolvedControl(
+                    action=request.action,
+                    service_calls=(
+                        ControlServiceCall(
+                            domain="light",
+                            service="turn_on",
+                            entity_ids=(
+                                "light.tv_light",
+                                "light.floor_lamp",
+                                "switch.corner_lamp",
+                            ),
+                        ),
+                    ),
+                    target=request.target,
+                    resolution="area",
+                )
+
+        client_holder: dict[str, _FakeClient] = {}
+
+        def client_factory(config: HomeAssistantClientConfig) -> _FakeClient:
+            client = _FakeClient(
+                config,
+                states={
+                    "light.tv_light": {
+                        "entity_id": "light.tv_light",
+                        "state": "on",
+                        "attributes": {"friendly_name": "TV Light"},
+                    },
+                    "light.floor_lamp": {
+                        "entity_id": "light.floor_lamp",
+                        "state": "on",
+                        "attributes": {"friendly_name": "Floor Lamp"},
+                    },
+                    "switch.corner_lamp": {
+                        "entity_id": "switch.corner_lamp",
+                        "state": "off",
+                        "attributes": {"friendly_name": "Corner Lamp"},
+                    },
+                },
+            )
+            client_holder["client"] = client
+            return client
+
+        service = HomeAssistantService(
+            client_factory=client_factory,
+            repository_factory=lambda context: _AreaRepository(context),
+        )
+
+        result = service.handle_command(
+            _FakeContext(),
+            "light_state_query",
+            {
+                "intent": "area_any_on",
+                "target": "lounge",
+                "scope": "area",
+                "requested_domain": "light",
+            },
+        )
+
+        self.assertEqual(result["status"], "complete")
+        self.assertIn("2 Lounge lights are on", result["content"])
+        self.assertIn("TV Light", result["content"])
+        self.assertIn("Floor Lamp", result["content"])
+        self.assertIn("Corner Lamp", result["content"])
+        self.assertEqual(
+            client_holder["client"].fetch_state_calls,
+            ["light.floor_lamp", "light.tv_light", "switch.corner_lamp"],
+        )
+        self.assertEqual(client_holder["client"].service_calls, [])
 
     def test_area_listing_uses_only_ephemeral_repository(self) -> None:
         repositories: list[_FakeRepository] = []

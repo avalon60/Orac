@@ -13,6 +13,8 @@
     "home_assistant.device_control",
     "home_assistant.area_listing",
     "home_assistant.state_query",
+    "home_assistant.light_control",
+    "home_assistant.light_state_query",
     "home_assistant.scene_activation",
     "home_assistant.event_listener",
     "home_assistant.health_status"
@@ -42,11 +44,16 @@
     "Turn off the office lamp.",
     "Desk lamp off.",
     "List devices in the office.",
+    "List living room devices.",
     "What lights are in the kitchen?",
     "What's the temperature in the lounge?",
     "What is the landing temperature?",
     "What's the humidity on the landing?",
     "What is the landing humidity?",
+    "Is the TV light on?",
+    "How bright is the TV light?",
+    "What colour is the TV light?",
+    "What setting is the TV light on?",
     "Which is warmer, the lounge or the landing?",
     "Are any sensors unavailable?",
     "When was the lounge sensor last updated?",
@@ -71,6 +78,8 @@
       "home_assistant.device_control",
       "home_assistant.area_listing",
       "home_assistant.state_query",
+      "home_assistant.light_control",
+      "home_assistant.light_state_query",
       "home_assistant.scene_activation",
       "home_assistant.event_listener",
       "home_assistant.health_status"
@@ -81,7 +90,7 @@
       "user_preferences.home_location"
     ],
     "scaffold": false,
-    "notes": "On-demand execution supports resync, deterministic low-risk light/switch/scene control, and read-only area and temperature/humidity sensor queries through the managed Home Assistant service."
+    "notes": "On-demand execution supports resync, deterministic low-risk light/switch/scene control, live light read-back, and read-only area and temperature/humidity sensor queries through the managed Home Assistant service."
   },
   "runtime": {
     "mode": "hybrid",

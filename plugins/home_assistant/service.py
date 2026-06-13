@@ -17,6 +17,13 @@ from .control import AreaListRequest
 from .control import ControlRequest
 from .control import HomeAssistantControlError
 from .repository import HomeAssistantRepository
+from .light_control import LightControlError
+from .light_control import LightControlRequest
+from .light_control import build_light_service_data
+from .light_control import light_target_display_name
+from .light_state_query import LightStateQueryError
+from .light_state_query import LightStateQueryRequest
+from .light_state_query import render_light_state_query
 from .sensor_query import DEFAULT_STALE_HOURS
 from .sensor_query import SensorQueryRequest
 from .sync import HomeAssistantSyncCoordinator
@@ -28,6 +35,8 @@ __description__ = "Runs Home Assistant startup sync inside Orac's plugin service
 
 CONTROL_TIMEOUT_SECONDS = 5.0
 SENSOR_QUERY_TIMEOUT_SECONDS = 5.0
+LIGHT_CONTROL_TIMEOUT_SECONDS = 5.0
+LIGHT_STATE_QUERY_TIMEOUT_SECONDS = 5.0
 
 class HomeAssistantServiceError(RuntimeError):
     """Raised when the Home Assistant managed service cannot start safely."""
@@ -129,6 +138,10 @@ class HomeAssistantService:
         """Handle a command dispatched through the Orac plugin service manager."""
         if command == "control":
             return self._control(context, payload or {})
+        if command == "light_control":
+            return self._light_control(context, payload or {})
+        if command == "light_state_query":
+            return self._light_state_query(context, payload or {})
         if command == "list_area":
             return self._list_area(context, payload or {})
         if command == "list_areas":
@@ -210,6 +223,220 @@ class HomeAssistantService:
                 ],
                 "resolution": resolved.resolution,
             }
+        finally:
+            for resource in (repository, client):
+                close = getattr(resource, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass
+
+    def _light_control(self, context: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        """Resolve and execute one isolated light-control request."""
+        try:
+            request = LightControlRequest.from_payload(payload)
+            if not request.target or not request.kind:
+                raise HomeAssistantControlError(
+                    "invalid_request",
+                    "Home Assistant light control requires a target and action.",
+                )
+        except HomeAssistantControlError:
+            raise
+        except Exception as exc:
+            raise HomeAssistantControlError(
+                "invalid_request",
+                f"Home Assistant light control request is invalid: {exc}",
+            ) from exc
+
+        repository = None
+        client = None
+        try:
+            repository = self._repository_factory(context)
+            resolved = repository.resolve_control(
+                ControlRequest(
+                    action="turn_on",
+                    target=request.target,
+                    requested_domain="light",
+                )
+            )
+            light_entity_ids = tuple(
+                entity_id
+                for service_call in resolved.service_calls
+                if service_call.domain == "light"
+                for entity_id in service_call.entity_ids
+            )
+            if not light_entity_ids:
+                if any(service_call.domain == "switch" for service_call in resolved.service_calls):
+                    raise HomeAssistantControlError(
+                        "unsupported_capability",
+                        "That device is a switch, so I can turn it on or off, but I cannot set brightness or colour.",
+                    )
+                raise HomeAssistantControlError(
+                    "unsupported_capability",
+                    "That target does not appear to expose a controllable light entity.",
+                )
+
+            runtime_config = self._load_config(context)
+            client = self._client_factory(
+                HomeAssistantClientConfig(
+                    protocol=runtime_config.protocol,
+                    host=runtime_config.host,
+                    port=runtime_config.port,
+                    token=runtime_config.access_token,
+                    verify_ssl=runtime_config.verify_ssl,
+                    timeout_seconds=LIGHT_CONTROL_TIMEOUT_SECONDS,
+                    websocket_path=runtime_config.websocket_path,
+                )
+            )
+
+            confirmations: list[dict[str, Any]] = []
+            responses: list[str] = []
+            display_target = light_target_display_name(
+                {"attributes": {}},
+                request.target,
+            )
+            for entity_id in light_entity_ids:
+                try:
+                    live_state = client.fetch_state(entity_id)
+                    service_data, response = build_light_service_data(
+                        request,
+                        live_state,
+                        target_label=display_target if len(light_entity_ids) > 1 else None,
+                    )
+                    responses.append(response)
+                    confirmations.extend(
+                        client.call_service(
+                            "light",
+                            "turn_on",
+                            (entity_id,),
+                            data=service_data,
+                        )
+                    )
+                except LightControlError:
+                    raise
+                except Exception as exc:
+                    raise HomeAssistantControlError(
+                        "execution_failed",
+                        f"Home Assistant light control failed: {exc}",
+                    ) from exc
+
+            confirmed_ids = {
+                str(item.get("entity_id") or "").strip().lower()
+                for item in confirmations
+            }
+            status = (
+                "confirmed"
+                if set(light_entity_ids).issubset(confirmed_ids)
+                else "unconfirmed"
+            )
+            return {
+                "status": status,
+                "entity_ids": list(light_entity_ids),
+                "service_calls": [
+                    {
+                        "domain": "light",
+                        "service": "turn_on",
+                        "entity_ids": [entity_id],
+                    }
+                    for entity_id in light_entity_ids
+                ],
+                "content": responses[0] if responses else "Light control complete.",
+                "resolution": resolved.resolution,
+            }
+        except LightControlError as exc:
+            raise HomeAssistantControlError(exc.code, str(exc)) from exc
+        finally:
+            for resource in (repository, client):
+                close = getattr(resource, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass
+
+    def _light_state_query(self, context: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        """Resolve and execute one isolated live light-state query."""
+        try:
+            request = LightStateQueryRequest.from_payload(payload)
+            if not request.target or not request.intent:
+                raise HomeAssistantControlError(
+                    "invalid_request",
+                    "Home Assistant light state queries require an intent and target.",
+                )
+        except HomeAssistantControlError:
+            raise
+        except Exception as exc:
+            raise HomeAssistantControlError(
+                "invalid_request",
+                f"Home Assistant light state query request is invalid: {exc}",
+            ) from exc
+
+        repository = None
+        client = None
+        try:
+            repository = self._repository_factory(context)
+            resolved = repository.resolve_control(
+                ControlRequest(
+                    action="turn_on",
+                    target=request.target,
+                    requested_domain=request.requested_domain,
+                )
+            )
+            entity_ids = resolved.entity_ids
+            if request.scope != "area":
+                if not entity_ids:
+                    raise HomeAssistantControlError(
+                        "unknown_target",
+                        f"Home Assistant target '{request.target}' was not found.",
+                    )
+                if len(entity_ids) > 1:
+                    raise HomeAssistantControlError(
+                        "ambiguous_target",
+                        f"Home Assistant target '{request.target}' is ambiguous.",
+                    )
+
+            if request.intent in {"brightness", "color", "setting", "color_temperature", "color_temperature_check"}:
+                if all(service_call.domain == "switch" for service_call in resolved.service_calls):
+                    raise HomeAssistantControlError(
+                        "unsupported_capability",
+                        "That device is a switch, so I can report whether it is on or off, but not brightness or colour.",
+                    )
+                if request.scope != "area" and len(entity_ids) == 1:
+                    entity_domain = entity_ids[0].split(".", 1)[0]
+                    if entity_domain == "switch":
+                        raise HomeAssistantControlError(
+                            "unsupported_capability",
+                            "That device is a switch, so I can report whether it is on or off, but not brightness or colour.",
+                        )
+
+            runtime_config = self._load_config(context)
+            client = self._client_factory(
+                HomeAssistantClientConfig(
+                    protocol=runtime_config.protocol,
+                    host=runtime_config.host,
+                    port=runtime_config.port,
+                    token=runtime_config.access_token,
+                    verify_ssl=runtime_config.verify_ssl,
+                    timeout_seconds=LIGHT_STATE_QUERY_TIMEOUT_SECONDS,
+                    websocket_path=runtime_config.websocket_path,
+                )
+            )
+
+            live_states: list[dict[str, Any]] = []
+            for entity_id in entity_ids:
+                live_states.append(client.fetch_state(entity_id))
+
+            result = render_light_state_query(request, live_states)
+            return {
+                "status": result.status,
+                "content": result.content,
+                "entity_ids": list(result.entity_ids or entity_ids),
+                "areas": list(result.areas or (request.target,)),
+                "source": "live_home_assistant",
+            }
+        except LightStateQueryError as exc:
+            raise HomeAssistantControlError(exc.code, str(exc)) from exc
         finally:
             for resource in (repository, client):
                 close = getattr(resource, "close", None)

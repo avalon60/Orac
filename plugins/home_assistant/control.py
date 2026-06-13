@@ -240,6 +240,19 @@ def parse_area_list_command(prompt: str) -> AreaListRequest | None:
             area=_normalise_target(match.group(2)),
             requested_domain=requested_domain,
         )
+
+    area_first_match = re.fullmatch(
+        r"^(?:please )?list (?:the )?(.+?) "
+        r"(devices|lights?|lamps?|switches|scenes)$",
+        command,
+    )
+    if area_first_match is not None:
+        noun = area_first_match.group(2)
+        requested_domain = None if noun == "devices" else _DOMAIN_TERMS[noun]
+        return AreaListRequest(
+            area=_normalise_target(area_first_match.group(1)),
+            requested_domain=requested_domain,
+        )
     return None
 
 

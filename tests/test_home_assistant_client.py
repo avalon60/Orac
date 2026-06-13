@@ -259,6 +259,25 @@ class HomeAssistantClientTests(unittest.TestCase):
         )
         self.assertEqual(session.headers["Authorization"], "Bearer secret-token")
 
+    def test_service_call_merges_extra_payload_data(self) -> None:
+        url = "http://ha.local:8123/api/services/light/turn_on"
+        session = _FakeSession(
+            {url: _FakeResponse([{"entity_id": "light.kitchen", "state": "on"}])}
+        )
+        client = _client(session)
+
+        client.call_service(
+            "light",
+            "turn_on",
+            ("light.kitchen",),
+            data={"brightness_pct": 50},
+        )
+
+        self.assertEqual(
+            session.calls[0]["json"],
+            {"entity_id": ["light.kitchen"], "brightness_pct": 50},
+        )
+
     def test_service_http_failure_and_timeout_raise_clean_errors(self) -> None:
         url = "http://ha.local:8123/api/services/switch/turn_off"
         for response in (_FakeResponse([], fail=True), requests.Timeout("slow")):

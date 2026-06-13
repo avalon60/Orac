@@ -113,6 +113,7 @@ class HomeAssistantClient:
         domain: str,
         service: str,
         entity_ids: tuple[str, ...],
+        data: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Call one prevalidated Home Assistant service.
 
@@ -120,6 +121,7 @@ class HomeAssistantClient:
             domain: Allowlisted Home Assistant domain.
             service: Allowlisted Home Assistant service.
             entity_ids: Resolved entity IDs to address.
+            data: Optional service payload merged with ``entity_id``.
 
         Returns:
             Home Assistant state objects confirming the service call.
@@ -129,10 +131,13 @@ class HomeAssistantClient:
         """
         path = f"/api/services/{domain}/{service}"
         url = f"{self.base_url}{path}"
+        payload = {"entity_id": list(entity_ids)}
+        if data:
+            payload.update(data)
         try:
             response = self._session.post(
                 url,
-                json={"entity_id": list(entity_ids)},
+                json=payload,
                 timeout=self._config.timeout_seconds,
                 verify=self._config.verify_ssl,
             )
