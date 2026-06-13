@@ -6,7 +6,6 @@ import {
   Environment,
   Edges, 
   Float, 
-  Lightformer,
   Line,
   MeshTransmissionMaterial,
   Sparkles,
@@ -207,12 +206,19 @@ const tesseractVisualState = (state: OracState): OracState =>
 
 const OUTER_CUBE_SURFACE = {
   color: '#d7f4ff',
-  clearcoat: 0.95,
-  distortion: 0.02,
-  distortionScale: 0.05,
-  opacity: 0.24,
-  roughness: 0.04,
-  thickness: 0.65,
+  clearcoat: 0.82,
+  distortion: 0.035,
+  distortionScale: 0.08,
+  envMapIntensity: 0.72,
+  opacity: 0.28,
+  roughness: 0.08,
+  thickness: 1.05,
+};
+
+const REFLECTION_ENVIRONMENT = {
+  assetUrl: new URL('../assets/dikhololo_night_1k.hdr', import.meta.url).href,
+  intensity: 0.58,
+  rotation: [0, Math.PI * 0.16, 0] as [number, number, number],
 };
 
 const TESSERACT_CORNERS: readonly [number, number, number][] = [
@@ -391,52 +397,12 @@ const CanvasDiagnostics = ({
 };
 
 const GlassEnvironment = () => (
-  <Environment background={false} resolution={48} blur={0.9}>
-    <group rotation={[0, Math.PI / 4, 0]}>
-      <Lightformer
-        form="rect"
-        intensity={0.46}
-        color="#8fdcff"
-        scale={[12, 1.1, 1]}
-        position={[0, 4, -7]}
-      />
-      <Lightformer
-        form="rect"
-        intensity={0.18}
-        color="#0f2233"
-        scale={[12, 1.1, 1]}
-        position={[0, -4, 7]}
-      />
-      <Lightformer
-        form="rect"
-        intensity={0.24}
-        color="#4ca9ff"
-        scale={[1.2, 12, 1]}
-        position={[-7, 0, 1]}
-      />
-      <Lightformer
-        form="rect"
-        intensity={0.18}
-        color="#2f5f99"
-        scale={[1.2, 12, 1]}
-        position={[7, 0, -1]}
-      />
-      <Lightformer
-        form="rect"
-        intensity={0.2}
-        color="#ffffff"
-        scale={[2.5, 2.5, 1]}
-        position={[0, 0, 8]}
-      />
-      <Lightformer
-        form="rect"
-        intensity={0.14}
-        color="#14324d"
-        scale={[2.5, 2.5, 1]}
-        position={[0, 0, -8]}
-      />
-    </group>
-  </Environment>
+  <Environment
+    files={REFLECTION_ENVIRONMENT.assetUrl}
+    background={false}
+    environmentIntensity={REFLECTION_ENVIRONMENT.intensity}
+    environmentRotation={REFLECTION_ENVIRONMENT.rotation}
+  />
 );
 
 const WaveHalo = ({ state }: { state: OracState }) => {
@@ -831,7 +797,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
       case 'listening':
         // 3% breathing for inner cube
         innerScale *= (1 + Math.sin(t * 1.5) * 0.03);
-        outerOpacity = 0.16;
+        outerOpacity = 0.2;
         innerOpacity = 0.14;
           {
             const idlePulse = (Math.sin(t * 0.8) + 1) * 0.5;
@@ -1036,6 +1002,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
           distortionScale={OUTER_CUBE_SURFACE.distortionScale}
           temporalDistortion={0}
           clearcoat={OUTER_CUBE_SURFACE.clearcoat}
+          envMapIntensity={OUTER_CUBE_SURFACE.envMapIntensity}
           attenuationDistance={1.2}
           attenuationColor={OUTER_CUBE_SURFACE.color}
           color={OUTER_CUBE_SURFACE.color}
