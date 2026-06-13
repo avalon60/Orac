@@ -168,16 +168,16 @@ const TESSERACT_AURA: TesseractAuraConfig = {
   xOffsetPct: 50,
   yOffsetPct: 47.5,
   size: 'clamp(38rem, 64vw, 72rem)',
-  opacityIdle: 0.14,
-  opacityListening: 0.16,
-  opacitySpeaking: 0.24,
+  opacityIdle: 0.13,
+  opacityListening: 0.15,
+  opacitySpeaking: 0.28,
   scaleIdle: 1,
-  scaleSpeaking: 1.08,
-  innerHolePct: 30,
-  ringThicknessPct: 22,
-  blurPx: 10,
+  scaleSpeaking: 1.09,
+  innerHolePct: 34,
+  ringThicknessPct: 18,
+  blurPx: 6,
   brightnessIdle: 1.02,
-  speakingBrightness: 1.16,
+  speakingBrightness: 1.22,
   blendMode: 'screen',
 };
 
@@ -1430,13 +1430,13 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
                       }
                     : {
                         opacity: [
-                          auraState.opacity * 0.92,
+                          auraState.opacity * (state === 'speaking' ? 0.86 : 0.94),
                           auraState.opacity,
-                          auraState.opacity * 0.96,
+                          auraState.opacity * (state === 'speaking' ? 0.92 : 0.97),
                         ],
                         scale: [
                           auraState.scale,
-                          auraState.scale * 1.01,
+                          auraState.scale * (state === 'speaking' ? 1.025 : 1.008),
                           auraState.scale,
                         ],
                       }

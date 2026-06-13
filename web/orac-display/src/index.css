@@ -37,6 +37,7 @@ canvas {
 }
 
 .orac-tesseract-aura-ring {
+  position: relative;
   width: 100%;
   height: 100%;
   opacity: 0.12;
@@ -46,19 +47,70 @@ canvas {
   mix-blend-mode: var(--orac-aura-blend-mode, screen);
   filter:
     brightness(var(--orac-aura-brightness, 1))
-    blur(var(--orac-aura-blur, 10px))
-    saturate(1.12)
-    contrast(1.05);
+    blur(var(--orac-aura-blur, 6px))
+    saturate(1.16)
+    contrast(1.08);
   will-change: transform, opacity, filter;
   background: radial-gradient(
     circle at center,
     transparent 0,
-    transparent calc(var(--orac-aura-inner-hole, 30%) - 1%),
-    rgba(112, 210, 244, 0.08) var(--orac-aura-inner-hole, 30%),
-    rgba(153, 237, 255, 0.5) calc(var(--orac-aura-inner-hole, 30%) + 8%),
-    rgba(102, 190, 238, 0.32) calc(var(--orac-aura-inner-hole, 30%) + var(--orac-aura-ring-thickness, 22%)),
-    rgba(104, 86, 205, 0.1) calc(var(--orac-aura-inner-hole, 30%) + var(--orac-aura-ring-thickness, 22%) + 7%),
-    transparent calc(var(--orac-aura-inner-hole, 30%) + var(--orac-aura-ring-thickness, 22%) + 15%)
+    transparent calc(var(--orac-aura-inner-hole, 34%) - 0.75%),
+    rgba(130, 224, 248, 0.08) var(--orac-aura-inner-hole, 34%),
+    rgba(162, 241, 255, 0.52) calc(var(--orac-aura-inner-hole, 34%) + 4%),
+    rgba(104, 202, 239, 0.3) calc(var(--orac-aura-inner-hole, 34%) + 11%),
+    rgba(84, 151, 224, 0.38) calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%)),
+    rgba(94, 72, 190, 0.13) calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) + 4%),
+    transparent calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) + 10%)
+  );
+}
+
+.orac-tesseract-aura-ring::before,
+.orac-tesseract-aura-ring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.orac-tesseract-aura-ring::before {
+  opacity: 0.42;
+  background: conic-gradient(
+    from 18deg,
+    rgba(92, 194, 239, 0.12),
+    rgba(150, 240, 255, 0.58) 8%,
+    rgba(63, 128, 218, 0.18) 17%,
+    rgba(118, 225, 250, 0.5) 29%,
+    rgba(68, 112, 207, 0.14) 43%,
+    rgba(148, 237, 255, 0.55) 57%,
+    rgba(74, 153, 226, 0.16) 71%,
+    rgba(129, 229, 251, 0.48) 86%,
+    rgba(92, 194, 239, 0.12)
+  );
+  -webkit-mask: radial-gradient(
+    circle,
+    transparent 0 calc(var(--orac-aura-inner-hole, 34%) + 2%),
+    #000 calc(var(--orac-aura-inner-hole, 34%) + 5%),
+    #000 calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) + 3%),
+    transparent calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) + 8%)
+  );
+  mask: radial-gradient(
+    circle,
+    transparent 0 calc(var(--orac-aura-inner-hole, 34%) + 2%),
+    #000 calc(var(--orac-aura-inner-hole, 34%) + 5%),
+    #000 calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) + 3%),
+    transparent calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) + 8%)
+  );
+  filter: blur(1.5px);
+}
+
+.orac-tesseract-aura-ring::after {
+  background: radial-gradient(
+    circle,
+    transparent 0 calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) - 1%),
+    rgba(153, 232, 255, 0.38) calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%)),
+    rgba(82, 133, 222, 0.2) calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) + 1.5%),
+    transparent calc(var(--orac-aura-inner-hole, 34%) + var(--orac-aura-ring-thickness, 18%) + 4%)
   );
 }
 
