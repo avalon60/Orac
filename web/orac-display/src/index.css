@@ -23,3 +23,88 @@ body {
 canvas {
   display: block;
 }
+
+.orac-tesseract-aura-anchor {
+  position: absolute;
+  left: var(--orac-aura-x, 50%);
+  top: var(--orac-aura-y, 48%);
+  width: var(--orac-aura-size, clamp(34rem, 58vw, 58rem));
+  aspect-ratio: 1 / 1;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  user-select: none;
+  z-index: 5;
+}
+
+.orac-tesseract-aura-ring {
+  width: 100%;
+  height: 100%;
+  opacity: 0.12;
+  pointer-events: none;
+  user-select: none;
+  border-radius: 9999px;
+  mix-blend-mode: var(--orac-aura-blend-mode, screen);
+  filter:
+    brightness(var(--orac-aura-brightness, 1))
+    blur(var(--orac-aura-blur, 10px))
+    saturate(1.12)
+    contrast(1.05);
+  will-change: transform, opacity, filter;
+  background: radial-gradient(
+    circle at center,
+    transparent 0,
+    transparent calc(var(--orac-aura-inner-hole, 30%) - 1%),
+    rgba(112, 210, 244, 0.08) var(--orac-aura-inner-hole, 30%),
+    rgba(153, 237, 255, 0.5) calc(var(--orac-aura-inner-hole, 30%) + 8%),
+    rgba(102, 190, 238, 0.32) calc(var(--orac-aura-inner-hole, 30%) + var(--orac-aura-ring-thickness, 22%)),
+    rgba(104, 86, 205, 0.1) calc(var(--orac-aura-inner-hole, 30%) + var(--orac-aura-ring-thickness, 22%) + 7%),
+    transparent calc(var(--orac-aura-inner-hole, 30%) + var(--orac-aura-ring-thickness, 22%) + 15%)
+  );
+}
+
+.orac-tesseract-aura-anchor--debug {
+  z-index: 20;
+  outline: 2px dashed rgba(255, 92, 224, 0.85);
+  outline-offset: 3px;
+}
+
+.orac-tesseract-aura-anchor--debug .orac-tesseract-aura-ring {
+  border: 2px solid rgba(132, 240, 255, 0.95);
+  mix-blend-mode: normal;
+  filter: none;
+  background: radial-gradient(
+    circle at center,
+    transparent 0,
+    transparent calc(var(--orac-aura-inner-hole, 30%) - 1%),
+    rgba(0, 218, 255, 0.25) var(--orac-aura-inner-hole, 30%),
+    rgba(0, 224, 255, 0.95) calc(var(--orac-aura-inner-hole, 30%) + 4%),
+    rgba(91, 126, 255, 0.85) calc(var(--orac-aura-inner-hole, 30%) + var(--orac-aura-ring-thickness, 22%)),
+    rgba(179, 70, 255, 0.25) calc(var(--orac-aura-inner-hole, 30%) + var(--orac-aura-ring-thickness, 22%) + 5%),
+    transparent calc(var(--orac-aura-inner-hole, 30%) + var(--orac-aura-ring-thickness, 22%) + 9%)
+  );
+}
+
+.orac-tesseract-aura-crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4rem;
+  height: 4rem;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.9;
+  color: rgba(255, 92, 224, 0.95);
+  background:
+    radial-gradient(circle at center, currentColor 0 0.12rem, transparent 0.14rem),
+    linear-gradient(to right, transparent calc(50% - 0.05rem), currentColor calc(50% - 0.05rem), currentColor calc(50% + 0.05rem), transparent calc(50% + 0.05rem)),
+    linear-gradient(to bottom, transparent calc(50% - 0.05rem), currentColor calc(50% - 0.05rem), currentColor calc(50% + 0.05rem), transparent calc(50% + 0.05rem));
+  filter: drop-shadow(0 0 8px rgba(255, 92, 224, 0.8));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orac-tesseract-aura-ring {
+    transition: opacity 0.2s linear;
+    animation: none !important;
+  }
+}

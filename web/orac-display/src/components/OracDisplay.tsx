@@ -13,7 +13,7 @@ import {
 } from '@react-three/drei';
 import { EffectComposer, Bloom, Noise, Glitch } from '@react-three/postprocessing';
 import * as THREE from 'three';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   attachCanvasDiagnostics,
   logDisplayDiagnostic,
@@ -46,6 +46,25 @@ interface TesseractTheme {
   coreBase: string;
   coreGlow: string;
   coreHighlight: string;
+}
+
+interface TesseractAuraConfig {
+  enabled: boolean;
+  debugEnabled: boolean;
+  xOffsetPct: number;
+  yOffsetPct: number;
+  size: string;
+  opacityIdle: number;
+  opacityListening: number;
+  opacitySpeaking: number;
+  scaleIdle: number;
+  scaleSpeaking: number;
+  innerHolePct: number;
+  ringThicknessPct: number;
+  blurPx: number;
+  brightnessIdle: number;
+  speakingBrightness: number;
+  blendMode: 'screen' | 'lighten';
 }
 
 interface OracDisplayProps {
@@ -139,6 +158,27 @@ const TESSERACT_THEME: TesseractTheme = {
   coreBase: '#f5fbff',
   coreGlow: '#9edfee',
   coreHighlight: '#ffffff',
+};
+
+const TESSERACT_AURA: TesseractAuraConfig = {
+  enabled: import.meta.env.VITE_ORAC_TESSERACT_AURA_ENABLED?.trim().toLowerCase() !== 'false',
+  debugEnabled:
+    import.meta.env.DEV &&
+    import.meta.env.VITE_ORAC_TESSERACT_AURA_DEBUG?.trim().toLowerCase() === 'true',
+  xOffsetPct: 50,
+  yOffsetPct: 47.5,
+  size: 'clamp(38rem, 64vw, 72rem)',
+  opacityIdle: 0.14,
+  opacityListening: 0.16,
+  opacitySpeaking: 0.24,
+  scaleIdle: 1,
+  scaleSpeaking: 1.08,
+  innerHolePct: 30,
+  ringThicknessPct: 22,
+  blurPx: 10,
+  brightnessIdle: 1.02,
+  speakingBrightness: 1.16,
+  blendMode: 'screen',
 };
 
 const CORE_PALETTES: Record<OracState, CorePalette> = {
@@ -1299,6 +1339,22 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
     state === 'reading_sources' ||
     state === 'tool_calling' ||
     state === 'speaking';
+  const prefersReducedMotion = useReducedMotion();
+  const auraState = TESSERACT_AURA.enabled
+    ? {
+        opacity:
+          state === 'speaking'
+            ? TESSERACT_AURA.opacitySpeaking
+            : state === 'listening' || state === 'wake_detected'
+              ? TESSERACT_AURA.opacityListening
+              : TESSERACT_AURA.opacityIdle,
+        scale: state === 'speaking' ? TESSERACT_AURA.scaleSpeaking : TESSERACT_AURA.scaleIdle,
+        brightness:
+          state === 'speaking'
+            ? TESSERACT_AURA.speakingBrightness
+            : TESSERACT_AURA.brightnessIdle,
+      }
+    : null;
   const leftTranscript =
     userTranscript.trim() || 'No recent utterance';
   const rightTranscript =
@@ -1347,9 +1403,80 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
           </div>
         )}
 
-        <div className="w-full h-full min-h-0 relative">
+        <div className="relative h-full min-h-0 w-full overflow-hidden">
+          {auraState && (
+            <div
+              className={`orac-tesseract-aura-anchor${
+                TESSERACT_AURA.debugEnabled ? ' orac-tesseract-aura-anchor--debug' : ''
+              }`}
+              style={
+                {
+                  '--orac-aura-x': `${TESSERACT_AURA.xOffsetPct}%`,
+                  '--orac-aura-y': `${TESSERACT_AURA.yOffsetPct}%`,
+                  '--orac-aura-size': TESSERACT_AURA.size,
+                } as React.CSSProperties
+              }
+              aria-hidden="true"
+            >
+              <motion.div
+                key="tesseract-aura"
+                className="orac-tesseract-aura-ring"
+                initial={false}
+                animate={
+                  TESSERACT_AURA.debugEnabled || prefersReducedMotion
+                    ? {
+                        opacity: TESSERACT_AURA.debugEnabled ? 0.8 : auraState.opacity,
+                        scale: auraState.scale,
+                      }
+                    : {
+                        opacity: [
+                          auraState.opacity * 0.92,
+                          auraState.opacity,
+                          auraState.opacity * 0.96,
+                        ],
+                        scale: [
+                          auraState.scale,
+                          auraState.scale * 1.01,
+                          auraState.scale,
+                        ],
+                      }
+                }
+                transition={
+                  TESSERACT_AURA.debugEnabled || prefersReducedMotion
+                    ? { duration: 0 }
+                    : {
+                        duration: state === 'speaking' ? 5.6 : 9.5,
+                        repeat: Infinity,
+                        ease: 'easeInOut',
+                      }
+                }
+                style={
+                  {
+                    '--orac-aura-brightness': auraState.brightness,
+                    '--orac-aura-blend-mode': TESSERACT_AURA.blendMode,
+                    '--orac-aura-inner-hole': `${TESSERACT_AURA.innerHolePct}%`,
+                    '--orac-aura-ring-thickness': `${TESSERACT_AURA.ringThicknessPct}%`,
+                    '--orac-aura-blur': `${TESSERACT_AURA.blurPx}px`,
+                  } as React.CSSProperties
+                }
+              />
+              {TESSERACT_AURA.debugEnabled && (
+                <div className="orac-tesseract-aura-crosshair" />
+              )}
+            </div>
+          )}
+
           <CanvasErrorBoundary resetKey={renderResetKey}>
-            <Canvas key={renderResetKey} gl={{ antialias: false }} dpr={[1, 1.5]}>
+            <Canvas
+              key={renderResetKey}
+              className="relative z-10"
+              gl={{ antialias: false, alpha: true, premultipliedAlpha: false }}
+              onCreated={({ gl, scene }) => {
+                gl.setClearColor(0x000000, 0);
+                scene.background = null;
+              }}
+              dpr={[1, 1.5]}
+            >
               <CanvasDiagnostics onRecovery={onRenderRecovery} />
               <Scene state={visualState} />
             </Canvas>
