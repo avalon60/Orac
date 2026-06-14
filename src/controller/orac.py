@@ -3541,7 +3541,7 @@ class Orac:
         model_name: str,
         llm_source: str | None,
         user_registration: str,
-        session_id: str | None = None,
+        voice_session_id: str | None = None,
         turn_id: str | None = None,
         stop_reason: str = "stop",
     ) -> None:
@@ -3552,7 +3552,7 @@ class Orac:
             "stream_start",
             payload={
                 "content_type": "text",
-                "voice_session_id": session_id,
+                "voice_session_id": voice_session_id,
                 "turn_id": turn_id or req_env.get("id"),
             },
             model_name=model_name,
@@ -3579,8 +3579,8 @@ class Orac:
                     "text_chunk",
                     payload={
                         "chunk": chunk,
-                        "session_id": session_id,
-                        "voice_session_id": (req_env.get("meta") or {}).get("session_id"),
+                        "session_id": voice_session_id,
+                        "voice_session_id": voice_session_id,
                         "turn_id": turn_id or req_env.get("id"),
                     },
                     model_name=model_name,
@@ -3593,7 +3593,7 @@ class Orac:
             "stream_end",
             payload={
                 "stop_reason": stop_reason,
-                "voice_session_id": session_id,
+                "voice_session_id": voice_session_id,
                 "turn_id": turn_id or req_env.get("id"),
             },
             model_name=model_name,
@@ -4499,7 +4499,7 @@ class Orac:
                             if request_flags["anonymous_user"]
                             else "registered"
                         ),
-                        session_id=session_id,
+                        voice_session_id=incoming_voice_session_id,
                         turn_id=str(req_env.get("id") or ""),
                         stop_reason="stop",
                     )
@@ -4696,7 +4696,7 @@ class Orac:
                                 if request_flags["anonymous_user"]
                                 else "registered"
                             ),
-                            session_id=session_id,
+                            voice_session_id=incoming_voice_session_id,
                             turn_id=str(req_env.get("id") or ""),
                             stop_reason="stop",
                         )
@@ -4767,7 +4767,7 @@ class Orac:
                                 if request_flags["anonymous_user"]
                                 else "registered"
                             ),
-                            session_id=session_id,
+                            voice_session_id=incoming_voice_session_id,
                             turn_id=str(req_env.get("id") or ""),
                             stop_reason="stop",
                         )
@@ -4967,7 +4967,7 @@ class Orac:
                                     if request_flags["anonymous_user"]
                                     else "registered"
                                 ),
-                                session_id=session_id,
+                                voice_session_id=incoming_voice_session_id,
                                 turn_id=str(req_env.get("id") or ""),
                                 stop_reason="stop",
                             )
@@ -4994,21 +4994,27 @@ class Orac:
                 )
 
             if plugin_execution_result is not None and plugin_execution_result.handled:
-                content = plugin_execution_result.content
-                plugin_provenance = plugin_execution_result.provenance
-                last_ti = self._save_assistant_turn(
-                    session_id,
-                    auth_user,
-                    content,
-                    client=client,
-                    req_id=req_env.get("id"),
-                    show_reasoning=show_reasoning,
-                    llm_id=effective_llm_id,
-                    provenance=plugin_provenance,
-                    request_flags=request_flags,
+                plugin_content = str(plugin_execution_result.content or "")
+                has_user_facing_response = (
+                    not plugin_execution_result.silent
+                    and bool(plugin_content.strip())
                 )
-                self._maybe_set_conversation_title(session_id, meta, llm_connector)
-                self._maybe_prune(session_id, last_ti)
+                content = plugin_content if has_user_facing_response else ""
+                plugin_provenance = plugin_execution_result.provenance
+                if has_user_facing_response:
+                    last_ti = self._save_assistant_turn(
+                        session_id,
+                        auth_user,
+                        content,
+                        client=client,
+                        req_id=req_env.get("id"),
+                        show_reasoning=show_reasoning,
+                        llm_id=effective_llm_id,
+                        provenance=plugin_provenance,
+                        request_flags=request_flags,
+                    )
+                    self._maybe_set_conversation_title(session_id, meta, llm_connector)
+                    self._maybe_prune(session_id, last_ti)
                 resp_env = self._build_response(
                     req_env,
                     content,
@@ -5033,7 +5039,7 @@ class Orac:
                             if request_flags["anonymous_user"]
                             else "registered"
                         ),
-                        session_id=session_id,
+                        voice_session_id=incoming_voice_session_id,
                         turn_id=str(req_env.get("id") or ""),
                         stop_reason=plugin_execution_result.stop_reason,
                     )

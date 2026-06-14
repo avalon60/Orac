@@ -5615,6 +5615,88 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     )
     self.assertTrue(all(state[3] == "req_current" for state in sender.states))
 
+  async def test_plugin_response_uses_standard_display_state_lifecycle(
+    self,
+  ) -> None:
+    """Plugin provenance must not bypass speaking and playback completion."""
+    frames = [
+      {
+        "v": 1,
+        "type": "stream_start",
+        "reply_to": "req_current",
+        "meta": {"source": "plugin_execution"},
+        "payload": {},
+      },
+      {
+        "v": 1,
+        "type": "text_delta",
+        "reply_to": "req_current",
+        "meta": {"source": "plugin_execution"},
+        "payload": {"delta": "The TV light is on."},
+      },
+      {
+        "v": 1,
+        "type": "text_chunk",
+        "reply_to": "req_current",
+        "meta": {"source": "plugin_execution"},
+        "payload": {
+          "chunk": "The TV light is on.",
+          "turn_id": "req_current",
+        },
+      },
+      {
+        "v": 1,
+        "type": "stream_end",
+        "reply_to": "req_current",
+        "meta": {"source": "plugin_execution"},
+        "payload": {"stop_reason": "stop"},
+      },
+      {
+        "v": 1,
+        "type": "response",
+        "reply_to": "req_current",
+        "meta": {
+          "source": "plugin_execution",
+          "provenance": {"plugin_id": "home_assistant"},
+        },
+        "payload": {"content": "The TV light is on."},
+      },
+      {
+        "v": 1,
+        "type": "tts_playback_started",
+        "reply_to": "req_current",
+        "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+      },
+      {
+        "v": 1,
+        "type": "tts_playback_finished",
+        "reply_to": "req_current",
+        "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+      },
+      {
+        "v": 1,
+        "type": "voice_turn_complete",
+        "reply_to": "req_current",
+        "payload": {"turn_id": "req_current"},
+      },
+    ]
+    sender = _FakeDisplaySender()
+    controller = VoiceTurnController(
+      reader=self._reader_with_frames(frames),
+      writer=_FakeStreamWriter(),
+      prompt_text="Is the TV light on?",
+      voice_session_id="voice-session",
+      display_sender=sender,
+    )
+
+    status = await controller.run()
+
+    self.assertEqual(status, 0)
+    self.assertEqual(
+      [state[0] for state in sender.states],
+      ["thinking", "speaking", "idle"],
+    )
+
   async def test_voice_prompt_forwards_runtime_identity_to_display(self) -> None:
     """Prompt handling should expose the current model and persona."""
     reader = asyncio.StreamReader()

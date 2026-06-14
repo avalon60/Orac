@@ -34,6 +34,7 @@ class PluginExecutionResult:
     handled: bool = True
     stop_reason: str = "stop"
     provenance: dict[str, Any] = field(default_factory=dict)
+    silent: bool = False
 
 
 @dataclass(frozen=True)

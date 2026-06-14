@@ -56,6 +56,9 @@ from controller.orac import Orac
 from model.context_manager import OracContextManager
 from model.llm_connector import LLMUsageMetadata
 from model.plugin_runtime import PluginExecutionResult
+from orac_voice.voice_events import VoiceTtsPlaybackFinished
+from orac_voice.voice_events import VoiceTtsPlaybackStarted
+from orac_voice.voice_events import VoiceTurnComplete
 from orac_core.retrieval import FetchedSource
 from orac_core.retrieval import GroundingPackBuilder
 from orac_core.retrieval import GroundingPack
@@ -796,6 +799,26 @@ class _ConditionalPluginRouter:
         if prompt == "What is the weather like in Brigadoon?":
             return PluginExecutionResult(plugin_id="weather", content=self.weather_content)
         return None
+
+
+class _StaticPluginRouter:
+    """Return one configured handled result for every prompt."""
+
+    def __init__(self, result: PluginExecutionResult) -> None:
+        self.result = result
+
+    def route(
+        self,
+        prompt: str,
+        meta: dict,
+        handoff,
+        auth_user: str | None = None,
+        *,
+        audit_adapter=None,
+        request_context=None,
+    ) -> PluginExecutionResult:
+        del prompt, meta, handoff, auth_user, audit_adapter, request_context
+        return self.result
 
 
 class _FakeDBSession:
@@ -1740,6 +1763,135 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         second_prompt = orchestrator.llm.prompts[0]
         self.assertIn(plugin_content, second_prompt)
         self.assertIn("USER: What is the weather like in Brigadoon?", second_prompt)
+
+    async def test_plugin_spoken_response_uses_incoming_voice_session(self) -> None:
+        """Plugin TTS lifecycle events must reach the active voice subscriber."""
+        plugin_content = "The TV light is on."
+        orchestrator = self._make_orac_stub(
+            llm_responses=[],
+            plugin_router=_StaticPluginRouter(
+                PluginExecutionResult(
+                    plugin_id="home_assistant",
+                    content=plugin_content,
+                )
+            ),
+        )
+        orchestrator._tts_coalescer = None
+
+        class _LifecycleVoiceWorker:
+            """Emit deterministic playback events for queued plugin speech."""
+
+            def enqueue_text(
+                self,
+                *,
+                session_id: str,
+                turn_id: str,
+                text: str,
+                tts_voice=None,
+            ) -> bool:
+                del text, tts_voice
+                orchestrator._publish_voice_playback_event(
+                    VoiceTtsPlaybackStarted(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        utterance_id="plugin-utterance",
+                    )
+                )
+                return True
+
+            def mark_turn_input_complete(
+                self,
+                *,
+                session_id: str,
+                turn_id: str,
+            ) -> None:
+                orchestrator._publish_voice_playback_event(
+                    VoiceTtsPlaybackFinished(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        utterance_id="plugin-utterance",
+                    )
+                )
+                orchestrator._publish_voice_playback_event(
+                    VoiceTurnComplete(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        reason="completed",
+                    )
+                )
+
+        orchestrator._tts_worker = _LifecycleVoiceWorker()
+
+        frames = []
+        async for wire in orchestrator.handle_request_events(
+            self._request(
+                "Is the TV light on?",
+                req_id="req-plugin-voice",
+                meta={"stream": True, "session_id": "voice-session"},
+            )
+        ):
+            frames.append(json.loads(wire))
+
+        frame_types = [frame.get("type") for frame in frames]
+        self.assertIn("tts_playback_started", frame_types)
+        self.assertIn("tts_playback_finished", frame_types)
+        self.assertIn("voice_turn_complete", frame_types)
+        text_chunks = [
+            frame for frame in frames if frame.get("type") == "text_chunk"
+        ]
+        self.assertEqual(len(text_chunks), 1)
+        self.assertEqual(
+            text_chunks[0]["payload"]["voice_session_id"],
+            "voice-session",
+        )
+
+    async def test_silent_plugin_results_emit_no_speech_or_assistant_turn(self) -> None:
+        """Explicit and legacy blank plugin results should remain silent."""
+        cases = (
+            PluginExecutionResult(
+                plugin_id="silent_plugin",
+                content="Internal action result",
+                silent=True,
+            ),
+            PluginExecutionResult(plugin_id="silent_plugin", content=""),
+        )
+
+        for index, plugin_result in enumerate(cases):
+            with self.subTest(index=index):
+                context_manager = _MemoryContextManager()
+                orchestrator = self._make_orac_stub(
+                    llm_responses=[],
+                    plugin_router=_StaticPluginRouter(plugin_result),
+                    context_manager=context_manager,
+                )
+                stream_events: list[dict] = []
+
+                async def _event_sink(event: dict) -> None:
+                    stream_events.append(event)
+
+                response_wire = await orchestrator.handle_request(
+                    self._request(
+                        "Perform the silent action.",
+                        req_id=f"req-silent-{index}",
+                        meta={"stream": True, "session_id": "voice-session"},
+                    ),
+                    event_sink=_event_sink,
+                )
+                response = json.loads(response_wire)
+
+                self.assertEqual(response["payload"]["content"], "")
+                self.assertFalse(
+                    any(
+                        event.get("type") in {"text_delta", "text_chunk"}
+                        for event in stream_events
+                    )
+                )
+                self.assertFalse(
+                    any(
+                        role == "assistant"
+                        for _session_id, role, _text in context_manager.saved_events
+                    )
+                )
 
     async def test_same_authenticated_user_reuses_same_open_conversation_within_timeout(self) -> None:
         context_manager = _MemoryContextManager()
