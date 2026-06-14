@@ -32,6 +32,11 @@ interface StateConfig {
 
 interface TesseractMotionConfig {
   rotationDamping: number;
+  initialYaw: number;
+  basePitch: number;
+  baseRoll: number;
+  pitchAmplitude: number;
+  rollAmplitude: number;
   floatSpeed: number;
   floatIntensity: number;
   rotationSpeedByState: Record<OracState, number>;
@@ -157,6 +162,11 @@ const STATE_CONFIGS: Record<OracState, StateConfig> = {
 
 const TESSERACT_MOTION: TesseractMotionConfig = {
   rotationDamping: 2.4,
+  initialYaw: 0.58,
+  basePitch: 0.42,
+  baseRoll: -0.08,
+  pitchAmplitude: 0.1,
+  rollAmplitude: 0.05,
   floatSpeed: 0.24,
   floatIntensity: 0.28,
   rotationSpeedByState: {
@@ -174,6 +184,8 @@ const TESSERACT_MOTION: TesseractMotionConfig = {
     error: 0.015,
   },
 };
+
+const IDLE_SPARKLE_RATE_SCALE = 0.1;
 
 const TESSERACT_THEME: TesseractTheme = {
   baseLine: '#8ad6ef',
@@ -733,30 +745,27 @@ const Tesseract = ({
   prefersReducedMotion: boolean;
 }) => {
   // Base sizes
-  const outerBaseSize = 2;
+  const outerBaseSize = 1.75;
   const innerBaseSize = 1.3;
   const coreBaseRadius = 0.16;
 
   const groupRef = useRef<THREE.Group>(null);
   const innerRef = useRef<THREE.Mesh>(null);
   const outerRef = useRef<THREE.Mesh>(null);
-  const outerGlowRef = useRef<THREE.Mesh>(null);
-  const innerGlowRef = useRef<THREE.Mesh>(null);
   const coreHaloRef = useRef<THREE.Mesh>(null);
   const coreRef = useRef<THREE.Mesh>(null);
   const coreGlowRef = useRef<THREE.Mesh>(null);
   const coreHighlightRef = useRef<THREE.Mesh>(null);
   const connectorRef = useRef<THREE.LineSegments>(null);
   const outerEdgeMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
-  const outerGlowEdgeMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
   const innerEdgeMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
-  const innerGlowEdgeMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
   const connectorMaterialRef = useRef<THREE.LineBasicMaterial>(null);
   const cornerFlaresRef = useRef<THREE.InstancedMesh>(null);
   const orbitalCoreRadiusRef = useRef<number>(coreBaseRadius);
   const rotationSpeedRef = useRef(
     prefersReducedMotion ? 0 : TESSERACT_MOTION.rotationSpeedByState[motionState],
   );
+  const rotationPhaseRef = useRef(TESSERACT_MOTION.initialYaw);
   const cornerDummy = useMemo(() => new THREE.Object3D(), []);
   const config = STATE_CONFIGS[state];
   const corePalette = CORE_PALETTES[state];
@@ -819,9 +828,15 @@ const Tesseract = ({
       delta,
     );
     const rotSpeed = rotationSpeedRef.current;
-    groupRef.current.rotation.y += delta * rotSpeed;
-    groupRef.current.rotation.x += delta * (rotSpeed * 0.5);
-    groupRef.current.rotation.z += delta * (rotSpeed * 0.25);
+    rotationPhaseRef.current = (rotationPhaseRef.current + delta * rotSpeed) % (Math.PI * 2);
+    const rotationPhase = rotationPhaseRef.current;
+    groupRef.current.rotation.set(
+      TESSERACT_MOTION.basePitch
+        + Math.sin(rotationPhase) * TESSERACT_MOTION.pitchAmplitude,
+      rotationPhase,
+      TESSERACT_MOTION.baseRoll
+        + Math.sin(rotationPhase * 2 + 0.8) * TESSERACT_MOTION.rollAmplitude,
+    );
 
     // 2. State-driven animations for the inner core, central sphere, and connectors
     let innerScale = innerBaseSize * config.scale;
@@ -971,17 +986,9 @@ const Tesseract = ({
       outerEdgeMaterialRef.current.color.set(speakingLineBaseColor);
       outerEdgeMaterialRef.current.opacity = isSpeaking ? 0.9 + speakingShimmer * 0.06 : 0.62;
     }
-    if (outerGlowEdgeMaterialRef.current) {
-      outerGlowEdgeMaterialRef.current.color.set(speakingGlowBaseColor);
-      outerGlowEdgeMaterialRef.current.opacity = isSpeaking ? 0.26 + speakingPulse * 0.24 : 0.06;
-    }
     if (innerEdgeMaterialRef.current) {
       innerEdgeMaterialRef.current.color.set(speakingLineBaseColor);
       innerEdgeMaterialRef.current.opacity = isSpeaking ? 0.78 + speakingShimmer * 0.07 : 0.58;
-    }
-    if (innerGlowEdgeMaterialRef.current) {
-      innerGlowEdgeMaterialRef.current.color.set(speakingGlowBaseColor);
-      innerGlowEdgeMaterialRef.current.opacity = isSpeaking ? 0.22 + speakingPulse * 0.18 : 0.04;
     }
 
     // 3. Update connector line vertices
@@ -1069,22 +1076,6 @@ const Tesseract = ({
         </Edges>
       </mesh>
 
-      <mesh ref={outerGlowRef} scale={[1.022, 1.022, 1.022]} renderOrder={12}>
-        <boxGeometry args={[outerBaseSize, outerBaseSize, outerBaseSize]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} toneMapped={false} />
-        <Edges threshold={15} color={edgeColor}>
-          <meshBasicMaterial
-            ref={outerGlowEdgeMaterialRef}
-            color={edgeColor}
-            transparent
-            opacity={0}
-            blending={THREE.AdditiveBlending}
-            depthWrite={false}
-            toneMapped={false}
-          />
-        </Edges>
-      </mesh>
-
       {/* Inner Cube */}
       <mesh ref={innerRef}>
         <boxGeometry args={[innerBaseSize, innerBaseSize, innerBaseSize]} />
@@ -1112,22 +1103,6 @@ const Tesseract = ({
             color={edgeColor}
             transparent
             opacity={0.58}
-            depthWrite={false}
-            toneMapped={false}
-          />
-        </Edges>
-      </mesh>
-
-      <mesh ref={innerGlowRef} scale={[1.03, 1.03, 1.03]} renderOrder={13}>
-        <boxGeometry args={[innerBaseSize, innerBaseSize, innerBaseSize]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} toneMapped={false} />
-        <Edges threshold={15} color={edgeColor}>
-          <meshBasicMaterial
-            ref={innerGlowEdgeMaterialRef}
-            color={edgeColor}
-            transparent
-            opacity={0}
-            blending={THREE.AdditiveBlending}
             depthWrite={false}
             toneMapped={false}
           />
@@ -1248,7 +1223,9 @@ const Scene = ({
     ? idleSparkleSpeed * 6
     : isSpeaking
       ? idleSparkleSpeed * 2
-      : isIdle
+      : motionState === 'idle'
+        ? idleSparkleSpeed * IDLE_SPARKLE_RATE_SCALE
+        : isIdle
         ? idleSparkleSpeed
         : config.pulseRate * 0.18;
   const sparkleOpacity = isError ? 0.14 : isIdle ? 0.28 : isSpeaking ? 0.62 : isThinking ? 0.58 : 0.42;
