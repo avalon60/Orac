@@ -367,6 +367,11 @@ SQL
       echo "missing ORDS config directory: /home/oracle/orac/ords/conf"
       exit 1
     fi
+    if [[ ! -L /home/oracle/orac/ords/conf ]] ||
+       [[ "$(readlink /home/oracle/orac/ords/conf)" != "/opt/oracle/oradata/orac/ords/conf" ]]; then
+      echo "ORDS runtime config is not linked to persistent config: /home/oracle/orac/ords/conf"
+      exit 1
+    fi
     /home/oracle/orac/ords/bin/ords --config /home/oracle/orac/ords/conf config list 2>&1
   ' 2>&1)" || {
     echo "❌ ORDS config validation command failed:"
@@ -394,10 +399,10 @@ wait_for_ords_apex_app() {
 
   while true; do
     output="$(docker exec "$container" bash -lc '
-      curl -sS -i --max-time 10 "http://127.0.0.1:8080/ords/f?p=1042" 2>&1 || true
+      curl -sS -i --max-time 10 "http://127.0.0.1:8080/ords/r/orac/orac-administration1042/login" 2>&1 || true
     ' 2>&1)"
 
-    if grep -Eq 'APEX_APP_ID: 1042|Location: .*f\?p=1042:1|HTTP/[0-9.]+ 200' <<<"$output" &&
+    if grep -Eq 'APEX_APP_ID: 1042|Orac Administration - Log In|HTTP/[0-9.]+ 200' <<<"$output" &&
        ! grep -Eq 'ERR-7620|Application not found|Could not determine workspace' <<<"$output"; then
       echo "✅ ORDS is serving APEX application 1042."
       return 0
@@ -477,6 +482,7 @@ run_container_with_retries() {
     echo "🎉 '${CONTAINER_NAME}' is up"
     echo "📡 SQL*Net  : ${PORT_SQLNET}"
     echo "🌐 ORDS/HTTP: http://localhost:${PORT_HTTP}"
+    echo "🌐 APEX admin: http://localhost:${PORT_HTTP}/ords/r/orac/orac-administration1042/login"
     echo "📂 Oradata  : ${ORADATA_DIR}"
     echo -e "⏳ Deploying Orac components..."
 

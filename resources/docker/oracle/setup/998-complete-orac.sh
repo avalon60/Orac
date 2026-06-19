@@ -15,6 +15,7 @@ orac_deployment_complete() {
   local orac_home="${ORAC_HOME:-/home/oracle/orac}"
   local ords_home="${orac_home}/ords"
   local ords_conf="${ords_home}/conf"
+  local ords_conf_persistent="${ORDS_CONF_PERSISTENT:-/opt/oracle/oradata/orac/ords/conf}"
   local pdb_status
   local apex_status
   local ords_metadata_status
@@ -51,6 +52,11 @@ SQL
 
   if [[ ! -d "${ords_conf}" ]]; then
     echo "ORAC_DEPLOYMENT_INCOMPLETE: missing ORDS config directory: ${ords_conf}"
+    return 1
+  fi
+
+  if [[ ! -L "${ords_conf}" ]] || [[ "$(readlink "${ords_conf}")" != "${ords_conf_persistent}" ]]; then
+    echo "ORAC_DEPLOYMENT_INCOMPLETE: ORDS runtime config is not linked to persistent config: ${ords_conf}"
     return 1
   fi
 

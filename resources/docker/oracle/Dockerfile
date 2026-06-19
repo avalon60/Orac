@@ -20,7 +20,8 @@ ENV ORACLE_BASE=${ORACLE_BASE} \
     ORACLE_PDB=${ORACLE_PDB} \
     APEX_VERSION=${APEX_VERSION} \
     ORDS_VERSION=${ORDS_VERSION} \
-    SQLCL_VERSION=${SQLCL_VERSION}
+    SQLCL_VERSION=${SQLCL_VERSION} \
+    CHECK_DB_FILE=checkDBStatus-orac.sh
 
 # --------------------------------------------------------------------
 # Root phase: create stable layout for cached tool downloads
@@ -138,6 +139,7 @@ RUN chmod +x  ${ORACLE_BASE}/scripts/setup/*.sh
 RUN chmod +x  ${ORACLE_BASE}/scripts/startup/*.sh
 RUN chmod +x  ${ORAC_HOME}/bin/*.sh
 RUN chmod 644 ${ORACLE_BASE}/scripts/setup/*.sql
+RUN ln -sf ${ORAC_HOME}/bin/checkDBStatus-orac.sh ${ORACLE_BASE}/checkDBStatus-orac.sh
 
 # Back to oracle
 USER oracle

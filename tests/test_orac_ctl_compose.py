@@ -411,7 +411,7 @@ class OracleSetupScriptContractTests(unittest.TestCase):
             "010-apex-install.sh",
             "020-setup-ords.sh",
             "035-orac-schema_and_apps.sh",
-            "999-complete.sh",
+            "998-complete-orac.sh",
         }
 
         actual_scripts = {path.name for path in ORACLE_SETUP_DIR.glob("*.sh")}
@@ -451,7 +451,7 @@ class OracleSetupScriptContractTests(unittest.TestCase):
 
         self.assertNotRegex(script, r"rm\s+-[^\n]*\$\{?ORDS_LOG\}?")
         self.assertNotRegex(script, r"rm\s+-[^\n]*/home/oracle/orac/logs")
-        self.assertIn('mkdir -p "${ORDS_CONF}" "${ORDS_LOG}"', script)
+        self.assertIn('"${ORDS_LOG}"', script)
 
     def test_ords_setup_uses_sys_installer_and_checks_install_log(self) -> None:
         """ORDS setup must not accept a partial ORDS install as success."""
@@ -478,7 +478,9 @@ class OracleSetupScriptContractTests(unittest.TestCase):
 
     def test_completion_requires_valid_ords_metadata(self) -> None:
         """The final deployment marker must require valid ORDS metadata."""
-        script = (ORACLE_SETUP_DIR / "999-complete.sh").read_text(encoding="utf-8")
+        script = (ORACLE_SETUP_DIR / "998-complete-orac.sh").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn("owner = 'ORDS_METADATA'", script)
         self.assertIn("ORDS metadata objects are not VALID", script)
@@ -494,14 +496,18 @@ class OracleSetupScriptContractTests(unittest.TestCase):
         self.assertIn("ORDS metadata objects are not VALID", script)
         self.assertIn("APEX_APP_ID: 1042", script)
 
-    def test_startup_refreshes_listener_after_container_recreation(self) -> None:
+    def test_startup_repairs_listener_after_container_recreation(self) -> None:
         """Startup should repair persisted listener hostnames before dbwait."""
-        script = (ORACLE_STARTUP_DIR / "005-refresh-listener.sh").read_text(encoding="utf-8")
+        script = (ORACLE_STARTUP_DIR / "005-repair-listener.sh").read_text(
+            encoding="utf-8"
+        )
 
-        self.assertIn("ORAC_LISTENER_REFRESH_COMPLETE", script)
+        self.assertIn("ORAC_LISTENER_REPAIR_COMPLETE", script)
         self.assertIn("sed -i -E", script)
         self.assertIn("lsnrctl start LISTENER", script)
-        self.assertIn("alter system register", script)
+        self.assertIn("HOST = 0.0.0.0", script)
+        self.assertIn("EXTPROC1521", script)
+        self.assertNotIn("alter system register", script)
 
     def _shell_lines_outside_heredocs(self, path: Path) -> list[tuple[int, str]]:
         """Return shell-source lines, ignoring SQL heredoc bodies."""

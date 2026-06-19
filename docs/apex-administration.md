@@ -8,7 +8,7 @@ APEX and ORDS in the local database container.
 After the stack is running, open:
 
 ```text
-http://localhost:8042/ords/f?p=1042:LOGIN
+http://localhost:8042/ords/r/orac/orac-administration1042/login
 ```
 
 For remote access, replace `localhost` with the Orac host name or IP address.
@@ -37,7 +37,7 @@ http://localhost:8042/ords/r/apex/workspace-sign-in/oracle-apex-sign-in
 
 2. Confirm the configured host port maps to container port `8080`.
 
-3. Confirm the application URL contains `f?p=1042:LOGIN`.
+3. Confirm the application URL contains `/ords/r/orac/orac-administration1042/login`.
 
 4. Use a private browser window to rule out stale APEX/ORDS sessions.
 

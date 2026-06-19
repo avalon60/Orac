@@ -166,7 +166,7 @@ bin/orac-ctl.sh logs ai
 Open the APEX administration application at:
 
 ```text
-http://localhost:8042/ords/f?p=1042:LOGIN
+http://localhost:8042/ords/r/orac/orac-administration1042/login
 ```
 
 Continue with:
