@@ -20,21 +20,25 @@ Value:
 * Reduces reliance on live Home Assistant lookups during intent resolution.
 * Provides the foundation for natural commands such as "turn on the lounge lights".
 
-Notes:
+Completed:
 
 * Database deployment is working.
 * Database-side sync API is now in place.
-* Next step is the managed `HomeAssistantService` runtime sync.
+* `HomeAssistantClient` fetches areas, devices, entities and states.
+* `HomeAssistantSyncCoordinator` feeds payloads into
+  `HomeAssistantRepository`.
+* The managed `HomeAssistantService` runs startup sync inside the Orac-managed
+  plugin service process.
+
+Notes:
+
 * Sync must run inside the Orac-managed plugin service process.
 * Python must write via `HomeAssistantRepository` and `orac_ha.ha_sync_api`, not raw DML.
 
 Next actions:
 
-* Implement Home Assistant REST client.
-* Fetch areas, devices, entities and states.
-* Feed payloads into `HomeAssistantRepository`.
-* Add startup sync.
-* Add periodic refresh or websocket state listener later.
+* Add periodic refresh or websocket state listener.
+* Surface sync status through APEX and/or React.
 
 ---
 
