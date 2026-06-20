@@ -7,17 +7,21 @@ It is deliberately narrower than a full plugin SDK.
 
 1. `PluginDiscovery` reads and validates top-level plugin manifests.
    Discovery must not import plugin implementation code.
-2. `PluginManager` builds the routing index from manifest metadata only.
-   Candidate selection is advisory and does not authorize execution.
-3. `PluginRouter` resolves the selected candidate's manifest and asks Orac-owned
-   policy code to evaluate the manifest execution policy.
-4. `plugin_execution_policy.evaluate_plugin_policy` decides whether execution is
+2. `PluginManager` builds the route-intent shortlist from manifest metadata
+   only. Embeddings are a ranking signal, not an authority layer.
+3. `PluginArbiter` resolves contention between route candidates. It protects
+   core-reserved commands, honours explicit plugin addressing, applies
+   directive/action gating, and asks for clarification on ambiguous matches.
+4. `PluginRouter` receives at most one arbitration-selected candidate, resolves
+   that candidate's manifest, and asks Orac-owned policy code to evaluate the
+   manifest execution policy.
+5. `plugin_execution_policy.evaluate_plugin_policy` decides whether execution is
    allowed, denied, or requires confirmation. Plugin code is not imported before
    this decision.
-5. Only allowed plugins are imported and invoked.
-6. Orac-owned code creates provenance for plugin results. Plugin code may return
+6. Only allowed plugins are imported and invoked.
+7. Orac-owned code creates provenance for plugin results. Plugin code may return
    content, but it does not author final provenance or policy status.
-7. `Orac` carries provenance into response metadata and assistant-turn
+8. `Orac` carries provenance into response metadata and assistant-turn
    persistence metadata.
 
 ## Ownership Rules
@@ -26,13 +30,37 @@ It is deliberately narrower than a full plugin SDK.
   `requires_confirmation`, `allowed_by_default`, capabilities, entitlements, and
   optional scaffold metadata.
 - Plugin discovery owns manifest validation only.
-- Routing owns candidate selection only.
+- Routing owns candidate discovery only. Route candidates are not plugin claims.
+- Core arbitration owns the decision about whether any plugin owns a turn.
 - Orac core owns policy, confirmation, provenance, persistence, and final
   response metadata.
 - Plugin implementation code must never make the final allow/deny decision for
   its own execution.
+- Plugin implementation code must not become the final arbiter through
+  first-match, registration-order, filesystem-order, or install-order fallback.
 - The LLM may help interpret user intent, but it must not authorize device
   control, local mutation, external mutation, or privileged/system actions.
+
+## Arbitration Rules
+
+Core-reserved commands such as exact or near-exact stop, cancel, mute, repeat,
+go idle, and shutdown requests must not be intercepted by plugins. Object-level
+commands such as "stop the lounge speaker" are not core commands merely because
+they contain a reserved verb.
+
+Explicit plugin addressing, such as "Ask Home Assistant to turn on the lounge
+lamp", restricts routing to the named plugin. If the named plugin is ambiguous
+or does not expose a matching declared capability, Orac asks for clarification
+or returns a graceful failure instead of trying another plugin.
+
+Route-intent embeddings are shortlist and ranking inputs only. The arbiter must
+still apply deterministic directive/action gating, quoted-example detection,
+plugin-name discussion detection, confirmation requirements, and ambiguity
+checks before execution.
+
+If a selected plugin later declines through its implementation-level
+`can_handle` check, that rejection is final for the turn. Orac must not try the
+next candidate as a fallback.
 
 ## Fail-Closed Cases
 

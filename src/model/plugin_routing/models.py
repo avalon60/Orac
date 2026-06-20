@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 PluginRuntimeMode = Literal["on_demand", "service", "hybrid"]
 PluginConfigValueType = Literal["string", "bool", "int", "float", "path", "list"]
@@ -81,6 +81,27 @@ class PluginExecutionPolicy:
     entitlements: tuple[str, ...] = ()
     scaffold: bool = False
     notes: str | None = None
+
+
+@dataclass(frozen=True)
+class PluginRouteIntent:
+    """Declarative routing metadata for one plugin intent."""
+
+    name: str
+    description: str = ""
+    examples: tuple[str, ...] = ()
+    requires_confirmation: bool | None = None
+    safety_level: str | None = None
+    priority_class: str = "normal"
+
+
+@dataclass(frozen=True)
+class PluginRouteCapability:
+    """Declarative routing metadata for one plugin capability."""
+
+    capability_id: str
+    description: str = ""
+    intents: tuple[PluginRouteIntent, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -163,6 +184,7 @@ class PluginManifest:
     runtime_mode: PluginRuntimeMode = "on_demand"
     service_runtime: PluginServiceRuntime | None = None
     execution_policy: PluginExecutionPolicy | None = None
+    route_capabilities: tuple[PluginRouteCapability, ...] = ()
     configuration_required: tuple[PluginConfigKey, ...] = ()
     configuration_optional: tuple[PluginConfigKey, ...] = ()
     database_required: bool = False
@@ -179,3 +201,44 @@ class PluginCandidate:
 
     plugin_id: str
     score: float
+    route_key: str = ""
+    capability_id: str = ""
+    intent_name: str = ""
+
+
+@dataclass(frozen=True)
+class PluginRouteCandidate:
+    """Represents one enriched plugin route candidate for arbitration."""
+
+    plugin_id: str
+    capability_id: str
+    intent_name: str
+    confidence: float
+    match_reasons: tuple[str, ...] = ()
+    extracted_params: dict[str, Any] | None = None
+    missing_params: tuple[str, ...] = ()
+    requires_confirmation: bool = False
+    safety_level: str = "informational_read_only"
+    priority_class: str = "normal"
+    route_key: str = ""
+
+
+@dataclass(frozen=True)
+class ArbitrationDecision:
+    """Core-owned decision for a plugin routing arbitration attempt."""
+
+    decision_type: Literal[
+        "execute_plugin",
+        "clarify",
+        "confirm",
+        "llm_fallback",
+        "core_command",
+        "reject",
+    ]
+    selected_plugin_id: str | None
+    selected_capability_id: str | None
+    selected_intent_name: str | None
+    candidates: tuple[PluginRouteCandidate, ...]
+    reason: str
+    clarification_prompt: str | None = None
+    utterance: str = ""

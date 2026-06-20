@@ -3062,9 +3062,13 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         retrieval_service = _SuccessfulRetrievalService(pack)
         orchestrator.retrieval_service = retrieval_service
 
-        await orchestrator.handle_request(
-            self._request("What is the current version of codecs?", req_id="req-codecs")
-        )
+        async def _inline_to_thread(func, /, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        with patch("asyncio.to_thread", _inline_to_thread):
+            await orchestrator.handle_request(
+                self._request("What is the current version of codecs?", req_id="req-codecs")
+            )
 
         self.assertNotIn("clive", orchestrator._pending_retrieval_by_session)
         self.assertEqual(retrieval_service.prompts, ["current version of Codex"])

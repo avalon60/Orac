@@ -69,6 +69,76 @@
     "Is Orac reporting as healthy in Home Assistant?"
   ],
   "entry_point": "plugin:HomeAssistantPlugin",
+  "routing": {
+    "capabilities": [
+      {
+        "id": "home_assistant.light_control",
+        "description": "Control Home Assistant lights, lamps and lighting scenes.",
+        "intents": [
+          {
+            "name": "control_light",
+            "description": "Turn lights on or off, adjust brightness, colour, or lighting state.",
+            "examples": [
+              "Turn on the lounge lamp.",
+              "Switch off the kitchen lights.",
+              "Make the TV light warmer.",
+              "Dim the office lamp."
+            ],
+            "requires_confirmation": false,
+            "safety_level": "local_mutation"
+          }
+        ]
+      },
+      {
+        "id": "home_assistant.area_listing",
+        "description": "List Home Assistant areas and area devices from synced shadow data.",
+        "intents": [
+          {
+            "name": "list_area_inventory",
+            "examples": [
+              "List devices in the office.",
+              "What lights are in the kitchen?",
+              "List areas."
+            ],
+            "requires_confirmation": false,
+            "safety_level": "informational_read_only"
+          }
+        ]
+      },
+      {
+        "id": "home_assistant.state_query",
+        "description": "Answer Home Assistant sensor state questions.",
+        "intents": [
+          {
+            "name": "query_sensor_state",
+            "examples": [
+              "What's the temperature in the lounge?",
+              "What is the landing humidity?",
+              "Are any sensors unavailable?"
+            ],
+            "requires_confirmation": false,
+            "safety_level": "informational_read_only"
+          }
+        ]
+      },
+      {
+        "id": "home_assistant.resync",
+        "description": "Refresh Home Assistant synced device and entity metadata.",
+        "intents": [
+          {
+            "name": "resync_home_assistant",
+            "examples": [
+              "Resync devices.",
+              "Sync devices.",
+              "Resync Home Assistant."
+            ],
+            "requires_confirmation": false,
+            "safety_level": "local_mutation"
+          }
+        ]
+      }
+    ]
+  },
   "execution": {
     "action_type": "local_mutation",
     "requires_confirmation": false,

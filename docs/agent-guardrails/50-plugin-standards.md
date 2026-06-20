@@ -358,6 +358,21 @@ Plugins must expose declared capabilities.
 
 Capabilities are what Orac may choose to use.
 
+Plugins may provide declarative route metadata for their capabilities and
+intents, but that metadata only produces route candidates. A plugin must not
+directly claim ownership of a user turn because it recognises a keyword,
+phrase, entity name, or example.
+
+Orac core must arbitrate between route candidates. Core-reserved commands win
+before plugin routing. Explicit plugin addressing restricts the candidate set
+but does not bypass capability matching or execution policy. Ambiguous matches
+must ask for clarification. Install order, registration order, filesystem
+order, vector-search order, and first-match-wins must never be the final
+arbiter of user intent.
+
+Vector similarity and embeddings are shortlist/ranking signals only. They must
+not directly authorize plugin execution.
+
 A plugin capability may be:
 
 * a tool

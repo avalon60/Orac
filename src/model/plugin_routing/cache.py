@@ -113,7 +113,10 @@ class PluginEmbeddingCache:
     def _is_valid_entry(plugin_id: str, entry: object) -> bool:
         if not isinstance(entry, dict):
             return False
-        if entry.get("plugin_id") != plugin_id:
+        route_key = str(entry.get("route_key") or entry.get("plugin_id") or "")
+        if route_key != plugin_id:
+            return False
+        if not isinstance(entry.get("plugin_id"), str):
             return False
         if not isinstance(entry.get("manifest_hash"), str):
             return False

@@ -19,6 +19,8 @@ from model.plugin_routing.models import (
     PluginExecutionPolicy,
     PluginHealthCheck,
     PluginManifest,
+    PluginRouteCapability,
+    PluginRouteIntent,
     PluginSecretKey,
     PluginSecrets,
     PluginServiceSchedule,
@@ -65,6 +67,7 @@ OPTIONAL_FIELDS = {
     "examples",
     "entry_point",
     "execution",
+    "routing",
     "configuration",
     "database",
     "secrets",
@@ -200,6 +203,12 @@ class PluginDiscovery:
             capabilities=capabilities,
             entitlements=entitlements,
         )
+        route_capabilities = self._load_routing(
+            data.get("routing"),
+            capabilities=capabilities,
+            examples=examples,
+            execution_policy=execution_policy,
+        )
         configuration_required, configuration_optional = self._load_configuration(
             data.get("configuration", {})
         )
@@ -234,6 +243,7 @@ class PluginDiscovery:
             runtime_mode=runtime_mode,
             service_runtime=service_runtime,
             execution_policy=execution_policy,
+            route_capabilities=tuple(route_capabilities),
             configuration_required=tuple(configuration_required),
             configuration_optional=tuple(configuration_optional),
             database_required=database_required,
@@ -242,6 +252,131 @@ class PluginDiscovery:
             secrets=secrets,
             python_dependencies=python_dependencies,
         )
+
+    def _load_routing(
+        self,
+        value: Any,
+        *,
+        capabilities: list[str],
+        examples: list[str],
+        execution_policy: PluginExecutionPolicy,
+    ) -> list[PluginRouteCapability]:
+        """Load declarative route metadata without importing plugin code."""
+        if value is None:
+            return [
+                PluginRouteCapability(
+                    capability_id=capability,
+                    description=capability.replace("_", " ").replace(".", " "),
+                    intents=(
+                        PluginRouteIntent(
+                            name=capability.rsplit(".", 1)[-1],
+                            examples=tuple(examples),
+                            requires_confirmation=execution_policy.requires_confirmation,
+                            safety_level=execution_policy.action_type,
+                        ),
+                    ),
+                )
+                for capability in capabilities
+            ]
+        if not isinstance(value, dict):
+            raise PluginManifestError("routing must be an object")
+
+        self._reject_unknown_fields(value, {"capabilities"}, "routing")
+        route_values = value.get("capabilities", [])
+        if not isinstance(route_values, list):
+            raise PluginManifestError("routing.capabilities must be a list")
+
+        route_capabilities: list[PluginRouteCapability] = []
+        for index, capability_value in enumerate(route_values):
+            field = f"routing.capabilities[{index}]"
+            if not isinstance(capability_value, dict):
+                raise PluginManifestError(f"{field} must be an object")
+            self._reject_unknown_fields(
+                capability_value,
+                {"id", "description", "intents"},
+                field,
+            )
+            capability_id = self._require_non_empty_string(
+                capability_value.get("id"),
+                f"{field}.id",
+            )
+            if capability_id not in capabilities:
+                raise PluginManifestError(
+                    f"{field}.id '{capability_id}' must be declared in capabilities"
+                )
+            intents_value = capability_value.get("intents", [])
+            if not isinstance(intents_value, list) or not intents_value:
+                raise PluginManifestError(f"{field}.intents must be a non-empty list")
+            intents: list[PluginRouteIntent] = []
+            for intent_index, intent_value in enumerate(intents_value):
+                intent_field = f"{field}.intents[{intent_index}]"
+                if not isinstance(intent_value, dict):
+                    raise PluginManifestError(f"{intent_field} must be an object")
+                self._reject_unknown_fields(
+                    intent_value,
+                    {
+                        "name",
+                        "description",
+                        "examples",
+                        "requires_confirmation",
+                        "safety_level",
+                        "priority_class",
+                    },
+                    intent_field,
+                )
+                intents.append(
+                    PluginRouteIntent(
+                        name=self._require_non_empty_string(
+                            intent_value.get("name"),
+                            f"{intent_field}.name",
+                        ),
+                        description=self._require_optional_string(
+                            intent_value.get("description"),
+                            f"{intent_field}.description",
+                        )
+                        or "",
+                        examples=tuple(
+                            self._require_string_list(
+                                intent_value.get("examples", []),
+                                f"{intent_field}.examples",
+                            )
+                        ),
+                        requires_confirmation=(
+                            self._require_bool(
+                                intent_value.get("requires_confirmation"),
+                                f"{intent_field}.requires_confirmation",
+                            )
+                            if "requires_confirmation" in intent_value
+                            else execution_policy.requires_confirmation
+                        ),
+                        safety_level=(
+                            self._require_optional_string(
+                                intent_value.get("safety_level"),
+                                f"{intent_field}.safety_level",
+                            )
+                            or execution_policy.action_type
+                        ),
+                        priority_class=(
+                            self._require_optional_string(
+                                intent_value.get("priority_class"),
+                                f"{intent_field}.priority_class",
+                            )
+                            or "normal"
+                        ),
+                    )
+                )
+            route_capabilities.append(
+                PluginRouteCapability(
+                    capability_id=capability_id,
+                    description=self._require_optional_string(
+                        capability_value.get("description"),
+                        f"{field}.description",
+                    )
+                    or "",
+                    intents=tuple(intents),
+                )
+            )
+        return route_capabilities
 
     def _load_runtime(self, value: Any) -> tuple[str, PluginServiceRuntime | None]:
         if not isinstance(value, dict):

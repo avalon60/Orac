@@ -33,6 +33,42 @@
     "What's the temperature outside?"
   ],
   "entry_point": "plugin:WeatherPlugin",
+  "routing": {
+    "capabilities": [
+      {
+        "id": "weather.current_conditions",
+        "description": "Answer current weather and outside-condition questions.",
+        "intents": [
+          {
+            "name": "current_weather",
+            "examples": [
+              "What's the weather where I am?",
+              "What's the weather in Manchester?",
+              "What's the temperature outside?"
+            ],
+            "requires_confirmation": false,
+            "safety_level": "informational_read_only"
+          }
+        ]
+      },
+      {
+        "id": "weather.short_forecast",
+        "description": "Answer short weather forecast questions.",
+        "intents": [
+          {
+            "name": "short_forecast",
+            "examples": [
+              "Will it rain today?",
+              "Do I need a coat this evening?",
+              "Will it be windy tomorrow morning?"
+            ],
+            "requires_confirmation": false,
+            "safety_level": "external_read"
+          }
+        ]
+      }
+    ]
+  },
   "execution": {
     "action_type": "informational_read_only",
     "requires_confirmation": false,

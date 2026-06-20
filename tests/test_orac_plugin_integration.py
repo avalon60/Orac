@@ -52,6 +52,7 @@ from model.plugin_routing.models import (
     PluginCandidate,
     PluginHealthCheck,
     PluginManifest,
+    PluginRouteCandidate,
     PluginServiceRuntime,
 )
 from model.plugin_runtime import PluginExecutionResult
@@ -119,12 +120,21 @@ class _FakePluginManager:
     def discovered_manifests(self) -> tuple[PluginManifest, ...]:
         return tuple(self._manifests)
 
-    def find_candidates(self, prompt: str, top_n: int, min_score: float | None = None) -> list[PluginCandidate]:
+    def find_candidates(self, prompt: str, top_n: int, min_score: float | None = None) -> list:
         self.find_calls += 1
         candidates = list(self._candidates)[:top_n]
         if min_score is None:
             return candidates
-        return [candidate for candidate in candidates if candidate.score >= min_score]
+        return [
+            candidate
+            for candidate in candidates
+            if _candidate_confidence(candidate) >= min_score
+        ]
+
+
+def _candidate_confidence(candidate) -> float:
+    """Return a score-like value from either plugin candidate model."""
+    return float(getattr(candidate, "confidence", getattr(candidate, "score", 0.0)))
 
 
 class _FakePluginServiceManager:
@@ -187,6 +197,7 @@ class _FakePluginExecutionService:
         handoff: PluginRoutingHandoff | None,
         auth_user: str,
         request_context: dict | None = None,
+        pending_context: dict | None = None,
     ) -> PluginExecutionResult | None:
         self.calls.append(
             {
@@ -198,6 +209,8 @@ class _FakePluginExecutionService:
         )
         if request_context is not None:
             self.calls[-1]["request_context"] = request_context
+        if pending_context is not None:
+            self.calls[-1]["pending_context"] = pending_context
         return self.result
 
 
@@ -397,6 +410,28 @@ class OracPluginIntegrationTests(unittest.TestCase):
         self.assertEqual(orchestrator.plugin_manager.refresh_calls, 1)
         self.assertEqual(orchestrator.plugin_manager.find_calls, 1)
 
+    def test_collect_plugin_routing_handoff_formats_route_candidate_confidence(self) -> None:
+        orchestrator = self._make_orac_stub()
+        candidate = PluginRouteCandidate(
+            plugin_id="home_assistant",
+            capability_id="home_assistant.light_control",
+            intent_name="control_light",
+            confidence=0.9123,
+            match_reasons=("unit",),
+            safety_level="local_mutation",
+        )
+        orchestrator.plugin_manager = _FakePluginManager(candidates=[candidate])
+
+        handoff = orchestrator._collect_plugin_routing_handoff(
+            "Turn on the kitchen lights.",
+            {},
+        )
+
+        self.assertIsNotNone(handoff)
+        self.assertEqual(handoff.candidates, (candidate,))
+        joined = "\n".join(message for _, message in orac_module.logger.messages)
+        self.assertIn("home_assistant=0.9123", joined)
+
     def test_collect_plugin_routing_handoff_returns_none_when_no_candidates(self) -> None:
         orchestrator = self._make_orac_stub()
         orchestrator.plugin_manager = _FakePluginManager(candidates=[])
@@ -459,6 +494,37 @@ class OracPluginIntegrationTests(unittest.TestCase):
                 }
             ],
         )
+
+    def test_execute_plugin_request_consumes_pending_context_from_meta(self) -> None:
+        orchestrator = self._make_orac_stub()
+        handoff = PluginRoutingHandoff(
+            candidates=(PluginCandidate(plugin_id="home_assistant", score=0.50),),
+            refreshed=False,
+        )
+        service = _FakePluginExecutionService(
+            PluginExecutionResult(plugin_id="home_assistant", content="Handled")
+        )
+        orchestrator.plugin_execution_service = service
+        pending_context = {
+            "plugin_id": "home_assistant",
+            "capability_id": "home_assistant.light_control",
+            "session_id": "session-a",
+        }
+        meta = {
+            "client": "unit",
+            "pending_plugin_context": pending_context,
+        }
+
+        orchestrator._execute_plugin_request(
+            prompt="the lounge one",
+            meta=meta,
+            plugin_routing_handoff=handoff,
+            auth_user="unit_user",
+        )
+
+        self.assertNotIn("pending_plugin_context", meta)
+        self.assertEqual(service.calls[0]["meta"], {"client": "unit"})
+        self.assertEqual(service.calls[0]["pending_context"], pending_context)
 
     def test_execute_plugin_request_returns_none_for_llm_fallback(self) -> None:
         orchestrator = self._make_orac_stub()

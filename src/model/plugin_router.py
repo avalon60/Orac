@@ -21,6 +21,7 @@ from model.plugin_execution_policy import (
 )
 from model.plugin_config import PluginConfigManager
 from model.plugin_routing.models import PluginManifest
+from model.plugin_routing.models import PluginRouteCandidate
 from model.plugin_routing.handoff import PluginRoutingHandoff
 from model.plugin_runtime import (
     PluginDataAccess,
@@ -198,14 +199,15 @@ class PluginRouter:
         audit_adapter: PluginAuditAdapter | None = None,
         request_context: dict[str, Any] | None = None,
     ) -> PluginExecutionResult | None:
-        """Returns the first successful plugin execution result, or None."""
+        """Execute the selected plugin route, or return ``None`` for fallback."""
         if handoff is None or not handoff.candidates or self._plugin_manager is None:
             return None
 
         meta = meta or {}
         request_context = request_context or {}
 
-        for candidate in handoff.candidates:
+        for candidate in handoff.candidates[:1]:
+            candidate_prompt = _candidate_prompt(prompt, candidate)
             manifest = self._plugin_manager.get_manifest(candidate.plugin_id)
             if manifest is None:
                 self._logger.log_debug(
@@ -224,7 +226,7 @@ class PluginRouter:
                 confirmation_broker=self._confirmation_broker,
             )
             if not policy_decision.allowed:
-                denial_skip_reason = self._denied_candidate_skip_reason(manifest, prompt)
+                denial_skip_reason = self._denied_candidate_skip_reason(manifest, candidate_prompt)
                 if denial_skip_reason is not None:
                     self._logger.log_debug(denial_skip_reason)
                     continue
@@ -251,7 +253,11 @@ class PluginRouter:
                     plugin_id=manifest.plugin_id,
                     content=plugin_policy_message(policy_decision),
                     handled=True,
-                    provenance=policy_decision.provenance,
+                    provenance=_with_arbitration_provenance(
+                        policy_decision.provenance,
+                        request_context,
+                        candidate,
+                    ),
                 )
 
             audit_session = self._start_audit_session(
@@ -273,7 +279,7 @@ class PluginRouter:
                 result = self._invoke_with_timeout(
                     lambda: self._invoke_plugin_candidate(
                         manifest=manifest,
-                        prompt=prompt,
+                        prompt=candidate_prompt,
                         meta=meta,
                         auth_user=auth_user,
                         policy_decision=policy_decision,
@@ -298,7 +304,7 @@ class PluginRouter:
                         ),
                         provenance_json=policy_decision.provenance,
                     )
-                if not self._candidate_matches_prompt(manifest, prompt):
+                if not self._candidate_matches_prompt(manifest, candidate_prompt):
                     continue
                 return self._failure_result(
                     manifest=manifest,
@@ -326,7 +332,7 @@ class PluginRouter:
                         failure_message=f"Plugin execution failed during {exc.stage}.",
                         provenance_json=policy_decision.provenance,
                     )
-                if exc.stage not in {"can_handle", "execute"} and not self._candidate_matches_prompt(manifest, prompt):
+                if exc.stage not in {"can_handle", "execute"} and not self._candidate_matches_prompt(manifest, candidate_prompt):
                     continue
                 return self._failure_result(
                     manifest=manifest,
@@ -340,27 +346,35 @@ class PluginRouter:
                 self._logger.log_debug(
                     f"Plugin '{candidate.plugin_id}' declined prompt after execution-time handle check."
                 )
-                if self._declined_mutation_requires_failure(manifest, prompt):
-                    return self._failure_result(
-                        manifest=manifest,
-                        policy_provenance=policy_decision.provenance,
-                        status="failed",
-                        failure_type="can_handle_declined",
-                        failure_message=(
-                            "A matching mutation plugin declined the action request."
-                        ),
-                    )
-                continue
+                return self._failure_result(
+                    manifest=manifest,
+                    policy_provenance=_with_arbitration_provenance(
+                        policy_decision.provenance,
+                        request_context,
+                        candidate,
+                    ),
+                    status="failed",
+                    failure_type="can_handle_declined",
+                    failure_message=(
+                        "The selected plugin declined the action request."
+                    ),
+                )
 
             if result is not None and result.handled:
                 self._logger.log_info(f"Plugin '{candidate.plugin_id}' handled request directly.")
                 return replace(
                     result,
                     provenance={
-                        **policy_decision.provenance,
+                        **_with_arbitration_provenance(
+                            policy_decision.provenance,
+                            request_context,
+                            candidate,
+                        ),
                         "status": "allowed",
                     },
                 )
+
+            return None
 
         self._logger.log_debug("No plugin candidate handled the request directly; falling back to conversational flow.")
         return None
@@ -758,6 +772,34 @@ def _has_action_intent(text: str) -> bool:
 
     tokens = set(ordered_tokens)
     return bool(tokens.intersection(_ACTION_INTENT_TERMS))
+
+
+def _candidate_prompt(prompt: str, candidate: Any) -> str:
+    """Return routed prompt text for an explicitly addressed selected candidate."""
+    extracted = getattr(candidate, "extracted_params", None)
+    if isinstance(extracted, dict):
+        routed_prompt = str(extracted.get("routed_prompt") or "").strip()
+        if routed_prompt:
+            return routed_prompt
+    return prompt
+
+
+def _with_arbitration_provenance(
+    provenance: dict[str, Any],
+    request_context: dict[str, Any],
+    candidate: Any,
+) -> dict[str, Any]:
+    """Attach core arbitration details to plugin execution provenance."""
+    merged = dict(provenance)
+    arbitration = request_context.get("arbitration")
+    if isinstance(arbitration, dict):
+        merged["arbitration"] = arbitration
+    if isinstance(candidate, PluginRouteCandidate):
+        merged["selected_capability_id"] = candidate.capability_id
+        merged["selected_intent_name"] = candidate.intent_name
+        merged["route_confidence"] = candidate.confidence
+        merged["route_match_reasons"] = tuple(candidate.match_reasons)
+    return merged
 
 
 def _resolve_execution_timeout_seconds(

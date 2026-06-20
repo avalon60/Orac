@@ -867,11 +867,13 @@ class PluginRoutingTests(unittest.TestCase):
         self.assertEqual(report["enabled"], 3)
         self.assertEqual(report["disabled"], 0)
         self.assertEqual(report["dependency_disabled"], 0)
-        self.assertEqual(report["indexed_plugin_count"], 3)
+        self.assertEqual(report["indexed_plugin_count"], 8)
         self.assertIsNotNone(manager.get_manifest("home_assistant"))
         self.assertEqual(len(candidates), 2)
-        self.assertGreaterEqual(candidates[0].score, candidates[1].score)
-        self.assertTrue(all(candidate.score <= 1.0 for candidate in candidates))
+        self.assertGreaterEqual(candidates[0].confidence, candidates[1].confidence)
+        self.assertTrue(all(candidate.confidence <= 1.0 for candidate in candidates))
+        self.assertTrue(all(candidate.capability_id for candidate in candidates))
+        self.assertTrue(all(candidate.intent_name for candidate in candidates))
 
     def test_service_only_plugin_is_not_indexed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins_dir, tempfile.TemporaryDirectory() as temp_cache_dir:

@@ -30,12 +30,37 @@ Required manifest fields include:
 - `entitlements`
 - `runtime`
 
-Optional fields include routing examples/entities, the Python `entry_point`,
-execution policy, configuration declarations, secrets, and database payloads.
+Optional fields include routing examples/entities, declarative `routing`
+capability/intent metadata, the Python `entry_point`, execution policy,
+configuration declarations, secrets, and database payloads.
 
 Routing text is derived only from routing-semantic metadata. Runtime,
 configuration, database, and execution-policy data do not become prompt or
-routing text.
+routing text. Plugins produce route candidates; Orac core arbitrates whether
+any candidate owns the current user turn.
+
+Declarative route metadata may describe capability-level intents:
+
+```json
+"routing": {
+  "capabilities": [
+    {
+      "id": "home_assistant.light_control",
+      "description": "Control Home Assistant lights and lamps.",
+      "intents": [
+        {
+          "name": "control_light",
+          "examples": ["Turn on the lounge lamp."],
+          "requires_confirmation": false,
+          "safety_level": "local_mutation"
+        }
+      ]
+    }
+  ]
+}
+```
+
+The route capability id must already appear in top-level `capabilities`.
 
 ## Runtime Modes
 
@@ -102,8 +127,18 @@ and, where declared, confirmation. See
 ## Lifecycle and Services
 
 Core runtime code owns discovery, dependency validation, service registration,
-startup, shutdown, routing, execution policy, and provenance. Plugins receive
-scoped contexts for the resources they are permitted to use.
+startup, shutdown, candidate discovery, arbitration, execution policy, and
+provenance. Plugins receive scoped contexts for the resources they are
+permitted to use.
+
+Embeddings and vector similarity are optional shortlist/ranking signals only.
+They must never directly execute a plugin. Ambiguous plugin matches must ask for
+clarification, and install order, filesystem order, registration order, or
+first-match-wins must never decide user intent.
+
+Core-reserved commands cannot be intercepted by plugins. Explicit plugin
+addressing restricts arbitration to the named plugin, but the named plugin must
+still expose a matching declared capability.
 
 Service and hybrid plugins must tolerate unavailable optional dependencies and
 report failures without destabilising the core runtime. Plugin startup does not

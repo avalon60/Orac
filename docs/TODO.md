@@ -11,7 +11,7 @@ This backlog captures ideas and integration threads that should not be lost as O
 
 Priority: High
 
-Status: In progress
+Status: Implemented for startup sync; periodic refresh/websocket follow-up pending
 
 Value:
 
@@ -42,7 +42,7 @@ Next actions:
 
 Priority: High
 
-Status: Not started
+Status: Partially implemented
 
 Value:
 
@@ -71,7 +71,7 @@ Next actions:
 
 Priority: High
 
-Status: Partially implemented
+Status: Implemented foundations; hardening ongoing
 
 Value:
 
@@ -103,7 +103,7 @@ Next actions:
 
 Priority: High
 
-Status: Planned / next major spike
+Status: POC groundwork in place
 
 Value:
 
@@ -132,7 +132,7 @@ Next actions:
 
 Priority: High
 
-Status: Planned
+Status: Experimental implementation in place
 
 Value:
 
@@ -159,7 +159,7 @@ Next actions:
 
 Priority: Medium
 
-Status: Design agreed
+Status: Partially implemented
 
 Value:
 
@@ -219,6 +219,8 @@ Next actions:
 
 Priority: Medium
 
+Status: Not started
+
 Correction:
 
 * Better term: speaker recognition or speaker identification.
@@ -248,6 +250,8 @@ Next actions:
 ### 9. IndexTTS2 voice cloning / voice design
 
 Priority: Medium
+
+Status: Research / not started
 
 Correction:
 
@@ -279,7 +283,7 @@ Next actions:
 
 Priority: Medium
 
-Status: Partially implemented
+Status: Implemented foundations; UI warning follow-up pending
 
 Value:
 
@@ -306,6 +310,8 @@ Next actions:
 ### 11. APEX administration UI
 
 Priority: High
+
+Status: Planned
 
 Correction:
 
@@ -335,7 +341,7 @@ Next actions:
 
 Priority: High
 
-Status: Good pivot
+Status: Partially implemented
 
 Value:
 
@@ -362,6 +368,8 @@ Next actions:
 ### 13. Small Pi display and physical satellite unit
 
 Priority: Medium
+
+Status: Planned
 
 Value:
 
@@ -396,6 +404,8 @@ Next actions:
 
 Priority: Medium
 
+Status: Schema groundwork in place
+
 Value:
 
 * Lets Orac build long-term local memory.
@@ -423,6 +433,8 @@ Next actions:
 ### 15. Document uploads and embeddings
 
 Priority: Medium
+
+Status: Not started
 
 Value:
 
@@ -452,6 +464,8 @@ Next actions:
 
 Priority: Medium
 
+Status: Schema groundwork in place
+
 Value:
 
 * Supports conversation memory and document retrieval.
@@ -480,6 +494,8 @@ Next actions:
 
 Priority: Medium
 
+Status: Not started
+
 Value:
 
 * Useful as a daily-driver chat/workspace interface.
@@ -504,6 +520,8 @@ Next actions:
 ### 18. Hermes Agent integration
 
 Priority: Low
+
+Status: Parked
 
 Correction:
 
@@ -534,6 +552,8 @@ Next actions:
 
 Priority: Low to Medium
 
+Status: Not started
+
 Value:
 
 * Could expose Orac actions to compatible tooling.
@@ -556,6 +576,8 @@ Next actions:
 ### 20. n8n/webhook integration
 
 Priority: Low
+
+Status: Parked
 
 Value:
 
@@ -582,6 +604,8 @@ Next actions:
 
 Priority: Medium
 
+Status: Partially implemented
+
 Value:
 
 * Gives Orac direct model lifecycle control.
@@ -607,6 +631,8 @@ Next actions:
 
 Priority: Medium
 
+Status: Partially implemented
+
 Value:
 
 * Prevents silent degradation.
@@ -629,6 +655,8 @@ Next actions:
 ### 23. Docker Compose / service estate rationalisation
 
 Priority: Medium
+
+Status: Partially implemented
 
 Value:
 
@@ -660,6 +688,8 @@ Next actions:
 
 Priority: Medium
 
+Status: Partially implemented
+
 Value:
 
 * Protects Orac state as it becomes more valuable.
@@ -687,6 +717,8 @@ Next actions:
 
 Priority: Medium
 
+Status: Partially implemented
+
 Value:
 
 * Helps Orac avoid hallucinating current facts.
@@ -712,6 +744,8 @@ Next actions:
 
 Priority: Low to Medium
 
+Status: Partially implemented
+
 Value:
 
 * Local/private metasearch option.
@@ -735,6 +769,8 @@ Next actions:
 ### 27. Plugin permissions and entitlements
 
 Priority: High
+
+Status: Partially implemented
 
 Value:
 
@@ -760,6 +796,8 @@ Next actions:
 ### 28. Personal data controls
 
 Priority: High once memory starts
+
+Status: Not started
 
 Value:
 
@@ -787,6 +825,8 @@ Next actions:
 
 Priority: Low to Medium
 
+Status: Parked
+
 Value:
 
 * Could allow Orac to ingest useful documents or notifications.
@@ -808,6 +848,8 @@ Next actions:
 
 Priority: Low to Medium
 
+Status: Parked
+
 Value:
 
 * Simple local-first route for adding documents.
@@ -828,6 +870,8 @@ Next actions:
 ### 31. APEX file upload ingestion
 
 Priority: Medium
+
+Status: Not started
 
 Value:
 
@@ -853,6 +897,8 @@ Next actions:
 
 Priority: Medium
 
+Status: Not started
+
 Value:
 
 * Lets commands like "turn the lights on" resolve to the satellite's room.
@@ -876,6 +922,8 @@ Next actions:
 ### 33. Local mute/privacy controls
 
 Priority: Medium
+
+Status: Display-only groundwork in place
 
 Value:
 

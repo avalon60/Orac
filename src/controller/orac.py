@@ -44,6 +44,7 @@ from orac_voice.tts_voice_catalog import refresh_tts_voice_catalog
 from orac_voice.tts_voice_catalog import resolve_tts_voice_selection
 from orac_voice.voice_events import VoiceEvent
 from model.plugin_audit_adapter import PluginAuditAdapter
+from model.plugin_arbitration import PluginArbiter
 from model.plugin_routing import (
     HashEmbeddingProvider,
     PluginManager,
@@ -2222,6 +2223,10 @@ class Orac:
                 plugin_router=self.plugin_router,
                 logger=logger,
                 plugin_audit_adapter=self.plugin_audit_adapter,
+                plugin_arbiter=PluginArbiter(
+                    plugin_manager=self.plugin_manager,
+                    logger=logger,
+                ),
             )
             logger.log_info(f"{Icons.info} Plugin routing bootstrap starting.")
             logger.log_info(
@@ -2423,13 +2428,25 @@ class Orac:
         logger.log_debug(f"Plugin routing produced {len(candidates)} candidate plugin(s).")
         logger.log_debug(
             "Plugin routing candidate scores: "
-            + ", ".join(f"{candidate.plugin_id}={candidate.score:.4f}" for candidate in candidates)
+            + ", ".join(
+                f"{candidate.plugin_id}={self._plugin_candidate_confidence(candidate):.4f}"
+                for candidate in candidates
+            )
         )
 
         return PluginRoutingHandoff(
             candidates=tuple(candidates),
             refreshed=refreshed,
         )
+
+    @staticmethod
+    def _plugin_candidate_confidence(candidate: Any) -> float:
+        """Return a display score for old and new plugin route candidate models."""
+        value = getattr(candidate, "confidence", getattr(candidate, "score", 0.0))
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
 
     def _execute_plugin_request(
         self,
@@ -2452,12 +2469,16 @@ class Orac:
                 plugin_audit_adapter=getattr(self, "plugin_audit_adapter", None),
             )
             self.plugin_execution_service = plugin_execution_service
+        pending_plugin_context = meta.pop("pending_plugin_context", None)
+        if not isinstance(pending_plugin_context, dict):
+            pending_plugin_context = None
         return plugin_execution_service.execute(
             prompt=prompt,
             meta=meta,
             handoff=plugin_routing_handoff,
             auth_user=auth_user,
             request_context=request_context,
+            pending_context=pending_plugin_context,
         )
 
     def _apply_user_preference_meta(

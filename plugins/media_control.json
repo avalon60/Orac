@@ -25,6 +25,41 @@
     "Play jazz in the study."
   ],
   "entry_point": "plugin:MediaControlPlugin",
+  "routing": {
+    "capabilities": [
+      {
+        "id": "media.playback_control",
+        "description": "Control media playback on TVs, speakers, and media devices.",
+        "intents": [
+          {
+            "name": "playback_control",
+            "examples": [
+              "Pause the lounge TV.",
+              "Play jazz in the study.",
+              "Stop the kitchen speaker."
+            ],
+            "requires_confirmation": true,
+            "safety_level": "device_control"
+          }
+        ]
+      },
+      {
+        "id": "media.volume_control",
+        "description": "Adjust media volume.",
+        "intents": [
+          {
+            "name": "volume_control",
+            "examples": [
+              "Turn the volume down in the kitchen.",
+              "Raise the TV volume."
+            ],
+            "requires_confirmation": true,
+            "safety_level": "device_control"
+          }
+        ]
+      }
+    ]
+  },
   "execution": {
     "action_type": "device_control",
     "requires_confirmation": true,

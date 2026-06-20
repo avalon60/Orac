@@ -17,8 +17,18 @@ from model.plugin_routing.cache import PluginEmbeddingCache
 from model.plugin_routing.discovery import PluginDiscovery
 from model.plugin_routing.embeddings import EmbeddingProvider
 from model.plugin_routing.index import PluginIntentIndex
-from model.plugin_routing.intent_text import INTENT_TEXT_VERSION, build_canonical_intent_text
-from model.plugin_routing.models import PluginCandidate, PluginManifest
+from model.plugin_routing.intent_text import (
+    INTENT_TEXT_VERSION,
+    build_canonical_route_intent_text,
+    route_intent_key,
+)
+from model.plugin_routing.models import (
+    PluginCandidate,
+    PluginManifest,
+    PluginRouteCandidate,
+    PluginRouteCapability,
+    PluginRouteIntent,
+)
 from model.plugin_registry import PluginRegistryError
 from model.plugin_registry import PluginRegistryStore
 
@@ -59,6 +69,10 @@ class PluginManager:
         self._discovery = PluginDiscovery(self._plugins_dir)
         self._index = PluginIntentIndex()
         self._manifests: dict[str, PluginManifest] = {}
+        self._route_records: dict[
+            str,
+            tuple[PluginManifest, PluginRouteCapability, PluginRouteIntent],
+        ] = {}
         self._discovered_manifests: tuple[PluginManifest, ...] = ()
         self._deployment_eligible_manifests: tuple[PluginManifest, ...] = ()
         self._configuration_results: dict[str, PluginConfigurationResult] = {}
@@ -129,41 +143,61 @@ class PluginManager:
 
         vectors_for_index: dict[str, list[float]] = {}
         cache_entries_to_save: dict[str, dict] = {}
+        route_records: dict[
+            str,
+            tuple[PluginManifest, PluginRouteCapability, PluginRouteIntent],
+        ] = {}
         cache_hits = 0
         cache_misses = 0
         re_embedded = 0
 
         for manifest in runtime_manifests:
-            canonical_text = build_canonical_intent_text(manifest)
-            cached_entry = cached_entries.get(manifest.plugin_id)
-
-            if self._is_cache_hit(manifest, canonical_text, cached_entry):
-                vector = [float(value) for value in cached_entry["vector"]]
-                cache_hits += 1
-            else:
-                if cached_entry is None:
-                    cache_misses += 1
-                else:
-                    self._log_debug(
-                        "Plugin routing cache entry stale for plugin "
-                        f"'{manifest.plugin_id}'; re-embedding."
+            for capability in manifest.route_capabilities:
+                for intent in capability.intents:
+                    key = route_intent_key(
+                        manifest.plugin_id,
+                        capability.capability_id,
+                        intent.name,
                     )
-                try:
-                    vector = self._embedding_provider.embed_text(canonical_text)
-                except Exception as exc:
-                    self._log_error(
-                        f"Plugin routing embedding failed for plugin '{manifest.plugin_id}': {exc}"
+                    canonical_text = build_canonical_route_intent_text(
+                        manifest,
+                        capability,
+                        intent,
                     )
-                    raise
-                re_embedded += 1
+                    cached_entry = cached_entries.get(key)
 
-            vectors_for_index[manifest.plugin_id] = vector
-            cache_entries_to_save[manifest.plugin_id] = {
-                "plugin_id": manifest.plugin_id,
-                "manifest_hash": manifest.manifest_hash,
-                "canonical_text": canonical_text,
-                "vector": vector,
-            }
+                    if self._is_cache_hit(manifest, canonical_text, cached_entry):
+                        vector = [float(value) for value in cached_entry["vector"]]
+                        cache_hits += 1
+                    else:
+                        if cached_entry is None:
+                            cache_misses += 1
+                        else:
+                            self._log_debug(
+                                "Plugin routing cache entry stale for route "
+                                f"'{key}'; re-embedding."
+                            )
+                        try:
+                            vector = self._embedding_provider.embed_text(canonical_text)
+                        except Exception as exc:
+                            self._log_error(
+                                "Plugin routing embedding failed for route "
+                                f"'{key}': {exc}"
+                            )
+                            raise
+                        re_embedded += 1
+
+                    vectors_for_index[key] = vector
+                    route_records[key] = (manifest, capability, intent)
+                    cache_entries_to_save[key] = {
+                        "route_key": key,
+                        "plugin_id": manifest.plugin_id,
+                        "capability_id": capability.capability_id,
+                        "intent_name": intent.name,
+                        "manifest_hash": manifest.manifest_hash,
+                        "canonical_text": canonical_text,
+                        "vector": vector,
+                    }
 
         self._cache.save(
             embedding_model_id=self._embedding_provider.model_id,
@@ -173,6 +207,7 @@ class PluginManager:
 
         self._index.build(vectors_for_index)
         self._manifests = {manifest.plugin_id: manifest for manifest in runtime_manifests}
+        self._route_records = route_records
         self._last_refresh_report = {
             "plugin_root": str(self._plugins_dir),
             "cache_dir": str(self._cache.cache_dir),
@@ -212,17 +247,32 @@ class PluginManager:
         utterance: str,
         top_n: int = 5,
         min_score: float | None = None,
-    ) -> list[PluginCandidate]:
+    ) -> list[PluginRouteCandidate]:
         """Returns scored plugin candidates for a user utterance."""
         if not self._manifests:
             self.refresh()
 
         query_vector = self._embedding_provider.embed_text(utterance)
-        return self._index.search(query_vector=query_vector, top_n=top_n, min_score=min_score)
+        raw_candidates = self._index.search(
+            query_vector=query_vector,
+            top_n=top_n,
+            min_score=min_score,
+        )
+        return [
+            self._route_candidate_from_index_candidate(candidate)
+            for candidate in raw_candidates
+            if candidate.plugin_id in self._route_records
+        ]
 
     def get_manifest(self, plugin_id: str) -> PluginManifest | None:
         """Returns the manifest for an indexed plugin."""
         return self._manifests.get(plugin_id)
+
+    def route_records(
+        self,
+    ) -> tuple[tuple[PluginManifest, PluginRouteCapability, PluginRouteIntent], ...]:
+        """Return indexed route records for deterministic arbitration helpers."""
+        return tuple(self._route_records.values())
 
     def discovered_manifests(self) -> tuple[PluginManifest, ...]:
         """Returns all valid manifests found during the last refresh."""
@@ -247,6 +297,36 @@ class PluginManager:
         return (
             cached_entry.get("manifest_hash") == manifest.manifest_hash
             and cached_entry.get("canonical_text") == canonical_text
+        )
+
+    def _route_candidate_from_index_candidate(
+        self,
+        candidate: PluginCandidate,
+    ) -> PluginRouteCandidate:
+        """Convert a route-key index hit into an arbitration candidate."""
+        manifest, capability, intent = self._route_records[candidate.plugin_id]
+        policy = manifest.execution_policy
+        safety_level = str(
+            intent.safety_level
+            or (policy.action_type if policy is not None else "informational_read_only")
+        )
+        requires_confirmation = bool(
+            intent.requires_confirmation
+            if intent.requires_confirmation is not None
+            else (policy.requires_confirmation if policy is not None else False)
+        )
+        return PluginRouteCandidate(
+            plugin_id=manifest.plugin_id,
+            capability_id=capability.capability_id,
+            intent_name=intent.name,
+            confidence=float(candidate.score),
+            match_reasons=("route_intent_embedding",),
+            extracted_params={},
+            missing_params=(),
+            requires_confirmation=requires_confirmation,
+            safety_level=safety_level,
+            priority_class=intent.priority_class,
+            route_key=candidate.plugin_id,
         )
 
     def _runtime_eligible_manifests(
