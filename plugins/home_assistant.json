@@ -246,5 +246,50 @@
         }
       }
     ]
+  },
+  "ui": {
+    "status_provider": {
+      "id": "home_assistant.status_summary",
+      "description": "Aggregated Home Assistant plugin health, API reachability, runtime state, and sync status.",
+      "format": "plugin_status_v1",
+      "redaction_required": true
+    },
+    "surfaces": [
+      {
+        "id": "home_assistant.admin_status",
+        "type": "admin_status",
+        "label": "Home Assistant Status",
+        "description": "Shows Home Assistant plugin health, sync status, API reachability and recent sync results.",
+        "target": "apex",
+        "audience": "admin",
+        "required_roles": [
+          "ORAC_ADMIN"
+        ],
+        "enabled": true,
+        "apex": {
+          "app_alias": "ORAC_HA_STATUS",
+          "app_export": "apex/home_assistant_status.sql",
+          "entry_page_id": 1,
+          "install_required": false
+        }
+      },
+      {
+        "id": "home_assistant.react_diagnostics",
+        "type": "diagnostic_panel",
+        "label": "Home Assistant Diagnostics",
+        "description": "Compact runtime diagnostic/status panel for the React display.",
+        "target": "react",
+        "audience": "admin",
+        "required_roles": [
+          "ORAC_ADMIN"
+        ],
+        "enabled": true,
+        "react": {
+          "component": "HomeAssistantDiagnosticsPanel",
+          "status_endpoint": "home_assistant.status_summary",
+          "install_required": false
+        }
+      }
+    ]
   }
 }

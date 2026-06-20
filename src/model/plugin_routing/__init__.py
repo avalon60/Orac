@@ -8,6 +8,7 @@ from model.plugin_routing.handoff import PluginRoutingHandoff, render_plugin_rou
 from model.plugin_routing.manager import PluginManager
 from model.plugin_routing.models import (
     PluginCandidate,
+    PluginApexSurfaceMetadata,
     PluginConfigKey,
     PluginDatabaseBackup,
     PluginDatabaseSchema,
@@ -15,16 +16,21 @@ from model.plugin_routing.models import (
     PluginRouteCandidate,
     PluginRouteCapability,
     PluginRouteIntent,
+    PluginReactSurfaceMetadata,
     ArbitrationDecision,
     PluginHealthCheck,
     PluginManifest,
     PluginServiceSchedule,
     PluginServiceRuntime,
+    PluginUi,
+    PluginUiStatusProvider,
+    PluginUiSurface,
 )
 
 __all__ = [
     "EmbeddingProvider",
     "HashEmbeddingProvider",
+    "PluginApexSurfaceMetadata",
     "PluginCandidate",
     "PluginConfigKey",
     "PluginDatabaseBackup",
@@ -36,9 +42,13 @@ __all__ = [
     "PluginRouteCandidate",
     "PluginRouteCapability",
     "PluginRouteIntent",
+    "PluginReactSurfaceMetadata",
     "PluginRoutingHandoff",
     "PluginServiceSchedule",
     "PluginServiceRuntime",
+    "PluginUi",
+    "PluginUiStatusProvider",
+    "PluginUiSurface",
     "render_plugin_routing_hints",
     "ArbitrationDecision",
 ]

@@ -16,6 +16,10 @@ PluginServiceStartPolicy = Literal["auto", "manual"]
 PluginServiceRestartPolicy = Literal["never", "on_failure"]
 PluginDatabaseOnMissing = Literal["warn_disable", "warn_only", "fail_refresh"]
 PluginDatabaseManagedBy = Literal["orac"]
+PluginUiStatusFormat = Literal["plugin_status_v1"]
+PluginUiSurfaceTarget = Literal["apex", "react"]
+PluginUiSurfaceType = Literal["admin_status", "diagnostic_panel"]
+PluginUiAudience = Literal["admin", "user", "system"]
 PluginActionType = Literal[
     "informational_read_only",
     "external_read",
@@ -164,6 +168,59 @@ class PluginSecrets:
 
 
 @dataclass(frozen=True)
+class PluginUiStatusProvider:
+    """Represents a plugin-owned operational status provider declaration."""
+
+    provider_id: str
+    description: str = ""
+    format: PluginUiStatusFormat = "plugin_status_v1"
+    redaction_required: bool = True
+
+
+@dataclass(frozen=True)
+class PluginApexSurfaceMetadata:
+    """Represents optional APEX metadata for a plugin UI surface."""
+
+    app_alias: str | None = None
+    app_export: str | None = None
+    entry_page_id: int | None = None
+    install_required: bool = False
+
+
+@dataclass(frozen=True)
+class PluginReactSurfaceMetadata:
+    """Represents optional React metadata for a plugin UI surface."""
+
+    component: str | None = None
+    status_endpoint: str | None = None
+    install_required: bool = False
+
+
+@dataclass(frozen=True)
+class PluginUiSurface:
+    """Represents one plugin-declared operational UI surface."""
+
+    surface_id: str
+    surface_type: PluginUiSurfaceType
+    label: str
+    target: PluginUiSurfaceTarget
+    audience: PluginUiAudience
+    enabled: bool
+    description: str = ""
+    required_roles: tuple[str, ...] = ()
+    apex: PluginApexSurfaceMetadata | None = None
+    react: PluginReactSurfaceMetadata | None = None
+
+
+@dataclass(frozen=True)
+class PluginUi:
+    """Represents optional plugin UI/status metadata."""
+
+    status_provider: PluginUiStatusProvider | None = None
+    surfaces: tuple[PluginUiSurface, ...] = ()
+
+
+@dataclass(frozen=True)
 class PluginManifest:
     """Represents a validated plugin manifest and its discovery metadata."""
 
@@ -191,6 +248,7 @@ class PluginManifest:
     database_on_missing: PluginDatabaseOnMissing = "warn_disable"
     database_schemas: tuple[PluginDatabaseSchema, ...] = ()
     secrets: PluginSecrets | None = None
+    ui: PluginUi | None = None
     python_dependencies: tuple[str, ...] = ()
     config_path: Path | None = None
 

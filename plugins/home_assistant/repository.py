@@ -25,6 +25,9 @@ from .sensor_query import SensorQueryRequest
 from .sensor_query import SensorQueryResult
 from .sensor_query import execute_sensor_query
 from .sensor_query import resolve_sensor_query_entity_ids
+from .status import HomeAssistantStatusSummary
+from .status import redact_sensitive_text
+from .status import summary_from_row
 
 __author__ = "Clive Bostock"
 __date__ = "04-Jun-2026"
@@ -158,6 +161,40 @@ class HomeAssistantRepository:
             status="cached",
         )
 
+    def status_summary(
+        self,
+        *,
+        service_running: bool | None = None,
+        api_reachable: bool | None = None,
+        last_error_message: str | None = None,
+    ) -> HomeAssistantStatusSummary:
+        """Return the redacted Home Assistant status summary."""
+        rows = self._db_session.fetch_dicts(
+            """
+            select plugin_id,
+                   service_running,
+                   api_reachable,
+                   last_startup_sync_at,
+                   last_startup_sync_status,
+                   last_state_sync_at,
+                   last_state_sync_status,
+                   last_areas_processed,
+                   last_devices_processed,
+                   last_entities_processed,
+                   last_states_processed,
+                   last_error_message_redacted,
+                   updated_at
+              from orac_ha.ha_status_summary_v
+            """
+        )
+        row = rows[0] if rows else None
+        return summary_from_row(
+            row,
+            service_running=service_running,
+            api_reachable=api_reachable,
+            last_error_message=last_error_message,
+        )
+
     def _control_resolution_rows(self) -> list[dict[str, Any]]:
         """Return rows from the Home Assistant control-resolution view."""
         return self._db_session.fetch_dicts(
@@ -213,7 +250,7 @@ def _json_payload(payload: Mapping[str, Any]) -> str:
 
 def _safe_error_message(error_message: str) -> str:
     """Return a bounded, single-line error message for database logging."""
-    return str(error_message or "").replace("\r", " ").replace("\n", " ")[:4000]
+    return redact_sensitive_text(error_message) or ""
 
 
 def _overlay_live_states(

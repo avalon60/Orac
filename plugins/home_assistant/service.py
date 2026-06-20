@@ -148,6 +148,8 @@ class HomeAssistantService:
             return self._list_areas(context)
         if command == "sensor_query":
             return self._sensor_query(context, payload or {})
+        if command == "status":
+            return self._status(context)
         if command != "resync":
             raise HomeAssistantServiceError(
                 f"Unsupported Home Assistant service command '{command}'."
@@ -158,6 +160,28 @@ class HomeAssistantService:
             "structural_rows": structural_result.rows_processed,
             "state_rows": state_result.rows_processed,
         }
+
+    def _status(self, context: Any) -> dict[str, Any]:
+        """Return a redacted operational status summary for diagnostics."""
+        repository = None
+        try:
+            repository = self._repository_factory(context)
+            service_running = (
+                self._state.started
+                and not self._state.stopped
+                and not getattr(context, "stop_event", threading.Event()).is_set()
+            )
+            summary = repository.status_summary(
+                service_running=service_running,
+                api_reachable=self._state.api_reachable,
+                last_error_message=self._state.last_error,
+            )
+            return summary.as_dict()
+        finally:
+            if repository is not None:
+                close = getattr(repository, "close", None)
+                if callable(close):
+                    close()
 
     def _control(self, context: Any, payload: dict[str, Any]) -> dict[str, Any]:
         """Resolve and execute one isolated low-risk Home Assistant control."""

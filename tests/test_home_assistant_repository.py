@@ -20,6 +20,7 @@ from home_assistant.repository import HomeAssistantRepository
 from home_assistant.control import AreaListRequest
 from home_assistant.control import ControlRequest
 from home_assistant.sensor_query import SensorQueryRequest
+from home_assistant.status import redact_sensitive_text
 
 
 class _FakePluginDatabaseSession:
@@ -136,6 +137,93 @@ class HomeAssistantRepositoryTests(unittest.TestCase):
             ),
         )
         self.assertTrue(session.committed)
+
+    def test_fail_sync_run_redacts_sensitive_error_values(self) -> None:
+        session = _FakePluginDatabaseSession()
+        repository = HomeAssistantRepository(_FakeContext(session))
+
+        repository.fail_sync_run(
+            "sync-run-1",
+            error_message=(
+                "Authorization: Bearer abc.def.ghi failed for "
+                "http://user:pass@ha.local/api?access_token=secret-token"
+            ),
+        )
+
+        _name, parameters = session.procedure_calls[-1]
+        self.assertEqual(parameters[0], "sync-run-1")
+        self.assertNotIn("abc.def.ghi", parameters[1])
+        self.assertNotIn("user:pass", parameters[1])
+        self.assertNotIn("secret-token", parameters[1])
+        self.assertIn("[redacted]", parameters[1])
+
+    def test_status_summary_reads_expected_fields_from_summary_view(self) -> None:
+        session = _FakePluginDatabaseSession()
+        session.fetch_rows = [
+            {
+                "PLUGIN_ID": "home_assistant",
+                "SERVICE_RUNNING": None,
+                "API_REACHABLE": None,
+                "LAST_STARTUP_SYNC_AT": "2026-06-20T10:00:00Z",
+                "LAST_STARTUP_SYNC_STATUS": "complete",
+                "LAST_STATE_SYNC_AT": "2026-06-20T10:01:00Z",
+                "LAST_STATE_SYNC_STATUS": "failed",
+                "LAST_AREAS_PROCESSED": 2,
+                "LAST_DEVICES_PROCESSED": 4,
+                "LAST_ENTITIES_PROCESSED": 8,
+                "LAST_STATES_PROCESSED": 7,
+                "LAST_ERROR_MESSAGE_REDACTED": "password=[redacted]",
+                "UPDATED_AT": "2026-06-20T10:02:00Z",
+            }
+        ]
+        repository = HomeAssistantRepository(_FakeContext(session))
+
+        summary = repository.status_summary(
+            service_running=True,
+            api_reachable=False,
+        ).as_dict()
+
+        self.assertEqual(summary["plugin_id"], "home_assistant")
+        self.assertTrue(summary["service_running"])
+        self.assertFalse(summary["api_reachable"])
+        self.assertEqual(summary["last_startup_sync_status"], "complete")
+        self.assertEqual(summary["last_state_sync_status"], "failed")
+        self.assertEqual(summary["last_areas_processed"], 2)
+        self.assertEqual(summary["last_devices_processed"], 4)
+        self.assertEqual(summary["last_entities_processed"], 8)
+        self.assertEqual(summary["last_states_processed"], 7)
+        self.assertEqual(summary["last_error_message_redacted"], "password=[redacted]")
+        self.assertIn("ha_status_summary_v", session.fetch_queries[-1])
+
+    def test_redaction_removes_common_secret_shapes(self) -> None:
+        redacted = redact_sensitive_text(
+            'Bearer token-123 access_token="ha-secret" '
+            'password=letmein {"api_key":"abc"} http://user:pass@example.test/path'
+        )
+
+        self.assertNotIn("token-123", redacted)
+        self.assertNotIn("ha-secret", redacted)
+        self.assertNotIn("letmein", redacted)
+        self.assertNotIn("abc", redacted)
+        self.assertNotIn("user:pass", redacted)
+        self.assertGreaterEqual(redacted.count("[redacted]"), 5)
+
+    def test_status_summary_database_surface_is_narrow_and_redacted(self) -> None:
+        schema_root = PROJECT_ROOT / "plugins" / "home_assistant" / "db" / "schema"
+        view_sql = (
+            schema_root / "view" / "ha_status_summary_v.sql"
+        ).read_text(encoding="utf-8").lower()
+        grants = " ".join(
+            path.read_text(encoding="utf-8").lower()
+            for path in (schema_root / "grant").glob("ha_status_summary_v_to_*.sql")
+        )
+
+        self.assertIn("ha_status_summary_v", view_sql)
+        self.assertIn("last_error_message_redacted", view_sql)
+        self.assertIn("regexp_replace", view_sql)
+        self.assertIn("grant select on orac_ha.ha_status_summary_v to orac_plugin", grants)
+        self.assertIn("grant select on orac_ha.ha_status_summary_v to orac_apx_pub", grants)
+        self.assertNotIn("grant all", grants)
 
     def test_repository_failure_logging_uses_package_api_and_sanitises_message(self) -> None:
         session = _FakePluginDatabaseSession()

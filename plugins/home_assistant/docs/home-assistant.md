@@ -397,6 +397,32 @@ credentials are available. Missing credentials or an offline Home Assistant
 instance degrade the plugin without granting broader database or network
 authority.
 
+### Status Surface
+
+The plugin exposes a redacted operational status provider declared in
+`plugins/home_assistant.json` as `home_assistant.status_summary`. This is admin
+diagnostic metadata, not a conversational capability, and it is not part of
+prompt routing or arbitration.
+
+The status summary combines:
+
+- latest structural startup sync time and status from `orac_ha.ha_sync_runs`
+- latest state sync time and status from `orac_ha.ha_sync_runs`
+- current shadow-table counts for areas, devices, entities, and states
+- last redacted sync/runtime error
+- runtime service-running and Home Assistant API reachability when available
+
+The APEX-facing source is the read-only
+`orac_ha.ha_status_summary_v` view. The Home Assistant service also exposes a
+read-only `status` command through Orac's managed plugin service boundary.
+React diagnostics can consume the same provider shape when an admin diagnostic
+panel is added.
+
+Use this status surface first when Orac cannot find a target such as `the lounge
+lamp`. It should show whether Home Assistant was reachable, whether the last
+sync failed, whether shadow data is empty, and when Orac last refreshed Home
+Assistant inventory and state data.
+
 Check logs for accepted commands, sync results, target refusals, REST failures,
 or confirmation failures:
 

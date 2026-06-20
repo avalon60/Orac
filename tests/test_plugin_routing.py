@@ -165,6 +165,188 @@ class PluginRoutingTests(unittest.TestCase):
             self.assertEqual(len(errors), 1)
             self.assertIn("must exactly match manifest filename stem", errors[0])
 
+    def test_discovery_accepts_manifest_without_ui_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Test plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.query"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(errors, [])
+            self.assertIsNone(manifests[0].ui)
+
+    def test_home_assistant_manifest_declares_valid_ui_surfaces(self) -> None:
+        manifest = PluginDiscovery(PROJECT_ROOT / "plugins").load_manifest(
+            PROJECT_ROOT / "plugins" / "home_assistant.json"
+        )
+
+        self.assertIsNotNone(manifest.ui)
+        assert manifest.ui is not None
+        self.assertEqual(
+            manifest.ui.status_provider.provider_id,
+            "home_assistant.status_summary",
+        )
+        self.assertTrue(manifest.ui.status_provider.redaction_required)
+        self.assertEqual(
+            [surface.surface_id for surface in manifest.ui.surfaces],
+            [
+                "home_assistant.admin_status",
+                "home_assistant.react_diagnostics",
+            ],
+        )
+        self.assertEqual(manifest.ui.surfaces[0].apex.app_alias, "ORAC_HA_STATUS")
+        self.assertFalse(manifest.ui.surfaces[0].apex.install_required)
+        self.assertEqual(
+            manifest.ui.surfaces[1].react.component,
+            "HomeAssistantDiagnosticsPanel",
+        )
+
+    def test_ui_surface_metadata_is_not_routing_metadata(self) -> None:
+        manifest = PluginDiscovery(PROJECT_ROOT / "plugins").load_manifest(
+            PROJECT_ROOT / "plugins" / "home_assistant.json"
+        )
+
+        route_values = {
+            value
+            for capability in manifest.route_capabilities
+            for value in (
+                capability.capability_id,
+                *(intent.name for intent in capability.intents),
+            )
+        }
+
+        self.assertNotIn("home_assistant.status_summary", route_values)
+        self.assertNotIn("home_assistant.admin_status", route_values)
+        self.assertNotIn("home_assistant.react_diagnostics", route_values)
+
+    def test_ui_status_provider_redaction_required_defaults_true(self) -> None:
+        manifest = self._load_temp_manifest(
+            {
+                "ui": {
+                    "status_provider": {
+                        "id": "alpha.status",
+                        "format": "plugin_status_v1",
+                    }
+                }
+            }
+        )
+
+        self.assertTrue(manifest.ui.status_provider.redaction_required)
+
+    def test_discovery_rejects_invalid_ui_surface_values(self) -> None:
+        cases = (
+            ("target", "terminal"),
+            ("type", "launcher"),
+            ("audience", "anonymous"),
+        )
+        for field_name, invalid_value in cases:
+            with self.subTest(field_name=field_name):
+                with self.assertRaisesRegex(ValueError, f"ui.surfaces\\[0\\].{field_name}"):
+                    self._load_temp_manifest(
+                        {
+                            "ui": {
+                                "surfaces": [
+                                    {
+                                        "id": "alpha.surface",
+                                        "type": (
+                                            invalid_value
+                                            if field_name == "type"
+                                            else "admin_status"
+                                        ),
+                                        "label": "Alpha Status",
+                                        "target": (
+                                            invalid_value
+                                            if field_name == "target"
+                                            else "apex"
+                                        ),
+                                        "audience": (
+                                            invalid_value
+                                            if field_name == "audience"
+                                            else "admin"
+                                        ),
+                                        "enabled": True,
+                                    }
+                                ]
+                            }
+                        }
+                    )
+
+    def test_ui_apex_and_react_metadata_are_accepted(self) -> None:
+        manifest = self._load_temp_manifest(
+            {
+                "ui": {
+                    "surfaces": [
+                        {
+                            "id": "alpha.apex_status",
+                            "type": "admin_status",
+                            "label": "Alpha APEX",
+                            "target": "apex",
+                            "audience": "admin",
+                            "enabled": True,
+                            "apex": {
+                                "app_alias": "ALPHA_STATUS",
+                                "app_export": "apex/alpha_status.sql",
+                                "entry_page_id": 1,
+                                "install_required": False,
+                            },
+                        },
+                        {
+                            "id": "alpha.react_status",
+                            "type": "diagnostic_panel",
+                            "label": "Alpha React",
+                            "target": "react",
+                            "audience": "admin",
+                            "enabled": True,
+                            "react": {
+                                "component": "AlphaStatusPanel",
+                                "status_endpoint": "alpha.status",
+                                "install_required": False,
+                            },
+                        },
+                    ]
+                }
+            }
+        )
+
+        self.assertEqual(manifest.ui.surfaces[0].apex.entry_page_id, 1)
+        self.assertEqual(manifest.ui.surfaces[1].react.status_endpoint, "alpha.status")
+
+    def _load_temp_manifest(self, extra: dict) -> object:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            manifest_data = {
+                "schema_version": 2,
+                "plugin_id": "alpha",
+                "name": "Alpha",
+                "description": "Test plugin",
+                "version": "1.0.0",
+                "enabled": True,
+                "capabilities": ["alpha.query"],
+                "entitlements": [],
+                "runtime": {"mode": "on_demand"},
+            }
+            manifest_data.update(extra)
+            manifest_path = plugins_dir / "alpha.json"
+            manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+            return PluginDiscovery(plugins_dir).load_manifest(manifest_path)
+
     def test_canonical_intent_text_is_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             plugins_dir = Path(temp_dir)

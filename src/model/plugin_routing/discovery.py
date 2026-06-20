@@ -13,6 +13,7 @@ from typing import Any
 
 from model.plugin_routing.models import (
     PluginConfigKey,
+    PluginApexSurfaceMetadata,
     PluginDatabaseBackup,
     PluginDatabaseSchema,
     PluginDatabaseVersionCheck,
@@ -21,10 +22,14 @@ from model.plugin_routing.models import (
     PluginManifest,
     PluginRouteCapability,
     PluginRouteIntent,
+    PluginReactSurfaceMetadata,
     PluginSecretKey,
     PluginSecrets,
     PluginServiceSchedule,
     PluginServiceRuntime,
+    PluginUi,
+    PluginUiStatusProvider,
+    PluginUiSurface,
 )
 from model.plugin_database_deployment import PROTECTED_ORAC_SCHEMAS
 from model.plugin_dependencies import PluginDependencyError
@@ -41,6 +46,10 @@ SERVICE_START_POLICIES = {"auto", "manual"}
 SERVICE_RESTART_POLICIES = {"never", "on_failure"}
 DATABASE_ON_MISSING_POLICIES = {"warn_disable", "warn_only", "fail_refresh"}
 DATABASE_MANAGERS = {"orac"}
+PLUGIN_UI_STATUS_FORMATS = {"plugin_status_v1"}
+PLUGIN_UI_SURFACE_TARGETS = {"apex", "react"}
+PLUGIN_UI_SURFACE_TYPES = {"admin_status", "diagnostic_panel"}
+PLUGIN_UI_AUDIENCES = {"admin", "user", "system"}
 PLUGIN_ACTION_TYPES = {
     "informational_read_only",
     "external_read",
@@ -71,6 +80,7 @@ OPTIONAL_FIELDS = {
     "configuration",
     "database",
     "secrets",
+    "ui",
     "python_dependencies",
 }
 ALLOWED_FIELDS = REQUIRED_FIELDS | OPTIONAL_FIELDS
@@ -216,6 +226,7 @@ class PluginDiscovery:
             data.get("database", {})
         )
         secrets = self._load_secrets(data.get("secrets"))
+        ui = self._load_ui(data.get("ui"))
         try:
             python_dependencies = normalise_requirements(
                 data.get("python_dependencies", [])
@@ -250,6 +261,7 @@ class PluginDiscovery:
             database_on_missing=database_on_missing,
             database_schemas=tuple(database_schemas),
             secrets=secrets,
+            ui=ui,
             python_dependencies=python_dependencies,
         )
 
@@ -863,6 +875,177 @@ class PluginDiscovery:
         include = self._require_bool(value.get("include", False), f"{field_name}.include")
         export_mode = self._require_optional_string(value.get("export_mode"), f"{field_name}.export_mode")
         return PluginDatabaseBackup(include=include, export_mode=export_mode)
+
+    def _load_ui(self, value: Any) -> PluginUi | None:
+        """Load optional plugin-owned UI/status metadata."""
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise PluginManifestError("ui must be an object")
+        self._reject_unknown_fields(value, {"status_provider", "surfaces"}, "ui")
+        status_provider = self._load_ui_status_provider(value.get("status_provider"))
+        surfaces_value = value.get("surfaces", [])
+        if not isinstance(surfaces_value, list):
+            raise PluginManifestError("ui.surfaces must be a list")
+        surfaces = tuple(
+            self._load_ui_surface(surface_value, index)
+            for index, surface_value in enumerate(surfaces_value)
+        )
+        return PluginUi(status_provider=status_provider, surfaces=surfaces)
+
+    def _load_ui_status_provider(self, value: Any) -> PluginUiStatusProvider | None:
+        """Load one status provider declaration."""
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise PluginManifestError("ui.status_provider must be an object")
+        self._reject_unknown_fields(
+            value,
+            {"id", "description", "format", "redaction_required"},
+            "ui.status_provider",
+        )
+        self._require_fields(value, {"id", "format"}, "ui.status_provider")
+        return PluginUiStatusProvider(
+            provider_id=self._require_non_empty_string(
+                value.get("id"),
+                "ui.status_provider.id",
+            ),
+            description=(
+                self._require_optional_string(
+                    value.get("description"),
+                    "ui.status_provider.description",
+                )
+                or ""
+            ),
+            format=self._require_enum(
+                value.get("format"),
+                "ui.status_provider.format",
+                PLUGIN_UI_STATUS_FORMATS,
+            ),
+            redaction_required=self._require_bool(
+                value.get("redaction_required", True),
+                "ui.status_provider.redaction_required",
+            ),
+        )
+
+    def _load_ui_surface(self, value: Any, index: int) -> PluginUiSurface:
+        """Load one operational UI surface declaration."""
+        field_name = f"ui.surfaces[{index}]"
+        if not isinstance(value, dict):
+            raise PluginManifestError(f"{field_name} must be an object")
+        required_fields = {"id", "type", "label", "target", "audience", "enabled"}
+        optional_fields = {"description", "required_roles", "apex", "react"}
+        self._reject_unknown_fields(value, required_fields | optional_fields, field_name)
+        self._require_fields(value, required_fields, field_name)
+        target = self._require_enum(
+            value.get("target"),
+            f"{field_name}.target",
+            PLUGIN_UI_SURFACE_TARGETS,
+        )
+        return PluginUiSurface(
+            surface_id=self._require_non_empty_string(value.get("id"), f"{field_name}.id"),
+            surface_type=self._require_enum(
+                value.get("type"),
+                f"{field_name}.type",
+                PLUGIN_UI_SURFACE_TYPES,
+            ),
+            label=self._require_non_empty_string(
+                value.get("label"),
+                f"{field_name}.label",
+            ),
+            target=target,
+            audience=self._require_enum(
+                value.get("audience"),
+                f"{field_name}.audience",
+                PLUGIN_UI_AUDIENCES,
+            ),
+            enabled=self._require_bool(value.get("enabled"), f"{field_name}.enabled"),
+            description=(
+                self._require_optional_string(
+                    value.get("description"),
+                    f"{field_name}.description",
+                )
+                or ""
+            ),
+            required_roles=tuple(
+                self._require_string_list(
+                    value.get("required_roles", []),
+                    f"{field_name}.required_roles",
+                )
+            ),
+            apex=self._load_apex_surface_metadata(
+                value.get("apex"),
+                f"{field_name}.apex",
+            ),
+            react=self._load_react_surface_metadata(
+                value.get("react"),
+                f"{field_name}.react",
+            ),
+        )
+
+    def _load_apex_surface_metadata(
+        self,
+        value: Any,
+        field_name: str,
+    ) -> PluginApexSurfaceMetadata | None:
+        """Load optional APEX surface metadata."""
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise PluginManifestError(f"{field_name} must be an object")
+        self._reject_unknown_fields(
+            value,
+            {"app_alias", "app_export", "entry_page_id", "install_required"},
+            field_name,
+        )
+        return PluginApexSurfaceMetadata(
+            app_alias=self._require_optional_string(
+                value.get("app_alias"),
+                f"{field_name}.app_alias",
+            ),
+            app_export=self._require_optional_string(
+                value.get("app_export"),
+                f"{field_name}.app_export",
+            ),
+            entry_page_id=self._require_non_negative_int(
+                value.get("entry_page_id"),
+                f"{field_name}.entry_page_id",
+            ),
+            install_required=self._require_bool(
+                value.get("install_required", False),
+                f"{field_name}.install_required",
+            ),
+        )
+
+    def _load_react_surface_metadata(
+        self,
+        value: Any,
+        field_name: str,
+    ) -> PluginReactSurfaceMetadata | None:
+        """Load optional React surface metadata."""
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise PluginManifestError(f"{field_name} must be an object")
+        self._reject_unknown_fields(
+            value,
+            {"component", "status_endpoint", "install_required"},
+            field_name,
+        )
+        return PluginReactSurfaceMetadata(
+            component=self._require_optional_string(
+                value.get("component"),
+                f"{field_name}.component",
+            ),
+            status_endpoint=self._require_optional_string(
+                value.get("status_endpoint"),
+                f"{field_name}.status_endpoint",
+            ),
+            install_required=self._require_bool(
+                value.get("install_required", False),
+                f"{field_name}.install_required",
+            ),
+        )
 
     @staticmethod
     def _require_non_empty_string(value: Any, field_name: str) -> str:

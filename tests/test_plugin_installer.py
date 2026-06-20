@@ -370,6 +370,46 @@ class PluginInstallerTests(unittest.TestCase):
                 "retained",
             )
 
+    def test_install_required_apex_surface_requires_export_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = _write_source_plugin(
+                root,
+                "alpha",
+                extra_manifest={
+                    "ui": {
+                        "surfaces": [
+                            {
+                                "id": "alpha.admin_status",
+                                "type": "admin_status",
+                                "label": "Alpha Status",
+                                "target": "apex",
+                                "audience": "admin",
+                                "enabled": True,
+                                "apex": {
+                                    "app_alias": "ALPHA_STATUS",
+                                    "app_export": "apex/alpha_status.sql",
+                                    "entry_page_id": 1,
+                                    "install_required": True,
+                                },
+                            }
+                        ]
+                    }
+                },
+            )
+            result = PluginInstaller(
+                project_root=root,
+                managed_root=root / "var" / "plugins",
+                config_root=root / "config",
+                dependency_installer=_DependencyInstaller(),
+                database_deployer=_DatabaseDeployer(),
+                registry=_Registry(),
+            ).install_source(source)
+
+            self.assertFalse(result.enabled)
+            self.assertEqual(result.status, "readiness_failed")
+            self.assertIn("missing APEX export", result.message)
+
 
 class ExistingPluginDependencyTests(unittest.TestCase):
     """Keep bundled plugin dependency declarations aligned with imports."""
@@ -403,6 +443,7 @@ def _write_source_plugin(
     plugin_id: str,
     *,
     required_config: bool = False,
+    extra_manifest: dict | None = None,
 ) -> Path:
     """Create a minimal source plugin fixture."""
     plugins = root / "plugins"
@@ -432,6 +473,8 @@ def _write_source_plugin(
         "database": {"required": False, "schemas": []},
         "python_dependencies": [],
     }
+    if extra_manifest:
+        manifest.update(extra_manifest)
     (plugins / f"{plugin_id}.json").write_text(
         json.dumps(manifest),
         encoding="utf-8",

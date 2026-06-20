@@ -34,6 +34,7 @@ from home_assistant.control import ResolvedControl
 from home_assistant.service import HomeAssistantService
 from home_assistant.service import HomeAssistantServiceError
 from home_assistant.sensor_query import SensorQueryResult
+from home_assistant.status import summary_from_row
 from home_assistant.sync import SyncResult
 
 
@@ -172,6 +173,7 @@ class _FakeRepository:
         self.sensor_query_requests: list = []
         self.sensor_resolution_requests: list = []
         self.cached_sensor_query_requests: list = []
+        self.status_summary_requests: list[dict] = []
 
     def close(self) -> None:
         self.closed = True
@@ -251,6 +253,39 @@ class _FakeRepository:
             entity_ids=("sensor.lounge_temperature",),
             areas=("lounge",),
             status="cached",
+        )
+
+    def status_summary(
+        self,
+        *,
+        service_running=None,
+        api_reachable=None,
+        last_error_message=None,
+    ):
+        self.status_summary_requests.append(
+            {
+                "service_running": service_running,
+                "api_reachable": api_reachable,
+                "last_error_message": last_error_message,
+            }
+        )
+        return summary_from_row(
+            {
+                "plugin_id": "home_assistant",
+                "last_startup_sync_at": "2026-06-20T10:00:00Z",
+                "last_startup_sync_status": "complete",
+                "last_state_sync_at": "2026-06-20T10:01:00Z",
+                "last_state_sync_status": "complete",
+                "last_areas_processed": 2,
+                "last_devices_processed": 3,
+                "last_entities_processed": 4,
+                "last_states_processed": 5,
+                "last_error_message_redacted": None,
+                "updated_at": "2026-06-20T10:02:00Z",
+            },
+            service_running=service_running,
+            api_reachable=api_reachable,
+            last_error_message=last_error_message,
         )
 
 
@@ -467,6 +502,57 @@ class HomeAssistantServiceTests(unittest.TestCase):
         self.assertTrue(service.state.started)
         self.assertEqual(service.state.structural_sync_status, "complete")
         self.assertEqual(service.state.state_sync_status, "complete")
+
+    def test_status_command_returns_runtime_and_sync_summary(self) -> None:
+        context = _FakeContext()
+        repository_holder: dict[str, _FakeRepository] = {}
+
+        def repository_factory(runtime_context: _FakeContext) -> _FakeRepository:
+            repository = _FakeRepository(runtime_context)
+            repository_holder["repository"] = repository
+            return repository
+
+        service = HomeAssistantService(
+            client_factory=lambda config: _FakeClient(config),
+            repository_factory=repository_factory,
+            sync_coordinator_factory=lambda **kwargs: _FakeSyncCoordinator(**kwargs),
+        )
+        service.handle_command(context, "resync", {"source": "unit"})
+
+        result = service.handle_command(context, "status", {})
+
+        self.assertEqual(result["plugin_id"], "home_assistant")
+        self.assertTrue(result["service_running"])
+        self.assertTrue(result["api_reachable"])
+        self.assertEqual(result["last_startup_sync_status"], "complete")
+        self.assertEqual(result["last_state_sync_status"], "complete")
+        self.assertEqual(result["last_areas_processed"], 2)
+        self.assertEqual(result["last_devices_processed"], 3)
+        self.assertEqual(result["last_entities_processed"], 4)
+        self.assertEqual(result["last_states_processed"], 5)
+        self.assertTrue(repository_holder["repository"].closed)
+
+    def test_status_command_reports_api_unreachable_and_redacts_error(self) -> None:
+        service = HomeAssistantService(
+            client_factory=lambda config: _FakeClient(config, fail_check=True),
+            repository_factory=lambda runtime_context: _FakeRepository(runtime_context),
+            sync_coordinator_factory=lambda **kwargs: _FakeSyncCoordinator(**kwargs),
+        )
+        context = _FakeContext()
+
+        with self.assertRaisesRegex(RuntimeError, "api unavailable"):
+            service.handle_command(context, "resync", {"source": "unit"})
+        service.state.last_error = (
+            "api unavailable with Bearer abc.def and password=supersecret"
+        )
+
+        result = service.handle_command(context, "status", {})
+
+        self.assertFalse(result["service_running"])
+        self.assertFalse(result["api_reachable"])
+        self.assertNotIn("abc.def", result["last_error_message_redacted"])
+        self.assertNotIn("supersecret", result["last_error_message_redacted"])
+        self.assertIn("[redacted]", result["last_error_message_redacted"])
 
     def test_control_uses_ephemeral_client_and_closes_resources(self) -> None:
         client_holder: dict[str, _FakeClient] = {}

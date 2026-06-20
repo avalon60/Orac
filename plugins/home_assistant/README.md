@@ -10,7 +10,8 @@ and plugin-owned database assets for `home_assistant`.
 
 The user guide includes the complete command reference for device control,
 scene activation, area control, area listings, target resolution, aliases,
-safety refusals, temperature/humidity queries, and resynchronisation.
+safety refusals, temperature/humidity queries, resynchronisation, and the
+admin status surface for sync/API diagnostics.
 
 Non-secret connection settings belong in `plugin.ini`. Store the long-lived
 access token in Orac's encrypted plugin PAT vault:

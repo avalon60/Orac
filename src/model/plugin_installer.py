@@ -368,6 +368,27 @@ class PluginInstaller:
                     f"Plugin service '{manifest.plugin_id}' does not expose its "
                     "declared health-check method."
                 )
+        PluginInstaller._validate_ui_assets(manifest)
+
+    @staticmethod
+    def _validate_ui_assets(manifest: PluginManifest) -> None:
+        """Verify required plugin UI assets are present without installing them."""
+        if manifest.ui is None:
+            return
+        for surface in manifest.ui.surfaces:
+            if surface.target == "apex" and surface.apex is not None:
+                if surface.apex.install_required and not surface.apex.app_export:
+                    raise PluginInstallationError(
+                        f"Plugin UI surface '{surface.surface_id}' requires an "
+                        "APEX export but does not declare apex.app_export."
+                    )
+                if surface.apex.install_required and surface.apex.app_export:
+                    export_path = manifest.plugin_dir / surface.apex.app_export
+                    if not export_path.is_file():
+                        raise PluginInstallationError(
+                            f"Plugin UI surface '{surface.surface_id}' declares "
+                            f"missing APEX export: {surface.apex.app_export}"
+                        )
 
     def _activate_candidate(
         self,

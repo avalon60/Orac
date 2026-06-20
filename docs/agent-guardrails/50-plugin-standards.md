@@ -350,6 +350,22 @@ The manifest describes what the plugin offers.
 
 The manifest does not grant authority.
 
+Optional plugin UI metadata may declare operational or admin surfaces, such as
+status providers, APEX admin pages, or React diagnostic panels. These
+declarations are discovery metadata only.
+
+Plugin UI metadata must not:
+
+* create conversational capabilities
+* enter prompt routing or intent arbitration
+* grant access to secrets or raw plugin-private tables
+* bypass Orac-owned installation, registration, authentication, or lifecycle
+  controls
+
+Status providers must return redacted operational data. Error text must mask
+tokens, bearer values, passwords, secrets, credential-bearing URLs, and other
+sensitive values before it is exposed to APEX, React, logs, or admin APIs.
+
 ---
 
 ## Plugin capabilities
