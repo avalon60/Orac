@@ -16,6 +16,11 @@ export ORACLE_BASE=${ORACLE_BASE:-/opt/oracle}
 timestamp() { date +"%Y-%m-%d %H:%M:%S"; }
 echo "[$(timestamp)] ${PROG} Started"
 
+if [[ -z "${ORACLE_PWD:-}" ]]; then
+    echo "ORAC_APEX_ADMIN_SETUP_FAILED: ORACLE_PWD is not set."
+    return 1 2>/dev/null || exit 1
+fi
+
 # Derive the CDN for this release
 CDN=" https://static.oracle.com/cdn/apex/${APEX_VERSION}.0/"
 
@@ -30,7 +35,22 @@ begin
     -- Use 'ORAC' (based on your footer in the first screenshot)
     apex_util.set_workspace(p_workspace => 'ORAC'); 
 
-    -- 2. Grant the role
+    -- 2. Reset and enable the exported workspace account for this install.
+    apex_util.reset_password (
+        p_user_name                    => 'ORAC_ADMIN',
+        p_new_password                 => '${ORACLE_PWD}',
+        p_change_password_on_first_use => false
+    );
+
+    apex_util.unlock_account (
+        p_user_name => 'ORAC_ADMIN'
+    );
+
+    apex_util.unexpire_workspace_account (
+        p_user_name => 'ORAC_ADMIN'
+    );
+
+    -- 3. Grant the role
     apex_acl.add_user_role (
         p_application_id => 1042,
         p_user_name      => 'ORAC_ADMIN',

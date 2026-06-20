@@ -17,6 +17,7 @@ ORACLE_ROOT = PROJECT_ROOT / "resources" / "docker" / "oracle"
 CHECK_WRAPPER = ORACLE_ROOT / "bin" / "checkDBStatus-orac.sh"
 DOCKERFILE = ORACLE_ROOT / "Dockerfile"
 ORDS_SETUP = ORACLE_ROOT / "setup" / "020-setup-ords.sh"
+APEX_ROLE_SETUP = ORACLE_ROOT / "setup" / "038-init-app-role.sh"
 ORDS_STARTUP = ORACLE_ROOT / "startup" / "010-start-ords.sh"
 LISTENER_REPAIR = ORACLE_ROOT / "startup" / "005-repair-listener.sh"
 ORDS_POST_INSTALL = ORACLE_ROOT / "setup" / "024-ords-post-install.sql"
@@ -122,6 +123,19 @@ def test_proxy_grant_is_minimal() -> None:
     assert sql.count("grant connect through ords_public_user") == 4
     assert "grant dba" not in sql
     assert "grant all" not in sql
+
+
+def test_apex_admin_account_is_reset_and_unexpired_during_setup() -> None:
+    script = APEX_ROLE_SETUP.read_text(encoding="utf-8")
+
+    assert '[[ -z "${ORACLE_PWD:-}" ]]' in script
+    assert "apex_util.reset_password" in script
+    assert "p_user_name                    => 'ORAC_ADMIN'" in script
+    assert "p_new_password                 => '${ORACLE_PWD}'" in script
+    assert "p_change_password_on_first_use => false" in script
+    assert "apex_util.unlock_account" in script
+    assert "apex_util.unexpire_workspace_account" in script
+    assert "apex_util.expire_workspace_account" not in script
 
 
 def test_canonical_apex_url_is_documented_and_used_by_deploy() -> None:
