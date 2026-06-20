@@ -21,6 +21,7 @@ const SHOW_TRANSCRIPT_PANELS =
 const RECONNECT_INITIAL_DELAY_MS = 500;
 const RECONNECT_MAX_DELAY_MS = 10_000;
 const RECOVERY_NOTICE_DURATION_MS = 6_000;
+const RENDER_RECOVERY_DEBOUNCE_MS = 12_000;
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected';
 type BrowserUiConfig = {
@@ -114,7 +115,6 @@ function useMediaQuery(query: string) {
       setMatches(event.matches);
     };
 
-    setMatches(mediaQuery.matches);
     mediaQuery.addEventListener('change', updateMatches);
     return () => mediaQuery.removeEventListener('change', updateMatches);
   }, [query]);
@@ -152,7 +152,6 @@ function App() {
   const [userTranscript, setUserTranscript] = useState('');
   const [oracTranscript, setOracTranscript] = useState('');
   const [railExpanded, setRailExpanded] = useState(false);
-  const [reconnectNonce, setReconnectNonce] = useState(0);
   const [renderResetNonce, setRenderResetNonce] = useState(0);
   const [renderRecoveryStatus, setRenderRecoveryStatus] =
     useState<RenderRecoveryStatus>({
@@ -163,10 +162,25 @@ function App() {
     });
   const socketRef = useRef<WebSocket | null>(null);
   const diagnosticQueueRef = useRef<string[]>([]);
+  const lastRenderRecoveryAtRef = useRef(0);
   const isWideScreen = useMediaQuery('(min-width: 1280px)');
 
   const requestDisplayRecovery = (reason: DisplayRecoveryReason) => {
     const timestamp = new Date().toISOString();
+    const now = Date.now();
+
+    if (
+      reason !== 'timer-gap' &&
+      now - lastRenderRecoveryAtRef.current < RENDER_RECOVERY_DEBOUNCE_MS
+    ) {
+      logDisplayDiagnostic('display recovery skipped during debounce', {
+        reason,
+        timestamp,
+      });
+      return;
+    }
+
+    lastRenderRecoveryAtRef.current = now;
     logDisplayDiagnostic('display recovery requested', { reason, timestamp });
     setRenderRecoveryStatus((current) => ({
       count: current.count + 1,
@@ -174,16 +188,8 @@ function App() {
       lastTimestamp: timestamp,
       visible: true,
     }));
-    setConnectionState('connecting');
-    setReconnectNonce((value) => value + 1);
     setRenderResetNonce((value) => value + 1);
   };
-
-  useEffect(() => {
-    if (!showButtons || isWideScreen) {
-      setRailExpanded(false);
-    }
-  }, [showButtons, isWideScreen]);
 
   useEffect(() => {
     if (!renderRecoveryStatus.visible || connectionState !== 'connected') {
@@ -279,7 +285,6 @@ function App() {
       try {
         logDisplayDiagnostic('opening display WebSocket', {
           url: DISPLAY_WS_URL,
-          reconnectNonce,
         });
         socket = new WebSocket(DISPLAY_WS_URL);
         socketRef.current = socket;
@@ -438,7 +443,7 @@ function App() {
       }
       socket = null;
     };
-  }, [reconnectNonce]);
+  }, []);
 
   const handleManualStateChange = (newState: OracState) => {
     setState(newState);

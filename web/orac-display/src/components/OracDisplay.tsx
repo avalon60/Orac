@@ -780,10 +780,11 @@ const Tesseract = ({
         depthWrite: false,
         toneMapped: false,
       }),
-    [config.color],
+    [],
   );
   const coreGlowTexture = useMemo(() => createCoreGlowTexture(), []);
   const coreBodyTexture = useMemo(() => createCoreBodyTexture(), []);
+  const edgeColor = useMemo(() => new THREE.Color(TESSERACT_THEME.baseLine), []);
 
   useFrame((sceneState, delta) => {
     if (
@@ -873,19 +874,19 @@ const Tesseract = ({
         break;
       case 'thinking':
       case 'checking_online':
-      case 'reading_sources':
+      case 'reading_sources': {
         // Out of phase breathing
-        const thinkT = t * 3;
-        innerScale *= (1.1 + Math.sin(thinkT) * 0.1);
+        const thinkT = t * 1.8;
+        innerScale *= (1.08 + Math.sin(thinkT) * 0.045);
         outerOpacity = 0.22;
         innerOpacity = 0.17;
-        // Shimmering connectors
-        connectorOpacity = 0.5 + Math.sin(t * 10) * 0.15;
-        coreScale *= (1.03 + Math.sin(t * 2.2) * 0.04);
+        connectorOpacity = 0.48 + Math.sin(t * 3.2) * 0.04;
+        coreScale *= (1.025 + Math.sin(t * 1.6) * 0.018);
         coreOpacity = 0.18;
-        coreGlow = 0.78;
+        coreGlow = 0.62;
         coreHighlightOpacity = 0.15;
         break;
+      }
       case 'speaking':
         // Rhythmic pulse
         innerScale *= (1.03 + Math.sin(t * 3.92) * 0.08);
@@ -1037,8 +1038,6 @@ const Tesseract = ({
       cornerMaterial.opacity = isSpeaking ? 0.32 + speakingPulse * 0.36 : 0.08;
     }
   });
-
-  const edgeColor = useMemo(() => new THREE.Color(TESSERACT_THEME.baseLine), []);
 
   return (
     <group ref={groupRef}>
@@ -1216,11 +1215,11 @@ const Scene = ({
   const isSpeaking = state === 'speaking';
   const isError = state === 'error' || state === 'interrupted';
   const isListening = false;
-  const sparkleCount = isThinking ? 52 : isSpeaking ? 40 : 28;
-  const sparkleSize = isThinking ? 1.8 : isSpeaking ? 1.7 : 1.55;
+  const sparkleCount = isThinking ? 34 : isSpeaking ? 40 : 28;
+  const sparkleSize = isThinking ? 1.45 : isSpeaking ? 1.7 : 1.55;
   const idleSparkleSpeed = STATE_CONFIGS.idle.pulseRate * 0.28;
   const sparkleSpeed = isThinking
-    ? idleSparkleSpeed * 6
+    ? idleSparkleSpeed * 1.6
     : isSpeaking
       ? idleSparkleSpeed * 2
       : motionState === 'idle'
@@ -1228,16 +1227,16 @@ const Scene = ({
         : isIdle
         ? idleSparkleSpeed
         : config.pulseRate * 0.18;
-  const sparkleOpacity = isError ? 0.14 : isIdle ? 0.28 : isSpeaking ? 0.62 : isThinking ? 0.58 : 0.42;
-  const pointLightIntensity = isListening ? 0.04 : isSpeaking ? 0.28 : isThinking ? 0.18 : 0.1;
-  const spotLightIntensity = isListening ? 0.08 : isSpeaking ? 0.5 : isThinking ? 0.34 : 0.18;
+  const sparkleOpacity = isError ? 0.14 : isIdle ? 0.28 : isSpeaking ? 0.62 : isThinking ? 0.34 : 0.42;
+  const pointLightIntensity = isListening ? 0.04 : isSpeaking ? 0.28 : isThinking ? 0.13 : 0.1;
+  const spotLightIntensity = isListening ? 0.08 : isSpeaking ? 0.5 : isThinking ? 0.24 : 0.18;
   const bloomIntensity = state === 'thinking'
-    ? config.bloomIntensity * 3
+    ? 1.65
     : state === 'speaking'
       ? config.bloomIntensity * 2
       : config.bloomIntensity;
   const bloomRadius = state === 'thinking'
-    ? 1.2
+    ? 0.58
     : state === 'speaking'
       ? 0.8
       : isListening
@@ -1511,7 +1510,7 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 1.05 }}
-          className="absolute bottom-14 z-10 flex flex-col items-center pointer-events-none"
+          className="absolute bottom-14 z-20 flex flex-col items-center pointer-events-none"
         >
           <div 
             className="font-bold tracking-[1em] text-[11px] uppercase mb-5 text-center transition-colors duration-700"
