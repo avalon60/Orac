@@ -713,9 +713,14 @@ Rules:
 
 ## SQLcl entrypoint scripts
 
-Repositories may use root SQLcl entrypoint scripts to launch Liquibase control
-files. When this pattern is requested or already present, maintain these two
-entrypoints from the repository root:
+Repositories may use SQLcl entrypoint scripts to launch Liquibase control
+files. In Orac, database deployment assets live under `resources/db/schema` and
+are copied as a whole into the Oracle container under `${ORAC_HOME}/schema`.
+Keep Liquibase controller paths relative to that schema root so the same
+relative paths work before and after the container copy.
+
+When this pattern is requested or already present, maintain these two
+entrypoints from the schema deployment root:
 
 - `install.sql` installs production database and application deliverables only.
 - `install_nonprod.sql` runs `install.sql` first, then installs lower
@@ -729,7 +734,7 @@ prompt ** INSTALL - START **
 prompt ** =================**
 
 prompt "... Running the liquibase update.."
-liquibase update -changelog-file product/productController.xml
+liquibase update -changelog-file productController.xml
 ```
 
 Non-production entrypoint pattern:
@@ -745,13 +750,16 @@ prompt ** =====================**
 prompt ** NONPROD - START     **
 prompt ** =====================**
 
-liquibase update -changelog-file nonprod/nonProdController.xml
+liquibase update -changelog-file nonProdController.xml
 ```
 
 Rules:
 
-- Keep the entrypoint scripts in the repository root unless the repository
-  documents a different launch location.
+- Keep Orac database entrypoint scripts under `resources/db/schema` unless the
+  repository documents a different launch location.
+- When launching inside the container, run the entrypoint from
+  `${ORAC_HOME}/schema` or otherwise preserve the same relative controller
+  paths.
 - `install_nonprod.sql` must call `@install.sql` before running the nonprod
   controller so lower environments receive the production baseline first.
 - Do not include non-production controllers or developer-only scripts from
@@ -770,38 +778,37 @@ Rules:
 
 ## XML controller topology
 
-The install chain should normally be:
+For Orac, the install chain should normally be rooted at `resources/db/schema`
+in the repository and at `${ORAC_HOME}/schema` after the container copy:
 
 ```text
+resources/db/schema/
 install.sql
-  -> product/productController.xml
-       -> product/db/_dba
-       -> product/db/<domain_schema>/schemaController.xml
-       -> product/db/post_install
-       -> product/db/install_validation/validationController.xml
+  -> productController.xml
+       -> orac_core/schemaController.xml
+       -> orac_api/schemaController.xml
+       -> orac_code/schemaController.xml
+       -> orac_apx_pub/schemaController.xml
+       -> orac/schemaController.xml
+       -> install_validation/validationController.xml
 
 install_nonprod.sql
   -> install.sql
-  -> nonprod/nonProdController.xml
-       -> nonprod/db/_dba
-       -> nonprod/db/<domain_schema>/schemaController.xml
-       -> nonprod/db/post_install
-       -> nonprod/db/install_validation/validationController.xml
+  -> nonProdController.xml
+       -> nonprod/<schema_bundle>/schemaController.xml
+       -> nonprod/install_validation/validationController.xml
 ```
 
-The `<domain_schema>` directories are repository-specific schema or namespace
-folders, such as `<namespace>_core`, `<namespace>_api`, or `<namespace>_code`.
-Discover them from the target repository's actual directory tree. Do not copy
-schema names, product names, public application schemas, or other project-only
-folders from an example repository unless the same directory exists in the
-target repository and belongs in the requested install scope.
+The Orac schema bundle directories are repository-specific schema folders such
+as `orac_core`, `orac_api`, `orac_code`, `orac_apx_pub`, `orac`, and
+`orac_plugin` when present. Resolve bundle meaning from
+`resources/db/schema/AGENT_CONTEXT.md`; do not infer ownership, privileges, or
+grant direction from folder names alone.
 
-The current scaffold topology does not use an extra project-name directory layer
-below `product/` or `nonprod/`. Therefore a controller stored at
-`product/productController.xml` should normally refer to `db/...` paths, not
-`<project_name>/db/...` paths. A controller stored at
-`nonprod/nonProdController.xml` should normally refer to `db/...` paths, not
-`<project_name>/db/...` paths.
+Do not introduce the generic SDK `product/db/...` or `nonprod/db/...` pathname
+shape into Orac unless a task explicitly asks for a directory migration. The
+Orac source layout is already the deployment root:
+`resources/db/schema/<schema_bundle>/<object_type>/...`.
 
 Rules:
 
@@ -809,12 +816,15 @@ Rules:
 - Use `errorIfMissingOrEmpty="false"` for optional `includeAll` directories.
 - Include only directories that exist, unless the task explicitly asks to
   instantiate the missing controller structure.
-- Where a database `install_validation` directory exists, include it in the
-  database Liquibase controller after `post_install`.
+- Where a top-level `install_validation` directory exists, include it after all
+  production schema bundle controllers.
 - Preserve the repository's established ordering when adding a new include.
 - Do not add example-only application or public-schema controller entries just
   because they appeared in another repository.
-- Keep production and non-production controller trees separate.
+- Keep production and non-production controller trees separate. Lower
+  environment content should live under an explicit non-production subtree such
+  as `resources/db/schema/nonprod/...` unless the repository documents another
+  separation pattern.
 
 ---
 
@@ -826,37 +836,34 @@ not yet have them, create only the parts needed for the requested scope.
 For a production install chain, create or update:
 
 ```text
-install.sql
-product/productController.xml
-product/db/<domain_schema>/schemaController.xml
-product/db/_dba/
-product/db/pre_install/
-product/db/post_install/
-product/db/install_validation/validationController.xml
+resources/db/schema/install.sql
+resources/db/schema/productController.xml
+resources/db/schema/<schema_bundle>/schemaController.xml
+resources/db/schema/<schema_bundle>/<object_type>/
+resources/db/schema/install_validation/validationController.xml
 ```
 
 For a non-production install chain, create or update:
 
 ```text
-install_nonprod.sql
-nonprod/nonProdController.xml
-nonprod/db/<domain_schema>/schemaController.xml
-nonprod/db/_dba/
-nonprod/db/pre_install/
-nonprod/db/post_install/
-nonprod/db/install_validation/validationController.xml
+resources/db/schema/install_nonprod.sql
+resources/db/schema/nonProdController.xml
+resources/db/schema/nonprod/<schema_bundle>/schemaController.xml
+resources/db/schema/nonprod/<schema_bundle>/<object_type>/
+resources/db/schema/nonprod/install_validation/validationController.xml
 ```
 
 Rules:
 
-- Do not create optional common directories unless the task needs them or the
-  target repository already uses them.
-- When a common directory exists, wire it into the matching top-level
+- Do not create optional validation or non-production directories unless the
+  task needs them or the target repository already uses them.
+- When an optional directory exists, wire it into the matching top-level
   controller even if it is currently empty and the controller uses
   `errorIfMissingOrEmpty="false"`.
-- Derive `<domain_schema>` directories from existing target repository folders
-  or from the object namespace being introduced by the task.
-- When introducing a new schema/domain directory, create its
+- Derive `<schema_bundle>` directories from
+  `resources/db/schema/AGENT_CONTEXT.md` and the existing target repository
+  folders.
+- When introducing a new schema bundle directory, create its
   `schemaController.xml` in the same change as the first object-type directory
   or SQL file that depends on it.
 
@@ -864,8 +871,10 @@ Rules:
 
 ## Top-level product controller
 
-The production controller lives at `product/productController.xml`. It is the
-root production Liquibase changelog called by `install.sql`.
+The production controller lives at `resources/db/schema/productController.xml`.
+It is the root production Liquibase changelog called by
+`resources/db/schema/install.sql`. After the container copy, the same controller
+is reached as `${ORAC_HOME}/schema/productController.xml`.
 
 Standard shell:
 
@@ -875,33 +884,26 @@ Standard shell:
     xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xmlns:ora="http://www.oracle.com/xml/ns/dbchangelog-ext"
-    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.17.xsd"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd"
 >
-  <changeSet id="productController_setup_environment" author="project-template" runOnChange="true" runAlways="true" failOnError="false">
-    <sql>
-        set define off
-        set sqlblanklines on
-    </sql>
-  </changeSet>
-
   <!-- Controller includes go here. -->
 </databaseChangeLog>
 ```
 
-Populate production controller entries from the directories under `product/db`.
-Use this order when the matching directories exist:
+Populate production controller entries from the schema bundle directories under
+`resources/db/schema`. Use this order when the matching directories exist:
 
-1. `db/_dba` through `includeAll`
-2. `db/pre_install` through `includeAll`
-3. schema/domain controllers such as `db/<domain_schema>/schemaController.xml`
-4. application controllers such as `apps/...` or `apex/...` only when the
-   repository uses them and the task scope includes them
-5. `db/post_install` through `includeAll`
-6. `db/install_validation/validationController.xml`
+1. `orac_core/schemaController.xml`
+2. `orac_api/schemaController.xml`
+3. `orac_code/schemaController.xml`
+4. `orac_apx_pub/schemaController.xml`
+5. `orac/schemaController.xml`
+6. `orac_plugin/schemaController.xml` only when present and in scope
+7. `install_validation/validationController.xml` only when present
 
-A production controller with the common database stages present should end with
-`install_validation`. In current scaffold topology, do not add an extra
-project-name path layer between `product/` and `db/`.
+A production controller with an `install_validation` directory present should
+end with `install_validation`. Do not add a `product/db` path layer to Orac's
+schema deployment root.
 
 Example:
 
@@ -911,63 +913,60 @@ Example:
     xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xmlns:ora="http://www.oracle.com/xml/ns/dbchangelog-ext"
-    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.17.xsd"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd"
 >
-  <changeSet id="productController_setup_environment" author="project-template" runOnChange="true" runAlways="true" failOnError="false">
-    <!-- As of SQLcl 24.4.1 only define and sqlblanklines persists across changesets for sqlcl settings -->
-    <sql>
-        set define off
-        set sqlblanklines on
-    </sql>
-  </changeSet>
-
-  <includeAll
+  <include
     relativeToChangelogFile="true"
-    errorIfMissingOrEmpty="false"
-    path="db/_dba"
-  />
-  <includeAll
-    relativeToChangelogFile="true"
-    errorIfMissingOrEmpty="false"
-    path="db/pre_install"
+    file="orac_core/schemaController.xml"
   />
   <include
     relativeToChangelogFile="true"
-    file="db/<domain_schema>/schemaController.xml"
-  />
-  <includeAll
-    relativeToChangelogFile="true"
-    errorIfMissingOrEmpty="false"
-    path="db/post_install"
+    file="orac_api/schemaController.xml"
   />
   <include
     relativeToChangelogFile="true"
-    file="db/install_validation/validationController.xml"
+    file="orac_code/schemaController.xml"
+  />
+  <include
+    relativeToChangelogFile="true"
+    file="orac_apx_pub/schemaController.xml"
+  />
+  <include
+    relativeToChangelogFile="true"
+    file="orac/schemaController.xml"
+  />
+  <include
+    relativeToChangelogFile="true"
+    file="install_validation/validationController.xml"
   />
 </databaseChangeLog>
 ```
 
 Rules:
 
-- The common production database directories `_dba`, `pre_install`,
-  `post_install`, and `install_validation` are optional, but when present they
-  must be wired into `product/productController.xml` in the appropriate place.
-- `_dba`, `pre_install`, and `post_install` should be `includeAll` entries.
+- The production schema bundle directories must be wired into
+  `productController.xml` in dependency order.
+- Keep bundle-level `pre_install` and `post_install` directories inside the
+  owning schema bundle and include them from that bundle's
+  `schemaController.xml`.
 - `install_validation` should normally be included through its
   `validationController.xml`, because validation can have its own internal
   ordering.
-- The `install_validation` include must appear after the `post_install`
-  include.
-- Do not include a schema/domain directory directly with `includeAll` from the
-  product controller. Include that directory's `schemaController.xml` so object
+- The top-level `install_validation` include must appear after all production
+  schema bundle includes.
+- Do not include a schema bundle directory directly with `includeAll` from the
+  product controller. Include that bundle's `schemaController.xml` so object
   type ordering remains explicit.
 
 ---
 
 ## Top-level non-production controller
 
-The non-production controller lives at `nonprod/nonProdController.xml`. It is
-called only by `install_nonprod.sql`, after `install.sql` has completed.
+The non-production controller lives at
+`resources/db/schema/nonProdController.xml`. It is called only by
+`resources/db/schema/install_nonprod.sql`, after `install.sql` has completed.
+After the container copy, the same controller is reached as
+`${ORAC_HOME}/schema/nonProdController.xml`.
 
 Standard shell:
 
@@ -977,53 +976,48 @@ Standard shell:
     xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xmlns:ora="http://www.oracle.com/xml/ns/dbchangelog-ext"
-    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.17.xsd"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd"
 >
-  <changeSet id="nonProdController_setup_environment" author="project-template" runOnChange="true" runAlways="true" failOnError="false">
-    <sql>
-        set define off
-        set sqlblanklines on
-    </sql>
-  </changeSet>
-
   <!-- Non-production controller includes go here. -->
 </databaseChangeLog>
 ```
 
-Populate non-production controller entries from directories under `nonprod/db`.
-Use this order when the matching directories exist:
+Populate non-production controller entries from lower-environment directories
+under `resources/db/schema/nonprod`. Use this order when the matching
+directories exist:
 
 1. local environment setup files, such as `development_properties.sql`, when the
    repository uses them
-2. `db/_dba` through `includeAll`
-3. `db/pre_install` through `includeAll`
-4. non-production schema/domain controllers such as
-   `db/<domain_schema>/schemaController.xml`
+2. `nonprod/_dba` through `includeAll`, only when present
+3. `nonprod/pre_install` through `includeAll`, only when present
+4. non-production schema bundle controllers such as
+   `nonprod/<schema_bundle>/schemaController.xml`
 5. non-production application, test, fixture, utility, or data controllers only
    when the directories exist and are in scope
-6. `db/post_install` through `includeAll`
-7. `db/install_validation/validationController.xml`
+6. `nonprod/post_install` through `includeAll`, only when present
+7. `nonprod/install_validation/validationController.xml`, only when present
 
 Rules:
 
 - The common non-production database directories `_dba`, `pre_install`,
   `post_install`, and `install_validation` are optional, but when present they
-  must be wired into `nonprod/nonProdController.xml` in the appropriate place.
+  must be wired into `nonProdController.xml` in the appropriate place.
 - The `install_validation` include must appear after the `post_install`
   include.
 - Do not duplicate production schema includes in the non-production controller
-  unless those directories actually exist under `nonprod/db` and contain
-  non-production changes.
-- Never make `install.sql` call `nonprod/nonProdController.xml`.
+  unless those directories actually exist under `resources/db/schema/nonprod`
+  and contain non-production changes.
+- Never make `install.sql` call `nonProdController.xml`.
 
 ---
 
 ## Schema/domain controllers
 
 A schema/domain controller lives inside a schema or namespace directory, for
-example `product/db/<domain_schema>/schemaController.xml` or
-`nonprod/db/<domain_schema>/schemaController.xml`. It orders executable SQL
-files by object type.
+example `resources/db/schema/orac_core/schemaController.xml` or
+`resources/db/schema/orac_api/schemaController.xml`. It orders executable SQL
+files by object type within that schema bundle. After the container copy, the
+same examples resolve under `${ORAC_HOME}/schema`.
 
 Standard shell:
 
@@ -1033,12 +1027,27 @@ Standard shell:
    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
    xmlns:ora="http://www.oracle.com/xml/ns/dbchangelog-ext"
-   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.17.xsd"
+   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd"
 >
   <includeAll
     relativeToChangelogFile="true"
     errorIfMissingOrEmpty="false"
     path="pre_install"
+  />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
+    path="privilege"
+  />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
+    path="role"
+  />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
+    path="sequence"
   />
   <includeAll
     relativeToChangelogFile="true"
@@ -1058,12 +1067,22 @@ Standard shell:
   <includeAll
     relativeToChangelogFile="true"
     errorIfMissingOrEmpty="false"
-    path="constraint_uk"
+    path="constraint_uc"
+  />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
+    path="constraint_other"
   />
   <includeAll
     relativeToChangelogFile="true"
     errorIfMissingOrEmpty="false"
     path="constraint_fk"
+  />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
+    path="type_spec"
   />
   <includeAll
     relativeToChangelogFile="true"
@@ -1078,12 +1097,67 @@ Standard shell:
   <includeAll
     relativeToChangelogFile="true"
     errorIfMissingOrEmpty="false"
+    path="materialized_view"
+  />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
+    path="type_body"
+  />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
     path="package_body"
   />
   <includeAll
     relativeToChangelogFile="true"
     errorIfMissingOrEmpty="false"
+    path="trigger"
+  />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
+    path="context"
+  />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
+    path="procedure"
+  />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
+    path="function"
+  />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
+    path="seed_data"
+  />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
+    path="schedule"
+  />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
+    path="job"
+  />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
+    path="synonym"
+  />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
     path="grant"
+  />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
+    path="rest_module"
   />
   <includeAll
     relativeToChangelogFile="true"
@@ -1100,6 +1174,16 @@ Standard shell:
     errorIfMissingOrEmpty="false"
     path="post_install"
   />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
+    path="orac_ws"
+  />
+  <includeAll
+    relativeToChangelogFile="true"
+    errorIfMissingOrEmpty="false"
+    path="orac_apps"
+  />
 </databaseChangeLog>
 ```
 
@@ -1107,11 +1191,11 @@ Rules:
 
 - Include only object-type directories that exist unless asked to instantiate
   the standard controller shell.
-- If creating a new schema/domain controller, use the repository install
-  sequence above as the default ordering.
+- If creating a new schema/domain controller, use Orac's existing object-type
+  sequence as the default ordering.
 - Directory names vary across repositories. Existing names such as
   `constraint_uc` and `constraint_uk` both mean unique constraints; follow the
-  target repository's existing directory name.
+  target repository's existing directory name. In Orac, use `constraint_uc`.
 - Add new SQL files under the object-type directory that matches the object and
   rely on the schema/domain controller to include that directory.
 - Do not place object SQL directly under the schema/domain root when an
@@ -1121,8 +1205,10 @@ Rules:
 
 ## Validation controllers
 
-When `db/install_validation` exists, prefer a nested validation controller at
-`db/install_validation/validationController.xml`.
+When top-level `install_validation` exists, prefer a nested validation
+controller at `resources/db/schema/install_validation/validationController.xml`.
+For non-production validation, use
+`resources/db/schema/nonprod/install_validation/validationController.xml`.
 
 Pattern:
 
@@ -1132,7 +1218,7 @@ Pattern:
     xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xmlns:ora="http://www.oracle.com/xml/ns/dbchangelog-ext"
-    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.17.xsd"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd"
 >
   <include
     relativeToChangelogFile="true"
@@ -1158,7 +1244,7 @@ Rules:
 - Put validation SQL under `validation`.
 - Put cleanup or post-check SQL under `post_validation`.
 - Wire validation from the product or non-production top-level controller only
-  when `db/install_validation` exists.
+  when the matching `install_validation` directory exists.
 
 ---
 
@@ -1171,7 +1257,8 @@ isolated file edit.
 Scope the check to every file needed to reach, run, and validate the changed
 SQL from the relevant entrypoint. Depending on the task, this includes:
 
-- root SQLcl entrypoints such as `install.sql` and `install_nonprod.sql`
+- schema deployment SQLcl entrypoints such as `install.sql` and
+  `install_nonprod.sql`
 - top-level product and non-production XML controllers
 - schema/domain XML controllers
 - validation controllers
@@ -1183,8 +1270,8 @@ SQL from the relevant entrypoint. Depending on the task, this includes:
 The coherence check must confirm:
 
 - The root entrypoint calls the intended top-level controller.
-- The top-level controller includes the correct product or non-production
-  database path, and does not mix production and non-production content.
+- The top-level controller includes the correct production or non-production
+  Orac schema path, and does not mix production and non-production content.
 - Every XML `include` or `includeAll` path resolves relative to its changelog
   file and uses the expected `relativeToChangelogFile` and
   `errorIfMissingOrEmpty` settings for that include style.

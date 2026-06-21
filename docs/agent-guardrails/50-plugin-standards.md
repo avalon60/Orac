@@ -373,13 +373,16 @@ routing.
 
 Each APEX app declaration must use `app_alias` or `alias` as the stable logical
 identifier, may declare an expected `application_id`, and may declare
-`parsing_schema`. The default workspace is `ORAC`, and the default parsing
-schema is `ORAC_APX_PUB` unless a supported alternative is explicitly declared.
+`parsing_schema`. Plugin-supplied APEX apps must be installed into the shared
+Orac workspace, `ORAC`, because plugin menu links and app-to-app navigation
+depend on a common APEX workspace session context. The default parsing schema
+is `ORAC_APX_PUB` unless a supported alternative is explicitly declared.
 
 Plugin installers must validate that declared export files are inside the
 plugin package. Required APEX app imports must fail the plugin installation if
-the import fails. Phase 1 idempotency is fail-closed: an existing app alias must
-not be replaced unless the manifest explicitly allows replacement.
+the import fails. Phase 1 idempotency is fail-safe: an existing app alias may
+be reused as an installed app record, but it must not be replaced unless the
+manifest explicitly allows replacement.
 
 The installer must capture APEX import output and record the installed
 application id in the Orac plugin APEX app registry. Listing surfaces must hide

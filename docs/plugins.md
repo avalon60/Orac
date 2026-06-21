@@ -336,6 +336,24 @@ Plugins must not connect with core-schema owner credentials or bypass the
 approved APIs and grants. Database deployment status and audit data remain core
 platform responsibilities.
 
+Plugins may opt in to SQLcl Liquibase deployment for plugin-owned database
+objects:
+
+```json
+"database": {
+  "deployment": {
+    "type": "liquibase",
+    "controller": "db/liquibase/pluginController.xml"
+  }
+}
+```
+
+When omitted, `deployment.type` defaults to `sqlplus` and the existing plugin
+database deployment path is used. Liquibase changelogs must remain plugin-local,
+must use explicit includes, and must not include APEX exports. Each plugin
+schema keeps its own Liquibase `databasechangelog` and
+`databasechangeloglock` tables.
+
 ## UI and Status Surfaces
 
 The optional `ui` object declares plugin-owned operational UI/status surfaces.
@@ -432,18 +450,21 @@ is separate from conversational capabilities and from `ui.surfaces`.
 
 `app_alias` is the stable logical key for the app. `application_id` is optional
 and should be used when the export expects a specific APEX application id.
-`parsing_schema` defaults to `ORAC_APX_PUB`. `workspace` currently supports the
-configured Orac workspace, normally `ORAC`.
+`parsing_schema` defaults to `ORAC_APX_PUB`. Plugin-supplied APEX applications
+must target the shared Orac workspace, `ORAC`; plugin menu links and
+app-to-app navigation rely on a common workspace session context and do not
+support arbitrary plugin workspaces.
 
 When `install_required` is true, the plugin installer validates that
 `app_export` exists inside the plugin package and imports the export. Import
 output is captured in the plugin APEX app registry. The installed APEX
 application id is recorded after import for future menu surfaces.
 
-Phase 1 idempotency is fail-safe: an existing app alias is not replaced unless
-`replace_existing` is explicitly true. Required APEX app import failure makes
-the plugin installation fail; Orac does not silently mark the plugin successful
-when its required admin app failed to import.
+Phase 1 idempotency is fail-safe: an existing app alias is reused as an
+installed app record and is not replaced unless `replace_existing` is
+explicitly true. Required APEX app import failure makes the plugin installation
+fail; Orac does not silently mark the plugin successful when its required admin
+app failed to import.
 
 Disabled, failed, and metadata-only APEX app rows are hidden from plugin app
 listing queries.

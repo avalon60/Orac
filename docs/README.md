@@ -8,6 +8,8 @@ to complete.
 
 - [Installation](installation.md): host prerequisites, database deployment,
   credentials, and first startup.
+- [SQLcl Liquibase Database Deployment](database-liquibase-deployment.md):
+  on-demand core and plugin database delta deployment boundaries.
 - [Configuration Reference](configuration.md): every setting shipped in
   `resources/config/orac.ini`.
 - [Docker Compose Deployment](docker-compose-deployment.md): stack locations,
