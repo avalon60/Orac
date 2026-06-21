@@ -8,11 +8,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from model.plugin_routing.models import (
     PluginConfigKey,
+    PluginApexApp,
     PluginApexSurfaceMetadata,
     PluginDatabaseBackup,
     PluginDatabaseSchema,
@@ -38,6 +39,7 @@ from model.plugin_dependencies import normalise_requirements
 PLUGIN_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 DATABASE_SCHEMA_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$", re.IGNORECASE)
 SECRET_KEY_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+APEX_ALIAS_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 MANIFEST_SCHEMA_VERSION = 2
 RUNTIME_MODES = {"on_demand", "service", "hybrid"}
 CONFIG_VALUE_TYPES = {"string", "bool", "int", "float", "path", "list"}
@@ -50,6 +52,7 @@ PLUGIN_UI_STATUS_FORMATS = {"plugin_status_v1"}
 PLUGIN_UI_SURFACE_TARGETS = {"apex", "react"}
 PLUGIN_UI_SURFACE_TYPES = {"admin_status", "diagnostic_panel"}
 PLUGIN_UI_AUDIENCES = {"admin", "user", "system"}
+SUPPORTED_APEX_WORKSPACES = {"ORAC"}
 PLUGIN_ACTION_TYPES = {
     "informational_read_only",
     "external_read",
@@ -81,6 +84,7 @@ OPTIONAL_FIELDS = {
     "database",
     "secrets",
     "ui",
+    "apex_apps",
     "python_dependencies",
 }
 ALLOWED_FIELDS = REQUIRED_FIELDS | OPTIONAL_FIELDS
@@ -227,6 +231,7 @@ class PluginDiscovery:
         )
         secrets = self._load_secrets(data.get("secrets"))
         ui = self._load_ui(data.get("ui"))
+        apex_apps = self._load_apex_apps(data.get("apex_apps"))
         try:
             python_dependencies = normalise_requirements(
                 data.get("python_dependencies", [])
@@ -262,6 +267,7 @@ class PluginDiscovery:
             database_schemas=tuple(database_schemas),
             secrets=secrets,
             ui=ui,
+            apex_apps=tuple(apex_apps),
             python_dependencies=python_dependencies,
         )
 
@@ -1047,6 +1053,106 @@ class PluginDiscovery:
             ),
         )
 
+    def _load_apex_apps(self, value: Any) -> list[PluginApexApp]:
+        """Load optional plugin-supplied APEX application declarations."""
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise PluginManifestError("apex_apps must be a list")
+        return [
+            self._load_apex_app(app_value, index)
+            for index, app_value in enumerate(value)
+        ]
+
+    def _load_apex_app(self, value: Any, index: int) -> PluginApexApp:
+        """Load one plugin-supplied APEX application declaration."""
+        field_name = f"apex_apps[{index}]"
+        if not isinstance(value, dict):
+            raise PluginManifestError(f"{field_name} must be an object")
+        required_fields = {"label", "app_export", "install_required"}
+        optional_fields = {
+            "alias",
+            "app_alias",
+            "description",
+            "workspace",
+            "parsing_schema",
+            "application_id",
+            "entry_page_id",
+            "replace_existing",
+            "required_roles",
+            "icon",
+            "card_title",
+            "card_subtitle",
+            "enabled",
+        }
+        self._reject_unknown_fields(value, required_fields | optional_fields, field_name)
+        self._require_fields(value, required_fields, field_name)
+        alias_value = value.get("app_alias", value.get("alias"))
+        if alias_value is None:
+            raise PluginManifestError(
+                f"{field_name} missing required field(s): app_alias"
+            )
+        return PluginApexApp(
+            app_alias=self._require_apex_alias(alias_value, f"{field_name}.app_alias"),
+            label=self._require_non_empty_string(value.get("label"), f"{field_name}.label"),
+            app_export=self._require_relative_export_path(
+                value.get("app_export"),
+                f"{field_name}.app_export",
+            ),
+            description=(
+                self._require_optional_string(
+                    value.get("description"),
+                    f"{field_name}.description",
+                )
+                or ""
+            ),
+            workspace=self._require_enum(
+                value.get("workspace", "ORAC"),
+                f"{field_name}.workspace",
+                SUPPORTED_APEX_WORKSPACES,
+            ),
+            parsing_schema=self._require_oracle_identifier(
+                value.get("parsing_schema", "ORAC_APX_PUB"),
+                f"{field_name}.parsing_schema",
+            ),
+            application_id=(
+                None
+                if value.get("application_id") is None
+                else self._require_positive_int(
+                    value.get("application_id"),
+                    f"{field_name}.application_id",
+                )
+            ),
+            entry_page_id=self._require_positive_int(
+                value.get("entry_page_id", 1),
+                f"{field_name}.entry_page_id",
+            ),
+            install_required=self._require_bool(
+                value.get("install_required"),
+                f"{field_name}.install_required",
+            ),
+            replace_existing=self._require_bool(
+                value.get("replace_existing", False),
+                f"{field_name}.replace_existing",
+            ),
+            required_roles=tuple(
+                self._require_string_list(
+                    value.get("required_roles", []),
+                    f"{field_name}.required_roles",
+                )
+            ),
+            icon=self._require_optional_string(value.get("icon"), f"{field_name}.icon"),
+            card_title=self._require_optional_string(
+                value.get("card_title"),
+                f"{field_name}.card_title",
+            ),
+            card_subtitle=self._require_optional_string(
+                value.get("card_subtitle"),
+                f"{field_name}.card_subtitle",
+            ),
+            enabled=self._require_bool(value.get("enabled", True), f"{field_name}.enabled"),
+        )
+
     @staticmethod
     def _require_non_empty_string(value: Any, field_name: str) -> str:
         if not isinstance(value, str):
@@ -1061,6 +1167,37 @@ class PluginDiscovery:
         if value is None:
             return None
         return PluginDiscovery._require_non_empty_string(value, field_name)
+
+    @staticmethod
+    def _require_apex_alias(value: Any, field_name: str) -> str:
+        """Return a validated APEX application alias."""
+        cleaned = PluginDiscovery._require_non_empty_string(value, field_name)
+        if not APEX_ALIAS_PATTERN.fullmatch(cleaned):
+            raise PluginManifestError(
+                f"{field_name} must start with a letter and contain only letters, numbers, underscores and hyphens"
+            )
+        return cleaned.upper()
+
+    @staticmethod
+    def _require_oracle_identifier(value: Any, field_name: str) -> str:
+        """Return a validated simple Oracle identifier."""
+        cleaned = PluginDiscovery._require_non_empty_string(value, field_name)
+        if not SECRET_KEY_PATTERN.fullmatch(cleaned):
+            raise PluginManifestError(
+                f"{field_name} must start with a letter and contain only letters, numbers and underscores"
+            )
+        return cleaned.upper()
+
+    @staticmethod
+    def _require_relative_export_path(value: Any, field_name: str) -> str:
+        """Return a safe plugin-relative SQL export path."""
+        cleaned = PluginDiscovery._require_non_empty_string(value, field_name)
+        path = PurePosixPath(cleaned)
+        if path.is_absolute() or ".." in path.parts:
+            raise PluginManifestError(f"{field_name} must be a relative path")
+        if path.suffix.lower() != ".sql":
+            raise PluginManifestError(f"{field_name} must reference a .sql file")
+        return path.as_posix()
 
     @staticmethod
     def _require_secret_key(value: Any, field_name: str) -> str:

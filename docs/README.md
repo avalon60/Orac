@@ -35,7 +35,7 @@ to complete.
 - [Architecture Overview](../detailed-architecture.md)
 - [Voice Turn Lifecycle](voice-turn-lifecycle.md)
 - [Home Assistant Data Lifecycle](../plugins/home_assistant/docs/home-assistant-data-lifecycle.md)
-- [Plugin Execution Boundaries](plugin-execution-boundaries.md)
+- [Plugin Execution Boundaries](agent-guardrails/55-plugin-execution-boundaries.md)
 - [Plugin Audit Persistence](plugin-audit-persistence.md)
 - [Plugin Audit Database/API Design](plugin-audit-db-api-design.md)
 - [Protocol Contract and Release Guide](../protocol/README.md)
@@ -51,6 +51,7 @@ repository tooling and referenced by `AGENTS.md`.
 - [Architecture Boundaries](agent-guardrails/10-architecture-boundaries.md)
 - [Python Standards](agent-guardrails/30-python-standards.md)
 - [Plugin Standards](agent-guardrails/50-plugin-standards.md)
+- [Plugin Execution Boundaries](agent-guardrails/55-plugin-execution-boundaries.md)
 - [Security and Risk](agent-guardrails/60-security-and-risk.md)
 - [Context Management](agent-guardrails/70-context-management.md)
 

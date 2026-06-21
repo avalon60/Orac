@@ -8,6 +8,7 @@ from model.plugin_routing.handoff import PluginRoutingHandoff, render_plugin_rou
 from model.plugin_routing.manager import PluginManager
 from model.plugin_routing.models import (
     PluginCandidate,
+    PluginApexApp,
     PluginApexSurfaceMetadata,
     PluginConfigKey,
     PluginDatabaseBackup,
@@ -30,6 +31,7 @@ from model.plugin_routing.models import (
 __all__ = [
     "EmbeddingProvider",
     "HashEmbeddingProvider",
+    "PluginApexApp",
     "PluginApexSurfaceMetadata",
     "PluginCandidate",
     "PluginConfigKey",

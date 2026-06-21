@@ -327,6 +327,67 @@ class PluginRoutingTests(unittest.TestCase):
         self.assertEqual(manifest.ui.surfaces[0].apex.entry_page_id, 1)
         self.assertEqual(manifest.ui.surfaces[1].react.status_endpoint, "alpha.status")
 
+    def test_apex_apps_metadata_is_accepted_with_defensive_defaults(self) -> None:
+        manifest = self._load_temp_manifest(
+            {
+                "apex_apps": [
+                    {
+                        "app_alias": "alpha_status",
+                        "label": "Alpha Status",
+                        "app_export": "apex/alpha_status.sql",
+                        "install_required": True,
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(len(manifest.apex_apps), 1)
+        app = manifest.apex_apps[0]
+        self.assertEqual(app.alias, "ALPHA_STATUS")
+        self.assertEqual(app.workspace, "ORAC")
+        self.assertEqual(app.parsing_schema, "ORAC_APX_PUB")
+        self.assertEqual(app.entry_page_id, 1)
+        self.assertFalse(app.replace_existing)
+        self.assertTrue(app.enabled)
+
+    def test_discovery_rejects_invalid_apex_app_values(self) -> None:
+        cases = (
+            ("workspace", "OTHER"),
+            ("parsing_schema", "bad-schema"),
+            ("app_export", "../escape.sql"),
+            ("app_alias", "bad alias"),
+        )
+        for field_name, invalid_value in cases:
+            with self.subTest(field_name=field_name):
+                with self.assertRaisesRegex(ValueError, f"apex_apps\\[0\\].{field_name}"):
+                    payload = {
+                        "app_alias": "ALPHA_STATUS",
+                        "label": "Alpha Status",
+                        "app_export": "apex/alpha_status.sql",
+                        "install_required": True,
+                    }
+                    payload[field_name] = invalid_value
+                    self._load_temp_manifest({"apex_apps": [payload]})
+
+    def test_apex_apps_are_not_routing_metadata(self) -> None:
+        manifest = self._load_temp_manifest(
+            {
+                "apex_apps": [
+                    {
+                        "app_alias": "ALPHA_STATUS",
+                        "label": "Alpha Status",
+                        "app_export": "apex/alpha_status.sql",
+                        "install_required": True,
+                    }
+                ]
+            }
+        )
+
+        intent_text = build_canonical_intent_text(manifest)
+        self.assertNotIn("ALPHA_STATUS", intent_text)
+        self.assertNotIn("Alpha Status", intent_text)
+        self.assertNotIn("alpha_status.sql", intent_text)
+
     def _load_temp_manifest(self, extra: dict) -> object:
         with tempfile.TemporaryDirectory() as temp_dir:
             plugins_dir = Path(temp_dir)

@@ -172,6 +172,95 @@ class PluginRegistryStore:
         return self._session_factory()
 
 
+class PluginApexAppRegistryStore:
+    """Read and update plugin APEX app registry state through ORAC_CODE surfaces."""
+
+    _MENU_SELECT_COLUMNS = (
+        "plugin_id, plugin_version, app_alias, workspace, installed_app_id, "
+        "entry_page_id, label, description, required_roles, icon, card_title, "
+        "card_subtitle"
+    )
+
+    def __init__(
+        self,
+        *,
+        session_factory: Callable[[], Any] | None = None,
+        logger: Any | None = None,
+    ) -> None:
+        """Initialise the APEX app registry store with an optional session factory."""
+        self._session_factory = session_factory or _default_session
+        self._logger = logger
+
+    def record(self, values: dict[str, Any]) -> None:
+        """Upsert one plugin APEX app registry record."""
+        session = self._connect()
+        try:
+            with session.cursor() as cursor:
+                cursor.setinputsizes(required_roles=oracledb.DB_TYPE_JSON)
+                cursor.execute(
+                    _APEX_APP_UPSERT_BLOCK,
+                    {
+                        "plugin_id": values["plugin_id"],
+                        "plugin_version": values["plugin_version"],
+                        "app_alias": values["app_alias"],
+                        "workspace": values["workspace"],
+                        "parsing_schema": values["parsing_schema"],
+                        "app_export": values["app_export"],
+                        "declared_application_id": values.get(
+                            "declared_application_id"
+                        ),
+                        "installed_app_id": values.get("installed_app_id"),
+                        "entry_page_id": values["entry_page_id"],
+                        "label": values["label"],
+                        "description": values.get("description"),
+                        "required_roles": _json_bind_value(
+                            values.get("required_roles")
+                        ),
+                        "icon": values.get("icon"),
+                        "card_title": values.get("card_title"),
+                        "card_subtitle": values.get("card_subtitle"),
+                        "install_status": values["install_status"],
+                        "install_log": values.get("install_log"),
+                        "last_error_message": values.get("last_error_message"),
+                        "enabled": "Y" if values.get("enabled") else "N",
+                    },
+                )
+            session.commit()
+        except Exception as exc:
+            raise PluginRegistryError(
+                f"Unable to record plugin APEX app registry state: {exc}"
+            ) from exc
+        finally:
+            _close_quietly(session)
+
+    def list_enabled(self) -> list[dict[str, Any]]:
+        """Return launchable plugin APEX applications for menu surfaces."""
+        return self._query(
+            f"select {self._MENU_SELECT_COLUMNS} "
+            "from orac_code.plugin_apex_app_menu_v order by plugin_id, label",
+            {},
+        )
+
+    def _query(self, sql: str, binds: dict[str, Any]) -> list[dict[str, Any]]:
+        """Execute a read against approved ORAC_CODE plugin APEX app views."""
+        session = self._connect()
+        try:
+            with session.cursor() as cursor:
+                cursor.execute(sql, binds)
+                columns = [description[0].lower() for description in cursor.description]
+                return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
+        except Exception as exc:
+            raise PluginRegistryError(
+                f"Unable to read plugin APEX app registry: {exc}"
+            ) from exc
+        finally:
+            _close_quietly(session)
+
+    def _connect(self) -> Any:
+        """Return an ORAC runtime database session."""
+        return self._session_factory()
+
+
 def _default_session() -> Any:
     """Open the saved Orac runtime database connection."""
     from lib.config_mgr import ConfigManager
@@ -244,6 +333,33 @@ begin
     p_enabled                  => :enabled,
     p_last_error_code          => :last_error_code,
     p_last_error_message       => :last_error_message
+  );
+end;
+"""
+
+
+_APEX_APP_UPSERT_BLOCK = """
+begin
+  orac_code.plugin_apex_app_registry_api.upsert_app(
+    p_plugin_id               => :plugin_id,
+    p_plugin_version          => :plugin_version,
+    p_app_alias               => :app_alias,
+    p_workspace               => :workspace,
+    p_parsing_schema          => :parsing_schema,
+    p_app_export              => :app_export,
+    p_declared_application_id => :declared_application_id,
+    p_installed_app_id        => :installed_app_id,
+    p_entry_page_id           => :entry_page_id,
+    p_label                   => :label,
+    p_description             => :description,
+    p_required_roles          => :required_roles,
+    p_icon                    => :icon,
+    p_card_title              => :card_title,
+    p_card_subtitle           => :card_subtitle,
+    p_install_status          => :install_status,
+    p_install_log             => :install_log,
+    p_last_error_message      => :last_error_message,
+    p_enabled                 => :enabled
   );
 end;
 """

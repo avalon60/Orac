@@ -99,6 +99,20 @@ when changing:
 
 Also read:
 
+- docs/agent-guardrails/55-plugin-execution-boundaries.md
+
+when plugin changes involve:
+
+- plugin routing
+- plugin arbitration
+- plugin execution policy
+- plugin confirmation flows
+- plugin provenance
+- plugin response persistence
+- plugin ownership or fallback behaviour
+
+Also read:
+
 - docs/agent-guardrails/60-security-and-risk.md
 
 when plugin changes involve:

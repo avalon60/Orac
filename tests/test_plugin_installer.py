@@ -24,6 +24,8 @@ from model.plugin_dependencies import PluginDependencyError
 from model.plugin_dependencies import PluginDependencyInstaller
 from model.plugin_dependencies import normalise_requirements
 from model.plugin_dependencies import validate_requirements_mirror
+from model.plugin_apex_installation import PluginApexAppInstallError
+from model.plugin_apex_installation import PluginApexAppInstallResult
 from model.plugin_installer import PluginInstallationError
 from model.plugin_installer import PluginInstaller
 from model.plugin_package import PluginPackageBuilder
@@ -76,6 +78,37 @@ class _Registry:
 class _FailingRecordRegistry(_Registry):
     def record(self, values):
         raise RuntimeError("mock registry write failure")
+
+
+class _ApexAppRegistry:
+    def __init__(self) -> None:
+        self.rows: list[dict] = []
+
+    def record(self, values):
+        self.rows.append(dict(values))
+
+
+class _ApexAppInstaller:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.calls: list[tuple[str, str]] = []
+
+    def install(self, manifest, app):
+        self.calls.append((manifest.plugin_id, app.alias))
+        if self.fail:
+            raise PluginApexAppInstallError("mock APEX import failure")
+        return PluginApexAppInstallResult(
+            plugin_id=manifest.plugin_id,
+            plugin_version=manifest.version,
+            app_alias=app.alias,
+            workspace=app.workspace,
+            parsing_schema=app.parsing_schema,
+            app_export=app.app_export,
+            declared_application_id=app.application_id,
+            installed_app_id=2042,
+            install_status="installed",
+            install_log="ORAC_PLUGIN_APEX_APP_ID=2042",
+        )
 
 
 class PluginDependencyTests(unittest.TestCase):
@@ -409,6 +442,158 @@ class PluginInstallerTests(unittest.TestCase):
             self.assertFalse(result.enabled)
             self.assertEqual(result.status, "readiness_failed")
             self.assertIn("missing APEX export", result.message)
+
+    def test_required_apex_app_is_imported_and_registered(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = _write_source_plugin(
+                root,
+                "alpha",
+                extra_manifest={
+                    "apex_apps": [
+                        {
+                            "app_alias": "ALPHA_STATUS",
+                            "label": "Alpha Status",
+                            "app_export": "apex/alpha_status.sql",
+                            "application_id": 1043,
+                            "entry_page_id": 1,
+                            "install_required": True,
+                            "required_roles": ["ORAC_ADMIN"],
+                            "replace_existing": True,
+                        }
+                    ]
+                },
+            )
+            (source / "apex").mkdir()
+            (source / "apex" / "alpha_status.sql").write_text("-- export\n", encoding="utf-8")
+            apex_installer = _ApexAppInstaller()
+            apex_registry = _ApexAppRegistry()
+
+            result = PluginInstaller(
+                project_root=root,
+                managed_root=root / "var" / "plugins",
+                config_root=root / "config",
+                dependency_installer=_DependencyInstaller(),
+                database_deployer=_DatabaseDeployer(),
+                registry=_Registry(),
+                apex_app_installer=apex_installer,
+                apex_app_registry=apex_registry,
+            ).install_source(source)
+
+            self.assertTrue(result.enabled)
+            self.assertEqual(apex_installer.calls, [("alpha", "ALPHA_STATUS")])
+            self.assertEqual(apex_registry.rows[0]["install_status"], "installed")
+            self.assertEqual(apex_registry.rows[0]["installed_app_id"], 2042)
+            self.assertEqual(apex_registry.rows[0]["declared_application_id"], 1043)
+            self.assertEqual(apex_registry.rows[0]["required_roles"], '["ORAC_ADMIN"]')
+
+    def test_required_apex_app_failure_blocks_plugin_success(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = _write_source_plugin(
+                root,
+                "alpha",
+                extra_manifest={
+                    "apex_apps": [
+                        {
+                            "app_alias": "ALPHA_STATUS",
+                            "label": "Alpha Status",
+                            "app_export": "apex/alpha_status.sql",
+                            "install_required": True,
+                        }
+                    ]
+                },
+            )
+            (source / "apex").mkdir()
+            (source / "apex" / "alpha_status.sql").write_text("-- export\n", encoding="utf-8")
+            registry = _Registry()
+            apex_registry = _ApexAppRegistry()
+
+            result = PluginInstaller(
+                project_root=root,
+                managed_root=root / "var" / "plugins",
+                config_root=root / "config",
+                dependency_installer=_DependencyInstaller(),
+                database_deployer=_DatabaseDeployer(),
+                registry=registry,
+                apex_app_installer=_ApexAppInstaller(fail=True),
+                apex_app_registry=apex_registry,
+            ).install_source(source)
+
+            self.assertFalse(result.enabled)
+            self.assertEqual(result.status, "apex_failed")
+            self.assertFalse(registry.rows["alpha"]["enabled"])
+            self.assertEqual(apex_registry.rows[0]["install_status"], "failed")
+            self.assertIn("mock APEX import failure", apex_registry.rows[0]["last_error_message"])
+
+    def test_optional_apex_app_is_registered_without_import(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = _write_source_plugin(
+                root,
+                "alpha",
+                extra_manifest={
+                    "apex_apps": [
+                        {
+                            "app_alias": "ALPHA_STATUS",
+                            "label": "Alpha Status",
+                            "app_export": "apex/alpha_status.sql",
+                            "install_required": False,
+                        }
+                    ]
+                },
+            )
+            apex_installer = _ApexAppInstaller()
+            apex_registry = _ApexAppRegistry()
+
+            result = PluginInstaller(
+                project_root=root,
+                managed_root=root / "var" / "plugins",
+                config_root=root / "config",
+                dependency_installer=_DependencyInstaller(),
+                database_deployer=_DatabaseDeployer(),
+                registry=_Registry(),
+                apex_app_installer=apex_installer,
+                apex_app_registry=apex_registry,
+            ).install_source(source)
+
+            self.assertTrue(result.enabled)
+            self.assertEqual(apex_installer.calls, [])
+            self.assertEqual(apex_registry.rows[0]["install_status"], "metadata_only")
+            self.assertIsNone(apex_registry.rows[0]["installed_app_id"])
+
+    def test_required_apex_app_requires_export_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = _write_source_plugin(
+                root,
+                "alpha",
+                extra_manifest={
+                    "apex_apps": [
+                        {
+                            "app_alias": "ALPHA_STATUS",
+                            "label": "Alpha Status",
+                            "app_export": "apex/missing.sql",
+                            "install_required": True,
+                        }
+                    ]
+                },
+            )
+
+            result = PluginInstaller(
+                project_root=root,
+                managed_root=root / "var" / "plugins",
+                config_root=root / "config",
+                dependency_installer=_DependencyInstaller(),
+                database_deployer=_DatabaseDeployer(),
+                registry=_Registry(),
+                apex_app_installer=_ApexAppInstaller(),
+                apex_app_registry=_ApexAppRegistry(),
+            ).install_source(source)
+
+            self.assertFalse(result.enabled)
+            self.assertEqual(result.status, "readiness_failed")
+            self.assertIn("Plugin APEX app 'ALPHA_STATUS' declares missing export", result.message)
 
 
 class ExistingPluginDependencyTests(unittest.TestCase):

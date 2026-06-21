@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 from pathlib import Path
 import shutil
@@ -13,6 +13,10 @@ import tempfile
 from typing import Any, Protocol
 
 from lib.fsutils import project_home
+from model.plugin_apex_installation import DockerPluginApexAppInstaller
+from model.plugin_apex_installation import PluginApexAppInstallError
+from model.plugin_apex_installation import PluginApexAppInstallResult
+from model.plugin_apex_installation import PluginApexAppInstaller
 from model.plugin_config import PluginConfigManager
 from model.plugin_database_deployment import PluginDatabaseDeployer
 from model.plugin_dependencies import PluginDependencyInstaller
@@ -23,7 +27,9 @@ from model.plugin_package import PluginPackageBuilder
 from model.plugin_package import PluginPackageReader
 from model.plugin_package import source_package
 from model.plugin_routing.discovery import PluginDiscovery
+from model.plugin_routing.models import PluginApexApp
 from model.plugin_routing.models import PluginManifest
+from model.plugin_registry import PluginApexAppRegistryStore
 from model.plugin_registry import PluginRegistryStore
 from model.plugin_runtime import load_plugin_class
 from model.plugin_runtime import load_plugin_service_class
@@ -56,6 +62,13 @@ class PluginRegistryWriter(Protocol):
         """Return the current registry row when available."""
 
 
+class PluginApexAppRegistryWriter(Protocol):
+    """Persistence boundary used by the installer for plugin APEX apps."""
+
+    def record(self, values: dict[str, Any]) -> None:
+        """Create or update one plugin APEX app registry row."""
+
+
 class PluginInstaller:
     """Coordinate plugin packaging and installation into Orac-managed paths."""
 
@@ -69,6 +82,8 @@ class PluginInstaller:
         database_deployer: PluginDatabaseDeployer | None = None,
         package_reader: PluginPackageReader | None = None,
         registry: PluginRegistryWriter | None = None,
+        apex_app_installer: PluginApexAppInstaller | None = None,
+        apex_app_registry: PluginApexAppRegistryWriter | None = None,
         logger: Any | None = None,
         keep_failed_staging: bool = False,
     ) -> None:
@@ -84,6 +99,12 @@ class PluginInstaller:
         self._database_deployer = database_deployer or PluginDatabaseDeployer(logger=logger)
         self._package_reader = package_reader or PluginPackageReader()
         self._registry = registry or PluginRegistryStore(logger=logger)
+        self._apex_app_installer = apex_app_installer or DockerPluginApexAppInstaller(
+            logger=logger
+        )
+        self._apex_app_registry = apex_app_registry or PluginApexAppRegistryStore(
+            logger=logger
+        )
         self._logger = logger
         self._keep_failed_staging = keep_failed_staging
 
@@ -280,8 +301,26 @@ class PluginInstaller:
             )
 
         installed_path, previous_path = self._activate_candidate(candidate_root, manifest)
-        values = self._registry_values(
+        active_manifest = replace(
             manifest,
+            manifest_path=installed_path / "manifest.json",
+            plugin_dir=installed_path / "plugin",
+        )
+        try:
+            self._install_apex_apps(active_manifest, package)
+        except PluginInstallationError as exc:
+            self._rollback_activation(installed_path, previous_path)
+            return self._failure(
+                manifest,
+                package,
+                "apex_failed",
+                str(exc),
+                configuration_status="success",
+                dependency_status=dependency_result.status,
+                database_status=database_result.status,
+            )
+        values = self._registry_values(
+            active_manifest,
             package,
             installed_path,
             config_path,
@@ -301,11 +340,11 @@ class PluginInstaller:
             raise
         self._finalise_activation(previous_path)
         self._log_info(
-            f"Plugin '{manifest.plugin_id}' {manifest.version} installed and enabled."
+            f"Plugin '{active_manifest.plugin_id}' {active_manifest.version} installed and enabled."
         )
         return PluginInstallResult(
-            plugin_id=manifest.plugin_id,
-            version=manifest.version,
+            plugin_id=active_manifest.plugin_id,
+            version=active_manifest.version,
             status="success",
             enabled=True,
             installed_path=installed_path,
@@ -369,6 +408,7 @@ class PluginInstaller:
                     "declared health-check method."
                 )
         PluginInstaller._validate_ui_assets(manifest)
+        PluginInstaller._validate_apex_app_assets(manifest)
 
     @staticmethod
     def _validate_ui_assets(manifest: PluginManifest) -> None:
@@ -389,6 +429,61 @@ class PluginInstaller:
                             f"Plugin UI surface '{surface.surface_id}' declares "
                             f"missing APEX export: {surface.apex.app_export}"
                         )
+
+    @staticmethod
+    def _validate_apex_app_assets(manifest: PluginManifest) -> None:
+        """Verify declared plugin APEX app exports are present."""
+        for app in manifest.apex_apps:
+            export_path = manifest.plugin_dir / app.app_export
+            if app.install_required and not export_path.is_file():
+                raise PluginInstallationError(
+                    f"Plugin APEX app '{app.alias}' declares missing export: "
+                    f"{app.app_export}"
+                )
+
+    def _install_apex_apps(
+        self,
+        manifest: PluginManifest,
+        package: PluginPackage,
+    ) -> None:
+        """Install and register plugin-supplied APEX apps."""
+        for app in manifest.apex_apps:
+            if app.install_required:
+                try:
+                    result = self._apex_app_installer.install(manifest, app)
+                except PluginApexAppInstallError as exc:
+                    self._record_apex_app(
+                        self._apex_app_values(
+                            manifest,
+                            app,
+                            package,
+                            install_status="failed",
+                            install_log=str(exc),
+                            last_error_message=str(exc),
+                        )
+                    )
+                    raise PluginInstallationError(str(exc)) from exc
+                self._record_apex_app(
+                    self._apex_app_values(
+                        manifest,
+                        app,
+                        package,
+                        result=result,
+                        install_status=result.install_status,
+                        install_log=result.install_log,
+                        last_error_message=result.last_error_message,
+                    )
+                )
+            else:
+                self._record_apex_app(
+                    self._apex_app_values(
+                        manifest,
+                        app,
+                        package,
+                        install_status="metadata_only",
+                        install_log=None,
+                    )
+                )
 
     def _activate_candidate(
         self,
@@ -504,6 +599,41 @@ class PluginInstaller:
             "last_error_message": last_error_message,
         }
 
+    def _apex_app_values(
+        self,
+        manifest: PluginManifest,
+        app: PluginApexApp,
+        package: PluginPackage,
+        *,
+        result: PluginApexAppInstallResult | None = None,
+        install_status: str,
+        install_log: str | None,
+        last_error_message: str | None = None,
+    ) -> dict[str, Any]:
+        """Build plugin APEX app registry values."""
+        return {
+            "plugin_id": manifest.plugin_id,
+            "plugin_version": manifest.version,
+            "app_alias": app.alias,
+            "workspace": app.workspace,
+            "parsing_schema": app.parsing_schema,
+            "app_export": app.app_export,
+            "declared_application_id": app.application_id,
+            "installed_app_id": result.installed_app_id if result else None,
+            "entry_page_id": app.entry_page_id,
+            "label": app.label,
+            "description": app.description,
+            "required_roles": json.dumps(app.required_roles),
+            "icon": app.icon,
+            "card_title": app.card_title,
+            "card_subtitle": app.card_subtitle,
+            "install_status": install_status,
+            "install_log": install_log,
+            "last_error_message": last_error_message,
+            "enabled": app.enabled,
+            "package_hash": package.package_hash,
+        }
+
     def _record(self, values: dict[str, Any]) -> None:
         """Persist registry state when a registry adapter is configured."""
         if self._registry is None:
@@ -513,6 +643,17 @@ class PluginInstaller:
         except Exception as exc:
             raise PluginInstallationError(
                 f"Unable to persist plugin registry state: {exc}"
+            ) from exc
+
+    def _record_apex_app(self, values: dict[str, Any]) -> None:
+        """Persist plugin APEX app registry state."""
+        if self._apex_app_registry is None:
+            return
+        try:
+            self._apex_app_registry.record(values)
+        except Exception as exc:
+            raise PluginInstallationError(
+                f"Unable to persist plugin APEX app registry state: {exc}"
             ) from exc
 
     def _staging_directory(self):

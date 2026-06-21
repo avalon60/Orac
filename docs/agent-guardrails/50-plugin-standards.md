@@ -366,6 +366,25 @@ Status providers must return redacted operational data. Error text must mask
 tokens, bearer values, passwords, secrets, credential-bearing URLs, and other
 sensitive values before it is exposed to APEX, React, logs, or admin APIs.
 
+Plugin-supplied APEX applications must be declared in the manifest `apex_apps`
+section. This section is installation and registration metadata only. It must
+not create conversational capabilities and must not be indexed by prompt
+routing.
+
+Each APEX app declaration must use `app_alias` or `alias` as the stable logical
+identifier, may declare an expected `application_id`, and may declare
+`parsing_schema`. The default workspace is `ORAC`, and the default parsing
+schema is `ORAC_APX_PUB` unless a supported alternative is explicitly declared.
+
+Plugin installers must validate that declared export files are inside the
+plugin package. Required APEX app imports must fail the plugin installation if
+the import fails. Phase 1 idempotency is fail-closed: an existing app alias must
+not be replaced unless the manifest explicitly allows replacement.
+
+The installer must capture APEX import output and record the installed
+application id in the Orac plugin APEX app registry. Listing surfaces must hide
+disabled, failed, and metadata-only app rows.
+
 ---
 
 ## Plugin capabilities

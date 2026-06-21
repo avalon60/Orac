@@ -19,4 +19,5 @@ grant select, insert, update, delete on orac_core.orac_personalities to orac_api
 grant select, insert, update, delete on orac_core.plugin_invocations to orac_api with grant option;
 grant select, insert, update, delete on orac_core.plugin_audit_events to orac_api with grant option;
 grant select, insert, update, delete on orac_core.plugin_db_deployments to orac_api with grant option;
+grant select, insert, update, delete on orac_core.plugin_apex_apps to orac_api with grant option;
 grant select, insert, update, delete on orac_core.plugin_registry to orac_api with grant option;

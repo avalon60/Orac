@@ -221,6 +221,32 @@ class PluginUi:
 
 
 @dataclass(frozen=True)
+class PluginApexApp:
+    """Represents one plugin-supplied APEX application export declaration."""
+
+    app_alias: str
+    label: str
+    app_export: str
+    description: str = ""
+    workspace: str = "ORAC"
+    parsing_schema: str = "ORAC_APX_PUB"
+    application_id: int | None = None
+    entry_page_id: int = 1
+    install_required: bool = False
+    replace_existing: bool = False
+    required_roles: tuple[str, ...] = ()
+    icon: str | None = None
+    card_title: str | None = None
+    card_subtitle: str | None = None
+    enabled: bool = True
+
+    @property
+    def alias(self) -> str:
+        """Return the stable APEX application alias."""
+        return self.app_alias
+
+
+@dataclass(frozen=True)
 class PluginManifest:
     """Represents a validated plugin manifest and its discovery metadata."""
 
@@ -249,6 +275,7 @@ class PluginManifest:
     database_schemas: tuple[PluginDatabaseSchema, ...] = ()
     secrets: PluginSecrets | None = None
     ui: PluginUi | None = None
+    apex_apps: tuple[PluginApexApp, ...] = ()
     python_dependencies: tuple[str, ...] = ()
     config_path: Path | None = None
 
