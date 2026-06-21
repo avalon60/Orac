@@ -21,6 +21,7 @@ ENV ORACLE_BASE=${ORACLE_BASE} \
     APEX_VERSION=${APEX_VERSION} \
     ORDS_VERSION=${ORDS_VERSION} \
     SQLCL_VERSION=${SQLCL_VERSION} \
+    SQLCL_HOME=${ORAC_HOME}/setup/sqlcl/sqlcl \
     CHECK_DB_FILE=checkDBStatus-orac.sh
 
 # --------------------------------------------------------------------
@@ -102,7 +103,7 @@ RUN curl -L -o /tmp/${JDK_FILENAME} ${JDK_URL} && \
     rm /tmp/${JDK_FILENAME}
 
 ENV JAVA_HOME=/usr/lib/jvm/jdk-17.0.11+9
-ENV PATH="${JAVA_HOME}/bin:$PATH"
+ENV PATH="${SQLCL_HOME}/bin:${JAVA_HOME}/bin:$PATH"
 
 # --------------------------------------------------------------------
 # Root phase: copy repo resources and set sane perms
@@ -120,6 +121,13 @@ COPY --chown=54321 resources/db/schema ${ORAC_HOME}/schema
 RUN find ${ORAC_HOME}/schema -type d -exec chmod 755 {} + \
  && find ${ORAC_HOME}/schema -type f -name "*.sql" -exec chmod 644 {} +
 
+# Copy Liquibase configuration and controller skeletons separately from the
+# legacy schema bundle so on-demand deltas can evolve without changing the
+# first-time SQL*Plus install path.
+COPY --chown=54321 resources/db/liquibase ${ORAC_HOME}/liquibase
+RUN find ${ORAC_HOME}/liquibase -type d -exec chmod 755 {} + \
+ && find ${ORAC_HOME}/liquibase -type f -exec chmod 644 {} +
+
 # Copy APEX workspace/app SQL (once) and set perms
 # COPY --chown=54321 resources/docker/oracle/apex_sql ${ORAC_HOME}/setup/apex
 RUN find ${ORAC_HOME}/setup/apex -type d -exec chmod 755 {} + \
@@ -133,6 +141,12 @@ RUN find ${ORAC_HOME}/setup/apex -type d -exec chmod 755 {} + \
 # Ensure we can read/write logs
 RUN chmod 750 ${ORAC_HOME}/datapump \
  && chmod 755 ${ORAC_HOME}/logs
+
+# Keep the interactive login aliases and non-interactive deployment wrappers on
+# the same SQLcl installation path. SQLcl is downloaded during image build, and
+# the symlink gives older shell customisations the location they already expect.
+RUN ln -sfn ${SQLCL_HOME} /home/oracle/sqlcl \
+ && chown -h 54321:54321 /home/oracle/sqlcl
 
 # Make startup scripts executable
 RUN chmod +x  ${ORACLE_BASE}/scripts/setup/*.sh

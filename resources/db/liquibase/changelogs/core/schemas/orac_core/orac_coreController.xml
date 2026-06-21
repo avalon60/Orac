@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Author: Clive Bostock
+  Date: 21-Jun-2026
+  Description: Controller for on-demand orac_core Liquibase deltas.
+-->
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+  <!--
+    Keep order-sensitive folders explicit. Tables, constraints, types, packages,
+    seed data, REST modules, APEX exports, and post-install steps should be
+    added as reviewed include entries when they are migrated to Liquibase.
+  -->
+  <!--
+    Example once migrated to Liquibase-formatted SQL or XML changelogs:
+    <includeAll path="comment" relativeToChangelogFile="true"
+                errorIfMissingOrEmpty="false" contextFilter="core"
+                labels="core"/>
+  -->
+</databaseChangeLog>
