@@ -247,6 +247,24 @@
       }
     ]
   },
+  "apex_apps": [
+    {
+      "app_alias": "ORAC_HA_STATUS",
+      "label": "Home Assistant Status",
+      "description": "Home Assistant plugin admin/status app.",
+      "app_export": "apex/f_home_assistant.sql",
+      "workspace": "ORAC",
+      "parsing_schema": "ORAC_APX_PUB",
+      "application_id": 10010,
+      "entry_page_id": 1,
+      "install_required": true,
+      "replace_existing": false,
+      "required_roles": [
+        "ORAC_ADMIN"
+      ],
+      "enabled": true
+    }
+  ],
   "ui": {
     "status_provider": {
       "id": "home_assistant.status_summary",
@@ -268,7 +286,7 @@
         "enabled": true,
         "apex": {
           "app_alias": "ORAC_HA_STATUS",
-          "app_export": "apex/home_assistant_status.sql",
+          "app_export": "apex/f_home_assistant.sql",
           "entry_page_id": 1,
           "install_required": false
         }

@@ -130,6 +130,36 @@ ORACLE_PDB="${ORACLE_PDB:-FREEPDB1}"
 echo "Importing plugin APEX app ${APP_ALIAS} for plugin ${PLUGIN_ID} ${PLUGIN_VERSION}"
 echo "Workspace=${WORKSPACE} Parsing schema=${PARSING_SCHEMA} PDB=${ORACLE_PDB}"
 
+EXISTING_APP_ID=$(
+  sqlplus -L -s / as sysdba <<SQL
+whenever sqlerror exit failure rollback
+set define off verify off feedback off heading off pagesize 0 serveroutput on size unlimited
+alter session set container=${ORACLE_PDB};
+
+declare
+  l_application_id number;
+begin
+  select application_id
+    into l_application_id
+    from apex_applications
+   where workspace = upper('${WORKSPACE}')
+     and alias = upper('${APP_ALIAS}');
+  dbms_output.put_line(l_application_id);
+exception
+  when no_data_found then
+    null;
+end;
+/
+SQL
+)
+EXISTING_APP_ID=$(printf '%s\n' "${EXISTING_APP_ID}" | sed '/^[[:space:]]*$/d' | tail -n 1)
+
+if [[ -n "${EXISTING_APP_ID}" && "${REPLACE_EXISTING}" != "Y" ]]; then
+  echo "APEX app alias ${APP_ALIAS} already exists in workspace ${WORKSPACE}; reusing application ${EXISTING_APP_ID}."
+  echo "ORAC_PLUGIN_APEX_APP_ID=${EXISTING_APP_ID}"
+  exit 0
+fi
+
 sqlplus -L -s / as sysdba <<SQL
 whenever sqlerror exit failure rollback
 set define off
@@ -157,20 +187,11 @@ begin
       l_existing_app_id := null;
   end;
 
-  if l_existing_app_id is not null and '${REPLACE_EXISTING}' <> 'Y'
-  then
-    raise_application_error(
-      -20000,
-      'APEX app alias ${APP_ALIAS} already exists in workspace ${WORKSPACE}'
-    );
-  end if;
-
   apex_application_install.set_workspace_id(l_workspace_id);
   apex_util.set_security_group_id(l_workspace_id);
   apex_application_install.set_schema(upper('${PARSING_SCHEMA}'));
   apex_application_install.set_application_alias(upper('${APP_ALIAS}'));
   apex_application_install.set_application_name('${APP_ALIAS}');
-  apex_application_install.set_application_group(null);
   apex_application_install.set_auto_install_sup_obj(false);
   if '${APPLICATION_ID}' is not null then
     apex_application_install.set_application_id(to_number('${APPLICATION_ID}'));
@@ -183,6 +204,7 @@ end;
 /
 @${EXPORT_FILE}
 commit;
+set serveroutput on size unlimited
 
 declare
   l_application_id number;

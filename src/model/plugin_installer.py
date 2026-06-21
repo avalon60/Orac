@@ -596,7 +596,7 @@ class PluginInstaller:
             "readiness_status": readiness_status,
             "enabled": enabled,
             "last_error_code": install_status if not enabled else None,
-            "last_error_message": last_error_message,
+            "last_error_message": _clamp_registry_text(last_error_message, 2000),
         }
 
     def _apex_app_values(
@@ -629,7 +629,7 @@ class PluginInstaller:
             "card_subtitle": app.card_subtitle,
             "install_status": install_status,
             "install_log": install_log,
-            "last_error_message": last_error_message,
+            "last_error_message": _clamp_registry_text(last_error_message, 4000),
             "enabled": app.enabled,
             "package_hash": package.package_hash,
         }
@@ -698,3 +698,11 @@ class _TemporaryPathDirectory:
 
     def __exit__(self, *args: object) -> None:
         self._temporary.__exit__(*args)
+
+
+def _clamp_registry_text(value: str | None, limit: int) -> str | None:
+    """Return text that fits the target registry column."""
+    if value is None or len(value) <= limit:
+        return value
+    suffix = "... [truncated]"
+    return value[: max(0, limit - len(suffix))] + suffix

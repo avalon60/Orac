@@ -211,11 +211,34 @@ class PluginRoutingTests(unittest.TestCase):
             ],
         )
         self.assertEqual(manifest.ui.surfaces[0].apex.app_alias, "ORAC_HA_STATUS")
+        self.assertEqual(
+            manifest.ui.surfaces[0].apex.app_export,
+            "apex/f_home_assistant.sql",
+        )
         self.assertFalse(manifest.ui.surfaces[0].apex.install_required)
         self.assertEqual(
             manifest.ui.surfaces[1].react.component,
             "HomeAssistantDiagnosticsPanel",
         )
+
+    def test_home_assistant_manifest_declares_plugin_apex_app(self) -> None:
+        manifest = PluginDiscovery(PROJECT_ROOT / "plugins").load_manifest(
+            PROJECT_ROOT / "plugins" / "home_assistant.json"
+        )
+
+        self.assertEqual(len(manifest.apex_apps), 1)
+        app = manifest.apex_apps[0]
+        self.assertEqual(app.alias, "ORAC_HA_STATUS")
+        self.assertEqual(app.label, "Home Assistant Status")
+        self.assertEqual(app.app_export, "apex/f_home_assistant.sql")
+        self.assertEqual(app.workspace, "ORAC")
+        self.assertEqual(app.parsing_schema, "ORAC_APX_PUB")
+        self.assertEqual(app.application_id, 10010)
+        self.assertEqual(app.entry_page_id, 1)
+        self.assertTrue(app.install_required)
+        self.assertFalse(app.replace_existing)
+        self.assertEqual(app.required_roles, ("ORAC_ADMIN",))
+        self.assertTrue(app.enabled)
 
     def test_ui_surface_metadata_is_not_routing_metadata(self) -> None:
         manifest = PluginDiscovery(PROJECT_ROOT / "plugins").load_manifest(

@@ -172,6 +172,8 @@ class DockerPluginApexAppInstaller:
             [
                 "docker",
                 "exec",
+                "--user",
+                "0",
                 self._container_name,
                 "chmod",
                 "755",

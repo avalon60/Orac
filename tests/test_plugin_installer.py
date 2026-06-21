@@ -26,8 +26,10 @@ from model.plugin_dependencies import normalise_requirements
 from model.plugin_dependencies import validate_requirements_mirror
 from model.plugin_apex_installation import PluginApexAppInstallError
 from model.plugin_apex_installation import PluginApexAppInstallResult
+from model.plugin_apex_installation import DockerPluginApexAppInstaller
 from model.plugin_installer import PluginInstallationError
 from model.plugin_installer import PluginInstaller
+from model.plugin_installer import _clamp_registry_text
 from model.plugin_package import PluginPackageBuilder
 from model.plugin_package import PluginPackageError
 from model.plugin_package import PluginPackageReader
@@ -188,6 +190,7 @@ class PluginPackageTests(unittest.TestCase):
                 names = set(package.getnames())
             self.assertIn("manifest.json", names)
             self.assertIn("plugin/plugin.py", names)
+            self.assertIn("plugin/apex/f_home_assistant.sql", names)
             self.assertIn("plugin/plugin.ini.example", names)
             self.assertIn("requirements.txt", names)
             self.assertNotIn("plugin/plugin.ini", names)
@@ -206,6 +209,51 @@ class PluginPackageTests(unittest.TestCase):
                 Path(second_dir),
             )
             self.assertEqual(first.read_bytes(), second.read_bytes())
+
+    def test_apex_helper_chmod_runs_as_container_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            helper = root / "resources" / "docker" / "oracle" / "bin"
+            helper.mkdir(parents=True)
+            (helper / "install-plugin-apex-app.sh").write_text(
+                "#!/usr/bin/env bash\n",
+                encoding="utf-8",
+            )
+            commands: list[list[str]] = []
+
+            def runner(command, **_kwargs):
+                commands.append(command)
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            installer = DockerPluginApexAppInstaller(
+                project_root=root,
+                command_runner=runner,
+            )
+
+            installer._sync_helper_script()
+
+            self.assertEqual(commands[1][:5], ["docker", "exec", "--user", "0", "orac-db"])
+            self.assertIn("chmod", commands[1])
+
+    def test_apex_helper_reuses_existing_app_without_replacement(self) -> None:
+        helper = (
+            PROJECT_ROOT
+            / "resources"
+            / "docker"
+            / "oracle"
+            / "bin"
+            / "install-plugin-apex-app.sh"
+        ).read_text(encoding="utf-8")
+
+        reuse_index = helper.index("reusing application")
+        import_index = helper.index("@${EXPORT_FILE}")
+
+        self.assertIn('if [[ -n "${EXISTING_APP_ID}"', helper)
+        self.assertIn('"${REPLACE_EXISTING}" != "Y"', helper)
+        self.assertIn("ORAC_PLUGIN_APEX_APP_ID=${EXISTING_APP_ID}", helper)
+        self.assertIn("exit 0", helper[reuse_index:import_index])
+        self.assertIn("--replace-existing", helper)
+        self.assertLess(reuse_index, import_index)
 
     def test_reader_rejects_path_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -402,6 +450,15 @@ class PluginInstallerTests(unittest.TestCase):
                 ),
                 "retained",
             )
+
+    def test_registry_error_text_is_clamped_to_column_limit(self) -> None:
+        message = "x" * 2100
+
+        clamped = _clamp_registry_text(message, 2000)
+
+        assert clamped is not None
+        self.assertEqual(len(clamped), 2000)
+        self.assertTrue(clamped.endswith("... [truncated]"))
 
     def test_install_required_apex_surface_requires_export_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
