@@ -16,6 +16,7 @@ from model.plugin_routing.models import (
     PluginApexApp,
     PluginApexSurfaceMetadata,
     PluginDatabaseBackup,
+    PluginDatabaseDeployment,
     PluginDatabaseSchema,
     PluginDatabaseVersionCheck,
     PluginExecutionPolicy,
@@ -48,6 +49,7 @@ SERVICE_START_POLICIES = {"auto", "manual"}
 SERVICE_RESTART_POLICIES = {"never", "on_failure"}
 DATABASE_ON_MISSING_POLICIES = {"warn_disable", "warn_only", "fail_refresh"}
 DATABASE_MANAGERS = {"orac"}
+DATABASE_DEPLOYMENT_TYPES = {"sqlplus", "liquibase"}
 PLUGIN_UI_STATUS_FORMATS = {"plugin_status_v1"}
 PLUGIN_UI_SURFACE_TARGETS = {"apex", "react"}
 PLUGIN_UI_SURFACE_TYPES = {"admin_status", "diagnostic_panel"}
@@ -226,9 +228,12 @@ class PluginDiscovery:
         configuration_required, configuration_optional = self._load_configuration(
             data.get("configuration", {})
         )
-        database_required, database_on_missing, database_schemas = self._load_database(
-            data.get("database", {})
-        )
+        (
+            database_required,
+            database_on_missing,
+            database_deployment,
+            database_schemas,
+        ) = self._load_database(data.get("database", {}))
         secrets = self._load_secrets(data.get("secrets"))
         ui = self._load_ui(data.get("ui"))
         apex_apps = self._load_apex_apps(data.get("apex_apps"))
@@ -264,6 +269,7 @@ class PluginDiscovery:
             configuration_optional=tuple(configuration_optional),
             database_required=database_required,
             database_on_missing=database_on_missing,
+            database_deployment=database_deployment,
             database_schemas=tuple(database_schemas),
             secrets=secrets,
             ui=ui,
@@ -716,11 +722,14 @@ class PluginDiscovery:
             )
         return result
 
-    def _load_database(self, value: Any) -> tuple[bool, str, list[PluginDatabaseSchema]]:
+    def _load_database(
+        self,
+        value: Any,
+    ) -> tuple[bool, str, PluginDatabaseDeployment, list[PluginDatabaseSchema]]:
         if not isinstance(value, dict):
             raise PluginManifestError("database must be an object")
 
-        allowed_fields = {"required", "on_missing", "schemas"}
+        allowed_fields = {"required", "on_missing", "deployment", "schemas"}
         self._reject_unknown_fields(value, allowed_fields, "database")
 
         required = self._require_bool(value.get("required", False), "database.required")
@@ -729,12 +738,34 @@ class PluginDiscovery:
             "database.on_missing",
             DATABASE_ON_MISSING_POLICIES,
         )
+        deployment = self._load_database_deployment(value.get("deployment", {}))
         schemas = self._load_database_schemas(value.get("schemas", []))
 
         if required and not schemas:
             raise PluginManifestError("database.schemas must contain at least one value when database.required is true")
 
-        return required, on_missing, schemas
+        return required, on_missing, deployment, schemas
+
+    def _load_database_deployment(self, value: Any) -> PluginDatabaseDeployment:
+        """Load optional plugin database deployment mechanism metadata."""
+        if not isinstance(value, dict):
+            raise PluginManifestError("database.deployment must be an object")
+        self._reject_unknown_fields(value, {"type", "controller"}, "database.deployment")
+        deployment_type = self._require_enum(
+            value.get("type", "sqlplus"),
+            "database.deployment.type",
+            DATABASE_DEPLOYMENT_TYPES,
+        )
+        controller = self._require_optional_relative_path(
+            value.get("controller"),
+            "database.deployment.controller",
+        )
+        if deployment_type == "liquibase" and controller is None:
+            controller = "db/liquibase/pluginController.xml"
+        return PluginDatabaseDeployment(
+            deployment_type=deployment_type,
+            controller=controller,
+        )
 
     def _load_secrets(self, value: Any) -> PluginSecrets | None:
         """Load plugin secret vault metadata."""
@@ -1197,6 +1228,17 @@ class PluginDiscovery:
             raise PluginManifestError(f"{field_name} must be a relative path")
         if path.suffix.lower() != ".sql":
             raise PluginManifestError(f"{field_name} must reference a .sql file")
+        return path.as_posix()
+
+    @staticmethod
+    def _require_optional_relative_path(value: Any, field_name: str) -> str | None:
+        """Return a safe plugin-relative path when one is provided."""
+        if value is None:
+            return None
+        cleaned = PluginDiscovery._require_non_empty_string(value, field_name)
+        path = PurePosixPath(cleaned)
+        if path.is_absolute() or ".." in path.parts:
+            raise PluginManifestError(f"{field_name} must be a relative path")
         return path.as_posix()
 
     @staticmethod

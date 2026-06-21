@@ -22,6 +22,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from model.plugin_database_deployment import PluginDatabaseDeployer
 from model.plugin_database_deployment import DockerPluginDatabaseRunner
+from model.plugin_database_deployment import DockerPluginLiquibaseDatabaseRunner
 from model.plugin_database_deployment import PluginDatabaseDeploymentError
 from model.plugin_database_deployment import PluginDatabaseDeploymentResult
 from model.plugin_database_deployment import PluginDatabaseArchive
@@ -31,6 +32,7 @@ from model.plugin_database_deployment import _payload_objects_deployed_sql
 from model.plugin_database_deployment import expected_deployment_objects
 from model.plugin_database_deployment import scan_protected_schema_references
 from model.plugin_database_deployment import validate_declared_database_schemas
+from model.plugin_database_deployment import validate_plugin_liquibase_changelog
 from model.plugin_database_deployment import validate_schema_payload
 from model.plugin_routing.discovery import PluginDiscovery
 from model.plugin_routing.embeddings import HashEmbeddingProvider
@@ -145,8 +147,13 @@ def _runtime(mode: str = "on_demand") -> dict:
     return {"mode": mode}
 
 
-def _database(schema_name: str = "orac_ha", *, required: bool = True) -> dict:
-    return {
+def _database(
+    schema_name: str = "orac_ha",
+    *,
+    required: bool = True,
+    deployment: dict | None = None,
+) -> dict:
+    result = {
         "required": required,
         "on_missing": "warn_disable",
         "schemas": [
@@ -160,6 +167,9 @@ def _database(schema_name: str = "orac_ha", *, required: bool = True) -> dict:
             }
         ],
     }
+    if deployment is not None:
+        result["deployment"] = deployment
+    return result
 
 
 def _manifest(plugin_id: str, *, database: dict | None = None) -> dict:
@@ -186,6 +196,7 @@ def _write_plugin(
     manifest: dict,
     *,
     with_schema: bool = False,
+    with_liquibase: bool = False,
     ddl: str = "create table orac_ha.example_table (id number);\n",
 ) -> None:
     plugin_dir = plugins_dir / plugin_id
@@ -195,6 +206,22 @@ def _write_plugin(
         schema_dir = plugin_dir / "db" / "schema" / "table"
         schema_dir.mkdir(parents=True)
         (schema_dir / "example.sql").write_text(ddl, encoding="utf-8")
+    if with_liquibase:
+        liquibase_dir = plugin_dir / "db" / "liquibase"
+        liquibase_dir.mkdir(parents=True, exist_ok=True)
+        (liquibase_dir / "pluginController.xml").write_text(
+            """<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+  <changeSet id="alpha-example" author="clive" contextFilter="plugin" labels="plugin">
+    <sqlFile path="../schema/table/example.sql" relativeToChangelogFile="true"/>
+  </changeSet>
+</databaseChangeLog>
+""",
+            encoding="utf-8",
+        )
     (plugins_dir / f"{plugin_id}.json").write_text(
         json.dumps(manifest),
         encoding="utf-8",
@@ -274,6 +301,45 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
     def test_protected_schema_list_is_centralised(self) -> None:
         self.assertIn("orac_core", PROTECTED_ORAC_SCHEMAS)
         self.assertIn("orac_api", PROTECTED_ORAC_SCHEMAS)
+
+    def test_database_deployment_defaults_to_sqlplus(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest("alpha", database=_database()),
+            )
+
+            manifest = _discover_one(plugins_dir)
+
+            self.assertEqual(manifest.database_deployment.deployment_type, "sqlplus")
+            self.assertIsNone(manifest.database_deployment.controller)
+
+    def test_database_deployment_liquibase_metadata_is_loaded(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest(
+                    "alpha",
+                    database=_database(
+                        deployment={
+                            "type": "liquibase",
+                            "controller": "db/liquibase/pluginController.xml",
+                        }
+                    ),
+                ),
+            )
+
+            manifest = _discover_one(plugins_dir)
+
+            self.assertEqual(manifest.database_deployment.deployment_type, "liquibase")
+            self.assertEqual(
+                manifest.database_deployment.controller,
+                "db/liquibase/pluginController.xml",
+            )
 
     def test_plugin_without_database_section_behaves_as_before(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache:
@@ -545,6 +611,154 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertEqual(manifest_data["database"]["schemas"][0]["schema_name"], "orac_ha")
             self.assertEqual(manifest_data["payload_checksum"], archive.payload_checksum)
             self.assertEqual(len(archive.archive_checksum), 64)
+
+    def test_liquibase_archive_contains_controller_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_archive:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest(
+                    "alpha",
+                    database=_database(deployment={"type": "liquibase"}),
+                ),
+                with_schema=True,
+                with_liquibase=True,
+            )
+            manifest = _discover_one(plugins_dir)
+            deployer = PluginDatabaseDeployer(
+                runner=_FakeRunner(),
+                liquibase_runner=_FakeRunner(),
+                archive_root=Path(temp_archive),
+                clock=lambda: datetime(2026, 6, 3, 12, 0, tzinfo=UTC),
+            )
+
+            archive = deployer.create_archive(manifest)
+
+            with tarfile.open(archive.archive_path, "r:gz") as tar:
+                names = set(tar.getnames())
+                manifest_data = json.loads(
+                    tar.extractfile("manifest.json").read().decode("utf-8")
+                )
+
+            self.assertIn("db/liquibase/pluginController.xml", names)
+            self.assertEqual(manifest_data["deployment"]["type"], "liquibase")
+
+    def test_liquibase_changelog_rejects_include_all(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest(
+                    "alpha",
+                    database=_database(deployment={"type": "liquibase"}),
+                ),
+                with_schema=True,
+                with_liquibase=True,
+            )
+            controller = plugins_dir / "alpha" / "db" / "liquibase" / "pluginController.xml"
+            controller.write_text(
+                """<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
+  <includeAll path="../schema" relativeToChangelogFile="true"/>
+</databaseChangeLog>
+""",
+                encoding="utf-8",
+            )
+            manifest = _discover_one(plugins_dir)
+
+            with self.assertRaises(PluginDatabaseDeploymentError) as exc:
+                validate_plugin_liquibase_changelog(manifest)
+
+            self.assertIn("includeAll is not allowed", str(exc.exception))
+
+    def test_plugin_security_rejects_cross_plugin_schema_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest("alpha", database=_database()),
+                with_schema=True,
+                ddl="create or replace view orac_ha.bad_v as select * from orac_beta.some_table;\n",
+            )
+            manifest = _discover_one(plugins_dir)
+
+            with self.assertRaises(PluginDatabaseDeploymentError) as exc:
+                validate_schema_payload(
+                    manifest.plugin_dir / "db" / "schema",
+                    manifest=manifest,
+                )
+
+            self.assertIn("undeclared plugin-like schema 'orac_beta'", str(exc.exception))
+
+    def test_plugin_security_rejects_public_synonym(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest("alpha", database=_database()),
+                with_schema=True,
+                ddl="create public synonym bad_syn for orac_ha.example_table;\n",
+            )
+            manifest = _discover_one(plugins_dir)
+
+            with self.assertRaises(PluginDatabaseDeploymentError) as exc:
+                validate_schema_payload(
+                    manifest.plugin_dir / "db" / "schema",
+                    manifest=manifest,
+                )
+
+            self.assertIn("public synonyms are not allowed", str(exc.exception))
+
+    def test_liquibase_runner_invokes_isolated_schema_deploy_script(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            script_path = temp_path / "deploy-plugin-liquibase-db.sh"
+            script_path.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+            archive_path = temp_path / "alpha-db.tar.gz"
+            archive_path.write_bytes(b"archive")
+            commands: list[list[str]] = []
+
+            def command_runner(command, **_kwargs):
+                commands.append(command)
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            runner = DockerPluginLiquibaseDatabaseRunner(
+                deploy_script_source_path=script_path,
+                command_runner=command_runner,
+            )
+            manifest = type(
+                "Manifest",
+                (),
+                {
+                    "plugin_id": "alpha",
+                    "version": "1.0.0",
+                    "database_deployment": type(
+                        "Deployment",
+                        (),
+                        {"controller": "db/liquibase/pluginController.xml"},
+                    )(),
+                    "database_schemas": [
+                        type("Schema", (), {"schema_name": "orac_alpha"})()
+                    ],
+                },
+            )()
+            archive = PluginDatabaseArchive(
+                archive_path=archive_path,
+                payload_checksum="a" * 64,
+                archive_checksum="b" * 64,
+                manifest={},
+            )
+
+            runner.deploy(manifest=manifest, archive=archive)
+
+            self.assertIn("deploy-plugin-liquibase-db.sh", commands[0][2])
+            self.assertIn("--schema-name", commands[-1])
+            self.assertIn("orac_alpha", commands[-1])
+            self.assertIn("--controller", commands[-1])
 
     def test_deployment_failure_prevents_routing_eligibility(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache, tempfile.TemporaryDirectory() as temp_archive:

@@ -19,6 +19,7 @@ import subprocess
 import tarfile
 import tempfile
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol
+from xml.etree import ElementTree
 
 if TYPE_CHECKING:
     from model.plugin_routing.models import PluginManifest
@@ -57,12 +58,43 @@ PluginDatabaseDeploymentStatus = Literal[
 ]
 
 _SCANNED_DDL_SUFFIXES = {".sql", ".pks", ".pkb", ".pls", ".plb"}
+_SCANNED_CHANGELOG_SUFFIXES = {".xml"}
 _PROTECTED_SCHEMA_REFERENCE = re.compile(
     r"(?<![a-z0-9_])\"?("
     + "|".join(re.escape(schema) for schema in PROTECTED_ORAC_SCHEMAS)
     + r")\"?\s*\.",
     re.IGNORECASE,
 )
+_SCHEMA_QUALIFIED_REFERENCE = re.compile(
+    r"(?<![a-z0-9_])\"?([a-z][a-z0-9_]*)\"?\s*\.",
+    re.IGNORECASE,
+)
+_PUBLIC_SYNONYM = re.compile(
+    r"\bcreate\s+(?:or\s+replace\s+)?public\s+synonym\b",
+    re.IGNORECASE,
+)
+_PRIVATE_SYNONYM_TARGET = re.compile(
+    r"\bcreate\s+(?:or\s+replace\s+)?synonym\s+"
+    r"(?:\"?[a-z][a-z0-9_]*\"?\s*\.\s*)?\"?[a-z][a-z0-9_]*\"?\s+"
+    r"for\s+\"?([a-z][a-z0-9_]*)\"?\s*\.",
+    re.IGNORECASE,
+)
+_GRANT_STATEMENT = re.compile(
+    r"\bgrant\s+(.+?)\s+on\s+"
+    r"\"?([a-z][a-z0-9_]*)\"?\s*\.\s*\"?([a-z][a-z0-9_]*)\"?"
+    r"\s+to\s+\"?([a-z][a-z0-9_]*)\"?",
+    re.IGNORECASE | re.DOTALL,
+)
+_DDL_OWNER_STATEMENT = re.compile(
+    r"\b(?:create|create\s+or\s+replace|alter|drop)\s+"
+    r"(?:editionable\s+|noneditionable\s+)?"
+    r"(?:table|view|materialized\s+view|package\s+body|package|procedure|"
+    r"function|trigger|sequence|type\s+body|type|synonym|context|role|index)\s+"
+    r"\"?([a-z][a-z0-9_]*)\"?\s*\.",
+    re.IGNORECASE,
+)
+_APEX_PATH_PARTS = {"apex", "orac_apps", "orac_ws"}
+_ALLOWED_PLUGIN_GRANTEES = {"orac_plugin", "orac_apx_pub"}
 _DEPLOYED_OBJECT_FOLDERS = {
     "function": "FUNCTION",
     "materialized_view": "MATERIALIZED VIEW",
@@ -549,6 +581,102 @@ class DockerPluginDatabaseRunner:
             self._logger.log_debug(message)
 
 
+class DockerPluginLiquibaseDatabaseRunner(DockerPluginDatabaseRunner):
+    """Stages plugin archives and invokes isolated plugin Liquibase deployment."""
+
+    def __init__(
+        self,
+        *,
+        container_name: str = "orac-db",
+        docker_bin: str = "docker",
+        container_staging_root: str = "/home/oracle/orac/plugin_staging",
+        deploy_script_path: str = "/home/oracle/orac/bin/deploy-plugin-liquibase-db.sh",
+        deploy_script_source_path: Path | None = None,
+        oracle_pdb: str = "FREEPDB1",
+        command_runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+        logger: Any | None = None,
+    ) -> None:
+        super().__init__(
+            container_name=container_name,
+            docker_bin=docker_bin,
+            container_staging_root=container_staging_root,
+            deploy_script_path=deploy_script_path,
+            deploy_script_source_path=deploy_script_source_path
+            or (
+                Path(__file__).resolve().parents[2]
+                / "resources"
+                / "docker"
+                / "oracle"
+                / "bin"
+                / "deploy-plugin-liquibase-db.sh"
+            ),
+            oracle_pdb=oracle_pdb,
+            command_runner=command_runner,
+            logger=logger,
+        )
+
+    def deploy(
+        self,
+        *,
+        manifest: PluginManifest,
+        archive: PluginDatabaseArchive,
+    ) -> None:
+        """Stage and deploy an archive once for each declared plugin schema."""
+        container_dir = (
+            f"{self._container_staging_root}/{manifest.plugin_id}/{manifest.version}"
+        )
+        container_archive = f"{container_dir}/{archive.archive_path.name}"
+        controller = manifest.database_deployment.controller or (
+            "db/liquibase/pluginController.xml"
+        )
+
+        self._sync_deploy_script()
+        self._run(
+            [
+                self._docker_bin,
+                "exec",
+                "-u",
+                "0",
+                self._container_name,
+                "bash",
+                "-lc",
+                (
+                    f"mkdir -p '{container_dir}' "
+                    f"&& chown 54321:54321 '{container_dir}' "
+                    f"&& chmod 750 '{container_dir}'"
+                ),
+            ],
+            "prepare plugin Liquibase staging directory",
+        )
+        self._run(
+            [
+                self._docker_bin,
+                "cp",
+                str(archive.archive_path),
+                f"{self._container_name}:{container_archive}",
+            ],
+            "copy plugin Liquibase database archive",
+        )
+        for schema in manifest.database_schemas:
+            self._run(
+                [
+                    self._docker_bin,
+                    "exec",
+                    self._container_name,
+                    self._deploy_script_path,
+                    "--plugin-id",
+                    manifest.plugin_id,
+                    "--archive",
+                    container_archive,
+                    "--schema-name",
+                    schema.schema_name,
+                    "--controller",
+                    controller,
+                ],
+                f"deploy plugin Liquibase archive for {schema.schema_name}",
+            )
+
+
 class PluginDatabaseDeployer:
     """Validates, packages, and deploys plugin-owned database schema payloads."""
 
@@ -556,6 +684,7 @@ class PluginDatabaseDeployer:
         self,
         *,
         runner: DockerPluginDatabaseRunner | None = None,
+        liquibase_runner: DockerPluginLiquibaseDatabaseRunner | None = None,
         schema_provisioner: PluginDatabaseSchemaProvisioner | None = None,
         archive_root: Path | None = None,
         clock: Callable[[], datetime] | None = None,
@@ -571,6 +700,9 @@ class PluginDatabaseDeployer:
         """
         self._logger = logger
         self._runner = runner or DockerPluginDatabaseRunner(logger=logger)
+        self._liquibase_runner = liquibase_runner or DockerPluginLiquibaseDatabaseRunner(
+            logger=logger
+        )
         self._schema_provisioner = (
             schema_provisioner or PluginDatabaseSchemaProvisioner(logger=logger)
         )
@@ -622,7 +754,7 @@ class PluginDatabaseDeployer:
                 f"Validating plugin database payload for '{manifest.plugin_id}'."
             )
             validate_declared_database_schemas(manifest)
-            validate_schema_payload(schema_payload_path)
+            validate_schema_payload(schema_payload_path, manifest=manifest)
             payload_checksum = calculate_payload_checksum(manifest)
             self._log_info(
                 "Plugin database payload validated for "
@@ -656,7 +788,8 @@ class PluginDatabaseDeployer:
                 "Staging and deploying plugin database archive for "
                 f"'{manifest.plugin_id}': {archive.archive_path}"
             )
-            self._runner.deploy(manifest=manifest, archive=archive)
+            runner = self._runner_for_manifest(manifest)
+            runner.deploy(manifest=manifest, archive=archive)
         except PluginDatabaseValidationError as exc:
             self._log_warning(
                 "Plugin database validation failed for "
@@ -711,7 +844,7 @@ class PluginDatabaseDeployer:
             )
 
         validate_declared_database_schemas(manifest)
-        validate_schema_payload(schema_payload_path)
+        validate_schema_payload(schema_payload_path, manifest=manifest)
 
         self._archive_root.mkdir(parents=True, exist_ok=True)
         output_dir = self._archive_root / manifest.plugin_id / manifest.version
@@ -751,6 +884,12 @@ class PluginDatabaseDeployer:
             archive_checksum=archive_checksum,
             manifest=archive_manifest,
         )
+
+    def _runner_for_manifest(self, manifest: PluginManifest) -> DockerPluginDatabaseRunner:
+        """Return the deployment runner for the manifest's declared mechanism."""
+        if manifest.database_deployment.deployment_type == "liquibase":
+            return self._liquibase_runner
+        return self._runner
 
     @staticmethod
     def _disabled_result(
@@ -857,6 +996,14 @@ def plugin_schema_payload_path(manifest: PluginManifest) -> Path:
     return manifest.plugin_dir / "db" / "schema"
 
 
+def plugin_liquibase_controller_path(manifest: PluginManifest) -> Path:
+    """Return the plugin-local Liquibase controller path."""
+    controller = manifest.database_deployment.controller or (
+        "db/liquibase/pluginController.xml"
+    )
+    return manifest.plugin_dir / controller
+
+
 def calculate_payload_checksum(manifest: PluginManifest) -> str:
     """Return the deterministic checksum for the plugin database payload."""
     return _payload_checksum(_archive_inputs(manifest), manifest)
@@ -873,10 +1020,15 @@ def validate_declared_database_schemas(manifest: PluginManifest) -> None:
             )
 
 
-def validate_schema_payload(schema_payload_path: Path) -> None:
+def validate_schema_payload(
+    schema_payload_path: Path,
+    *,
+    manifest: PluginManifest | None = None,
+) -> None:
     """Reject plugin DDL payloads that reference protected Orac schemas.
 
     :param schema_payload_path: Plugin-local ``db/schema`` path.
+    :param manifest: Optional manifest for owner/grant/Liquibase validation.
     :raises PluginDatabaseDeploymentError: when forbidden references are found.
     """
     violations = scan_protected_schema_references(schema_payload_path)
@@ -885,6 +1037,217 @@ def validate_schema_payload(schema_payload_path: Path) -> None:
         raise PluginDatabaseValidationError(
             "Plugin database payload references protected Orac schemas:\n" + details
         )
+    if manifest is not None:
+        validate_plugin_database_security(manifest)
+
+
+def validate_plugin_database_security(manifest: PluginManifest) -> None:
+    """Validate plugin database assets before any deployment tool can run."""
+    schema_payload_path = plugin_schema_payload_path(manifest)
+    declared_schemas = {
+        schema.schema_name.strip().lower()
+        for schema in manifest.database_schemas
+        if schema.schema_name.strip()
+    }
+    if not declared_schemas:
+        return
+
+    sql_paths = [
+        path
+        for path in sorted(schema_payload_path.rglob("*"))
+        if path.is_file() and path.suffix.lower() in _SCANNED_DDL_SUFFIXES
+    ]
+    if manifest.database_deployment.deployment_type == "liquibase":
+        sql_paths.extend(validate_plugin_liquibase_changelog(manifest))
+
+    violations: list[str] = []
+    for path in sorted(set(sql_paths)):
+        violations.extend(
+            _validate_plugin_sql_file(
+                path,
+                declared_schemas=declared_schemas,
+            )
+        )
+    if violations:
+        raise PluginDatabaseValidationError(
+            "Plugin database payload failed security validation:\n"
+            + "\n".join(violations)
+        )
+
+
+def validate_plugin_liquibase_changelog(manifest: PluginManifest) -> list[Path]:
+    """Validate plugin Liquibase XML and return referenced SQL files."""
+    controller_path = plugin_liquibase_controller_path(manifest)
+    plugin_dir = manifest.plugin_dir.resolve()
+    if not controller_path.is_file():
+        raise PluginDatabaseValidationError(
+            f"Plugin Liquibase controller is missing: {controller_path}"
+        )
+    if not controller_path.resolve().is_relative_to(plugin_dir):
+        raise PluginDatabaseValidationError(
+            f"Plugin Liquibase controller escapes plugin directory: {controller_path}"
+        )
+
+    referenced_sql: list[Path] = []
+    visited: set[Path] = set()
+    _collect_liquibase_sql_references(
+        controller_path,
+        plugin_dir=plugin_dir,
+        referenced_sql=referenced_sql,
+        visited=visited,
+    )
+    return referenced_sql
+
+
+def _collect_liquibase_sql_references(
+    changelog_path: Path,
+    *,
+    plugin_dir: Path,
+    referenced_sql: list[Path],
+    visited: set[Path],
+) -> None:
+    """Collect SQL files referenced by a Liquibase changelog tree."""
+    resolved = changelog_path.resolve()
+    if resolved in visited:
+        return
+    visited.add(resolved)
+    if not resolved.is_relative_to(plugin_dir):
+        raise PluginDatabaseValidationError(
+            f"Plugin Liquibase changelog escapes plugin directory: {changelog_path}"
+        )
+    if any(part.lower() in _APEX_PATH_PARTS for part in resolved.parts):
+        raise PluginDatabaseValidationError(
+            f"APEX assets must not be included in plugin Liquibase changelog: {changelog_path}"
+        )
+    if resolved.suffix.lower() not in _SCANNED_CHANGELOG_SUFFIXES:
+        raise PluginDatabaseValidationError(
+            f"Plugin Liquibase changelog must be XML: {changelog_path}"
+        )
+
+    try:
+        root = ElementTree.parse(resolved).getroot()
+    except ElementTree.ParseError as exc:
+        raise PluginDatabaseValidationError(
+            f"Plugin Liquibase changelog XML is invalid: {changelog_path}: {exc}"
+        ) from exc
+    except OSError as exc:
+        raise PluginDatabaseValidationError(
+            f"Unable to read plugin Liquibase changelog {changelog_path}: {exc}"
+        ) from exc
+
+    for element in root.iter():
+        tag = element.tag.rsplit("}", 1)[-1]
+        if tag in {"include", "sqlFile"}:
+            file_value = element.attrib.get("file") or element.attrib.get("path")
+            if not file_value:
+                raise PluginDatabaseValidationError(
+                    f"Plugin Liquibase {tag} is missing file/path in {changelog_path}"
+                )
+            target = _resolve_liquibase_reference(
+                file_value,
+                source=resolved,
+                relative_to_changelog=(
+                    element.attrib.get("relativeToChangelogFile", "false").lower()
+                    == "true"
+                ),
+                plugin_dir=plugin_dir,
+            )
+            if tag == "include":
+                _collect_liquibase_sql_references(
+                    target,
+                    plugin_dir=plugin_dir,
+                    referenced_sql=referenced_sql,
+                    visited=visited,
+                )
+            else:
+                _validate_plugin_referenced_sql_path(target)
+                referenced_sql.append(target)
+        elif tag == "includeAll":
+            raise PluginDatabaseValidationError(
+                f"Plugin Liquibase includeAll is not allowed: {changelog_path}"
+            )
+
+
+def _resolve_liquibase_reference(
+    value: str,
+    *,
+    source: Path,
+    relative_to_changelog: bool,
+    plugin_dir: Path,
+) -> Path:
+    """Resolve and constrain a Liquibase file reference."""
+    reference = Path(value)
+    if reference.is_absolute():
+        raise PluginDatabaseValidationError(
+            f"Plugin Liquibase reference must be relative: {value}"
+        )
+    base = source.parent if relative_to_changelog else plugin_dir
+    target = (base / reference).resolve()
+    if not target.is_relative_to(plugin_dir):
+        raise PluginDatabaseValidationError(
+            f"Plugin Liquibase reference escapes plugin directory: {value}"
+        )
+    if not target.is_file():
+        raise PluginDatabaseValidationError(
+            f"Plugin Liquibase referenced file is missing: {value}"
+        )
+    return target
+
+
+def _validate_plugin_referenced_sql_path(path: Path) -> None:
+    """Reject referenced SQL paths that cross the APEX deployment boundary."""
+    if path.suffix.lower() not in _SCANNED_DDL_SUFFIXES:
+        raise PluginDatabaseValidationError(
+            f"Plugin Liquibase sqlFile must reference SQL/PLSQL: {path}"
+        )
+    if any(part.lower() in _APEX_PATH_PARTS for part in path.parts):
+        raise PluginDatabaseValidationError(
+            f"APEX assets must not be included in plugin Liquibase deployment: {path}"
+        )
+
+
+def _validate_plugin_sql_file(
+    path: Path,
+    *,
+    declared_schemas: set[str],
+) -> list[str]:
+    """Return security validation failures for one plugin SQL file."""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    violations: list[str] = []
+    if _PUBLIC_SYNONYM.search(text):
+        violations.append(f"{path}: public synonyms are not allowed")
+    for match in _PRIVATE_SYNONYM_TARGET.finditer(text):
+        target_owner = match.group(1).lower()
+        if target_owner not in declared_schemas:
+            violations.append(
+                f"{path}: private synonym targets undeclared schema '{target_owner}'"
+            )
+    for match in _DDL_OWNER_STATEMENT.finditer(text):
+        owner = match.group(1).lower()
+        if owner not in declared_schemas:
+            violations.append(
+                f"{path}: DDL targets undeclared schema '{owner}'"
+            )
+    for match in _GRANT_STATEMENT.finditer(text):
+        owner = match.group(2).lower()
+        grantee = match.group(4).lower()
+        if owner not in declared_schemas:
+            violations.append(
+                f"{path}: grant source schema '{owner}' is not declared"
+            )
+        if grantee not in declared_schemas and grantee not in _ALLOWED_PLUGIN_GRANTEES:
+            violations.append(
+                f"{path}: grant target schema '{grantee}' is not allowed"
+            )
+    for match in _SCHEMA_QUALIFIED_REFERENCE.finditer(text):
+        schema_name = match.group(1).lower()
+        if schema_name in PROTECTED_ORAC_SCHEMAS:
+            continue
+        if schema_name.startswith("orac_") and schema_name not in declared_schemas:
+            violations.append(
+                f"{path}: references undeclared plugin-like schema '{schema_name}'"
+            )
+    return sorted(set(violations))
 
 
 def scan_protected_schema_references(schema_payload_path: Path) -> list[ProtectedSchemaReference]:
@@ -921,6 +1284,15 @@ def _archive_inputs(manifest: PluginManifest) -> list[tuple[Path, str]]:
         if path.is_file():
             archive_name = Path("db") / "schema" / path.relative_to(schema_payload_path)
             files.append((path, archive_name.as_posix()))
+    if manifest.database_deployment.deployment_type == "liquibase":
+        liquibase_path = manifest.plugin_dir / "db" / "liquibase"
+        if liquibase_path.is_dir():
+            for path in sorted(liquibase_path.rglob("*")):
+                if path.is_file():
+                    archive_name = (
+                        Path("db") / "liquibase" / path.relative_to(liquibase_path)
+                    )
+                    files.append((path, archive_name.as_posix()))
     return sorted(files, key=lambda item: item[1])
 
 
@@ -962,6 +1334,10 @@ def _archive_manifest(
         "source_plugin_directory": str(manifest.plugin_dir),
         "schema_payload_path": str(plugin_schema_payload_path(manifest)),
         "deployment_mode": "plugin_database_refresh",
+        "deployment": {
+            "type": manifest.database_deployment.deployment_type,
+            "controller": manifest.database_deployment.controller,
+        },
     }
 
 

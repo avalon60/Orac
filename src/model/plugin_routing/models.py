@@ -16,6 +16,7 @@ PluginServiceStartPolicy = Literal["auto", "manual"]
 PluginServiceRestartPolicy = Literal["never", "on_failure"]
 PluginDatabaseOnMissing = Literal["warn_disable", "warn_only", "fail_refresh"]
 PluginDatabaseManagedBy = Literal["orac"]
+PluginDatabaseDeploymentType = Literal["sqlplus", "liquibase"]
 PluginUiStatusFormat = Literal["plugin_status_v1"]
 PluginUiSurfaceTarget = Literal["apex", "react"]
 PluginUiSurfaceType = Literal["admin_status", "diagnostic_panel"]
@@ -121,6 +122,14 @@ class PluginDatabaseBackup:
 
     include: bool
     export_mode: str | None = None
+
+
+@dataclass(frozen=True)
+class PluginDatabaseDeployment:
+    """Represents plugin database deployment mechanism metadata."""
+
+    deployment_type: PluginDatabaseDeploymentType = "sqlplus"
+    controller: str | None = None
 
 
 @dataclass(frozen=True)
@@ -272,6 +281,7 @@ class PluginManifest:
     configuration_optional: tuple[PluginConfigKey, ...] = ()
     database_required: bool = False
     database_on_missing: PluginDatabaseOnMissing = "warn_disable"
+    database_deployment: PluginDatabaseDeployment = PluginDatabaseDeployment()
     database_schemas: tuple[PluginDatabaseSchema, ...] = ()
     secrets: PluginSecrets | None = None
     ui: PluginUi | None = None
