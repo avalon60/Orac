@@ -254,11 +254,13 @@ wait_for_orac_deploy() {
   local interval=60
   local timeout=1800   # 30 minutes
   local marker="=  ORAC deployment complete ="
+  local log_since
   local failure_patterns=(
     "!! Halting due to STOP_ON_ERROR=1."
     "Database configuration failed. Check logs under '/opt/oracle/cfgtoollogs/dbca'."
     "DATABASE SETUP WAS NOT SUCCESSFUL!"
     "ORAC_APEX_SETUP_FAILED"
+    "ORAC_APEX_ADMIN_SETUP_FAILED"
     "ORAC_ORDS_SETUP_FAILED"
     "ORAC_ORDS_START_FAILED"
     "ORAC_DEPLOYMENT_INCOMPLETE"
@@ -267,11 +269,12 @@ wait_for_orac_deploy() {
   local start_time
   local logs_snapshot
   start_time=$(date +%s)
+  log_since="${start_time}"
 
   echo "⏳ Waiting for Orac deployment to complete..."
 
   while true; do
-    logs_snapshot="$(docker logs "$container" 2>&1 || true)"
+    logs_snapshot="$(docker logs --since "$log_since" "$container" 2>&1 || true)"
 
     if grep -Fq "$marker" <<<"$logs_snapshot"; then
       if ! verify_container_ords_config "$container"; then
@@ -294,6 +297,7 @@ wait_for_orac_deploy() {
         echo "❌ Detected deployment failure in container logs."
         echo "   Matched marker: $pattern"
         echo "   Check container logs: docker logs $container"
+        print_recent_log_context "$container" "$pattern" "$log_since"
         return 1
       fi
     done
@@ -317,6 +321,19 @@ wait_for_orac_deploy() {
     echo "Deployment still in progress. Checking again in ${interval}s..."
     sleep "$interval"
   done
+}
+
+print_recent_log_context() {
+  local container="$1"
+  local pattern="$2"
+  local since="$3"
+  local context
+
+  context="$(docker logs --since "$since" "$container" 2>&1 | grep -F -A 8 -B 8 "$pattern" | tail -n 40 || true)"
+  if [[ -n "$context" ]]; then
+    echo "   Recent matching log context:"
+    echo "$context"
+  fi
 }
 
 verify_container_ords_config() {

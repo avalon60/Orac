@@ -18,6 +18,7 @@ orac_deployment_complete() {
   local ords_conf_persistent="${ORDS_CONF_PERSISTENT:-/opt/oracle/oradata/orac/ords/conf}"
   local pdb_status
   local apex_status
+  local apex_admin_status
   local ords_metadata_status
   local ords_config_output
 
@@ -47,6 +48,42 @@ SQL
   if ! grep -Eq '(^|[[:space:]])VALID([[:space:]]|$)' <<<"${apex_status}"; then
     echo "ORAC_DEPLOYMENT_INCOMPLETE: APEX registry component is not VALID."
     echo "${apex_status}"
+    return 1
+  fi
+
+  apex_admin_status=$(sqlplus -L -s / as sysdba <<SQL
+set heading off feedback off pagesize 0 verify off echo off
+whenever sqlerror exit failure rollback
+alter session set container=${oracle_pdb};
+select case
+         when exists (
+                select 1
+                  from apex_workspace_apex_users
+                 where workspace_name = 'ORAC'
+                   and user_name = 'ORAC_ADMIN'
+              )
+          and 3 = (
+                select count(distinct role_static_id)
+                  from apex_appl_acl_user_roles
+                 where workspace = 'ORAC'
+                   and application_id = 1042
+                   and user_name = 'ORAC_ADMIN'
+                   and role_static_id in (
+                         'ADMINISTRATOR',
+                         'CONTRIBUTOR',
+                         'READER'
+                       )
+              )
+         then 'VALID'
+         else 'INVALID'
+       end
+  from dual;
+exit
+SQL
+)
+  if ! grep -Eq '(^|[[:space:]])VALID([[:space:]]|$)' <<<"${apex_admin_status}"; then
+    echo "ORAC_DEPLOYMENT_INCOMPLETE: ORAC_ADMIN is not configured for APEX application 1042."
+    echo "${apex_admin_status}"
     return 1
   fi
 
@@ -100,6 +137,10 @@ SQL
   fi
 
 }
+
+if [[ "${ORAC_DEPLOYMENT_COMPLETE_LIB_ONLY:-0}" == "1" ]]; then
+  return 0 2>/dev/null || exit 0
+fi
 
 (
   orac_deployment_complete

@@ -4,6 +4,7 @@
 # Description: Enables extended string support for the Orac Oracle database PDB.
 
 PROG="Orac: 020-enable-extended-strings.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 timestamp() {
   date +"%Y-%m-%d %H:%M:%S"
@@ -125,6 +126,28 @@ orac_enable_extended_strings() {
   echo "[$(timestamp)] ${PROG} Extended strings enabled successfully for ${oracle_pdb}."
 }
 
+emit_deployment_complete_marker() {
+  local complete_script="${SCRIPT_DIR}/998-complete-orac.sh"
+  local previous_lib_only="${ORAC_DEPLOYMENT_COMPLETE_LIB_ONLY:-}"
+
+  if [[ ! -f "${complete_script}" ]]; then
+    echo "ERROR: deployment readiness script is missing: ${complete_script}"
+    return 1
+  fi
+
+  ORAC_DEPLOYMENT_COMPLETE_LIB_ONLY=1
+  # shellcheck source=resources/docker/oracle/setup/998-complete-orac.sh
+  source "${complete_script}"
+  if [[ -n "${previous_lib_only}" ]]; then
+    ORAC_DEPLOYMENT_COMPLETE_LIB_ONLY="${previous_lib_only}"
+  else
+    unset ORAC_DEPLOYMENT_COMPLETE_LIB_ONLY
+  fi
+
+  orac_deployment_complete || return 1
+  echo "==================  ORAC deployment complete =================="
+}
+
 (
   orac_enable_extended_strings
 )
@@ -134,5 +157,5 @@ if [[ ${enable_status} -ne 0 ]]; then
   return "${enable_status}" 2>/dev/null || exit "${enable_status}"
 fi
 
-echo "==================  ORAC deployment complete =================="
+emit_deployment_complete_marker || return 1 2>/dev/null || exit 1
 return 0 2>/dev/null || exit 0

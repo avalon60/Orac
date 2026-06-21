@@ -95,6 +95,7 @@ def test_ords_config_uses_persistent_config_and_runtime_symlink() -> None:
 
     assert 'ln -s "${ORDS_CONF_PERSISTENT}" "${ORDS_CONF}"' in setup
     assert 'ln -s "${ORDS_CONF_PERSISTENT}" "${ORDS_CONF}"' in startup
+    assert 'find -L "${ORDS_CONF}"' in setup
 
 
 def test_startup_does_not_run_ords_install() -> None:
@@ -129,6 +130,14 @@ def test_apex_admin_account_is_reset_and_unexpired_during_setup() -> None:
     script = APEX_ROLE_SETUP.read_text(encoding="utf-8")
 
     assert '[[ -z "${ORACLE_PWD:-}" ]]' in script
+    assert "whenever sqlerror exit failure rollback" in script
+    assert "create or replace procedure orac_apx_pub.orac_admin_setup_tmp" in script
+    assert "authid definer" in script
+    assert "drop procedure orac_apx_pub.orac_admin_setup_tmp" in script
+    assert "alter session set current_schema = &&apex_owner" not in script
+    assert "ORAC_APEX_ADMIN_SETUP_FAILED" in script
+    assert "apex_application_install.set_workspace_id" in script
+    assert "apex_util.set_security_group_id" in script
     assert "apex_util.reset_password" in script
     assert "p_user_name                    => 'ORAC_ADMIN'" in script
     assert "p_new_password                 => '${ORACLE_PWD}'" in script
@@ -136,6 +145,16 @@ def test_apex_admin_account_is_reset_and_unexpired_during_setup() -> None:
     assert "apex_util.unlock_account" in script
     assert "apex_util.unexpire_workspace_account" in script
     assert "apex_util.expire_workspace_account" not in script
+
+
+def test_extended_strings_revalidates_before_completion_marker() -> None:
+    script = (ORACLE_ROOT / "setup" / "999-extended-strings.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "emit_deployment_complete_marker" in script
+    assert "ORAC_DEPLOYMENT_COMPLETE_LIB_ONLY=1" in script
+    assert "orac_deployment_complete || return 1" in script
 
 
 def test_canonical_apex_url_is_documented_and_used_by_deploy() -> None:

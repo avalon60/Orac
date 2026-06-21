@@ -477,18 +477,24 @@ class OracleSetupScriptContractTests(unittest.TestCase):
         self.assertIn('if is_excluded_bundle "$bundle_name"; then', script)
 
     def test_completion_requires_valid_ords_metadata(self) -> None:
-        """The final deployment marker must require valid ORDS metadata."""
+        """The final deployment marker must require valid ORDS/APEX state."""
         script = (ORACLE_SETUP_DIR / "998-complete-orac.sh").read_text(
             encoding="utf-8"
         )
 
         self.assertIn("owner = 'ORDS_METADATA'", script)
         self.assertIn("ORDS metadata objects are not VALID", script)
+        self.assertIn("apex_workspace_apex_users", script)
+        self.assertIn("apex_appl_acl_user_roles", script)
+        self.assertIn("ORAC_ADMIN is not configured", script)
 
     def test_deploy_verification_requires_ords_metadata_and_http_ready(self) -> None:
         """Deploy marker verification must reject config-only ORDS state."""
         script = DB_DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
+        self.assertIn('docker logs --since "$log_since"', script)
+        self.assertIn("ORAC_APEX_ADMIN_SETUP_FAILED", script)
+        self.assertNotIn("Ignoring stale ORDS setup marker", script)
         self.assertIn("verify_container_ords_config()", script)
         self.assertIn("wait_for_ords_apex_app", script)
         self.assertIn("owner = ", script)

@@ -152,7 +152,7 @@ SQL
     return 1
   fi
 
-  if [[ ! -d "${ORDS_CONF}" ]] || ! find "${ORDS_CONF}" -type f -print -quit | grep -q .; then
+  if [[ ! -d "${ORDS_CONF}" ]] || ! find -L "${ORDS_CONF}" -type f -print -quit | grep -q .; then
     echo "ORAC_ORDS_SETUP_FAILED: ORDS config directory is missing or empty: ${ORDS_CONF}"
     return 1
   fi
