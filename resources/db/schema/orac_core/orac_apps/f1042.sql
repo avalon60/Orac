@@ -110,7 +110,7 @@ wwv_imp_workspace.create_flow(
 ,p_rejoin_existing_sessions=>'N'
 ,p_csv_encoding=>'Y'
 ,p_auto_time_zone=>'N'
-,p_friendly_url=>'N'
+,p_friendly_url=>'Y'
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'Orac Administration'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
