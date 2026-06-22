@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset clive:plugin_db_deployments_tapi_create_body stripComments:false endDelimiter:/ runOnChange:true
+--changeset clive:plugin_db_deployments_tapi_create_body stripComments:false endDelimiter:/ runOnChange:true context:core labels:core splitStatements:false
 
 create or replace package body orac_api.plugin_db_deployments_tapi
 as

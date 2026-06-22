@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_package_body_orac_code_package_body_plugin_registry_api context:core labels:core stripComments:false splitStatements:false endDelimiter:/ runOnChange:true
 -- __author__: clive
 -- __date__: 2026-06-07
 -- __description__: controlled plugin installation registry API body
@@ -74,3 +77,5 @@ create or replace package body orac_code.plugin_registry_api as
   end upsert_plugin;
 end plugin_registry_api;
 /
+
+--rollback drop package body orac_code.plugin_registry_api;

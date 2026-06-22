@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_package_body_orac_code_package_body_preference_lov_api context:core labels:core stripComments:false splitStatements:false endDelimiter:/ runOnChange:true
 -- __author__: clive
 -- __date__: 2026-04-29
 -- __description__: ORAC_CODE helper for preference-driven LOV resolution
@@ -498,3 +501,5 @@ create or replace package body orac_code.preference_lov_api as
   end get_lov_json;
 end preference_lov_api;
 /
+
+--rollback drop package body orac_code.preference_lov_api;

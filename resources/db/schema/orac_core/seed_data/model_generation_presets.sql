@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:seed_data_orac_core_seed_data_model_generation_presets context:core labels:core stripComments:false runOnChange:true
 -- Author: Clive Bostock
 -- Date: 23-May-2026
 -- Purpose: Seed standard Orac model generation presets.
@@ -154,3 +157,5 @@ when not matched then insert (
   src.is_system_preset,
   src.is_active
 );
+
+--rollback delete from orac_core.model_generation_presets where model_preset_code in ('DEFAULT', 'PRECISE', 'PRECISE_DETAILED', 'BALANCED', 'CREATIVE', 'CODING', 'LONGFORM', 'DETERMINISTIC_DEBUG');

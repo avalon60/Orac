@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:seed_data_orac_core_seed_data_orac_pers_nicola context:core labels:core stripComments:false runOnChange:true
 -- Author: Clive Bostock
 -- Date: 19-May-2026
 -- Purpose: Seed the Nicola Orac persona.
@@ -100,3 +103,5 @@ when not matched then insert (
   src.style_prompt,
   src.is_active
 );
+
+--rollback delete from orac_core.orac_personalities where personality_code in ('NICOLA');

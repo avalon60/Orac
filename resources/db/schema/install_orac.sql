@@ -8,5 +8,5 @@ set sqlblanklines on
 whenever sqlerror exit sql.sqlcode
 
 prompt Installing production database changes through Liquibase
-liquibase update -changelog-file ../liquibase/changelogs/core/oracController.xml
+liquibase update -changelog-file productController.xml
 prompt Completed production database Liquibase install

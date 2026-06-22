@@ -33,18 +33,20 @@ def _write_mock_environment(root: Path) -> dict[str, str]:
     orac_home = root / "orac"
     sqlcl_home = root / "sqlcl"
     liquibase_home = root / "liquibase"
+    schema_home = orac_home / "schema"
     log_root = root / "logs"
 
     _write_executable(
         sqlcl_home / "bin" / "sql",
         "#!/usr/bin/env bash\nprintf 'SQLcl mock 25.2\\n'\n",
     )
-    (liquibase_home / "changelogs" / "core").mkdir(parents=True)
+    liquibase_home.mkdir(parents=True)
+    schema_home.mkdir(parents=True)
     (liquibase_home / "liquibase-core.properties").write_text(
-        "changeLogFile=changelogs/core/oracController.xml\n",
+        "changeLogFile=productController.xml\n",
         encoding="utf-8",
     )
-    (liquibase_home / "changelogs" / "core" / "oracController.xml").write_text(
+    (schema_home / "productController.xml").write_text(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?><databaseChangeLog/>\n",
         encoding="utf-8",
     )
@@ -70,6 +72,7 @@ exit 0
             "ORACLE_PWD": "secret",
             "SQLCL_HOME": str(sqlcl_home),
             "LIQUIBASE_HOME": str(liquibase_home),
+            "LIQUIBASE_SEARCH_PATH": str(schema_home),
             "LIQUIBASE_SETUP_LOG_ROOT": str(log_root),
         }
     )
@@ -89,7 +92,7 @@ def _run_script(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
 class OracLiquibaseSetupScriptTests(unittest.TestCase):
     """Tests first-setup Liquibase delta orchestration."""
 
-    def test_success_calls_validate_before_update_and_logs_under_setup(self) -> None:
+    def test_success_calls_probe_validate_update_and_logs_under_setup(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             env = _write_mock_environment(root)
@@ -100,9 +103,10 @@ class OracLiquibaseSetupScriptTests(unittest.TestCase):
             calls = (root / "orac" / "deploy-calls.txt").read_text(
                 encoding="utf-8"
             ).splitlines()
-            self.assertEqual(len(calls), 2)
-            self.assertIn("--validate --contexts core,prod --labels core", calls[0])
-            self.assertIn("--update --contexts core,prod --labels core", calls[1])
+            self.assertEqual(len(calls), 3)
+            self.assertIn("--probe-tracking --contexts core,prod --labels core", calls[0])
+            self.assertIn("--validate --contexts core,prod --labels core", calls[1])
+            self.assertIn("--update --contexts core,prod --labels core", calls[2])
             self.assertIn(str(root / "logs"), calls[0])
             self.assertTrue(list((root / "logs").glob("*/040-orac-liquibase-deltas.log")))
 
@@ -136,8 +140,9 @@ class OracLiquibaseSetupScriptTests(unittest.TestCase):
             calls = (root / "orac" / "deploy-calls.txt").read_text(
                 encoding="utf-8"
             ).splitlines()
-            self.assertEqual(len(calls), 1)
-            self.assertIn("--validate", calls[0])
+            self.assertEqual(len(calls), 2)
+            self.assertIn("--probe-tracking", calls[0])
+            self.assertIn("--validate", calls[1])
             self.assertNotIn("--update", "\n".join(calls))
 
     def test_missing_sqlcl_fails_clearly(self) -> None:
@@ -155,7 +160,7 @@ class OracLiquibaseSetupScriptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             env = _write_mock_environment(root)
-            (root / "liquibase" / "changelogs" / "core" / "oracController.xml").unlink()
+            (root / "orac" / "schema" / "productController.xml").unlink()
 
             result = _run_script(env)
 

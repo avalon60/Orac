@@ -1,3 +1,8 @@
+--liquibase formatted sql
+
+--changeset clive:create_table_orac_core_table_model_generation_presets context:core labels:core stripComments:false
+--preconditions onFail:HALT onError:HALT
+--precondition-sql-check expectedResult:0 select count(1) from all_tables where owner = 'ORAC_CORE' and table_name = 'MODEL_GENERATION_PRESETS';
 -- __author__: clive
 -- __date__: 2026-05-23
 -- __description__: reusable LLM generation presets for Orac model requests
@@ -29,3 +34,5 @@ create table orac_core.model_generation_presets
   row_version       number default 1 not null
 )
 ;
+
+--rollback drop table orac_core.model_generation_presets purge;

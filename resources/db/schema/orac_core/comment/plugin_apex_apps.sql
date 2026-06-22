@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:comment_orac_core_comment_plugin_apex_apps context:core labels:core stripComments:false runOnChange:true
 comment on table orac_core.plugin_apex_apps is
   'Stores plugin-supplied APEX application installation and launch metadata.';
 

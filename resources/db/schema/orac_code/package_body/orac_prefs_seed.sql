@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_package_body_orac_code_package_body_orac_prefs_seed context:core labels:core stripComments:false splitStatements:false endDelimiter:/ runOnChange:true
 -- __author__: clive
 -- __date__: 2026-04-25
 -- __description__: seed default user preferences through ORAC_API views and TAPIs
@@ -103,3 +106,5 @@ create or replace package body orac_code.orac_prefs_seed as
 
 end orac_prefs_seed;
 /
+
+--rollback drop package body orac_code.orac_prefs_seed;

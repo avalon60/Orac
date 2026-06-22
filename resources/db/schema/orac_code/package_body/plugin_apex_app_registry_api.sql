@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_package_body_orac_code_package_body_plugin_apex_app_registry_api context:core labels:core stripComments:false splitStatements:false endDelimiter:/ runOnChange:true
 -- __author__: clive
 -- __date__: 2026-06-20
 -- __description__: controlled plugin APEX application registry API body
@@ -67,3 +70,5 @@ create or replace package body orac_code.plugin_apex_app_registry_api as
   end upsert_app;
 end plugin_apex_app_registry_api;
 /
+
+--rollback drop package body orac_code.plugin_apex_app_registry_api;

@@ -1,3 +1,8 @@
+--liquibase formatted sql
+
+--changeset clive:create_table_orac_core_table_plugin_registry context:core labels:core stripComments:false
+--preconditions onFail:HALT onError:HALT
+--precondition-sql-check expectedResult:0 select count(1) from all_tables where owner = 'ORAC_CORE' and table_name = 'PLUGIN_REGISTRY';
 -- __author__: clive
 -- __date__: 2026-06-07
 -- __description__: current installation and activation state for Orac plugins
@@ -39,3 +44,5 @@ create table orac_core.plugin_registry
   updated_by               varchar2(128 char),
   row_version              number default 1 not null
 );
+
+--rollback drop table orac_core.plugin_registry purge;

@@ -20,6 +20,8 @@ Run the lightweight guardrail structure and reference checks with:
 ```bash
 poetry run python scripts/check_guardrails.py
 poetry run pytest tests/test_check_guardrails.py
+poetry run python scripts/check_core_liquibase.py
+poetry run pytest tests/test_check_core_liquibase.py
 ```
 
 ## Database, DDL, SQL, install scripts, grants, schemas
@@ -35,6 +37,17 @@ Also read the adjacent database context file when it exists:
 Read:
 
 - docs/agent-guardrails/20-database-standards.md
+
+Also read:
+
+- docs/agent-guardrails/27-liquibase-annotations.md
+
+when changing:
+
+- Liquibase formatted SQL
+- Liquibase changesets, rollback annotations, or preconditions
+- SQLcl/Liquibase controller files or deployment entrypoints
+- Oracle Database object annotations installed through Liquibase
 
 Also read:
 

@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset clive:plugin_registry_v_create stripComments:false runOnChange:true
+--changeset clive:plugin_registry_v_create stripComments:false runOnChange:true context:core labels:core
 
 create or replace force view orac_api.plugin_registry_v as
 select plugin_registry_id

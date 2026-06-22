@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset clive:orac_personalities_tapi_create_body stripComments:false endDelimiter:/ runOnChange:true
+--changeset clive:orac_personalities_tapi_create_body stripComments:false endDelimiter:/ runOnChange:true context:core labels:core splitStatements:false
 
 create or replace package body orac_api.orac_personalities_tapi
 as
@@ -419,4 +419,4 @@ as
 
 end orac_personalities_tapi;
 /
---rollback drop package orac_api.orac_personalities_tapi
+--rollback drop package body orac_api.orac_personalities_tapi;

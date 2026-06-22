@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_view_orac_api_view_users context:core labels:core stripComments:false runOnChange:true
 -- __author__: clive
 -- __date__: 2026-04-25
 -- __description__: published users view for POLP-compatible consumers
@@ -16,3 +19,5 @@ select
   u.row_version
 from orac_core.users u
 ;
+
+--rollback drop view orac_api.users;

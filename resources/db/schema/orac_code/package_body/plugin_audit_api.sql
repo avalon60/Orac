@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_package_body_orac_code_package_body_plugin_audit_api context:core labels:core stripComments:false splitStatements:false endDelimiter:/ runOnChange:true
 -- __author__: clive
 -- __date__: 2026-05-25
 -- __description__: ORAC_CODE API body for durable plugin audit/result persistence
@@ -232,3 +235,5 @@ create or replace package body orac_code.plugin_audit_api as
   end link_message;
 end plugin_audit_api;
 /
+
+--rollback drop package body orac_code.plugin_audit_api;

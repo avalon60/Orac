@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:comment_orac_core_comment_plugin_invocations context:core labels:core stripComments:false runOnChange:true
 comment on table orac_core.plugin_invocations is
   'One summary row per Orac-owned plugin invocation attempt or policy-stopped plugin action.'
 ;

@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_view_orac_code_view_plugin_apex_app_menu_v context:core labels:core stripComments:false runOnChange:true
 -- __author__: clive
 -- __date__: 2026-06-20
 -- __description__: launchable plugin APEX apps for future admin menu surfaces
@@ -19,3 +22,5 @@ select plugin_id
  where enabled = 'Y'
    and install_status = 'installed'
    and installed_app_id is not null;
+
+--rollback drop view orac_code.plugin_apex_app_menu_v;

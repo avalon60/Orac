@@ -33,21 +33,27 @@ def _write_mock_environment(root: Path) -> dict[str, str]:
     orac_home = root / "orac"
     sqlcl_home = root / "sqlcl"
     liquibase_home = root / "liquibase"
+    schema_home = orac_home / "schema"
     log_root = root / "logs"
 
     _write_executable(
         sqlcl_home / "bin" / "sql",
         """#!/usr/bin/env bash
 cat > "${CAPTURE_SQL}"
-printf '%s\n' "${SQLCL_OUTPUT:-Operation completed successfully.}"
+if grep -q "select table_name from all_tables" "${CAPTURE_SQL}"; then
+  printf 'DATABASECHANGELOG\nDATABASECHANGELOGLOCK\n'
+else
+  printf '%s\n' "${SQLCL_OUTPUT:-Operation completed successfully.}"
+fi
 exit "${SQLCL_EXIT:-0}"
 """,
     )
-    (liquibase_home / "changelogs" / "core").mkdir(parents=True)
+    liquibase_home.mkdir(parents=True)
+    schema_home.mkdir(parents=True)
     (liquibase_home / "liquibase-core.properties").write_text(
         "\n".join(
             [
-                "changeLogFile=changelogs/core/oracController.xml",
+                "changeLogFile=productController.xml",
                 "liquibase.command.contextFilter=core,prod",
                 "liquibase.command.labelFilter=core",
                 "searchPath=/old/path",
@@ -56,7 +62,7 @@ exit "${SQLCL_EXIT:-0}"
         ),
         encoding="utf-8",
     )
-    (liquibase_home / "changelogs" / "core" / "oracController.xml").write_text(
+    (schema_home / "productController.xml").write_text(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?><databaseChangeLog/>\n",
         encoding="utf-8",
     )
@@ -69,6 +75,7 @@ exit "${SQLCL_EXIT:-0}"
             "ORACLE_PWD": "secret",
             "SQLCL_HOME": str(sqlcl_home),
             "LIQUIBASE_HOME": str(liquibase_home),
+            "LIQUIBASE_SEARCH_PATH": str(schema_home),
             "LOG_ROOT": str(log_root),
             "CAPTURE_SQL": str(root / "sqlcl-input.sql"),
         }
@@ -118,7 +125,7 @@ class CoreDbDeployScriptTests(unittest.TestCase):
             runtime_text = runtime_properties.read_text(encoding="utf-8")
             self.assertIn("liquibase.command.contextFilter=core,test", runtime_text)
             self.assertIn("liquibase.command.labelFilter=core", runtime_text)
-            self.assertIn(f"searchPath={root / 'liquibase'}", runtime_text)
+            self.assertIn(f"searchPath={root / 'orac' / 'schema'}", runtime_text)
             self.assertNotIn("searchPath=/old/path", runtime_text)
 
     def test_sqlcl_liquibase_error_text_fails_even_with_zero_exit(self) -> None:
@@ -142,6 +149,50 @@ class CoreDbDeployScriptTests(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("cannot run as SYS", result.stderr + result.stdout)
+
+    def test_update_fails_when_configured_tracking_tables_are_not_observed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            env = _write_mock_environment(root)
+            properties = root / "liquibase" / "liquibase-core.properties"
+            properties.write_text(
+                properties.read_text(encoding="utf-8")
+                + "databaseChangeLogTableName=orac_databasechangelog\n",
+                encoding="utf-8",
+            )
+
+            result = _run_script(env, "--update")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "Configured Liquibase changelog table ORAC_DATABASECHANGELOG",
+                result.stderr + result.stdout,
+            )
+
+    def test_probe_tracking_runs_validate_update_sql_update(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            env = _write_mock_environment(root)
+
+            result = _run_script(env, "--probe-tracking")
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            probe_logs = list((root / "logs").glob("*/probe-*.log"))
+            self.assertEqual(len(probe_logs), 3)
+            self.assertTrue(list((root / "logs").glob("*/tracking-tables.log")))
+
+    def test_changelog_sync_validates_existing_baseline_and_tracking_tables(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            env = _write_mock_environment(root)
+
+            result = _run_script(env, "--changelog-sync")
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            sql_input = (root / "sqlcl-input.sql").read_text(encoding="utf-8")
+            self.assertIn("select table_name from all_tables", sql_input)
+            self.assertTrue(list((root / "logs").glob("*/existing-core-baseline.log")))
+            self.assertTrue(list((root / "logs").glob("*/changelog-sync.log")))
 
 
 if __name__ == "__main__":

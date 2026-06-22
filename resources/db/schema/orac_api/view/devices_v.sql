@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset clive:devices_v_create stripComments:false runOnChange:true
+--changeset clive:devices_v_create stripComments:false runOnChange:true context:core labels:core
 
 create or replace force view orac_api.devices_v as
    select

@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:comment_orac_core_comment_message_embeddings context:core labels:core stripComments:false runOnChange:true
 comment on table orac_core.message_embeddings is
   'Embeddings for message-level chunks.'
 ;

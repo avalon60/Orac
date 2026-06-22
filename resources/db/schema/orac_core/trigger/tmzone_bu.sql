@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_trigger_orac_core_trigger_tmzone_bu context:core labels:core stripComments:false splitStatements:false endDelimiter:/ runOnChange:true
 -- __author__: clive
 -- __date__: 2026-04-27
 -- __description__: maintain audit and row version columns on timezone updates
@@ -16,3 +19,5 @@ begin
   :new.row_version := nvl(:old.row_version, 0) + 1;
 end;
 /
+
+--rollback drop trigger orac_core.tmzone_bu;

@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset clive:llm_registry_tapi_create_body stripComments:false endDelimiter:/ runOnChange:true
+--changeset clive:llm_registry_tapi_create_body stripComments:false endDelimiter:/ runOnChange:true context:core labels:core splitStatements:false
 
 create or replace package body orac_api.llm_registry_tapi
 as
@@ -316,4 +316,4 @@ as
 
 end llm_registry_tapi;
 /
---rollback drop package orac_api.llm_registry_tapi
+--rollback drop package body orac_api.llm_registry_tapi;

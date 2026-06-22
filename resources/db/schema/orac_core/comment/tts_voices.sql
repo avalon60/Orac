@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:comment_orac_core_comment_tts_voices context:core labels:core stripComments:false runOnChange:true
 comment on table orac_core.tts_voices is
   'Startup-refreshed runtime catalogue of available selectable text-to-speech voices.'
 ;

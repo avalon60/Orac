@@ -121,9 +121,9 @@ COPY --chown=54321 resources/db/schema ${ORAC_HOME}/schema
 RUN find ${ORAC_HOME}/schema -type d -exec chmod 755 {} + \
  && find ${ORAC_HOME}/schema -type f -name "*.sql" -exec chmod 644 {} +
 
-# Copy Liquibase configuration and controller skeletons separately from the
-# legacy schema bundle so on-demand deltas can evolve without changing the
-# first-time SQL*Plus install path.
+# Copy Liquibase configuration separately from the schema bundle. Core
+# controllers live under ${ORAC_HOME}/schema so repository-relative paths are
+# mirrored inside the container; plugin Liquibase assets remain here.
 COPY --chown=54321 resources/db/liquibase ${ORAC_HOME}/liquibase
 RUN find ${ORAC_HOME}/liquibase -type d -exec chmod 755 {} + \
  && find ${ORAC_HOME}/liquibase -type f -exec chmod 644 {} +

@@ -1,3 +1,8 @@
+--liquibase formatted sql
+
+--changeset clive:create_table_orac_core_table_tts_voices context:core labels:core stripComments:false
+--preconditions onFail:HALT onError:HALT
+--precondition-sql-check expectedResult:0 select count(1) from all_tables where owner = 'ORAC_CORE' and table_name = 'TTS_VOICES';
 -- __author__: clive
 -- __date__: 2026-05-25
 -- __description__: startup-refreshed runtime catalogue of available TTS voices
@@ -21,3 +26,5 @@ create table orac_core.tts_voices
   loaded_on        timestamp default systimestamp not null
 )
 ;
+
+--rollback drop table orac_core.tts_voices purge;

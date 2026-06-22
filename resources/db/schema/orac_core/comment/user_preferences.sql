@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:comment_orac_core_comment_user_preferences context:core labels:core stripComments:false runOnChange:true
 comment on table orac_core.user_preferences is
   'Stores key-value preference settings for each user.'
 ;

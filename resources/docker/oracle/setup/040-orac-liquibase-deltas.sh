@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Author: Clive Bostock
 # Date: 21-Jun-2026
-# Description: Run first-setup Orac Liquibase database deltas after SQL*Plus install.
+# Description: Run first-setup Orac Liquibase database changes after bootstrap.
 #
-# Purpose: Validate and apply migrated core Orac Liquibase deltas during first container setup.
+# Purpose: Probe, validate, and apply core Orac Liquibase changes during first container setup.
 # Usage: Sourced by Oracle container setup; no direct arguments are required.
 
 PROG="Orac: 040-orac-liquibase-deltas.sh"
@@ -19,6 +19,7 @@ orac_liquibase_delta_setup() {
   local oracle_pdb="${ORACLE_PDB:-FREEPDB1}"
   local sqlcl_home="${SQLCL_HOME:-${orac_home}/setup/sqlcl/sqlcl}"
   local liquibase_home="${LIQUIBASE_HOME:-${orac_home}/liquibase}"
+  local liquibase_search_path="${LIQUIBASE_SEARCH_PATH:-${orac_home}/schema}"
   local setup_log_root="${LIQUIBASE_SETUP_LOG_ROOT:-${orac_home}/logs/liquibase/setup}"
   local run_stamp
   local log_dir
@@ -34,7 +35,7 @@ orac_liquibase_delta_setup() {
   deploy_script="${orac_home}/bin/deploy-orac-db.sh"
   sqlcl_bin="${sqlcl_home}/bin/sql"
   properties_file="${liquibase_home}/liquibase-core.properties"
-  changelog_file="${liquibase_home}/changelogs/core/oracController.xml"
+  changelog_file="${liquibase_search_path}/productController.xml"
 
   mkdir -p "${log_dir}"
 
@@ -42,11 +43,12 @@ orac_liquibase_delta_setup() {
     printf '[%s] %s Started\n' "$(timestamp)" "${PROG}"
     printf '%s SQLcl home: %s\n' "${PROG}" "${sqlcl_home}"
     printf '%s Liquibase home: %s\n' "${PROG}" "${liquibase_home}"
+    printf '%s Liquibase search path: %s\n' "${PROG}" "${liquibase_search_path}"
     printf '%s Setup log: %s\n' "${PROG}" "${log_file}"
 
-    # This setup stage intentionally runs after the legacy SQL*Plus schema/app
-    # install. It applies only migrated Liquibase deltas and keeps the reusable
-    # on-demand deployment logic in deploy-orac-db.sh.
+    # This setup stage intentionally runs after account/bootstrap setup. Core
+    # Orac schema objects are owned by Liquibase, while user creation remains in
+    # the dedicated bootstrap scripts.
     [[ -n "${ORACLE_PWD:-}" ]] || {
       printf '%s ERROR: ORACLE_PWD is not set.\n' "${PROG}" >&2
       return 1
@@ -71,12 +73,22 @@ orac_liquibase_delta_setup() {
     printf '%s Verifying SQLcl availability.\n' "${PROG}"
     "${sqlcl_bin}" -V
 
+    printf '%s Probing SQLcl Liquibase tracking table behaviour.\n' "${PROG}"
+    LOG_ROOT="${log_dir}/core" \
+      ORAC_HOME="${orac_home}" \
+      ORACLE_PDB="${oracle_pdb}" \
+      SQLCL_HOME="${sqlcl_home}" \
+      LIQUIBASE_HOME="${liquibase_home}" \
+      LIQUIBASE_SEARCH_PATH="${liquibase_search_path}" \
+      "${deploy_script}" --probe-tracking --contexts core,prod --labels core
+
     printf '%s Validating core Liquibase changelog.\n' "${PROG}"
     LOG_ROOT="${log_dir}/core" \
       ORAC_HOME="${orac_home}" \
       ORACLE_PDB="${oracle_pdb}" \
       SQLCL_HOME="${sqlcl_home}" \
       LIQUIBASE_HOME="${liquibase_home}" \
+      LIQUIBASE_SEARCH_PATH="${liquibase_search_path}" \
       "${deploy_script}" --validate --contexts core,prod --labels core
 
     printf '%s Applying core Liquibase deltas.\n' "${PROG}"
@@ -85,6 +97,7 @@ orac_liquibase_delta_setup() {
       ORACLE_PDB="${oracle_pdb}" \
       SQLCL_HOME="${sqlcl_home}" \
       LIQUIBASE_HOME="${liquibase_home}" \
+      LIQUIBASE_SEARCH_PATH="${liquibase_search_path}" \
       "${deploy_script}" --update --contexts core,prod --labels core
 
     printf '[%s] %s Complete\n' "$(timestamp)" "${PROG}"

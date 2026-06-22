@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_view_orac_code_view_plugin_apex_apps_v context:core labels:core stripComments:false runOnChange:true
 -- __author__: clive
 -- __date__: 2026-06-20
 -- __description__: approved runtime projection of plugin APEX app registry state
@@ -23,3 +26,5 @@ select plugin_id
      , enabled
      , row_version
   from orac_api.plugin_apex_apps_v;
+
+--rollback drop view orac_code.plugin_apex_apps_v;

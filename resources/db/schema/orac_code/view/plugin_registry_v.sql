@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_view_orac_code_view_plugin_registry_v context:core labels:core stripComments:false runOnChange:true
 -- __author__: clive
 -- __date__: 2026-06-07
 -- __description__: approved runtime projection of active plugin registry state
@@ -24,3 +27,5 @@ select plugin_id
      , last_error_message
      , row_version
   from orac_api.plugin_registry_v;
+
+--rollback drop view orac_code.plugin_registry_v;

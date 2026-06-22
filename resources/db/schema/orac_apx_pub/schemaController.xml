@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Author: Clive Bostock
+  Date: 22-Jun-2026
+  Description: Schema controller for orac_apx_pub core Orac Liquibase deployment.
+-->
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+
+  <includeAll path="synonym" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>
+</databaseChangeLog>

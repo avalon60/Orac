@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset clive:model_generation_presets_v_create stripComments:false runOnChange:true
+--changeset clive:model_generation_presets_v_create stripComments:false runOnChange:true context:core labels:core
 
 create or replace force view orac_api.model_generation_presets_v as
    select

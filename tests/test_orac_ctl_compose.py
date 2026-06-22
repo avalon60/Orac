@@ -476,6 +476,19 @@ class OracleSetupScriptContractTests(unittest.TestCase):
         self.assertIn("orac_ha", script)
         self.assertIn('if is_excluded_bundle "$bundle_name"; then', script)
 
+    def test_core_schema_setup_skips_liquibase_owned_dirs_by_default(self) -> None:
+        """Core SQL*Plus setup must not double-run Liquibase-owned object dirs."""
+        script = (ORACLE_SETUP_DIR / "035-orac-schema_and_apps.sh").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('RUN_CORE_OBJECTS_WITH_SQLPLUS="${RUN_CORE_OBJECTS_WITH_SQLPLUS:-0}"', script)
+        self.assertIn("CORE_LIQUIBASE_BUNDLES=(", script)
+        self.assertIn("CORE_SQLPLUS_DIRS=(", script)
+        self.assertIn('echo "-- $(timestamp) :: Skipping Liquibase-owned directory:', script)
+        self.assertIn("orac_ws", script)
+        self.assertIn("orac_apps", script)
+
     def test_completion_requires_valid_ords_metadata(self) -> None:
         """The final deployment marker must require valid ORDS/APEX state."""
         script = (ORACLE_SETUP_DIR / "998-complete-orac.sh").read_text(

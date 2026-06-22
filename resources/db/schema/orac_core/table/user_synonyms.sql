@@ -1,3 +1,8 @@
+--liquibase formatted sql
+
+--changeset clive:create_table_orac_core_table_user_synonyms context:core labels:core stripComments:false
+--preconditions onFail:HALT onError:HALT
+--precondition-sql-check expectedResult:0 select count(1) from all_tables where owner = 'ORAC_CORE' and table_name = 'USER_SYNONYMS';
 -- __author__: clive
 -- __date__: 2026-03-21
 -- __description__: generated/synchronised by split_ddl; one object per file
@@ -16,3 +21,5 @@ create table orac_core.user_synonyms
   row_version number default 1 not null
 )
 ;
+
+--rollback drop table orac_core.user_synonyms purge;

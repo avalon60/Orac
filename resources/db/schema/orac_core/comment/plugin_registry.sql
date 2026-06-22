@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:comment_orac_core_comment_plugin_registry context:core labels:core stripComments:false runOnChange:true
 comment on table orac_core.plugin_registry is
   'Stores current Orac plugin installation, readiness and activation state.';
 

@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_package_body_orac_code_package_body_plugin_db_deployment_api context:core labels:core stripComments:false splitStatements:false endDelimiter:/ runOnChange:true
 -- __author__: clive
 -- __date__: 2026-06-03
 -- __description__: ORAC_CODE API body for plugin database deployment state
@@ -87,3 +90,5 @@ create or replace package body orac_code.plugin_db_deployment_api as
   end is_deployed;
 end plugin_db_deployment_api;
 /
+
+--rollback drop package body orac_code.plugin_db_deployment_api;

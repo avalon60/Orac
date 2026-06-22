@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_package_spec_orac_code_package_spec_plugin_registry_api context:core labels:core stripComments:false splitStatements:false endDelimiter:/ runOnChange:true
 -- __author__: clive
 -- __date__: 2026-06-07
 -- __description__: controlled plugin installation registry API
@@ -30,3 +33,5 @@ create or replace package orac_code.plugin_registry_api as
   );
 end plugin_registry_api;
 /
+
+--rollback drop package orac_code.plugin_registry_api;

@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:comment_orac_core_comment_orac_personalities context:core labels:core stripComments:false runOnChange:true
 comment on table orac_core.orac_personalities is
   'Defines configurable AI personas for Orac, including behavioural controls, personality flags, and prompt templates used to influence response generation.';
 

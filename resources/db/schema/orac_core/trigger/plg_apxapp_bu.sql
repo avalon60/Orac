@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_trigger_orac_core_trigger_plg_apxapp_bu context:core labels:core stripComments:false splitStatements:false endDelimiter:/ runOnChange:true
 -- __author__: clive
 -- __date__: 2026-06-20
 -- __description__: maintain plugin_apex_apps update audit columns
@@ -16,3 +19,5 @@ begin
   :new.row_version := nvl(:old.row_version, 1) + 1;
 end;
 /
+
+--rollback drop trigger orac_core.plg_apxapp_bu;

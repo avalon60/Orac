@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Author: Clive Bostock
 # Date: 21 Mar 2026
-# Description: Execute DDL/DML scripts in ordered directories via SQL*Plus.
+# Description: Execute remaining SQL*Plus-owned database setup assets.
 #              Expects schema bundle directories beneath ${BASE_DIR}, with each
 #              bundle containing the ordered subdirectories in DIR_ORDER.
 #              Stops on first error by default; logs each file's output.
@@ -22,6 +22,7 @@ BASE_DIR="${BASE_DIR:-${ORAC_HOME}/schema}"
 SQLPLUS_CONN="${SQLPLUS_CONN:-/ as sysdba}"  # e.g. "user/pass@service" or "/ as sysdba"
 LOG_ROOT="${LOG_ROOT:-$BASE_DIR/_logs}"
 STOP_ON_ERROR="${STOP_ON_ERROR:-1}"          # 1 = stop on first error, 0 = continue
+RUN_CORE_OBJECTS_WITH_SQLPLUS="${RUN_CORE_OBJECTS_WITH_SQLPLUS:-0}"
 BUNDLE_ORDER=(
   orac_core
   orac_api
@@ -66,6 +67,17 @@ DIR_ORDER=(
   orac_ws
   orac_apps
 )
+CORE_LIQUIBASE_BUNDLES=(
+  orac_core
+  orac_api
+  orac_code
+  orac_apx_pub
+  orac
+)
+CORE_SQLPLUS_DIRS=(
+  orac_ws
+  orac_apps
+)
 
 # --- Setup -------------------------------------------------------------------
 RUN_STAMP="$(date +%Y%m%d_%H%M%S)"
@@ -102,6 +114,48 @@ is_excluded_bundle() {
   done
 
   return 1
+}
+
+is_core_liquibase_bundle() {
+  local bundle_name="$1"
+  local core_bundle
+
+  for core_bundle in "${CORE_LIQUIBASE_BUNDLES[@]}"; do
+    if [[ "$bundle_name" == "$core_bundle" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+is_core_sqlplus_dir() {
+  local dir="$1"
+  local sqlplus_dir
+
+  for sqlplus_dir in "${CORE_SQLPLUS_DIRS[@]}"; do
+    if [[ "$dir" == "$sqlplus_dir" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+should_process_bundle_dir() {
+  local bundle_name="$1"
+  local dir="$2"
+
+  if [[ "${RUN_CORE_OBJECTS_WITH_SQLPLUS}" == "1" ]]; then
+    return 0
+  fi
+
+  if is_core_liquibase_bundle "${bundle_name}"; then
+    is_core_sqlplus_dir "${dir}"
+    return $?
+  fi
+
+  return 0
 }
 
 run_sql_file() {
@@ -147,6 +201,11 @@ process_bundle_dir() {
   echo "== $(timestamp) :: Processing schema bundle: $bundle_name"
 
   for dir in "${DIR_ORDER[@]}"; do
+    if ! should_process_bundle_dir "$bundle_name" "$dir"; then
+      echo "-- $(timestamp) :: Skipping Liquibase-owned directory: $bundle_name/$dir"
+      continue
+    fi
+
     dirpath="$bundle_dir/$dir"
 
     if [[ ! -d "$dirpath" ]]; then

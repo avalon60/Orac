@@ -813,6 +813,12 @@ Orac source layout is already the deployment root:
 Rules:
 
 - Use `relativeToChangelogFile="true"` on controller includes.
+- Pin controller `xsi:schemaLocation` to the verified SQLcl/Liquibase runtime
+  major/minor XSD version. Do not use `dbchangelog-latest.xsd`; it makes
+  controller validation non-reproducible across Liquibase upgrades.
+- For the current Orac SQLcl Liquibase runtime verified during deployment
+  checks, use `dbchangelog-4.30.xsd` in controller examples and generated
+  controller files.
 - Use `errorIfMissingOrEmpty="false"` for optional `includeAll` directories.
 - Include only directories that exist, unless the task explicitly asks to
   instantiate the missing controller structure.
@@ -884,7 +890,7 @@ Standard shell:
     xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xmlns:ora="http://www.oracle.com/xml/ns/dbchangelog-ext"
-    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd"
 >
   <!-- Controller includes go here. -->
 </databaseChangeLog>
@@ -913,7 +919,7 @@ Example:
     xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xmlns:ora="http://www.oracle.com/xml/ns/dbchangelog-ext"
-    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd"
 >
   <include
     relativeToChangelogFile="true"
@@ -976,7 +982,7 @@ Standard shell:
     xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xmlns:ora="http://www.oracle.com/xml/ns/dbchangelog-ext"
-    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd"
 >
   <!-- Non-production controller includes go here. -->
 </databaseChangeLog>
@@ -1027,7 +1033,7 @@ Standard shell:
    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
    xmlns:ora="http://www.oracle.com/xml/ns/dbchangelog-ext"
-   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd"
+   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd"
 >
   <includeAll
     relativeToChangelogFile="true"
@@ -1218,7 +1224,7 @@ Pattern:
     xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xmlns:ora="http://www.oracle.com/xml/ns/dbchangelog-ext"
-    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd"
 >
   <include
     relativeToChangelogFile="true"

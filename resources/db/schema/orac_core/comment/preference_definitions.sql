@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:comment_orac_core_comment_preference_definitions context:core labels:core stripComments:false runOnChange:true
 comment on table orac_core.preference_definitions is
   'Defines preference metadata, including display, validation, and LOV behaviour for user-editable settings.'
 ;

@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:seed_data_orac_core_seed_data_orac_pers_zen context:core labels:core stripComments:false runOnChange:true
 merge into orac_core.orac_personalities tgt
 using (
   select
@@ -86,3 +89,5 @@ when not matched then insert (
   src.style_prompt,
   src.is_active
 );
+
+--rollback delete from orac_core.orac_personalities where personality_code in ('ZEN');

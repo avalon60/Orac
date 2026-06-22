@@ -1,3 +1,8 @@
+--liquibase formatted sql
+
+--changeset clive:create_table_orac_core_table_orac_personalities context:core labels:core stripComments:false
+--preconditions onFail:HALT onError:HALT
+--precondition-sql-check expectedResult:0 select count(1) from all_tables where owner = 'ORAC_CORE' and table_name = 'ORAC_PERSONALITIES';
 create table orac_core.orac_personalities
 (
   personality_id        number generated always as identity,
@@ -32,3 +37,5 @@ create table orac_core.orac_personalities
   updated_by            varchar2(128),
   row_version           number default 1 not null
 );
+
+--rollback drop table orac_core.orac_personalities purge;
