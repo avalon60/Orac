@@ -143,9 +143,9 @@ invalid_schema_objects() {
 
   sqlplus -L -s / as sysdba <<SQL
 whenever sqlerror exit failure rollback
-alter session set container=${ORACLE_PDB};
 set heading off feedback off pagesize 0 verify off echo off trimspool on
-select object_type || ' ' || owner || '.' || object_name
+alter session set container=${ORACLE_PDB};
+select 'INVALID_OBJECT ' || object_type || ' ' || owner || '.' || object_name
   from dba_objects
  where owner = upper('${schema_name}')
    and status <> 'VALID'
@@ -228,7 +228,10 @@ data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 print(data["database"]["schemas"][int(sys.argv[2])]["schema_name"])
 PY
 )"
-      invalid_objects="$(invalid_schema_objects "${schema_name}" | sed '/^[[:space:]]*$/d')"
+      invalid_objects="$(
+        invalid_schema_objects "${schema_name}" \
+          | sed -n 's/^[[:space:]]*INVALID_OBJECT[[:space:]]\{1,\}//p'
+      )"
       if [[ -n "${invalid_objects}" ]]; then
         record_deployment_status "failed" "${schema_name}" "${plugin_version}" "${payload_checksum}" "Deployment left invalid objects: ${invalid_objects}" "${log_root}"
         fail "Plugin database deployment left invalid objects in ${schema_name}: ${invalid_objects}"

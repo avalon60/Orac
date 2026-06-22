@@ -57,6 +57,25 @@ def _write_archive(path: Path, *, include_manifest: bool = True, include_schema:
             _add_bytes(archive, "db/schema/table/example.sql", b"create table orac_alpha.example_table (id number);\n")
 
 
+def _write_successful_core_deploy_script(path: Path) -> None:
+    path.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    path.chmod(0o755)
+
+
+def _write_fake_sqlplus(path: Path) -> None:
+    path.write_text(
+        """#!/usr/bin/env bash
+input="$(cat)"
+if grep -q "dba_objects" <<<"${input}"; then
+  printf '%b' "${SQLPLUS_INVALID_OUTPUT:-}"
+fi
+exit 0
+""",
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+
+
 def _write_liquibase_archive(path: Path) -> None:
     manifest = {
         "plugin_id": "alpha",
@@ -113,6 +132,39 @@ class _BytesReader:
 
 class PluginDbDeployScriptTests(unittest.TestCase):
     """Tests script validation without requiring an Oracle container."""
+
+    def _run_deploy_with_invalid_object_output(
+        self,
+        temp_path: Path,
+        invalid_object_output: str,
+    ) -> subprocess.CompletedProcess[str]:
+        archive_path = temp_path / "alpha-db.tar.gz"
+        _write_archive(archive_path)
+        core_deploy_script = temp_path / "035-orac-schema_and_apps.sh"
+        _write_successful_core_deploy_script(core_deploy_script)
+        bin_dir = temp_path / "bin"
+        bin_dir.mkdir()
+        _write_fake_sqlplus(bin_dir / "sqlplus")
+
+        env = _script_env(temp_path / "staging")
+        env["CORE_DEPLOY_SCRIPT"] = str(core_deploy_script)
+        env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+        env["SQLPLUS_INVALID_OUTPUT"] = invalid_object_output
+
+        return subprocess.run(
+            [
+                "bash",
+                str(SCRIPT_PATH),
+                "--plugin-id",
+                "alpha",
+                "--archive",
+                str(archive_path),
+            ],
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
 
     def test_dry_run_validates_archive_shape(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -240,6 +292,34 @@ class PluginDbDeployScriptTests(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("db/schema is missing", result.stdout)
+
+    def test_session_altered_output_does_not_fail_invalid_object_check(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = self._run_deploy_with_invalid_object_output(
+                Path(temp_dir),
+                "\nSession altered.\n\n",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn("Plugin database deployment completed", result.stdout)
+
+    def test_blank_invalid_object_output_is_success(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = self._run_deploy_with_invalid_object_output(Path(temp_dir), "")
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn("Plugin database deployment completed", result.stdout)
+
+    def test_marked_invalid_object_output_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = self._run_deploy_with_invalid_object_output(
+                Path(temp_dir),
+                "\nSession altered.\nINVALID_OBJECT PACKAGE BODY ORAC_ALPHA.BAD_API\n",
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("left invalid objects", result.stdout)
+            self.assertIn("PACKAGE BODY ORAC_ALPHA.BAD_API", result.stdout)
 
     def test_liquibase_dry_run_validates_archive_shape_and_invokes_sqlcl(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
