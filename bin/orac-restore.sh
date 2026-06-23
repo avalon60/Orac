@@ -3,9 +3,10 @@
 #
 # Author: Clive Bostock
 # Date: 20-May-2026
-# Purpose: Restore Orac database schemas from an Orac backup archive.
-# Usage: bin/orac-restore.sh [--container NAME] [--pdb NAME] BACKUP_TARBALL
+# Purpose: Restore Orac database schemas from an Orac backup archive or backup directory.
+# Usage: bin/orac-restore.sh [--container NAME] [--pdb NAME] BACKUP_SOURCE
 # Example: bin/orac-restore.sh /backups/orac/orac-backup-20260520-120000.tar.gz
+# Example: bin/orac-restore.sh /backups/orac
 #
 ################################################################################
 
@@ -21,6 +22,7 @@ DOCKER_BIN=${ORAC_DOCKER_BIN:-docker}
 TAR_BIN=${ORAC_TAR_BIN:-tar}
 PYTHON_BIN=${ORAC_PYTHON_BIN:-}
 DRY_RUN=0
+BACKUP_SOURCE=""
 BACKUP_TARBALL=""
 
 if [[ -f "$ENV_FILE" ]]; then
@@ -37,9 +39,12 @@ ORAC_RESTORE_TABLE_EXISTS_ACTION=${ORAC_RESTORE_TABLE_EXISTS_ACTION:-${ORAC_RECO
 
 usage() {
   cat <<EOF
-Usage: $PROG [options] BACKUP_TARBALL
+Usage: $PROG [options] BACKUP_SOURCE
 
-Restore Orac database schemas from a backup archive.
+Restore Orac database schemas from a backup archive or directory.
+
+When BACKUP_SOURCE is a directory, the newest direct orac-backup-*.tar.gz
+archive is selected by filename timestamp.
 
 Options:
   --container NAME   Oracle database container name. Default: ${CONTAINER_NAME}
@@ -138,6 +143,33 @@ clean_sql_output_file() {
   sed -i '/^[[:space:]]*$/d; s/^[[:space:]]*//; s/[[:space:]]*$//' "$output_path"
 }
 
+resolve_backup_tarball() {
+  local source="$1"
+  local -a archives=()
+
+  if [[ -f "$source" ]]; then
+    BACKUP_TARBALL="$source"
+    return 0
+  fi
+
+  if [[ -d "$source" ]]; then
+    mapfile -d '' -t archives < <(
+      find "$source" -maxdepth 1 -type f -name 'orac-backup-*.tar.gz' -print0 | sort -z
+    )
+
+    [[ "${#archives[@]}" -gt 0 ]] || fail "No Orac backup archives found in directory: $source"
+    BACKUP_TARBALL="${archives[$((${#archives[@]} - 1))]}"
+    log "Selected newest backup archive: ${BACKUP_TARBALL}"
+    return 0
+  fi
+
+  if [[ -e "$source" ]]; then
+    fail "Backup source is not a regular file or directory: $source"
+  fi
+
+  fail "Backup source not found: $source"
+}
+
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -163,15 +195,15 @@ parse_args() {
         fail "Unknown option: $1"
         ;;
       *)
-        [[ -z "$BACKUP_TARBALL" ]] || fail "Only one BACKUP_TARBALL may be supplied"
-        BACKUP_TARBALL="$1"
+        [[ -z "$BACKUP_SOURCE" ]] || fail "Only one BACKUP_SOURCE may be supplied"
+        BACKUP_SOURCE="$1"
         shift
         ;;
     esac
   done
 
-  [[ -n "$BACKUP_TARBALL" ]] || fail "BACKUP_TARBALL is required"
-  [[ -f "$BACKUP_TARBALL" ]] || fail "Backup tarball not found: $BACKUP_TARBALL"
+  [[ -n "$BACKUP_SOURCE" ]] || fail "BACKUP_SOURCE is required"
+  resolve_backup_tarball "$BACKUP_SOURCE"
 }
 
 read_current_version() {

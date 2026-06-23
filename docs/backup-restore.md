@@ -70,9 +70,20 @@ are stored under `vaults/portable/` in the archive.
 bin/orac-restore.sh /tmp/orac-backups/orac-backup-YYYYMMDD-HHMMSS.tar.gz
 ```
 
-Restore reads the manifest, reports version differences, and requires the user
-to type `RECOVER` before import. It temporarily disables relevant foreign keys,
-runs Data Pump import, and restores the constraints it changed.
+You can also point restore at a backup directory:
+
+```bash
+bin/orac-restore.sh /tmp/orac-backups
+```
+
+When given a directory, restore selects the newest direct
+`orac-backup-*.tar.gz` archive by filename timestamp. It exits with an error if
+the directory contains no matching backups.
+
+Restore reads the selected archive manifest, reports version differences, and
+requires the user to type `RECOVER` before import. It temporarily disables
+relevant foreign keys, runs Data Pump import, and restores the constraints it
+changed.
 
 The default mode restores data into an already deployed schema set:
 

@@ -274,6 +274,88 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
             self.assertIn("Restore cancelled", combined_output)
             self.assertNotIn("Preparing Data Pump directory", combined_output)
 
+    def test_recovery_directory_selects_newest_backup_filename(self) -> None:
+        """Directory restore should select the newest Orac backup archive by name."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            backup_dir = temp_path / "backups"
+            backup_dir.mkdir()
+            older_archive = self._write_recovery_archive(
+                backup_dir,
+                archive_name="orac-backup-20260623-101500.tar.gz",
+                orac_version="old-version",
+            )
+            newer_archive = self._write_recovery_archive(
+                backup_dir,
+                archive_name="orac-backup-20260623-102000.tar.gz",
+                orac_version="new-version",
+            )
+            self._write_recovery_archive(
+                backup_dir,
+                archive_name="not-an-orac-backup-20260623-103000.tar.gz",
+                orac_version="ignored-version",
+            )
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), "--dry-run", str(backup_dir)],
+                cwd=PROJECT_ROOT,
+                env={**os.environ, "ORAC_PYTHON_BIN": sys.executable},
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn(f"Selected newest backup archive: {newer_archive}", result.stdout)
+            self.assertIn("Backup Orac version : new-version", result.stdout)
+            self.assertNotIn(str(older_archive), result.stdout)
+            self.assertNotIn("ignored-version", result.stdout)
+            self.assertNotIn("Type RECOVER to continue", result.stdout + result.stderr)
+
+    def test_recovery_directory_without_backups_fails_before_prompt(self) -> None:
+        """Directory restore should reject directories without Orac backup archives."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            backup_dir = temp_path / "backups"
+            backup_dir.mkdir()
+            (backup_dir / "backup.tar.gz").write_text("not selected", encoding="utf-8")
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), str(backup_dir)],
+                cwd=PROJECT_ROOT,
+                env={**os.environ, "ORAC_PYTHON_BIN": sys.executable},
+                input="RECOVER\n",
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            combined_output = result.stdout + result.stderr
+            self.assertIn("No Orac backup archives found in directory", combined_output)
+            self.assertNotIn("Type RECOVER to continue", combined_output)
+            self.assertNotIn("Preparing Data Pump directory", combined_output)
+
+    def test_recovery_explicit_archive_path_still_dry_runs(self) -> None:
+        """A direct restore archive path should continue to work."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = self._write_recovery_archive(temp_path)
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), "--dry-run", str(archive_path)],
+                cwd=PROJECT_ROOT,
+                env={**os.environ, "ORAC_PYTHON_BIN": sys.executable},
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn("Backup Orac version : 0.0.0-test", result.stdout)
+            self.assertIn("Dry run only. No database import performed.", result.stdout)
+            self.assertNotIn("Selected newest backup archive", result.stdout)
+
     def test_recovery_makes_copied_dump_readable_before_import(self) -> None:
         """Recovery should fix dump ownership after docker cp and before impdp."""
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -613,11 +695,13 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
         temp_path: Path,
         exported_schemas: list[str] | None = None,
         plugins: list[dict[str, object]] | None = None,
+        archive_name: str = "backup.tar.gz",
+        orac_version: str = "0.0.0-test",
     ) -> Path:
         """Create a minimal database restore archive."""
         archive_root = temp_path / "orac-backup-test"
         db_dir = archive_root / "db"
-        db_dir.mkdir(parents=True)
+        db_dir.mkdir(parents=True, exist_ok=True)
         (db_dir / "orac-test.dmp").write_text("placeholder", encoding="utf-8")
         if exported_schemas is None:
             exported_schemas = ["orac_core"]
@@ -625,7 +709,7 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
             plugins = []
         manifest = {
             "backup_format_version": 1,
-            "orac_version": "0.0.0-test",
+            "orac_version": orac_version,
             "database": {
                 "container_name": "orac-db",
                 "pdb": "FREEPDB1",
@@ -642,7 +726,7 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
             json.dumps(manifest),
             encoding="utf-8",
         )
-        archive_path = temp_path / "backup.tar.gz"
+        archive_path = temp_path / archive_name
         with tarfile.open(archive_path, "w:gz") as archive:
             archive.add(archive_root, arcname=archive_root.name)
         return archive_path
