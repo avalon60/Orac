@@ -1,5 +1,7 @@
 .idea/
+node_modules/
 __pycache__/
+.pytest_cache/
 src/controller/__pycache__/
 src/lib/__pycache__/
 *.egg-info/

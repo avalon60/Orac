@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_view_orac_code_view_llm_usage_breakdown_v context:core labels:core stripComments:false runOnChange:true
 -- __author__: clive
 -- __date__: 2026-04-25
 -- __description__: message counts by LLM sourced via the API passthrough layer
@@ -12,3 +15,5 @@ join orac_api.llm_registry_v l
 where m.llm_id is not null
 group by l.name
 order by usage_count desc;
+
+--rollback drop view orac_code.llm_usage_breakdown_v;

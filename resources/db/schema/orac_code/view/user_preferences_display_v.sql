@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_view_orac_code_view_user_preferences_display_v context:core labels:core stripComments:false runOnChange:true
 -- __author__: clive
 -- __date__: 2026-04-25
 -- __description__: published user preferences projection
@@ -75,3 +78,5 @@ from orac_api.user_preferences_v p
 left join orac_api.preference_definitions_v d
   on d.pref_key = p.pref_key
 ;
+
+--rollback drop view orac_code.user_preferences_display_v;

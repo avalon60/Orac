@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:post_install_orac_code_post_install_open_meteo_geocoder_acl context:core labels:core stripComments:false splitStatements:false endDelimiter:/ runOnChange:true
 -- __author__: clive
 -- __date__: 2026-04-27
 -- __description__: allow Orac schemas to reach the Open-Meteo geocoding endpoint
@@ -64,3 +67,5 @@ begin
   end loop;
 end;
 /
+
+--rollback not required for idempotent post-install block; reversing it may remove shared external privileges.

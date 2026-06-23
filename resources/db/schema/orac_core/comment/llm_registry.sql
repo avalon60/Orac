@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:comment_orac_core_comment_llm_registry context:core labels:core stripComments:false runOnChange:true
 comment on table orac_core.llm_registry is
   'Registry of available large language models (LLMs) and their configuration.'
 ;

@@ -144,6 +144,33 @@ class WeatherPluginTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIn("need a location", result.content)
 
+    def test_weather_plugin_does_not_claim_area_before_temperature_wording(self) -> None:
+        snapshot = _build_snapshot()
+        plugin = WeatherPlugin(
+            logger=_FakeLogger(),
+            config_mgr=_FakeConfigManager(default_location="London"),
+            provider=StubWeatherProvider(
+                location=snapshot.location,
+                snapshot=snapshot,
+            ),
+        )
+
+        self.assertFalse(plugin.can_handle("What is the landing temperature?"))
+        self.assertIsNone(plugin.execute("What is the landing temperature?"))
+
+    def test_weather_plugin_declines_unknown_temperature_in_location(self) -> None:
+        snapshot = _build_snapshot()
+        plugin = WeatherPlugin(
+            logger=_FakeLogger(),
+            config_mgr=_FakeConfigManager(default_location="London"),
+            provider=StubWeatherProvider(
+                location=snapshot.location,
+                snapshot=snapshot,
+            ),
+        )
+
+        self.assertIsNone(plugin.execute("What's the temperature in the lounge?"))
+
     def test_weather_plugin_uses_default_location_for_here_question(self) -> None:
         snapshot = _build_snapshot()
         provider = StubWeatherProvider(location=snapshot.location, snapshot=snapshot)

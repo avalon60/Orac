@@ -388,10 +388,10 @@ class DBSession(oracledb.Connection):
 
     def __del__(self):
         try:
-            if self.connection_succeeded:
+            if getattr(self, "connection_succeeded", False):
                 self.close()
-        except oracledb.DatabaseError as e:
-            print("Error closing the database connection:", e)
+        except Exception:
+            pass
 
 
 def _looks_like_instant_client(path: str) -> bool:

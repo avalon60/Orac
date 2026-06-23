@@ -1,0 +1,49 @@
+declare
+  l_count number;
+begin
+  select count(*)
+    into l_count
+    from all_tables
+   where owner = 'ORAC_HA'
+     and table_name = 'HA_AREAS';
+
+  if l_count = 0
+  then
+    execute immediate q'~
+create table orac_ha.ha_areas
+(
+  area_id               varchar2(64 char) not null,
+  name                  varchar2(255 char) not null,
+  floor_id              varchar2(64 char),
+  icon                  varchar2(255 char),
+  picture               varchar2(255 char),
+  humidity_entity_id    varchar2(255 char),
+  temperature_entity_id varchar2(255 char),
+  aliases               clob,
+  labels                clob,
+  created_at            timestamp with time zone,
+  modified_at           timestamp with time zone,
+  row_version           number not null,
+  created_on            timestamp with time zone not null,
+  updated_on            timestamp with time zone not null
+)
+logging
+no inmemory
+lob (aliases) store as securefile
+(
+  chunk 8192
+  retention
+  enable storage in row
+  nocache logging
+)
+lob (labels) store as securefile
+(
+  chunk 8192
+  retention
+  enable storage in row
+  nocache logging
+)
+    ~';
+  end if;
+end;
+/

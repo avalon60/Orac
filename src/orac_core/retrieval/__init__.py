@@ -8,6 +8,10 @@ from .broker import SearchBroker
 from .decision import RetrievalDecisionService
 from .decision import build_topic_signature
 from .fetcher import SourceFetcher
+from .factual_risk import FactualRiskMatch
+from .factual_risk import detect_factual_risk
+from .factual_risk import should_force_retrieval
+from .factual_support import enforce_high_risk_factual_grounding
 from .grounding import GroundingPackBuilder
 from .models import FetchedSource
 from .models import GroundingPack
@@ -23,9 +27,14 @@ from .person_status import PersonStatusQuery
 from .person_status import answer_from_stable_bio
 from .person_status import calculate_age
 from .person_status import parse_person_age_or_status_query
+from .person_fact_resolver import PersonFactResolution
+from .person_fact_resolver import PersonFactResolver
+from .person_fact_resolver import resolve_person_fact
 from .response_style import build_retrieval_response_guidance
 from .response_style import normalize_retrieval_response_style
 from .response_style import polish_retrieval_response_text
+from .titled_work import TitledWorkQuery
+from .titled_work import parse_titled_work_question
 from .providers import SearXNGSearchProvider
 from .providers import SearchProvider
 from .service import ExplicitRetrievalService
@@ -34,11 +43,14 @@ from .triggers import detect_explicit_search_request
 __all__ = [
     "ExplicitRetrievalService",
     "FetchedSource",
+    "FactualRiskMatch",
     "GroundingPack",
     "GroundingPackBuilder",
     "GroundingSource",
     "PartialDate",
     "PersonBio",
+    "PersonFactResolution",
+    "PersonFactResolver",
     "PersonStatusQuery",
     "RetrievalOutcome",
     "RetrievalDecision",
@@ -51,12 +63,18 @@ __all__ = [
     "SearchRequest",
     "SearchResult",
     "SourceFetcher",
+    "TitledWorkQuery",
     "answer_from_stable_bio",
     "build_retrieval_response_guidance",
     "build_topic_signature",
     "calculate_age",
+    "detect_factual_risk",
+    "enforce_high_risk_factual_grounding",
     "detect_explicit_search_request",
     "normalize_retrieval_response_style",
     "parse_person_age_or_status_query",
+    "parse_titled_work_question",
     "polish_retrieval_response_text",
+    "should_force_retrieval",
+    "resolve_person_fact",
 ]

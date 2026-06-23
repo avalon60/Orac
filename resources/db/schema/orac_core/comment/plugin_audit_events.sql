@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:comment_orac_core_comment_plugin_audit_events context:core labels:core stripComments:false runOnChange:true
 comment on table orac_core.plugin_audit_events is
   'Append-only plugin audit lifecycle event stream linked to plugin invocation summaries.'
 ;

@@ -411,7 +411,7 @@ class OracleSetupScriptContractTests(unittest.TestCase):
             "010-apex-install.sh",
             "020-setup-ords.sh",
             "035-orac-schema_and_apps.sh",
-            "999-complete.sh",
+            "998-complete-orac.sh",
         }
 
         actual_scripts = {path.name for path in ORACLE_SETUP_DIR.glob("*.sh")}
@@ -419,6 +419,12 @@ class OracleSetupScriptContractTests(unittest.TestCase):
             expected_scripts <= actual_scripts,
             f"Missing setup scripts: {sorted(expected_scripts - actual_scripts)}",
         )
+
+    def test_home_assistant_schema_user_is_not_created_by_core_setup(self) -> None:
+        """Plugin-owned schemas must be provisioned by plugin deployment."""
+        actual_scripts = {path.name for path in ORACLE_SETUP_DIR.glob("*.sh")}
+
+        self.assertNotIn("032-orac-ha-user.sh", actual_scripts)
 
     def test_duplicate_copy_setup_scripts_are_rejected(self) -> None:
         """Accidental editor-copy scripts must not be copied into Oracle setup."""
@@ -445,7 +451,7 @@ class OracleSetupScriptContractTests(unittest.TestCase):
 
         self.assertNotRegex(script, r"rm\s+-[^\n]*\$\{?ORDS_LOG\}?")
         self.assertNotRegex(script, r"rm\s+-[^\n]*/home/oracle/orac/logs")
-        self.assertIn('mkdir -p "${ORDS_CONF}" "${ORDS_LOG}"', script)
+        self.assertIn('"${ORDS_LOG}"', script)
 
     def test_ords_setup_uses_sys_installer_and_checks_install_log(self) -> None:
         """ORDS setup must not accept a partial ORDS install as success."""
@@ -457,17 +463,51 @@ class OracleSetupScriptContractTests(unittest.TestCase):
         self.assertIn("owner = 'ORDS_METADATA'", script)
         self.assertIn("ORDS metadata objects are not VALID", script)
 
+    def test_core_schema_setup_excludes_plugin_owned_home_assistant_bundle(self) -> None:
+        """Core Docker schema setup must not deploy the legacy orac_ha bundle."""
+        script = (ORACLE_SETUP_DIR / "035-orac-schema_and_apps.sh").read_text(
+            encoding="utf-8"
+        )
+        bundle_order = re.search(r"BUNDLE_ORDER=\(\n(?P<body>.*?)\n\)", script, re.S)
+        self.assertIsNotNone(bundle_order)
+
+        self.assertNotIn("orac_ha", bundle_order.group("body"))
+        self.assertIn("EXCLUDED_BUNDLES=(", script)
+        self.assertIn("orac_ha", script)
+        self.assertIn('if is_excluded_bundle "$bundle_name"; then', script)
+
+    def test_core_schema_setup_skips_liquibase_owned_dirs_by_default(self) -> None:
+        """Core SQL*Plus setup must not double-run Liquibase-owned object dirs."""
+        script = (ORACLE_SETUP_DIR / "035-orac-schema_and_apps.sh").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('RUN_CORE_OBJECTS_WITH_SQLPLUS="${RUN_CORE_OBJECTS_WITH_SQLPLUS:-0}"', script)
+        self.assertIn("CORE_LIQUIBASE_BUNDLES=(", script)
+        self.assertIn("CORE_SQLPLUS_DIRS=(", script)
+        self.assertIn('echo "-- $(timestamp) :: Skipping Liquibase-owned directory:', script)
+        self.assertIn("orac_ws", script)
+        self.assertIn("orac_apps", script)
+
     def test_completion_requires_valid_ords_metadata(self) -> None:
-        """The final deployment marker must require valid ORDS metadata."""
-        script = (ORACLE_SETUP_DIR / "999-complete.sh").read_text(encoding="utf-8")
+        """The final deployment marker must require valid ORDS/APEX state."""
+        script = (ORACLE_SETUP_DIR / "998-complete-orac.sh").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn("owner = 'ORDS_METADATA'", script)
         self.assertIn("ORDS metadata objects are not VALID", script)
+        self.assertIn("apex_workspace_apex_users", script)
+        self.assertIn("apex_appl_acl_user_roles", script)
+        self.assertIn("ORAC_ADMIN is not configured", script)
 
     def test_deploy_verification_requires_ords_metadata_and_http_ready(self) -> None:
         """Deploy marker verification must reject config-only ORDS state."""
         script = DB_DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
+        self.assertIn('docker logs --since "$log_since"', script)
+        self.assertIn("ORAC_APEX_ADMIN_SETUP_FAILED", script)
+        self.assertNotIn("Ignoring stale ORDS setup marker", script)
         self.assertIn("verify_container_ords_config()", script)
         self.assertIn("wait_for_ords_apex_app", script)
         self.assertIn("owner = ", script)
@@ -475,14 +515,18 @@ class OracleSetupScriptContractTests(unittest.TestCase):
         self.assertIn("ORDS metadata objects are not VALID", script)
         self.assertIn("APEX_APP_ID: 1042", script)
 
-    def test_startup_refreshes_listener_after_container_recreation(self) -> None:
+    def test_startup_repairs_listener_after_container_recreation(self) -> None:
         """Startup should repair persisted listener hostnames before dbwait."""
-        script = (ORACLE_STARTUP_DIR / "005-refresh-listener.sh").read_text(encoding="utf-8")
+        script = (ORACLE_STARTUP_DIR / "005-repair-listener.sh").read_text(
+            encoding="utf-8"
+        )
 
-        self.assertIn("ORAC_LISTENER_REFRESH_COMPLETE", script)
+        self.assertIn("ORAC_LISTENER_REPAIR_COMPLETE", script)
         self.assertIn("sed -i -E", script)
         self.assertIn("lsnrctl start LISTENER", script)
-        self.assertIn("alter system register", script)
+        self.assertIn("HOST = 0.0.0.0", script)
+        self.assertIn("EXTPROC1521", script)
+        self.assertNotIn("alter system register", script)
 
     def _shell_lines_outside_heredocs(self, path: Path) -> list[tuple[int, str]]:
         """Return shell-source lines, ignoring SQL heredoc bodies."""

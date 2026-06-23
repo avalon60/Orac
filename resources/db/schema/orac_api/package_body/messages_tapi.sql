@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset clive:messages_tapi_create_body stripComments:false endDelimiter:/ runOnChange:true
+--changeset clive:messages_tapi_create_body stripComments:false endDelimiter:/ runOnChange:true context:core labels:core splitStatements:false
 
 create or replace package body orac_api.messages_tapi
 as
@@ -329,4 +329,4 @@ as
 
 end messages_tapi;
 /
---rollback drop package orac_api.messages_tapi
+--rollback drop package body orac_api.messages_tapi;

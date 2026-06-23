@@ -9,12 +9,16 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 import importlib
+from importlib.machinery import ModuleSpec
 import inspect
 from pathlib import Path
 import sys
+from types import ModuleType
 from typing import Any, Iterator
 
+from model.plugin_config import PluginConfigManager
 from model.plugin_routing.models import PluginManifest
+from model.plugin_secret_vault import PluginSecretVault
 
 
 class PluginRuntimeError(RuntimeError):
@@ -30,6 +34,7 @@ class PluginExecutionResult:
     handled: bool = True
     stop_reason: str = "stop"
     provenance: dict[str, Any] = field(default_factory=dict)
+    silent: bool = False
 
 
 @dataclass(frozen=True)
@@ -152,9 +157,17 @@ def load_plugin_entry_point(
     full_module_name = f"{manifest.plugin_id}.{module_name}"
     plugins_root = manifest.manifest_path.parent
 
-    with _temporary_sys_path(plugins_root):
-        importlib.invalidate_caches()
-        module = importlib.import_module(full_module_name)
+    if manifest.plugin_dir.name == manifest.plugin_id:
+        with _temporary_sys_path(plugins_root):
+            importlib.invalidate_caches()
+            module = importlib.import_module(full_module_name)
+    else:
+        with _temporary_plugin_package(
+            manifest.plugin_id,
+            manifest.plugin_dir,
+        ):
+            importlib.invalidate_caches()
+            module = importlib.import_module(full_module_name)
 
     plugin_class = getattr(module, class_name, None)
     if plugin_class is None:
@@ -175,12 +188,14 @@ def instantiate_plugin(
     logger: Any,
     config_mgr: Any,
     data_access: PluginDataAccess,
+    runtime_context: PluginRuntimeContext | None = None,
 ) -> Any:
     """Instantiate a plugin class with supported runtime dependencies."""
     kwargs = {
         "logger": logger,
         "config_mgr": config_mgr,
         "data_access": data_access,
+        "runtime_context": runtime_context,
     }
     try:
         signature = inspect.signature(plugin_class)
@@ -213,6 +228,33 @@ def _temporary_sys_path(path: Path) -> Iterator[None]:
                 sys.path.remove(path_str)
             except ValueError:
                 pass
+
+
+@contextmanager
+def _temporary_plugin_package(plugin_id: str, plugin_dir: Path) -> Iterator[None]:
+    """Expose an installed generic ``plugin/`` directory as its plugin ID."""
+    prefix = f"{plugin_id}."
+    previous_modules = {
+        name: module
+        for name, module in tuple(sys.modules.items())
+        if name == plugin_id or name.startswith(prefix)
+    }
+    for name in previous_modules:
+        sys.modules.pop(name, None)
+
+    package = ModuleType(plugin_id)
+    package.__package__ = plugin_id
+    package.__path__ = [str(plugin_dir)]
+    package.__spec__ = ModuleSpec(plugin_id, loader=None, is_package=True)
+    package.__spec__.submodule_search_locations = [str(plugin_dir)]
+    sys.modules[plugin_id] = package
+    try:
+        yield
+    finally:
+        for name in tuple(sys.modules):
+            if name == plugin_id or name.startswith(prefix):
+                sys.modules.pop(name, None)
+        sys.modules.update(previous_modules)
 
 
 def _resolve_user_preference(context_manager: Any, username: str, pref_key: str) -> Any | None:
@@ -256,3 +298,65 @@ _ENTITLEMENT_RESOLVERS = {
         )
     ),
 }
+
+
+@dataclass(frozen=True)
+class PluginRuntimeContext:
+    """Narrow Orac-owned runtime context exposed to on-demand plugins."""
+
+    manifest: PluginManifest
+    logger: Any
+    config_mgr: Any
+    auth_user: str
+    plugin_db_session_factory: Any | None = None
+    plugin_service_manager: Any | None = None
+    plugin_config_manager: PluginConfigManager | None = None
+    _secret_vault: PluginSecretVault | None = None
+
+    @property
+    def plugin_id(self) -> str:
+        """Return the current plugin identifier."""
+        return self.manifest.plugin_id
+
+    def plugin_db_session(self) -> Any:
+        """Return a managed ORAC_PLUGIN database session for plugin runtime use."""
+        if self.plugin_db_session_factory is None:
+            raise PluginRuntimeError(
+                f"Plugin '{self.plugin_id}' requested database access, but no "
+                "managed plugin database session factory is configured."
+            )
+        return self.plugin_db_session_factory()
+
+    def plugin_config(self) -> PluginConfigManager:
+        """Return this plugin's scoped configuration manager."""
+        if self.plugin_config_manager is None:
+            raise PluginRuntimeError(
+                f"Plugin '{self.plugin_id}' requested configuration access, but no "
+                "plugin configuration manager is configured."
+            )
+        return self.plugin_config_manager
+
+    @property
+    def secret_vault(self) -> PluginSecretVault:
+        """Return this plugin's scoped personal access token vault."""
+        if self._secret_vault is None:
+            return PluginSecretVault(plugin_id=self.plugin_id, manifest=self.manifest)
+        return self._secret_vault
+
+    def run_service_command(
+        self,
+        plugin_id: str,
+        command: str,
+        payload: dict[str, Any] | None = None,
+    ) -> Any:
+        """Dispatch a plugin command to an Orac-managed service instance."""
+        if self.plugin_service_manager is None:
+            raise PluginRuntimeError(
+                "Plugin service manager is unavailable for service command dispatch."
+            )
+        run_command = getattr(self.plugin_service_manager, "run_service_command", None)
+        if not callable(run_command):
+            raise PluginRuntimeError(
+                "Plugin service manager does not support service command dispatch."
+            )
+        return run_command(plugin_id, command, payload or {})

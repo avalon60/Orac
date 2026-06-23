@@ -19,9 +19,22 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from model.plugin_routing.discovery import PluginDiscovery
+from model.plugin_database_session import PluginDatabaseSessionError
+from model.plugin_database_deployment import PluginDatabaseDeploymentResult
 from model.plugin_routing.embeddings import HashEmbeddingProvider
 from model.plugin_routing.manager import PluginManager
 from model.plugin_service_manager import PluginServiceManager
+
+
+class _SuccessfulDatabaseDeployer:
+    def deploy_if_needed(self, manifest):
+        status = "deployed" if manifest.database_required else "not_required"
+        return PluginDatabaseDeploymentResult(
+            plugin_id=manifest.plugin_id,
+            status=status,
+            eligible=True,
+            message="test deployment allowed",
+        )
 
 
 class _FakeLogger:
@@ -73,10 +86,19 @@ def _write_plugin(
     plugin_id: str,
     manifest: dict,
     plugin_code: str,
+    *,
+    with_schema: bool = False,
 ) -> None:
     plugin_dir = plugins_dir / plugin_id
     plugin_dir.mkdir()
     (plugin_dir / "plugin.py").write_text(plugin_code, encoding="utf-8")
+    if with_schema:
+        schema_dir = plugin_dir / "db" / "schema" / "table"
+        schema_dir.mkdir(parents=True)
+        (schema_dir / "example.sql").write_text(
+            "create table orac_alpha.example_table (id number);\n",
+            encoding="utf-8",
+        )
     (plugins_dir / f"{plugin_id}.json").write_text(
         json.dumps(manifest),
         encoding="utf-8",
@@ -194,6 +216,46 @@ class TestService:
 """
 
 
+DB_SESSION_REQUESTING_SERVICE_CODE = """
+class TestPlugin:
+    pass
+
+
+class TestService:
+    def run(self, context):
+        context.plugin_db_session()
+"""
+
+
+SERVICE_COMMAND_CODE = """
+class TestPlugin:
+    pass
+
+
+class TestService:
+    def __init__(self, logger=None, config_mgr=None, manifest=None):
+        self.commands = []
+
+    def run(self, context):
+        while not context.stop_event.wait(0.01):
+            pass
+
+    def handle_command(self, context, command, payload=None):
+        self.commands.append((command, payload or {}))
+        return {"command": command, "payload": payload or {}}
+
+    def health(self, context):
+        return not context.stop_event.is_set()
+"""
+
+
+def _raise_missing_orac_plugin_credentials():
+    raise PluginDatabaseSessionError(
+        "ORAC_PLUGIN database credentials are unavailable. Configure saved DSN "
+        "connection 'orac-plugin'."
+    )
+
+
 class PluginServiceManagerTests(unittest.TestCase):
     """Tests the Orac-owned plugin service manager."""
 
@@ -221,6 +283,37 @@ class PluginServiceManagerTests(unittest.TestCase):
             self.assertEqual(service_report["registered"], 1)
             self.assertEqual(service_manager.service_ids(), (plugin_id,))
 
+    def test_service_with_missing_required_plugin_config_is_not_registered(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            plugin_id = "svc_config"
+            manifest = _base_manifest(plugin_id, _long_running_runtime())
+            manifest["configuration"] = {
+                "required": [
+                    {
+                        "section": plugin_id,
+                        "key": "host",
+                        "type": "string",
+                        "description": "Service host.",
+                    }
+                ],
+                "optional": [],
+            }
+            _write_plugin(
+                plugins_dir,
+                plugin_id,
+                manifest,
+                LONG_RUNNING_SERVICE_CODE,
+            )
+            service_manager = PluginServiceManager(logger=_FakeLogger())
+
+            service_report = service_manager.register_manifests(_discover(plugins_dir))
+
+            self.assertEqual(service_report["registered"], 0)
+            self.assertEqual(service_report["dependency_invalid"], 1)
+            self.assertEqual(service_manager.service_ids(), ())
+            self.assertFalse(service_manager.start(plugin_id))
+
     def test_hybrid_plugin_is_routable_and_service_eligible_when_dependencies_valid(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache, tempfile.TemporaryDirectory() as temp_schema:
             plugins_dir = Path(temp_plugins)
@@ -246,12 +339,14 @@ class PluginServiceManagerTests(unittest.TestCase):
                 plugin_id,
                 _base_manifest(plugin_id, runtime, database),
                 LONG_RUNNING_SERVICE_CODE,
+                with_schema=True,
             )
             routing_manager = PluginManager(
                 embedding_provider=HashEmbeddingProvider(),
                 plugins_dir=plugins_dir,
                 cache_dir=Path(temp_cache),
                 database_schema_root=schema_root,
+                database_deployer=_SuccessfulDatabaseDeployer(),
             )
             service_manager = PluginServiceManager(
                 logger=_FakeLogger(),
@@ -259,7 +354,9 @@ class PluginServiceManagerTests(unittest.TestCase):
             )
 
             routing_report = routing_manager.refresh()
-            service_report = service_manager.register_manifests(_discover(plugins_dir))
+            service_report = service_manager.register_manifests(
+                list(routing_manager.deployment_eligible_manifests())
+            )
 
             self.assertEqual(routing_report["indexed_plugin_count"], 1)
             self.assertIsNotNone(routing_manager.get_manifest(plugin_id))
@@ -493,6 +590,61 @@ class PluginServiceManagerTests(unittest.TestCase):
             )
             status = service_manager.status()["services"][plugin_id]
             self.assertEqual(status["restart_count"], 0)
+
+    def test_missing_orac_plugin_credentials_fail_service_startup_clearly(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            plugin_id = "db_missing_creds"
+            _write_plugin(
+                plugins_dir,
+                plugin_id,
+                _base_manifest(plugin_id, _long_running_runtime()),
+                DB_SESSION_REQUESTING_SERVICE_CODE,
+            )
+            service_manager = PluginServiceManager(
+                logger=_FakeLogger(),
+                plugin_db_session_factory=lambda: (_raise_missing_orac_plugin_credentials()),
+            )
+            service_manager.register_manifests(_discover(plugins_dir))
+
+            service_manager.start(plugin_id)
+
+            self.assertTrue(
+                _wait_until(lambda: service_manager.get_state(plugin_id) == "failed")
+            )
+            status = service_manager.status()["services"][plugin_id]
+            self.assertIn("ORAC_PLUGIN database credentials are unavailable", status["last_error"])
+            self.assertNotIn("secret", status["last_error"])
+
+    def test_run_service_command_dispatches_to_managed_service_instance(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            plugin_id = "commandable"
+            _write_plugin(
+                plugins_dir,
+                plugin_id,
+                _base_manifest(plugin_id, _long_running_runtime()),
+                SERVICE_COMMAND_CODE,
+            )
+            service_manager = PluginServiceManager(logger=_FakeLogger())
+            service_manager.register_manifests(_discover(plugins_dir))
+
+            service_manager.start(plugin_id)
+            self.assertTrue(
+                _wait_until(lambda: service_manager.get_state(plugin_id) == "running")
+            )
+
+            result = service_manager.run_service_command(
+                plugin_id,
+                "resync",
+                {"source": "unit"},
+            )
+
+            self.assertEqual(
+                result,
+                {"command": "resync", "payload": {"source": "unit"}},
+            )
+            service_manager.stop(plugin_id)
 
 
 if __name__ == "__main__":

@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:comment_orac_core_comment_users context:core labels:core stripComments:false runOnChange:true
 comment on table orac_core.users is
   'Stores registered users of the orac system.'
 ;

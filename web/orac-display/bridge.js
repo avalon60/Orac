@@ -5,8 +5,28 @@ import { WebSocketServer, WebSocket } from 'ws';
 // Bridge display pipe events to browser WebSocket clients.
 const TCP_PORT = 8766;
 const WS_PORT = 8767;
+const BROWSER_RECONNECT_GRACE_MS = 1_000;
 let latestMessage = null;
 let latestRuntimeIdentity = null;
+let latestUserIdentity = null;
+let activeBrowserClients = 0;
+let browserDisconnectTimer = null;
+const logBrowserConnections = envBoolean(
+  'ORAC_DISPLAY_LOG_BROWSER_CONNECTIONS',
+  false,
+);
+
+function timestamp() {
+  return new Date().toLocaleTimeString('en-GB', { hour12: false });
+}
+
+function log(message, ...args) {
+  console.log(`[${timestamp()}] ${message}`, ...args);
+}
+
+function logError(message, ...args) {
+  console.error(`[${timestamp()}] ${message}`, ...args);
+}
 
 function envBoolean(name, defaultValue = false) {
   const value = (process.env[name] || '').trim().toLowerCase();
@@ -30,18 +50,46 @@ function uiConfigMessage() {
 
 // WebSocket Server
 const wss = new WebSocketServer({ port: WS_PORT });
-console.log(`🚀 WebSocket Bridge: Listening for browser connections on ws://localhost:${WS_PORT}`);
+log(`🚀 WebSocket Bridge: Listening for browser connections on ws://localhost:${WS_PORT}`);
 
 wss.on('connection', (ws) => {
-  console.log('💻 Browser connected to bridge');
+  activeBrowserClients += 1;
+  if (browserDisconnectTimer) {
+    clearTimeout(browserDisconnectTimer);
+    browserDisconnectTimer = null;
+    if (logBrowserConnections) {
+      log('💻 Browser reconnected to bridge');
+    }
+  } else {
+    if (logBrowserConnections) {
+      log('💻 Browser connected to bridge');
+    }
+  }
   ws.send(uiConfigMessage());
   if (latestRuntimeIdentity) {
     ws.send(latestRuntimeIdentity);
   }
+  if (latestUserIdentity) {
+    ws.send(latestUserIdentity);
+  }
   if (latestMessage) {
     ws.send(latestMessage);
   }
-  ws.on('close', () => console.log('❌ Browser disconnected'));
+  ws.on('close', () => {
+    activeBrowserClients = Math.max(0, activeBrowserClients - 1);
+    if (activeBrowserClients > 0) {
+      return;
+    }
+
+    browserDisconnectTimer = setTimeout(() => {
+      browserDisconnectTimer = null;
+      if (activeBrowserClients === 0) {
+        if (logBrowserConnections) {
+          log('Browser disconnected from bridge');
+        }
+      }
+    }, BROWSER_RECONNECT_GRACE_MS);
+  });
 });
 
 function broadcast(data) {
@@ -50,6 +98,8 @@ function broadcast(data) {
     const payload = JSON.parse(message);
     if (payload?.event === 'runtime.identity') {
       latestRuntimeIdentity = message;
+    } else if (payload?.event === 'user.identity') {
+      latestUserIdentity = message;
     }
   } catch {
     // Keep forwarding malformed payloads for diagnostic parity.
@@ -64,17 +114,17 @@ function broadcast(data) {
 
 // TCP Server (Emulates orac_atom_display.py listener)
 const tcpServer = net.createServer((socket) => {
-  console.log('📡 Orac Backend connected to bridge');
+  log('📡 Orac Backend connected to bridge');
   
   socket.on('data', (data) => {
-    console.log(`📩 Received from Orac: ${data.toString().trim()}`);
+    log(`📩 Received from Orac: ${data.toString().trim()}`);
     broadcast(data);
   });
 
-  socket.on('end', () => console.log('🔌 Orac Backend disconnected'));
-  socket.on('error', (err) => console.error('⚠️ TCP Socket Error:', err));
+  socket.on('end', () => log('🔌 Orac Backend disconnected'));
+  socket.on('error', (err) => logError('⚠️ TCP Socket Error:', err));
 });
 
 tcpServer.listen(TCP_PORT, '127.0.0.1', () => {
-  console.log(`🔗 TCP Bridge: Listening for Orac backend on 127.0.0.1:${TCP_PORT}`);
+  log(`🔗 TCP Bridge: Listening for Orac backend on 127.0.0.1:${TCP_PORT}`);
 });

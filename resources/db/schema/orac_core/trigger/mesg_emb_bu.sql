@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_trigger_orac_core_trigger_mesg_emb_bu context:core labels:core stripComments:false splitStatements:false endDelimiter:/ runOnChange:true
 -- __author__: clive
 -- __date__: 2026-04-24
 -- __description__: generated/synchronised by split_ddl; one object per file
@@ -12,3 +15,5 @@ begin
   :new.row_version := nvl(:old.row_version, 1) + 1;
 end;
 /
+
+--rollback drop trigger orac_core.mesg_emb_bu;

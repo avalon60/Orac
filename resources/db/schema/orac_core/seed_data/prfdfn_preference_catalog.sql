@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:seed_data_orac_core_seed_data_prfdfn_preference_catalog context:core labels:core stripComments:false runOnChange:true
 merge into orac_core.preference_definitions tgt
 using (
   select
@@ -566,3 +569,5 @@ delete from orac_core.user_preferences
 
 delete from orac_core.preference_definitions
  where pref_key = 'theme_style';
+
+--rollback delete from orac_core.preference_definitions where pref_key in ('date_format', 'default_llm_id', 'email_opt_in', 'personality_code', 'enable_advanced_mode', 'enable_feedback', 'force_concise', 'landing_page_id', 'max_tokens', 'push_opt_in', 'rows_per_report', 'show_reasoning', 'strip_reasoning_tags', 'temperature', 'weather_location', 'timezone', 'tts_pitch', 'tts_rate', 'tts_voice');

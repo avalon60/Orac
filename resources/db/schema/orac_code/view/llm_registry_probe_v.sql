@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_view_orac_code_view_llm_registry_probe_v context:core labels:core stripComments:false runOnChange:true
 -- __author__: clive
 -- __date__: 2026-05-24
 -- __description__: registered LLM reporting projection including probe metadata
@@ -79,3 +82,5 @@ select
     '$.history_probe_second_reply' returning varchar2(4000) null on error
   ) as second_reply
 from orac_api.llm_registry_v;
+
+--rollback drop view orac_code.llm_registry_probe_v;

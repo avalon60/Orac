@@ -6,14 +6,13 @@ import {
   Environment,
   Edges, 
   Float, 
-  Lightformer,
   Line,
   MeshTransmissionMaterial,
   Sparkles,
 } from '@react-three/drei';
 import { EffectComposer, Bloom, Noise, Glitch } from '@react-three/postprocessing';
 import * as THREE from 'three';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   attachCanvasDiagnostics,
   logDisplayDiagnostic,
@@ -24,12 +23,23 @@ import type { OracState } from '../types/oracState';
 interface StateConfig {
   color: string;
   bloomIntensity: number;
-  rotationSpeed: number;
   distortion: number;
   pulseRate: number;
   scale: number;
   transmission: number;
   glitchIntensity?: number;
+}
+
+interface TesseractMotionConfig {
+  rotationDamping: number;
+  initialYaw: number;
+  basePitch: number;
+  baseRoll: number;
+  pitchAmplitude: number;
+  rollAmplitude: number;
+  floatSpeed: number;
+  floatIntensity: number;
+  rotationSpeedByState: Record<OracState, number>;
 }
 
 interface CorePalette {
@@ -38,11 +48,41 @@ interface CorePalette {
   highlightColor: string;
 }
 
+interface TesseractTheme {
+  baseLine: string;
+  highlightLine: string;
+  idleGlow: string;
+  speakingGlow: string;
+  coreBase: string;
+  coreGlow: string;
+  coreHighlight: string;
+}
+
+interface TesseractAuraConfig {
+  enabled: boolean;
+  debugEnabled: boolean;
+  xOffsetPct: number;
+  yOffsetPct: number;
+  size: string;
+  opacityIdle: number;
+  opacityListening: number;
+  opacitySpeaking: number;
+  scaleIdle: number;
+  scaleSpeaking: number;
+  innerHolePct: number;
+  ringThicknessPct: number;
+  blurPx: number;
+  brightnessIdle: number;
+  speakingBrightness: number;
+  blendMode: 'screen' | 'lighten';
+}
+
 interface OracDisplayProps {
   state: OracState;
   message?: string;
   showTranscriptPanels?: boolean;
   userTranscript?: string;
+  userDisplayName?: string;
   oracTranscript?: string;
   renderResetKey?: number;
   onRenderRecovery?: (reason: DisplayRecoveryReason) => void;
@@ -106,24 +146,82 @@ const SHOW_TRANSCRIPT_PANELS =
     .toLowerCase() === 'true';
 
 const STATE_CONFIGS: Record<OracState, StateConfig> = {
-  idle: { color: '#4fc3f7', bloomIntensity: 0.45, rotationSpeed: 0.15, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
-  wake_detected: { color: '#8fdcff', bloomIntensity: 0.15, rotationSpeed: 1.5, distortion: 0.1, pulseRate: 10, scale: 1.25, transmission: 0.28 },
-  listening: { color: '#7af7ff', bloomIntensity: 0.22, rotationSpeed: 0.4, distortion: 0.2, pulseRate: 2, scale: 1.1, transmission: 0.34 },
-  transcribing: { color: '#b8f2ff', bloomIntensity: 1.1, rotationSpeed: 1.2, distortion: 0.4, pulseRate: 4, scale: 1.05, transmission: 0.8 },
-  thinking: { color: '#8ed3e8', bloomIntensity: 1.45, rotationSpeed: 0.8, distortion: 0.42, pulseRate: 1, scale: 1.15, transmission: 0.7 },
-  checking_online: { color: '#71cfff', bloomIntensity: 1.0, rotationSpeed: 0.62, distortion: 0.28, pulseRate: 0.75, scale: 1.08, transmission: 0.66 },
-  reading_sources: { color: '#98ddff', bloomIntensity: 1.18, rotationSpeed: 0.72, distortion: 0.32, pulseRate: 0.95, scale: 1.12, transmission: 0.7 },
-  tool_calling: { color: '#31e6d0', bloomIntensity: 2.1, rotationSpeed: 1.8, distortion: 0.3, pulseRate: 6, scale: 1.2, transmission: 0.6 },
-  speaking: { color: '#9be7ff', bloomIntensity: 1.6, rotationSpeed: 0.54, distortion: 0.2, pulseRate: 3, scale: 1.15, transmission: 0.8 },
-  interrupted: { color: '#ffb02e', bloomIntensity: 2.5, rotationSpeed: 2.0, distortion: 1.0, pulseRate: 8, scale: 0.95, transmission: 0.4, glitchIntensity: 1 },
-  complete: { color: '#4fc3f7', bloomIntensity: 1.0, rotationSpeed: 0.15, distortion: 0.1, pulseRate: 0.2, scale: 1.05, transmission: 0.95 },
-  error: { color: '#ff5b4f', bloomIntensity: 1.5, rotationSpeed: 0.05, distortion: 0.5, pulseRate: 12, scale: 1.0, transmission: 0.5 },
+  idle: { color: '#72d7f1', bloomIntensity: 0.45, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
+  wake_detected: { color: '#72d7f1', bloomIntensity: 0.45, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
+  listening: { color: '#72d7f1', bloomIntensity: 0.45, distortion: 0.1, pulseRate: 0.5, scale: 1, transmission: 0.9 },
+  transcribing: { color: '#b8f2ff', bloomIntensity: 1.1, distortion: 0.4, pulseRate: 4, scale: 1.05, transmission: 0.8 },
+  thinking: { color: '#8ed3e8', bloomIntensity: 1.45, distortion: 0.42, pulseRate: 1, scale: 1.15, transmission: 0.7 },
+  checking_online: { color: '#71cfff', bloomIntensity: 1.0, distortion: 0.28, pulseRate: 0.75, scale: 1.08, transmission: 0.66 },
+  reading_sources: { color: '#98ddff', bloomIntensity: 1.18, distortion: 0.32, pulseRate: 0.95, scale: 1.12, transmission: 0.7 },
+  tool_calling: { color: '#31e6d0', bloomIntensity: 2.1, distortion: 0.3, pulseRate: 6, scale: 1.2, transmission: 0.6 },
+  speaking: { color: '#9be7ff', bloomIntensity: 1.9, distortion: 0.2, pulseRate: 3.4, scale: 1.15, transmission: 0.8 },
+  interrupted: { color: '#ffb02e', bloomIntensity: 2.5, distortion: 1.0, pulseRate: 8, scale: 0.95, transmission: 0.4, glitchIntensity: 1 },
+  complete: { color: '#72d7f1', bloomIntensity: 1.0, distortion: 0.1, pulseRate: 0.2, scale: 1.05, transmission: 0.95 },
+  error: { color: '#ff5b4f', bloomIntensity: 1.5, distortion: 0.5, pulseRate: 12, scale: 1.0, transmission: 0.5 },
+};
+
+const TESSERACT_MOTION: TesseractMotionConfig = {
+  rotationDamping: 2.4,
+  initialYaw: 0.58,
+  basePitch: 0.42,
+  baseRoll: -0.08,
+  pitchAmplitude: 0.1,
+  rollAmplitude: 0.05,
+  floatSpeed: 0.24,
+  floatIntensity: 0.28,
+  rotationSpeedByState: {
+    idle: 0.012,
+    wake_detected: 0.07,
+    listening: 0.1,
+    transcribing: 0.55,
+    thinking: 0.46,
+    checking_online: 0.38,
+    reading_sources: 0.42,
+    tool_calling: 0.8,
+    speaking: 0.68,
+    interrupted: 0.9,
+    complete: 0.03,
+    error: 0.015,
+  },
+};
+
+const IDLE_SPARKLE_RATE_SCALE = 0.1;
+
+const TESSERACT_THEME: TesseractTheme = {
+  baseLine: '#8ad6ef',
+  highlightLine: '#f2fdff',
+  idleGlow: '#63bfd4',
+  speakingGlow: '#8defff',
+  coreBase: '#f5fbff',
+  coreGlow: '#9edfee',
+  coreHighlight: '#ffffff',
+};
+
+const TESSERACT_AURA: TesseractAuraConfig = {
+  enabled: import.meta.env.VITE_ORAC_TESSERACT_AURA_ENABLED?.trim().toLowerCase() !== 'false',
+  debugEnabled:
+    import.meta.env.DEV &&
+    import.meta.env.VITE_ORAC_TESSERACT_AURA_DEBUG?.trim().toLowerCase() === 'true',
+  xOffsetPct: 50,
+  yOffsetPct: 47.5,
+  size: 'clamp(38rem, 64vw, 72rem)',
+  opacityIdle: 0.125,
+  opacityListening: 0.145,
+  opacitySpeaking: 0.3,
+  scaleIdle: 1,
+  scaleSpeaking: 1.09,
+  innerHolePct: 34,
+  ringThicknessPct: 15,
+  blurPx: 4,
+  brightnessIdle: 1.02,
+  speakingBrightness: 1.25,
+  blendMode: 'screen',
 };
 
 const CORE_PALETTES: Record<OracState, CorePalette> = {
   idle: { color: '#edf8ff', glowColor: '#d7ecff', highlightColor: '#ffffff' },
-  wake_detected: { color: '#fff3d3', glowColor: '#ffe2a8', highlightColor: '#fff9ec' },
-  listening: { color: '#eefcff', glowColor: '#dff7ff', highlightColor: '#ffffff' },
+  wake_detected: { color: '#edf8ff', glowColor: '#d7ecff', highlightColor: '#ffffff' },
+  listening: { color: '#edf8ff', glowColor: '#d7ecff', highlightColor: '#ffffff' },
   transcribing: { color: '#eefaff', glowColor: '#d7f3ff', highlightColor: '#ffffff' },
   thinking: { color: '#f4fbff', glowColor: '#d8edf7', highlightColor: '#ffffff' },
   checking_online: { color: '#f3fcff', glowColor: '#d7f0ff', highlightColor: '#ffffff' },
@@ -135,15 +233,42 @@ const CORE_PALETTES: Record<OracState, CorePalette> = {
   error: { color: '#d3deea', glowColor: '#b9cadf', highlightColor: '#edf4fb' },
 };
 
+const TESSERACT_VISUAL_STATE_OVERRIDES: Partial<Record<OracState, OracState>> = {
+  wake_detected: 'idle',
+  listening: 'idle',
+  tool_calling: 'idle',
+};
+
+const tesseractVisualState = (state: OracState): OracState =>
+  TESSERACT_VISUAL_STATE_OVERRIDES[state] || state;
+
 const OUTER_CUBE_SURFACE = {
   color: '#d7f4ff',
-  clearcoat: 0.95,
-  distortion: 0.02,
-  distortionScale: 0.05,
-  opacity: 0.24,
-  roughness: 0.04,
-  thickness: 0.65,
+  clearcoat: 0.82,
+  distortion: 0.035,
+  distortionScale: 0.08,
+  envMapIntensity: 0.72,
+  opacity: 0.28,
+  roughness: 0.08,
+  thickness: 1.05,
 };
+
+const REFLECTION_ENVIRONMENT = {
+  assetUrl: new URL('../assets/dikhololo_night_1k.hdr', import.meta.url).href,
+  intensity: 0.58,
+  rotation: [0, Math.PI * 0.16, 0] as [number, number, number],
+};
+
+const TESSERACT_CORNERS: readonly [number, number, number][] = [
+  [-1, -1, -1],
+  [1, -1, -1],
+  [1, 1, -1],
+  [-1, 1, -1],
+  [-1, -1, 1],
+  [1, -1, 1],
+  [1, 1, 1],
+  [-1, 1, 1],
+];
 
 const createCoreGlowTexture = () => {
   const canvas = document.createElement('canvas');
@@ -310,58 +435,18 @@ const CanvasDiagnostics = ({
 };
 
 const GlassEnvironment = () => (
-  <Environment background={false} resolution={48} blur={0.9}>
-    <group rotation={[0, Math.PI / 4, 0]}>
-      <Lightformer
-        form="rect"
-        intensity={0.46}
-        color="#8fdcff"
-        scale={[12, 1.1, 1]}
-        position={[0, 4, -7]}
-      />
-      <Lightformer
-        form="rect"
-        intensity={0.18}
-        color="#0f2233"
-        scale={[12, 1.1, 1]}
-        position={[0, -4, 7]}
-      />
-      <Lightformer
-        form="rect"
-        intensity={0.24}
-        color="#4ca9ff"
-        scale={[1.2, 12, 1]}
-        position={[-7, 0, 1]}
-      />
-      <Lightformer
-        form="rect"
-        intensity={0.18}
-        color="#2f5f99"
-        scale={[1.2, 12, 1]}
-        position={[7, 0, -1]}
-      />
-      <Lightformer
-        form="rect"
-        intensity={0.2}
-        color="#ffffff"
-        scale={[2.5, 2.5, 1]}
-        position={[0, 0, 8]}
-      />
-      <Lightformer
-        form="rect"
-        intensity={0.14}
-        color="#14324d"
-        scale={[2.5, 2.5, 1]}
-        position={[0, 0, -8]}
-      />
-    </group>
-  </Environment>
+  <Environment
+    files={REFLECTION_ENVIRONMENT.assetUrl}
+    background={false}
+    environmentIntensity={REFLECTION_ENVIRONMENT.intensity}
+    environmentRotation={REFLECTION_ENVIRONMENT.rotation}
+  />
 );
 
 const WaveHalo = ({ state }: { state: OracState }) => {
   const ref = useRef<THREE.Group>(null);
   const config = STATE_CONFIGS[state];
-  const isListening = state === 'listening' || state === 'wake_detected';
+  const isListening = false;
   const isRetrieval = state === 'checking_online' || state === 'reading_sources';
   const isSpeaking = state === 'speaking';
   const waveCount = isSpeaking ? 3 : 2;
@@ -467,8 +552,8 @@ const OrbitalRings = ({
     }
 
     const t = sceneState.clock.elapsedTime;
-    const isIdle = state === 'idle';
-    const isListening = state === 'listening' || state === 'wake_detected';
+    const isIdle = state === 'idle' || state === 'wake_detected' || state === 'listening';
+    const isListening = false;
     const isSpeaking = state === 'speaking';
     const coreRadius = coreRadiusRef.current;
     const ringRadius = coreRadius * ORBITAL_RING_BASE_MULTIPLIER;
@@ -650,9 +735,17 @@ const TranscriptPanel = ({
   );
 };
 
-const Tesseract = ({ state }: { state: OracState }) => {
+const Tesseract = ({
+  state,
+  motionState,
+  prefersReducedMotion,
+}: {
+  state: OracState;
+  motionState: OracState;
+  prefersReducedMotion: boolean;
+}) => {
   // Base sizes
-  const outerBaseSize = 2;
+  const outerBaseSize = 1.75;
   const innerBaseSize = 1.3;
   const coreBaseRadius = 0.16;
 
@@ -664,14 +757,34 @@ const Tesseract = ({ state }: { state: OracState }) => {
   const coreGlowRef = useRef<THREE.Mesh>(null);
   const coreHighlightRef = useRef<THREE.Mesh>(null);
   const connectorRef = useRef<THREE.LineSegments>(null);
+  const outerEdgeMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const innerEdgeMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const connectorMaterialRef = useRef<THREE.LineBasicMaterial>(null);
+  const cornerFlaresRef = useRef<THREE.InstancedMesh>(null);
   const orbitalCoreRadiusRef = useRef<number>(coreBaseRadius);
-  const stateEnteredAtRef = useRef<number>(0);
-  const previousStateRef = useRef<OracState>(state);
-  
+  const rotationSpeedRef = useRef(
+    prefersReducedMotion ? 0 : TESSERACT_MOTION.rotationSpeedByState[motionState],
+  );
+  const rotationPhaseRef = useRef(TESSERACT_MOTION.initialYaw);
+  const cornerDummy = useMemo(() => new THREE.Object3D(), []);
   const config = STATE_CONFIGS[state];
   const corePalette = CORE_PALETTES[state];
+  const cornerGeometry = useMemo(() => new THREE.OctahedronGeometry(0.065, 0), []);
+  const cornerMaterial = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        color: TESSERACT_THEME.baseLine,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false,
+      }),
+    [],
+  );
   const coreGlowTexture = useMemo(() => createCoreGlowTexture(), []);
   const coreBodyTexture = useMemo(() => createCoreBodyTexture(), []);
+  const edgeColor = useMemo(() => new THREE.Color(TESSERACT_THEME.baseLine), []);
 
   useFrame((sceneState, delta) => {
     if (
@@ -685,17 +798,46 @@ const Tesseract = ({ state }: { state: OracState }) => {
     }
 
     const t = sceneState.clock.elapsedTime;
-    if (previousStateRef.current !== state) {
-      previousStateRef.current = state;
-      stateEnteredAtRef.current = t;
-    }
-    const stateAge = Math.max(0, t - stateEnteredAtRef.current);
-    
+    const isSpeaking = state === 'speaking';
+    const speakingPulse = isSpeaking ? Math.pow((Math.sin(t * 4.2) + 1) * 0.5, 1.7) : 0;
+    const speakingShimmer = isSpeaking
+      ? 0.5
+      + Math.sin(t * 17.6) * 0.06
+      + Math.sin(t * 9.15 + 1.7) * 0.045
+      : 0;
+    const speakingLineBaseColor = isSpeaking
+      ? new THREE.Color(TESSERACT_THEME.baseLine).lerp(
+        new THREE.Color(TESSERACT_THEME.highlightLine),
+        0.22 + speakingPulse * 0.18,
+      )
+      : edgeColor;
+    const speakingGlowBaseColor = isSpeaking
+      ? new THREE.Color(TESSERACT_THEME.speakingGlow).lerp(
+        new THREE.Color(TESSERACT_THEME.highlightLine),
+        0.2 + speakingPulse * 0.28,
+      )
+      : new THREE.Color(TESSERACT_THEME.idleGlow);
+
     // 1. Shared rotation for the whole tesseract
-    const rotSpeed = config.rotationSpeed;
-    groupRef.current.rotation.y += delta * rotSpeed;
-    groupRef.current.rotation.x += delta * (rotSpeed * 0.5);
-    groupRef.current.rotation.z += delta * (rotSpeed * 0.25);
+    const targetRotationSpeed = prefersReducedMotion
+      ? 0
+      : TESSERACT_MOTION.rotationSpeedByState[motionState];
+    rotationSpeedRef.current = THREE.MathUtils.damp(
+      rotationSpeedRef.current,
+      targetRotationSpeed,
+      TESSERACT_MOTION.rotationDamping,
+      delta,
+    );
+    const rotSpeed = rotationSpeedRef.current;
+    rotationPhaseRef.current = (rotationPhaseRef.current + delta * rotSpeed) % (Math.PI * 2);
+    const rotationPhase = rotationPhaseRef.current;
+    groupRef.current.rotation.set(
+      TESSERACT_MOTION.basePitch
+        + Math.sin(rotationPhase) * TESSERACT_MOTION.pitchAmplitude,
+      rotationPhase,
+      TESSERACT_MOTION.baseRoll
+        + Math.sin(rotationPhase * 2 + 0.8) * TESSERACT_MOTION.rollAmplitude,
+    );
 
     // 2. State-driven animations for the inner core, central sphere, and connectors
     let innerScale = innerBaseSize * config.scale;
@@ -703,7 +845,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
     let outerOpacity = OUTER_CUBE_SURFACE.opacity;
     let innerOpacity = 0.16;
     let connectorOpacity = 0.45;
-    let coreScale = coreBaseRadius * (state === 'idle' ? 1 : 2);
+    let coreScale = coreBaseRadius * (state === 'idle' || state === 'wake_detected' || state === 'listening' ? 1 : 2);
     let coreOpacity = 0.12;
     let coreGlow = 0.45;
     let coreHighlightOpacity = 0.2;
@@ -713,87 +855,66 @@ const Tesseract = ({ state }: { state: OracState }) => {
 
     switch (state) {
       case 'idle':
+      case 'wake_detected':
+      case 'listening':
         // 3% breathing for inner cube
         innerScale *= (1 + Math.sin(t * 1.5) * 0.03);
-        outerOpacity = 0.16;
+        outerOpacity = 0.2;
         innerOpacity = 0.14;
-        {
-          const idlePulse = (Math.sin(t * 0.8) + 1) * 0.5;
-          coreScale *= 1 + idlePulse * 0.02;
-          coreOpacity = 0.12 + idlePulse * 0.03;
-          coreGlow = 1.5 + idlePulse * 0.12;
-          coreHighlightOpacity = 0.12 + idlePulse * 0.025;
-          coreColor = new THREE.Color(corePalette.color).lerp(new THREE.Color('#f7fcff'), 0.3 + idlePulse * 0.25);
-          coreGlowColor = new THREE.Color(corePalette.glowColor).lerp(new THREE.Color('#f9fdff'), 0.35 + idlePulse * 0.2);
-          coreHighlightColor = new THREE.Color(corePalette.highlightColor).lerp(new THREE.Color('#ffffff'), 0.22 + idlePulse * 0.2);
-        }
-        break;
-      case 'listening':
-        // Expanded + gentle pulse
-        innerScale *= (1.1 + Math.sin(t * 4) * 0.05);
-        outerOpacity = 0.21;
-        innerOpacity = 0.16;
-        connectorOpacity = 0.55;
-        coreScale *= (1 + Math.sin(t * 2.5) * 0.04);
-        coreOpacity = 0.16;
-        coreGlow = 0.65;
-        coreHighlightOpacity = 0.14;
+          {
+            const idlePulse = (Math.sin(t * 0.8) + 1) * 0.5;
+            coreScale *= 1 + idlePulse * 0.02;
+            coreOpacity = 0.12 + idlePulse * 0.03;
+            coreGlow = 1.5 + idlePulse * 0.12;
+            coreHighlightOpacity = 0.12 + idlePulse * 0.025;
+          coreColor = new THREE.Color(TESSERACT_THEME.coreBase).lerp(new THREE.Color(corePalette.color), 0.14 + idlePulse * 0.16);
+          coreGlowColor = new THREE.Color(TESSERACT_THEME.coreGlow).lerp(new THREE.Color(corePalette.glowColor), 0.22 + idlePulse * 0.12);
+          coreHighlightColor = new THREE.Color(TESSERACT_THEME.coreHighlight).lerp(new THREE.Color(corePalette.highlightColor), 0.18 + idlePulse * 0.14);
+          }
         break;
       case 'thinking':
       case 'checking_online':
-      case 'reading_sources':
+      case 'reading_sources': {
         // Out of phase breathing
-        const thinkT = t * 3;
-        innerScale *= (1.1 + Math.sin(thinkT) * 0.1);
+        const thinkT = t * 1.8;
+        innerScale *= (1.08 + Math.sin(thinkT) * 0.045);
         outerOpacity = 0.22;
         innerOpacity = 0.17;
-        // Shimmering connectors
-        connectorOpacity = 0.5 + Math.sin(t * 10) * 0.15;
-        coreScale *= (1.03 + Math.sin(t * 2.2) * 0.04);
+        connectorOpacity = 0.48 + Math.sin(t * 3.2) * 0.04;
+        coreScale *= (1.025 + Math.sin(t * 1.6) * 0.018);
         coreOpacity = 0.18;
-        coreGlow = 0.78;
+        coreGlow = 0.62;
         coreHighlightOpacity = 0.15;
         break;
+      }
       case 'speaking':
         // Rhythmic pulse
         innerScale *= (1.03 + Math.sin(t * 3.92) * 0.08);
-        outerOpacity = 0.23;
-        innerOpacity = 0.18;
+        outerOpacity = 0.24;
+        innerOpacity = 0.19;
         {
           const pulsar = Math.pow((Math.sin(t * 3.12375) + 1) * 0.5, 1.8);
-          connectorOpacity = 0.56 + pulsar * 0.08;
-          const peakColor = new THREE.Color(corePalette.color).lerp(
-            new THREE.Color('#fffdf6'),
-            0.25 + pulsar * 0.7,
+          connectorOpacity = 0.58 + pulsar * 0.12;
+          const peakColor = new THREE.Color(TESSERACT_THEME.baseLine).lerp(
+            new THREE.Color(TESSERACT_THEME.highlightLine),
+            0.24 + pulsar * 0.28,
           );
-          const peakGlowColor = new THREE.Color(corePalette.glowColor).lerp(
-            new THREE.Color('#ffffff'),
-            0.45 + pulsar * 0.45,
+          const peakGlowColor = new THREE.Color(TESSERACT_THEME.speakingGlow).lerp(
+            new THREE.Color(TESSERACT_THEME.highlightLine),
+            0.38 + pulsar * 0.34,
           );
-          const peakHighlightColor = new THREE.Color(corePalette.highlightColor).lerp(
-            new THREE.Color('#ffffff'),
-            0.3 + pulsar * 0.6,
+          const peakHighlightColor = new THREE.Color(TESSERACT_THEME.highlightLine).lerp(
+            new THREE.Color(TESSERACT_THEME.speakingGlow),
+            0.08 + pulsar * 0.08,
           );
           coreScale *= (1 + pulsar * 0.06);
           coreOpacity = 0.18 + pulsar * 0.2;
-          coreGlow = 0.95 + pulsar * 3.0;
+          coreGlow = 1.12 + pulsar * 3.35;
           coreHighlightOpacity = 0.16 + pulsar * 0.12;
           coreColor = peakColor;
           coreGlowColor = peakGlowColor;
           coreHighlightColor = peakHighlightColor;
         }
-        break;
-      case 'wake_detected':
-        // Sharp expansion
-        innerScale *= 1.4;
-        outerOpacity = 0.2;
-        innerOpacity = 0.16;
-        connectorOpacity = 0.85;
-        const wakePulse = Math.max(0, Math.min(1, 1 - stateAge * 1.6));
-        coreScale *= 1 + wakePulse * 0.06;
-        coreOpacity = 0.18 + wakePulse * 0.12;
-        coreGlow = 0.95 + wakePulse * 0.35;
-        coreHighlightOpacity = 0.16 + wakePulse * 0.06;
         break;
       case 'error':
         // Reduced scale and dimmed connectors
@@ -862,6 +983,15 @@ const Tesseract = ({ state }: { state: OracState }) => {
       highlightMaterial.opacity = coreHighlightOpacity;
     }
 
+    if (outerEdgeMaterialRef.current) {
+      outerEdgeMaterialRef.current.color.set(speakingLineBaseColor);
+      outerEdgeMaterialRef.current.opacity = isSpeaking ? 0.9 + speakingShimmer * 0.06 : 0.62;
+    }
+    if (innerEdgeMaterialRef.current) {
+      innerEdgeMaterialRef.current.color.set(speakingLineBaseColor);
+      innerEdgeMaterialRef.current.opacity = isSpeaking ? 0.78 + speakingShimmer * 0.07 : 0.58;
+    }
+
     // 3. Update connector line vertices
     const positions = connectorRef.current.geometry.attributes.position.array as Float32Array;
     
@@ -886,10 +1016,28 @@ const Tesseract = ({ state }: { state: OracState }) => {
       positions[i * 6 + 5] = cz * halfInner;
     }
     connectorRef.current.geometry.attributes.position.needsUpdate = true;
-    (connectorRef.current.material as THREE.LineBasicMaterial).opacity = connectorOpacity;
-  });
+    if (connectorMaterialRef.current) {
+      connectorMaterialRef.current.color.set(speakingGlowBaseColor);
+      connectorMaterialRef.current.opacity = connectorOpacity + (isSpeaking ? speakingShimmer * 0.05 : 0);
+    }
 
-  const edgeColor = useMemo(() => new THREE.Color(config.color), [config.color]);
+    if (cornerFlaresRef.current) {
+      const cornerHalf = (outerBaseSize * outerRef.current.scale.x) / 2;
+      const flareBase = isSpeaking ? 0.085 + speakingPulse * 0.03 : 0.04;
+      for (let i = 0; i < TESSERACT_CORNERS.length; i += 1) {
+        const [cx, cy, cz] = TESSERACT_CORNERS[i];
+        cornerDummy.position.set(cx * cornerHalf, cy * cornerHalf, cz * cornerHalf);
+        cornerDummy.scale.setScalar(flareBase);
+        cornerDummy.rotation.set(t * 0.8 + i * 0.7, t * 1.1 + i * 0.5, t * 0.6 + i * 0.3);
+        cornerDummy.updateMatrix();
+        cornerFlaresRef.current.setMatrixAt(i, cornerDummy.matrix);
+      }
+      cornerFlaresRef.current.instanceMatrix.needsUpdate = true;
+      const cornerMaterial = cornerFlaresRef.current.material as THREE.MeshBasicMaterial;
+      cornerMaterial.color.set(speakingGlowBaseColor);
+      cornerMaterial.opacity = isSpeaking ? 0.32 + speakingPulse * 0.36 : 0.08;
+    }
+  });
 
   return (
     <group ref={groupRef}>
@@ -906,6 +1054,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
           distortionScale={OUTER_CUBE_SURFACE.distortionScale}
           temporalDistortion={0}
           clearcoat={OUTER_CUBE_SURFACE.clearcoat}
+          envMapIntensity={OUTER_CUBE_SURFACE.envMapIntensity}
           attenuationDistance={1.2}
           attenuationColor={OUTER_CUBE_SURFACE.color}
           color={OUTER_CUBE_SURFACE.color}
@@ -915,7 +1064,14 @@ const Tesseract = ({ state }: { state: OracState }) => {
           ior={1.45}
         />
         <Edges threshold={15} color={edgeColor}>
-          <meshBasicMaterial color={edgeColor} toneMapped={false} />
+          <meshBasicMaterial
+            ref={outerEdgeMaterialRef}
+            color={edgeColor}
+            transparent
+            opacity={0.6}
+            depthWrite={false}
+            toneMapped={false}
+          />
         </Edges>
       </mesh>
 
@@ -941,7 +1097,14 @@ const Tesseract = ({ state }: { state: OracState }) => {
           ior={1.45}
         />
         <Edges threshold={15} color={edgeColor}>
-          <meshBasicMaterial color={edgeColor} toneMapped={false} />
+          <meshBasicMaterial
+            ref={innerEdgeMaterialRef}
+            color={edgeColor}
+            transparent
+            opacity={0.58}
+            depthWrite={false}
+            toneMapped={false}
+          />
         </Edges>
       </mesh>
 
@@ -1018,6 +1181,7 @@ const Tesseract = ({ state }: { state: OracState }) => {
           />
         </bufferGeometry>
         <lineBasicMaterial
+          ref={connectorMaterialRef}
           color={edgeColor}
           transparent
           opacity={0.45}
@@ -1026,23 +1190,58 @@ const Tesseract = ({ state }: { state: OracState }) => {
           toneMapped={false}
         />
       </lineSegments>
+
+      <instancedMesh
+        ref={cornerFlaresRef}
+        args={[cornerGeometry, cornerMaterial, TESSERACT_CORNERS.length]}
+        renderOrder={14}
+      />
     </group>
   );
 };
 
-const Scene = ({ state }: { state: OracState }) => {
+const Scene = ({
+  state,
+  motionState,
+  prefersReducedMotion,
+}: {
+  state: OracState;
+  motionState: OracState;
+  prefersReducedMotion: boolean;
+}) => {
   const config = STATE_CONFIGS[state];
-  const isIdle = state === 'idle';
+  const isIdle = state === 'idle' || state === 'wake_detected' || state === 'listening';
   const isThinking = state === 'thinking' || state === 'checking_online' || state === 'reading_sources';
   const isSpeaking = state === 'speaking';
   const isError = state === 'error' || state === 'interrupted';
-  const isListening = state === 'listening' || state === 'wake_detected';
-  const sparkleCount = isThinking ? 52 : 28;
-  const sparkleSize = isThinking ? 1.8 : 1.55;
-  const sparkleSpeed = config.pulseRate * (isIdle ? 0.28 : isThinking ? 0.24 : 0.18);
-  const sparkleOpacity = isError ? 0.14 : isIdle ? 0.28 : isSpeaking ? 0.5 : isThinking ? 0.58 : 0.42;
-  const pointLightIntensity = isListening ? 0.04 : isSpeaking ? 0.22 : isThinking ? 0.18 : 0.1;
-  const spotLightIntensity = isListening ? 0.08 : isSpeaking ? 0.42 : isThinking ? 0.34 : 0.18;
+  const isListening = false;
+  const sparkleCount = isThinking ? 34 : isSpeaking ? 40 : 28;
+  const sparkleSize = isThinking ? 1.45 : isSpeaking ? 1.7 : 1.55;
+  const idleSparkleSpeed = STATE_CONFIGS.idle.pulseRate * 0.28;
+  const sparkleSpeed = isThinking
+    ? idleSparkleSpeed * 1.6
+    : isSpeaking
+      ? idleSparkleSpeed * 2
+      : motionState === 'idle'
+        ? idleSparkleSpeed * IDLE_SPARKLE_RATE_SCALE
+        : isIdle
+        ? idleSparkleSpeed
+        : config.pulseRate * 0.18;
+  const sparkleOpacity = isError ? 0.14 : isIdle ? 0.28 : isSpeaking ? 0.62 : isThinking ? 0.34 : 0.42;
+  const pointLightIntensity = isListening ? 0.04 : isSpeaking ? 0.28 : isThinking ? 0.13 : 0.1;
+  const spotLightIntensity = isListening ? 0.08 : isSpeaking ? 0.5 : isThinking ? 0.24 : 0.18;
+  const bloomIntensity = state === 'thinking'
+    ? 1.65
+    : state === 'speaking'
+      ? config.bloomIntensity * 2
+      : config.bloomIntensity;
+  const bloomRadius = state === 'thinking'
+    ? 0.58
+    : state === 'speaking'
+      ? 0.8
+      : isListening
+        ? 0.24
+        : 0.4;
 
   const glitchDelay = useMemo(() => new THREE.Vector2(0.1, 0.3), []);
   const glitchDuration = useMemo(() => new THREE.Vector2(0.1, 0.2), []);
@@ -1056,18 +1255,32 @@ const Scene = ({ state }: { state: OracState }) => {
       <spotLight position={[-10, 10, 10]} angle={0.2} penumbra={1} intensity={spotLightIntensity} color={config.color} />
       
       <Float
-        speed={1.5 * config.pulseRate} 
-        rotationIntensity={0.3} 
-        floatIntensity={0.5}
+        speed={prefersReducedMotion ? 0 : TESSERACT_MOTION.floatSpeed}
+        rotationIntensity={0}
+        floatIntensity={prefersReducedMotion ? 0 : TESSERACT_MOTION.floatIntensity}
       >
         <group>
-          <Tesseract state={state} />
+          <Tesseract
+            state={state}
+            motionState={motionState}
+            prefersReducedMotion={prefersReducedMotion}
+          />
+          {isSpeaking ? (
+            <Sparkles
+              count={14}
+              scale={1.85}
+              size={0.7}
+              speed={prefersReducedMotion ? 0 : 0.24}
+              color="#f3feff"
+              opacity={0.56}
+            />
+          ) : null}
           
           <Sparkles 
             count={sparkleCount} 
             scale={2.6} 
             size={sparkleSize} 
-            speed={sparkleSpeed} 
+            speed={prefersReducedMotion ? 0 : sparkleSpeed}
             color={config.color} 
             opacity={sparkleOpacity}
           />
@@ -1083,8 +1296,8 @@ const Scene = ({ state }: { state: OracState }) => {
         <Bloom 
           luminanceThreshold={0.8} 
           mipmapBlur 
-          intensity={config.bloomIntensity} 
-          radius={isListening ? 0.24 : 0.4} 
+          intensity={bloomIntensity}
+          radius={bloomRadius}
         />
         <Noise opacity={0.05} />
         {state === 'interrupted' ? (
@@ -1104,16 +1317,19 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
   message,
   showTranscriptPanels = SHOW_TRANSCRIPT_PANELS,
   userTranscript = '',
+  userDisplayName = '',
   oracTranscript = '',
   renderResetKey = 0,
   onRenderRecovery,
 }) => {
   const config = STATE_CONFIGS[state];
+  const visualState = tesseractVisualState(state);
+  const visualConfig = STATE_CONFIGS[visualState];
   const isBackendUnavailableMessage =
     typeof message === 'string' &&
     message.includes('Python stack is not running');
-  const isIdle = state === 'idle';
-  const isListening = state === 'listening' || state === 'wake_detected';
+  const isIdle = state === 'idle' || state === 'wake_detected' || state === 'listening';
+  const isListening = false;
   const isRetrieval = state === 'checking_online' || state === 'reading_sources';
   const isTurnActive =
     state === 'wake_detected' ||
@@ -1124,10 +1340,27 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
     state === 'reading_sources' ||
     state === 'tool_calling' ||
     state === 'speaking';
+  const prefersReducedMotion = useReducedMotion();
+  const auraState = TESSERACT_AURA.enabled
+    ? {
+        opacity:
+          state === 'speaking'
+            ? TESSERACT_AURA.opacitySpeaking
+            : state === 'listening' || state === 'wake_detected'
+              ? TESSERACT_AURA.opacityListening
+              : TESSERACT_AURA.opacityIdle,
+        scale: state === 'speaking' ? TESSERACT_AURA.scaleSpeaking : TESSERACT_AURA.scaleIdle,
+        brightness:
+          state === 'speaking'
+            ? TESSERACT_AURA.speakingBrightness
+            : TESSERACT_AURA.brightnessIdle,
+      }
+    : null;
   const leftTranscript =
     userTranscript.trim() || 'No recent utterance';
   const rightTranscript =
     oracTranscript.trim() || 'Waiting for response';
+  const userPanelTitle = userDisplayName.trim() || 'You (unverified)';
   const leftPanelEmphasis = isIdle ? 0.98 : isTurnActive ? 1.01 : 1;
   const rightPanelEmphasis = isIdle ? 0.98 : state === 'speaking' ? 1.03 : 1.01;
 
@@ -1136,7 +1369,7 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
       <motion.div 
         className="absolute inset-0 transition-colors duration-1000 pointer-events-none"
         style={{
-          background: `radial-gradient(circle at center, ${config.color}${isListening || isRetrieval ? '28' : '18'} 0%, transparent ${isListening || isRetrieval ? '66%' : '72%'})`,
+          background: `radial-gradient(circle at center, ${visualConfig.color}${isListening || isRetrieval ? '28' : '18'} 0%, transparent ${isListening || isRetrieval ? '66%' : '72%'})`,
         }}
         animate={{
           opacity: isListening || isRetrieval ? [0.42, 0.62, 0.42] : [0.18, 0.26, 0.18],
@@ -1161,7 +1394,7 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
         {showTranscriptPanels && (
           <div className="hidden min-h-0 xl:flex">
             <TranscriptPanel
-              title="You"
+              title={userPanelTitle}
               text={leftTranscript}
               placeholder="Listening for wake word"
               accentColor="#8fdcff"
@@ -1171,11 +1404,86 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
           </div>
         )}
 
-        <div className="w-full h-full min-h-0 relative">
+        <div className="relative h-full min-h-0 w-full overflow-hidden">
+          {auraState && (
+            <div
+              className={`orac-tesseract-aura-anchor${
+                TESSERACT_AURA.debugEnabled ? ' orac-tesseract-aura-anchor--debug' : ''
+              }`}
+              style={
+                {
+                  '--orac-aura-x': `${TESSERACT_AURA.xOffsetPct}%`,
+                  '--orac-aura-y': `${TESSERACT_AURA.yOffsetPct}%`,
+                  '--orac-aura-size': TESSERACT_AURA.size,
+                } as React.CSSProperties
+              }
+              aria-hidden="true"
+            >
+              <motion.div
+                key="tesseract-aura"
+                className="orac-tesseract-aura-ring"
+                initial={false}
+                animate={
+                  TESSERACT_AURA.debugEnabled || prefersReducedMotion
+                    ? {
+                        opacity: TESSERACT_AURA.debugEnabled ? 0.8 : auraState.opacity,
+                        scale: auraState.scale,
+                      }
+                    : {
+                        opacity: [
+                          auraState.opacity * (state === 'speaking' ? 0.84 : 0.95),
+                          auraState.opacity,
+                          auraState.opacity * (state === 'speaking' ? 0.91 : 0.98),
+                        ],
+                        scale: [
+                          auraState.scale,
+                          auraState.scale * (state === 'speaking' ? 1.028 : 1.006),
+                          auraState.scale,
+                        ],
+                      }
+                }
+                transition={
+                  TESSERACT_AURA.debugEnabled || prefersReducedMotion
+                    ? { duration: 0 }
+                    : {
+                        duration: state === 'speaking' ? 5.6 : 9.5,
+                        repeat: Infinity,
+                        ease: 'easeInOut',
+                      }
+                }
+                style={
+                  {
+                    '--orac-aura-brightness': auraState.brightness,
+                    '--orac-aura-blend-mode': TESSERACT_AURA.blendMode,
+                    '--orac-aura-inner-hole': `${TESSERACT_AURA.innerHolePct}%`,
+                    '--orac-aura-ring-thickness': `${TESSERACT_AURA.ringThicknessPct}%`,
+                    '--orac-aura-blur': `${TESSERACT_AURA.blurPx}px`,
+                  } as React.CSSProperties
+                }
+              />
+              {TESSERACT_AURA.debugEnabled && (
+                <div className="orac-tesseract-aura-crosshair" />
+              )}
+            </div>
+          )}
+
           <CanvasErrorBoundary resetKey={renderResetKey}>
-            <Canvas key={renderResetKey} gl={{ antialias: false }} dpr={[1, 1.5]}>
+            <Canvas
+              key={renderResetKey}
+              className="relative z-10"
+              gl={{ antialias: false, alpha: true, premultipliedAlpha: false }}
+              onCreated={({ gl, scene }) => {
+                gl.setClearColor(0x000000, 0);
+                scene.background = null;
+              }}
+              dpr={[1, 1.5]}
+            >
               <CanvasDiagnostics onRecovery={onRenderRecovery} />
-              <Scene state={state} />
+              <Scene
+                state={visualState}
+                motionState={state}
+                prefersReducedMotion={prefersReducedMotion === true}
+              />
             </Canvas>
           </CanvasErrorBoundary>
         </div>
@@ -1198,11 +1506,11 @@ export const OracDisplay: React.FC<OracDisplayProps> = ({
 
       <AnimatePresence mode="wait">
         <motion.div
-          key={state}
+          key={state === 'wake_detected' || state === 'listening' ? 'idle' : state}
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 1.05 }}
-          className="absolute bottom-14 z-10 flex flex-col items-center pointer-events-none"
+          className="absolute bottom-14 z-20 flex flex-col items-center pointer-events-none"
         >
           <div 
             className="font-bold tracking-[1em] text-[11px] uppercase mb-5 text-center transition-colors duration-700"

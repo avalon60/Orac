@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_package_body_orac_code_package_body_orac_personalities_api context:core labels:core stripComments:false splitStatements:false endDelimiter:/ runOnChange:true
 -- __author__: clive
 -- __date__: 2026-04-29
 -- __description__: ORAC_CODE wrapper API for Orac personality maintenance
@@ -96,3 +99,5 @@ create or replace package body orac_code.orac_personalities_api as
   end del;
 end orac_personalities_api;
 /
+
+--rollback drop package body orac_code.orac_personalities_api;

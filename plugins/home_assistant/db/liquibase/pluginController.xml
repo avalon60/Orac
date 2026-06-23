@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Author: Clive Bostock
+  Date: 22-Jun-2026
+  Description: Liquibase controller for Home Assistant plugin-owned database objects.
+-->
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  logicalFilePath="plugins/home_assistant/db/liquibase/pluginController.xml"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+
+  <include file="controllers/01_table.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/02_index.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/03_constraint_pk.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/04_constraint_uc.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/05_constraint_other.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/06_constraint_fk.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/07_package_spec.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/08_package_body.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/09_view.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/10_grant.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/11_comment.xml" relativeToChangelogFile="true"/>
+</databaseChangeLog>

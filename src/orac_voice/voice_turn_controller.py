@@ -24,6 +24,7 @@ from view.display_event_pipe import DisplayEventSender
 
 ConsoleLineWriter = Callable[[str], None]
 ConsoleStartWriter = Callable[[str], None]
+FinalTextCallback = Callable[[str], None]
 
 
 class VoiceCancelRequester(Protocol):
@@ -59,6 +60,8 @@ class VoiceTurnController:
     cancel_request: VoiceCancelRequester | None = None,
     console_line: ConsoleLineWriter | None = None,
     console_start: ConsoleStartWriter | None = None,
+    completion_idle_message: str = "Listening for wake word",
+    on_final_text: FinalTextCallback | None = None,
   ) -> None:
     """Initialise a voice turn controller.
 
@@ -75,6 +78,10 @@ class VoiceTurnController:
       cancel_request (VoiceCancelRequester | None): Cancellation transport.
       console_line (ConsoleLineWriter | None): Console line writer.
       console_start (ConsoleStartWriter | None): Console prefix writer.
+      completion_idle_message (str): Display message emitted when this turn
+        has finished and the caller is resuming its idle lifecycle.
+      on_final_text (FinalTextCallback | None): Optional callback receiving
+        final assistant text for echo-suppression or diagnostics.
     """
     self.reader = reader
     self.writer = writer
@@ -87,6 +94,8 @@ class VoiceTurnController:
     self.cancel_request = cancel_request
     self.console_line = console_line or print
     self.console_start = console_start or self._default_console_start
+    self.completion_idle_message = completion_idle_message
+    self.on_final_text = on_final_text
 
   async def run(self) -> int:
     """Send the prompt and process protocol frames until the turn finishes."""
@@ -131,6 +140,8 @@ class VoiceTurnController:
     playback_cancelled = False
     final_response_status: int | None = None
     orac_transcript_parts: list[str] = []
+    orac_spoken_parts: list[str] = []
+    last_final_text_notified = ""
     stream_start_at: float | None = None
     first_text_delta_at: float | None = None
     first_text_chunk_at: float | None = None
@@ -140,6 +151,7 @@ class VoiceTurnController:
     timing_logged = False
     barge_in_min_speech_ms = 0
     last_runtime_identity: tuple[str, str, str, str, str] | None = None
+    last_user_identity: tuple[str, str] | None = None
     if (
       barge_in_controller is not None
       and not isinstance(barge_in_controller, OpenWakeWordBargeInController)
@@ -227,6 +239,26 @@ class VoiceTurnController:
         playback_started_count,
       )
 
+    def _current_orac_text() -> str:
+      """Return the best currently known assistant text for this turn."""
+      transcript_text = "".join(orac_transcript_parts).strip()
+      if transcript_text:
+        return transcript_text
+      return " ".join(part.strip() for part in orac_spoken_parts if part.strip())
+
+    def _notify_final_text(text: str | None = None) -> None:
+      """Notify the caller of final assistant text at most once per value."""
+      nonlocal last_final_text_notified
+      final_text_value = (text or _current_orac_text()).strip()
+      if (
+        not final_text_value
+        or self.on_final_text is None
+        or final_text_value == last_final_text_notified
+      ):
+        return
+      last_final_text_notified = final_text_value
+      self.on_final_text(final_text_value)
+
     def _update_retrieval_display_state(frame_type: str) -> None:
       """Map retrieval lifecycle frames to the display state rail."""
       if self.display_sender is None:
@@ -268,7 +300,7 @@ class VoiceTurnController:
         if self.display_sender is not None:
           self.display_sender.send_state(
             "idle",
-            message="Listening for wake word",
+            message=self.completion_idle_message,
             session_id=self.voice_session_id,
             turn_id=req_id,
           )
@@ -280,10 +312,11 @@ class VoiceTurnController:
       if not stream_finished:
         return None
       interruption_policy.mark_turn_complete(output_turn_id=req_id)
+      _notify_final_text()
       if self.display_sender is not None:
         self.display_sender.send_state(
           "idle",
-          message="Listening for wake word",
+          message=self.completion_idle_message,
           session_id=self.voice_session_id,
           turn_id=req_id,
         )
@@ -366,7 +399,7 @@ class VoiceTurnController:
             if self.display_sender is not None:
               self.display_sender.send_state(
                 "idle",
-                message="Listening for wake word",
+                message=self.completion_idle_message,
                 session_id=self.voice_session_id,
                 turn_id=req_id,
               )
@@ -412,6 +445,23 @@ class VoiceTurnController:
             llm_source=llm_source or None,
           )
           last_runtime_identity = runtime_identity
+
+        user_identity = _display_user_identity_from_frame(env)
+        if (
+          self.display_sender is not None
+          and user_identity is not None
+          and user_identity != last_user_identity
+        ):
+          user_registration, user_display_name = user_identity
+          _send_display_event(
+            self.display_sender,
+            "user.identity",
+            session_id=self.voice_session_id,
+            turn_id=req_id,
+            user_registration=user_registration,
+            user_display_name=user_display_name or None,
+          )
+          last_user_identity = user_identity
 
         frame_type = env.get("type")
         if frame_type in slave_client.STREAM_EVENT_TYPES:
@@ -477,6 +527,7 @@ class VoiceTurnController:
             )
             if delta_text:
               orac_transcript_parts.append(delta_text)
+              _notify_final_text()
               _send_display_event(
                 self.display_sender,
                 "transcript.orac.delta",
@@ -492,6 +543,12 @@ class VoiceTurnController:
           elif frame_type == "text_chunk":
             if first_text_chunk_at is None:
               first_text_chunk_at = time.perf_counter()
+            chunk_text = slave_client.strip_reasoning_tags(
+              str(payload.get("chunk") or "")
+            ).strip()
+            if chunk_text:
+              orac_spoken_parts.append(chunk_text)
+              _notify_final_text()
             logger.debug("Speech text chunk received for existing TTS path")
             playback_expected = True
           elif frame_type in {"stream_end", "stream_cancelled"}:
@@ -551,10 +608,11 @@ class VoiceTurnController:
             interruption_policy.mark_turn_complete(output_turn_id=req_id)
             if last_tts_finished_at is None:
               last_tts_finished_at = time.perf_counter()
+            _notify_final_text()
             if self.display_sender is not None:
               self.display_sender.send_state(
                 "idle",
-                message="Listening for wake word",
+                message=self.completion_idle_message,
                 session_id=self.voice_session_id,
                 turn_id=req_id,
               )
@@ -591,6 +649,7 @@ class VoiceTurnController:
           final_text = "".join(orac_transcript_parts).strip()
         if stream_end_at is None and not stream_rendered:
           stream_end_at = time.perf_counter()
+        _notify_final_text(final_text)
         _send_display_event(
           self.display_sender,
           "transcript.orac.final",
@@ -620,7 +679,7 @@ class VoiceTurnController:
         if self.display_sender is not None:
           self.display_sender.send_state(
             "idle",
-            message="Listening for wake word",
+            message=self.completion_idle_message,
             session_id=self.voice_session_id,
             turn_id=req_id,
           )
@@ -673,9 +732,25 @@ def _display_runtime_identity_from_frame(
   personality_name = str(meta.get("personality_name") or "").strip()
   llm_source = str(meta.get("llm_source") or "").strip()
   persona = personality_name or personality_code
-  if model and not persona:
-    personality_code = "DEFAULT"
-    persona = personality_code
   if not model and not persona:
     return None
+  if model and not persona:
+    return None
   return model, persona, personality_code, personality_name, llm_source
+
+
+def _display_user_identity_from_frame(
+  frame: dict[str, object],
+) -> tuple[str, str] | None:
+  """Extract display-safe user identity from an Orac frame."""
+  meta = frame.get("meta")
+  if not isinstance(meta, dict):
+    return None
+
+  user_registration = str(meta.get("user_registration") or "").strip()
+  user_display_name = str(meta.get("user_display_name") or "").strip()
+  if user_registration == "registered" and user_display_name:
+    return user_registration, user_display_name
+  if user_registration == "anonymous":
+    return user_registration, ""
+  return None

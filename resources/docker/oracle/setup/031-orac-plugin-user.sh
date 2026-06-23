@@ -20,10 +20,28 @@ echo "${PROG} Launching sqlplus; creating ORAC_PLUGIN..."
 sqlplus / as sysdba <<EOF
 alter session set container=${ORACLE_PDB};
 
-create user ORAC_PLUGIN identified by ${ORACLE_PWD}
-  default tablespace users
-  temporary tablespace temp
-  quota unlimited on users;
+declare
+  l_count number;
+begin
+  select count(*)
+    into l_count
+    from dba_users
+   where username = 'ORAC_PLUGIN';
+
+  if l_count = 0 then
+    execute immediate q'[
+      create user ORAC_PLUGIN identified by ${ORACLE_PWD}
+        default tablespace users
+        temporary tablespace temp
+        quota unlimited on users
+    ]';
+  else
+    execute immediate q'[
+      alter user ORAC_PLUGIN identified by ${ORACLE_PWD}
+    ]';
+  end if;
+end;
+/
 
 grant create session, create table, create view, create sequence,
       create procedure, create trigger, create type, create synonym

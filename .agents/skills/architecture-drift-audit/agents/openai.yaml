@@ -1,0 +1,4 @@
+interface:
+  display_name: "Architecture Drift Audit"
+  short_description: "Audit architecture drift without editing files"
+  default_prompt: "Use $architecture-drift-audit to audit this repository for architecture drift without editing files."

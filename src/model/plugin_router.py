@@ -19,15 +19,20 @@ from model.plugin_execution_policy import (
     evaluate_plugin_policy,
     plugin_policy_message,
 )
+from model.plugin_config import PluginConfigManager
 from model.plugin_routing.models import PluginManifest
+from model.plugin_routing.models import PluginRouteCandidate
 from model.plugin_routing.handoff import PluginRoutingHandoff
 from model.plugin_runtime import (
     PluginDataAccess,
     PluginExecutionResult,
+    PluginRuntimeContext,
     PluginRuntimeError,
     instantiate_plugin,
     load_plugin_class,
 )
+from model.plugin_database_session import OracPluginDatabaseSessionFactory
+from model.plugin_secret_vault import PluginSecretVault
 
 
 _STOPWORDS = {
@@ -68,6 +73,73 @@ _STOPWORDS = {
     "you",
 }
 
+_ACTION_INTENT_REQUIRED_TYPES = {
+    "local_mutation",
+    "external_mutation",
+    "device_control",
+    "privileged_system_action",
+}
+
+_ACTION_INTENT_TERMS = {
+    "activate",
+    "adjust",
+    "brighten",
+    "brightness",
+    "change",
+    "close",
+    "control",
+    "deactivate",
+    "dim",
+    "disable",
+    "down",
+    "enable",
+    "execute",
+    "increase",
+    "launch",
+    "lower",
+    "make",
+    "mute",
+    "off",
+    "on",
+    "open",
+    "pause",
+    "play",
+    "raise",
+    "resume",
+    "run",
+    "select",
+    "set",
+    "skip",
+    "start",
+    "stop",
+    "switch",
+    "warm",
+    "white",
+    "color",
+    "colour",
+    "kelvin",
+    "turn",
+    "unmute",
+    "up",
+}
+
+_FACTUAL_QUESTION_STARTERS = {
+    "are",
+    "did",
+    "do",
+    "does",
+    "how",
+    "is",
+    "was",
+    "were",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "why",
+}
+
 
 DEFAULT_PLUGIN_EXECUTION_TIMEOUT_SECONDS = 10.0
 _DECLINED = object()
@@ -95,6 +167,8 @@ class PluginRouter:
         config_mgr,
         context_manager,
         confirmation_broker=None,
+        plugin_service_manager=None,
+        plugin_db_session_factory=None,
         execution_timeout_seconds: float | None = None,
     ):
         self._plugin_manager = plugin_manager
@@ -102,6 +176,14 @@ class PluginRouter:
         self._config_mgr = config_mgr
         self._context_manager = context_manager
         self._confirmation_broker = confirmation_broker
+        self._plugin_service_manager = plugin_service_manager
+        self._plugin_db_session_factory = (
+            plugin_db_session_factory
+            or OracPluginDatabaseSessionFactory(
+                config_mgr=config_mgr,
+                logger=logger,
+            ).create
+        )
         self._execution_timeout_seconds = _resolve_execution_timeout_seconds(
             config_mgr,
             explicit_timeout=execution_timeout_seconds,
@@ -117,14 +199,15 @@ class PluginRouter:
         audit_adapter: PluginAuditAdapter | None = None,
         request_context: dict[str, Any] | None = None,
     ) -> PluginExecutionResult | None:
-        """Returns the first successful plugin execution result, or None."""
+        """Execute the selected plugin route, or return ``None`` for fallback."""
         if handoff is None or not handoff.candidates or self._plugin_manager is None:
             return None
 
         meta = meta or {}
         request_context = request_context or {}
 
-        for candidate in handoff.candidates:
+        for candidate in handoff.candidates[:1]:
+            candidate_prompt = _candidate_prompt(prompt, candidate)
             manifest = self._plugin_manager.get_manifest(candidate.plugin_id)
             if manifest is None:
                 self._logger.log_debug(
@@ -143,12 +226,9 @@ class PluginRouter:
                 confirmation_broker=self._confirmation_broker,
             )
             if not policy_decision.allowed:
-                if not self._candidate_matches_prompt(manifest, prompt):
-                    self._logger.log_debug(
-                        "Plugin execution denial skipped for "
-                        f"'{candidate.plugin_id}' because the prompt did not "
-                        "match manifest-declared routing terms."
-                    )
+                denial_skip_reason = self._denied_candidate_skip_reason(manifest, candidate_prompt)
+                if denial_skip_reason is not None:
+                    self._logger.log_debug(denial_skip_reason)
                     continue
                 self._logger.log_warning(
                     "Plugin execution blocked for "
@@ -173,7 +253,11 @@ class PluginRouter:
                     plugin_id=manifest.plugin_id,
                     content=plugin_policy_message(policy_decision),
                     handled=True,
-                    provenance=policy_decision.provenance,
+                    provenance=_with_arbitration_provenance(
+                        policy_decision.provenance,
+                        request_context,
+                        candidate,
+                    ),
                 )
 
             audit_session = self._start_audit_session(
@@ -195,7 +279,7 @@ class PluginRouter:
                 result = self._invoke_with_timeout(
                     lambda: self._invoke_plugin_candidate(
                         manifest=manifest,
-                        prompt=prompt,
+                        prompt=candidate_prompt,
                         meta=meta,
                         auth_user=auth_user,
                         policy_decision=policy_decision,
@@ -220,7 +304,7 @@ class PluginRouter:
                         ),
                         provenance_json=policy_decision.provenance,
                     )
-                if not self._candidate_matches_prompt(manifest, prompt):
+                if not self._candidate_matches_prompt(manifest, candidate_prompt):
                     continue
                 return self._failure_result(
                     manifest=manifest,
@@ -248,7 +332,7 @@ class PluginRouter:
                         failure_message=f"Plugin execution failed during {exc.stage}.",
                         provenance_json=policy_decision.provenance,
                     )
-                if exc.stage not in {"can_handle", "execute"} and not self._candidate_matches_prompt(manifest, prompt):
+                if exc.stage not in {"can_handle", "execute"} and not self._candidate_matches_prompt(manifest, candidate_prompt):
                     continue
                 return self._failure_result(
                     manifest=manifest,
@@ -262,17 +346,35 @@ class PluginRouter:
                 self._logger.log_debug(
                     f"Plugin '{candidate.plugin_id}' declined prompt after execution-time handle check."
                 )
-                continue
+                return self._failure_result(
+                    manifest=manifest,
+                    policy_provenance=_with_arbitration_provenance(
+                        policy_decision.provenance,
+                        request_context,
+                        candidate,
+                    ),
+                    status="failed",
+                    failure_type="can_handle_declined",
+                    failure_message=(
+                        "The selected plugin declined the action request."
+                    ),
+                )
 
             if result is not None and result.handled:
                 self._logger.log_info(f"Plugin '{candidate.plugin_id}' handled request directly.")
                 return replace(
                     result,
                     provenance={
-                        **policy_decision.provenance,
+                        **_with_arbitration_provenance(
+                            policy_decision.provenance,
+                            request_context,
+                            candidate,
+                        ),
                         "status": "allowed",
                     },
                 )
+
+            return None
 
         self._logger.log_debug("No plugin candidate handled the request directly; falling back to conversational flow.")
         return None
@@ -300,11 +402,28 @@ class PluginRouter:
                 auth_user=auth_user,
                 logger=self._logger,
             )
+            runtime_context = PluginRuntimeContext(
+                manifest=manifest,
+                logger=self._logger,
+                config_mgr=self._config_mgr,
+                auth_user=auth_user,
+                plugin_db_session_factory=self._plugin_db_session_factory,
+                plugin_service_manager=self._plugin_service_manager,
+                plugin_config_manager=PluginConfigManager(
+                    manifest,
+                    logger=self._logger,
+                ),
+                _secret_vault=PluginSecretVault(
+                    plugin_id=manifest.plugin_id,
+                    manifest=manifest,
+                ),
+            )
             plugin_instance = instantiate_plugin(
                 plugin_class,
                 logger=self._logger,
                 config_mgr=self._config_mgr,
                 data_access=data_access,
+                runtime_context=runtime_context,
             )
         except BaseException as exc:
             raise _PluginInvocationError("instantiate", exc) from exc
@@ -587,6 +706,47 @@ class PluginRouter:
         )
         return bool(prompt_tokens.intersection(_significant_tokens(manifest_text)))
 
+    @staticmethod
+    def _denied_candidate_skip_reason(manifest: PluginManifest, prompt: str) -> str | None:
+        """Return the reason a denied candidate should not be user-visible."""
+        if not PluginRouter._candidate_matches_prompt(manifest, prompt):
+            return (
+                "Plugin execution denial skipped for "
+                f"'{manifest.plugin_id}' because the prompt did not "
+                "match manifest-declared routing terms."
+            )
+
+        action_type = (
+            manifest.execution_policy.action_type
+            if manifest.execution_policy is not None
+            else None
+        )
+        if action_type in _ACTION_INTENT_REQUIRED_TYPES and not _has_action_intent(prompt):
+            return (
+                "Plugin execution denial skipped for "
+                f"'{manifest.plugin_id}' because the prompt matched manifest terms "
+                "but did not contain an explicit action intent."
+            )
+
+        return None
+
+    @staticmethod
+    def _declined_mutation_requires_failure(
+        manifest: PluginManifest,
+        prompt: str,
+    ) -> bool:
+        """Return whether a declined action must not fall through to the LLM."""
+        action_type = (
+            manifest.execution_policy.action_type
+            if manifest.execution_policy is not None
+            else None
+        )
+        return (
+            action_type in _ACTION_INTENT_REQUIRED_TYPES
+            and _has_action_intent(prompt)
+            and PluginRouter._candidate_matches_prompt(manifest, prompt)
+        )
+
 
 def _significant_tokens(text: str) -> set[str]:
     """Return normalized non-trivial words for manifest-level routing checks."""
@@ -602,6 +762,44 @@ def _significant_tokens(text: str) -> set[str]:
         elif token.endswith("s") and len(token) > 3:
             expanded.add(token[:-1])
     return expanded
+
+
+def _has_action_intent(text: str) -> bool:
+    """Return whether text contains an explicit command-style action verb."""
+    ordered_tokens = re.findall(r"[a-z0-9]+", str(text or "").lower())
+    if ordered_tokens and ordered_tokens[0] in _FACTUAL_QUESTION_STARTERS:
+        return False
+
+    tokens = set(ordered_tokens)
+    return bool(tokens.intersection(_ACTION_INTENT_TERMS))
+
+
+def _candidate_prompt(prompt: str, candidate: Any) -> str:
+    """Return routed prompt text for an explicitly addressed selected candidate."""
+    extracted = getattr(candidate, "extracted_params", None)
+    if isinstance(extracted, dict):
+        routed_prompt = str(extracted.get("routed_prompt") or "").strip()
+        if routed_prompt:
+            return routed_prompt
+    return prompt
+
+
+def _with_arbitration_provenance(
+    provenance: dict[str, Any],
+    request_context: dict[str, Any],
+    candidate: Any,
+) -> dict[str, Any]:
+    """Attach core arbitration details to plugin execution provenance."""
+    merged = dict(provenance)
+    arbitration = request_context.get("arbitration")
+    if isinstance(arbitration, dict):
+        merged["arbitration"] = arbitration
+    if isinstance(candidate, PluginRouteCandidate):
+        merged["selected_capability_id"] = candidate.capability_id
+        merged["selected_intent_name"] = candidate.intent_name
+        merged["route_confidence"] = candidate.confidence
+        merged["route_match_reasons"] = tuple(candidate.match_reasons)
+    return merged
 
 
 def _resolve_execution_timeout_seconds(

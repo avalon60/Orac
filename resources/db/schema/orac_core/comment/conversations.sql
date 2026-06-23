@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:comment_orac_core_comment_conversations context:core labels:core stripComments:false runOnChange:true
 comment on table orac_core.conversations is
   'One row per dialog thread; holds session key and default LLM.'
 ;

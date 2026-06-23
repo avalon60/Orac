@@ -117,9 +117,11 @@ from orac_voice.wake_stt_phrase import _matches_wake_phrase
 from orac_voice.voice_loop_local import _is_exit_phrase
 from orac_voice.voice_loop_local import _create_activation_listener
 from orac_voice.voice_loop_local import _create_barge_in_controller
+from orac_voice.voice_loop_local import _is_probable_tts_echo
 from orac_voice.voice_loop_local import _load_activation_mode
 from orac_voice.voice_loop_local import _load_record_mode
 from orac_voice.voice_loop_local import _load_wake_rearm_seconds
+from orac_voice.voice_loop_local import _load_wake_capture_delay_seconds
 from orac_voice.voice_loop_local import _send_configured_runtime_identity
 from orac_voice.voice_loop_local import _send_orac_prompt
 from orac_voice.voice_loop_local import _transcribe_once
@@ -128,6 +130,8 @@ from orac_voice.voice_loop_local import _voice_session_async
 from orac_voice.voice_loop_local import build_parser
 from orac_voice.voice_loop_local import ORAC_BACKEND_UNAVAILABLE_MESSAGE
 from orac_voice.voice_turn_controller import VoiceTurnController
+from orac_voice.voice_turn_controller import _display_runtime_identity_from_frame
+from orac_voice.voice_turn_controller import _display_user_identity_from_frame
 
 
 class _FakeTtsEngine:
@@ -1149,6 +1153,83 @@ class OracVoiceTests(unittest.TestCase):
     )
     self.assertEqual(transcript_events[-1]["text"], "Turn the lights on")
 
+  def test_tts_echo_detection_matches_recent_spoken_answer(self) -> None:
+    """Recent STT text matching Orac's own answer should be treated as echo."""
+    reference = (
+      "Val Doonican was 88 when he died. He was born on 3 February "
+      "1927 and died on 2 July 2015."
+    )
+    recognised = (
+      "Valdunican was 88 when he died he was born on 3rd of February "
+      "1927 and died on 2nd of July 2015"
+    )
+
+    self.assertTrue(
+      _is_probable_tts_echo(
+        recognised,
+        reference,
+        reference_finished_at=10.0,
+        now=11.0,
+      )
+    )
+
+  def test_tts_echo_detection_does_not_match_unrelated_command(self) -> None:
+    """Unrelated commands should not be suppressed as output echo."""
+    self.assertFalse(
+      _is_probable_tts_echo(
+        "turn the kitchen light on",
+        "Val Doonican was 88 when he died.",
+        reference_finished_at=10.0,
+        now=11.0,
+      )
+    )
+
+  def test_transcribe_once_can_suppress_echo_user_transcript_event(self) -> None:
+    """Suppressed echo text should not be displayed as a user utterance."""
+
+    class _FixedCapture:
+      def __init__(self) -> None:
+        self.record_seconds = None
+
+      def record_to_wav(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        record_seconds: float | None,
+      ) -> Path:
+        return Path("/tmp/fake-stt.wav")
+
+      def cancel(self) -> None:
+        return None
+
+    args = build_parser().parse_args(["--listen-once"])
+    sender = _FakeDisplaySender()
+
+    with patch(
+      "orac_voice.voice_loop_local._load_record_mode",
+      return_value="fixed",
+    ):
+      _session_id, _turn_id, recognised_text = _transcribe_once(
+        args,
+        capture=_FixedCapture(),
+        stt_engine=_FakeWakeStt("Val Doonican was 88 when he died."),
+        prompt=None,
+        display_sender=sender,
+        transcript_filter=lambda _text: False,
+      )
+
+    self.assertEqual(recognised_text, "Val Doonican was 88 when he died.")
+    transcript_events = [
+      event
+      for event in sender.events
+      if str(event.get("event", "")).startswith("transcript.")
+    ]
+    self.assertEqual(
+      [event["event"] for event in transcript_events],
+      ["transcript.turn.clear"],
+    )
+
   def test_voice_cli_accepts_record_mode_override(self) -> None:
     """Voice CLI should expose fixed and VAD recording modes."""
     fixed_args = build_parser().parse_args(
@@ -1544,6 +1625,12 @@ class OracVoiceTests(unittest.TestCase):
   def test_wake_rearm_delay_uses_configured_default(self) -> None:
     """Voice sessions should pause briefly before listening again."""
     self.assertGreaterEqual(_load_wake_rearm_seconds(), 0.0)
+    self.assertLessEqual(_load_wake_rearm_seconds(), 0.2)
+
+  def test_wake_capture_delay_uses_configured_default(self) -> None:
+    """Voice sessions should minimise delay before command capture."""
+    self.assertGreaterEqual(_load_wake_capture_delay_seconds(), 0.0)
+    self.assertLessEqual(_load_wake_capture_delay_seconds(), 0.2)
 
   def test_porcupine_activation_reports_missing_dependency(self) -> None:
     """Porcupine mode should fail clearly when dependency is unavailable."""
@@ -4223,6 +4310,45 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(sender.events[0]["llm_source"], "configured_default")
     self.assertEqual(sender.events[0]["session_id"], "voice-session")
 
+  def test_model_only_runtime_frame_does_not_reset_persona(self) -> None:
+    """Model-only protocol frames should not imply the DEFAULT persona."""
+    identity = _display_runtime_identity_from_frame(
+      {
+        "meta": {
+          "model": "qwen3.5-48K:latest",
+          "llm_source": "conversation",
+        },
+      }
+    )
+
+    self.assertIsNone(identity)
+
+  def test_display_user_identity_uses_registered_display_name(self) -> None:
+    """Registered user metadata should expose only the display-safe name."""
+    identity = _display_user_identity_from_frame(
+      {
+        "meta": {
+          "user_registration": "registered",
+          "user_display_name": "Clive",
+        },
+      }
+    )
+
+    self.assertEqual(identity, ("registered", "Clive"))
+
+  def test_display_user_identity_treats_anonymous_as_unverified(self) -> None:
+    """Anonymous user metadata should clear any display name."""
+    identity = _display_user_identity_from_frame(
+      {
+        "meta": {
+          "user_registration": "anonymous",
+          "user_display_name": "Ignored",
+        },
+      }
+    )
+
+    self.assertEqual(identity, ("anonymous", ""))
+
   async def test_voice_turn_controller_handles_non_streaming_response(
     self,
   ) -> None:
@@ -4263,6 +4389,139 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
       ["transcript.orac.start", "transcript.orac.final"],
     )
     self.assertEqual([state[0] for state in sender.states], ["thinking", "idle"])
+
+  async def test_voice_turn_controller_reports_spoken_text_on_voice_complete(
+    self,
+  ) -> None:
+    """Spoken text chunks should be available for post-playback echo filtering."""
+    reader = self._reader_with_frames(
+      [
+        {
+          "v": 1,
+          "type": "stream_start",
+          "reply_to": "req_current",
+          "payload": {},
+        },
+        {
+          "v": 1,
+          "type": "text_chunk",
+          "reply_to": "req_current",
+          "payload": {
+            "chunk": "Des O'Connor was 88 when he died.",
+            "turn_id": "req_current",
+          },
+        },
+        {
+          "v": 1,
+          "type": "tts_playback_started",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+        },
+        {
+          "v": 1,
+          "type": "tts_playback_finished",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+        },
+        {
+          "v": 1,
+          "type": "voice_turn_complete",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current"},
+        },
+      ]
+    )
+    writer = _FakeStreamWriter()
+    final_texts: list[str] = []
+    controller = VoiceTurnController(
+      reader=reader,
+      writer=writer,
+      prompt_text="How old was Des O'Connor?",
+      voice_session_id="voice-session",
+      display_sender=_FakeDisplaySender(),
+      on_final_text=final_texts.append,
+    )
+
+    status = await controller.run()
+
+    self.assertEqual(status, 0)
+    self.assertEqual(
+      final_texts,
+      ["Des O'Connor was 88 when he died."],
+    )
+
+  async def test_voice_turn_controller_reports_text_before_voice_complete(
+    self,
+  ) -> None:
+    """Assistant text should be available early for echo filtering."""
+    reader = self._reader_with_frames(
+      [
+        {
+          "v": 1,
+          "type": "stream_start",
+          "reply_to": "req_current",
+          "payload": {},
+        },
+        {
+          "v": 1,
+          "type": "text_delta",
+          "reply_to": "req_current",
+          "payload": {"delta": "I found results, "},
+        },
+        {
+          "v": 1,
+          "type": "text_delta",
+          "reply_to": "req_current",
+          "payload": {"delta": "but they did not appear relevant."},
+        },
+        {
+          "v": 1,
+          "type": "text_chunk",
+          "reply_to": "req_current",
+          "payload": {
+            "chunk": "I found results, but they did not appear relevant.",
+            "turn_id": "req_current",
+          },
+        },
+        {
+          "v": 1,
+          "type": "tts_playback_started",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+        },
+        {
+          "v": 1,
+          "type": "tts_playback_finished",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+        },
+        {
+          "v": 1,
+          "type": "voice_turn_complete",
+          "reply_to": "req_current",
+          "payload": {"turn_id": "req_current"},
+        },
+      ]
+    )
+    writer = _FakeStreamWriter()
+    final_texts: list[str] = []
+    controller = VoiceTurnController(
+      reader=reader,
+      writer=writer,
+      prompt_text="Check that.",
+      voice_session_id="voice-session",
+      display_sender=_FakeDisplaySender(),
+      on_final_text=final_texts.append,
+    )
+
+    status = await controller.run()
+
+    self.assertEqual(status, 0)
+    self.assertIn("I found results,", final_texts)
+    self.assertIn(
+      "I found results, but they did not appear relevant.",
+      final_texts,
+    )
 
   async def test_voice_turn_controller_maps_retrieval_frames_to_display_states(
     self,
@@ -5356,6 +5615,88 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     )
     self.assertTrue(all(state[3] == "req_current" for state in sender.states))
 
+  async def test_plugin_response_uses_standard_display_state_lifecycle(
+    self,
+  ) -> None:
+    """Plugin provenance must not bypass speaking and playback completion."""
+    frames = [
+      {
+        "v": 1,
+        "type": "stream_start",
+        "reply_to": "req_current",
+        "meta": {"source": "plugin_execution"},
+        "payload": {},
+      },
+      {
+        "v": 1,
+        "type": "text_delta",
+        "reply_to": "req_current",
+        "meta": {"source": "plugin_execution"},
+        "payload": {"delta": "The TV light is on."},
+      },
+      {
+        "v": 1,
+        "type": "text_chunk",
+        "reply_to": "req_current",
+        "meta": {"source": "plugin_execution"},
+        "payload": {
+          "chunk": "The TV light is on.",
+          "turn_id": "req_current",
+        },
+      },
+      {
+        "v": 1,
+        "type": "stream_end",
+        "reply_to": "req_current",
+        "meta": {"source": "plugin_execution"},
+        "payload": {"stop_reason": "stop"},
+      },
+      {
+        "v": 1,
+        "type": "response",
+        "reply_to": "req_current",
+        "meta": {
+          "source": "plugin_execution",
+          "provenance": {"plugin_id": "home_assistant"},
+        },
+        "payload": {"content": "The TV light is on."},
+      },
+      {
+        "v": 1,
+        "type": "tts_playback_started",
+        "reply_to": "req_current",
+        "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+      },
+      {
+        "v": 1,
+        "type": "tts_playback_finished",
+        "reply_to": "req_current",
+        "payload": {"turn_id": "req_current", "utterance_id": "utt1"},
+      },
+      {
+        "v": 1,
+        "type": "voice_turn_complete",
+        "reply_to": "req_current",
+        "payload": {"turn_id": "req_current"},
+      },
+    ]
+    sender = _FakeDisplaySender()
+    controller = VoiceTurnController(
+      reader=self._reader_with_frames(frames),
+      writer=_FakeStreamWriter(),
+      prompt_text="Is the TV light on?",
+      voice_session_id="voice-session",
+      display_sender=sender,
+    )
+
+    status = await controller.run()
+
+    self.assertEqual(status, 0)
+    self.assertEqual(
+      [state[0] for state in sender.states],
+      ["thinking", "speaking", "idle"],
+    )
+
   async def test_voice_prompt_forwards_runtime_identity_to_display(self) -> None:
     """Prompt handling should expose the current model and persona."""
     reader = asyncio.StreamReader()
@@ -5397,6 +5738,16 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
         },
         "payload": {"content": "OK."},
       },
+      {
+        "v": 1,
+        "type": "voice_turn_complete",
+        "reply_to": "req_current",
+        "meta": {
+          "model": "test-model",
+          "llm_source": "configured_fallback",
+        },
+        "payload": {"turn_id": "req_current", "request_id": "req_current"},
+      },
     ]
     for frame in frames:
       reader.feed_data((json.dumps(frame) + "\n").encode("utf-8"))
@@ -5421,6 +5772,48 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(runtime_events[0]["model"], "test-model")
     self.assertEqual(runtime_events[0]["persona"], "Standard Orac")
     self.assertEqual(runtime_events[0]["llm_source"], "configured_fallback")
+
+  async def test_voice_prompt_forwards_user_identity_to_display(self) -> None:
+    """Prompt handling should expose registered user display metadata."""
+    reader = asyncio.StreamReader()
+    writer = _FakeStreamWriter()
+    frames = [
+      {
+        "v": 1,
+        "type": "response",
+        "reply_to": "req_current",
+        "meta": {
+          "model": "test-model",
+          "personality_code": "DEFAULT",
+          "personality_name": "Standard Orac",
+          "user_registration": "registered",
+          "user_display_name": "Clive",
+        },
+        "payload": {"content": "OK."},
+      },
+    ]
+    for frame in frames:
+      reader.feed_data((json.dumps(frame) + "\n").encode("utf-8"))
+    reader.feed_eof()
+
+    sender = _FakeDisplaySender()
+    with contextlib.redirect_stdout(io.StringIO()):
+      status = await _send_orac_prompt(
+        reader=reader,
+        writer=writer,
+        prompt_text="current",
+        voice_session_id="voice-session",
+        display_sender=sender,
+      )
+
+    user_events = [
+      event for event in sender.events
+      if event.get("event") == "user.identity"
+    ]
+    self.assertEqual(status, 0)
+    self.assertEqual(len(user_events), 1)
+    self.assertEqual(user_events[0]["user_registration"], "registered")
+    self.assertEqual(user_events[0]["user_display_name"], "Clive")
 
   async def test_voice_prompt_stays_speaking_until_last_chunk_finishes(
     self,
@@ -6025,6 +6418,96 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
     )
     self.assertEqual(sender.states[-1][0], "idle")
     self.assertEqual(sender.states[-1][1], "Listening for wake word")
+
+  async def test_voice_session_marks_rearm_before_wake_listener_is_ready(
+    self,
+  ) -> None:
+    """The display should not claim wake listening during the rearm pause."""
+    args = build_parser().parse_args(
+      ["--voice-session", "--activation-mode", "openwakeword"]
+    )
+    sender = _FakeDisplaySender()
+    activation_listener = _FakeActivationListener(
+      [
+        types.SimpleNamespace(activated=True, exit_requested=False),
+        types.SimpleNamespace(activated=False, exit_requested=True),
+      ]
+    )
+    transcriptions = iter([
+      ("voice-session", "turn-1", "First question"),
+    ])
+    sleep_calls: list[float] = []
+
+    async def _fake_open_connection(*_args, **_kwargs):
+      return asyncio.StreamReader(), _FakeStreamWriter()
+
+    async def _fake_send_orac_prompt(**_kwargs) -> int:
+      return 0
+
+    def _fake_transcribe_once(*_args, **_kwargs):
+      return next(transcriptions)
+
+    def _fake_sleep(seconds: float) -> None:
+      sleep_calls.append(seconds)
+
+    with patch(
+      "orac_voice.voice_loop_local.SoundDeviceAudioCapture.from_config",
+      return_value=_FakeWakeCapture(
+        VadCaptureResult(wav_path=Path("/tmp/fake-voice-capture.wav"))
+      ),
+    ):
+      with patch(
+        "orac_voice.voice_loop_local.FasterWhisperSttEngine.from_config",
+        return_value=object(),
+      ):
+        with patch(
+          "orac_voice.voice_loop_local._create_barge_in_controller",
+          return_value=None,
+        ):
+          with patch(
+            "orac_voice.voice_loop_local.DisplayEventSender.from_config",
+            return_value=sender,
+          ):
+            with patch(
+              "orac_voice.voice_loop_local._create_activation_listener",
+              return_value=activation_listener,
+            ):
+              with patch(
+                "orac_voice.voice_loop_local._load_wake_rearm_seconds",
+                return_value=0.2,
+              ):
+                with patch(
+                  "orac_voice.voice_loop_local._load_wake_capture_delay_seconds",
+                  return_value=0.0,
+                ):
+                  with patch(
+                    "orac_voice.voice_loop_local._transcribe_once",
+                    side_effect=_fake_transcribe_once,
+                  ):
+                    with patch(
+                      "orac_voice.voice_loop_local._send_orac_prompt",
+                      side_effect=_fake_send_orac_prompt,
+                    ):
+                      with patch(
+                        "orac_voice.voice_loop_local.asyncio.open_connection",
+                        side_effect=_fake_open_connection,
+                      ):
+                        with patch(
+                          "orac_voice.voice_loop_local.time.sleep",
+                          side_effect=_fake_sleep,
+                        ):
+                          status = await _voice_session_async(args)
+
+    self.assertEqual(status, 0)
+    self.assertEqual(sleep_calls, [0.2])
+    state_pairs = [(state[0], state[1]) for state in sender.states]
+    rearm_index = state_pairs.index(("idle", "Re-arming wake word"))
+    next_idle_index = state_pairs.index(
+      ("idle", "Listening for wake word"),
+      rearm_index + 1,
+    )
+    self.assertLess(rearm_index, next_idle_index)
+    self.assertNotIn(("listening", "Listening for wake word"), state_pairs)
 
   async def test_voice_session_continues_after_backend_connection_refused(
     self,

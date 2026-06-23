@@ -62,6 +62,23 @@ def _set_file_path(p: Path) -> None:
     setattr(logr, "_ORAC_LOG_FILE", str(p))
 
 
+def _fd_targets_path(fd: int, path: Path) -> bool:
+    """Return whether a process file descriptor points at ``path``."""
+    try:
+        target = os.readlink(f"/proc/self/fd/{fd}")
+    except OSError:
+        return False
+
+    if not target.startswith("/"):
+        return False
+
+    target_path = Path(target.removesuffix(" (deleted)"))
+    try:
+        return os.path.samefile(target_path, path)
+    except OSError:
+        return target_path.resolve() == path.resolve()
+
+
 # -------------
 # Run ID helper
 # -------------
@@ -234,8 +251,14 @@ class Logger:
 
                 logr.info(f"{Icons.tick} Logging initialized at {self.log_file}")
 
-                # Optional stderr sink
-                if self.include_stderr:
+                # Optional stderr sink. If the process was launched with
+                # stderr redirected to the same log file, adding both sinks
+                # duplicates every line.
+                include_stderr = self.include_stderr and not _fd_targets_path(
+                    2,
+                    self.log_file,
+                )
+                if include_stderr:
                     Logger._stderr_sink_id = logr.add(
                         sink=stderr,
                         level=self.log_level,

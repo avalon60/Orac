@@ -14,6 +14,9 @@ prompt === tables ===
 @table/messages.sql
 @table/plugin_invocations.sql
 @table/plugin_audit_events.sql
+@table/plugin_db_deployments.sql
+@table/plugin_apex_apps.sql
+@table/plugin_registry.sql
 @table/orac_search_queries.sql
 @table/orac_search_results.sql
 @table/orac_fetched_sources.sql
@@ -54,6 +57,13 @@ prompt === indexes ===
 @index/plg_inv_users_fk1_idx.sql
 @index/plg_audevt_pk.sql
 @index/plg_audevt_plg_inv_fk1_idx.sql
+@index/plg_dbdep_pk.sql
+@index/plg_dbdep_uk1_idx.sql
+@index/plg_apxapp_pk.sql
+@index/plg_apxapp_uk1_idx.sql
+@index/plg_apxapp_idx1.sql
+@index/plgreg_pk.sql
+@index/plgreg_uk1_idx.sql
 @index/orac_srch_q_pk.sql
 @index/orac_srch_res_pk.sql
 @index/orac_srch_res_srch_q_fk1_idx.sql
@@ -83,6 +93,9 @@ prompt === constraints_pk ===
 @constraint_pk/mesgs_pk.sql
 @constraint_pk/plg_inv_pk.sql
 @constraint_pk/plg_audevt_pk.sql
+@constraint_pk/plg_dbdep_pk.sql
+@constraint_pk/plg_apxapp_pk.sql
+@constraint_pk/plgreg_pk.sql
 @constraint_pk/orac_srch_q_pk.sql
 @constraint_pk/orac_srch_res_pk.sql
 @constraint_pk/orac_fch_src_pk.sql
@@ -102,6 +115,9 @@ prompt === constraints_uc ===
 @constraint_uc/mesg_emb_uk1.sql
 @constraint_uc/mesgs_uk1.sql
 @constraint_uc/orpers_uk1.sql
+@constraint_uc/plg_dbdep_uk1.sql
+@constraint_uc/plg_apxapp_uk1.sql
+@constraint_uc/plgreg_uk1.sql
 @constraint_uc/user_pref_uk1.sql
 @constraint_uc/users_uk1.sql
 
@@ -151,6 +167,10 @@ prompt === constraints_other ===
 @constraint_other/plg_audevt_ck1.sql
 @constraint_other/plg_audevt_ck2.sql
 @constraint_other/plg_audevt_ck3.sql
+@constraint_other/plg_dbdep_ck1.sql
+@constraint_other/plg_apxapp_ck1.sql
+@constraint_other/plg_apxapp_ck2.sql
+@constraint_other/plgreg_ck1.sql
 @constraint_other/orpers_ck1.sql
 @constraint_other/orpers_ck2.sql
 @constraint_other/orpers_ck3.sql
@@ -171,6 +191,9 @@ prompt === comments ===
 @comment/messages.sql
 @comment/plugin_invocations.sql
 @comment/plugin_audit_events.sql
+@comment/plugin_db_deployments.sql
+@comment/plugin_apex_apps.sql
+@comment/plugin_registry.sql
 @comment/orac_personalities.sql
 @comment/user_preferences.sql
 @comment/users.sql
@@ -186,6 +209,9 @@ prompt === triggers ===
 @trigger/mesgs_bu.sql
 @trigger/plg_inv_bu.sql
 @trigger/plg_audevt_bu.sql
+@trigger/plg_dbdep_bu.sql
+@trigger/plg_apxapp_bu.sql
+@trigger/plgreg_bu.sql
 @trigger/user_pe_bu.sql
 @trigger/user_pref_bu.sql
 @trigger/user_syns_bu.sql

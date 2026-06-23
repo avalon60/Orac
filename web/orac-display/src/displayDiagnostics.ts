@@ -155,7 +155,6 @@ export function attachCanvasDiagnostics(
 
   const handleContextRestored = (event: Event) => {
     logDisplayDiagnostic('webglcontextrestored', event);
-    onRecoveryRequested('webgl-context-restored');
   };
 
   canvas.addEventListener('webglcontextlost', handleContextLost);

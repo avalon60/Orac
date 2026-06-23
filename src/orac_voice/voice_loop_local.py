@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from difflib import SequenceMatcher
 from datetime import datetime
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import socket
 import subprocess
 import time
+from typing import Callable
 import uuid
 
 from loguru import logger
@@ -66,9 +69,15 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 DEFAULT_SESSION_EXIT_PHRASES = ("exit", "quit", "stop listening", "goodbye")
 DEFAULT_RECORD_MODE = "fixed"
-DEFAULT_WAKE_REARM_SECONDS = 1.0
+DEFAULT_WAKE_REARM_SECONDS = 0.2
+DEFAULT_WAKE_CAPTURE_DELAY_SECONDS = 0.1
 DEFAULT_CONSOLE_TIMESTAMPS = True
 DEFAULT_DISPLAY_BRIDGE_SCRIPT = "web/orac-display/bridge.js"
+DEFAULT_TTS_ECHO_SUPPRESSION_SECONDS = 8.0
+TTS_ECHO_MIN_WORDS = 5
+TTS_ECHO_SIMILARITY_THRESHOLD = 0.72
+WAKE_LISTENING_MESSAGE = "Listening for wake word"
+WAKE_REARMING_MESSAGE = "Re-arming wake word"
 ORAC_BACKEND_UNAVAILABLE_MESSAGE = (
   "Python stack is not running. Start it with bin/orac-ctl.sh start "
   "or bin/orac.sh start, then try again."
@@ -118,6 +127,59 @@ def _send_display_event(
   display_sender.send(event_payload)
 
 
+def _normalise_echo_text(text: str) -> str:
+  """Return a conservative normal form for comparing STT echo text."""
+  return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def _is_probable_tts_echo(
+  recognised_text: str,
+  reference_text: str,
+  *,
+  reference_finished_at: float | None = None,
+  now: float | None = None,
+  suppression_seconds: float = DEFAULT_TTS_ECHO_SUPPRESSION_SECONDS,
+) -> bool:
+  """Return whether recognised speech is likely Orac's own recent TTS output.
+
+  Args:
+    recognised_text: Text just returned by speech-to-text.
+    reference_text: Last assistant response spoken by Orac.
+    reference_finished_at: Monotonic timestamp when the reference response was
+      observed, or ``None`` when no timing guard should be applied.
+    now: Current monotonic timestamp. Supplying this keeps tests deterministic.
+    suppression_seconds: Maximum age for echo suppression.
+
+  Returns:
+    ``True`` when the recognised text closely matches recent Orac output.
+  """
+  recognised = _normalise_echo_text(recognised_text)
+  reference = _normalise_echo_text(reference_text)
+  if not recognised or not reference:
+    return False
+
+  if reference_finished_at is not None:
+    current_time = time.perf_counter() if now is None else now
+    if current_time - reference_finished_at > suppression_seconds:
+      return False
+
+  recognised_words = recognised.split()
+  reference_words = reference.split()
+  if len(recognised_words) < TTS_ECHO_MIN_WORDS:
+    return False
+
+  recognised_set = set(recognised_words)
+  reference_set = set(reference_words)
+  overlap = len(recognised_set & reference_set) / max(1, len(recognised_set))
+  similarity = SequenceMatcher(None, recognised, reference).ratio()
+  return (
+    recognised in reference
+    or reference in recognised
+    or similarity >= TTS_ECHO_SIMILARITY_THRESHOLD
+    or (overlap >= 0.7 and len(recognised_words) >= 8)
+  )
+
+
 def _display_runtime_identity_from_frame(
   frame: dict[str, object],
 ) -> tuple[str, str, str, str, str] | None:
@@ -131,10 +193,9 @@ def _display_runtime_identity_from_frame(
   personality_name = str(meta.get("personality_name") or "").strip()
   llm_source = str(meta.get("llm_source") or "").strip()
   persona = personality_name or personality_code
-  if model and not persona:
-    personality_code = "DEFAULT"
-    persona = personality_code
   if not model and not persona:
+    return None
+  if model and not persona:
     return None
   return model, persona, personality_code, personality_name, llm_source
 
@@ -414,6 +475,21 @@ def _load_wake_rearm_seconds() -> float:
   )
 
 
+def _load_wake_capture_delay_seconds() -> float:
+  """Load the delay between wake detection and command capture."""
+  config_mgr = _voice_config_manager()
+  return max(
+    0.0,
+    float(
+      config_mgr.config_value(
+        "voice",
+        "wake_capture_delay_seconds",
+        default=str(DEFAULT_WAKE_CAPTURE_DELAY_SECONDS),
+      )
+    ),
+  )
+
+
 def _create_barge_in_controller() -> BargeInController | OpenWakeWordBargeInController | None:
   """Create the configured barge-in controller, if enabled."""
   config_mgr = _voice_config_manager()
@@ -620,6 +696,7 @@ def _transcribe_once(
   session_id: str | None = None,
   prompt: str | None = "Press Enter to record speech.",
   display_sender: DisplayEventSender | None = None,
+  transcript_filter: Callable[[str], bool] | None = None,
 ) -> tuple[str, str, str]:
   """Capture and transcribe one local microphone sample.
 
@@ -630,6 +707,9 @@ def _transcribe_once(
     session_id (str | None): Optional stable voice session id.
     prompt (str): Prompt shown before recording.
     display_sender (DisplayEventSender | None): Optional display event sender.
+    transcript_filter (Callable[[str], bool] | None): Optional predicate used
+      to suppress display of recognised text that should not become a user
+      turn, such as recent TTS echo.
 
   Returns:
     tuple[str, str, str]: Session id, turn id, and recognised text.
@@ -739,13 +819,14 @@ def _transcribe_once(
       ),
       transcribe_finished_at - timing_started_at,
     )
-    _send_display_event(
-      display_sender,
-      "transcript.user.final",
-      session_id=session_id,
-      turn_id=turn_id,
-      text=recognised_text,
-    )
+    if transcript_filter is None or transcript_filter(recognised_text):
+      _send_display_event(
+        display_sender,
+        "transcript.user.final",
+        session_id=session_id,
+        turn_id=turn_id,
+        text=recognised_text,
+      )
     return session_id, turn_id, recognised_text
   except KeyboardInterrupt:
     capture.cancel()
@@ -828,6 +909,8 @@ async def _send_orac_prompt(
   cancel_host: str | None = None,
   cancel_port: int | None = None,
   display_sender: DisplayEventSender | None = None,
+  completion_idle_message: str = WAKE_LISTENING_MESSAGE,
+  on_final_text: Callable[[str], None] | None = None,
 ) -> int:
   """Send one prompt on an existing Orac TCP connection."""
   controller = VoiceTurnController(
@@ -842,6 +925,8 @@ async def _send_orac_prompt(
     cancel_request=_send_voice_cancel_request,
     console_line=_console_line,
     console_start=_console_start,
+    completion_idle_message=completion_idle_message,
+    on_final_text=on_final_text,
   )
   return await controller.run()
 
@@ -934,6 +1019,7 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
   session_id = f"local-voice-session-{uuid.uuid4().hex[:12]}"
   exit_phrases = _load_exit_phrases()
   wake_rearm_seconds = _load_wake_rearm_seconds()
+  wake_capture_delay_seconds = _load_wake_capture_delay_seconds()
   capture = SoundDeviceAudioCapture.from_config(record_seconds=args.record_seconds)
   stt_engine = FasterWhisperSttEngine.from_config()
   barge_in_controller = _create_barge_in_controller()
@@ -956,7 +1042,37 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
   reader: asyncio.StreamReader | None = None
   writer: asyncio.StreamWriter | None = None
   capture_next_command = False
-  next_idle_message = "Listening for wake word"
+  next_idle_message = WAKE_LISTENING_MESSAGE
+  recent_orac_responses: list[tuple[str, float]] = []
+
+  def _remember_orac_response(text: str) -> None:
+    text = str(text or "").strip()
+    if not text:
+      return
+    now = time.perf_counter()
+    recent_orac_responses[:] = [
+      (known_text, known_at)
+      for known_text, known_at in recent_orac_responses
+      if now - known_at <= DEFAULT_TTS_ECHO_SUPPRESSION_SECONDS
+    ]
+    if recent_orac_responses and recent_orac_responses[-1][0] == text:
+      recent_orac_responses[-1] = (text, now)
+    else:
+      recent_orac_responses.append((text, now))
+    del recent_orac_responses[:-6]
+
+  def _accept_user_transcript(text: str) -> bool:
+    now = time.perf_counter()
+    return not any(
+      _is_probable_tts_echo(
+        text,
+        known_text,
+        reference_finished_at=known_at,
+        now=now,
+      )
+      for known_text, known_at in recent_orac_responses
+    )
+
   if not _orac_backend_reachable(args.host, args.port):
     next_idle_message = ORAC_BACKEND_UNAVAILABLE_MESSAGE
     _console_line(
@@ -978,7 +1094,7 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
             message=next_idle_message,
             session_id=session_id,
           )
-          next_idle_message = "Listening for wake word"
+          next_idle_message = WAKE_LISTENING_MESSAGE
           activation = activation_listener.wait_for_activation(
             session_id=session_id
           )
@@ -993,8 +1109,9 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
             message="Wake word detected",
             session_id=session_id,
           )
-          # Brief delay to allow the "wake_detected" animation to play
-          time.sleep(0.4)
+          if wake_capture_delay_seconds > 0:
+            # Keep this short so fast follow-up speech is not missed.
+            time.sleep(wake_capture_delay_seconds)
         else:
           logger.info("Barge-in return mode: command_capture")
           capture_next_command = False
@@ -1006,12 +1123,13 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
           session_id=session_id,
           prompt=None,
           display_sender=display_sender,
+          transcript_filter=_accept_user_transcript,
         )
       except NoSpeechDetectedError as exc:
         _console_line(str(exc))
         display_sender.send_state(
           "idle",
-          message="Listening for wake word",
+          message=WAKE_LISTENING_MESSAGE,
           session_id=session_id,
         )
         continue
@@ -1021,6 +1139,18 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
 
       if not recognised_text.strip():
         _console_line("No speech recognised.")
+        continue
+      if not _accept_user_transcript(recognised_text):
+        logger.warning(
+          "Suppressing probable TTS echo as user turn: session={} words={}",
+          session_id,
+          len(recognised_text.split()),
+        )
+        display_sender.send_state(
+          "idle",
+          message=WAKE_LISTENING_MESSAGE,
+          session_id=session_id,
+        )
         continue
 
       _console_line(f"You: {recognised_text}")
@@ -1040,6 +1170,8 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
           cancel_host=args.host,
           cancel_port=args.port,
           display_sender=display_sender,
+          completion_idle_message=WAKE_REARMING_MESSAGE,
+          on_final_text=_remember_orac_response,
         )
       except ConnectionRefusedError:
         _console_line(
@@ -1078,7 +1210,7 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
         if display_sender is not None:
           display_sender.send_state(
             "idle",
-            message="Listening for wake word",
+            message=WAKE_LISTENING_MESSAGE,
             session_id=session_id,
           )
         if writer is not None:
@@ -1095,13 +1227,18 @@ async def _voice_session_async(args: argparse.Namespace) -> int:
         _console_line(
           f"Re-arming wake word in {wake_rearm_seconds:.1f}s..."
         )
+        display_sender.send_state(
+          "idle",
+          message=WAKE_REARMING_MESSAGE,
+          session_id=session_id,
+        )
         time.sleep(wake_rearm_seconds)
   finally:
     display_sender.send(
       DisplayEvent(
         event="state_changed",
         state="idle",
-        message="Listening for wake word",
+        message=WAKE_LISTENING_MESSAGE,
         session_id=session_id,
       )
     )

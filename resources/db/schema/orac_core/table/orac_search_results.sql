@@ -1,3 +1,8 @@
+--liquibase formatted sql
+
+--changeset clive:create_table_orac_core_table_orac_search_results context:core labels:core stripComments:false
+--preconditions onFail:HALT onError:HALT
+--precondition-sql-check expectedResult:0 select count(1) from all_tables where owner = 'ORAC_CORE' and table_name = 'ORAC_SEARCH_RESULTS';
 -- __author__: clive
 -- __date__: 2026-05-26
 -- __description__: stores structured search results for explicit retrieval cache
@@ -27,3 +32,5 @@ create table orac_core.orac_search_results
 )
 ;
 
+
+--rollback drop table orac_core.orac_search_results purge;

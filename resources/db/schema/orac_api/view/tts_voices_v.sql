@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset clive:tts_voices_v_create stripComments:false runOnChange:true
+--changeset clive:tts_voices_v_create stripComments:false runOnChange:true context:core labels:core
 
 create or replace force view orac_api.tts_voices_v as
    select

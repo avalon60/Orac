@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_trigger_orac_code_trigger_user_pref_v_iud context:core labels:core stripComments:false splitStatements:false endDelimiter:/ runOnChange:true
 -- __author__: clive
 -- __date__: 2026-04-26
 -- __description__: writable support for the ORAC_CODE user preferences maintenance view
@@ -69,3 +72,5 @@ begin
   end if;
 end;
 /
+
+--rollback drop trigger orac_code.user_pref_v_iud;

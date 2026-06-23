@@ -44,6 +44,7 @@ from orac_voice.tts_voice_catalog import refresh_tts_voice_catalog
 from orac_voice.tts_voice_catalog import resolve_tts_voice_selection
 from orac_voice.voice_events import VoiceEvent
 from model.plugin_audit_adapter import PluginAuditAdapter
+from model.plugin_arbitration import PluginArbiter
 from model.plugin_routing import (
     HashEmbeddingProvider,
     PluginManager,
@@ -72,6 +73,9 @@ from orac_core.retrieval import parse_person_age_or_status_query
 from orac_core.retrieval import SourceFetcher
 from orac_core.retrieval import SearchRequest
 from orac_core.retrieval import detect_explicit_search_request
+from orac_core.retrieval import enforce_high_risk_factual_grounding
+from orac_core.retrieval import PersonFactResolver
+from orac_core import answer_date_reasoning_query
 from lib.session_manager import DBSession
 from lib.user_security import UserSecurity
 
@@ -298,6 +302,65 @@ def system_clock_line(prefs: dict) -> str:
     return "\n".join(lines)
 
 
+def answer_local_date_time_query(prompt: str, prefs: dict) -> str | None:
+    """Return a deterministic answer for direct local date/time questions.
+
+    Args:
+        prompt: Current user prompt.
+        prefs: Runtime preferences containing at least ``timezone`` and
+            optionally ``weather_location``.
+
+    Returns:
+        A concise local date/time answer, or ``None`` when the prompt is not a
+        direct local date/time query.
+    """
+    text = re.sub(r"[^a-z0-9'\s]", " ", str(prompt or "").lower())
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+
+    time_patterns = {
+        "what time is it",
+        "what's the time",
+        "whats the time",
+        "what is the time",
+        "tell me the time",
+        "tell me current time",
+        "tell me the current time",
+        "give me the time",
+        "give me current time",
+        "give me the current time",
+    }
+    date_patterns = {
+        "what date is it",
+        "what's today's date",
+        "whats today's date",
+        "what is today's date",
+        "tell me today's date",
+        "tell me the date",
+        "give me today's date",
+        "what day is it",
+    }
+    asks_time = text in time_patterns
+    asks_date = text in date_patterns
+    if not asks_time and not asks_date:
+        return None
+
+    tz_name = str((prefs or {}).get("timezone") or "Europe/London").strip()
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+        tz_name = "UTC"
+    now_local = datetime.now(timezone.utc).astimezone(tz)
+    location = str((prefs or {}).get("weather_location") or "").strip()
+    location_suffix = f" in {location}" if location else f" in {tz_name}"
+
+    if asks_time:
+        return f"It's {now_local.strftime('%H:%M')}{location_suffix}."
+    return f"Today is {now_local.strftime('%A, %-d %B %Y')}{location_suffix}."
+
+
 def _load_system_prompt_policy(policy_path: Path) -> dict[str, Any]:
     """Load the Orac system prompt policy from YAML."""
     with policy_path.open("r", encoding="utf-8") as policy_file:
@@ -493,8 +556,11 @@ def _orac_system_primer(meta: dict, policy: dict[str, Any]) -> str:
             "Your name is {assistant_name}. Only answer with the identity "
             "statement when the user explicitly asks who or what you are, who "
             "created you, or another direct identity/creator question. For "
-            "those questions, answer simply: \"{identity_answer}.\" Do not "
-            "include {assistant_name}'s identity or creator in replies to "
+            "those questions, answer from {assistant_name}'s own perspective, "
+            "for example: \"{identity_answer}.\" For creator-only questions, "
+            "say \"Clive Bostock is my creator\" or \"I was created by Clive "
+            "Bostock\"; never say Clive Bostock is the user's creator. Do "
+            "not include {assistant_name}'s identity or creator in replies to "
             "ordinary factual requests such as date, time, weather, "
             "calculations, or status questions unless the user asks for it."
         )
@@ -517,6 +583,12 @@ def _orac_system_primer(meta: dict, policy: dict[str, Any]) -> str:
             )
         else:
             lines.append(f"{assistant_name} was created by {creator_name}.")
+        lines.append(
+            f"When answering direct creator questions, speak as "
+            f"{assistant_name}: say \"{creator_name} is my creator\" or "
+            f"\"I was created by {creator_name}\"; never say the creator is "
+            "the user's creator."
+        )
     lines.append(
         "Do not volunteer details about Orac's implementation, underlying "
         "model, runtime, training, or vendor provenance."
@@ -796,6 +868,7 @@ class Orac:
             self.plugin_service_manager: PluginServiceManager | None = None
             self.retrieval_service: ExplicitRetrievalService | None = None
             self.retrieval_decision_service: RetrievalDecisionService | None = None
+            self.person_fact_resolver: PersonFactResolver | None = None
             self._retrieval_context_by_session: dict[str, RetrievalTurnContext] = {}
             self._pending_retrieval_by_session: dict[str, _PendingRetrievalIntent] = {}
             self._plugin_routing_ready = False
@@ -2144,11 +2217,16 @@ class Orac:
                 config_mgr=self.config_mgr,
                 context_manager=self.ctx,
                 confirmation_broker=self.plugin_confirmation_broker,
+                plugin_service_manager=self.plugin_service_manager,
             )
             self.plugin_execution_service = PluginExecutionService(
                 plugin_router=self.plugin_router,
                 logger=logger,
                 plugin_audit_adapter=self.plugin_audit_adapter,
+                plugin_arbiter=PluginArbiter(
+                    plugin_manager=self.plugin_manager,
+                    logger=logger,
+                ),
             )
             logger.log_info(f"{Icons.info} Plugin routing bootstrap starting.")
             logger.log_info(
@@ -2218,6 +2296,10 @@ class Orac:
                 settings=broker.settings,
                 logger=logger,
             )
+            self.person_fact_resolver = PersonFactResolver(
+                settings=broker.settings,
+                logger=logger,
+            )
             logger.log_info(
                 f"{Icons.info} Explicit retrieval subsystem initialised with provider "
                 f"'{broker.settings.default_search_provider}'."
@@ -2225,6 +2307,7 @@ class Orac:
         except Exception as e:
             self.retrieval_service = None
             self.retrieval_decision_service = None
+            self.person_fact_resolver = None
             _log_exception("Explicit retrieval initialisation failed (non-fatal)", e)
 
     def refresh_plugin_routing(self) -> dict[str, Any] | None:
@@ -2255,7 +2338,13 @@ class Orac:
             logger.log_debug("Plugin service lifecycle unavailable; skipping service refresh.")
             return None
 
-        discovered_manifests = getattr(plugin_manager, "discovered_manifests", None)
+        discovered_manifests = getattr(
+            plugin_manager,
+            "deployment_eligible_manifests",
+            None,
+        )
+        if not callable(discovered_manifests):
+            discovered_manifests = getattr(plugin_manager, "discovered_manifests", None)
         manifests = (
             list(discovered_manifests())
             if callable(discovered_manifests)
@@ -2339,13 +2428,25 @@ class Orac:
         logger.log_debug(f"Plugin routing produced {len(candidates)} candidate plugin(s).")
         logger.log_debug(
             "Plugin routing candidate scores: "
-            + ", ".join(f"{candidate.plugin_id}={candidate.score:.4f}" for candidate in candidates)
+            + ", ".join(
+                f"{candidate.plugin_id}={self._plugin_candidate_confidence(candidate):.4f}"
+                for candidate in candidates
+            )
         )
 
         return PluginRoutingHandoff(
             candidates=tuple(candidates),
             refreshed=refreshed,
         )
+
+    @staticmethod
+    def _plugin_candidate_confidence(candidate: Any) -> float:
+        """Return a display score for old and new plugin route candidate models."""
+        value = getattr(candidate, "confidence", getattr(candidate, "score", 0.0))
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
 
     def _execute_plugin_request(
         self,
@@ -2368,12 +2469,16 @@ class Orac:
                 plugin_audit_adapter=getattr(self, "plugin_audit_adapter", None),
             )
             self.plugin_execution_service = plugin_execution_service
+        pending_plugin_context = meta.pop("pending_plugin_context", None)
+        if not isinstance(pending_plugin_context, dict):
+            pending_plugin_context = None
         return plugin_execution_service.execute(
             prompt=prompt,
             meta=meta,
             handoff=plugin_routing_handoff,
             auth_user=auth_user,
             request_context=request_context,
+            pending_context=pending_plugin_context,
         )
 
     def _apply_user_preference_meta(
@@ -2970,6 +3075,13 @@ class Orac:
             self._persistence_failures = []
             failures = self._persistence_failures
         failures.append(failure)
+        if self._is_unregistered_user_error(exc):
+            logger.log_warning(f"{Icons.warn} Persistence skipped for {phase}: {exc}")
+            if getattr(self, "_fail_on_persistence_error", False):
+                raise RuntimeError(
+                    f"Persistence failure during {phase}: {exc}"
+                ) from exc
+            return
         _log_exception(f"Failed to persist {phase}", exc)
         if self._is_recoverable_db_disconnect(exc):
             try:
@@ -3021,6 +3133,9 @@ class Orac:
         self.db_session = new_session
         if getattr(self, "ctx", None) is not None:
             self.ctx.db = new_session
+        plugin_audit_adapter = getattr(self, "plugin_audit_adapter", None)
+        if plugin_audit_adapter is not None:
+            plugin_audit_adapter.set_db_session(new_session)
         if old_session is not None:
             try:
                 old_session.close()
@@ -3275,6 +3390,11 @@ class Orac:
             "req_id": req_env.get("id"),
             "user_registration": user_registration,
         }
+        user_display_name = str(
+            request_meta.get("user_display_name") or ""
+        ).strip()
+        if user_registration == "registered" and user_display_name:
+            response_meta["user_display_name"] = user_display_name
         llm_source_value = str(
             llm_source or getattr(self, "_active_llm_source", "") or ""
         ).strip()
@@ -3442,7 +3562,7 @@ class Orac:
         model_name: str,
         llm_source: str | None,
         user_registration: str,
-        session_id: str | None = None,
+        voice_session_id: str | None = None,
         turn_id: str | None = None,
         stop_reason: str = "stop",
     ) -> None:
@@ -3453,7 +3573,7 @@ class Orac:
             "stream_start",
             payload={
                 "content_type": "text",
-                "voice_session_id": session_id,
+                "voice_session_id": voice_session_id,
                 "turn_id": turn_id or req_env.get("id"),
             },
             model_name=model_name,
@@ -3480,8 +3600,8 @@ class Orac:
                     "text_chunk",
                     payload={
                         "chunk": chunk,
-                        "session_id": session_id,
-                        "voice_session_id": (req_env.get("meta") or {}).get("session_id"),
+                        "session_id": voice_session_id,
+                        "voice_session_id": voice_session_id,
                         "turn_id": turn_id or req_env.get("id"),
                     },
                     model_name=model_name,
@@ -3494,7 +3614,7 @@ class Orac:
             "stream_end",
             payload={
                 "stop_reason": stop_reason,
-                "voice_session_id": session_id,
+                "voice_session_id": voice_session_id,
                 "turn_id": turn_id or req_env.get("id"),
             },
             model_name=model_name,
@@ -3835,6 +3955,22 @@ class Orac:
                 _log_exception("Oracle session validation failed (non-fatal)", e)
 
             meta = self._apply_user_preference_meta(meta, auth_user)
+            profile_lookup = getattr(self.ctx, "get_user_profile", None)
+            if callable(profile_lookup):
+                try:
+                    user_profile = profile_lookup(auth_user)
+                except PermissionError:
+                    user_profile = {}
+                except Exception as e:
+                    _log_exception("Failed to load authenticated user profile", e)
+                    user_profile = {}
+                if isinstance(user_profile, dict):
+                    display_name = str(
+                        user_profile.get("display_name") or ""
+                    ).strip()
+                    if display_name:
+                        meta = dict(meta)
+                        meta["user_display_name"] = display_name
             req_env["meta"] = meta
 
             logger.log_info(f"{Icons.info} [{client}] user={auth_user} Prompt received")
@@ -3927,28 +4063,40 @@ class Orac:
             except Exception as e:
                 if self._is_unregistered_user_error(e):
                     request_flags["anonymous_user"] = True
-                _log_exception("ensure_conversation_with_timeout failed (non-fatal)", e)
-                session_id = session_id_base
-                created_new_conversation = False
-                try:
-                    existing_llm_id = self.ctx.get_conversation_llm_id(session_id)
-                    if existing_llm_id is None:
-                        self.ctx.ensure_conversation(
-                            user_name=auth_user,
-                            session_id=session_id,
-                            llm_id=new_conversation_selection.get("llm_id"),
-                        )
-                        created_new_conversation = True
-                    else:
-                        self.ctx.ensure_conversation(
-                            user_name=auth_user,
-                            session_id=session_id,
-                            llm_id=existing_llm_id,
-                        )
-                except Exception as e2:
-                    if self._is_unregistered_user_error(e2):
-                        request_flags["anonymous_user"] = True
-                    _log_exception("ensure_conversation fallback failed (non-fatal)", e2)
+                    logger.log_warning(
+                        f"{Icons.warn} Context persistence disabled for "
+                        f"unregistered user '{auth_user}': {e}"
+                    )
+                    session_id = session_id_base
+                    created_new_conversation = False
+                else:
+                    _log_exception("ensure_conversation_with_timeout failed (non-fatal)", e)
+                    session_id = session_id_base
+                    created_new_conversation = False
+                    try:
+                        existing_llm_id = self.ctx.get_conversation_llm_id(session_id)
+                        if existing_llm_id is None:
+                            self.ctx.ensure_conversation(
+                                user_name=auth_user,
+                                session_id=session_id,
+                                llm_id=new_conversation_selection.get("llm_id"),
+                            )
+                            created_new_conversation = True
+                        else:
+                            self.ctx.ensure_conversation(
+                                user_name=auth_user,
+                                session_id=session_id,
+                                llm_id=existing_llm_id,
+                            )
+                    except Exception as e2:
+                        if self._is_unregistered_user_error(e2):
+                            request_flags["anonymous_user"] = True
+                            logger.log_warning(
+                                f"{Icons.warn} Context fallback skipped for "
+                                f"unregistered user '{auth_user}': {e2}"
+                            )
+                        else:
+                            _log_exception("ensure_conversation fallback failed (non-fatal)", e2)
 
             if force_new_conversation and not created_new_conversation:
                 logger.log_info(
@@ -4372,7 +4520,7 @@ class Orac:
                             if request_flags["anonymous_user"]
                             else "registered"
                         ),
-                        session_id=session_id,
+                        voice_session_id=incoming_voice_session_id,
                         turn_id=str(req_env.get("id") or ""),
                         stop_reason="stop",
                     )
@@ -4385,24 +4533,101 @@ class Orac:
                     "Internet retrieval is disabled right now, so current information cannot be verified."
                 )
 
+            local_date_time_answer = answer_local_date_time_query(
+                prompt,
+                {
+                    "timezone": meta.get("timezone")
+                    or getattr(self, "_default_timezone", "Europe/London"),
+                    "weather_location": meta.get("weather_location"),
+                },
+            )
+            if local_date_time_answer is not None:
+                return await return_simple_response(local_date_time_answer)
+
+            date_reasoning_answer = answer_date_reasoning_query(prompt)
+            if date_reasoning_answer is not None:
+                return await return_simple_response(date_reasoning_answer.answer)
+
+            person_fact_failure_message: str | None = None
             if (
                 retrieval_decision is not None
-                and str(getattr(retrieval_decision, "retrieval_type", ""))
-                == "structured_bio"
                 and str(getattr(retrieval_decision, "reason_code", ""))
                 == "person_age_or_status"
             ):
-                person_query = parse_person_age_or_status_query(prompt)
-                stable_answer = (
-                    answer_from_stable_bio(
-                        person_query,
-                        today=datetime.now(ZoneInfo("Europe/London")).date(),
+                person_query = parse_person_age_or_status_query(llm_prompt) or parse_person_age_or_status_query(prompt)
+                person_resolver = getattr(self, "person_fact_resolver", None)
+                if person_query is not None and person_resolver is not None:
+                    try:
+                        person_fact_resolution = await asyncio.to_thread(
+                            person_resolver.resolve,
+                            person_query,
+                            today=datetime.now(ZoneInfo("Europe/London")).date(),
+                        )
+                    except Exception as exc:
+                        _log_exception("Person fact resolution failed (non-fatal)", exc)
+                        person_fact_resolution = None
+                    if person_fact_resolution is not None:
+                        if (
+                            person_fact_resolution.status == "resolved"
+                            and person_fact_resolution.answer
+                        ):
+                            resolution_request = SearchRequest(
+                                query=str(
+                                    person_fact_resolution.search_query
+                                    or person_query.search_query
+                                    or prompt
+                                ),
+                                max_results=1,
+                                trigger_phrase=str(
+                                    person_fact_resolution.source_kind or "person_fact_resolver"
+                                ),
+                            )
+                            retrieval_outcome = RetrievalOutcome(
+                                requested=True,
+                                status="success",
+                                message=person_fact_resolution.answer,
+                                request=resolution_request,
+                                diagnostics={
+                                    "source_kind": person_fact_resolution.source_kind,
+                                    "source_name": person_fact_resolution.source_name,
+                                    "source_url": person_fact_resolution.source_url,
+                                    "confidence": person_fact_resolution.confidence,
+                                },
+                            )
+                            self._remember_retrieval_context(
+                                session_id,
+                                user_message=llm_prompt,
+                                previous_context=previous_retrieval_context,
+                                retrieval_decision=retrieval_decision,
+                                retrieval_outcome=retrieval_outcome,
+                                retrieval_pack=None,
+                                retrieval_status_override="success",
+                            )
+                            return await return_simple_response(person_fact_resolution.answer)
+                        if (
+                            person_fact_resolution.status == "ambiguous"
+                            and person_fact_resolution.clarification
+                        ):
+                            self._pop_pending_retrieval_intent(session_id)
+                            return await return_simple_response(
+                                person_fact_resolution.clarification
+                            )
+                        person_fact_failure_message = person_fact_resolution.failure_message
+
+                if (
+                    str(getattr(retrieval_decision, "retrieval_type", ""))
+                    == "structured_bio"
+                ):
+                    stable_answer = (
+                        answer_from_stable_bio(
+                            person_query,
+                            today=datetime.now(ZoneInfo("Europe/London")).date(),
+                        )
+                        if person_query is not None
+                        else None
                     )
-                    if person_query is not None
-                    else None
-                )
-                if stable_answer:
-                    return await return_simple_response(stable_answer)
+                    if stable_answer:
+                        return await return_simple_response(stable_answer)
 
             if retrieval_decision is not None and str(
                 getattr(retrieval_decision, "retrieval_type", "")
@@ -4492,7 +4717,7 @@ class Orac:
                                 if request_flags["anonymous_user"]
                                 else "registered"
                             ),
-                            session_id=session_id,
+                            voice_session_id=incoming_voice_session_id,
                             turn_id=str(req_env.get("id") or ""),
                             stop_reason="stop",
                         )
@@ -4563,7 +4788,7 @@ class Orac:
                                 if request_flags["anonymous_user"]
                                 else "registered"
                             ),
-                            session_id=session_id,
+                            voice_session_id=incoming_voice_session_id,
                             turn_id=str(req_env.get("id") or ""),
                             stop_reason="stop",
                         )
@@ -4615,7 +4840,16 @@ class Orac:
                                         else "registered"
                                     ),
                                 )
-                            if retrieval_decision.explicit_request:
+                            reason_code = str(
+                                getattr(retrieval_decision, "reason_code", "") or ""
+                            )
+                            use_decision_search_query = reason_code.startswith(
+                                "factual_risk_"
+                            )
+                            if (
+                                retrieval_decision.explicit_request
+                                and not use_decision_search_query
+                            ):
                                 build_outcome = getattr(
                                     retrieval_service,
                                     "build_grounding_outcome",
@@ -4694,15 +4928,23 @@ class Orac:
                         retrieval_pack = None
 
                     if retrieval_pack is None:
-                        content = (
-                            retrieval_outcome.message
-                            if retrieval_outcome is not None
-                            else (
-                                retrieval_decision.user_visible_reason
-                                if retrieval_decision.explicit_request and retrieval_decision.reason_code == "disabled"
-                                else "I could not retrieve online evidence for that request."
-                            )
-                        )
+                        if (
+                            person_fact_failure_message is not None
+                            and str(getattr(retrieval_decision, "reason_code", ""))
+                            == "person_age_or_status"
+                        ):
+                            content = person_fact_failure_message
+                            if retrieval_outcome is not None and retrieval_outcome.message:
+                                content = f"{content} {retrieval_outcome.message}"
+                        elif retrieval_outcome is not None:
+                            content = retrieval_outcome.message
+                        elif (
+                            retrieval_decision.explicit_request
+                            and retrieval_decision.reason_code == "disabled"
+                        ):
+                            content = retrieval_decision.user_visible_reason
+                        else:
+                            content = "I could not retrieve online evidence for that request."
                         self._remember_retrieval_context(
                             session_id,
                             user_message=llm_prompt,
@@ -4746,7 +4988,7 @@ class Orac:
                                     if request_flags["anonymous_user"]
                                     else "registered"
                                 ),
-                                session_id=session_id,
+                                voice_session_id=incoming_voice_session_id,
                                 turn_id=str(req_env.get("id") or ""),
                                 stop_reason="stop",
                             )
@@ -4773,21 +5015,27 @@ class Orac:
                 )
 
             if plugin_execution_result is not None and plugin_execution_result.handled:
-                content = plugin_execution_result.content
-                plugin_provenance = plugin_execution_result.provenance
-                last_ti = self._save_assistant_turn(
-                    session_id,
-                    auth_user,
-                    content,
-                    client=client,
-                    req_id=req_env.get("id"),
-                    show_reasoning=show_reasoning,
-                    llm_id=effective_llm_id,
-                    provenance=plugin_provenance,
-                    request_flags=request_flags,
+                plugin_content = str(plugin_execution_result.content or "")
+                has_user_facing_response = (
+                    not plugin_execution_result.silent
+                    and bool(plugin_content.strip())
                 )
-                self._maybe_set_conversation_title(session_id, meta, llm_connector)
-                self._maybe_prune(session_id, last_ti)
+                content = plugin_content if has_user_facing_response else ""
+                plugin_provenance = plugin_execution_result.provenance
+                if has_user_facing_response:
+                    last_ti = self._save_assistant_turn(
+                        session_id,
+                        auth_user,
+                        content,
+                        client=client,
+                        req_id=req_env.get("id"),
+                        show_reasoning=show_reasoning,
+                        llm_id=effective_llm_id,
+                        provenance=plugin_provenance,
+                        request_flags=request_flags,
+                    )
+                    self._maybe_set_conversation_title(session_id, meta, llm_connector)
+                    self._maybe_prune(session_id, last_ti)
                 resp_env = self._build_response(
                     req_env,
                     content,
@@ -4812,7 +5060,7 @@ class Orac:
                             if request_flags["anonymous_user"]
                             else "registered"
                         ),
-                        session_id=session_id,
+                        voice_session_id=incoming_voice_session_id,
                         turn_id=str(req_env.get("id") or ""),
                         stop_reason=plugin_execution_result.stop_reason,
                     )
@@ -5048,6 +5296,12 @@ class Orac:
                     ),
                     retrieval_pack=retrieval_pack,
                     retrieval_outcome=retrieval_outcome,
+                )
+                content = enforce_high_risk_factual_grounding(
+                    content,
+                    user_query=prompt,
+                    retrieval_decision=retrieval_decision,
+                    retrieval_pack=retrieval_pack,
                 )
 
             if not content:

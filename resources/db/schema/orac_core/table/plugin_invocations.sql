@@ -1,3 +1,8 @@
+--liquibase formatted sql
+
+--changeset clive:create_table_orac_core_table_plugin_invocations context:core labels:core stripComments:false
+--preconditions onFail:HALT onError:HALT
+--precondition-sql-check expectedResult:0 select count(1) from all_tables where owner = 'ORAC_CORE' and table_name = 'PLUGIN_INVOCATIONS';
 -- __author__: clive
 -- __date__: 2026-05-25
 -- __description__: plugin invocation audit summary table
@@ -38,3 +43,5 @@ create table orac_core.plugin_invocations
   row_version          number default 1 not null
 )
 ;
+
+--rollback drop table orac_core.plugin_invocations purge;

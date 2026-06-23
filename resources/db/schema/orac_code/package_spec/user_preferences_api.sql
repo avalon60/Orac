@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:create_package_spec_orac_code_package_spec_user_preferences_api context:core labels:core stripComments:false splitStatements:false endDelimiter:/ runOnChange:true
 -- __author__: clive
 -- __date__: 2026-04-26
 -- __description__: ORAC_CODE wrapper API for user preference maintenance
@@ -33,3 +36,5 @@ create or replace package orac_code.user_preferences_api as
   );
 end user_preferences_api;
 /
+
+--rollback drop package orac_code.user_preferences_api;

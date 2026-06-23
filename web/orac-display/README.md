@@ -129,3 +129,6 @@ voice path and older bridge payloads:
 - The React UI remains a thin display/control surface.
 - Browser mode starts the Node bridge and mirrors the existing display
   payloads to the browser.
+- Browser WebSocket connect/reconnect/disconnect logs are quiet by default.
+  Set `ORAC_DISPLAY_LOG_BROWSER_CONNECTIONS=true` when diagnosing browser
+  display transport reconnects.

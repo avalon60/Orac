@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset clive:user_preferences_v_create stripComments:false runOnChange:true
+--changeset clive:user_preferences_v_create stripComments:false runOnChange:true context:core labels:core
 
 create or replace force view orac_api.user_preferences_v as
    select

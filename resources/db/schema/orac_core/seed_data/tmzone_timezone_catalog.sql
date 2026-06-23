@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:seed_data_orac_core_seed_data_tmzone_timezone_catalog context:core labels:core stripComments:false runOnChange:true
 merge into orac_core.timezones tgt
 using (
   select 'Africa/Johannesburg' as tz_name, 'Johannesburg (South Africa)' as display_label, 'Africa' as region_group, 10 as display_sequence, 'Y' as is_active from dual
@@ -62,3 +65,5 @@ values
   src.is_active
 )
 ;
+
+--rollback delete from orac_core.timezones where tz_name in ('Africa/Johannesburg', 'Africa/Nairobi', 'Africa/Windhoek', 'America/Anchorage', 'America/Chicago', 'America/Denver', 'America/Halifax', 'America/Los_Angeles', 'America/New_York', 'America/Phoenix', 'America/Toronto', 'America/Vancouver', 'Asia/Bangkok', 'Asia/Dubai', 'Asia/Hong_Kong', 'Asia/Karachi', 'Asia/Kolkata', 'Asia/Riyadh', 'Asia/Seoul', 'Asia/Shanghai', 'Asia/Singapore', 'Asia/Tokyo', 'Australia/Adelaide', 'Australia/Brisbane', 'Australia/Perth', 'Australia/Sydney', 'Europe/Amsterdam', 'Europe/Berlin', 'Europe/Dublin', 'Europe/Helsinki', 'Europe/Lisbon', 'Europe/London', 'Europe/Madrid', 'Europe/Paris', 'Europe/Rome', 'Europe/Warsaw', 'Pacific/Auckland', 'UTC');

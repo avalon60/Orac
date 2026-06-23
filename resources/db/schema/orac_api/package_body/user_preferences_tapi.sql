@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset clive:user_preferences_tapi_create_body stripComments:false endDelimiter:/ runOnChange:true
+--changeset clive:user_preferences_tapi_create_body stripComments:false endDelimiter:/ runOnChange:true context:core labels:core splitStatements:false
 
 create or replace package body orac_api.user_preferences_tapi
 as
@@ -282,4 +282,4 @@ as
 
 end user_preferences_tapi;
 /
---rollback drop package orac_api.user_preferences_tapi
+--rollback drop package body orac_api.user_preferences_tapi;

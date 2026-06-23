@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:comment_orac_core_comment_model_generation_presets context:core labels:core stripComments:false runOnChange:true
 comment on table orac_core.model_generation_presets is
   'Reusable model generation presets controlling sampling and output limits for LLM requests.';
 

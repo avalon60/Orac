@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset clive:devices_tapi_create_body stripComments:false endDelimiter:/ runOnChange:true
+--changeset clive:devices_tapi_create_body stripComments:false endDelimiter:/ runOnChange:true context:core labels:core splitStatements:false
 
 create or replace package body orac_api.devices_tapi
 as
@@ -269,4 +269,4 @@ as
 
 end devices_tapi;
 /
---rollback drop package orac_api.devices_tapi
+--rollback drop package body orac_api.devices_tapi;

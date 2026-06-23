@@ -90,7 +90,7 @@ Tests before changing: undeclared entitlement denial, unsupported entitlement de
 
 ### 8. Home Assistant advertises active capabilities that are still placeholders
 Severity: should fix before enabling as a real capability; leave alone if explicitly marked as roadmap-only.  
-Files involved: `plugins/home_assistant.json`, `plugins/home_assistant/plugin.py`, `src/model/plugin_routing/manager.py`, `resources/db/schema/AGENT_CONTEXT.md`, `resources/db/schema/ha_ddl.sql`, `resources/db/schema/orac_ha/run_all.sql`.  
+Files involved: `plugins/home_assistant.json`, `plugins/home_assistant/plugin.py`, `src/model/plugin_routing/manager.py`, `resources/db/schema/AGENT_CONTEXT.md`, `resources/db/schema/ha_ddl.sql`, `plugins/home_assistant/db/schema`.
 Evidence: manifest is `enabled: true` and lists device control, state query, event listener, DB requirement, and unsupported entitlements. Implementation `can_handle` returns false and service loop explicitly says no websocket is attempted. DB schema has both monolithic DDL and object-by-object files for the same HA objects. Dependency check only verifies local schema folder existence, not installed DB version.  
 Why it matters: users and future code may treat HA as production-ready when it is a scaffold.  
 Suggested remediation: either disable HA until real runtime exists, or mark it as scaffold/experimental in routing eligibility and service startup. Remove or quarantine duplicate DDL sources once canonical HA DB source is chosen.  

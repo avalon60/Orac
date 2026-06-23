@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:comment_orac_core_comment_timezones context:core labels:core stripComments:false runOnChange:true
 comment on table orac_core.timezones is
   'Curated canonical timezone catalogue used for user-facing LOVs and validation.'
 ;

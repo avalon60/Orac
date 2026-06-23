@@ -4,10 +4,17 @@
   "name": "Home Assistant",
   "description": "Controls Home Assistant devices, scenes, and state queries for the user's smart home.",
   "version": "1.0.0",
+  "python_dependencies": [
+    "requests>=2.32,<3"
+  ],
   "enabled": true,
   "capabilities": [
+    "home_assistant.resync",
     "home_assistant.device_control",
+    "home_assistant.area_listing",
     "home_assistant.state_query",
+    "home_assistant.light_control",
+    "home_assistant.light_state_query",
     "home_assistant.scene_activation",
     "home_assistant.event_listener",
     "home_assistant.health_status"
@@ -21,6 +28,8 @@
     "light",
     "switch",
     "scene",
+    "device",
+    "area",
     "room",
     "sensor",
     "door",
@@ -33,22 +42,114 @@
   "examples": [
     "Turn on the kitchen lights.",
     "Turn off the office lamp.",
+    "Desk lamp off.",
+    "List devices in the office.",
+    "List living room devices.",
+    "What lights are in the kitchen?",
+    "What's the temperature in the lounge?",
+    "What is the landing temperature?",
+    "What's the humidity on the landing?",
+    "What is the landing humidity?",
+    "Is the TV light on?",
+    "How bright is the TV light?",
+    "What colour is the TV light?",
+    "What setting is the TV light on?",
+    "Which is warmer, the lounge or the landing?",
+    "Are any sensors unavailable?",
+    "When was the lounge sensor last updated?",
     "Is the front door locked?",
     "What is the temperature in the lounge?",
     "Are any windows open?",
     "Is there motion in the hallway?",
     "Activate movie night.",
+    "Resync devices.",
+    "Sync devices.",
+    "Resync Home Assistant.",
     "Is Home Assistant online?",
     "Is Orac reporting as healthy in Home Assistant?"
   ],
   "entry_point": "plugin:HomeAssistantPlugin",
-  "execution": {
-    "action_type": "device_control",
-    "requires_confirmation": true,
-    "allowed_by_default": false,
+  "routing": {
     "capabilities": [
+      {
+        "id": "home_assistant.light_control",
+        "description": "Control Home Assistant lights, lamps and lighting scenes.",
+        "intents": [
+          {
+            "name": "control_light",
+            "description": "Turn lights on or off, adjust brightness, colour, or lighting state.",
+            "examples": [
+              "Turn on the lounge lamp.",
+              "Switch off the kitchen lights.",
+              "Make the TV light warmer.",
+              "Dim the office lamp."
+            ],
+            "requires_confirmation": false,
+            "safety_level": "local_mutation"
+          }
+        ]
+      },
+      {
+        "id": "home_assistant.area_listing",
+        "description": "List Home Assistant areas and area devices from synced shadow data.",
+        "intents": [
+          {
+            "name": "list_area_inventory",
+            "examples": [
+              "List devices in the office.",
+              "What lights are in the kitchen?",
+              "List areas."
+            ],
+            "requires_confirmation": false,
+            "safety_level": "informational_read_only"
+          }
+        ]
+      },
+      {
+        "id": "home_assistant.state_query",
+        "description": "Answer Home Assistant sensor state questions.",
+        "intents": [
+          {
+            "name": "query_sensor_state",
+            "examples": [
+              "What's the temperature in the lounge?",
+              "What is the landing humidity?",
+              "Are any sensors unavailable?"
+            ],
+            "requires_confirmation": false,
+            "safety_level": "informational_read_only"
+          }
+        ]
+      },
+      {
+        "id": "home_assistant.resync",
+        "description": "Refresh Home Assistant synced device and entity metadata.",
+        "intents": [
+          {
+            "name": "resync_home_assistant",
+            "examples": [
+              "Resync devices.",
+              "Sync devices.",
+              "Resync Home Assistant."
+            ],
+            "requires_confirmation": false,
+            "safety_level": "local_mutation"
+          }
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "action_type": "local_mutation",
+    "requires_confirmation": false,
+    "allowed_by_default": true,
+    "capabilities": [
+      "home_assistant.resync",
       "home_assistant.device_control",
+      "home_assistant.area_listing",
       "home_assistant.state_query",
+      "home_assistant.light_control",
+      "home_assistant.light_state_query",
       "home_assistant.scene_activation",
       "home_assistant.event_listener",
       "home_assistant.health_status"
@@ -58,13 +159,13 @@
       "home_assistant.api_token",
       "user_preferences.home_location"
     ],
-    "scaffold": true,
-    "notes": "Scaffold-only placeholder; real Home Assistant control remains disabled until policy, credentials, entitlement checks and runtime behaviour are complete."
+    "scaffold": false,
+    "notes": "On-demand execution supports resync, deterministic low-risk light/switch/scene control, live light read-back, and read-only area and temperature/humidity sensor queries through the managed Home Assistant service."
   },
   "runtime": {
     "mode": "hybrid",
     "service": {
-      "entry_point": "plugin:HomeAssistantService",
+      "entry_point": "service:HomeAssistantService",
       "execution_model": "long_running",
       "start_policy": "auto",
       "restart_policy": "on_failure",
@@ -91,12 +192,6 @@
         "key": "port",
         "type": "int",
         "description": "Home Assistant HTTP API port."
-      },
-      {
-        "section": "home_assistant",
-        "key": "access_token_env",
-        "type": "string",
-        "description": "Environment variable name containing the Home Assistant long-lived access token."
       }
     ],
     "optional": [
@@ -111,12 +206,35 @@
         "key": "structural_refresh_mode",
         "type": "string",
         "description": "Controls structural metadata refresh cadence."
+      },
+      {
+        "section": "home_assistant",
+        "key": "sensor_stale_hours",
+        "type": "float",
+        "description": "Age in hours after which a sensor reading is reported as stale."
       }
     ]
+  },
+  "secrets": {
+    "vault": "pat_vault",
+    "default_key": "access_token",
+    "allow_custom_keys": false,
+    "keys": {
+      "access_token": {
+        "required": true,
+        "description": "Long-lived Home Assistant access token.",
+        "setup_hint": "Create a long-lived access token in Home Assistant and store it with plugin-pat-mgr.sh.",
+        "rotation_supported": true
+      }
+    }
   },
   "database": {
     "required": true,
     "on_missing": "warn_disable",
+    "deployment": {
+      "type": "liquibase",
+      "controller": "db/liquibase/pluginController.xml"
+    },
     "schemas": [
       {
         "schema_name": "orac_ha",
@@ -129,6 +247,69 @@
         "backup": {
           "include": true,
           "export_mode": "schema"
+        }
+      }
+    ]
+  },
+  "apex_apps": [
+    {
+      "app_alias": "ORAC_HA_STATUS",
+      "label": "Home Assistant Status",
+      "description": "Home Assistant plugin admin/status app.",
+      "app_export": "apex/f10010.sql",
+      "workspace": "ORAC",
+      "parsing_schema": "ORAC_APX_PUB",
+      "application_id": 10010,
+      "entry_page_id": 1,
+      "install_required": true,
+      "replace_existing": false,
+      "required_roles": [
+        "ORAC_ADMIN"
+      ],
+      "enabled": true
+    }
+  ],
+  "ui": {
+    "status_provider": {
+      "id": "home_assistant.status_summary",
+      "description": "Aggregated Home Assistant plugin health, API reachability, runtime state, and sync status.",
+      "format": "plugin_status_v1",
+      "redaction_required": true
+    },
+    "surfaces": [
+      {
+        "id": "home_assistant.admin_status",
+        "type": "admin_status",
+        "label": "Home Assistant Status",
+        "description": "Shows Home Assistant plugin health, sync status, API reachability and recent sync results.",
+        "target": "apex",
+        "audience": "admin",
+        "required_roles": [
+          "ORAC_ADMIN"
+        ],
+        "enabled": true,
+        "apex": {
+          "app_alias": "ORAC_HA_STATUS",
+          "app_export": "apex/f10010.sql",
+          "entry_page_id": 1,
+          "install_required": false
+        }
+      },
+      {
+        "id": "home_assistant.react_diagnostics",
+        "type": "diagnostic_panel",
+        "label": "Home Assistant Diagnostics",
+        "description": "Compact runtime diagnostic/status panel for the React display.",
+        "target": "react",
+        "audience": "admin",
+        "required_roles": [
+          "ORAC_ADMIN"
+        ],
+        "enabled": true,
+        "react": {
+          "component": "HomeAssistantDiagnosticsPanel",
+          "status_endpoint": "home_assistant.status_summary",
+          "install_required": false
         }
       }
     ]

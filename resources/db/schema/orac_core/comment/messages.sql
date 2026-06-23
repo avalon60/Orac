@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset clive:comment_orac_core_comment_messages context:core labels:core stripComments:false runOnChange:true
 comment on table orac_core.messages is
   'Atomic utterances within a conversation (user/assistant/system/tool).'
 ;

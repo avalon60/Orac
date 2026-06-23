@@ -18,10 +18,45 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from model.plugin_routing.discovery import PluginDiscovery
+from model.plugin_database_deployment import PluginDatabaseDeploymentResult
 from model.plugin_routing.embeddings import HashEmbeddingProvider
 from model.plugin_routing.index import PluginIntentIndex
 from model.plugin_routing.intent_text import INTENT_TEXT_VERSION, build_canonical_intent_text
 from model.plugin_routing.manager import PluginManager
+from model.plugin_registry import PluginRegistryError
+
+
+class _SuccessfulDatabaseDeployer:
+    def deploy_if_needed(self, manifest):
+        status = "deployed" if manifest.database_required else "not_required"
+        return PluginDatabaseDeploymentResult(
+            plugin_id=manifest.plugin_id,
+            status=status,
+            eligible=True,
+            message="test deployment allowed",
+        )
+
+
+class _CountingDatabaseDeployer(_SuccessfulDatabaseDeployer):
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def deploy_if_needed(self, manifest):
+        self.calls.append(manifest.plugin_id)
+        return super().deploy_if_needed(manifest)
+
+
+class _ManifestRegistry:
+    def __init__(self, manifests):
+        self.manifests = list(manifests)
+
+    def enabled_manifests(self):
+        return list(self.manifests)
+
+
+class _FailingRegistry:
+    def enabled_manifests(self):
+        raise PluginRegistryError("registry unavailable")
 
 
 class PluginRoutingTests(unittest.TestCase):
@@ -42,6 +77,66 @@ class PluginRoutingTests(unittest.TestCase):
 
         def log_error(self, message: str) -> None:
             self.messages.append(("error", message))
+
+    def test_registry_gated_refresh_does_not_redeploy_database_payloads(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins_dir,
+            tempfile.TemporaryDirectory() as temp_cache_dir,
+        ):
+            plugins_dir = Path(temp_plugins_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Test plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.control"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+            self.assertEqual(errors, [])
+            deployer = _CountingDatabaseDeployer()
+            manager = PluginManager(
+                embedding_provider=HashEmbeddingProvider(),
+                plugins_dir=plugins_dir,
+                cache_dir=Path(temp_cache_dir),
+                database_deployer=deployer,
+                registry_store=_ManifestRegistry(manifests),
+                require_registry=True,
+            )
+
+            report = manager.refresh()
+
+            self.assertEqual(report["indexed_plugin_count"], 1)
+            self.assertEqual(deployer.calls, [])
+
+    def test_registry_failure_disables_plugins_without_breaking_refresh(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logger = self._FakeLogger()
+            manager = PluginManager(
+                embedding_provider=HashEmbeddingProvider(),
+                plugins_dir=Path(temp_dir) / "plugins",
+                cache_dir=Path(temp_dir) / "cache",
+                registry_store=_FailingRegistry(),
+                require_registry=True,
+                logger=logger,
+            )
+
+            report = manager.refresh()
+
+            self.assertEqual(report["indexed_plugin_count"], 0)
+            self.assertEqual(report["invalid"], 1)
+            self.assertTrue(
+                any("plugin routing is disabled" in message for _, message in logger.messages)
+            )
 
     def test_discovery_rejects_mismatched_plugin_id(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -69,6 +164,272 @@ class PluginRoutingTests(unittest.TestCase):
             self.assertEqual(manifests, [])
             self.assertEqual(len(errors), 1)
             self.assertIn("must exactly match manifest filename stem", errors[0])
+
+    def test_discovery_accepts_manifest_without_ui_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Test plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.query"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(errors, [])
+            self.assertIsNone(manifests[0].ui)
+
+    def test_home_assistant_manifest_declares_valid_ui_surfaces(self) -> None:
+        manifest = PluginDiscovery(PROJECT_ROOT / "plugins").load_manifest(
+            PROJECT_ROOT / "plugins" / "home_assistant.json"
+        )
+
+        self.assertIsNotNone(manifest.ui)
+        assert manifest.ui is not None
+        self.assertEqual(
+            manifest.ui.status_provider.provider_id,
+            "home_assistant.status_summary",
+        )
+        self.assertTrue(manifest.ui.status_provider.redaction_required)
+        self.assertEqual(
+            [surface.surface_id for surface in manifest.ui.surfaces],
+            [
+                "home_assistant.admin_status",
+                "home_assistant.react_diagnostics",
+            ],
+        )
+        self.assertEqual(manifest.ui.surfaces[0].apex.app_alias, "ORAC_HA_STATUS")
+        self.assertEqual(
+            manifest.ui.surfaces[0].apex.app_export,
+            "apex/f10010.sql",
+        )
+        self.assertFalse(manifest.ui.surfaces[0].apex.install_required)
+        self.assertEqual(
+            manifest.ui.surfaces[1].react.component,
+            "HomeAssistantDiagnosticsPanel",
+        )
+
+    def test_home_assistant_manifest_declares_plugin_apex_app(self) -> None:
+        manifest = PluginDiscovery(PROJECT_ROOT / "plugins").load_manifest(
+            PROJECT_ROOT / "plugins" / "home_assistant.json"
+        )
+
+        self.assertEqual(len(manifest.apex_apps), 1)
+        app = manifest.apex_apps[0]
+        self.assertEqual(app.alias, "ORAC_HA_STATUS")
+        self.assertEqual(app.label, "Home Assistant Status")
+        self.assertEqual(app.app_export, "apex/f10010.sql")
+        self.assertEqual(app.workspace, "ORAC")
+        self.assertEqual(app.parsing_schema, "ORAC_APX_PUB")
+        self.assertEqual(app.application_id, 10010)
+        self.assertEqual(app.entry_page_id, 1)
+        self.assertTrue(app.install_required)
+        self.assertFalse(app.replace_existing)
+        self.assertEqual(app.required_roles, ("ORAC_ADMIN",))
+        self.assertTrue(app.enabled)
+
+    def test_ui_surface_metadata_is_not_routing_metadata(self) -> None:
+        manifest = PluginDiscovery(PROJECT_ROOT / "plugins").load_manifest(
+            PROJECT_ROOT / "plugins" / "home_assistant.json"
+        )
+
+        route_values = {
+            value
+            for capability in manifest.route_capabilities
+            for value in (
+                capability.capability_id,
+                *(intent.name for intent in capability.intents),
+            )
+        }
+
+        self.assertNotIn("home_assistant.status_summary", route_values)
+        self.assertNotIn("home_assistant.admin_status", route_values)
+        self.assertNotIn("home_assistant.react_diagnostics", route_values)
+
+    def test_ui_status_provider_redaction_required_defaults_true(self) -> None:
+        manifest = self._load_temp_manifest(
+            {
+                "ui": {
+                    "status_provider": {
+                        "id": "alpha.status",
+                        "format": "plugin_status_v1",
+                    }
+                }
+            }
+        )
+
+        self.assertTrue(manifest.ui.status_provider.redaction_required)
+
+    def test_discovery_rejects_invalid_ui_surface_values(self) -> None:
+        cases = (
+            ("target", "terminal"),
+            ("type", "launcher"),
+            ("audience", "anonymous"),
+        )
+        for field_name, invalid_value in cases:
+            with self.subTest(field_name=field_name):
+                with self.assertRaisesRegex(ValueError, f"ui.surfaces\\[0\\].{field_name}"):
+                    self._load_temp_manifest(
+                        {
+                            "ui": {
+                                "surfaces": [
+                                    {
+                                        "id": "alpha.surface",
+                                        "type": (
+                                            invalid_value
+                                            if field_name == "type"
+                                            else "admin_status"
+                                        ),
+                                        "label": "Alpha Status",
+                                        "target": (
+                                            invalid_value
+                                            if field_name == "target"
+                                            else "apex"
+                                        ),
+                                        "audience": (
+                                            invalid_value
+                                            if field_name == "audience"
+                                            else "admin"
+                                        ),
+                                        "enabled": True,
+                                    }
+                                ]
+                            }
+                        }
+                    )
+
+    def test_ui_apex_and_react_metadata_are_accepted(self) -> None:
+        manifest = self._load_temp_manifest(
+            {
+                "ui": {
+                    "surfaces": [
+                        {
+                            "id": "alpha.apex_status",
+                            "type": "admin_status",
+                            "label": "Alpha APEX",
+                            "target": "apex",
+                            "audience": "admin",
+                            "enabled": True,
+                            "apex": {
+                                "app_alias": "ALPHA_STATUS",
+                                "app_export": "apex/alpha_status.sql",
+                                "entry_page_id": 1,
+                                "install_required": False,
+                            },
+                        },
+                        {
+                            "id": "alpha.react_status",
+                            "type": "diagnostic_panel",
+                            "label": "Alpha React",
+                            "target": "react",
+                            "audience": "admin",
+                            "enabled": True,
+                            "react": {
+                                "component": "AlphaStatusPanel",
+                                "status_endpoint": "alpha.status",
+                                "install_required": False,
+                            },
+                        },
+                    ]
+                }
+            }
+        )
+
+        self.assertEqual(manifest.ui.surfaces[0].apex.entry_page_id, 1)
+        self.assertEqual(manifest.ui.surfaces[1].react.status_endpoint, "alpha.status")
+
+    def test_apex_apps_metadata_is_accepted_with_defensive_defaults(self) -> None:
+        manifest = self._load_temp_manifest(
+            {
+                "apex_apps": [
+                    {
+                        "app_alias": "alpha_status",
+                        "label": "Alpha Status",
+                        "app_export": "apex/alpha_status.sql",
+                        "install_required": True,
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(len(manifest.apex_apps), 1)
+        app = manifest.apex_apps[0]
+        self.assertEqual(app.alias, "ALPHA_STATUS")
+        self.assertEqual(app.workspace, "ORAC")
+        self.assertEqual(app.parsing_schema, "ORAC_APX_PUB")
+        self.assertEqual(app.entry_page_id, 1)
+        self.assertFalse(app.replace_existing)
+        self.assertTrue(app.enabled)
+
+    def test_discovery_rejects_invalid_apex_app_values(self) -> None:
+        cases = (
+            ("workspace", "OTHER"),
+            ("parsing_schema", "bad-schema"),
+            ("app_export", "../escape.sql"),
+            ("app_alias", "bad alias"),
+        )
+        for field_name, invalid_value in cases:
+            with self.subTest(field_name=field_name):
+                with self.assertRaisesRegex(ValueError, f"apex_apps\\[0\\].{field_name}"):
+                    payload = {
+                        "app_alias": "ALPHA_STATUS",
+                        "label": "Alpha Status",
+                        "app_export": "apex/alpha_status.sql",
+                        "install_required": True,
+                    }
+                    payload[field_name] = invalid_value
+                    self._load_temp_manifest({"apex_apps": [payload]})
+
+    def test_apex_apps_are_not_routing_metadata(self) -> None:
+        manifest = self._load_temp_manifest(
+            {
+                "apex_apps": [
+                    {
+                        "app_alias": "ALPHA_STATUS",
+                        "label": "Alpha Status",
+                        "app_export": "apex/alpha_status.sql",
+                        "install_required": True,
+                    }
+                ]
+            }
+        )
+
+        intent_text = build_canonical_intent_text(manifest)
+        self.assertNotIn("ALPHA_STATUS", intent_text)
+        self.assertNotIn("Alpha Status", intent_text)
+        self.assertNotIn("alpha_status.sql", intent_text)
+
+    def _load_temp_manifest(self, extra: dict) -> object:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            manifest_data = {
+                "schema_version": 2,
+                "plugin_id": "alpha",
+                "name": "Alpha",
+                "description": "Test plugin",
+                "version": "1.0.0",
+                "enabled": True,
+                "capabilities": ["alpha.query"],
+                "entitlements": [],
+                "runtime": {"mode": "on_demand"},
+            }
+            manifest_data.update(extra)
+            manifest_path = plugins_dir / "alpha.json"
+            manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+            return PluginDiscovery(plugins_dir).load_manifest(manifest_path)
 
     def test_canonical_intent_text_is_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -758,6 +1119,7 @@ class PluginRoutingTests(unittest.TestCase):
             embedding_provider=provider,
             plugins_dir=Path("plugins"),
             cache_dir=Path(tempfile.mkdtemp()),
+            database_deployer=_SuccessfulDatabaseDeployer(),
         )
 
         report = manager.refresh()
@@ -771,11 +1133,13 @@ class PluginRoutingTests(unittest.TestCase):
         self.assertEqual(report["enabled"], 3)
         self.assertEqual(report["disabled"], 0)
         self.assertEqual(report["dependency_disabled"], 0)
-        self.assertEqual(report["indexed_plugin_count"], 3)
+        self.assertEqual(report["indexed_plugin_count"], 8)
         self.assertIsNotNone(manager.get_manifest("home_assistant"))
         self.assertEqual(len(candidates), 2)
-        self.assertGreaterEqual(candidates[0].score, candidates[1].score)
-        self.assertTrue(all(candidate.score <= 1.0 for candidate in candidates))
+        self.assertGreaterEqual(candidates[0].confidence, candidates[1].confidence)
+        self.assertTrue(all(candidate.confidence <= 1.0 for candidate in candidates))
+        self.assertTrue(all(candidate.capability_id for candidate in candidates))
+        self.assertTrue(all(candidate.intent_name for candidate in candidates))
 
     def test_service_only_plugin_is_not_indexed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins_dir, tempfile.TemporaryDirectory() as temp_cache_dir:
@@ -863,6 +1227,115 @@ class PluginRoutingTests(unittest.TestCase):
             self.assertEqual(report["dependency_disabled"], 1)
             self.assertEqual(report["indexed_plugin_count"], 0)
             self.assertIsNone(manager.get_manifest("alpha"))
+
+    def test_missing_required_plugin_config_disables_before_database_deployment(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins_dir, tempfile.TemporaryDirectory() as temp_cache_dir:
+            plugins_dir = Path(temp_plugins_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Configured database-backed plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.query"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
+                        "configuration": {
+                            "required": [
+                                {
+                                    "section": "alpha",
+                                    "key": "host",
+                                    "type": "string",
+                                    "description": "Alpha host.",
+                                }
+                            ],
+                            "optional": [],
+                        },
+                        "database": {
+                            "required": True,
+                            "on_missing": "warn_disable",
+                            "schemas": [
+                                {
+                                    "schema_name": "orac_alpha",
+                                    "purpose": "Alpha plugin storage.",
+                                    "managed_by": "orac",
+                                    "minimum_version": "1.0.0",
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            deployer = _CountingDatabaseDeployer()
+            manager = PluginManager(
+                embedding_provider=HashEmbeddingProvider(),
+                plugins_dir=plugins_dir,
+                cache_dir=Path(temp_cache_dir),
+                database_deployer=deployer,
+            )
+
+            report = manager.refresh()
+
+            self.assertEqual(report["dependency_disabled"], 1)
+            self.assertEqual(report["indexed_plugin_count"], 0)
+            self.assertEqual(report["configuration_status"]["alpha"], "missing_required")
+            self.assertEqual(report["deployment_status"], {})
+            self.assertEqual(deployer.calls, [])
+
+    def test_uninitialised_plugin_config_disables_before_database_deployment(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins_dir, tempfile.TemporaryDirectory() as temp_cache_dir:
+            plugins_dir = Path(temp_plugins_dir)
+            plugin_dir = plugins_dir / "alpha"
+            plugin_dir.mkdir()
+            (plugin_dir / "plugin.ini").write_text(
+                "[alpha]\nhost = %host%\n",
+                encoding="utf-8",
+            )
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Configured plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.query"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
+                        "configuration": {
+                            "required": [
+                                {
+                                    "section": "alpha",
+                                    "key": "host",
+                                    "type": "string",
+                                    "description": "Alpha host.",
+                                }
+                            ],
+                            "optional": [],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            deployer = _CountingDatabaseDeployer()
+            manager = PluginManager(
+                embedding_provider=HashEmbeddingProvider(),
+                plugins_dir=plugins_dir,
+                cache_dir=Path(temp_cache_dir),
+                database_deployer=deployer,
+            )
+
+            report = manager.refresh()
+
+            self.assertEqual(report["dependency_disabled"], 1)
+            self.assertEqual(report["configuration_status"]["alpha"], "uninitialised")
+            self.assertEqual(deployer.calls, [])
 
     def test_cache_invalidation_uses_manifest_hash(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins_dir, tempfile.TemporaryDirectory() as temp_cache_dir:

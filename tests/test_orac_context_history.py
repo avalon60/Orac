@@ -16,6 +16,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 import types
 import unittest
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -55,6 +56,9 @@ from controller.orac import Orac
 from model.context_manager import OracContextManager
 from model.llm_connector import LLMUsageMetadata
 from model.plugin_runtime import PluginExecutionResult
+from orac_voice.voice_events import VoiceTtsPlaybackFinished
+from orac_voice.voice_events import VoiceTtsPlaybackStarted
+from orac_voice.voice_events import VoiceTurnComplete
 from orac_core.retrieval import FetchedSource
 from orac_core.retrieval import GroundingPackBuilder
 from orac_core.retrieval import GroundingPack
@@ -797,6 +801,26 @@ class _ConditionalPluginRouter:
         return None
 
 
+class _StaticPluginRouter:
+    """Return one configured handled result for every prompt."""
+
+    def __init__(self, result: PluginExecutionResult) -> None:
+        self.result = result
+
+    def route(
+        self,
+        prompt: str,
+        meta: dict,
+        handoff,
+        auth_user: str | None = None,
+        *,
+        audit_adapter=None,
+        request_context=None,
+    ) -> PluginExecutionResult:
+        del prompt, meta, handoff, auth_user, audit_adapter, request_context
+        return self.result
+
+
 class _FakeDBSession:
     """Minimal DB stub to exercise load_context limit semantics."""
 
@@ -1006,6 +1030,31 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("physical embodiment", clock)
 
+    def test_direct_time_query_has_deterministic_answer(self) -> None:
+        """Direct local time questions should not depend on model reasoning."""
+        answer = orac_module.answer_local_date_time_query(
+            "What time is it?",
+            {
+                "timezone": "Europe/London",
+                "weather_location": "Thornton Dale, England, United Kingdom",
+            },
+        )
+
+        self.assertIsNotNone(answer)
+        self.assertRegex(
+            answer or "",
+            r"^It's \d{2}:\d{2} in Thornton Dale, England, United Kingdom\.$",
+        )
+
+    def test_non_time_question_has_no_deterministic_time_answer(self) -> None:
+        """Only direct local date/time questions should use this shortcut."""
+        answer = orac_module.answer_local_date_time_query(
+            "What is the time signature of Money by Pink Floyd?",
+            {"timezone": "Europe/London"},
+        )
+
+        self.assertIsNone(answer)
+
     def test_system_primer_includes_creator_and_model_provenance_rules(self) -> None:
         """System primer should constrain creator and vendor provenance."""
         primer = orac_module._orac_system_primer(
@@ -1019,8 +1068,12 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
                         "answer with the identity statement when the user "
                         "explicitly asks who or what you are, who created you, "
                         "or another direct identity/creator question. For those "
-                        "questions, answer simply: \"{identity_answer}.\" Do "
-                        "not include {assistant_name}'s identity or creator in "
+                        "questions, answer from {assistant_name}'s own "
+                        "perspective, for example: \"{identity_answer}.\" For "
+                        "creator-only questions, say \"Clive Bostock is my "
+                        "creator\" or \"I was created by Clive Bostock\"; "
+                        "never say Clive Bostock is the user's creator. Do not "
+                        "include {assistant_name}'s identity or creator in "
                         "replies to ordinary factual requests such as date, "
                         "time, weather, calculations, or status questions "
                         "unless the user asks for it."
@@ -1050,8 +1103,15 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             primer,
         )
         self.assertIn(
-            "For those questions, answer simply: \"I am Orac, an extensible "
-            "artificial intelligence system, created by Clive Bostock.\"",
+            "For those questions, answer from Orac's own perspective, for "
+            "example: \"I am Orac, an extensible artificial intelligence "
+            "system, created by Clive Bostock.\"",
+            primer,
+        )
+        self.assertIn(
+            "For creator-only questions, say \"Clive Bostock is my creator\" "
+            "or \"I was created by Clive Bostock\"; never say Clive Bostock "
+            "is the user's creator.",
             primer,
         )
         self.assertIn(
@@ -1062,6 +1122,12 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn(
             "Orac was created by Clive Bostock, Orac's author and designer.",
+            primer,
+        )
+        self.assertIn(
+            "When answering direct creator questions, speak as Orac: say "
+            "\"Clive Bostock is my creator\" or \"I was created by Clive "
+            "Bostock\"; never say the creator is the user's creator.",
             primer,
         )
         self.assertIn(
@@ -1108,6 +1174,8 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("{assistant_name}", identity_policy)
         self.assertIn("{identity_answer}", identity_policy)
+        self.assertIn("Clive Bostock is my creator", identity_policy)
+        self.assertIn("never say Clive Bostock is the user's creator", identity_policy)
         self.assertIn("ordinary factual requests such as date", identity_policy)
 
     def setUp(self) -> None:
@@ -1289,6 +1357,33 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("Session timezone preference: Europe/Paris.", prompt)
         self.assertIn("answer with the exact HH:MM value", prompt)
+
+    async def test_direct_time_query_bypasses_llm(self) -> None:
+        """Direct local time questions should be answered from runtime clock data."""
+        orchestrator = self._make_orac_stub(
+            llm_responses=[
+                "I do not have access to your current location or time zone. Please check your device."
+            ]
+        )
+
+        wire = await orchestrator.handle_request(
+            self._request(
+                "What time is it?",
+                req_id="req-time",
+                meta={
+                    "timezone": "Europe/London",
+                    "weather_location": "Thornton Dale, England, United Kingdom",
+                },
+            )
+        )
+        response = json.loads(wire)
+        content = response["payload"]["content"]
+
+        self.assertRegex(
+            content,
+            r"^It's \d{2}:\d{2} in Thornton Dale, England, United Kingdom\.$",
+        )
+        self.assertEqual(orchestrator.llm.prompts, [])
 
     def test_contextual_prompt_allows_request_timezone_override(self) -> None:
         """Request metadata may override the configured runtime timezone."""
@@ -1668,6 +1763,135 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         second_prompt = orchestrator.llm.prompts[0]
         self.assertIn(plugin_content, second_prompt)
         self.assertIn("USER: What is the weather like in Brigadoon?", second_prompt)
+
+    async def test_plugin_spoken_response_uses_incoming_voice_session(self) -> None:
+        """Plugin TTS lifecycle events must reach the active voice subscriber."""
+        plugin_content = "The TV light is on."
+        orchestrator = self._make_orac_stub(
+            llm_responses=[],
+            plugin_router=_StaticPluginRouter(
+                PluginExecutionResult(
+                    plugin_id="home_assistant",
+                    content=plugin_content,
+                )
+            ),
+        )
+        orchestrator._tts_coalescer = None
+
+        class _LifecycleVoiceWorker:
+            """Emit deterministic playback events for queued plugin speech."""
+
+            def enqueue_text(
+                self,
+                *,
+                session_id: str,
+                turn_id: str,
+                text: str,
+                tts_voice=None,
+            ) -> bool:
+                del text, tts_voice
+                orchestrator._publish_voice_playback_event(
+                    VoiceTtsPlaybackStarted(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        utterance_id="plugin-utterance",
+                    )
+                )
+                return True
+
+            def mark_turn_input_complete(
+                self,
+                *,
+                session_id: str,
+                turn_id: str,
+            ) -> None:
+                orchestrator._publish_voice_playback_event(
+                    VoiceTtsPlaybackFinished(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        utterance_id="plugin-utterance",
+                    )
+                )
+                orchestrator._publish_voice_playback_event(
+                    VoiceTurnComplete(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        reason="completed",
+                    )
+                )
+
+        orchestrator._tts_worker = _LifecycleVoiceWorker()
+
+        frames = []
+        async for wire in orchestrator.handle_request_events(
+            self._request(
+                "Is the TV light on?",
+                req_id="req-plugin-voice",
+                meta={"stream": True, "session_id": "voice-session"},
+            )
+        ):
+            frames.append(json.loads(wire))
+
+        frame_types = [frame.get("type") for frame in frames]
+        self.assertIn("tts_playback_started", frame_types)
+        self.assertIn("tts_playback_finished", frame_types)
+        self.assertIn("voice_turn_complete", frame_types)
+        text_chunks = [
+            frame for frame in frames if frame.get("type") == "text_chunk"
+        ]
+        self.assertEqual(len(text_chunks), 1)
+        self.assertEqual(
+            text_chunks[0]["payload"]["voice_session_id"],
+            "voice-session",
+        )
+
+    async def test_silent_plugin_results_emit_no_speech_or_assistant_turn(self) -> None:
+        """Explicit and legacy blank plugin results should remain silent."""
+        cases = (
+            PluginExecutionResult(
+                plugin_id="silent_plugin",
+                content="Internal action result",
+                silent=True,
+            ),
+            PluginExecutionResult(plugin_id="silent_plugin", content=""),
+        )
+
+        for index, plugin_result in enumerate(cases):
+            with self.subTest(index=index):
+                context_manager = _MemoryContextManager()
+                orchestrator = self._make_orac_stub(
+                    llm_responses=[],
+                    plugin_router=_StaticPluginRouter(plugin_result),
+                    context_manager=context_manager,
+                )
+                stream_events: list[dict] = []
+
+                async def _event_sink(event: dict) -> None:
+                    stream_events.append(event)
+
+                response_wire = await orchestrator.handle_request(
+                    self._request(
+                        "Perform the silent action.",
+                        req_id=f"req-silent-{index}",
+                        meta={"stream": True, "session_id": "voice-session"},
+                    ),
+                    event_sink=_event_sink,
+                )
+                response = json.loads(response_wire)
+
+                self.assertEqual(response["payload"]["content"], "")
+                self.assertFalse(
+                    any(
+                        event.get("type") in {"text_delta", "text_chunk"}
+                        for event in stream_events
+                    )
+                )
+                self.assertFalse(
+                    any(
+                        role == "assistant"
+                        for _session_id, role, _text in context_manager.saved_events
+                    )
+                )
 
     async def test_same_authenticated_user_reuses_same_open_conversation_within_timeout(self) -> None:
         context_manager = _MemoryContextManager()
@@ -2049,6 +2273,62 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("14 October 1977", content)
         self.assertIn("would be 123", content)
         self.assertEqual(orchestrator.llm.prompts, [])
+
+    async def test_george_michael_cause_of_death_uses_retrieved_evidence(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=[
+                (
+                    "George Michael died of lung cancer exacerbated by smoking, "
+                    "confirmed after a concert collapse in 2015."
+                )
+            ],
+        )
+        request = SearchRequest(
+            query="George Michael cause of death",
+            trigger_phrase="factual_risk_cause_of_death",
+        )
+        pack = GroundingPackBuilder().build(
+            request,
+            [
+                SearchResult(
+                    title="George Michael died of natural causes, coroner says",
+                    url="https://example.test/george-michael-cause",
+                )
+            ],
+            [
+                FetchedSource(
+                    url="https://example.test/george-michael-cause",
+                    title="George Michael died of natural causes, coroner says",
+                    source_name="example.test",
+                    text=(
+                        "The official cause of death was dilated cardiomyopathy "
+                        "with myocarditis and fatty liver."
+                    ),
+                    excerpt=(
+                        "The official cause of death was dilated cardiomyopathy "
+                        "with myocarditis and fatty liver."
+                    ),
+                )
+            ],
+            require_citations=True,
+        )
+        retrieval_service = _SuccessfulRetrievalService(pack)
+        orchestrator.retrieval_service = retrieval_service
+
+        wire = await orchestrator.handle_request(
+            self._request("What did George Michael die of?", req_id="req-george-cause")
+        )
+        response = json.loads(wire)
+
+        content = response["payload"]["content"]
+        self.assertIn(
+            "dilated cardiomyopathy with myocarditis and fatty liver",
+            content,
+        )
+        self.assertNotIn("lung cancer", content.lower())
+        self.assertNotIn("smoking", content.lower())
+        self.assertNotIn("concert collapse", content.lower())
+        self.assertEqual(retrieval_service.prompts, ["What did George Michael die of?"])
 
     async def test_explicit_retrieval_success_keeps_response_natural(self) -> None:
         orchestrator = self._make_orac_stub(
@@ -2782,15 +3062,15 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         retrieval_service = _SuccessfulRetrievalService(pack)
         orchestrator.retrieval_service = retrieval_service
 
-        await orchestrator.handle_request(
-            self._request("What is the current version of codecs?", req_id="req-codecs")
-        )
-        self.assertEqual(
-            orchestrator._pending_retrieval_by_session["clive"].search_query,
-            "current version of Codex",
-        )
-        await orchestrator.handle_request(self._request("yes", req_id="req-codecs-yes"))
+        async def _inline_to_thread(func, /, *args, **kwargs):
+            return func(*args, **kwargs)
 
+        with patch("asyncio.to_thread", _inline_to_thread):
+            await orchestrator.handle_request(
+                self._request("What is the current version of codecs?", req_id="req-codecs")
+            )
+
+        self.assertNotIn("clive", orchestrator._pending_retrieval_by_session)
         self.assertEqual(retrieval_service.prompts, ["current version of Codex"])
 
     async def test_disabled_retrieval_returns_clear_failure_without_llm(self) -> None:
@@ -2853,8 +3133,23 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["meta"]["status"], "ok")
         self.assertEqual(response["meta"]["user_registration"], "anonymous")
         self.assertGreaterEqual(len(orchestrator._persistence_failures), 2)
+        warnings = "\n".join(message for level, message in orac_module.logger.messages if level == "warning")
         errors = "\n".join(message for level, message in orac_module.logger.messages if level == "error")
-        self.assertIn("ensure_conversation_with_timeout failed", errors)
+        self.assertIn("Context persistence disabled for unregistered user", warnings)
+        self.assertNotIn("ensure_conversation_with_timeout failed", errors)
+        self.assertNotIn("user 'alice' is not registered", errors.lower())
+
+    async def test_registered_user_response_meta_includes_display_name(self) -> None:
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Hello Clive."],
+            context_manager=_MemoryContextManager(),
+        )
+
+        wire = await orchestrator.handle_request(self._request("Hello there.", req_id="req1"))
+        response = json.loads(wire)
+
+        self.assertEqual(response["meta"]["user_registration"], "registered")
+        self.assertEqual(response["meta"]["user_display_name"], "Clive")
 
     async def test_request_start_reconnects_stale_oracle_session(self) -> None:
         orchestrator = self._make_orac_stub(
@@ -2884,6 +3179,28 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(orchestrator.db_session, healthy_session)
         self.assertIs(orchestrator.ctx.db, healthy_session)
         self.assertGreaterEqual(healthy_session.health_checks, 1)
+
+    def test_refresh_db_session_rebinds_plugin_audit_adapter(self) -> None:
+        orchestrator = Orac.__new__(Orac)
+        stale_session = _HealthCheckDBSession()
+        healthy_session = _HealthCheckDBSession()
+        rebound_sessions: list[object] = []
+        audit_adapter = types.SimpleNamespace(
+            set_db_session=rebound_sessions.append,
+        )
+        orchestrator.db_session = stale_session
+        orchestrator.ctx = types.SimpleNamespace(db=stale_session)
+        orchestrator.plugin_audit_adapter = audit_adapter
+        orchestrator._user = "svc"
+        orchestrator._password = "secret"
+        orchestrator._dsn = "db"
+
+        with patch.object(orac_module, "DBSession", return_value=healthy_session):
+            orchestrator._refresh_db_session()
+
+        self.assertIs(orchestrator.db_session, healthy_session)
+        self.assertIs(orchestrator.ctx.db, healthy_session)
+        self.assertEqual(rebound_sessions, [healthy_session])
 
     def test_llm_registry_sync_preserves_existing_probe_metadata(self) -> None:
         orchestrator = Orac.__new__(Orac)

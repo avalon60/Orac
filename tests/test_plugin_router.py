@@ -12,6 +12,7 @@ from datetime import timezone
 import sys
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -21,6 +22,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from model.plugin_router import PluginRouter
 import model.plugin_router as plugin_router_module
+from model.plugin_arbitration import PluginArbiter
 from model.plugin_confirmation_broker import PluginConfirmationBroker
 from model.plugin_execution_service import PluginExecutionService
 from model.plugin_routing.handoff import PluginRoutingHandoff
@@ -28,6 +30,7 @@ from model.plugin_routing.models import (
     PluginCandidate,
     PluginExecutionPolicy,
     PluginManifest,
+    PluginRouteCandidate,
 )
 from model.plugin_runtime import PluginExecutionResult
 
@@ -204,6 +207,25 @@ class _FakeAuditAdapter:
 class PluginExecutionServiceTests(unittest.TestCase):
     """Tests the controller-facing plugin execution service seam."""
 
+    def _route_candidate(
+        self,
+        *,
+        plugin_id: str = "home_assistant",
+        capability_id: str = "home_assistant.light_control",
+        intent_name: str = "control_light",
+        confidence: float = 0.91,
+        safety_level: str = "local_mutation",
+    ) -> PluginRouteCandidate:
+        return PluginRouteCandidate(
+            plugin_id=plugin_id,
+            capability_id=capability_id,
+            intent_name=intent_name,
+            confidence=confidence,
+            match_reasons=("unit",),
+            extracted_params={},
+            safety_level=safety_level,
+        )
+
     def test_service_returns_none_when_router_is_unavailable(self) -> None:
         logger = _FakeLogger()
         service = PluginExecutionService(plugin_router=None, logger=logger)
@@ -250,13 +272,19 @@ class PluginExecutionServiceTests(unittest.TestCase):
             request_context={"request_id": "req-1"},
         )
 
-        self.assertIs(result, expected)
+        self.assertIsNotNone(result)
         self.assertEqual(len(router.calls), 1)
         self.assertEqual(router.calls[0]["prompt"], "What's the weather?")
-        self.assertEqual(router.calls[0]["handoff"], handoff)
+        routed_handoff = router.calls[0]["handoff"]
+        self.assertEqual(len(routed_handoff.candidates), 1)
+        self.assertEqual(routed_handoff.candidates[0].plugin_id, "weather")
         self.assertEqual(router.calls[0]["auth_user"], "unit_user")
         self.assertIs(router.calls[0]["audit_adapter"], audit_adapter)
-        self.assertEqual(router.calls[0]["request_context"], {"request_id": "req-1"})
+        self.assertEqual(router.calls[0]["request_context"]["request_id"], "req-1")
+        self.assertEqual(
+            router.calls[0]["request_context"]["arbitration"]["decision_type"],
+            "execute_plugin",
+        )
 
     def test_service_returns_none_for_unhandled_router_result(self) -> None:
         router = _FakeRouter(
@@ -277,7 +305,7 @@ class PluginExecutionServiceTests(unittest.TestCase):
 
         self.assertIsNone(result)
 
-    def test_service_adds_legacy_provenance_fallback(self) -> None:
+    def test_service_requires_arbitration_selected_candidate(self) -> None:
         router = _FakeRouter(
             PluginExecutionResult(
                 plugin_id="weather",
@@ -294,10 +322,306 @@ class PluginExecutionServiceTests(unittest.TestCase):
             auth_user="unit_user",
         )
 
+        self.assertIsNone(result)
+        self.assertEqual(router.calls, [])
+
+    def test_service_passes_only_selected_candidate_to_router(self) -> None:
+        expected = PluginExecutionResult(
+            plugin_id="home_assistant",
+            content="Selected plugin declined.",
+            provenance={"status": "failed", "failure_type": "can_handle_declined"},
+        )
+        router = _FakeRouter(expected)
+        service = PluginExecutionService(plugin_router=router, logger=_FakeLogger())
+
+        result = service.execute(
+            prompt="Turn on the lounge lamp",
+            meta={},
+            handoff=PluginRoutingHandoff(
+                candidates=(
+                    self._route_candidate(confidence=0.95),
+                    self._route_candidate(
+                        plugin_id="weather",
+                        capability_id="weather.current_conditions",
+                        intent_name="current_weather",
+                        confidence=0.70,
+                        safety_level="informational_read_only",
+                    ),
+                ),
+                refreshed=False,
+            ),
+            auth_user="unit_user",
+        )
+
         self.assertIsNotNone(result)
-        self.assertEqual(result.provenance["source"], "plugin_execution")
-        self.assertEqual(result.provenance["plugin_id"], "weather")
-        self.assertEqual(result.provenance["status"], "allowed")
+        self.assertEqual(len(router.calls), 1)
+        routed_candidates = router.calls[0]["handoff"].candidates
+        self.assertEqual(len(routed_candidates), 1)
+        self.assertEqual(routed_candidates[0].plugin_id, "home_assistant")
+
+    def test_service_arbitration_provenance_redacts_secret_like_text(self) -> None:
+        expected = PluginExecutionResult(
+            plugin_id="home_assistant",
+            content="Handled",
+            provenance={},
+        )
+        router = _FakeRouter(expected)
+        service = PluginExecutionService(plugin_router=router, logger=_FakeLogger())
+
+        result = service.execute(
+            prompt="Turn on the lounge lamp bearer abcdefghijklmnop",
+            meta={},
+            handoff=PluginRoutingHandoff(
+                candidates=(self._route_candidate(confidence=0.95),),
+                refreshed=False,
+            ),
+            auth_user="unit_user",
+        )
+
+        self.assertIsNotNone(result)
+        arbitration = router.calls[0]["request_context"]["arbitration"]
+        self.assertIn("bearer [REDACTED]", arbitration["utterance"])
+        self.assertNotIn("abcdefghijklmnop", arbitration["utterance"])
+
+    def test_pending_context_from_other_session_is_ignored(self) -> None:
+        router = _FakeRouter(
+            PluginExecutionResult(plugin_id="home_assistant", content="Handled")
+        )
+        service = PluginExecutionService(plugin_router=router, logger=_FakeLogger())
+
+        result = service.execute(
+            prompt="the lounge one",
+            meta={"session_id": "session-b"},
+            handoff=PluginRoutingHandoff(
+                candidates=(self._route_candidate(confidence=0.50),),
+                refreshed=False,
+            ),
+            auth_user="unit_user",
+            pending_context={
+                "plugin_id": "home_assistant",
+                "capability_id": "home_assistant.light_control",
+                "intent_name": "control_light",
+                "session_id": "session-a",
+            },
+        )
+
+        self.assertIsNone(result)
+        self.assertEqual(router.calls, [])
+
+    def test_pending_context_for_same_session_is_honoured_once_per_call(self) -> None:
+        router = _FakeRouter(
+            PluginExecutionResult(plugin_id="home_assistant", content="Handled")
+        )
+        service = PluginExecutionService(plugin_router=router, logger=_FakeLogger())
+
+        result = service.execute(
+            prompt="the lounge one",
+            meta={"session_id": "session-a"},
+            handoff=PluginRoutingHandoff(
+                candidates=(self._route_candidate(confidence=0.50),),
+                refreshed=False,
+            ),
+            auth_user="unit_user",
+            pending_context={
+                "plugin_id": "home_assistant",
+                "capability_id": "home_assistant.light_control",
+                "intent_name": "control_light",
+                "session_id": "session-a",
+            },
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(len(router.calls), 1)
+
+
+class PluginArbiterTests(unittest.TestCase):
+    """Tests core-owned plugin route arbitration decisions."""
+
+    def _candidate(
+        self,
+        *,
+        plugin_id: str = "home_assistant",
+        capability_id: str = "home_assistant.light_control",
+        intent_name: str = "control_light",
+        confidence: float = 0.91,
+        safety_level: str = "local_mutation",
+        requires_confirmation: bool = False,
+    ) -> PluginRouteCandidate:
+        return PluginRouteCandidate(
+            plugin_id=plugin_id,
+            capability_id=capability_id,
+            intent_name=intent_name,
+            confidence=confidence,
+            match_reasons=("unit",),
+            extracted_params={},
+            requires_confirmation=requires_confirmation,
+            safety_level=safety_level,
+        )
+
+    def test_clear_home_assistant_directive_executes(self) -> None:
+        decision = PluginArbiter().arbitrate(
+            utterance="Turn on the lounge lamp",
+            candidates=(self._candidate(),),
+        )
+
+        self.assertEqual(decision.decision_type, "execute_plugin")
+        self.assertEqual(decision.selected_plugin_id, "home_assistant")
+
+    def test_design_sentence_with_device_words_falls_back(self) -> None:
+        decision = PluginArbiter().arbitrate(
+            utterance="The lounge lamp problem is a good example for the design document",
+            candidates=(self._candidate(confidence=0.94),),
+        )
+
+        self.assertEqual(decision.decision_type, "llm_fallback")
+        self.assertEqual(decision.reason, "no_directive_for_plugin_action")
+
+    def test_quoted_command_does_not_execute(self) -> None:
+        decision = PluginArbiter().arbitrate(
+            utterance='Add the phrase "turn on the lounge lamp" to the docs',
+            candidates=(self._candidate(confidence=0.95),),
+        )
+
+        self.assertEqual(decision.decision_type, "llm_fallback")
+
+    def test_explicit_quoted_home_assistant_example_does_not_execute(self) -> None:
+        manager = SimpleNamespace(
+            _manifests={
+                "home_assistant": SimpleNamespace(
+                    plugin_id="home_assistant",
+                    name="Home Assistant",
+                )
+            }
+        )
+
+        decision = PluginArbiter(plugin_manager=manager).arbitrate(
+            utterance='Ask Home Assistant whether "turn on the lounge lamp" is a good example phrase',
+            candidates=(self._candidate(confidence=0.95),),
+        )
+
+        self.assertEqual(decision.decision_type, "llm_fallback")
+
+    def test_plugin_name_discussion_does_not_route(self) -> None:
+        decision = PluginArbiter().arbitrate(
+            utterance="Home Assistant has the same routing problem as the weather plugin.",
+            candidates=(self._candidate(confidence=0.95),),
+        )
+
+        self.assertEqual(decision.decision_type, "llm_fallback")
+
+    def test_core_reserved_commands_win_without_object_hijack(self) -> None:
+        arbiter = PluginArbiter()
+
+        for utterance in ("stop", "cancel that", "go idle"):
+            with self.subTest(utterance=utterance):
+                decision = arbiter.arbitrate(
+                    utterance=utterance,
+                    candidates=(self._candidate(confidence=0.95),),
+                )
+                self.assertEqual(decision.decision_type, "core_command")
+
+        object_command = arbiter.arbitrate(
+            utterance="stop the kitchen timer",
+            candidates=(
+                self._candidate(
+                    plugin_id="media_control",
+                    capability_id="media.playback_control",
+                    intent_name="playback_control",
+                    safety_level="device_control",
+                ),
+            ),
+        )
+        self.assertNotEqual(object_command.decision_type, "core_command")
+
+        discussion = arbiter.arbitrate(
+            utterance="why did Orac stop speaking?",
+            candidates=(self._candidate(confidence=0.95),),
+        )
+        self.assertNotEqual(discussion.decision_type, "core_command")
+
+    def test_multiple_plausible_candidates_clarify(self) -> None:
+        decision = PluginArbiter().arbitrate(
+            utterance="Add this to Orac",
+            candidates=(
+                self._candidate(plugin_id="projects", capability_id="projects.note", confidence=0.88),
+                self._candidate(plugin_id="documents", capability_id="documents.note", confidence=0.86),
+            ),
+        )
+
+        self.assertEqual(decision.decision_type, "clarify")
+
+    def test_low_confidence_candidate_falls_back(self) -> None:
+        decision = PluginArbiter().arbitrate(
+            utterance="Hello there",
+            candidates=(self._candidate(confidence=0.41),),
+        )
+
+        self.assertEqual(decision.decision_type, "llm_fallback")
+
+    def test_pending_context_wins_for_short_reply(self) -> None:
+        decision = PluginArbiter().arbitrate(
+            utterance="the lounge one",
+            candidates=(self._candidate(confidence=0.50),),
+            pending_context={
+                "plugin_id": "home_assistant",
+                "capability_id": "home_assistant.light_control",
+                "intent_name": "control_light",
+            },
+        )
+
+        self.assertEqual(decision.decision_type, "execute_plugin")
+        self.assertEqual(decision.reason, "pending_plugin_context")
+
+    def test_confirmation_required_candidate_returns_confirm(self) -> None:
+        decision = PluginArbiter().arbitrate(
+            utterance="Pause the lounge TV",
+            candidates=(
+                self._candidate(
+                    plugin_id="media_control",
+                    capability_id="media.playback_control",
+                    intent_name="playback_control",
+                    safety_level="device_control",
+                    requires_confirmation=True,
+                ),
+            ),
+        )
+
+        self.assertEqual(decision.decision_type, "confirm")
+
+    def test_explicit_plugin_addressing_selects_named_plugin(self) -> None:
+        manager = SimpleNamespace(
+            _manifests={
+                "home_assistant": SimpleNamespace(
+                    plugin_id="home_assistant",
+                    name="Home Assistant",
+                )
+            }
+        )
+
+        decision = PluginArbiter(plugin_manager=manager).arbitrate(
+            utterance="Ask Home Assistant to turn on the lounge lamp",
+            candidates=(self._candidate(confidence=0.70),),
+        )
+
+        self.assertEqual(decision.decision_type, "execute_plugin")
+        self.assertEqual(decision.selected_plugin_id, "home_assistant")
+        self.assertEqual(
+            decision.candidates[0].extracted_params["routed_prompt"],
+            "turn on the lounge lamp",
+        )
+
+    def test_arbitration_logs_redacted_utterance(self) -> None:
+        logger = _FakeLogger()
+        decision = PluginArbiter(logger=logger).arbitrate(
+            utterance="Turn on the lounge lamp password=super-secret-token",
+            candidates=(self._candidate(confidence=0.95),),
+        )
+
+        self.assertIn("password [REDACTED]", decision.utterance)
+        self.assertNotIn("super-secret-token", decision.utterance)
+        debug_text = "\n".join(message for level, message in logger.messages if level == "debug")
+        self.assertIn("password [REDACTED]", debug_text)
+        self.assertNotIn("super-secret-token", debug_text)
 
 
 class PluginRouterTests(unittest.TestCase):
@@ -512,7 +836,9 @@ class PluginRouterTests(unittest.TestCase):
         finally:
             plugin_router_module.load_plugin_class = original_loader
 
-        self.assertIsNone(result)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.provenance["status"], "failed")
+        self.assertEqual(result.provenance["failure_type"], "can_handle_declined")
         self.assertEqual(len(audit_adapter.sessions), 1)
         self.assertTrue(
             any(
@@ -523,6 +849,54 @@ class PluginRouterTests(unittest.TestCase):
                 for event in audit_adapter.sessions[0].events
             )
         )
+
+    def test_declined_matching_mutation_does_not_fall_through_to_llm(self) -> None:
+        manifest = self._manifest(
+            plugin_id="home_assistant",
+            action_type="device_control",
+            capabilities=("home_assistant.device_control",),
+            entities=("light", "lamp", "switch"),
+        )
+        router = PluginRouter(
+            plugin_manager=_FakePluginManager(manifest),
+            logger=_FakeLogger(),
+            config_mgr=object(),
+            context_manager=object(),
+        )
+
+        class _DecliningPlugin:
+            def can_handle(self, prompt: str) -> bool:
+                return False
+
+        with patch.object(
+            plugin_router_module,
+            "load_plugin_class",
+            return_value=_DecliningPlugin,
+        ):
+            for prompt in (
+                "Switch off the desk lamp.",
+                "Switch office lamp off.",
+            ):
+                with self.subTest(prompt=prompt):
+                    result = router.route(
+                        prompt,
+                        {},
+                        PluginRoutingHandoff(
+                            candidates=(
+                                PluginCandidate(plugin_id="home_assistant", score=0.91),
+                            ),
+                            refreshed=False,
+                        ),
+                        auth_user="unit_user",
+                    )
+
+                    self.assertIsNotNone(result)
+                    self.assertEqual(result.plugin_id, "home_assistant")
+                    self.assertEqual(result.provenance["status"], "failed")
+                    self.assertEqual(
+                        result.provenance["failure_type"],
+                        "can_handle_declined",
+                    )
 
     def test_router_records_audit_event_for_load_failure(self) -> None:
         logger = _FakeLogger()
@@ -879,7 +1253,113 @@ class PluginRouterTests(unittest.TestCase):
             logger.messages,
         )
 
-    def test_unmatched_risky_candidate_falls_through_to_safe_plugin(self) -> None:
+    def test_natural_history_question_does_not_trigger_media_confirmation(self) -> None:
+        logger = _FakeLogger()
+        manifest = self._media_control_manifest()
+        router = PluginRouter(
+            plugin_manager=_FakePluginManager(manifest),
+            logger=logger,
+            config_mgr=object(),
+            context_manager=object(),
+        )
+
+        with patch.object(
+            plugin_router_module,
+            "load_plugin_class",
+            side_effect=AssertionError("factual question must not import media plugin code"),
+        ):
+            result = router.route(
+                "When the meteorite struck earth and wiped out the dinosaurs, "
+                "did any of them die of a heart attack?",
+                {},
+                PluginRoutingHandoff(
+                    candidates=(PluginCandidate(plugin_id="media_control", score=0.91),),
+                    refreshed=False,
+                ),
+                auth_user="unit_user",
+            )
+
+        self.assertIsNone(result)
+        self.assertIn(
+            (
+                "debug",
+                "Plugin execution denial skipped for 'media_control' because the prompt did not "
+                "match manifest-declared routing terms.",
+            ),
+            logger.messages,
+        )
+
+    def test_factual_question_with_media_term_does_not_trigger_confirmation(self) -> None:
+        logger = _FakeLogger()
+        manifest = self._media_control_manifest()
+        router = PluginRouter(
+            plugin_manager=_FakePluginManager(manifest),
+            logger=logger,
+            config_mgr=object(),
+            context_manager=object(),
+        )
+
+        with patch.object(
+            plugin_router_module,
+            "load_plugin_class",
+            side_effect=AssertionError("factual question must not import media plugin code"),
+        ):
+            result = router.route(
+                "What is the volume of a dinosaur's heart?",
+                {},
+                PluginRoutingHandoff(
+                    candidates=(PluginCandidate(plugin_id="media_control", score=0.91),),
+                    refreshed=False,
+                ),
+                auth_user="unit_user",
+            )
+
+        self.assertIsNone(result)
+        self.assertIn(
+            (
+                "debug",
+                "Plugin execution denial skipped for 'media_control' because the prompt matched "
+                "manifest terms but did not contain an explicit action intent.",
+            ),
+            logger.messages,
+        )
+
+    def test_factual_question_with_media_action_word_does_not_trigger_confirmation(self) -> None:
+        logger = _FakeLogger()
+        manifest = self._media_control_manifest()
+        router = PluginRouter(
+            plugin_manager=_FakePluginManager(manifest),
+            logger=logger,
+            config_mgr=object(),
+            context_manager=object(),
+        )
+
+        with patch.object(
+            plugin_router_module,
+            "load_plugin_class",
+            side_effect=AssertionError("factual question must not import media plugin code"),
+        ):
+            result = router.route(
+                "Did the lounge playlist stop when dinosaurs died of a heart attack?",
+                {},
+                PluginRoutingHandoff(
+                    candidates=(PluginCandidate(plugin_id="media_control", score=0.91),),
+                    refreshed=False,
+                ),
+                auth_user="unit_user",
+            )
+
+        self.assertIsNone(result)
+        self.assertIn(
+            (
+                "debug",
+                "Plugin execution denial skipped for 'media_control' because the prompt matched "
+                "manifest terms but did not contain an explicit action intent.",
+            ),
+            logger.messages,
+        )
+
+    def test_router_does_not_fall_through_to_second_candidate(self) -> None:
         logger = _FakeLogger()
         media_manifest = self._media_control_manifest()
         weather_manifest = self._manifest()
@@ -896,7 +1376,7 @@ class PluginRouterTests(unittest.TestCase):
 
             def execute(self, prompt: str, meta: dict):
                 del prompt, meta
-                return PluginExecutionResult(plugin_id="weather", content="Weather answer")
+                raise AssertionError("second-choice plugin must not execute")
 
         loaded_plugin_ids: list[str] = []
 
@@ -920,10 +1400,8 @@ class PluginRouterTests(unittest.TestCase):
                 auth_user="unit_user",
             )
 
-        self.assertIsNotNone(result)
-        self.assertEqual(result.plugin_id, "weather")
-        self.assertEqual(result.content, "Weather answer")
-        self.assertEqual(loaded_plugin_ids, ["weather"])
+        self.assertIsNone(result)
+        self.assertEqual(loaded_plugin_ids, [])
 
     def test_matched_risky_candidate_is_still_denied_before_import(self) -> None:
         logger = _FakeLogger()

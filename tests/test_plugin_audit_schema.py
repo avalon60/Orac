@@ -191,6 +191,18 @@ class PluginAuditSchemaTests(unittest.TestCase):
         self.assertIn("end plugin_audit_events_tapi;", evt_tapi_spec)
         self.assertIn("create or replace package body orac_api.plugin_audit_events_tapi", evt_tapi_body)
         self.assertIn("end plugin_audit_events_tapi;", evt_tapi_body)
+        self.assertEqual(
+            package_body.count("l_row.provenance_json := p_provenance_json;"),
+            1,
+        )
+        self.assertIn(
+            "Workaround for Oracle 23.26 ORA-07445 [kohfrem] crash",
+            package_body,
+        )
+        self.assertIn(
+            "retesting on the target Oracle database patch level",
+            package_body,
+        )
 
     def test_no_stale_plg_aud_evt_references_remain(self) -> None:
         """No stale plugin audit abbreviation references remain in the repo."""

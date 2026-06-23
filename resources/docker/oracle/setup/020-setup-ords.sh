@@ -22,6 +22,7 @@ orac_ords_setup() {
 
   ORDS_HOME=${ORAC_HOME}/ords
   ORDS_CONF=${ORDS_HOME}/conf
+  ORDS_CONF_PERSISTENT=${ORDS_CONF_PERSISTENT:-/opt/oracle/oradata/orac/ords/conf}
   ORDS_LOG=${ORAC_HOME}/logs
   ORDS_INIT_LOG=${ORDS_HOME}/init_ords.log
   ORDS_PWD_FILE=${ORDS_HOME}/install_pwd.txt
@@ -43,8 +44,30 @@ orac_ords_setup() {
   chmod 600 "${ORDS_PWD_FILE}"
 
   rm -f nohup.out 2>/dev/null || true
-  rm -rf "${ORDS_CONF}"
-  mkdir -p "${ORDS_CONF}" "${ORDS_LOG}"
+  mkdir -p "$(dirname "${ORDS_CONF_PERSISTENT}")" "${ORDS_LOG}"
+  if [[ -d "${ORDS_CONF_PERSISTENT}" ]] && find "${ORDS_CONF_PERSISTENT}" -type f -print -quit 2>/dev/null | grep -q .; then
+    echo "ORAC_ORDS_SETUP: Keeping existing persistent ORDS config: ${ORDS_CONF_PERSISTENT}"
+  elif [[ -d "${ORDS_CONF}" && ! -L "${ORDS_CONF}" ]]; then
+    echo "ORAC_ORDS_SETUP: Preserving existing runtime ORDS config from ${ORDS_CONF} to ${ORDS_CONF_PERSISTENT}"
+    mkdir -p "${ORDS_CONF_PERSISTENT}"
+    if ! cp -a "${ORDS_CONF}/." "${ORDS_CONF_PERSISTENT}/"; then
+      echo "ORAC_ORDS_SETUP_FAILED: Could not preserve runtime ORDS config at ${ORDS_CONF_PERSISTENT}."
+      return 1
+    fi
+    echo "ORAC_ORDS_SETUP: Runtime ORDS config preserved in persistent storage."
+  else
+    echo "ORAC_ORDS_SETUP: No existing ORDS config to preserve before setup."
+  fi
+
+  if [[ -e "${ORDS_CONF}" && ! -L "${ORDS_CONF}" ]]; then
+    rm -rf "${ORDS_CONF}"
+  elif [[ -L "${ORDS_CONF}" && "$(readlink "${ORDS_CONF}")" != "${ORDS_CONF_PERSISTENT}" ]]; then
+    rm -f "${ORDS_CONF}"
+  fi
+  mkdir -p "${ORDS_CONF_PERSISTENT}"
+  if [[ ! -L "${ORDS_CONF}" ]]; then
+    ln -s "${ORDS_CONF_PERSISTENT}" "${ORDS_CONF}"
+  fi
 
   ORDS_DB_HOSTNAME="localhost"
   ORDS_DB_PORT="1521"
@@ -124,7 +147,12 @@ SQL
     return 1
   fi
 
-  if [[ ! -d "${ORDS_CONF}" ]] || ! find "${ORDS_CONF}" -type f -print -quit | grep -q .; then
+  if [[ ! -L "${ORDS_CONF}" ]] || [[ "$(readlink "${ORDS_CONF}")" != "${ORDS_CONF_PERSISTENT}" ]]; then
+    echo "ORAC_ORDS_SETUP_FAILED: ORDS runtime config is not linked to persistent config: ${ORDS_CONF}"
+    return 1
+  fi
+
+  if [[ ! -d "${ORDS_CONF}" ]] || ! find -L "${ORDS_CONF}" -type f -print -quit | grep -q .; then
     echo "ORAC_ORDS_SETUP_FAILED: ORDS config directory is missing or empty: ${ORDS_CONF}"
     return 1
   fi

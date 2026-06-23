@@ -1044,6 +1044,154 @@ Example:
 timeout = 10  # Weather API occasionally stalls on DNS lookup.
 ```
 
+### Operational commentary
+
+Some code needs operational commentary in addition to docstrings.
+
+Docstrings describe the public purpose and contract of a module, class, or
+function. Operational comments explain non-obvious design decisions inside the
+implementation.
+
+Operational commentary is required when code coordinates side effects,
+lifecycle phases, external tools, safety boundaries, rollback behaviour, or
+security-sensitive actions.
+
+Examples include:
+
+* plugin installation
+* plugin loading
+* dependency installation or validation
+* database deployment
+* schema migration
+* filesystem staging
+* activation and rollback
+* shell wrappers
+* subprocess execution
+* credential access
+* dynamic imports
+* external network calls
+* home automation control
+* LLM tool execution
+* context assembly
+* message persistence
+
+Use comments to explain:
+
+* why this step exists
+* why the ordering matters
+* what external assumption is being relied on
+* what state is being changed
+* what is deliberately not copied, loaded, logged, or persisted
+* what happens if this step fails
+* where rollback starts and ends
+* why a fallback exists
+* why an apparently simpler approach is not used
+
+Do not comment obvious Python syntax or repeat the function name in prose.
+
+Good:
+
+```python
+# Build a clean staged candidate so plugin installation never runs directly
+# from the developer source tree. Runtime configuration, virtual
+# environments, Git metadata, and Python caches are intentionally excluded
+# from the managed plugin copy.
+```
+
+Bad:
+
+```python
+# Copy the plugin directory.
+```
+
+Good:
+
+```python
+# Dependency checks run against the active Orac Python environment, not a
+# per-plugin virtual environment. A broken optional dependency can therefore
+# block installation before the plugin itself is activated.
+```
+
+Bad:
+
+```python
+# Check dependencies.
+```
+
+Good:
+
+```python
+# Activate only after all validation gates have passed. If registry
+# persistence fails, roll back the filesystem change before surfacing the
+# error so the registry and managed plugin tree stay aligned.
+```
+
+Bad:
+
+```python
+# Activate plugin.
+```
+
+#### Commentary trigger checklist
+
+Add operational commentary when a block of code answers "yes" to any of these
+questions:
+
+* Does this code perform more than one side-effecting step?
+* Does the order of operations matter?
+* Does this code call out to Poetry, pip, Docker, sqlplus, SQLcl, ORDS, APEX,
+  Home Assistant, the filesystem, the shell, or the network?
+* Does this code deliberately bypass a higher-level tool for performance,
+  reliability, or bootstrapping reasons?
+* Does this code validate, stage, activate, persist, rollback, or clean up?
+* Could a failure here leave partial state behind?
+* Could a future maintainer reasonably ask "why is this done this way?"
+* Could a coding agent plausibly make a dangerous simplification here?
+
+When in doubt, add a short comment explaining the design constraint. Keep it
+close to the code it explains.
+
+#### Commentary density
+
+Do not add comments to every line.
+
+Prefer one short comment before each meaningful phase of an orchestration
+function.
+
+For long lifecycle functions, use phase comments such as:
+
+```python
+# Stage a clean candidate before performing any irreversible work.
+```
+
+```python
+# Validate cheap local gates before dependency or database side effects.
+```
+
+```python
+# Persist registry state after activation so rollback can restore the previous
+# filesystem state if persistence fails.
+```
+
+If a function needs many operational comments, consider whether it should be
+split into smaller phase-specific helpers.
+
+#### Agent rules for commentary
+
+When generating or modifying Python code, agents must:
+
+1. Preserve existing useful comments.
+2. Remove comments that no longer match the code.
+3. Add operational commentary for lifecycle, orchestration, deployment,
+   rollback, plugin, database, shell, filesystem, network, credential, and
+   security-sensitive code.
+4. Explain non-obvious ordering, fallbacks, side effects, and failure handling.
+5. Avoid comments that simply restate the code.
+6. Avoid commented-out code.
+7. Avoid using comments to justify unsafe shortcuts.
+8. Treat missing commentary around side-effecting orchestration as a review
+   finding.
+
 ---
 
 ## Command line interfaces

@@ -1,3 +1,8 @@
+--liquibase formatted sql
+
+--changeset clive:create_table_orac_core_table_preference_definitions context:core labels:core stripComments:false
+--preconditions onFail:HALT onError:HALT
+--precondition-sql-check expectedResult:0 select count(1) from all_tables where owner = 'ORAC_CORE' and table_name = 'PREFERENCE_DEFINITIONS';
 -- __author__: clive
 -- __date__: 2026-04-27
 -- __description__: preference metadata definitions for validation, display, and LOV behaviour
@@ -38,3 +43,5 @@ create table orac_core.preference_definitions
   row_version        number default 1 not null
 )
 ;
+
+--rollback drop table orac_core.preference_definitions purge;

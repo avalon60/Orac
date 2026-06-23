@@ -254,11 +254,13 @@ wait_for_orac_deploy() {
   local interval=60
   local timeout=1800   # 30 minutes
   local marker="=  ORAC deployment complete ="
+  local log_since
   local failure_patterns=(
     "!! Halting due to STOP_ON_ERROR=1."
     "Database configuration failed. Check logs under '/opt/oracle/cfgtoollogs/dbca'."
     "DATABASE SETUP WAS NOT SUCCESSFUL!"
     "ORAC_APEX_SETUP_FAILED"
+    "ORAC_APEX_ADMIN_SETUP_FAILED"
     "ORAC_ORDS_SETUP_FAILED"
     "ORAC_ORDS_START_FAILED"
     "ORAC_DEPLOYMENT_INCOMPLETE"
@@ -267,11 +269,12 @@ wait_for_orac_deploy() {
   local start_time
   local logs_snapshot
   start_time=$(date +%s)
+  log_since="${start_time}"
 
   echo "⏳ Waiting for Orac deployment to complete..."
 
   while true; do
-    logs_snapshot="$(docker logs "$container" 2>&1 || true)"
+    logs_snapshot="$(docker logs --since "$log_since" "$container" 2>&1 || true)"
 
     if grep -Fq "$marker" <<<"$logs_snapshot"; then
       if ! verify_container_ords_config "$container"; then
@@ -294,6 +297,7 @@ wait_for_orac_deploy() {
         echo "❌ Detected deployment failure in container logs."
         echo "   Matched marker: $pattern"
         echo "   Check container logs: docker logs $container"
+        print_recent_log_context "$container" "$pattern" "$log_since"
         return 1
       fi
     done
@@ -317,6 +321,19 @@ wait_for_orac_deploy() {
     echo "Deployment still in progress. Checking again in ${interval}s..."
     sleep "$interval"
   done
+}
+
+print_recent_log_context() {
+  local container="$1"
+  local pattern="$2"
+  local since="$3"
+  local context
+
+  context="$(docker logs --since "$since" "$container" 2>&1 | grep -F -A 8 -B 8 "$pattern" | tail -n 40 || true)"
+  if [[ -n "$context" ]]; then
+    echo "   Recent matching log context:"
+    echo "$context"
+  fi
 }
 
 verify_container_ords_config() {
@@ -367,6 +384,11 @@ SQL
       echo "missing ORDS config directory: /home/oracle/orac/ords/conf"
       exit 1
     fi
+    if [[ ! -L /home/oracle/orac/ords/conf ]] ||
+       [[ "$(readlink /home/oracle/orac/ords/conf)" != "/opt/oracle/oradata/orac/ords/conf" ]]; then
+      echo "ORDS runtime config is not linked to persistent config: /home/oracle/orac/ords/conf"
+      exit 1
+    fi
     /home/oracle/orac/ords/bin/ords --config /home/oracle/orac/ords/conf config list 2>&1
   ' 2>&1)" || {
     echo "❌ ORDS config validation command failed:"
@@ -394,10 +416,10 @@ wait_for_ords_apex_app() {
 
   while true; do
     output="$(docker exec "$container" bash -lc '
-      curl -sS -i --max-time 10 "http://127.0.0.1:8080/ords/f?p=1042" 2>&1 || true
+      curl -sS -i --max-time 10 "http://127.0.0.1:8080/ords/r/orac/orac-administration1042/login" 2>&1 || true
     ' 2>&1)"
 
-    if grep -Eq 'APEX_APP_ID: 1042|Location: .*f\?p=1042:1|HTTP/[0-9.]+ 200' <<<"$output" &&
+    if grep -Eq 'APEX_APP_ID: 1042|Orac Administration - Log In|HTTP/[0-9.]+ 200' <<<"$output" &&
        ! grep -Eq 'ERR-7620|Application not found|Could not determine workspace' <<<"$output"; then
       echo "✅ ORDS is serving APEX application 1042."
       return 0
@@ -477,6 +499,7 @@ run_container_with_retries() {
     echo "🎉 '${CONTAINER_NAME}' is up"
     echo "📡 SQL*Net  : ${PORT_SQLNET}"
     echo "🌐 ORDS/HTTP: http://localhost:${PORT_HTTP}"
+    echo "🌐 APEX admin: http://localhost:${PORT_HTTP}/ords/r/orac/orac-administration1042/login"
     echo "📂 Oradata  : ${ORADATA_DIR}"
     echo -e "⏳ Deploying Orac components..."
 

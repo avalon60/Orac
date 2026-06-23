@@ -17,7 +17,9 @@ dependencies = [
   "oracledb (>=4.0.0,<5.0.0)",
   "cryptography (>=47.0.0,<48.0.0)",
   "customtkinter (>=5.2.2,<6.0.0)",
-  "pytest (>=9.0.3,<10.0.0)"
+  "pytest (>=9.0.3,<10.0.0)",
+  "packaging (>=24.0,<27.0)",
+  "platypush-speexdsp-ns (>=0.1.2,<0.2.0)"
 ]
 
 [project.optional-dependencies]

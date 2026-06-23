@@ -56,6 +56,13 @@ class PersonBio:
 
 
 _AGE_STATUS_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "age_at_death",
+        re.compile(
+            r"^\s*how old (?:was|is) (?P<person>.+?) when (?:they|he|she|the person) (?:died|die|passed away)\??\s*$",
+            re.I,
+        ),
+    ),
     ("age", re.compile(r"^\s*how old (?:is|was) (?P<person>.+?)\??\s*$", re.I)),
     ("born", re.compile(r"^\s*when was (?P<person>.+?) born\??\s*$", re.I)),
     ("death", re.compile(r"^\s*when did (?P<person>.+?) (?:die|pass away)\??\s*$", re.I)),
@@ -64,6 +71,22 @@ _AGE_STATUS_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("age", re.compile(r"^\s*(?P<person>.+?)\s+age\??\s*$", re.I)),
     ("born", re.compile(r"^\s*(?P<person>.+?)\s+date of birth\??\s*$", re.I)),
     ("death", re.compile(r"^\s*(?P<person>.+?)\s+date of death\??\s*$", re.I)),
+    (
+        "cause",
+        re.compile(r"^\s*what was (?P<person>.+?)'s cause of death\??\s*$", re.I),
+    ),
+    (
+        "cause",
+        re.compile(r"^\s*what was the cause of death of (?P<person>.+?)\??\s*$", re.I),
+    ),
+    (
+        "cause",
+        re.compile(r"^\s*what did (?P<person>.+?) die of\??\s*$", re.I),
+    ),
+    (
+        "cause",
+        re.compile(r"^\s*how did (?P<person>.+?) (?:die|pass away)\??\s*$", re.I),
+    ),
     ("death", re.compile(r"^\s*(?P<person>.+?)\s+(?:death|died|obituary|cause of death)\??\s*$", re.I)),
     ("death", re.compile(r"^\s*(?:the\s+)?(?:death|obituary|cause of death) of (?P<person>.+?)\??\s*$", re.I)),
 )
@@ -78,6 +101,10 @@ _PERSON_DESCRIPTOR_WORDS = (
     "singer",
     "writer",
 )
+
+_PERSON_NAME_TOKEN_CORRECTIONS = {
+    "micheal": "Michael",
+}
 
 _STABLE_BIOS: dict[str, PersonBio] = {
     "bing crosby": PersonBio(
@@ -156,20 +183,31 @@ def normalise_person_name(value: str) -> str:
         cleaned,
         flags=re.I,
     )
-    return " ".join(cleaned.strip(" .?!:-,;").split())
+    tokens = cleaned.strip(" .?!:-,;").split()
+    corrected_tokens = [
+        _PERSON_NAME_TOKEN_CORRECTIONS.get(token.lower(), token)
+        for token in tokens
+    ]
+    return " ".join(corrected_tokens)
 
 
 def build_person_status_search_query(person: str, *, query_type: str = "status") -> str:
     """Return a focused query for verifying person age/status facts."""
     cleaned = " ".join(str(person or "").strip(" .?!").split())
     if cleaned.lower() == "kelly curtis":
-        if query_type == "age":
+        if query_type in {"age", "age_at_death"}:
             return "Kelly Curtis actress age born died"
+        if query_type == "born":
+            return "Kelly Curtis actress date of birth"
+        if query_type == "cause":
+            return "Kelly Curtis actress cause of death"
         return "Kelly Curtis actress died"
     if query_type == "born":
         return f'"{cleaned}" date of birth'
-    if query_type == "age":
+    if query_type in {"age", "age_at_death"}:
         return f'"{cleaned}" date of birth date of death'
+    if query_type == "cause":
+        return f'"{cleaned}" cause of death'
     return f'"{cleaned}" death obituary'
 
 
@@ -202,8 +240,7 @@ def answer_from_stable_bio(
         return None
 
     born_text = format_partial_date(bio.date_of_birth)
-    pronoun = bio.subject_pronoun.strip().lower() or "they"
-    pronoun_title = pronoun[:1].upper() + pronoun[1:]
+    pronoun = bio.subject_pronoun.strip().lower()
     if bio.date_of_death is None:
         if not bio.date_of_birth.is_full:
             return (
@@ -211,9 +248,14 @@ def answer_from_stable_bio(
                 "date precision to calculate a reliable current age."
             )
         age = calculate_age(bio.date_of_birth.as_date(), today)
-        return f"{bio.display_name} is {age}. {pronoun_title} was born on {born_text}."
+        return (
+            f"{bio.display_name} is {age}. "
+            f"{_birth_sentence_subject(bio.display_name, pronoun)} was born on {born_text}."
+        )
 
     died_text = format_partial_date(bio.date_of_death)
+    if query.query_type in {"death", "status"}:
+        return f"{bio.display_name} died on {died_text}."
     if not bio.date_of_birth.is_full or not bio.date_of_death.is_full:
         uncertainty = " Their exact birth date is uncertain." if bio.birth_date_uncertain else ""
         return (
@@ -223,9 +265,12 @@ def answer_from_stable_bio(
     age_at_death = calculate_age(bio.date_of_birth.as_date(), bio.date_of_death.as_date())
     age_today = calculate_age(bio.date_of_birth.as_date(), today)
     return (
-        f"{bio.display_name} was {age_at_death} when {pronoun} died. "
-        f"{pronoun_title} was born on {born_text} and died on {died_text}. "
-        f"If {pronoun} were alive today, {pronoun} would be {age_today}."
+        f"{bio.display_name} was {age_at_death} when "
+        f"{_death_clause_subject(bio.display_name, pronoun)} died. "
+        f"{_birth_sentence_subject(bio.display_name, pronoun)} was born on {born_text} "
+        f"and died on {died_text}. "
+        f"Had {bio.display_name} still been alive today, "
+        f"{_hypothetical_clause_subject(bio.display_name, pronoun)} would be {age_today}."
     )
 
 
@@ -243,3 +288,20 @@ def _looks_like_specific_person(person: str) -> bool:
     """Return whether the extracted name looks specific enough to search."""
     tokens = [token for token in re.split(r"\s+", str(person or "").strip()) if token]
     return len(tokens) >= 2 or str(person or "").strip().lower() in _STABLE_BIOS
+
+
+def _death_clause_subject(display_name: str, pronoun: str) -> str:
+    """Return a readable subject for a death clause."""
+    return pronoun if pronoun in {"he", "she"} else display_name
+
+
+def _birth_sentence_subject(display_name: str, pronoun: str) -> str:
+    """Return a readable subject for a follow-up birth sentence."""
+    if pronoun in {"he", "she"}:
+        return pronoun.capitalize()
+    return display_name
+
+
+def _hypothetical_clause_subject(display_name: str, pronoun: str) -> str:
+    """Return a readable subject for a hypothetical age clause."""
+    return pronoun if pronoun in {"he", "she"} else display_name

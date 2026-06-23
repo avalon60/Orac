@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset clive:plugin_invocations_tapi_create_spec stripComments:false endDelimiter:/ runOnChange:true
+--changeset clive:plugin_invocations_tapi_create_spec stripComments:false endDelimiter:/ runOnChange:true context:core labels:core splitStatements:false
 
 create or replace package orac_api.plugin_invocations_tapi
 authid definer
@@ -22,4 +22,4 @@ as
   );
 end plugin_invocations_tapi;
 /
---rollback drop package orac_api.plugin_invocations_tapi
+--rollback drop package orac_api.plugin_invocations_tapi;

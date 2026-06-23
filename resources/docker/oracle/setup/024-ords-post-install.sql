@@ -10,4 +10,4 @@ alter session set container=FREEPDB1;
 alter user apex_public_user grant connect through ords_public_user;
 alter user apex_rest_public_user grant connect through ords_public_user;
 alter user apex_listener grant connect through ords_public_user;
-
+alter user orac_apx_pub grant connect through ords_public_user;

@@ -20,6 +20,8 @@ const SHOW_TRANSCRIPT_PANELS =
     .toLowerCase() === 'true';
 const RECONNECT_INITIAL_DELAY_MS = 500;
 const RECONNECT_MAX_DELAY_MS = 10_000;
+const RECOVERY_NOTICE_DURATION_MS = 6_000;
+const RENDER_RECOVERY_DEBOUNCE_MS = 12_000;
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected';
 type BrowserUiConfig = {
@@ -30,6 +32,12 @@ type RuntimeIdentity = {
   model: string;
   persona: string;
   llm_source: string;
+};
+type RenderRecoveryStatus = {
+  count: number;
+  lastReason: DisplayRecoveryReason | null;
+  lastTimestamp: string | null;
+  visible: boolean;
 };
 type BrowserDiagnosticEvent = CustomEvent<{
   timestamp: string;
@@ -75,6 +83,27 @@ function getRuntimeIdentity(data: Record<string, unknown>): RuntimeIdentity | nu
   };
 }
 
+function getUserDisplayName(data: Record<string, unknown>): string | null {
+  const registration =
+    typeof data.user_registration === 'string'
+      ? data.user_registration.trim().toLowerCase()
+      : '';
+  const displayName =
+    typeof data.user_display_name === 'string'
+      ? data.user_display_name.trim()
+      : '';
+
+  if (registration === 'registered' && displayName) {
+    return displayName;
+  }
+
+  if (registration === 'anonymous') {
+    return '';
+  }
+
+  return null;
+}
+
 function useMediaQuery(query: string) {
   const [matches, setMatches] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.matchMedia(query).matches : false,
@@ -86,7 +115,6 @@ function useMediaQuery(query: string) {
       setMatches(event.matches);
     };
 
-    setMatches(mediaQuery.matches);
     mediaQuery.addEventListener('change', updateMatches);
     return () => mediaQuery.removeEventListener('change', updateMatches);
   }, [query]);
@@ -120,27 +148,67 @@ function App() {
   );
   const [runtimeIdentity, setRuntimeIdentity] =
     useState<RuntimeIdentity | null>(null);
+  const [userDisplayName, setUserDisplayName] = useState('');
   const [userTranscript, setUserTranscript] = useState('');
   const [oracTranscript, setOracTranscript] = useState('');
   const [railExpanded, setRailExpanded] = useState(false);
-  const [reconnectNonce, setReconnectNonce] = useState(0);
   const [renderResetNonce, setRenderResetNonce] = useState(0);
+  const [renderRecoveryStatus, setRenderRecoveryStatus] =
+    useState<RenderRecoveryStatus>({
+      count: 0,
+      lastReason: null,
+      lastTimestamp: null,
+      visible: false,
+    });
   const socketRef = useRef<WebSocket | null>(null);
   const diagnosticQueueRef = useRef<string[]>([]);
+  const lastRenderRecoveryAtRef = useRef(0);
   const isWideScreen = useMediaQuery('(min-width: 1280px)');
 
   const requestDisplayRecovery = (reason: DisplayRecoveryReason) => {
-    logDisplayDiagnostic('display recovery requested', { reason });
-    setConnectionState('connecting');
-    setReconnectNonce((value) => value + 1);
+    const timestamp = new Date().toISOString();
+    const now = Date.now();
+
+    if (
+      reason !== 'timer-gap' &&
+      now - lastRenderRecoveryAtRef.current < RENDER_RECOVERY_DEBOUNCE_MS
+    ) {
+      logDisplayDiagnostic('display recovery skipped during debounce', {
+        reason,
+        timestamp,
+      });
+      return;
+    }
+
+    lastRenderRecoveryAtRef.current = now;
+    logDisplayDiagnostic('display recovery requested', { reason, timestamp });
+    setRenderRecoveryStatus((current) => ({
+      count: current.count + 1,
+      lastReason: reason,
+      lastTimestamp: timestamp,
+      visible: true,
+    }));
     setRenderResetNonce((value) => value + 1);
   };
 
   useEffect(() => {
-    if (!showButtons || isWideScreen) {
-      setRailExpanded(false);
+    if (!renderRecoveryStatus.visible || connectionState !== 'connected') {
+      return;
     }
-  }, [showButtons, isWideScreen]);
+
+    const noticeTimerId = window.setTimeout(() => {
+      setRenderRecoveryStatus((current) => ({
+        ...current,
+        visible: false,
+      }));
+    }, RECOVERY_NOTICE_DURATION_MS);
+
+    return () => window.clearTimeout(noticeTimerId);
+  }, [
+    connectionState,
+    renderRecoveryStatus.lastTimestamp,
+    renderRecoveryStatus.visible,
+  ]);
 
   useEffect(() => {
     const sendDiagnostic = (payload: string) => {
@@ -217,7 +285,6 @@ function App() {
       try {
         logDisplayDiagnostic('opening display WebSocket', {
           url: DISPLAY_WS_URL,
-          reconnectNonce,
         });
         socket = new WebSocket(DISPLAY_WS_URL);
         socketRef.current = socket;
@@ -259,6 +326,8 @@ function App() {
             persona?: string;
             personality_code?: string;
             personality_name?: string;
+            user_registration?: string;
+            user_display_name?: string;
           };
           const transcriptText = getTranscriptText(
             data as Record<string, unknown>,
@@ -289,6 +358,14 @@ function App() {
             const identity = getRuntimeIdentity(data as Record<string, unknown>);
             if (identity) {
               setRuntimeIdentity(identity);
+            }
+            setConnectionState('connected');
+          } else if (data.event === 'user.identity') {
+            const displayName = getUserDisplayName(
+              data as Record<string, unknown>,
+            );
+            if (displayName !== null) {
+              setUserDisplayName(displayName);
             }
             setConnectionState('connected');
           } else if (
@@ -366,7 +443,7 @@ function App() {
       }
       socket = null;
     };
-  }, [reconnectNonce]);
+  }, []);
 
   const handleManualStateChange = (newState: OracState) => {
     setState(newState);
@@ -412,7 +489,7 @@ function App() {
         </div>
         {runtimeIdentityLabel && (
           <div
-            className="absolute left-1/2 top-12 inline-flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center justify-center gap-2 rounded-full border border-[#4fc3f7]/20 bg-[#06131d]/72 px-4 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.28em] text-[#8fdcff]/80 shadow-[0_0_20px_rgba(79,195,247,0.12)] backdrop-blur-md sm:top-0 sm:max-w-[min(34rem,calc(100vw-21rem))] sm:px-5"
+            className="absolute left-1/2 top-12 inline-flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center justify-center gap-2 rounded-full border border-[#4fc3f7]/20 bg-[#06131d]/72 px-4 py-2 text-center text-[10px] font-semibold tracking-[0.18em] text-[#8fdcff]/80 shadow-[0_0_20px_rgba(79,195,247,0.12)] backdrop-blur-md sm:top-0 sm:max-w-[min(34rem,calc(100vw-21rem))] sm:px-5"
             title={showRuntimeIdentityFallbackWarning ? runtimeIdentityWarning : undefined}
           >
             {showRuntimeIdentityFallbackWarning && (
@@ -422,6 +499,24 @@ function App() {
               />
             )}
             <span className="truncate">{runtimeIdentityLabel}</span>
+          </div>
+        )}
+        {renderRecoveryStatus.visible && (
+          <div
+            className={`absolute right-0 top-12 rounded-full border px-4 py-2 text-[10px] font-bold uppercase tracking-[0.24em] shadow-[0_0_20px_rgba(251,191,36,0.1)] backdrop-blur-md sm:top-0 sm:right-24 ${
+              connectionState === 'connected'
+                ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-100/85'
+                : 'border-amber-300/20 bg-amber-300/10 text-amber-100/85'
+            }`}
+            title={
+              renderRecoveryStatus.lastTimestamp
+                ? `Display recovery ${renderRecoveryStatus.count}: ${renderRecoveryStatus.lastReason?.replaceAll('-', ' ') || 'unknown'} at ${renderRecoveryStatus.lastTimestamp}`
+                : undefined
+            }
+          >
+            {connectionState === 'connected'
+              ? 'Display resumed'
+              : 'Display resyncing'}
           </div>
         )}
       </div>
@@ -456,6 +551,7 @@ function App() {
                 message={message}
                 showTranscriptPanels={showTranscriptPanels}
                 userTranscript={userTranscript}
+                userDisplayName={userDisplayName}
                 oracTranscript={oracTranscript}
                 renderResetKey={renderResetNonce}
                 onRenderRecovery={requestDisplayRecovery}

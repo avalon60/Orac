@@ -126,6 +126,98 @@ The plugin display name may change.
 The plugin code should not change once released.
 
 ---
+## Plugin file layout
+
+Plugins must be located under the project-level `plugins` directory.
+
+Each plugin must have a manifest file in the form:
+
+```text
+plugins/<plugin-code>.json
+```
+
+The manifest file stem must match the plugin source directory name.
+
+For example, the Home Assistant plugin must use:
+
+```text
+plugins/home_assistant.json
+plugins/home_assistant/
+```
+
+The plugin source directory must contain the plugin implementation and any plugin-specific supporting assets.
+
+Example structure:
+
+```text
+plugins/
+|-- home_assistant.json        <- manifest
+`-- home_assistant/            <- source directory
+    |-- README.md
+    |-- Python files
+    |-- db/
+    |   `-- schema/
+    |       |-- comment/
+    |       |-- constraint_fk/
+    |       |-- constraint_other/
+    |       |-- constraint_pk/
+    |       |-- constraint_uc/
+    |       |-- context/
+    |       |-- function/
+    |       |-- grant/
+    |       |-- index/
+    |       |-- job/
+    |       |-- materialized_view/
+    |       |-- package_body/
+    |       |-- package_spec/
+    |       |-- post_install/
+    |       |-- pre_install/
+    |       |-- privilege/
+    |       |-- procedure/
+    |       |-- rest_module/
+    |       |-- role/
+    |       |-- schedule/
+    |       |-- seed_data/
+    |       |-- sequence/
+    |       |-- synonym/
+    |       |-- table/
+    |       |-- trigger/
+    |       |-- type_body/
+    |       |-- type_spec/
+    |       `-- view/
+    `-- docs/
+```
+
+The `db` directory is optional. It must only be provided for plugins that need plugin-owned database artefacts to be created, installed, upgraded, or maintained as part of the plugin lifecycle.
+
+Where plugin database deployment files are required, they must be located under:
+
+```text
+plugins/<plugin-code>/db/schema/
+```
+
+Plugin-specific database deployment files must not be placed in the main project-level `resources/db/schema` directory unless they define generic Orac platform objects rather than plugin-specific objects.
+
+Each plugin should include a plugin-level README file:
+
+```text
+plugins/<plugin-code>/README.md
+```
+
+The README should describe the purpose of the plugin, its configuration requirements, installation behaviour, runtime behaviour, and any relevant operational notes.
+
+Supplementary plugin documentation must be located under the plugin's own `docs` directory:
+
+```text
+plugins/<plugin-code>/docs/
+```
+
+Plugin-specific documentation must not be placed in the main project-level `docs` directory.
+
+The main project-level `docs` directory should only contain generic Orac documentation, shared standards, architecture notes, platform-level guidance, and documentation that applies across multiple plugins.
+
+Where supplementary plugin documentation exists, the plugin README must include links to those documents.
+---
 
 ## Plugin registration
 
@@ -258,6 +350,44 @@ The manifest describes what the plugin offers.
 
 The manifest does not grant authority.
 
+Optional plugin UI metadata may declare operational or admin surfaces, such as
+status providers, APEX admin pages, or React diagnostic panels. These
+declarations are discovery metadata only.
+
+Plugin UI metadata must not:
+
+* create conversational capabilities
+* enter prompt routing or intent arbitration
+* grant access to secrets or raw plugin-private tables
+* bypass Orac-owned installation, registration, authentication, or lifecycle
+  controls
+
+Status providers must return redacted operational data. Error text must mask
+tokens, bearer values, passwords, secrets, credential-bearing URLs, and other
+sensitive values before it is exposed to APEX, React, logs, or admin APIs.
+
+Plugin-supplied APEX applications must be declared in the manifest `apex_apps`
+section. This section is installation and registration metadata only. It must
+not create conversational capabilities and must not be indexed by prompt
+routing.
+
+Each APEX app declaration must use `app_alias` or `alias` as the stable logical
+identifier, may declare an expected `application_id`, and may declare
+`parsing_schema`. Plugin-supplied APEX apps must be installed into the shared
+Orac workspace, `ORAC`, because plugin menu links and app-to-app navigation
+depend on a common APEX workspace session context. The default parsing schema
+is `ORAC_APX_PUB` unless a supported alternative is explicitly declared.
+
+Plugin installers must validate that declared export files are inside the
+plugin package. Required APEX app imports must fail the plugin installation if
+the import fails. Phase 1 idempotency is fail-safe: an existing app alias may
+be reused as an installed app record, but it must not be replaced unless the
+manifest explicitly allows replacement.
+
+The installer must capture APEX import output and record the installed
+application id in the Orac plugin APEX app registry. Listing surfaces must hide
+disabled, failed, and metadata-only app rows.
+
 ---
 
 ## Plugin capabilities
@@ -265,6 +395,21 @@ The manifest does not grant authority.
 Plugins must expose declared capabilities.
 
 Capabilities are what Orac may choose to use.
+
+Plugins may provide declarative route metadata for their capabilities and
+intents, but that metadata only produces route candidates. A plugin must not
+directly claim ownership of a user turn because it recognises a keyword,
+phrase, entity name, or example.
+
+Orac core must arbitrate between route candidates. Core-reserved commands win
+before plugin routing. Explicit plugin addressing restricts the candidate set
+but does not bypass capability matching or execution policy. Ambiguous matches
+must ask for clarification. Install order, registration order, filesystem
+order, vector-search order, and first-match-wins must never be the final
+arbiter of user intent.
+
+Vector similarity and embeddings are shortlist/ranking signals only. They must
+not directly authorize plugin execution.
 
 A plugin capability may be:
 

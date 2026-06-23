@@ -12,6 +12,8 @@ import sys
 import json
 import unittest
 from unittest.mock import patch
+from urllib.parse import parse_qs
+from urllib.parse import urlparse
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -20,13 +22,16 @@ if str(SRC_ROOT) not in sys.path:
 
 from orac_core.retrieval import ExplicitRetrievalService
 from orac_core.retrieval import FetchedSource
+from orac_core.retrieval import FactualRiskMatch
 from orac_core.retrieval import GroundingPackBuilder
+from orac_core.retrieval import RetrievalDecision
 from orac_core.retrieval import RetrievalDecisionService
 from orac_core.retrieval import RetrievalSettings
 from orac_core.retrieval import RetrievalTurnContext
 from orac_core.retrieval import SearchBroker
 from orac_core.retrieval import SearchRequest
 from orac_core.retrieval import SearchResult
+from orac_core.retrieval import PersonFactResolver
 from orac_core.retrieval import build_topic_signature
 from orac_core.retrieval import SearXNGSearchProvider
 from orac_core.retrieval import SourceFetcher
@@ -34,9 +39,13 @@ from orac_core.retrieval import answer_from_stable_bio
 from orac_core.retrieval import build_retrieval_response_guidance
 from orac_core.retrieval import detect_explicit_search_request
 from orac_core.retrieval import calculate_age
+from orac_core.retrieval import detect_factual_risk
+from orac_core.retrieval import enforce_high_risk_factual_grounding
 from orac_core.retrieval import normalize_retrieval_response_style
 from orac_core.retrieval import parse_person_age_or_status_query
+from orac_core.retrieval import parse_titled_work_question
 from orac_core.retrieval import polish_retrieval_response_text
+from orac_core.retrieval import should_force_retrieval
 import orac_core.retrieval.fetcher as retrieval_fetcher
 from orac_core.retrieval import providers as retrieval_providers
 
@@ -92,6 +101,26 @@ class _FakeHeaders:
         if key.lower() == "content-type":
             return self._content_type
         return default
+
+
+class _JsonResponse:
+    """Minimal JSON response stub for urlopen patching."""
+
+    def __init__(self, payload: dict, *, url: str) -> None:
+        self._payload = json.dumps(payload).encode("utf-8")
+        self.headers = _FakeHeaders("application/json; charset=utf-8")
+        self.url = url
+
+    def __enter__(self) -> "_JsonResponse":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def read(self, size: int = -1) -> bytes:
+        if size < 0:
+            return self._payload
+        return self._payload[:size]
 
 
 class PersonStatusHelperTests(unittest.TestCase):
@@ -162,6 +191,885 @@ class PersonStatusHelperTests(unittest.TestCase):
         self.assertIn("born in April 1564", answer or "")
         self.assertIn("died on 23 April 1616", answer or "")
         self.assertIn("exact birth date is uncertain", answer or "")
+
+    def test_parse_person_age_at_death_query(self) -> None:
+        query = parse_person_age_or_status_query("How old was Bing Crosby when he died?")
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        self.assertEqual(query.person_name, "Bing Crosby")
+        self.assertEqual(query.query_type, "age_at_death")
+
+    def test_parse_person_cause_of_death_query(self) -> None:
+        query = parse_person_age_or_status_query("What was Kelly Curtis's cause of death?")
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        self.assertEqual(query.person_name, "Kelly Curtis")
+        self.assertEqual(query.query_type, "cause")
+
+    def test_parse_corrects_common_person_name_misspelling(self) -> None:
+        query = parse_person_age_or_status_query("When did George Micheal die?")
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        self.assertEqual(query.person_name, "George Michael")
+        self.assertEqual(query.query_type, "death")
+
+class PersonFactResolverTests(unittest.TestCase):
+    """Tests preferred person fact resolution through structured sources."""
+
+    def _resolver(self, **overrides) -> PersonFactResolver:
+        settings_values = {
+            "internet_search_enabled": True,
+            "internet_search_mode": "explicit_only",
+            "default_search_provider": "searxng",
+            "max_search_results": 5,
+            "max_sources_to_fetch": 3,
+            "cache_ttl_hours": 1,
+            "require_citations": True,
+            "prefer_wikidata": True,
+            "prefer_wikipedia": True,
+            "require_corroboration_for_recent_deaths": True,
+            "recent_death_days": 90,
+        }
+        settings_values.update(overrides)
+        settings = RetrievalSettings(**settings_values)
+        return PersonFactResolver(settings=settings, logger=_FakeLogger())
+
+    def _wikidata_search_payload(self, entity_id: str, label: str, description: str) -> dict:
+        return {
+            "search": [
+                {
+                    "id": entity_id,
+                    "label": label,
+                    "description": description,
+                }
+            ]
+        }
+
+    def _wikidata_entity_payload(
+        self,
+        entity_id: str,
+        *,
+        label: str,
+        description: str,
+        birth: str | None = None,
+        death: str | None = None,
+        cause_id: str | None = None,
+        aliases: tuple[str, ...] = (),
+        wikipedia_title: str | None = None,
+    ) -> dict:
+        claims: dict[str, list[dict]] = {}
+        if birth is not None:
+            claims["P569"] = [
+                {
+                    "mainsnak": {
+                        "datavalue": {
+                            "value": {
+                                "time": birth,
+                                "precision": 11,
+                            }
+                        }
+                    }
+                }
+            ]
+        if death is not None:
+            claims["P570"] = [
+                {
+                    "mainsnak": {
+                        "datavalue": {
+                            "value": {
+                                "time": death,
+                                "precision": 11,
+                            }
+                        }
+                    }
+                }
+            ]
+        if cause_id is not None:
+            claims["P509"] = [
+                {
+                    "mainsnak": {
+                        "datavalue": {"value": {"id": cause_id}},
+                    }
+                }
+            ]
+        payload = {
+            "entities": {
+                entity_id: {
+                    "id": entity_id,
+                    "labels": {"en": {"value": label}},
+                    "descriptions": {"en": {"value": description}},
+                    "aliases": {
+                        "en": [
+                            {"language": "en", "value": alias}
+                            for alias in aliases
+                        ]
+                    },
+                    "claims": claims,
+                    "sitelinks": {},
+                }
+            }
+        }
+        if wikipedia_title is not None:
+            payload["entities"][entity_id]["sitelinks"]["enwiki"] = {"title": wikipedia_title}
+        return payload
+
+    def test_resolves_bing_crosby_from_wikidata(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload("Q1", "Bing Crosby", "American singer and actor"),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q1":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q1",
+                        label="Bing Crosby",
+                        description="American singer and actor",
+                        birth="+1903-05-03T00:00:00Z",
+                        death="+1977-10-14T00:00:00Z",
+                        wikipedia_title="Bing Crosby",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("When did Bing Crosby die?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertIn("14 October 1977", resolution.answer or "")
+        self.assertIn("Bing Crosby", resolution.answer or "")
+        self.assertEqual(resolution.source_kind, "wikidata")
+
+    def test_known_male_description_uses_he_pronoun(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload("Q42", "Gene Hackman", "American actor"),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q42":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q42",
+                        label="Gene Hackman",
+                        description="American actor",
+                        birth="+1930-01-30T00:00:00Z",
+                        death="+2025-02-18T00:00:00Z",
+                        wikipedia_title="Gene Hackman",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Gene Hackman?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertIn("Gene Hackman was 95 when he died.", resolution.answer or "")
+        self.assertIn("He was born on 30 January 1930", resolution.answer or "")
+        self.assertIn("Had Gene Hackman still been alive today, he would be 96.", resolution.answer or "")
+        self.assertNotIn("they", (resolution.answer or "").lower())
+
+    def test_unknown_pronoun_repeats_name_instead_of_they(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload("Q43", "Example Person", "notable person"),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q43":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q43",
+                        label="Example Person",
+                        description="notable person",
+                        birth="+1930-01-30T00:00:00Z",
+                        death="+2025-02-18T00:00:00Z",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Example Person?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertIn("Example Person was 95 when Example Person died.", resolution.answer or "")
+        self.assertIn("Example Person was born on 30 January 1930", resolution.answer or "")
+        self.assertIn(
+            "Had Example Person still been alive today, Example Person would be 96.",
+            resolution.answer or "",
+        )
+        self.assertNotIn("they", (resolution.answer or "").lower())
+
+    def test_uses_wikipedia_to_find_wikidata_entity(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse({"search": []}, url=url)
+            if "action=query" in url and params.get("list", [""])[0] == "search":
+                return _JsonResponse(
+                    {
+                        "query": {
+                            "search": [
+                                {
+                                    "title": "Kelly Curtis",
+                                }
+                            ]
+                        }
+                    },
+                    url=url,
+                )
+            if "api/rest_v1/page/summary" in url:
+                return _JsonResponse(
+                    {
+                        "title": "Kelly Curtis",
+                        "description": "American actress",
+                        "extract": "Kelly Curtis is an American actress.",
+                        "wikibase_item": "Q9",
+                        "content_urls": {
+                            "desktop": {
+                                "page": "https://en.wikipedia.org/wiki/Kelly_Curtis",
+                            }
+                        },
+                    },
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q9":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q9",
+                        label="Kelly Curtis",
+                        description="American actress",
+                        birth="+1956-06-13T00:00:00Z",
+                        wikipedia_title="Kelly Curtis",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Kelly Curtis?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertIn("Kelly Curtis is", resolution.answer or "")
+        self.assertIn("13 June 1956", resolution.answer or "")
+        self.assertEqual(resolution.source_kind, "wikipedia")
+
+    def test_ambiguous_name_asks_for_clarification(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    {
+                        "search": [
+                            {
+                                "id": "Q10",
+                                "label": "Kelly Curtis",
+                                "description": "American actress",
+                            },
+                            {
+                                "id": "Q11",
+                                "label": "Kelly Curtis",
+                                "description": "British journalist",
+                            },
+                        ]
+                    },
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q10":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q10",
+                        label="Kelly Curtis",
+                        description="American actress",
+                        birth="+1956-06-13T00:00:00Z",
+                        death="+2026-05-30T00:00:00Z",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q11":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q11",
+                        label="Kelly Curtis",
+                        description="British journalist",
+                        birth="+1970-01-01T00:00:00Z",
+                        death="+2026-05-30T00:00:00Z",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("When did Kelly Curtis die?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "ambiguous")
+        self.assertIn("Do you mean", resolution.clarification or "")
+
+    def test_canonical_same_name_biography_candidate_answers_directly(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    {
+                        "search": [
+                            {
+                                "id": "Q20",
+                                "label": "George Michael",
+                                "description": "English singer (1963-2016)",
+                            },
+                            {
+                                "id": "Q21",
+                                "label": "George Michael",
+                                "description": "American business executive",
+                            },
+                        ]
+                    },
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q20":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q20",
+                        label="George Michael",
+                        description="English singer (1963-2016)",
+                        birth="+1963-06-25T00:00:00Z",
+                        death="+2016-12-25T00:00:00Z",
+                        wikipedia_title="George Michael",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q21":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q21",
+                        label="George Michael",
+                        description="American business executive",
+                        birth="+1939-03-24T00:00:00Z",
+                        death="+2009-12-24T00:00:00Z",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("When did George Michael die?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertFalse(resolution.disambiguation_required)
+        self.assertEqual(resolution.display_name, "George Michael")
+        self.assertIn("George Michael died on 25 December 2016.", resolution.answer or "")
+
+    def test_exact_name_age_fact_uses_pronoun_not_repeated_name(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload(
+                        "Q20",
+                        "George Michael",
+                        "English singer (1963-2016)",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q20":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q20",
+                        label="George Michael",
+                        description="English singer (1963-2016)",
+                        birth="+1963-06-25T00:00:00Z",
+                        death="+2016-12-25T00:00:00Z",
+                        wikipedia_title="George Michael",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is George Michael?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertIn("George Michael was 53 when he died.", resolution.answer or "")
+        self.assertIn("He was born on 25 June 1963", resolution.answer or "")
+        self.assertIn("Had George Michael still been alive today, he would be 62.", resolution.answer or "")
+        self.assertEqual((resolution.answer or "").count("George Michael"), 2)
+
+    def test_weak_wikidata_match_does_not_block_wikipedia_identity_resolution(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload(
+                        "QVB",
+                        "Victoria Beckham",
+                        "English fashion designer and singer",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "QVB":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "QVB",
+                        label="Victoria Beckham",
+                        description="English fashion designer and singer",
+                        birth="+1974-04-17T00:00:00Z",
+                        wikipedia_title="Victoria Beckham",
+                    ),
+                    url=url,
+                )
+            if "action=query" in url and params.get("list", [""])[0] == "search":
+                return _JsonResponse(
+                    {"query": {"search": [{"title": "David Beckham"}]}},
+                    url=url,
+                )
+            if "api/rest_v1/page/summary" in url:
+                return _JsonResponse(
+                    {
+                        "title": "David Beckham",
+                        "description": "English footballer",
+                        "extract": "David Beckham is an English former footballer.",
+                        "wikibase_item": "QDB",
+                        "content_urls": {
+                            "desktop": {
+                                "page": "https://en.wikipedia.org/wiki/David_Beckham",
+                            }
+                        },
+                    },
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "QDB":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "QDB",
+                        label="David Beckham",
+                        description="English footballer",
+                        birth="+1975-05-02T00:00:00Z",
+                        wikipedia_title="David Beckham",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is David Beckham?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertEqual(resolution.display_name, "David Beckham")
+        self.assertEqual(resolution.identity_confidence, "high")
+        self.assertEqual(resolution.identity_match_type, "exact_name")
+        self.assertIn("David Beckham is 51.", resolution.answer or "")
+        self.assertNotIn("Victoria Beckham", resolution.answer or "")
+
+    def test_stable_historical_person_falls_back_to_local_bio(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            if "wbsearchentities" in url or "action=query" in url or "api/rest_v1/page/summary" in url:
+                return _JsonResponse({"search": []}, url=url)
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Shakespeare?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertIn("William Shakespeare", resolution.answer or "")
+        self.assertIn("exact birth date is uncertain", resolution.answer or "")
+
+    def test_cause_of_death_without_source_support_falls_back_to_generic_search(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload("Q1", "Kelly Curtis", "American actress"),
+                    url=url,
+                )
+            if "wbgetentities" in url and "ids=Q1" in url:
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q1",
+                        label="Kelly Curtis",
+                        description="American actress",
+                        birth="+1956-06-13T00:00:00Z",
+                        wikipedia_title="Kelly Curtis",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("What was Kelly Curtis's cause of death?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "needs_generic")
+        self.assertTrue(resolution.needs_generic_retrieval)
+        self.assertIn("cause of death", resolution.failure_message or "")
+        self.assertNotIn("I will check", resolution.failure_message or "")
+
+    def test_unresolved_person_failure_names_structured_lookup(self) -> None:
+        resolver = self._resolver()
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            if "wbsearchentities" in url:
+                return _JsonResponse({"search": []}, url=url)
+            if "action=query" in url:
+                return _JsonResponse({"query": {"search": []}}, url=url)
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("When did Fictional Example die?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "needs_generic")
+        self.assertIn("Wikidata or Wikipedia", resolution.failure_message or "")
+        self.assertNotIn("I will check", resolution.failure_message or "")
+
+    def test_entity_drift_candidate_without_alias_is_not_answered(self) -> None:
+        resolver = self._resolver(prefer_wikipedia=False)
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload(
+                        "Q100",
+                        "Jay Wheeler",
+                        "Puerto Rican singer",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q100":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q100",
+                        label="Jay Wheeler",
+                        description="Puerto Rican singer",
+                        birth="+1994-04-25T00:00:00Z",
+                        wikipedia_title="Jay Wheeler",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Nelson Lopez?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "ambiguous")
+        self.assertIsNone(resolution.answer)
+        self.assertEqual(resolution.identity_confidence, "low")
+        self.assertEqual(resolution.identity_match_type, "none")
+        self.assertIn("could not confirm", resolution.clarification or "")
+        self.assertNotIn("Jay Wheeler", resolution.clarification or "")
+        self.assertNotIn("Jay Wheeler is", resolution.clarification or "")
+
+    def test_alias_approved_stage_name_can_answer(self) -> None:
+        resolver = self._resolver(prefer_wikipedia=False)
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload(
+                        "Q200",
+                        "Elton John",
+                        "English singer and pianist",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q200":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q200",
+                        label="Elton John",
+                        description="English singer and pianist",
+                        birth="+1947-03-25T00:00:00Z",
+                        aliases=("Reginald Dwight",),
+                        wikipedia_title="Elton John",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Reginald Dwight?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertEqual(resolution.identity_confidence, "high")
+        self.assertEqual(resolution.identity_match_type, "alias")
+        self.assertIn("Elton John, born Reginald Dwight is 79", resolution.answer or "")
+        self.assertNotIn("identity_confidence", resolution.answer or "")
+
+    def test_middle_name_tolerant_match_resolves(self) -> None:
+        resolver = self._resolver(prefer_wikipedia=False)
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload(
+                        "Q300",
+                        "Kelly Lee Curtis",
+                        "American actress",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q300":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q300",
+                        label="Kelly Lee Curtis",
+                        description="American actress",
+                        birth="+1956-06-13T00:00:00Z",
+                        aliases=("Kelly Curtis",),
+                        wikipedia_title="Kelly Lee Curtis",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Kelly Curtis?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertEqual(resolution.identity_confidence, "high")
+        self.assertIn(
+            resolution.identity_match_type,
+            {"alias", "context"},
+        )
+        self.assertIn("Kelly Lee Curtis is", resolution.answer or "")
+
+    def test_reversed_name_is_rejected_without_alias(self) -> None:
+        resolver = self._resolver(prefer_wikipedia=False)
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload(
+                        "Q301",
+                        "Curtis Kelly",
+                        "American actor",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q301":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q301",
+                        label="Curtis Kelly",
+                        description="American actor",
+                        birth="+1956-06-13T00:00:00Z",
+                        wikipedia_title="Curtis Kelly",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Kelly Curtis?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "ambiguous")
+        self.assertEqual(resolution.identity_confidence, "low")
+        self.assertIsNone(resolution.answer)
+
+    def test_accent_normalisation_matches_same_person(self) -> None:
+        resolver = self._resolver(prefer_wikipedia=False)
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload(
+                        "Q302",
+                        "Nelson López",
+                        "Puerto Rican musician",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q302":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q302",
+                        label="Nelson López",
+                        description="Puerto Rican musician",
+                        birth="+1994-04-25T00:00:00Z",
+                        wikipedia_title="Nelson López",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Nelson Lopez?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        self.assertEqual(resolution.status, "resolved")
+        self.assertEqual(resolution.identity_confidence, "high")
+        self.assertEqual(resolution.identity_match_type, "exact_name")
+        self.assertIn("Nelson López is 32", resolution.answer or "")
+
+    def test_normal_answer_does_not_leak_internal_diagnostics(self) -> None:
+        resolver = self._resolver(prefer_wikipedia=False)
+
+        def _open(request, timeout=None):
+            del timeout
+            url = request.full_url if hasattr(request, "full_url") else str(request)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if "wbsearchentities" in url:
+                return _JsonResponse(
+                    self._wikidata_search_payload(
+                        "Q303",
+                        "Kelly Curtis",
+                        "American actress",
+                    ),
+                    url=url,
+                )
+            if "wbgetentities" in url and params.get("ids", [""])[0] == "Q303":
+                return _JsonResponse(
+                    self._wikidata_entity_payload(
+                        "Q303",
+                        label="Kelly Curtis",
+                        description="American actress",
+                        birth="+1956-06-13T00:00:00Z",
+                        wikipedia_title="Kelly Curtis",
+                    ),
+                    url=url,
+                )
+            raise AssertionError(f"Unexpected biography lookup URL: {url}")
+
+        query = parse_person_age_or_status_query("How old is Kelly Curtis?")
+        assert query is not None
+
+        with patch("orac_core.retrieval.person_fact_resolver.urlopen", side_effect=_open):
+            resolution = resolver.resolve(query, today=date(2026, 6, 1))
+
+        answer = resolution.answer or ""
+        self.assertEqual(resolution.status, "resolved")
+        for forbidden in (
+            "identity_confidence",
+            "reason_code",
+            "RetrievalDecisionService",
+            "grounding pack",
+            "raw resolver diagnostics",
+        ):
+            self.assertNotIn(forbidden, answer)
 
 
 class RetrievalTriggerTests(unittest.TestCase):
@@ -332,6 +1240,69 @@ class SearchBrokerTests(unittest.TestCase):
         self.assertEqual(provider.calls[0].max_results, 2)
 
 
+class TitledWorkQueryTests(unittest.TestCase):
+    """Tests exact title parsing for titled-work questions."""
+
+    def test_final_word_ambiguity_keeps_both_title_parses(self) -> None:
+        query = parse_titled_work_question(
+            "Which band recorded the song She Moved the Dishes first?"
+        )
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        self.assertEqual(query.work_type, "song")
+        self.assertEqual(
+            query.title_candidates,
+            ("She Moved the Dishes", "She Moved the Dishes First"),
+        )
+
+    def test_unambiguous_titled_work_preserves_title_exactly(self) -> None:
+        query = parse_titled_work_question("Who wrote the book The Left Hand of Darkness?")
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        self.assertEqual(query.work_type, "book")
+        self.assertEqual(query.title_candidates, ("The Left Hand of Darkness",))
+
+    def test_recording_question_adds_nearby_terminal_title_candidate(self) -> None:
+        query = parse_titled_work_question(
+            "Which band recorded the song She Moved the Dishes?"
+        )
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        self.assertEqual(
+            query.title_candidates,
+            ("She Moved the Dishes", "She Moved the Dishes First"),
+        )
+
+    def test_correction_statement_preserves_song_called_title(self) -> None:
+        query = parse_titled_work_question(
+            "The Beatles never recorded a song called She Moved the Dishes"
+        )
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        self.assertEqual(query.user_provided_title, "She Moved the Dishes")
+        self.assertEqual(query.claim_artist, "The Beatles")
+        self.assertTrue(query.correction_negation)
+        self.assertEqual(
+            query.title_candidates,
+            ("She Moved the Dishes", "She Moved the Dishes First"),
+        )
+
+    def test_record_claim_preserves_album_as_claim_context(self) -> None:
+        query = parse_titled_work_question(
+            "Did The Rolling Stones record She Moved the Dishes on Sticky Fingers?"
+        )
+
+        self.assertIsNotNone(query)
+        assert query is not None
+        self.assertEqual(query.user_provided_title, "She Moved the Dishes")
+        self.assertEqual(query.claim_artist, "The Rolling Stones")
+        self.assertEqual(query.claim_album, "Sticky Fingers")
+
+
 class RetrievalDecisionServiceTests(unittest.TestCase):
     """Tests controlled retrieval decisioning."""
 
@@ -358,7 +1329,114 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
         self.assertTrue(decision.explicit_request)
         self.assertEqual(decision.retrieval_type, "internet")
         self.assertEqual(decision.confidence, "high")
-        self.assertEqual(decision.reason_code, "explicit_request")
+        self.assertEqual(decision.reason_code, "factual_risk_current_latest")
+
+    def test_factual_risk_detector_forces_required_prompts(self) -> None:
+        prompts = [
+            "What did George Michael die of?",
+            "How did George Michael die?",
+            "When did George Michael die?",
+            "Is Kelly Curtis dead?",
+            "Who is the current CEO of Oracle?",
+            "What is the current UK capital gains tax allowance?",
+            "How much is the Seeed reTerminal E1003?",
+            "Is Mellum2 available for Ollama?",
+            "What is the latest version of ORDS?",
+            "Was Ronnie Wood a member of The Rolling Stones?",
+            "Who played guitar on Sticky Fingers?",
+            "Which band recorded the song She Moved the Dishes first?",
+        ]
+
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                self.assertTrue(should_force_retrieval(prompt))
+                self.assertIsInstance(detect_factual_risk(prompt), FactualRiskMatch)
+
+    def test_factual_risk_detector_ignores_stable_non_risky_prompts(self) -> None:
+        prompts = [
+            "What does hobo mean?",
+            "Explain the left-hand rule for escaping a maze.",
+            "Write a Python script to parse a JSON file.",
+            "Rewrite this paragraph in clearer English.",
+        ]
+
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                self.assertFalse(should_force_retrieval(prompt))
+                self.assertIsNone(detect_factual_risk(prompt))
+
+    def test_high_risk_prompts_force_retrieval_in_explicit_only(self) -> None:
+        prompts = [
+            ("What did George Michael die of?", "person_age_or_status"),
+            ("How did George Michael die?", "person_age_or_status"),
+            ("When did George Michael die?", "person_age_or_status"),
+            ("Is Kelly Curtis dead?", "person_age_or_status"),
+            ("Who is the current CEO of Oracle?", "factual_risk_current_role"),
+            ("What is the current UK capital gains tax allowance?", "factual_risk_law_policy"),
+            ("How much is the Seeed reTerminal E1003?", "factual_risk_price_availability"),
+            ("Is Mellum2 available for Ollama?", "factual_risk_price_availability"),
+            ("What is the latest version of ORDS?", "factual_risk_current_latest"),
+            (
+                "Was Ronnie Wood a member of The Rolling Stones?",
+                "factual_risk_music_claim",
+            ),
+            (
+                "Who played guitar on Sticky Fingers?",
+                "factual_risk_music_claim",
+            ),
+            (
+                "Which band recorded the song She Moved the Dishes first?",
+                "factual_risk_titled_work",
+            ),
+        ]
+
+        for prompt, reason_code in prompts:
+            with self.subTest(prompt=prompt):
+                decision = self._service("explicit_only").decide(prompt)
+                self.assertTrue(decision.should_retrieve)
+                self.assertTrue(decision.explicit_request)
+                self.assertFalse(decision.requires_user_confirmation)
+                self.assertEqual(decision.retrieval_type, "internet")
+                self.assertEqual(decision.reason_code, reason_code)
+
+    def test_factual_risk_disabled_mode_does_not_retrieve(self) -> None:
+        decision = self._service("disabled").decide("What did George Michael die of?")
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertTrue(decision.explicit_request)
+        self.assertEqual(decision.retrieval_type, "internet")
+        self.assertEqual(decision.reason_code, "disabled")
+        self.assertIn("current information cannot be verified", decision.user_visible_reason.lower())
+
+    def test_titled_work_question_forces_exact_title_retrieval(self) -> None:
+        decision = self._service("explicit_only").decide(
+            "Which band recorded the song She Moved the Dishes first?"
+        )
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertTrue(decision.explicit_request)
+        self.assertEqual(decision.reason_code, "factual_risk_titled_work")
+        self.assertIn('"She Moved the Dishes"', decision.search_query or "")
+
+    def test_music_claim_search_prefers_music_specific_sources(self) -> None:
+        decision = self._service("explicit_only").decide(
+            "Was Ronnie Wood a member of The Rolling Stones?"
+        )
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertEqual(decision.reason_code, "factual_risk_music_claim")
+        self.assertIn("MusicBrainz", decision.search_query or "")
+        self.assertIn("Discogs", decision.search_query or "")
+
+    def test_music_claim_check_forces_exact_title_retrieval(self) -> None:
+        decision = self._service("explicit_only").decide(
+            "Did The Rolling Stones record She Moved the Dishes on Sticky Fingers?"
+        )
+
+        self.assertTrue(decision.should_retrieve)
+        self.assertTrue(decision.explicit_request)
+        self.assertEqual(decision.reason_code, "factual_risk_titled_work")
+        self.assertIn('"She Moved the Dishes"', decision.search_query or "")
 
     def test_explicit_only_retrieves_explicit_current_query(self) -> None:
         decision = self._service("explicit_only").decide(
@@ -369,7 +1447,7 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
         self.assertTrue(decision.explicit_request)
         self.assertEqual(decision.retrieval_type, "internet")
         self.assertEqual(decision.confidence, "high")
-        self.assertEqual(decision.reason_code, "freshness_release_version")
+        self.assertEqual(decision.reason_code, "factual_risk_current_latest")
 
     def test_latest_news_triggers_retrieval_in_explicit_only(self) -> None:
         decision = self._service("explicit_only").decide(
@@ -487,17 +1565,57 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
             "That may have changed recently. Shall I check online?",
         )
 
+    def test_subjective_historical_event_question_does_not_trigger_freshness(self) -> None:
+        decision = self._service("suggest_search").decide(
+            "Do you consider it a sad event that the dinosaurs were wiped out?"
+        )
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertFalse(decision.requires_user_confirmation)
+        self.assertEqual(decision.retrieval_type, "none")
+        self.assertEqual(decision.reason_code, "stable_general_knowledge")
+
+    def test_historical_sports_result_does_not_use_changed_recently_confirmation(self) -> None:
+        decision = self._service("suggest_search").decide(
+            "What was the final score of the 1966 FIFA World Cup?"
+        )
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertFalse(decision.requires_user_confirmation)
+        self.assertEqual(decision.retrieval_type, "none")
+        self.assertEqual(decision.reason_code, "stable_historical_event_result")
+        self.assertNotIn("changed recently", decision.user_visible_reason.lower())
+
+    def test_current_score_question_still_triggers_freshness_confirmation(self) -> None:
+        decision = self._service("suggest_search").decide(
+            "What is the current score of the England game?"
+        )
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertTrue(decision.requires_user_confirmation)
+        self.assertEqual(decision.reason_code, "freshness_schedule_scores")
+        self.assertIn("changed recently", decision.user_visible_reason.lower())
+
+    def test_current_event_wording_still_triggers_freshness(self) -> None:
+        decision = self._service("suggest_search").decide(
+            "Are there any current events in Iran?"
+        )
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertTrue(decision.requires_user_confirmation)
+        self.assertEqual(decision.reason_code, "freshness_news_events")
+
     def test_suggest_search_requests_confirmation_for_natural_current_query(self) -> None:
         decision = self._service("suggest_search").decide(
             "What is the current Python release?"
         )
 
-        self.assertFalse(decision.should_retrieve)
-        self.assertTrue(decision.requires_user_confirmation)
+        self.assertTrue(decision.should_retrieve)
+        self.assertFalse(decision.requires_user_confirmation)
         self.assertEqual(decision.retrieval_type, "internet")
         self.assertEqual(
             decision.user_visible_reason,
-            "That may have changed recently. Shall I check online?",
+            "I'll verify that from current sources.",
         )
 
     def test_auto_safe_retrieves_high_confidence_freshness_query(self) -> None:
@@ -528,13 +1646,13 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
 
     def test_auto_safe_retrieves_broader_current_information_categories(self) -> None:
         prompts = [
-            ("What is the latest version of the Oracle Database?", "freshness_release_version"),
+            ("What is the latest version of the Oracle Database?", "factual_risk_current_latest"),
             ("Does SearXNG still use search.formats for JSON output?", "freshness_docs_api"),
-            ("Is this product still available?", "freshness_price_availability"),
-            ("What is the current price of X?", "freshness_price_availability"),
-            ("Who is the current CEO of OpenAI?", "freshness_public_role"),
-            ("Who is president of Iran?", "freshness_public_role"),
-            ("What changed in the latest SearXNG release?", "freshness_release_version"),
+            ("Is this product still available?", "factual_risk_price_availability"),
+            ("What is the current price of X?", "factual_risk_price_availability"),
+            ("Who is the current CEO of OpenAI?", "factual_risk_current_role"),
+            ("Who is president of Iran?", "factual_risk_current_role"),
+            ("What changed in the latest SearXNG release?", "factual_risk_current_latest"),
         ]
 
         for prompt, reason_code in prompts:
@@ -562,7 +1680,6 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
                 self.assertTrue(decision.explicit_request)
                 self.assertEqual(decision.reason_code, "person_age_or_status")
                 self.assertIn("Kelly Curtis", decision.search_query or "")
-                self.assertIn("actress", decision.search_query or "")
 
     def test_person_age_status_queries_trigger_retrieval_for_modern_people(self) -> None:
         prompts = [
@@ -582,9 +1699,26 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
                 self.assertEqual(decision.reason_code, "person_age_or_status")
                 self.assertIn("Kelly Curtis", decision.search_query or "")
 
+    def test_historical_event_gate_does_not_perturb_biography_age_queries(self) -> None:
+        prompts = [
+            "How old is David Beckham?",
+            "How old is Daveid Beckham?",
+        ]
+
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                decision = self._service("explicit_only").decide(prompt)
+                self.assertTrue(decision.should_retrieve)
+                self.assertTrue(decision.explicit_request)
+                self.assertFalse(decision.requires_user_confirmation)
+                self.assertEqual(decision.reason_code, "person_age_or_status")
+                self.assertIn("date of birth", decision.search_query or "")
+                self.assertIn("date of death", decision.search_query or "")
+
     def test_person_age_status_historical_exceptions_use_structured_bio(self) -> None:
         prompts = [
             "How old is Bing Crosby?",
+            "How old was Bing Crosby when he died?",
             "How old is Elvis Presley?",
             "How old is Shakespeare?",
             "When did Shakespeare die?",
@@ -606,6 +1740,14 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
         self.assertEqual(decision.retrieval_type, "structured_bio")
         self.assertEqual(decision.reason_code, "person_age_or_status")
 
+    def test_disabled_mode_blocks_modern_person_age_status_verification(self) -> None:
+        decision = self._service("disabled").decide("How old is Kelly Curtis?")
+
+        self.assertFalse(decision.should_retrieve)
+        self.assertEqual(decision.retrieval_type, "internet")
+        self.assertEqual(decision.reason_code, "disabled")
+        self.assertIn("current information cannot be verified", decision.user_visible_reason.lower())
+
     def test_forced_person_death_search_uses_disambiguating_query(self) -> None:
         decision = self._service("explicit_only").decide(
             "do an internet search for the death of Kelly Curtis."
@@ -614,7 +1756,6 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
         self.assertTrue(decision.should_retrieve)
         self.assertEqual(decision.reason_code, "person_age_or_status")
         self.assertIn("Kelly Curtis", decision.search_query or "")
-        self.assertIn("actress", decision.search_query or "")
 
     def test_local_latest_change_does_not_trigger_internet_retrieval(self) -> None:
         prompts = [
@@ -962,6 +2103,41 @@ class RetrievalResponseStyleTests(unittest.TestCase):
         self.assertIn("Answer naturally and directly.", guidance)
         self.assertIn("Do not mention internal retrieval mechanics", guidance)
 
+    def test_guidance_preserves_titled_work_parse_candidates(self) -> None:
+        request = SearchRequest(
+            query='"She Moved the Dishes" OR "She Moved the Dishes first" song recorded artist first',
+            trigger_phrase="factual_risk_titled_work",
+            metadata={
+                "titled_work": True,
+                "work_type": "song",
+                "title_candidates": (
+                    "She Moved the Dishes",
+                    "She Moved the Dishes first",
+                ),
+            },
+        )
+        pack = GroundingPackBuilder(max_excerpt_chars=120).build(
+            request,
+            [SearchResult(title="Example", url="https://example.com/1", snippet="Snippet")],
+            [
+                FetchedSource(
+                    url="https://example.com/1",
+                    text="She Moved the Dishes is a song.",
+                    excerpt="She Moved the Dishes is a song.",
+                )
+            ],
+            require_citations=True,
+        )
+
+        guidance = build_retrieval_response_guidance(
+            response_style="normal",
+            retrieval_pack=pack,
+        )
+
+        self.assertIn("Preserve the suspected title exactly", guidance)
+        self.assertIn('"She Moved the Dishes"', guidance)
+        self.assertIn('"She Moved the Dishes first"', guidance)
+
     def test_polishes_mechanical_success_phrasing(self) -> None:
         raw = (
             "The song is 'My Life in England, Pt. 1' by Dexys Midnight Runners. "
@@ -1026,6 +2202,306 @@ class RetrievalResponseStyleTests(unittest.TestCase):
 
         self.assertNotIn("I will check online", polished)
         self.assertIn("couldn't produce a reliable answer", polished)
+
+    def test_polishes_unsupported_titled_work_merge_to_likely_correction(self) -> None:
+        request = SearchRequest(
+            query='"She Moved the Dishes" OR "She Moved the Dishes First" song recorded artist',
+            trigger_phrase="factual_risk_titled_work",
+            metadata={
+                "titled_work": True,
+                "work_type": "song",
+                "user_provided_title": "She Moved the Dishes",
+                "claim_artist": None,
+                "claim_album": None,
+                "correction_negation": False,
+                "title_candidates": (
+                    "She Moved the Dishes",
+                    "She Moved the Dishes First",
+                ),
+                "supported_title_candidates": ("She Moved the Dishes First",),
+                "unsupported_title_candidates": ("She Moved the Dishes",),
+                "candidate_resolutions": (
+                    {
+                        "candidate_title": "She Moved the Dishes",
+                        "source_support_found": False,
+                        "supported_artist": None,
+                        "supported_album": None,
+                        "supported_year": None,
+                        "confidence": "low",
+                        "evidence_urls": (),
+                    },
+                    {
+                        "candidate_title": "She Moved the Dishes First",
+                        "source_support_found": True,
+                        "supported_artist": "Supercharge",
+                        "supported_album": None,
+                        "supported_year": None,
+                        "confidence": "high",
+                        "evidence_urls": ("https://musicbrainz.org/recording/she-moved-the-dishes-first",),
+                    },
+                ),
+            },
+        )
+        pack = GroundingPackBuilder(max_excerpt_chars=300).build(
+            request,
+            [
+                SearchResult(
+                    title="She Moved the Dishes First",
+                    url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                    snippet="She Moved the Dishes First was recorded by Supercharge.",
+                )
+            ],
+            [
+                FetchedSource(
+                    url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                    title="She Moved the Dishes First",
+                    text="She Moved the Dishes First was recorded by Supercharge.",
+                    excerpt="She Moved the Dishes First was recorded by Supercharge.",
+                )
+            ],
+            require_citations=True,
+        )
+
+        polished = polish_retrieval_response_text(
+            (
+                "The song 'She Moved the Dishes' was first recorded by The Beatles "
+                "in 1969. However, the specific track title 'She Moved the Dishes First' "
+                "was recorded by Supercharge."
+            ),
+            response_style="normal",
+            retrieval_pack=pack,
+        )
+
+        self.assertEqual(
+            polished,
+            (
+                "I do not find reliable evidence for a song titled 'She Moved the Dishes'. "
+                "You may mean 'She Moved the Dishes First', by Supercharge."
+            ),
+        )
+
+    def test_polishes_correction_prompt_without_inventing_replacement_artist(self) -> None:
+        request = SearchRequest(
+            query='"She Moved the Dishes" OR "She Moved the Dishes First" song recorded artist',
+            trigger_phrase="factual_risk_titled_work",
+            metadata={
+                "titled_work": True,
+                "work_type": "song",
+                "user_provided_title": "She Moved the Dishes",
+                "claim_artist": "The Beatles",
+                "claim_album": None,
+                "correction_negation": True,
+                "title_candidates": (
+                    "She Moved the Dishes",
+                    "She Moved the Dishes First",
+                ),
+                "supported_title_candidates": ("She Moved the Dishes First",),
+                "unsupported_title_candidates": ("She Moved the Dishes",),
+                "candidate_resolutions": (
+                    {
+                        "candidate_title": "She Moved the Dishes",
+                        "source_support_found": False,
+                        "supported_artist": None,
+                        "supported_album": None,
+                        "supported_year": None,
+                        "confidence": "low",
+                        "evidence_urls": (),
+                    },
+                    {
+                        "candidate_title": "She Moved the Dishes First",
+                        "source_support_found": True,
+                        "supported_artist": "Supercharge",
+                        "supported_album": None,
+                        "supported_year": None,
+                        "confidence": "high",
+                        "evidence_urls": ("https://musicbrainz.org/recording/she-moved-the-dishes-first",),
+                    },
+                ),
+            },
+        )
+        pack = GroundingPackBuilder(max_excerpt_chars=300).build(
+            request,
+            [
+                SearchResult(
+                    title="She Moved the Dishes First",
+                    url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                    snippet="She Moved the Dishes First was recorded by Supercharge.",
+                )
+            ],
+            [
+                FetchedSource(
+                    url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                    title="She Moved the Dishes First",
+                    text="She Moved the Dishes First was recorded by Supercharge.",
+                    excerpt="She Moved the Dishes First was recorded by Supercharge.",
+                )
+            ],
+            require_citations=True,
+        )
+
+        polished = polish_retrieval_response_text(
+            (
+                "The Beatles did not record a song called 'She Moved the Dishes.' "
+                "That track was released by The Rolling Stones on their 1970 album "
+                "Sticky Fingers."
+            ),
+            response_style="normal",
+            retrieval_pack=pack,
+        )
+
+        self.assertIn("You are right", polished)
+        self.assertIn("The Beatles", polished)
+        self.assertIn("She Moved the Dishes First", polished)
+        self.assertIn("Supercharge", polished)
+        self.assertNotIn("Rolling Stones", polished)
+        self.assertNotIn("Sticky Fingers", polished)
+
+    def test_polishes_unsupported_album_claim_without_treating_album_as_track_support(self) -> None:
+        request = SearchRequest(
+            query='"She Moved the Dishes" OR "She Moved the Dishes First" song recorded artist',
+            trigger_phrase="factual_risk_titled_work",
+            metadata={
+                "titled_work": True,
+                "work_type": "song",
+                "user_provided_title": "She Moved the Dishes",
+                "claim_artist": "The Rolling Stones",
+                "claim_album": "Sticky Fingers",
+                "correction_negation": False,
+                "title_candidates": (
+                    "She Moved the Dishes",
+                    "She Moved the Dishes First",
+                ),
+                "supported_title_candidates": ("She Moved the Dishes First",),
+                "unsupported_title_candidates": ("She Moved the Dishes",),
+                "candidate_resolutions": (
+                    {
+                        "candidate_title": "She Moved the Dishes",
+                        "source_support_found": False,
+                        "supported_artist": None,
+                        "supported_album": None,
+                        "supported_year": None,
+                        "confidence": "low",
+                        "evidence_urls": (),
+                    },
+                    {
+                        "candidate_title": "She Moved the Dishes First",
+                        "source_support_found": True,
+                        "supported_artist": "Supercharge",
+                        "supported_album": None,
+                        "supported_year": None,
+                        "confidence": "high",
+                        "evidence_urls": ("https://musicbrainz.org/recording/she-moved-the-dishes-first",),
+                    },
+                ),
+            },
+        )
+        pack = GroundingPackBuilder(max_excerpt_chars=300).build(
+            request,
+            [
+                SearchResult(
+                    title="Sticky Fingers track listing",
+                    url="https://example.com/sticky",
+                    snippet="Sticky Fingers is a Rolling Stones album.",
+                ),
+                SearchResult(
+                    title="She Moved the Dishes First",
+                    url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                    snippet="She Moved the Dishes First was recorded by Supercharge.",
+                ),
+            ],
+            [
+                FetchedSource(
+                    url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                    title="She Moved the Dishes First",
+                    text="She Moved the Dishes First was recorded by Supercharge.",
+                    excerpt="She Moved the Dishes First was recorded by Supercharge.",
+                )
+            ],
+            require_citations=True,
+        )
+
+        polished = polish_retrieval_response_text(
+            "The Rolling Stones recorded it on Sticky Fingers.",
+            response_style="normal",
+            retrieval_pack=pack,
+        )
+
+        self.assertIn(
+            "I do not find reliable evidence that The Rolling Stones recorded",
+            polished,
+        )
+        self.assertIn("on Sticky Fingers", polished)
+        self.assertNotIn("The Rolling Stones recorded it", polished)
+
+    def test_polishes_supported_terminal_title_to_likely_title_answer(self) -> None:
+        request = SearchRequest(
+            query='"She Moved the Dishes" OR "She Moved the Dishes First" song recorded artist first',
+            trigger_phrase="factual_risk_titled_work",
+            metadata={
+                "titled_work": True,
+                "work_type": "song",
+                "user_provided_title": "She Moved the Dishes First",
+                "claim_artist": None,
+                "claim_album": None,
+                "correction_negation": False,
+                "title_candidates": (
+                    "She Moved the Dishes",
+                    "She Moved the Dishes First",
+                ),
+                "supported_title_candidates": ("She Moved the Dishes First",),
+                "unsupported_title_candidates": ("She Moved the Dishes",),
+                "candidate_resolutions": (
+                    {
+                        "candidate_title": "She Moved the Dishes",
+                        "source_support_found": False,
+                        "supported_artist": None,
+                        "supported_album": None,
+                        "supported_year": None,
+                        "confidence": "low",
+                        "evidence_urls": (),
+                    },
+                    {
+                        "candidate_title": "She Moved the Dishes First",
+                        "source_support_found": True,
+                        "supported_artist": "Supercharge",
+                        "supported_album": None,
+                        "supported_year": None,
+                        "confidence": "high",
+                        "evidence_urls": ("https://musicbrainz.org/recording/she-moved-the-dishes-first",),
+                    },
+                ),
+            },
+        )
+        pack = GroundingPackBuilder(max_excerpt_chars=300).build(
+            request,
+            [
+                SearchResult(
+                    title="She Moved the Dishes First",
+                    url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                    snippet="She Moved the Dishes First was recorded by Supercharge.",
+                )
+            ],
+            [
+                FetchedSource(
+                    url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                    title="She Moved the Dishes First",
+                    text="She Moved the Dishes First was recorded by Supercharge.",
+                    excerpt="She Moved the Dishes First was recorded by Supercharge.",
+                )
+            ],
+            require_citations=True,
+        )
+
+        polished = polish_retrieval_response_text(
+            "The track was recorded by Supercharge.",
+            response_style="normal",
+            retrieval_pack=pack,
+        )
+
+        self.assertEqual(
+            polished,
+            "The title is likely 'She Moved the Dishes First', recorded by Supercharge.",
+        )
 
 
 class RetrievalServiceTests(unittest.TestCase):
@@ -1264,6 +2740,414 @@ class RetrievalServiceTests(unittest.TestCase):
         self.assertEqual(request.query, "Kelly Curtis actress age born died")
         self.assertIn('"Kelly Curtis" date of birth', request.metadata["query_variants"])
 
+    def test_titled_work_search_enriches_exact_title_metadata(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def __init__(self) -> None:
+                self.requests: list[SearchRequest] = []
+
+            def search(self, request: SearchRequest):
+                self.requests.append(request)
+                return ()
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del results, max_sources
+                return ()
+
+        broker = _FakeBroker()
+        service = ExplicitRetrievalService(
+            search_broker=broker,
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome_for_request(
+            SearchRequest(query="Which band recorded the song She Moved the Dishes first?")
+        )
+
+        self.assertEqual(outcome.status, "no_exact_title_match")
+        self.assertIn("may have been misremembered", outcome.message)
+        self.assertEqual(len(broker.requests), 2)
+        request = outcome.request
+        assert request is not None
+        self.assertTrue(request.metadata["titled_work"])
+        self.assertEqual(
+            request.metadata["title_candidates"],
+            ("She Moved the Dishes", "She Moved the Dishes First"),
+        )
+        self.assertIn('"She Moved the Dishes"', request.query)
+        self.assertIn('"She Moved the Dishes First"', request.query)
+        self.assertIn('"She Moved the Dishes"', broker.requests[0].query)
+        self.assertIn('"She Moved the Dishes First"', broker.requests[1].query)
+
+    def test_titled_work_rejects_fuzzy_artist_result_without_exact_title(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def search(self, request: SearchRequest):
+                del request
+                return (
+                    SearchResult(
+                        title="Famous band discography",
+                        url="https://example.com/band",
+                        snippet="A famous band recorded many songs.",
+                    ),
+                )
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del results, max_sources
+                return (
+                    FetchedSource(
+                        url="https://example.com/band",
+                        title="Famous band discography",
+                        text="A famous band recorded many songs.",
+                        excerpt="A famous band recorded many songs.",
+                    ),
+                )
+
+        service = ExplicitRetrievalService(
+            search_broker=_FakeBroker(),
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome_for_request(
+            SearchRequest(query="Which band recorded the song She Moved the Dishes first?")
+        )
+
+        self.assertEqual(outcome.status, "no_exact_title_match")
+        self.assertIsNone(outcome.grounding_pack)
+
+    def test_titled_work_rejects_unknown_exact_title_snippet_for_music(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def search(self, request: SearchRequest):
+                del request
+                return (
+                    SearchResult(
+                        title="She Moved the Dishes",
+                        url="https://example.com/song",
+                        snippet="She Moved the Dishes is listed as a song by Example Band.",
+                    ),
+                )
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del results, max_sources
+                return ()
+
+        service = ExplicitRetrievalService(
+            search_broker=_FakeBroker(),
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome_for_request(
+            SearchRequest(query="Which band recorded the song She Moved the Dishes first?")
+        )
+
+        self.assertEqual(outcome.status, "no_exact_title_match")
+        self.assertIsNone(outcome.grounding_pack)
+
+    def test_titled_work_accepts_musicbrainz_exact_title_snippet(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def search(self, request: SearchRequest):
+                del request
+                return (
+                    SearchResult(
+                        title="She Moved the Dishes",
+                        url="https://musicbrainz.org/recording/example",
+                        snippet="She Moved the Dishes is listed as a recording by Example Band.",
+                        source_name="MusicBrainz",
+                    ),
+                )
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del results, max_sources
+                return ()
+
+        service = ExplicitRetrievalService(
+            search_broker=_FakeBroker(),
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome_for_request(
+            SearchRequest(query="Which band recorded the song She Moved the Dishes first?")
+        )
+
+        self.assertEqual(outcome.status, "snippet_only")
+        self.assertIsNotNone(outcome.grounding_pack)
+        assert outcome.grounding_pack is not None
+        self.assertTrue(outcome.grounding_pack.request.metadata["titled_work"])
+
+    def test_titled_work_correction_check_online_resolves_candidates_independently(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def __init__(self) -> None:
+                self.requests: list[SearchRequest] = []
+
+            def search(self, request: SearchRequest):
+                self.requests.append(request)
+                if "She Moved the Dishes First" in request.query:
+                    return (
+                        SearchResult(
+                            title="She Moved the Dishes First",
+                            url="https://musicbrainz.org/recording/she-moved-the-dishes-first",
+                            snippet="She Moved the Dishes First was recorded by Supercharge.",
+                        ),
+                    )
+                return (
+                    SearchResult(
+                        title="The Beatles discography",
+                        url="https://example.com/beatles",
+                        snippet="The Beatles recorded many songs.",
+                    ),
+                )
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del max_sources
+                fetched = []
+                for result in results:
+                    if "She Moved the Dishes First" in result.title:
+                        fetched.append(
+                            FetchedSource(
+                                url=result.url,
+                                title=result.title,
+                                text="She Moved the Dishes First was recorded by Supercharge.",
+                                excerpt="She Moved the Dishes First was recorded by Supercharge.",
+                            )
+                        )
+                    else:
+                        fetched.append(
+                            FetchedSource(
+                                url=result.url,
+                                title=result.title,
+                                text="The Beatles recorded many songs.",
+                                excerpt="The Beatles recorded many songs.",
+                            )
+                        )
+                return tuple(fetched)
+
+        broker = _FakeBroker()
+        service = ExplicitRetrievalService(
+            search_broker=broker,
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome(
+            "The Beatles never recorded a song called She Moved the Dishes. Check online."
+        )
+
+        self.assertEqual(outcome.status, "ok")
+        self.assertEqual(len(broker.requests), 2)
+        self.assertIsNotNone(outcome.grounding_pack)
+        assert outcome.grounding_pack is not None
+        metadata = outcome.grounding_pack.request.metadata
+        self.assertEqual(metadata["claim_artist"], "The Beatles")
+        self.assertTrue(metadata["correction_negation"])
+        self.assertEqual(metadata["supported_title_candidates"], ("She Moved the Dishes First",))
+        self.assertEqual(metadata["unsupported_title_candidates"], ("She Moved the Dishes",))
+        self.assertEqual(
+            metadata["candidate_resolutions"][1]["supported_artist"],
+            "Supercharge",
+        )
+
+        polished = polish_retrieval_response_text(
+            "The Rolling Stones recorded it on Sticky Fingers.",
+            response_style="normal",
+            retrieval_pack=outcome.grounding_pack,
+        )
+
+        self.assertIn("You are right", polished)
+        self.assertIn("The Beatles", polished)
+        self.assertIn("Supercharge", polished)
+        self.assertNotIn("Rolling Stones", polished)
+        self.assertNotIn("Sticky Fingers", polished)
+
+    def test_music_claim_rejects_unknown_source_grounding(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def search(self, request: SearchRequest):
+                del request
+                return (
+                    SearchResult(
+                        title="Rolling Stones facts",
+                        url="https://example.com/rolling-stones",
+                        snippet="Ronnie Wood was a member of The Rolling Stones.",
+                    ),
+                )
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del results, max_sources
+                return (
+                    FetchedSource(
+                        url="https://example.com/rolling-stones",
+                        title="Rolling Stones facts",
+                        text="Ronnie Wood was a member of The Rolling Stones.",
+                        excerpt="Ronnie Wood was a member of The Rolling Stones.",
+                    ),
+                )
+
+        service = ExplicitRetrievalService(
+            search_broker=_FakeBroker(),
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome_for_request(
+            SearchRequest(query="Was Ronnie Wood a member of The Rolling Stones?")
+        )
+
+        self.assertEqual(outcome.status, "no_relevant_sources")
+        self.assertIsNone(outcome.grounding_pack)
+
+    def test_music_claim_accepts_musicbrainz_grounding(self) -> None:
+        class _FakeBroker:
+            settings = RetrievalSettings(
+                internet_search_enabled=True,
+                internet_search_mode="explicit_only",
+                default_search_provider="custom",
+                max_search_results=2,
+                max_sources_to_fetch=1,
+                cache_ttl_hours=1,
+                require_citations=True,
+            )
+
+            def search(self, request: SearchRequest):
+                del request
+                return (
+                    SearchResult(
+                        title="Ron Wood - MusicBrainz",
+                        url="https://musicbrainz.org/artist/example",
+                        snippet="Ronnie Wood is associated with The Rolling Stones.",
+                        source_name="MusicBrainz",
+                    ),
+                )
+
+            @property
+            def max_sources_to_fetch(self) -> int:
+                return 1
+
+        class _Fetcher:
+            def fetch_sources(self, results, *, max_sources: int | None = None):
+                del results, max_sources
+                return (
+                    FetchedSource(
+                        url="https://musicbrainz.org/artist/example",
+                        title="Ron Wood - MusicBrainz",
+                        source_name="MusicBrainz",
+                        text="Ronnie Wood is associated with The Rolling Stones.",
+                        excerpt="Ronnie Wood is associated with The Rolling Stones.",
+                    ),
+                )
+
+        service = ExplicitRetrievalService(
+            search_broker=_FakeBroker(),
+            source_fetcher=_Fetcher(),
+            grounding_pack_builder=GroundingPackBuilder(),
+            logger=_FakeLogger(),
+        )
+
+        outcome = service.build_grounding_outcome_for_request(
+            SearchRequest(query="Was Ronnie Wood a member of The Rolling Stones?")
+        )
+
+        self.assertEqual(outcome.status, "ok")
+        self.assertIsNotNone(outcome.grounding_pack)
+        assert outcome.grounding_pack is not None
+        self.assertTrue(outcome.grounding_pack.request.metadata["music_claim"])
+
     def test_unrelated_person_death_results_are_rejected(self) -> None:
         class _FakeBroker:
             settings = RetrievalSettings(
@@ -1374,3 +3258,119 @@ class RetrievalServiceTests(unittest.TestCase):
         self.assertTrue(outcome.diagnostics["snippet_only"])
         self.assertIn("could not retrieve enough readable source text", outcome.message)
         self.assertEqual(outcome.grounding_pack.fetched_sources[0].fetch_status, "snippet_only")
+
+    def test_george_michael_cause_answer_uses_retrieved_evidence_only(self) -> None:
+        request = SearchRequest(
+            query="George Michael cause of death",
+            trigger_phrase="factual_risk_cause_of_death",
+        )
+        pack = GroundingPackBuilder().build(
+            request,
+            [
+                SearchResult(
+                    title="George Michael died of natural causes, coroner says",
+                    url="https://example.test/george-michael-cause",
+                )
+            ],
+            [
+                FetchedSource(
+                    url="https://example.test/george-michael-cause",
+                    title="George Michael died of natural causes, coroner says",
+                    source_name="example.test",
+                    text=(
+                        "The official cause of death was dilated cardiomyopathy "
+                        "with myocarditis and fatty liver."
+                    ),
+                    excerpt=(
+                        "The official cause of death was dilated cardiomyopathy "
+                        "with myocarditis and fatty liver."
+                    ),
+                )
+            ],
+            require_citations=True,
+        )
+        decision = RetrievalDecision(
+            should_retrieve=True,
+            retrieval_type="internet",
+            confidence="high",
+            reason_code="factual_risk_cause_of_death",
+            user_visible_reason="",
+            explicit_request=True,
+            requires_user_confirmation=False,
+            search_query="George Michael cause of death",
+        )
+
+        answer = enforce_high_risk_factual_grounding(
+            (
+                "George Michael died of lung cancer exacerbated by smoking, "
+                "confirmed after a concert collapse in 2015."
+            ),
+            user_query="What did George Michael die of?",
+            retrieval_decision=decision,
+            retrieval_pack=pack,
+        )
+
+        self.assertIn(
+            "dilated cardiomyopathy with myocarditis and fatty liver",
+            answer,
+        )
+        self.assertNotIn("lung cancer", answer.lower())
+        self.assertNotIn("smoking", answer.lower())
+        self.assertNotIn("concert collapse", answer.lower())
+
+    def test_music_membership_grounding_rejects_invented_lineup(self) -> None:
+        request = SearchRequest(
+            query="Who were the members of Swing Out Sister?",
+            metadata={"music_claim": True},
+        )
+        pack = GroundingPackBuilder().build(
+            request,
+            [
+                SearchResult(
+                    title="Swing Out Sister overview",
+                    url="https://example.test/swing-out-sister",
+                    snippet="Swing Out Sister are a British pop group formed in 1985.",
+                )
+            ],
+            [
+                FetchedSource(
+                    url="https://example.test/swing-out-sister",
+                    title="Swing Out Sister overview",
+                    source_name="example.test",
+                    text="Swing Out Sister are a British pop group formed in 1985.",
+                    excerpt="Swing Out Sister are a British pop group formed in 1985.",
+                )
+            ],
+            require_citations=True,
+        )
+        decision = RetrievalDecision(
+            should_retrieve=True,
+            retrieval_type="internet",
+            confidence="high",
+            reason_code="factual_risk_music_claim",
+            user_visible_reason="",
+            explicit_request=True,
+            requires_user_confirmation=False,
+            search_query="Swing Out Sister members",
+        )
+
+        answer = enforce_high_risk_factual_grounding(
+            (
+                "Swing Out Sister were Kirsty MacAskill, Sue Quinn, Liz Rhodes, "
+                "Sue Jones, Sue Jones, and Sue Jones."
+            ),
+            user_query="Who were the members of Swing Out Sister?",
+            retrieval_decision=decision,
+            retrieval_pack=pack,
+        )
+
+        self.assertIn(
+            "I do not find reliable evidence for the members of Swing Out Sister.",
+            answer,
+        )
+        self.assertIn(
+            "I found results, but they did not appear relevant enough to verify that safely.",
+            answer,
+        )
+        self.assertNotIn("Kirsty MacAskill", answer)
+        self.assertNotIn("Sue Quinn", answer)

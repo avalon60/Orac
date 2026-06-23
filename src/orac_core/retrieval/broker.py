@@ -27,6 +27,10 @@ class RetrievalSettings:
     max_sources_to_fetch: int = 3
     cache_ttl_hours: float = 12.0
     require_citations: bool = True
+    prefer_wikidata: bool = True
+    prefer_wikipedia: bool = True
+    require_corroboration_for_recent_deaths: bool = True
+    recent_death_days: int = 90
 
 
 class SearchBroker:
@@ -179,6 +183,35 @@ class SearchBroker:
                     "retrieval",
                     "require_citations",
                     default=True,
+                ),
+                prefer_wikidata=_bool_config_value(
+                    config_mgr,
+                    "retrieval.person_facts",
+                    "prefer_wikidata",
+                    default=True,
+                ),
+                prefer_wikipedia=_bool_config_value(
+                    config_mgr,
+                    "retrieval.person_facts",
+                    "prefer_wikipedia",
+                    default=True,
+                ),
+                require_corroboration_for_recent_deaths=_bool_config_value(
+                    config_mgr,
+                    "retrieval.person_facts",
+                    "require_corroboration_for_recent_deaths",
+                    default=True,
+                ),
+                recent_death_days=max(
+                    0,
+                    int(
+                        _int_config_value(
+                            config_mgr,
+                            "retrieval.person_facts",
+                            "recent_death_days",
+                            default=90,
+                        )
+                    ),
                 ),
             )
         except Exception:

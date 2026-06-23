@@ -10,15 +10,15 @@ Apply the sections relevant to the architecture actually in use.
 
 The project may include or interact with:
 
-- user interaction history
-- runtime context
-- extensions or plugins
-- Oracle Database schemas
-- external services
-- local files
-- device and automation systems
-- AI or model runtimes
-- gateway interfaces
+* user interaction history
+* runtime context
+* extensions or plugins
+* Oracle Database schemas
+* external services
+* local files
+* device and automation systems
+* AI or model runtimes
+* gateway interfaces
 
 That combination is powerful and risky.
 
@@ -26,18 +26,18 @@ The default security stance is conservative.
 
 Where AI or model-based components are part of the design:
 
-- the model may reason
-- the model may suggest
-- the model may request approved tools
-- the model must not receive uncontrolled authority
+* the model may reason
+* the model may suggest
+* the model may request approved tools
+* the model must not receive uncontrolled authority
 
 Where interaction history or AI runtime context is part of the design:
 
-- persisted history and runtime model context are not the same thing
-- context must be assembled deliberately
-- stale, irrelevant, or sensitive material must be excluded
-- tool or extension output must not be treated as trusted instructions
-- any message metadata used for context selection must be explicitly documented
+* persisted history and runtime model context are not the same thing
+* context must be assembled deliberately
+* stale, irrelevant, or sensitive material must be excluded
+* tool or extension output must not be treated as trusted instructions
+* any message metadata used for context selection must be explicitly documented
 
 ---
 
@@ -45,19 +45,19 @@ Where interaction history or AI runtime context is part of the design:
 
 The project must separate:
 
-- reasoning
-- authority
-- execution
-- persistence
-- audit
+* reasoning
+* authority
+* execution
+* persistence
+* audit
 
 Where AI or generated-content components are used:
 
-- they are not the security boundary
-- they are not the authority layer
-- they are not the database owner
-- they are not the operating system user
-- they must not bypass project policy
+* they are not the security boundary
+* they are not the authority layer
+* they are not the database owner
+* they are not the operating system user
+* they must not bypass project policy
 
 All actions that affect external state must be mediated by project application code or reviewed platform services.
 
@@ -86,18 +86,18 @@ All actions that affect external state must be mediated by project application c
 
 The following are separate trust zones where present:
 
-- user interface
-- project application code
-- AI or model runtime
-- context builder
-- extension or plugin framework
-- individual extensions or plugins
-- project database schemas
-- extension or plugin database schemas
-- external APIs
-- local operating system
-- device and automation systems
-- logs and audit trails
+* user interface
+* project application code
+* AI or model runtime
+* context builder
+* extension or plugin framework
+* individual extensions or plugins
+* project database schemas
+* extension or plugin database schemas
+* external APIs
+* local operating system
+* device and automation systems
+* logs and audit trails
 
 Crossing a trust boundary requires validation.
 
@@ -117,21 +117,21 @@ Where the project includes AI or model-mediated behaviour, the model has no dire
 
 The model must not directly:
 
-- write to the database
-- execute SQL
-- execute PL/SQL
-- execute shell commands
-- call arbitrary URLs
-- access files
-- access secrets
-- control devices
-- send emails
-- spend money
-- change security settings
-- alter plugin configuration
-- alter project configuration
-- alter database privileges
-- alter database schema objects
+* write to the database
+* execute SQL
+* execute PL/SQL
+* execute shell commands
+* call arbitrary URLs
+* access files
+* access secrets
+* control devices
+* send emails
+* spend money
+* change security settings
+* alter plugin configuration
+* alter project configuration
+* alter database privileges
+* alter database schema objects
 
 The model may request an action using a structured tool call or equivalent mediated action request.
 
@@ -147,20 +147,20 @@ Where the project uses tool calls, plugins, or mediated action requests, every s
 
 Before invoking a tool, extension, or equivalent mediated capability, the platform must check:
 
-- the tool exists
-- the plugin exists
-- the plugin is registered
-- the plugin is enabled
-- the plugin is configured
-- the capability is declared
-- the input schema is valid
-- the caller is allowed
-- the action is allowed
-- the risk level is acceptable
-- confirmation exists if required
-- rate limits permit execution
-- timeout behaviour is defined
-- audit behaviour is defined
+* the tool exists
+* the plugin exists
+* the plugin is registered
+* the plugin is enabled
+* the plugin is configured
+* the capability is declared
+* the input schema is valid
+* the caller is allowed
+* the action is allowed
+* the risk level is acceptable
+* confirmation exists if required
+* rate limits permit execution
+* timeout behaviour is defined
+* audit behaviour is defined
 
 The model must not invoke plugin code directly.
 
@@ -186,13 +186,13 @@ high_risk_action
 prohibited
 ```
 
-| Risk level | Meaning |
-|---|---|
-| `read_only` | Reads data and does not change state. |
-| `low_risk_write` | Makes a reversible or low-impact change. |
-| `sensitive_write` | Changes user data, configuration, external state, or persisted system state. |
+| Risk level         | Meaning                                                                                  |
+| ------------------ | ---------------------------------------------------------------------------------------- |
+| `read_only`        | Reads data and does not change state.                                                    |
+| `low_risk_write`   | Makes a reversible or low-impact change.                                                 |
+| `sensitive_write`  | Changes user data, configuration, external state, or persisted system state.             |
 | `high_risk_action` | Controls physical devices, security, access, money, identity, or destructive operations. |
-| `prohibited` | Must not be performed by the project. |
+| `prohibited`       | Must not be performed by the project.                                                    |
 
 When in doubt, classify the action at the higher risk level.
 
@@ -210,26 +210,26 @@ Read-only actions are generally lower risk, but they are not automatically safe.
 
 Examples:
 
-- read weather data
-- read device state
-- list rooms or areas
-- list calendar availability
-- search documents
-- retrieve plugin metadata
-- retrieve interaction summaries
+* read weather data
+* read device state
+* list rooms or areas
+* list calendar availability
+* search documents
+* retrieve plugin metadata
+* retrieve interaction summaries
 
 Read-only actions can still expose sensitive data.
 
 A read-only action may require restrictions if it accesses:
 
-- personal documents
-- emails
-- calendar entries
-- financial data
-- health data
-- location data
-- security device state
-- private interaction history
+* personal documents
+* emails
+* calendar entries
+* financial data
+* health data
+* location data
+* security device state
+* private interaction history
 
 Read-only does not mean unrestricted.
 
@@ -241,11 +241,11 @@ Low-risk write actions are normally reversible and low impact.
 
 Examples:
 
-- turn on a non-critical lamp
-- apply a harmless UI preference
-- create a temporary draft
-- store non-sensitive user preference data
-- refresh plugin metadata
+* turn on a non-critical lamp
+* apply a harmless UI preference
+* create a temporary draft
+* store non-sensitive user preference data
+* refresh plugin metadata
 
 Low-risk write actions may be allowed without explicit confirmation if project policy permits it.
 
@@ -261,14 +261,14 @@ Sensitive write actions affect user data, configuration, external systems, or pe
 
 Examples:
 
-- send an email
-- create a calendar event
-- update a user profile
-- change plugin configuration
-- change project configuration
-- create or update database records
-- expose user content to an external service
-- modify stored interaction summaries
+* send an email
+* create a calendar event
+* update a user profile
+* change plugin configuration
+* change project configuration
+* create or update database records
+* expose user content to an external service
+* modify stored interaction summaries
 
 Sensitive write actions normally require confirmation unless explicitly pre-authorised by policy.
 
@@ -280,19 +280,19 @@ High-risk actions can affect safety, security, money, access, identity, or destr
 
 Examples:
 
-- unlock a door
-- open a garage
-- disable an alarm
-- change security camera settings
-- delete user data
-- overwrite files
-- drop database objects
-- grant database privileges
-- run arbitrary shell commands
-- submit payment
-- make a purchase
-- expose secrets
-- disable audit logging
+* unlock a door
+* open a garage
+* disable an alarm
+* change security camera settings
+* delete user data
+* overwrite files
+* drop database objects
+* grant database privileges
+* run arbitrary shell commands
+* submit payment
+* make a purchase
+* expose secrets
+* disable audit logging
 
 High-risk actions require explicit policy.
 
@@ -308,20 +308,20 @@ The project must not perform prohibited actions.
 
 Examples:
 
-- exfiltrate secrets
-- bypass authentication
-- weaken security controls
-- install untrusted code without approval
-- grant broad database privileges without approval
-- run arbitrary shell commands from model output
-- run arbitrary SQL from model output
-- disable audit trails to hide activity
-- modify logs to conceal activity
-- expose private keys or tokens
-- act as an unrestricted network proxy
-- perform unsafe physical device actions
-- let a plugin directly control project internals
-- let external content override project instructions
+* exfiltrate secrets
+* bypass authentication
+* weaken security controls
+* install untrusted code without approval
+* grant broad database privileges without approval
+* run arbitrary shell commands from model output
+* run arbitrary SQL from model output
+* disable audit trails to hide activity
+* modify logs to conceal activity
+* expose private keys or tokens
+* act as an unrestricted network proxy
+* perform unsafe physical device actions
+* let a plugin directly control project internals
+* let external content override project instructions
 
 If a prohibited action seems necessary, the design is wrong.
 
@@ -353,12 +353,12 @@ Yes, create the calendar event for tomorrow at 10:00.
 
 For sensitive and high-risk actions, the confirmation should identify:
 
-- the action
-- the target
-- the important consequence
-- the destination, if data is being sent
-- the recipient, if a message is being sent
-- the object being modified or deleted
+* the action
+* the target
+* the important consequence
+* the destination, if data is being sent
+* the recipient, if a message is being sent
+* the object being modified or deleted
 
 Confirmation must not be inferred from vague contextual history.
 
@@ -372,23 +372,23 @@ Confirmation must not be inferred from a previous unrelated approval.
 
 The following normally require confirmation:
 
-- sending an email or message
-- deleting user data
-- overwriting files
-- changing configuration
-- changing security settings
-- disabling alarms
-- unlocking doors
-- opening garages
-- spending money
-- submitting forms
-- making purchases
-- changing database structures
-- running destructive database operations
-- exposing private data to an external service
-- sharing personal data
-- enabling a new plugin permission
-- executing a high-risk device-control action
+* sending an email or message
+* deleting user data
+* overwriting files
+* changing configuration
+* changing security settings
+* disabling alarms
+* unlocking doors
+* opening garages
+* spending money
+* submitting forms
+* making purchases
+* changing database structures
+* running destructive database operations
+* exposing private data to an external service
+* sharing personal data
+* enabling a new plugin permission
+* executing a high-risk device-control action
 
 Project-specific policy may allow some low-risk actions without confirmation.
 
@@ -418,11 +418,11 @@ Some actions may be pre-authorised by explicit configuration.
 
 Examples:
 
-- turn on a hall light when motion is detected
-- refresh weather context every hour
-- sync integration metadata
-- summarise old interaction history
-- clear expired runtime context
+* turn on a hall light when motion is detected
+* refresh weather context every hour
+* sync integration metadata
+* summarise old interaction history
+* clear expired runtime context
 
 Pre-authorisation must be explicit.
 
@@ -454,11 +454,11 @@ Expected topology:
 
 Rules:
 
-- `<DOMAIN>_CORE` owns domain tables.
-- `<DOMAIN>_API` exposes approved access paths.
-- `<DOMAIN>_CODE` owns business logic.
-- `<DOMAIN>_<CONSUMER>_PUB` schemas receive only the privileges they need.
-- `<PLUGIN_SCHEMA>` owns plugin-private artefacts only.
+* `<DOMAIN>_CORE` owns domain tables.
+* `<DOMAIN>_API` exposes approved access paths.
+* `<DOMAIN>_CODE` owns business logic.
+* `<DOMAIN>_<CONSUMER>_PUB` schemas receive only the privileges they need.
+* `<PLUGIN_SCHEMA>` owns plugin-private artefacts only.
 
 Application code should not connect as schema owners unless explicitly required.
 
@@ -518,18 +518,18 @@ DDL changes are high risk.
 
 Examples:
 
-- create table
-- alter table
-- drop table
-- create user
-- alter user
-- grant
-- revoke
-- create synonym
-- create database link
-- create directory
-- create procedure
-- drop package
+* create table
+* alter table
+* drop table
+* create user
+* alter user
+* grant
+* revoke
+* create synonym
+* create database link
+* create directory
+* create procedure
+* drop package
 
 DDL must not be generated and executed automatically from LLM output.
 
@@ -547,13 +547,13 @@ The LLM must not execute shell commands directly.
 
 Shell command execution, if ever supported, must be:
 
-- allowlisted
-- parameter-validated
-- logged
-- time-limited
-- executed as a low-privilege user
-- isolated from secrets where practical
-- denied by default
+* allowlisted
+* parameter-validated
+* logged
+* time-limited
+* executed as a low-privilege user
+* isolated from secrets where practical
+* denied by default
 
 Do not pass raw LLM output to a shell.
 
@@ -575,18 +575,18 @@ Sensitive paths must be protected.
 
 Examples of sensitive files:
 
-- SSH keys
-- API keys
-- private keys
-- database wallets
-- password files
-- shell history
-- browser profiles
-- cloud credentials
-- unrelated project files
-- operating system configuration
-- encryption keys
-- token stores
+* SSH keys
+* API keys
+* private keys
+* database wallets
+* password files
+* shell history
+* browser profiles
+* cloud credentials
+* unrelated project files
+* operating system configuration
+* encryption keys
+* token stores
 
 If a plugin needs file access, it must declare the required path scope.
 
@@ -632,18 +632,18 @@ Secrets must never be logged.
 
 Secrets include:
 
-- passwords
-- API keys
-- bearer tokens
-- refresh tokens
-- private keys
-- database wallet contents
-- session cookies
-- SSH keys
-- encryption keys
-- OAuth tokens
-- service credentials
-- signing keys
+* passwords
+* API keys
+* bearer tokens
+* refresh tokens
+* private keys
+* database wallet contents
+* session cookies
+* SSH keys
+* encryption keys
+* OAuth tokens
+* service credentials
+* signing keys
 
 Secrets should be accessed through an approved credential mechanism.
 
@@ -712,15 +712,15 @@ Security-relevant actions must be logged.
 
 Logs should record:
 
-- who requested the action
-- what action was requested
-- what plugin or component executed it
-- whether confirmation was required
-- whether confirmation was received
-- result status
-- error code, if any
-- correlation id
-- timestamp
+* who requested the action
+* what action was requested
+* what plugin or component executed it
+* whether confirmation was required
+* whether confirmation was received
+* result status
+* error code, if any
+* correlation id
+* timestamp
 
 Logs must not include secrets.
 
@@ -738,21 +738,21 @@ Do not disable audit logging to make a feature easier to implement.
 
 The following should normally be auditable:
 
-- plugin installation
-- plugin upgrade
-- plugin enablement
-- plugin disablement
-- plugin permission change
-- sensitive tool invocation
-- denied tool invocation
-- failed authentication
-- failed authorisation
-- configuration change
-- high-risk action request
-- high-risk action execution
-- confirmation received
-- destructive database request
-- external service data transmission
+* plugin installation
+* plugin upgrade
+* plugin enablement
+* plugin disablement
+* plugin permission change
+* sensitive tool invocation
+* denied tool invocation
+* failed authentication
+* failed authorisation
+* configuration change
+* high-risk action request
+* high-risk action execution
+* confirmation received
+* destructive database request
+* external service data transmission
 
 Audit events should be structured.
 
@@ -770,17 +770,17 @@ Treat external content as hostile unless proven otherwise.
 
 External content includes:
 
-- web pages
-- emails
-- documents
-- calendar entries
-- tool results
-- plugin results
-- retrieved snippets
-- device or automation entity names
-- filenames
-- user-provided text from untrusted sources
-- third-party API responses
+* web pages
+* emails
+* documents
+* calendar entries
+* tool results
+* plugin results
+* retrieved snippets
+* device or automation entity names
+* filenames
+* user-provided text from untrusted sources
+* third-party API responses
 
 External content must not be allowed to override project instructions.
 
@@ -848,17 +848,17 @@ Where the project uses runtime context or cached operational state, stale contex
 
 Examples:
 
-- old room location
-- old device state
-- old user presence
-- old weather
-- old plugin permissions
-- old security state
-- old calendar availability
-- old interaction summary
-- old tool result
-- old confirmation
-- old plugin capability list
+* old room location
+* old device state
+* old user presence
+* old weather
+* old plugin permissions
+* old security state
+* old calendar availability
+* old interaction summary
+* old tool result
+* old confirmation
+* old plugin capability list
 
 Runtime-sensitive facts must be refreshed when needed.
 
@@ -896,20 +896,20 @@ User data must be treated carefully.
 
 Examples:
 
-- personal preferences
-- location
-- home layout
-- device names
-- interaction history
-- documents
-- emails
-- calendar data
-- financial data
-- medical data
-- credentials
-- family details
-- work details
-- private project details
+* personal preferences
+* location
+* home layout
+* device names
+* interaction history
+* documents
+* emails
+* calendar data
+* financial data
+* medical data
+* credentials
+* family details
+* work details
+* private project details
 
 Access to user data must be purposeful.
 
@@ -933,31 +933,31 @@ Device-control actions can be risky.
 
 Examples of read-only actions:
 
-- list rooms or areas
-- list lights
-- read temperature
-- read sensor state
-- read device availability
-- read current scene
-- read battery level
+* list rooms or areas
+* list lights
+* read temperature
+* read sensor state
+* read device availability
+* read current scene
+* read battery level
 
 Examples of lower-risk control actions:
 
-- turn on a non-critical lamp
-- turn off a non-critical lamp
-- set a harmless lighting scene
+* turn on a non-critical lamp
+* turn off a non-critical lamp
+* set a harmless lighting scene
 
 Examples of sensitive or high-risk actions:
 
-- unlock a door
-- open a garage
-- disable an alarm
-- change security camera configuration
-- operate heating unsafely
-- operate appliances that may create physical risk
-- disable safety sensors
-- alter presence detection
-- expose occupancy state externally
+* unlock a door
+* open a garage
+* disable an alarm
+* change security camera configuration
+* operate heating unsafely
+* operate appliances that may create physical risk
+* disable safety sensors
+* alter presence detection
+* expose occupancy state externally
 
 High-risk actions require explicit policy and normally require confirmation.
 
@@ -973,13 +973,13 @@ Sending messages can expose private information or create external consequences.
 
 Actions normally requiring confirmation include:
 
-- sending email
-- forwarding email
-- sending chat messages
-- sending SMS messages
-- posting to social media
-- submitting support tickets
-- replying to external parties
+* sending email
+* forwarding email
+* sending chat messages
+* sending SMS messages
+* posting to social media
+* submitting support tickets
+* replying to external parties
 
 Drafting a message is lower risk than sending it.
 
@@ -1005,14 +1005,14 @@ Inviting attendees is externally visible and normally requires confirmation.
 
 Calendar actions should be specific about:
 
-- title
-- date
-- time
-- timezone
-- attendees
-- location
-- conferencing details
-- recurrence
+* title
+* date
+* time
+* timezone
+* attendees
+* location
+* conferencing details
+* recurrence
 
 Do not infer attendee consent.
 
@@ -1024,14 +1024,14 @@ Do not silently invite people.
 
 Before sending user data to an external service, the project must consider:
 
-- what data is being sent
-- why it is needed
-- which service receives it
-- whether the relevant integration, plugin, or extension declared that service
-- whether personal data is included
-- whether secrets are included
-- whether confirmation is required
-- whether the data can be minimised
+* what data is being sent
+* why it is needed
+* which service receives it
+* whether the relevant integration, plugin, or extension declared that service
+* whether personal data is included
+* whether secrets are included
+* whether confirmation is required
+* whether the data can be minimised
 
 Do not send complete interaction history to external services unless explicitly required and approved.
 
@@ -1047,16 +1047,16 @@ Plugins and extensions are not automatically trusted.
 
 A plugin or extension must be constrained by:
 
-- registration
-- enablement
-- declared capabilities
-- declared permissions
-- risk levels
-- input validation
-- output validation
-- execution policy
-- logging
-- tests
+* registration
+* enablement
+* declared capabilities
+* declared permissions
+* risk levels
+* input validation
+* output validation
+* execution policy
+* logging
+* tests
 
 A plugin or extension must not bypass project security by calling internal APIs, direct database objects, shell commands, or external services outside its declared permissions.
 
@@ -1070,11 +1070,11 @@ Gateway plugins and external front ends must not bypass project policy.
 
 Examples:
 
-- web gateway
-- voice gateway
-- webhook gateway
-- external chat gateway
-- local UI gateway
+* web gateway
+* voice gateway
+* webhook gateway
+* external chat gateway
+* local UI gateway
 
 A gateway may adapt transport formats.
 
@@ -1082,13 +1082,13 @@ A gateway must not become a second runtime with weaker rules.
 
 A gateway must not skip:
 
-- authentication
-- authorisation
-- context management
-- plugin policy
-- message recording
-- audit requirements
-- confirmation requirements
+* authentication
+* authorisation
+* context management
+* plugin policy
+* message recording
+* audit requirements
+* confirmation requirements
 
 ---
 
@@ -1148,12 +1148,12 @@ High-frequency calls should have rate limits where appropriate.
 
 Rate limits help prevent:
 
-- accidental loops
-- runaway plugin execution
-- external API abuse
-- excessive costs
-- denial of service
-- repeated unsafe action attempts
+* accidental loops
+* runaway plugin execution
+* external API abuse
+* excessive costs
+* denial of service
+* repeated unsafe action attempts
 
 Timeouts and rate limits should be logged when they affect execution.
 
@@ -1165,13 +1165,13 @@ Some actions may create cost even if they are not security-sensitive.
 
 Examples:
 
-- LLM calls
-- external API calls
-- cloud service operations
-- large document processing
-- repeated web searches
-- image or media generation
-- high-frequency polling
+* LLM calls
+* external API calls
+* cloud service operations
+* large document processing
+* repeated web searches
+* image or media generation
+* high-frequency polling
 
 Cost-generating actions should be visible to policy.
 
@@ -1185,17 +1185,183 @@ Do not use development shortcuts that weaken the security model.
 
 Avoid:
 
-- hardcoded credentials
-- broad grants
-- owner-schema connections for normal runtime
-- direct writes to core tables
-- disabled validation
-- disabled audit
-- shelling out to solve application problems
-- exposing debug endpoints without access control
-- treating local-only code as safe by default
+* hardcoded credentials
+* broad grants
+* owner-schema connections for normal runtime
+* direct writes to core tables
+* disabled validation
+* disabled audit
+* shelling out to solve application problems
+* exposing debug endpoints without access control
+* treating local-only code as safe by default
 
 Temporary development code must be clearly marked and must not become production behaviour accidentally.
+
+---
+
+## Protected Runtime Infrastructure
+
+Stateful runtime infrastructure must be treated as protected. It must not be restarted, rebuilt, recreated, reinitialised, or modified as a side effect of unrelated feature work.
+
+Protected runtime infrastructure includes:
+
+* the `orac-db` container
+* the Oracle data volume, especially `/opt/oracle/oradata` and the host path mounted to it
+* Oracle database bootstrap and setup scripts
+* APEX installation and configuration
+* ORDS installation, configuration, and runtime state
+* database image builds and rebuilds
+* Docker Compose actions that recreate stateful services
+* deployment scripts that rebuild, recreate, or reinitialise stateful containers
+
+The following commands and command families must not be run unless the user explicitly authorises the exact action:
+
+```text
+docker stop orac-db
+docker start orac-db
+docker restart orac-db
+docker compose restart orac-db
+docker compose down
+docker compose down -v
+docker compose up --force-recreate
+docker compose up --build
+docker build
+docker buildx
+bin/orac-db-deploy.sh
+docker rm orac-db
+docker volume rm
+docker volume prune
+docker system prune
+ords install
+ords config
+sqlplus execution of setup DDL against protected schemas
+```
+
+Read-only inspection is allowed where appropriate. Examples include:
+
+```text
+docker ps
+docker inspect
+docker logs
+docker exec ... ls
+docker exec ... cat
+docker exec ... grep
+docker exec ... find
+docker exec ... stat
+```
+
+Any `docker exec` command used during diagnosis must be read-only unless the user has explicitly approved a mutating action.
+
+## Diagnosis-Only Mode
+
+If an investigation touches Oracle, APEX, ORDS, Docker bootstrap, container health, database setup, or persistent volumes, the agent must switch to diagnosis-only mode.
+
+In diagnosis-only mode, the agent must not:
+
+* edit files
+* restart containers
+* rebuild images
+* recreate containers
+* run deployment scripts
+* run database setup scripts
+* run ORDS install or config commands
+* modify `/opt/oracle/oradata`
+* modify generated runtime configuration
+* apply opportunistic fixes
+
+The agent must produce a diagnosis report before proposing any fix.
+
+The diagnosis report must include:
+
+1. The observed symptom.
+2. The current container and service state.
+3. The last known good state, if known.
+4. The first command that changed runtime state, if any.
+5. The files changed before runtime state changed.
+6. The exact setup, startup, or health gate involved.
+7. The evidence supporting the suspected cause.
+8. The smallest reversible recovery action.
+9. The rollback plan.
+10. The commands that must not be run.
+
+## Blast-Radius Escalation
+
+The agent must classify every task by blast radius before acting:
+
+1. code-only
+2. configuration or manifest
+3. runtime process
+4. database or schema
+5. Docker, container, bootstrap, APEX, or ORDS
+
+If a task moves beyond its original blast radius, the agent must stop and ask the user before continuing.
+
+The agent must not fix newly discovered issues opportunistically. Newly discovered issues must be reported separately unless the user explicitly expands the task scope.
+
+For example, a plugin routing task must not become a database container repair task. A UI enhancement task must not become a Docker rebuild task. A unit test task must not become an APEX or ORDS bootstrap task.
+
+## Stateful Configuration Rule
+
+Generated configuration required for service startup must not live only in disposable container filesystem state.
+
+Every generated runtime asset must be classified as one of:
+
+* image state: built into the image and safe to recreate
+* persistent mounted state: stored on a host mount or volume
+* generated persistent state: generated once and stored in a persistent location
+* generated disposable state: safe to regenerate on every startup
+
+If a service needs generated configuration after container recreation, that configuration must either:
+
+* be stored in a mounted persistent path
+* be regenerated safely and idempotently on startup
+* be deliberately baked into the image
+
+It must not exist only in the old container filesystem.
+
+For ORDS, the configuration directory must be treated as persistent or safely regenerable state. If `ords/conf` is required to start ORDS, then container recreation must not leave the system with:
+
+```text
+Oracle data volume says setup is complete
+ORDS configuration has been deleted with the old container
+startup skips setup
+ORDS cannot start
+APEX is unreachable
+```
+
+## Setup Versus Startup
+
+Setup and startup must remain separate.
+
+Setup may create users, install APEX, configure ORDS, run DDL, and initialise persistent state.
+
+Startup must only start already provisioned services and perform safe, idempotent checks.
+
+Startup must not run setup DDL unless the task is explicitly a first-time setup or an approved recovery operation.
+
+Setup scripts must be idempotent where practical, but idempotency is not a substitute for correct lifecycle gating. A setup script failing because an object already exists may reveal two separate issues:
+
+1. the script is not idempotent
+2. setup is being run at the wrong point in the lifecycle
+
+Both issues must be considered.
+
+## Protected Action Approval
+
+Before proposing any protected action, the agent must provide:
+
+1. The exact command to be run.
+2. The expected effect.
+3. The state it may change.
+4. The state it must not change.
+5. The evidence that the action is needed.
+6. The rollback plan.
+7. The safer read-only alternatives already attempted.
+8. The reason the action cannot be avoided.
+
+The user must approve the exact protected action before it is run.
+
+Any code that bypasses this model is a security defect.
 
 ---
 
@@ -1203,22 +1369,22 @@ Temporary development code must be clearly marked and must not become production
 
 Security-relevant code must include tests for:
 
-- permission denial
-- disabled plugin denial
-- missing confirmation denial
-- ambiguous confirmation denial
-- invalid input rejection
-- unauthorised tool rejection
-- undeclared capability rejection
-- prohibited action rejection
-- stale context exclusion
-- secret masking
-- audit logging
-- error safety
-- prompt-injection resistance
-- direct database access prevention
-- unsafe SQL rejection
-- unsafe shell command rejection
+* permission denial
+* disabled plugin denial
+* missing confirmation denial
+* ambiguous confirmation denial
+* invalid input rejection
+* unauthorised tool rejection
+* undeclared capability rejection
+* prohibited action rejection
+* stale context exclusion
+* secret masking
+* audit logging
+* error safety
+* prompt-injection resistance
+* direct database access prevention
+* unsafe SQL rejection
+* unsafe shell command rejection
 
 The unhappy path matters.
 
@@ -1263,20 +1429,20 @@ Do not solve LLM limitations by giving the LLM more authority.
 
 A change should be treated as security-significant if it:
 
-- adds a plugin capability
-- changes plugin permissions
-- adds external network access
-- changes credential handling
-- changes context assembly
-- changes message persistence
-- adds database writes
-- adds dynamic SQL
-- adds shell execution
-- adds file access
-- changes confirmation logic
-- changes audit behaviour
-- changes device or automation control
-- sends user data to an external service
+* adds a plugin capability
+* changes plugin permissions
+* adds external network access
+* changes credential handling
+* changes context assembly
+* changes message persistence
+* adds database writes
+* adds dynamic SQL
+* adds shell execution
+* adds file access
+* changes confirmation logic
+* changes audit behaviour
+* changes device or automation control
+* sends user data to an external service
 
 Security-significant changes require careful review and appropriate tests.
 
@@ -1296,5 +1462,3 @@ request confirmation
 execute only through approved policy
 audit the result
 ```
-
-Any code that bypasses this model is a security defect.

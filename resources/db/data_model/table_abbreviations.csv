@@ -9,3 +9,4 @@ user_preferences, usrprf
 user_prompt_elements, usrpre 
 user_synonyms, usrsyns
 devices, devics 
+device_aliases,dalias
