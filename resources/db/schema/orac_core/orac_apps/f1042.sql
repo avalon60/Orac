@@ -33,25 +33,25 @@ prompt APPLICATION 1042 - Orac Administration
 -- Application Export:
 --   Application:     1042
 --   Name:            Orac Administration
---   Date and Time:   22:57 Thursday April 30, 2026
+--   Date and Time:   22:42 Monday June 22, 2026
 --   Exported By:     ORAC_ADMIN
 --   Flashback:       0
 --   Export Type:     Application Export
---     Pages:                     32
---       Items:                  120
+--     Pages:                     36
+--       Items:                  134
 --       Validations:              7
---       Processes:               41
---       Regions:                 87
---       Buttons:                 67
---       Dynamic Actions:         31
+--       Processes:               44
+--       Regions:                 95
+--       Buttons:                 72
+--       Dynamic Actions:         33
 --     Shared Components:
 --       Logic:
 --         App Settings:           2
 --         Build Options:          6
 --       Navigation:
---         Lists:                  8
+--         Lists:                 10
 --         Breadcrumbs:            1
---           Entries:              6
+--           Entries:             10
 --       Security:
 --         Authentication:         1
 --         Authorization:          3
@@ -66,7 +66,7 @@ prompt APPLICATION 1042 - Orac Administration
 --       E-Mail:
 --     Supporting Objects:  Included
 --   Version:         24.2.0
---   Instance ID:     1027678997723247
+--   Instance ID:     1009167529597535
 --
 
 prompt --application/delete_application
@@ -110,12 +110,11 @@ wwv_imp_workspace.create_flow(
 ,p_rejoin_existing_sessions=>'N'
 ,p_csv_encoding=>'Y'
 ,p_auto_time_zone=>'N'
-,p_friendly_url=>'Y'
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'Orac Administration'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>6
-,p_version_scn=>2278864
+,p_version_scn=>2376955
 ,p_print_server_type=>'NATIVE'
 ,p_file_storage=>'DB'
 ,p_is_pwa=>'Y'
@@ -264,60 +263,6 @@ wwv_flow_imp_shared.create_list_item(
 ,p_list_item_link_text=>'Dashboard'
 ,p_list_item_link_target=>'f?p=&APP_ID.:2:&APP_SESSION.::&DEBUG.:::'
 ,p_list_item_icon=>'fa-dashboard'
-,p_list_item_current_type=>'TARGET_PAGE'
-);
-end;
-/
-prompt --application/shared_components/navigation/lists/orac_admin_cards
-begin
-wwv_flow_imp_shared.create_list(
- p_id=>wwv_flow_imp.id(14400100000000001)
-,p_name=>'Orac Admin Cards'
-,p_list_status=>'PUBLIC'
-);
-wwv_flow_imp_shared.create_list_item(
- p_id=>wwv_flow_imp.id(14400100000000002)
-,p_list_item_display_sequence=>10
-,p_list_item_link_text=>'Preference Definitions'
-,p_list_item_link_target=>'f?p=&APP_ID.:7:&APP_SESSION.::&DEBUG.:::'
-,p_list_item_icon=>'fa-sliders'
-,p_list_text_01=>'Manage preference keys, labels, defaults, and allowed value metadata.'
-,p_list_item_current_type=>'TARGET_PAGE'
-);
-wwv_flow_imp_shared.create_list_item(
- p_id=>wwv_flow_imp.id(14400100000000003)
-,p_list_item_display_sequence=>20
-,p_list_item_link_text=>'Orac Personas'
-,p_list_item_link_target=>'f?p=&APP_ID.:9:&APP_SESSION.::&DEBUG.:::'
-,p_list_item_icon=>'fa-user-circle-o'
-,p_list_text_01=>'Manage assistant personas, prompt behaviour, and presentation style.'
-,p_list_item_current_type=>'TARGET_PAGE'
-);
-wwv_flow_imp_shared.create_list_item(
- p_id=>wwv_flow_imp.id(14400100000000004)
-,p_list_item_display_sequence=>30
-,p_list_item_link_text=>'Model Presets'
-,p_list_item_link_target=>'f?p=&APP_ID.:30:&APP_SESSION.::&DEBUG.:::'
-,p_list_item_icon=>'fa-sliders'
-,p_list_text_01=>'Manage reusable generation settings for model requests.'
-,p_list_item_current_type=>'TARGET_PAGE'
-);
-end;
-/
-prompt --application/shared_components/navigation/lists/model_admin_cards
-begin
-wwv_flow_imp_shared.create_list(
- p_id=>wwv_flow_imp.id(14500100000000001)
-,p_name=>'Model Admin Cards'
-,p_list_status=>'PUBLIC'
-);
-wwv_flow_imp_shared.create_list_item(
- p_id=>wwv_flow_imp.id(14500100000000002)
-,p_list_item_display_sequence=>10
-,p_list_item_link_text=>'Registered LLMs'
-,p_list_item_link_target=>'f?p=&APP_ID.:11:&APP_SESSION.::&DEBUG.:::'
-,p_list_item_icon=>'fa-microchip'
-,p_list_text_01=>'Manage registered model runtimes and provider metadata.'
 ,p_list_item_current_type=>'TARGET_PAGE'
 );
 end;
@@ -480,6 +425,62 @@ wwv_flow_imp_shared.create_list_item(
 ,p_list_item_link_target=>'f?p=&APP_ID.:10053:&APP_SESSION.::&DEBUG.:10053::'
 ,p_list_item_icon=>'fa-comment-o'
 ,p_list_text_01=>'Report of all feedback submitted by application users'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+end;
+/
+prompt --application/shared_components/navigation/lists/orac_admin_cards
+begin
+wwv_flow_imp_shared.create_list(
+ p_id=>wwv_flow_imp.id(14400100000000001)
+,p_name=>'Orac Admin Cards'
+,p_list_status=>'PUBLIC'
+,p_version_scn=>2186276
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(14400100000000002)
+,p_list_item_display_sequence=>10
+,p_list_item_link_text=>'Preference Definitions'
+,p_list_item_link_target=>'f?p=&APP_ID.:7:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-sliders'
+,p_list_text_01=>'Manage preference keys, labels, defaults, and allowed value metadata.'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(14400100000000003)
+,p_list_item_display_sequence=>20
+,p_list_item_link_text=>'Orac Personas'
+,p_list_item_link_target=>'f?p=&APP_ID.:9:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-user-circle-o'
+,p_list_text_01=>'Manage assistant personas, prompt behaviour, and presentation style.'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(14400100000000004)
+,p_list_item_display_sequence=>30
+,p_list_item_link_text=>'Model Presets'
+,p_list_item_link_target=>'f?p=&APP_ID.:30:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-sliders'
+,p_list_text_01=>'Manage reusable generation settings for model requests.'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+end;
+/
+prompt --application/shared_components/navigation/lists/model_admin_cards
+begin
+wwv_flow_imp_shared.create_list(
+ p_id=>wwv_flow_imp.id(14500100000000001)
+,p_name=>'Model Admin Cards'
+,p_list_status=>'PUBLIC'
+,p_version_scn=>2186276
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(14500100000000002)
+,p_list_item_display_sequence=>10
+,p_list_item_link_text=>'Registered LLMs'
+,p_list_item_link_target=>'f?p=&APP_ID.:11:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-microchip'
+,p_list_text_01=>'Manage registered model runtimes and provider metadata.'
 ,p_list_item_current_type=>'TARGET_PAGE'
 );
 end;
@@ -1828,18 +1829,6 @@ wwv_flow_imp_shared.create_menu_option(
 ,p_page_id=>2
 );
 wwv_flow_imp_shared.create_menu_option(
- p_id=>wwv_flow_imp.id(14400100000000011)
-,p_short_name=>'Orac Admin'
-,p_link=>'f?p=&APP_ID.:32:&APP_SESSION.::&DEBUG.:::'
-,p_page_id=>32
-);
-wwv_flow_imp_shared.create_menu_option(
- p_id=>wwv_flow_imp.id(14500100000000011)
-,p_short_name=>'Model Admin'
-,p_link=>'f?p=&APP_ID.:33:&APP_SESSION.::&DEBUG.:::'
-,p_page_id=>33
-);
-wwv_flow_imp_shared.create_menu_option(
  p_id=>wwv_flow_imp.id(13900100000000002)
 ,p_short_name=>'Preference Definitions'
 ,p_link=>'f?p=&APP_ID.:7:&APP_SESSION.::&DEBUG.:::'
@@ -1876,6 +1865,18 @@ wwv_flow_imp_shared.create_menu_option(
 ,p_short_name=>'Model Preset'
 ,p_link=>'f?p=&APP_ID.:31:&APP_SESSION.::&DEBUG.:::'
 ,p_page_id=>31
+);
+wwv_flow_imp_shared.create_menu_option(
+ p_id=>wwv_flow_imp.id(14400100000000011)
+,p_short_name=>'Orac Admin'
+,p_link=>'f?p=&APP_ID.:32:&APP_SESSION.::&DEBUG.:::'
+,p_page_id=>32
+);
+wwv_flow_imp_shared.create_menu_option(
+ p_id=>wwv_flow_imp.id(14500100000000011)
+,p_short_name=>'Model Admin'
+,p_link=>'f?p=&APP_ID.:33:&APP_SESSION.::&DEBUG.:::'
+,p_page_id=>33
 );
 end;
 /
@@ -2039,9 +2040,10 @@ wwv_flow_imp_shared.create_authentication(
 ,p_scheme_type=>'NATIVE_APEX_ACCOUNTS'
 ,p_invalid_session_type=>'LOGIN'
 ,p_logout_url=>'f?p=&APP_ID.:1'
+,p_cookie_name=>'&WORKSPACE_COOKIE.'
 ,p_use_secure_cookie_yn=>'N'
 ,p_ras_mode=>0
-,p_version_scn=>2453319
+,p_version_scn=>2376955
 );
 end;
 /
@@ -6221,34 +6223,6 @@ wwv_flow_imp_page.create_page_item(
   'trim_spaces', 'BOTH')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
- p_id=>wwv_flow_imp.id(14000100000000340)
-,p_name=>'P10_MODEL_PRESET_ID'
-,p_source_data_type=>'NUMBER'
-,p_item_sequence=>45
-,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
-,p_prompt=>'Model Preset'
-,p_display_as=>'NATIVE_SELECT_ONE'
-,p_lov=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select model_preset_name || '' ('' || model_preset_code || '')'' d,',
-'       model_preset_id r',
-'  from orac_api.model_generation_presets_v',
-' where is_active = ''Y''',
-' order by case is_system_preset when ''Y'' then 0 else 1 end,',
-'          model_preset_name,',
-'          model_preset_code'))
-,p_lov_display_null=>'YES'
-,p_field_template=>1609121967514267634
-,p_item_template_options=>'#DEFAULT#'
-,p_is_persistent=>'N'
-,p_lov_display_extra=>'YES'
-,p_help_text=>'Controls model generation settings such as creativity, determinism, repetition control, and output length.'
-,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'case_sensitive', 'N',
-  'fetch_on_search', 'Y',
-  'match_type', 'CONTAINS',
-  'min_chars', '0')).to_clob
-);
-wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(14000100000000311)
 ,p_name=>'P10_ATTITUDE_BASE_LEVEL'
 ,p_source_data_type=>'NUMBER'
@@ -6467,6 +6441,34 @@ wwv_flow_imp_page.create_page_item(
 ,p_is_persistent=>'N'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(14000100000000340)
+,p_name=>'P10_MODEL_PRESET_ID'
+,p_source_data_type=>'NUMBER'
+,p_item_sequence=>45
+,p_item_plug_id=>wwv_flow_imp.id(14000100000000301)
+,p_prompt=>'Model Preset'
+,p_display_as=>'NATIVE_SELECT_ONE'
+,p_lov=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select model_preset_name || '' ('' || model_preset_code || '')'' d,',
+'       model_preset_id r',
+'  from orac_api.model_generation_presets_v',
+' where is_active = ''Y''',
+' order by case is_system_preset when ''Y'' then 0 else 1 end,',
+'          model_preset_name,',
+'          model_preset_code'))
+,p_lov_display_null=>'YES'
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'YES'
+,p_help_text=>'Controls model generation settings such as creativity, determinism, repetition control, and output length.'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'case_sensitive', 'N',
+  'fetch_on_search', 'Y',
+  'match_type', 'CONTAINS',
+  'min_chars', '0')).to_clob
 );
 wwv_flow_imp_page.create_page_da_event(
  p_id=>wwv_flow_imp.id(14000100000000323)
@@ -7786,6 +7788,11 @@ wwv_flow_imp_page.create_page_item(
 ,p_field_template=>1609122147107268652
 ,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'disabled', 'N',
+  'submit_when_enter_pressed', 'N',
+  'subtype', 'TEXT',
+  'trim_spaces', 'BOTH')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(14300100000000310)
@@ -8050,7 +8057,7 @@ wwv_flow_imp_page.create_page(
 ,p_step_template=>2526643373347724467
 ,p_page_template_options=>'#DEFAULT#'
 ,p_protection_level=>'C'
-,p_page_component_map=>'03'
+,p_page_component_map=>'06'
 );
 wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(14400100000000201)
@@ -8092,7 +8099,7 @@ wwv_flow_imp_page.create_page(
 ,p_step_template=>2526643373347724467
 ,p_page_template_options=>'#DEFAULT#'
 ,p_protection_level=>'C'
-,p_page_component_map=>'03'
+,p_page_component_map=>'06'
 );
 wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(14500100000000201)
