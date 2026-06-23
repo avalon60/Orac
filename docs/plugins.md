@@ -455,6 +455,19 @@ must target the shared Orac workspace, `ORAC`; plugin menu links and
 app-to-app navigation rely on a common workspace session context and do not
 support arbitrary plugin workspaces.
 
+Plugin-supplied APEX applications must also configure their authentication
+scheme with **Session Sharing** set to **Workspace Sharing**. This is required
+for seamless navigation from the Orac plugin app hub into plugin apps without a
+second login prompt.
+
+![APEX Session Sharing set to Workspace Sharing](images/plugins-apex-session-sharing.png)
+
+To verify or change the setting in APEX Builder, open the plugin application,
+go to **Shared Components** >
+[**Authentication Schemes**](http://localhost:8042/ords/r/apex/app-builder/authentication-schemes?session=16421612331627),
+open the active authentication scheme, expand **Session Sharing**, and set
+**Type** to **Workspace Sharing**.
+
 When `install_required` is true, the plugin installer validates that
 `app_export` exists inside the plugin package and imports the export. Import
 output is captured in the plugin APEX app registry. The installed APEX
