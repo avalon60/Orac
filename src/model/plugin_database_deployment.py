@@ -462,6 +462,9 @@ class DockerPluginDatabaseRunner:
             payload_checksum=payload_checksum,
             schema_names=schema_names,
             oracle_pdb=self._oracle_pdb,
+            require_liquibase_tracking=(
+                manifest.database_deployment.deployment_type == "liquibase"
+            ),
         )
         command = [
             self._docker_bin,
@@ -658,6 +661,7 @@ class DockerPluginLiquibaseDatabaseRunner(DockerPluginDatabaseRunner):
             "copy plugin Liquibase database archive",
         )
         for schema in manifest.database_schemas:
+            schema_name = schema.schema_name.upper()
             self._run(
                 [
                     self._docker_bin,
@@ -669,11 +673,15 @@ class DockerPluginLiquibaseDatabaseRunner(DockerPluginDatabaseRunner):
                     "--archive",
                     container_archive,
                     "--schema-name",
-                    schema.schema_name,
+                    schema_name,
+                    "--default-schema-name",
+                    schema_name,
+                    "--liquibase-schema-name",
+                    schema_name,
                     "--controller",
                     controller,
                 ],
-                f"deploy plugin Liquibase archive for {schema.schema_name}",
+                f"deploy plugin Liquibase archive for {schema_name}",
             )
 
 
@@ -911,7 +919,8 @@ class PluginDatabaseDeployer:
         schema_payload_path: Path,
     ) -> bool:
         """Return whether state and expected objects confirm deployment."""
-        checker = getattr(self._runner, "already_deployed", None)
+        runner = self._runner_for_manifest(manifest)
+        checker = getattr(runner, "already_deployed", None)
         state_says_deployed = False
         try:
             if checker is not None:
@@ -928,7 +937,7 @@ class PluginDatabaseDeployer:
                 "deciding whether to redeploy."
             )
 
-        object_checker = getattr(self._runner, "payload_objects_deployed", None)
+        object_checker = getattr(runner, "payload_objects_deployed", None)
         if object_checker is None:
             return state_says_deployed
 
@@ -960,7 +969,7 @@ class PluginDatabaseDeployer:
                     f"'{manifest.plugin_id}', but the current checksum was not "
                     "recorded; recording verified deployment and skipping DDL."
                 )
-                marker = getattr(self._runner, "mark_payload_deployed", None)
+                marker = getattr(runner, "mark_payload_deployed", None)
                 if marker is not None:
                     try:
                         marker(
@@ -1366,6 +1375,7 @@ def _already_deployed_sql(
     payload_checksum: str,
     schema_names: list[str],
     oracle_pdb: str,
+    require_liquibase_tracking: bool = False,
 ) -> str:
     """Build the SQL*Plus state-check block for a plugin deployment payload."""
     lines = [
@@ -1378,8 +1388,20 @@ def _already_deployed_sql(
         "begin",
     ]
     for schema_name in schema_names:
+        schema_literal = _sql_literal(schema_name.upper())
         lines.extend(
             [
+                "  select case",
+                "           when exists (",
+                "                  select 1",
+                "                    from dba_users",
+                f"                   where username = {schema_literal}",
+                "                )",
+                "           then l_all_deployed",
+                "           else 'N'",
+                "         end",
+                "    into l_all_deployed",
+                "    from dual;",
                 "  if orac_code.plugin_db_deployment_api.is_deployed(",
                 f"       p_plugin_id           => {_sql_literal(plugin_id)},",
                 f"       p_plugin_version      => {_sql_literal(plugin_version)},",
@@ -1391,6 +1413,31 @@ def _already_deployed_sql(
                 "  end if;",
             ]
         )
+        if require_liquibase_tracking:
+            lines.extend(
+                [
+                    "  select case",
+                    "           when (",
+                    "                  select count(1)",
+                    "                    from dba_tables",
+                    f"                   where owner = {schema_literal}",
+                    "                     and table_name in (",
+                    "                           'DATABASECHANGELOG',",
+                    "                           'DATABASECHANGELOGLOCK'",
+                    "                         )",
+                    "                ) = 2",
+                    "           then l_all_deployed",
+                    "           else 'N'",
+                    "         end",
+                    "    into l_all_deployed",
+                    "    from dual;",
+                    "  if l_all_deployed = 'Y'",
+                    "  then",
+                    f"    execute immediate 'select case when count(1) > 0 then ''Y'' else ''N'' end from {schema_name.upper()}.databasechangelog'",
+                    "       into l_all_deployed;",
+                    "  end if;",
+                ]
+            )
     lines.extend(
         [
             "  dbms_output.put_line(",

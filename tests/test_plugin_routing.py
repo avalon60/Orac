@@ -213,7 +213,7 @@ class PluginRoutingTests(unittest.TestCase):
         self.assertEqual(manifest.ui.surfaces[0].apex.app_alias, "ORAC_HA_STATUS")
         self.assertEqual(
             manifest.ui.surfaces[0].apex.app_export,
-            "apex/f_home_assistant.sql",
+            "apex/f10010.sql",
         )
         self.assertFalse(manifest.ui.surfaces[0].apex.install_required)
         self.assertEqual(
@@ -230,7 +230,7 @@ class PluginRoutingTests(unittest.TestCase):
         app = manifest.apex_apps[0]
         self.assertEqual(app.alias, "ORAC_HA_STATUS")
         self.assertEqual(app.label, "Home Assistant Status")
-        self.assertEqual(app.app_export, "apex/f_home_assistant.sql")
+        self.assertEqual(app.app_export, "apex/f10010.sql")
         self.assertEqual(app.workspace, "ORAC")
         self.assertEqual(app.parsing_schema, "ORAC_APX_PUB")
         self.assertEqual(app.application_id, 10010)

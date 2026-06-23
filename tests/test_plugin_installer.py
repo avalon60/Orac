@@ -190,7 +190,7 @@ class PluginPackageTests(unittest.TestCase):
                 names = set(package.getnames())
             self.assertIn("manifest.json", names)
             self.assertIn("plugin/plugin.py", names)
-            self.assertIn("plugin/apex/f_home_assistant.sql", names)
+            self.assertIn("plugin/apex/f10010.sql", names)
             self.assertIn("plugin/plugin.ini.example", names)
             self.assertIn("requirements.txt", names)
             self.assertNotIn("plugin/plugin.ini", names)

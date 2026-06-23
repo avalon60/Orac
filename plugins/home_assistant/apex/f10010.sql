@@ -33,7 +33,7 @@ prompt APPLICATION 10010 - Home Assistant
 -- Application Export:
 --   Application:     10010
 --   Name:            Home Assistant
---   Date and Time:   11:12 Sunday June 21, 2026
+--   Date and Time:   22:41 Monday June 22, 2026
 --   Exported By:     ORAC_ADMIN
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -61,7 +61,7 @@ prompt APPLICATION 10010 - Home Assistant
 --       E-Mail:
 --     Supporting Objects:  Included
 --   Version:         24.2.0
---   Instance ID:     1035505630628526
+--   Instance ID:     1009167529597535
 --
 
 prompt --application/delete_application
@@ -99,14 +99,14 @@ wwv_imp_workspace.create_flow(
 ,p_exact_substitutions_only=>'Y'
 ,p_browser_cache=>'N'
 ,p_browser_frame=>'D'
-,p_rejoin_existing_sessions=>'N'
+,p_rejoin_existing_sessions=>'Y'
 ,p_csv_encoding=>'Y'
 ,p_auto_time_zone=>'N'
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'Plugin Apps'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>6
-,p_version_scn=>2493914
+,p_version_scn=>2376723
 ,p_print_server_type=>'NATIVE'
 ,p_file_storage=>'DB'
 ,p_is_pwa=>'Y'
@@ -698,7 +698,7 @@ wwv_flow_imp_shared.create_security_scheme(
  p_id=>wwv_flow_imp.id(14538832508386634)
 ,p_name=>'Administration Rights'
 ,p_scheme_type=>'NATIVE_FUNCTION_BODY'
-,p_attribute_01=>'return true;'
+,p_attribute_01=>'return orac_code.plugin_apex_app_auth_api.has_required_role(''ORAC_ADMIN'') = 1;'
 ,p_error_message=>'Insufficient privileges, user is not an Administrator'
 ,p_version_scn=>2391663
 ,p_caching=>'BY_USER_BY_PAGE_VIEW'
@@ -879,9 +879,11 @@ wwv_flow_imp_shared.create_authentication(
 ,p_name=>'Oracle APEX Accounts'
 ,p_scheme_type=>'NATIVE_APEX_ACCOUNTS'
 ,p_invalid_session_type=>'LOGIN'
+,p_cookie_name=>'&WORKSPACE_COOKIE.'
 ,p_use_secure_cookie_yn=>'N'
 ,p_ras_mode=>0
-,p_version_scn=>2391577
+,p_switch_in_session_yn=>'Y'
+,p_version_scn=>2376723
 );
 end;
 /
@@ -912,6 +914,7 @@ wwv_flow_imp_page.create_page(
 ,p_step_title=>'Plugin Apps'
 ,p_autocomplete_on_off=>'OFF'
 ,p_page_template_options=>'#DEFAULT#'
+,p_required_role=>wwv_flow_imp.id(14538832508386634)
 ,p_protection_level=>'C'
 ,p_page_component_map=>'13'
 );
@@ -1155,6 +1158,7 @@ wwv_flow_imp_page.create_page(
 ,p_autocomplete_on_off=>'OFF'
 ,p_group_id=>wwv_flow_imp.id(14539152016386634)
 ,p_page_template_options=>'#DEFAULT#'
+,p_required_role=>wwv_flow_imp.id(14538832508386634)
 ,p_required_patch=>wwv_flow_imp.id(14538272267386633)
 ,p_protection_level=>'C'
 ,p_help_text=>'All application help text can be accessed from this page. The links in the "Documentation" region give a much more in-depth explanation of the application''s features and functionality.'
@@ -1187,6 +1191,7 @@ wwv_flow_imp_page.create_page(
 ,p_warn_on_unsaved_changes=>'N'
 ,p_autocomplete_on_off=>'OFF'
 ,p_page_template_options=>'#DEFAULT#'
+,p_required_role=>wwv_flow_imp.id(14538832508386634)
 ,p_required_patch=>wwv_flow_imp.id(14538272267386633)
 ,p_dialog_chained=>'N'
 ,p_dialog_resizable=>'Y'

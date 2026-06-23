@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Author: Clive Bostock
+  Date: 22-Jun-2026
+  Description: Ordered Home Assistant constraint_pk Liquibase changesets.
+-->
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  logicalFilePath="plugins/home_assistant/db/liquibase/controllers/03_constraint_pk.xml"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+
+  <changeSet id="home_assistant-03_constraint_pk-ha_areas_pk" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant">
+    <sqlFile path="../../schema/constraint_pk/ha_areas_pk.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+
+  <changeSet id="home_assistant-03_constraint_pk-ha_devices_pk" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant">
+    <sqlFile path="../../schema/constraint_pk/ha_devices_pk.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+
+  <changeSet id="home_assistant-03_constraint_pk-ha_entities_pk" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant">
+    <sqlFile path="../../schema/constraint_pk/ha_entities_pk.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+
+  <changeSet id="home_assistant-03_constraint_pk-ha_states_current_pk" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant">
+    <sqlFile path="../../schema/constraint_pk/ha_states_current_pk.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+
+  <changeSet id="home_assistant-03_constraint_pk-ha_sync_runs_pk" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant">
+    <sqlFile path="../../schema/constraint_pk/ha_sync_runs_pk.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+
+  <changeSet id="home_assistant-03_constraint_pk-dalias_pk" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant">
+    <sqlFile path="../../schema/constraint_pk/dalias_pk.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+</databaseChangeLog>

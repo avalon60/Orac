@@ -28,6 +28,7 @@ from model.plugin_database_deployment import PluginDatabaseDeploymentResult
 from model.plugin_database_deployment import PluginDatabaseArchive
 from model.plugin_database_deployment import PluginDatabaseSchemaProvisioner
 from model.plugin_database_deployment import PROTECTED_ORAC_SCHEMAS
+from model.plugin_database_deployment import _already_deployed_sql
 from model.plugin_database_deployment import _payload_objects_deployed_sql
 from model.plugin_database_deployment import expected_deployment_objects
 from model.plugin_database_deployment import scan_protected_schema_references
@@ -210,13 +211,14 @@ def _write_plugin(
         liquibase_dir = plugin_dir / "db" / "liquibase"
         liquibase_dir.mkdir(parents=True, exist_ok=True)
         (liquibase_dir / "pluginController.xml").write_text(
-            """<?xml version="1.0" encoding="UTF-8"?>
+            f"""<?xml version="1.0" encoding="UTF-8"?>
 <databaseChangeLog
   xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
-  <changeSet id="alpha-example" author="clive" contextFilter="plugin" labels="plugin">
-    <sqlFile path="../schema/table/example.sql" relativeToChangelogFile="true"/>
+  logicalFilePath="plugins/{plugin_id}/db/liquibase/pluginController.xml"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <changeSet id="{plugin_id}-example" author="cbostock" contextFilter="plugin,prod" labels="plugin,{plugin_id}">
+    <sqlFile path="../schema/table/example.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
   </changeSet>
 </databaseChangeLog>
 """,
@@ -476,6 +478,55 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
 
         self.assertEqual(manifest.database_schemas[0].schema_name, "orac_ha")
 
+    def test_home_assistant_uses_liquibase_deployment_controller(self) -> None:
+        manifest = next(
+            item
+            for item in PluginDiscovery(Path("plugins")).discover()[0]
+            if item.plugin_id == "home_assistant"
+        )
+
+        self.assertEqual(manifest.database_deployment.deployment_type, "liquibase")
+        self.assertEqual(
+            manifest.database_deployment.controller,
+            "db/liquibase/pluginController.xml",
+        )
+
+    def test_home_assistant_liquibase_controller_has_stable_identity(self) -> None:
+        controller = Path("plugins") / "home_assistant" / "db" / "liquibase" / "pluginController.xml"
+        text = controller.read_text(encoding="utf-8")
+        controller_dir = controller.parent / "controllers"
+
+        self.assertIn(
+            'logicalFilePath="plugins/home_assistant/db/liquibase/pluginController.xml"',
+            text,
+        )
+        self.assertIn("dbchangelog-4.30.xsd", text)
+        self.assertNotIn("<sqlFile", text)
+        self.assertNotIn("includeAll", text)
+        self.assertIn('file="controllers/01_table.xml"', text)
+        self.assertIn('file="controllers/11_comment.xml"', text)
+        self.assertTrue((controller_dir / "01_table.xml").is_file())
+        self.assertTrue((controller_dir / "11_comment.xml").is_file())
+
+    def test_home_assistant_liquibase_controller_validates_referenced_sql(self) -> None:
+        manifest = next(
+            item
+            for item in PluginDiscovery(Path("plugins")).discover()[0]
+            if item.plugin_id == "home_assistant"
+        )
+
+        referenced = validate_plugin_liquibase_changelog(manifest)
+        plugin_dir = manifest.plugin_dir.resolve()
+        referenced_relative = {
+            path.relative_to(plugin_dir).as_posix()
+            for path in referenced
+        }
+
+        self.assertIn("db/schema/table/ha_areas.sql", referenced_relative)
+        self.assertIn("db/schema/package_body/ha_sync_api.sql", referenced_relative)
+        self.assertIn("db/schema/grant/ha_sync_api_to_orac_plugin.sql", referenced_relative)
+        self.assertNotIn("apex/f10010.sql", referenced_relative)
+
     def test_home_assistant_payload_contains_sync_api_contract(self) -> None:
         schema_dir = Path("plugins") / "home_assistant" / "db" / "schema"
 
@@ -541,9 +592,9 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
         self.assertIn("ent.disabled_by", view_text)
         self.assertIn("dal.enabled_flag = 'Y'", view_text)
         self.assertIn("coalesce(ent.area_id, dev.area_id)", view_text)
-        self.assertEqual(
-            grant_text.strip(),
-            "grant select on orac_ha.ha_control_resolution_v to orac_plugin\n;",
+        self.assertIn(
+            "grant select on orac_ha.ha_control_resolution_v to orac_plugin",
+            grant_text,
         )
         self.assertIn("device_aliases,dalias", abbreviation_text)
 
@@ -644,6 +695,31 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertIn("db/liquibase/pluginController.xml", names)
             self.assertEqual(manifest_data["deployment"]["type"], "liquibase")
 
+    def test_home_assistant_liquibase_archive_contains_controller_tree(self) -> None:
+        manifest = next(
+            item
+            for item in PluginDiscovery(Path("plugins")).discover()[0]
+            if item.plugin_id == "home_assistant"
+        )
+        with tempfile.TemporaryDirectory() as temp_archive:
+            deployer = PluginDatabaseDeployer(
+                runner=_FakeRunner(),
+                liquibase_runner=_FakeRunner(),
+                archive_root=Path(temp_archive),
+                clock=lambda: datetime(2026, 6, 22, 12, 0, tzinfo=UTC),
+            )
+
+            archive = deployer.create_archive(manifest)
+
+            with tarfile.open(archive.archive_path, "r:gz") as tar:
+                names = set(tar.getnames())
+
+            self.assertIn("db/liquibase/pluginController.xml", names)
+            self.assertIn("db/liquibase/controllers/01_table.xml", names)
+            self.assertIn("db/liquibase/controllers/11_comment.xml", names)
+            self.assertIn("db/schema/table/ha_areas.sql", names)
+            self.assertNotIn("apex/f10010.sql", names)
+
     def test_liquibase_changelog_rejects_include_all(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:
             plugins_dir = Path(temp_plugins)
@@ -672,6 +748,26 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
                 validate_plugin_liquibase_changelog(manifest)
 
             self.assertIn("includeAll is not allowed", str(exc.exception))
+
+    def test_liquibase_changelog_accepts_sqlfile_wrappers(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest(
+                    "alpha",
+                    database=_database(deployment={"type": "liquibase"}),
+                ),
+                with_schema=True,
+                with_liquibase=True,
+            )
+            manifest = _discover_one(plugins_dir)
+
+            referenced = validate_plugin_liquibase_changelog(manifest)
+
+            self.assertEqual(len(referenced), 1)
+            self.assertEqual(referenced[0].name, "example.sql")
 
     def test_plugin_security_rejects_cross_plugin_schema_reference(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:
@@ -757,8 +853,59 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
 
             self.assertIn("deploy-plugin-liquibase-db.sh", commands[0][2])
             self.assertIn("--schema-name", commands[-1])
-            self.assertIn("orac_alpha", commands[-1])
+            self.assertIn("ORAC_ALPHA", commands[-1])
+            self.assertIn("--default-schema-name", commands[-1])
+            self.assertIn("--liquibase-schema-name", commands[-1])
             self.assertIn("--controller", commands[-1])
+
+    def test_liquibase_deployer_uses_liquibase_runner_for_state_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_archive:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest(
+                    "alpha",
+                    database=_database(deployment={"type": "liquibase"}),
+                ),
+                with_schema=True,
+                with_liquibase=True,
+            )
+            manifest = _discover_one(plugins_dir)
+            sqlplus_runner = _FakeRunner(already_deployed=True)
+            liquibase_runner = _FakeRunner(already_deployed=False)
+            provisioner = _FakeProvisioner()
+            deployer = PluginDatabaseDeployer(
+                runner=sqlplus_runner,
+                liquibase_runner=liquibase_runner,
+                schema_provisioner=provisioner,
+                archive_root=Path(temp_archive),
+                clock=lambda: datetime(2026, 6, 3, 12, 0, tzinfo=UTC),
+            )
+
+            result = deployer.deploy_if_needed(manifest)
+
+            self.assertEqual(result.status, "deployed")
+            self.assertEqual(len(sqlplus_runner.already_deployed_calls), 0)
+            self.assertEqual(len(sqlplus_runner.calls), 0)
+            self.assertEqual(len(liquibase_runner.already_deployed_calls), 1)
+            self.assertEqual(len(liquibase_runner.calls), 1)
+
+    def test_liquibase_already_deployed_sql_requires_schema_and_tracking(self) -> None:
+        sql = _already_deployed_sql(
+            plugin_id="alpha",
+            plugin_version="1.0.0",
+            payload_checksum="a" * 64,
+            schema_names=["orac_alpha"],
+            oracle_pdb="FREEPDB1",
+            require_liquibase_tracking=True,
+        )
+
+        self.assertIn("from dba_users", sql)
+        self.assertIn("'ORAC_ALPHA'", sql)
+        self.assertIn("'DATABASECHANGELOG'", sql)
+        self.assertIn("'DATABASECHANGELOGLOCK'", sql)
+        self.assertIn("from ORAC_ALPHA.databasechangelog", sql)
 
     def test_deployment_failure_prevents_routing_eligibility(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache, tempfile.TemporaryDirectory() as temp_archive:

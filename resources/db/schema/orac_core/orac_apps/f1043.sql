@@ -33,7 +33,7 @@ prompt APPLICATION 1043 - Plugin Apps
 -- Application Export:
 --   Application:     1043
 --   Name:            Plugin Apps
---   Date and Time:   15:22 Saturday June 20, 2026
+--   Date and Time:   22:42 Monday June 22, 2026
 --   Exported By:     ORAC_ADMIN
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -52,6 +52,7 @@ prompt APPLICATION 1043 - Plugin Apps
 --       Security:
 --         Authentication:         1
 --         Authorization:          1
+--         ACL Roles:              3
 --       User Interface:
 --         Themes:                 1
 --         Templates:
@@ -61,7 +62,7 @@ prompt APPLICATION 1043 - Plugin Apps
 --       E-Mail:
 --     Supporting Objects:  Included
 --   Version:         24.2.0
---   Instance ID:     1035505630628526
+--   Instance ID:     1009167529597535
 --
 
 prompt --application/delete_application
@@ -99,15 +100,14 @@ wwv_imp_workspace.create_flow(
 ,p_exact_substitutions_only=>'Y'
 ,p_browser_cache=>'N'
 ,p_browser_frame=>'D'
-,p_rejoin_existing_sessions=>'N'
+,p_rejoin_existing_sessions=>'Y'
 ,p_csv_encoding=>'Y'
 ,p_auto_time_zone=>'N'
-,p_friendly_url=>'Y'
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'Plugin Apps'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>6
-,p_version_scn=>2402344
+,p_version_scn=>2376413
 ,p_print_server_type=>'NATIVE'
 ,p_file_storage=>'DB'
 ,p_is_pwa=>'Y'
@@ -699,10 +699,44 @@ wwv_flow_imp_shared.create_security_scheme(
  p_id=>wwv_flow_imp.id(8896483526580360)
 ,p_name=>'Administration Rights'
 ,p_scheme_type=>'NATIVE_FUNCTION_BODY'
-,p_attribute_01=>'return true;'
+,p_attribute_01=>'return orac_code.plugin_apex_app_auth_api.has_required_role(''ORAC_ADMIN'') = 1;'
 ,p_error_message=>'Insufficient privileges, user is not an Administrator'
 ,p_version_scn=>2391663
 ,p_caching=>'BY_USER_BY_PAGE_VIEW'
+);
+end;
+/
+prompt --application/shared_components/security/app_access_control/administrator
+begin
+wwv_flow_imp_shared.create_acl_role(
+ p_id=>wwv_flow_imp.id(8910020000000001)
+,p_static_id=>'ADMINISTRATOR'
+,p_name=>'Administrator'
+,p_description=>'Role assigned to plugin app hub administrators.'
+,p_users=>wwv_flow_t_varchar2('ORAC_ADMIN')
+,p_version_scn=>2402344
+);
+end;
+/
+prompt --application/shared_components/security/app_access_control/contributor
+begin
+wwv_flow_imp_shared.create_acl_role(
+ p_id=>wwv_flow_imp.id(8910020000000002)
+,p_static_id=>'CONTRIBUTOR'
+,p_name=>'Contributor'
+,p_description=>'Role assigned to plugin app hub contributors.'
+,p_version_scn=>2402344
+);
+end;
+/
+prompt --application/shared_components/security/app_access_control/reader
+begin
+wwv_flow_imp_shared.create_acl_role(
+ p_id=>wwv_flow_imp.id(8910020000000003)
+,p_static_id=>'READER'
+,p_name=>'Reader'
+,p_description=>'Role assigned to plugin app hub readers.'
+,p_version_scn=>2402344
 );
 end;
 /
@@ -880,9 +914,11 @@ wwv_flow_imp_shared.create_authentication(
 ,p_name=>'Oracle APEX Accounts'
 ,p_scheme_type=>'NATIVE_APEX_ACCOUNTS'
 ,p_invalid_session_type=>'LOGIN'
+,p_cookie_name=>'&WORKSPACE_COOKIE.'
 ,p_use_secure_cookie_yn=>'N'
 ,p_ras_mode=>0
-,p_version_scn=>2391577
+,p_switch_in_session_yn=>'Y'
+,p_version_scn=>2376413
 );
 end;
 /
@@ -920,16 +956,52 @@ wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(8904422740580376)
 ,p_plug_name=>'Plugin Apps'
 ,p_region_template_options=>'#DEFAULT#'
-,p_escape_on_http_output=>'Y'
 ,p_plug_template=>2674017834225413037
 ,p_plug_display_sequence=>10
-,p_plug_display_point=>'REGION_POSITION_01'
-,p_plug_query_num_rows=>15
-,p_region_image=>'#APP_FILES#icons/app-icon-512.png'
-,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'expand_shortcuts', 'N',
-  'output_as', 'HTML',
-  'show_line_breaks', 'Y')).to_clob
+,p_plug_display_point=>'BODY'
+,p_query_type=>'SQL'
+,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select plugin_id',
+'     , app_alias',
+'     , card_title',
+'     , card_subtitle',
+'     , description',
+'     , icon',
+'     , card_link',
+'  from orac_code.plugin_apex_app_menu_visible_v',
+' order by card_title, plugin_id'))
+,p_lazy_loading=>false
+,p_plug_source_type=>'NATIVE_CARDS'
+,p_plug_query_num_rows_type=>'SCROLL'
+,p_plug_query_no_data_found=>'No plugin applications are available.'
+,p_show_total_row_count=>false
+);
+wwv_flow_imp_page.create_card(
+ p_id=>wwv_flow_imp.id(8910010000000001)
+,p_region_id=>wwv_flow_imp.id(8904422740580376)
+,p_layout_type=>'GRID'
+,p_grid_column_count=>3
+,p_title_adv_formatting=>false
+,p_title_column_name=>'CARD_TITLE'
+,p_sub_title_adv_formatting=>false
+,p_sub_title_column_name=>'CARD_SUBTITLE'
+,p_body_adv_formatting=>false
+,p_body_column_name=>'DESCRIPTION'
+,p_second_body_adv_formatting=>false
+,p_icon_source_type=>'DYNAMIC_CLASS'
+,p_icon_class_column_name=>'ICON'
+,p_icon_position=>'START'
+,p_media_adv_formatting=>false
+,p_pk1_column_name=>'PLUGIN_ID'
+,p_pk2_column_name=>'APP_ALIAS'
+);
+wwv_flow_imp_page.create_card_action(
+ p_id=>wwv_flow_imp.id(8910010000000002)
+,p_card_id=>wwv_flow_imp.id(8910010000000001)
+,p_action_type=>'FULL_CARD'
+,p_display_sequence=>10
+,p_link_target_type=>'REDIRECT_URL'
+,p_link_target=>'&CARD_LINK.'
 );
 end;
 /

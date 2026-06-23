@@ -9,9 +9,9 @@
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
 
-  <includeAll path="view" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>
   <includeAll path="package_spec" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>
   <includeAll path="package_body" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>
+  <includeAll path="view" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>
   <includeAll path="trigger" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>
   <includeAll path="grant" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>
   <includeAll path="post_install" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>

@@ -53,6 +53,106 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("install_status = 'installed'", view_sql)
         self.assertIn("installed_app_id is not null", view_sql)
 
+    def test_visible_menu_view_generates_safe_card_links(self) -> None:
+        view_sql = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_code/view/plugin_apex_app_menu_visible_v.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn(
+            "create or replace force view orac_code.plugin_apex_app_menu_visible_v",
+            view_sql,
+        )
+        self.assertIn("from orac_code.plugin_apex_app_menu_v", view_sql)
+        self.assertIn("apex_util.prepare_url", view_sql)
+        self.assertIn("installed_app_id", view_sql)
+        self.assertIn("coalesce(entry_page_id, 1)", view_sql)
+        self.assertTrue("v('app_session')" in view_sql or "app_session" in view_sql)
+        self.assertIn("p_checksum_type => 'session'", view_sql)
+        self.assertIn("card_link", view_sql)
+
+    def test_visible_menu_view_fails_closed_for_required_roles(self) -> None:
+        view_sql = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_code/view/plugin_apex_app_menu_visible_v.sql"
+        ).read_text(encoding="utf-8").lower()
+        package_spec = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_code/package_spec/plugin_apex_app_auth_api.sql"
+        ).read_text(encoding="utf-8").lower()
+        package_body = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_code/package_body/plugin_apex_app_auth_api.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("required_roles is null", view_sql)
+        self.assertIn("json_serialize(required_roles", view_sql)
+        self.assertIn("= '[]'", view_sql)
+        self.assertIn("json_table(", view_sql)
+        self.assertIn("orac_code.plugin_apex_app_auth_api.has_required_role", view_sql)
+        self.assertIn("function has_required_role", package_spec)
+        self.assertIn("return number", package_spec)
+        self.assertIn("apex_util.find_security_group_id", package_body)
+        self.assertIn("apex_util.set_security_group_id", package_body)
+        self.assertIn("from apex_appl_acl_user_roles", package_body)
+        self.assertIn("when 'orac_admin' then", package_body)
+        self.assertIn("'administrator'", package_body)
+        self.assertIn("else", package_body)
+        self.assertIn("return 0", package_body)
+
+    def test_f1043_defines_acl_roles_and_seeds_admin(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1043.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("wwv_flow_imp_shared.create_acl_role", export_sql)
+        self.assertIn("p_static_id=>'administrator'", export_sql)
+        self.assertIn("p_static_id=>'contributor'", export_sql)
+        self.assertIn("p_static_id=>'reader'", export_sql)
+        self.assertIn("p_users=>wwv_flow_t_varchar2('orac_admin')", export_sql)
+        self.assertNotIn("apex_acl.", export_sql)
+
+    def test_f1043_renders_plugin_apps_cards_from_visible_view(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1043.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("p_plug_name=>'plugin apps'", export_sql)
+        self.assertIn("p_plug_display_point=>'body'", export_sql)
+        self.assertIn("p_plug_source_type=>'native_cards'", export_sql)
+        self.assertIn("from orac_code.plugin_apex_app_menu_visible_v", export_sql)
+        self.assertNotIn("orac_core.plugin_apex_apps", export_sql)
+        self.assertIn("p_link_target=>'&card_link.'", export_sql)
+        self.assertIn("p_link_target_type=>'redirect_url'", export_sql)
+        self.assertIn("p_title_column_name=>'card_title'", export_sql)
+        self.assertIn("p_sub_title_column_name=>'card_subtitle'", export_sql)
+        self.assertIn("p_body_column_name=>'description'", export_sql)
+        self.assertIn("p_icon_class_column_name=>'icon'", export_sql)
+
+    def test_apex_exports_do_not_disable_session_rejoin(self) -> None:
+        exports = (
+            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1043.sql",
+            PROJECT_ROOT / "plugins/home_assistant/apex/f10010.sql",
+        )
+
+        for export_path in exports:
+            with self.subTest(export_path=export_path):
+                export_sql = export_path.read_text(encoding="utf-8").lower()
+                self.assertNotIn("p_rejoin_existing_sessions=>'n'", export_sql)
+                self.assertIn("p_rejoin_existing_sessions=>'y'", export_sql)
+                self.assertIn("p_cookie_name=>'&workspace_cookie.'", export_sql)
+                self.assertIn("p_switch_in_session_yn=>'y'", export_sql)
+
+    def test_home_assistant_uses_plugin_app_authorization(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "plugins/home_assistant/apex/f10010.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertNotIn("p_attribute_01=>'return true;'", export_sql)
+        self.assertIn("orac_code.plugin_apex_app_auth_api.has_required_role", export_sql)
+        self.assertIn("''orac_admin''", export_sql)
+        self.assertGreaterEqual(export_sql.count("p_required_role=>"), 3)
+
     def test_grants_remain_narrow(self) -> None:
         package_grants = (
             PROJECT_ROOT
@@ -67,10 +167,22 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             "grant execute on orac_code.plugin_apex_app_registry_api to orac;",
             package_grants,
         )
+        self.assertIn(
+            "grant execute on orac_code.plugin_apex_app_auth_api to orac_apx_pub;",
+            package_grants,
+        )
         self.assertIn("grant read on orac_code.plugin_apex_app_menu_v to orac;", view_grants)
         self.assertIn(
             "grant read on orac_code.plugin_apex_app_menu_v to orac_apx_pub;",
             view_grants,
+        )
+        self.assertIn(
+            "grant read on orac_code.plugin_apex_app_menu_visible_v to orac_apx_pub;",
+            view_grants,
+        )
+        self.assertNotIn(
+            "grant read on orac_core.plugin_apex_apps to orac_apx_pub",
+            view_grants.lower(),
         )
         self.assertNotIn("grant dba", package_grants.lower() + view_grants.lower())
         self.assertNotIn("grant all", package_grants.lower() + view_grants.lower())

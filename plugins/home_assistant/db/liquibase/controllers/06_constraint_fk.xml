@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Author: Clive Bostock
+  Date: 22-Jun-2026
+  Description: Ordered Home Assistant constraint_fk Liquibase changesets.
+-->
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  logicalFilePath="plugins/home_assistant/db/liquibase/controllers/06_constraint_fk.xml"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+
+  <changeSet id="home_assistant-06_constraint_fk-ha_devices_areas_fk" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant">
+    <sqlFile path="../../schema/constraint_fk/ha_devices_areas_fk.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+
+  <changeSet id="home_assistant-06_constraint_fk-ha_entities_devices_fk" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant">
+    <sqlFile path="../../schema/constraint_fk/ha_entities_devices_fk.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+
+  <changeSet id="home_assistant-06_constraint_fk-ha_states_current_entities_fk" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant">
+    <sqlFile path="../../schema/constraint_fk/ha_states_current_entities_fk.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+</databaseChangeLog>

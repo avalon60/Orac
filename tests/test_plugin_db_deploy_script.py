@@ -76,6 +76,18 @@ exit 0
     path.chmod(0o755)
 
 
+def _write_static_sqlplus(path: Path, output: str) -> None:
+    path.write_text(
+        f"""#!/usr/bin/env bash
+cat >/dev/null
+printf '%b' {output!r}
+exit 0
+""",
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+
+
 def _write_liquibase_archive(path: Path) -> None:
     manifest = {
         "plugin_id": "alpha",
@@ -94,11 +106,21 @@ def _write_liquibase_archive(path: Path) -> None:
         "payload_checksum": "a" * 64,
     }
     controller = b"""<?xml version="1.0" encoding="UTF-8"?>
-<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
-  <changeSet id="alpha-example" author="clive">
-    <sqlFile path="../schema/table/example.sql" relativeToChangelogFile="true"/>
-  </changeSet>
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  logicalFilePath="plugins/alpha/db/liquibase/pluginController.xml"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="../schema/table/example.sql" relativeToChangelogFile="true"/>
 </databaseChangeLog>
+"""
+    sql = b"""--liquibase formatted sql logicalFilePath:plugins/alpha/db/schema/table/example.sql
+
+--changeset alpha:alpha_create_table_example context:plugin labels:plugin,alpha stripComments:false splitStatements:false endDelimiter:/
+--preconditions onFail:HALT onError:HALT
+--precondition-sql-check expectedResult:0 select count(1) from all_tables where owner = 'ORAC_ALPHA' and table_name = 'EXAMPLE_TABLE';
+create table orac_alpha.example_table (id number);
+--rollback drop table orac_alpha.example_table purge;
 """
     with tarfile.open(path, "w:gz") as archive:
         _add_bytes(archive, "manifest.json", json.dumps(manifest).encode("utf-8"))
@@ -106,7 +128,7 @@ def _write_liquibase_archive(path: Path) -> None:
         _add_bytes(
             archive,
             "db/schema/table/example.sql",
-            b"create table orac_alpha.example_table (id number);\n",
+            sql,
         )
         _add_bytes(archive, "db/liquibase/pluginController.xml", controller)
 
@@ -331,10 +353,14 @@ class PluginDbDeployScriptTests(unittest.TestCase):
             sql_bin.mkdir(parents=True)
             sql_path = sql_bin / "sql"
             sql_path.write_text(
-                "#!/usr/bin/env bash\ncat >/dev/null\nexit 0\n",
+                "#!/usr/bin/env bash\ncat >\"${SQLCL_INPUT_CAPTURE}\"\nexit 0\n",
                 encoding="utf-8",
             )
             sql_path.chmod(0o755)
+            bin_dir = temp_path / "bin"
+            bin_dir.mkdir()
+            _write_fake_sqlplus(bin_dir / "sqlplus")
+            sqlcl_input = temp_path / "sqlcl-input.sql"
             properties_path = temp_path / "liquibase-plugin.properties"
             properties_path.write_text(
                 "changeLogFile=db/liquibase/pluginController.xml\n",
@@ -345,6 +371,8 @@ class PluginDbDeployScriptTests(unittest.TestCase):
             env["LIQUIBASE_PROPERTIES_SOURCE"] = str(properties_path)
             env["LOG_ROOT"] = str(temp_path / "logs")
             env["ORACLE_PWD"] = "secret"
+            env["SQLCL_INPUT_CAPTURE"] = str(sqlcl_input)
+            env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
 
             result = subprocess.run(
                 [
@@ -356,6 +384,10 @@ class PluginDbDeployScriptTests(unittest.TestCase):
                     str(archive_path),
                     "--schema-name",
                     "orac_alpha",
+                    "--default-schema-name",
+                    "ORAC_ALPHA",
+                    "--liquibase-schema-name",
+                    "ORAC_ALPHA",
                     "--dry-run",
                 ],
                 env=env,
@@ -366,6 +398,193 @@ class PluginDbDeployScriptTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             self.assertIn("Plugin Liquibase update-sql completed", result.stdout)
+            input_text = sqlcl_input.read_text(encoding="utf-8")
+            self.assertIn('connect ORAC_ALPHA/"secret"@//127.0.0.1:1521/FREEPDB1', input_text)
+            self.assertNotIn("--default-schema-name", input_text)
+            self.assertNotIn("--liquibase-schema-name", input_text)
+            generated_properties = (
+                temp_path / "work-liquibase-orac_alpha" / "liquibase-plugin.properties"
+            ).read_text(encoding="utf-8")
+            self.assertIn("defaultSchemaName=ORAC_ALPHA", generated_properties)
+            self.assertIn("liquibaseSchemaName=ORAC_ALPHA", generated_properties)
+            self.assertIn(
+                "liquibase.command.defaultSchemaName=ORAC_ALPHA",
+                generated_properties,
+            )
+            self.assertIn(
+                "liquibase.command.liquibaseSchemaName=ORAC_ALPHA",
+                generated_properties,
+            )
+
+    def test_liquibase_requires_default_schema_name(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = temp_path / "alpha-db.tar.gz"
+            _write_liquibase_archive(archive_path)
+
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(LIQUIBASE_SCRIPT_PATH),
+                    "--plugin-id",
+                    "alpha",
+                    "--archive",
+                    str(archive_path),
+                    "--schema-name",
+                    "orac_alpha",
+                    "--liquibase-schema-name",
+                    "ORAC_ALPHA",
+                    "--dry-run",
+                ],
+                env=_script_env(temp_path / "staging"),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("--default-schema-name is required", result.stderr)
+
+    def test_liquibase_requires_matching_tracking_schema_names(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = temp_path / "alpha-db.tar.gz"
+            _write_liquibase_archive(archive_path)
+
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(LIQUIBASE_SCRIPT_PATH),
+                    "--plugin-id",
+                    "alpha",
+                    "--archive",
+                    str(archive_path),
+                    "--schema-name",
+                    "orac_alpha",
+                    "--default-schema-name",
+                    "ORAC_BETA",
+                    "--liquibase-schema-name",
+                    "ORAC_ALPHA",
+                    "--dry-run",
+                ],
+                env=_script_env(temp_path / "staging"),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("--default-schema-name must match --schema-name", result.stderr)
+
+    def test_liquibase_dry_run_fails_when_sqlcl_logs_connection_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = temp_path / "alpha-db.tar.gz"
+            _write_liquibase_archive(archive_path)
+            sqlcl_home = temp_path / "sqlcl"
+            sql_bin = sqlcl_home / "bin"
+            sql_bin.mkdir(parents=True)
+            sql_path = sql_bin / "sql"
+            sql_path.write_text(
+                "#!/usr/bin/env bash\ncat >/dev/null\nprintf 'Connection failed\\nORA-28000: account locked\\n'\nexit 0\n",
+                encoding="utf-8",
+            )
+            sql_path.chmod(0o755)
+            bin_dir = temp_path / "bin"
+            bin_dir.mkdir()
+            _write_fake_sqlplus(bin_dir / "sqlplus")
+            properties_path = temp_path / "liquibase-plugin.properties"
+            properties_path.write_text(
+                "changeLogFile=db/liquibase/pluginController.xml\n",
+                encoding="utf-8",
+            )
+            env = _script_env(temp_path / "staging")
+            env["SQLCL_HOME"] = str(sqlcl_home)
+            env["LIQUIBASE_PROPERTIES_SOURCE"] = str(properties_path)
+            env["LOG_ROOT"] = str(temp_path / "logs")
+            env["ORACLE_PWD"] = "secret"
+            env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(LIQUIBASE_SCRIPT_PATH),
+                    "--plugin-id",
+                    "alpha",
+                    "--archive",
+                    str(archive_path),
+                    "--schema-name",
+                    "ORAC_ALPHA",
+                    "--default-schema-name",
+                    "ORAC_ALPHA",
+                    "--liquibase-schema-name",
+                    "ORAC_ALPHA",
+                    "--dry-run",
+                ],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("reported an error", result.stderr)
+
+    def test_liquibase_update_fails_on_system_changelog_contamination(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = temp_path / "alpha-db.tar.gz"
+            _write_liquibase_archive(archive_path)
+            sqlcl_home = temp_path / "sqlcl"
+            sql_bin = sqlcl_home / "bin"
+            sql_bin.mkdir(parents=True)
+            sql_path = sql_bin / "sql"
+            sql_path.write_text(
+                "#!/usr/bin/env bash\ncat >/dev/null\nexit 0\n",
+                encoding="utf-8",
+            )
+            sql_path.chmod(0o755)
+            bin_dir = temp_path / "bin"
+            bin_dir.mkdir()
+            _write_static_sqlplus(
+                bin_dir / "sqlplus",
+                "CONTAMINATED_CHANGELOG SYSTEM.DATABASECHANGELOG rows=1\n",
+            )
+            properties_path = temp_path / "liquibase-plugin.properties"
+            properties_path.write_text(
+                "changeLogFile=db/liquibase/pluginController.xml\n",
+                encoding="utf-8",
+            )
+            env = _script_env(temp_path / "staging")
+            env["SQLCL_HOME"] = str(sqlcl_home)
+            env["LIQUIBASE_PROPERTIES_SOURCE"] = str(properties_path)
+            env["LOG_ROOT"] = str(temp_path / "logs")
+            env["ORACLE_PWD"] = "secret"
+            env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(LIQUIBASE_SCRIPT_PATH),
+                    "--plugin-id",
+                    "alpha",
+                    "--archive",
+                    str(archive_path),
+                    "--schema-name",
+                    "ORAC_ALPHA",
+                    "--default-schema-name",
+                    "ORAC_ALPHA",
+                    "--liquibase-schema-name",
+                    "ORAC_ALPHA",
+                ],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("guarded repair is required", result.stderr)
 
 
 if __name__ == "__main__":

@@ -231,6 +231,10 @@
   "database": {
     "required": true,
     "on_missing": "warn_disable",
+    "deployment": {
+      "type": "liquibase",
+      "controller": "db/liquibase/pluginController.xml"
+    },
     "schemas": [
       {
         "schema_name": "orac_ha",
@@ -252,7 +256,7 @@
       "app_alias": "ORAC_HA_STATUS",
       "label": "Home Assistant Status",
       "description": "Home Assistant plugin admin/status app.",
-      "app_export": "apex/f_home_assistant.sql",
+      "app_export": "apex/f10010.sql",
       "workspace": "ORAC",
       "parsing_schema": "ORAC_APX_PUB",
       "application_id": 10010,
@@ -286,7 +290,7 @@
         "enabled": true,
         "apex": {
           "app_alias": "ORAC_HA_STATUS",
-          "app_export": "apex/f_home_assistant.sql",
+          "app_export": "apex/f10010.sql",
           "entry_page_id": 1,
           "install_required": false
         }
