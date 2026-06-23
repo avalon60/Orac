@@ -1003,6 +1003,55 @@ wwv_flow_imp_page.create_card_action(
 ,p_link_target_type=>'REDIRECT_URL'
 ,p_link_target=>'&CARD_LINK.'
 );
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(8910010000000003)
+,p_process_sequence=>10
+,p_process_point=>'BEFORE_HEADER'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Synchronize Orac Theme Style'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'declare',
+'  l_theme_style_name  apex_application_theme_styles.name%type;',
+'  l_theme_number      apex_application_themes.theme_number%type;',
+'  l_target_style_name apex_application_theme_styles.name%type;',
+'begin',
+'  if :REQUEST = ''ORAC_THEME_SYNC'' then',
+'    select t.theme_number',
+'      into l_theme_number',
+'      from apex_application_themes t',
+'     where t.application_id = :APP_ID',
+'       and t.is_current     = ''Yes'';',
+'',
+'    select s.name',
+'      into l_theme_style_name',
+'      from apex_application_theme_styles s,',
+'           apex_application_themes t',
+'     where s.application_id = t.application_id',
+'       and s.theme_number   = t.theme_number',
+'       and s.application_id = 1042',
+'       and t.is_current     = ''Yes''',
+'       and s.is_current     = ''Yes'';',
+'',
+'    select s.name',
+'      into l_target_style_name',
+'      from apex_application_theme_styles s',
+'     where s.application_id = :APP_ID',
+'       and s.theme_number   = l_theme_number',
+'       and s.name           = l_theme_style_name;',
+'',
+'    apex_theme.set_session_style(',
+'      p_application_id => :APP_ID,',
+'      p_theme_number   => l_theme_number,',
+'      p_name           => l_target_style_name',
+'    );',
+'  end if;',
+'exception',
+'  when no_data_found then',
+'    null;',
+'end;'))
+,p_process_clob_language=>'PLSQL'
+,p_internal_uid=>8910010000000003
+);
 end;
 /
 prompt --application/pages/page_09999
