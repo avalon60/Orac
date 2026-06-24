@@ -809,7 +809,7 @@ wwv_flow_imp_shared.create_theme(
 ,p_nav_bar_type=>'LIST'
 ,p_reference_id=>4072363937200175119
 ,p_is_locked=>false
-,p_current_theme_style_id=>2721322117358710262
+,p_current_theme_style_id=>3544795214802435419
 ,p_default_page_template=>4072355960268175073
 ,p_default_dialog_template=>2100407606326202693
 ,p_error_template=>2101157952850466385
@@ -955,8 +955,10 @@ wwv_flow_imp_page.create_page(
 wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(8904422740580376)
 ,p_plug_name=>'Plugin Apps'
+,p_icon_css_classes=>'fa-plug'
 ,p_region_template_options=>'#DEFAULT#'
-,p_plug_template=>2674017834225413037
+,p_component_template_options=>'#DEFAULT#:u-colors:t-Cards--featured t-Cards--block force-fa-lg:t-Cards--displayIcons:t-Cards--3cols:t-Cards--animColorFill'
+,p_plug_template=>4501440665235496320
 ,p_plug_display_sequence=>10
 ,p_plug_display_point=>'BODY'
 ,p_query_type=>'SQL'
@@ -990,7 +992,7 @@ wwv_flow_imp_page.create_card(
 ,p_second_body_adv_formatting=>false
 ,p_icon_source_type=>'DYNAMIC_CLASS'
 ,p_icon_class_column_name=>'ICON'
-,p_icon_position=>'START'
+,p_icon_position=>'TOP'
 ,p_media_adv_formatting=>false
 ,p_pk1_column_name=>'PLUGIN_ID'
 ,p_pk2_column_name=>'APP_ALIAS'

@@ -51,6 +51,18 @@ when changing:
 
 Also read:
 
+- [APEX Standards](docs/agent-guardrails/28-apex-standards.md)
+
+when changing:
+
+- APEX workspace exports
+- APEX application exports
+- APEX pages, regions, cards, navigation, breadcrumbs, authentication, or
+  authorization metadata
+- plugin-supplied APEX exports
+
+Also read:
+
 - docs/agent-guardrails/25-plsql-standards.md
 
 when changing:
@@ -89,8 +101,16 @@ Also read the adjacent web application context file when it exists:
 
 - web/AGENT_CONTEXT.md
 
+For Vite/React application changes, also read:
+
+- docs/agent-guardrails/35-frontend-vite-react-standards.md
+
 APEX applications are not part of the `web` tree. Treat APEX exports and APEX
 workspace assets as database assets under `resources/db/schema`.
+
+The archived Next.js reference material under `docs/reference-archive/` is not
+part of the active guardrail path. Do not load or apply it unless a real Next.js
+application is introduced and documented in `web/AGENT_CONTEXT.md`.
 
 ## Plugins
 

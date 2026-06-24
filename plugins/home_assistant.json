@@ -64,7 +64,16 @@
     "Activate movie night.",
     "Resync devices.",
     "Sync devices.",
+    "Sync Home Assistant devices.",
     "Resync Home Assistant.",
+    "Resync Home Assistant devices.",
+    "Synchronize devices.",
+    "Synchronize Home Assistant.",
+    "Synchronize Home Assistant devices.",
+    "Synchronise devices.",
+    "Synchronise Home Assistant.",
+    "Synchronise Home Assistant devices.",
+    "Sink devices.",
     "Is Home Assistant online?",
     "Is Orac reporting as healthy in Home Assistant?"
   ],
@@ -130,7 +139,16 @@
             "examples": [
               "Resync devices.",
               "Sync devices.",
-              "Resync Home Assistant."
+              "Sync Home Assistant devices.",
+              "Resync Home Assistant.",
+              "Resync Home Assistant devices.",
+              "Synchronize devices.",
+              "Synchronize Home Assistant.",
+              "Synchronize Home Assistant devices.",
+              "Synchronise devices.",
+              "Synchronise Home Assistant.",
+              "Synchronise Home Assistant devices.",
+              "Sink devices."
             ],
             "requires_confirmation": false,
             "safety_level": "local_mutation"

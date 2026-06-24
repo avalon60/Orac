@@ -79,7 +79,9 @@ class HomeAssistantRepositoryTests(unittest.TestCase):
         )
 
         sync_run_id = repository.begin_sync_run("structural")
-        repository.merge_area({"area_id": "kitchen", "name": "Kitchen"})
+        repository.merge_area(
+            {"area_id": "kitchen", "name": "Kitchen", "aliases": ["Galley"]}
+        )
         repository.merge_device({"id": "device-1", "name": "Lamp"})
         repository.merge_entity({"entity_id": "light.kitchen"})
         repository.merge_state({"entity_id": "light.kitchen", "state": "on"})
@@ -112,7 +114,7 @@ class HomeAssistantRepositoryTests(unittest.TestCase):
             session.procedure_calls[1],
             (
                 "orac_ha.ha_sync_api.merge_area",
-                ['{"area_id":"kitchen","name":"Kitchen"}'],
+                ['{"aliases":["Galley"],"area_id":"kitchen","name":"Kitchen"}'],
             ),
         )
         self.assertEqual(

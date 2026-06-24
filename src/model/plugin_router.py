@@ -113,6 +113,8 @@ _ACTION_INTENT_TERMS = {
     "start",
     "stop",
     "switch",
+    "synchronise",
+    "synchronize",
     "warm",
     "white",
     "color",
@@ -769,6 +771,9 @@ def _has_action_intent(text: str) -> bool:
     ordered_tokens = re.findall(r"[a-z0-9]+", str(text or "").lower())
     if ordered_tokens and ordered_tokens[0] in _FACTUAL_QUESTION_STARTERS:
         return False
+
+    if ordered_tokens == ["sink", "devices"]:
+        return True
 
     tokens = set(ordered_tokens)
     return bool(tokens.intersection(_ACTION_INTENT_TERMS))

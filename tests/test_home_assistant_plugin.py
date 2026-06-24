@@ -180,7 +180,16 @@ class HomeAssistantPluginTests(unittest.TestCase):
         for phrase in (
             "Resync devices",
             "Sync devices",
+            "Sync Home Assistant devices",
             "Resync Home Assistant",
+            "Resync Home Assistant devices",
+            "Synchronize devices",
+            "Synchronize Home Assistant",
+            "Synchronize Home Assistant devices",
+            "Synchronise devices",
+            "Synchronise Home Assistant",
+            "Synchronise Home Assistant devices",
+            "Sink devices",
         ):
             with self.subTest(phrase=phrase):
                 self.assertTrue(plugin.can_handle(phrase))
@@ -190,8 +199,12 @@ class HomeAssistantPluginTests(unittest.TestCase):
 
         for phrase in (
             "sync",
+            "sink",
             "sync music",
+            "sink music",
             "resync calendar",
+            "synchronize calendar",
+            "synchronise calendar",
         ):
             with self.subTest(phrase=phrase):
                 self.assertFalse(plugin.can_handle(phrase))
@@ -404,25 +417,40 @@ class HomeAssistantPluginTests(unittest.TestCase):
         self.assertEqual(runtime_context.commands, [])
 
     def test_successful_command_calls_managed_service_path(self) -> None:
-        runtime_context = _FakeRuntimeContext()
-        plugin = HomeAssistantPlugin(runtime_context=runtime_context)
+        for phrase in (
+            "Resync devices",
+            "Sync devices",
+            "Sync Home Assistant devices",
+            "Resync Home Assistant",
+            "Resync Home Assistant devices",
+            "Synchronize devices",
+            "Synchronize Home Assistant",
+            "Synchronize Home Assistant devices",
+            "Synchronise devices",
+            "Synchronise Home Assistant",
+            "Synchronise Home Assistant devices",
+            "Sink devices",
+        ):
+            with self.subTest(phrase=phrase):
+                runtime_context = _FakeRuntimeContext()
+                plugin = HomeAssistantPlugin(runtime_context=runtime_context)
 
-        result = plugin.execute("Resync devices")
+                result = plugin.execute(phrase)
 
-        self.assertIsNotNone(result)
-        self.assertEqual(result.plugin_id, "home_assistant")
-        self.assertIn("Resyncing Home Assistant devices and entities.", result.content)
-        self.assertIn("Home Assistant sync complete.", result.content)
-        self.assertEqual(
-            runtime_context.commands,
-            [
-                {
-                    "plugin_id": "home_assistant",
-                    "command": "resync",
-                    "payload": {"source": "voice_command"},
-                }
-            ],
-        )
+                self.assertIsNotNone(result)
+                self.assertEqual(result.plugin_id, "home_assistant")
+                self.assertIn("Resyncing Home Assistant devices and entities.", result.content)
+                self.assertIn("Home Assistant sync complete.", result.content)
+                self.assertEqual(
+                    runtime_context.commands,
+                    [
+                        {
+                            "plugin_id": "home_assistant",
+                            "command": "resync",
+                            "payload": {"source": "voice_command"},
+                        }
+                    ],
+                )
 
     def test_failed_command_returns_failure_response_and_logs(self) -> None:
         logger = _FakeLogger()
@@ -443,7 +471,12 @@ class HomeAssistantPluginTests(unittest.TestCase):
         cases = {
             "Resync devices": "resync",
             "Sync devices": "resync",
+            "Sync Home Assistant devices": "resync",
             "Resync Home Assistant": "resync",
+            "Resync Home Assistant devices": "resync",
+            "Synchronize Home Assistant Devices": "resync",
+            "Synchronise Home Assistant Devices": "resync",
+            "Sink devices": "resync",
             "Desk lamp off": "control",
             "Set the TV light to 50 percent": "light_control",
             "Is the TV light on?": "light_state_query",

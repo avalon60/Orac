@@ -51,8 +51,10 @@ The implemented service performs an initial pull refresh:
 4. Replace current-state cache rows.
 5. Record structural and state sync completion metadata.
 
-The same path is available through `Sync devices`, `Resync devices`, and
-`Resync Home Assistant`.
+The same path is available through `Sync devices`, `Sync Home Assistant
+devices`, `Resync devices`, `Resync Home Assistant`, `Resync Home Assistant
+devices`, US and British English `Synchronize`/`Synchronise` variants, and the
+narrow ASR fallback `Sink devices`.
 
 Websocket state updates and periodic reconciliation remain future work. Until
 they are implemented, cached state reflects the last successful state sync.

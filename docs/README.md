@@ -52,6 +52,7 @@ repository tooling and referenced by `AGENTS.md`.
 - [Project Principles](agent-guardrails/00-project-principles.md)
 - [Architecture Boundaries](agent-guardrails/10-architecture-boundaries.md)
 - [Python Standards](agent-guardrails/30-python-standards.md)
+- [Frontend Vite React Standards](agent-guardrails/35-frontend-vite-react-standards.md)
 - [Plugin Standards](agent-guardrails/50-plugin-standards.md)
 - [Plugin Execution Boundaries](agent-guardrails/55-plugin-execution-boundaries.md)
 - [Security and Risk](agent-guardrails/60-security-and-risk.md)

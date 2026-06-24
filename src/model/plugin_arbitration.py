@@ -66,6 +66,8 @@ _ACTION_TERMS = {
     "stop",
     "switch",
     "sync",
+    "synchronise",
+    "synchronize",
     "tell",
     "turn",
     "unmute",
@@ -545,6 +547,8 @@ def _has_action_directive(tokens: tuple[str, ...]) -> bool:
         return False
     if tokens[0] in _QUESTION_STARTERS:
         return False
+    if tokens == ("sink", "devices"):
+        return True
     return bool(set(tokens).intersection(_ACTION_TERMS))
 
 

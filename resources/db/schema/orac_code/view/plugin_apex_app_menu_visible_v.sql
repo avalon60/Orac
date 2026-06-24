@@ -25,9 +25,9 @@ select plugin_id
                             || coalesce(entry_page_id, 1)
                             || ':'
                             || v('APP_SESSION')
-                            || '::'
+                            || ':ORAC_THEME_SYNC:'
                             || v('DEBUG')
-                            || ':::',
+                            || ':RP::',
          p_checksum_type => 'SESSION'
        ) card_link
   from orac_code.plugin_apex_app_menu_v
