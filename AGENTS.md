@@ -108,10 +108,6 @@ For Vite/React application changes, also read:
 APEX applications are not part of the `web` tree. Treat APEX exports and APEX
 workspace assets as database assets under `resources/db/schema`.
 
-The archived Next.js reference material under `docs/reference-archive/` is not
-part of the active guardrail path. Do not load or apply it unless a real Next.js
-application is introduced and documented in `web/AGENT_CONTEXT.md`.
-
 ## Plugins
 
 Read:

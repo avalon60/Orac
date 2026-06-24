@@ -48,6 +48,5 @@ For the current Vite/React display app, read:
 - docs/agent-guardrails/35-frontend-vite-react-standards.md
 
 Do not apply Next.js-specific routing, server component, or app-router
-assumptions. Archived Next.js reference material under `docs/reference-archive/`
-is optional reference only and is inactive unless a real Next.js app is added to
-this repository.
+assumptions unless a real Next.js app is added to this repository and documented
+in `web/AGENT_CONTEXT.md`.

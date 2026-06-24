@@ -135,16 +135,16 @@ def test_active_vite_react_guardrail_name_is_allowed(tmp_path: Path) -> None:
     assert check_guardrails.validate_guardrail_tree(tmp_path) == []
 
 
-def test_reference_archive_is_not_active_guardrail_tree(tmp_path: Path) -> None:
+def test_non_guardrail_docs_are_not_active_guardrail_tree(tmp_path: Path) -> None:
     guardrail_dir = tmp_path / "docs/agent-guardrails"
-    archive_dir = tmp_path / "docs/reference-archive/frontend-nextjs"
+    inactive_dir = tmp_path / "docs/notes"
     guardrail_dir.mkdir(parents=True)
-    archive_dir.mkdir(parents=True)
+    inactive_dir.mkdir(parents=True)
     (guardrail_dir / "35-frontend-vite-react-standards.md").write_text(
         "# ok\n",
         encoding="utf-8",
     )
-    (archive_dir / "not-an-active-guardrail.md").write_text(
+    (inactive_dir / "not-an-active-guardrail.md").write_text(
         "[broken](missing-reference.md)\n",
         encoding="utf-8",
     )
