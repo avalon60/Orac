@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import sys
 import unittest
 
@@ -266,6 +267,125 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             export_sql,
             r"\b(update|insert|delete|merge)\s+(into\s+)?orac_(core|api)\.plugin_apex_apps",
         )
+
+    def test_f1042_user_preferences_edit_route_uses_pref_id(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1042.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("p_column_alias=>'edit_pref_id'", export_sql)
+        self.assertIn(
+            "p_column_link=>'f?p=&app_id.:6:&app_session.::&debug.:rp:p6_pref_id:#edit_pref_id#'",
+            export_sql,
+        )
+        self.assertNotIn("p6_rowid", export_sql)
+        self.assertNotIn("p6_rowid:#rowid#", export_sql)
+
+    def test_f1042_user_preferences_form_uses_pref_id_primary_key(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1042.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertRegex(
+            export_sql,
+            r"(?s)p_name=>'p6_pref_id'.*?,p_is_primary_key=>true",
+        )
+        self.assertIn(",p_include_rowid_column=>false", export_sql)
+        self.assertIn(",p_attribute_01=>'p6_pref_id,request'", export_sql)
+
+    def test_f1042_user_preferences_report_filters_editable_preferences(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1042.sql"
+        ).read_text(encoding="utf-8").lower()
+        display_view_sql = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_code/view/user_preferences_display_v.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("from user_preferences_display_v", export_sql)
+        self.assertIn("and is_active = ''y''", export_sql)
+        self.assertIn("and is_user_editable = ''y''", export_sql)
+        self.assertIn("coalesce(d.is_active, 'n') as is_active", display_view_sql)
+        self.assertIn(
+            "coalesce(d.is_user_editable, 'n') as is_user_editable",
+            display_view_sql,
+        )
+
+    def test_preference_lov_api_returns_empty_lov_for_non_lov_preferences(self) -> None:
+        package_body = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_code/package_body/preference_lov_api.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("if l_pref_definition.lov_type is null then", package_body)
+        self.assertIn("return l_rows.to_clob;", package_body)
+        self.assertIn("else\n        return l_rows.to_clob;", package_body)
+
+    def test_f1042_user_preferences_lov_items_are_render_guarded(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1042.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("when :p6_control_type = ''select_list'' then", export_sql)
+        self.assertIn(
+            "when :p6_control_type in (''popup_lov'', ''select_one'')",
+            export_sql,
+        )
+        self.assertIn("else", export_sql)
+        self.assertIn("to_clob(json_array())", export_sql)
+
+    def test_f1042_weather_location_keeps_dedicated_search_path(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1042.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("p_name=>'weather location results'", export_sql)
+        self.assertIn("p6_pref_key,p6_pref_value_search_term", export_sql)
+        self.assertIn("and :p6_pref_key <> ''weather_location'' then", export_sql)
+        self.assertIn("$v(''p6_pref_key'') === ''weather_location''", export_sql)
+
+    def test_user_preference_seed_hides_unwired_starred_preferences(self) -> None:
+        seed_sql = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_core/seed_data/prfdfn_preference_catalog.sql"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(
+            self._seeded_editable_flag(seed_sql, "enable_feedback"),
+            "N",
+        )
+        self.assertEqual(self._seeded_editable_flag(seed_sql, "push_opt_in"), "N")
+        self.assertEqual(self._seeded_editable_flag(seed_sql, "rows_per_report"), "N")
+        self.assertEqual(self._seeded_editable_flag(seed_sql, "temperature"), "N")
+
+    def test_orac_prefs_seed_filters_user_editable_defaults(self) -> None:
+        package_body = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_code/package_body/orac_prefs_seed.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertEqual(package_body.count("and is_user_editable = 'y'"), 2)
+
+    @staticmethod
+    def _seeded_editable_flag(seed_sql: str, pref_key: str) -> str:
+        row_match = re.search(
+            rf"select\s+'{re.escape(pref_key)}'.*?\n\s*from dual",
+            seed_sql,
+            re.DOTALL,
+        )
+        if row_match is None:
+            raise AssertionError(f"Missing preference seed row for {pref_key}")
+
+        row_sql = row_match.group(0)
+        flag_match = re.search(
+            r"cast\(null as varchar2\(1000 byte\)\),\s*'Y',\s*'([YN])',\s*\d+,",
+            row_sql,
+            re.DOTALL,
+        )
+        if flag_match is None:
+            raise AssertionError(f"Missing editable flag for {pref_key}")
+
+        return flag_match.group(1)
 
     def test_plugin_apex_app_admin_api_only_toggles_enabled(self) -> None:
         package_spec = (

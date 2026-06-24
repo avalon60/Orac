@@ -1601,11 +1601,17 @@ wwv_flow_imp_shared.create_list_of_values(
 'select jt.display_value d,',
 '       jt.return_value r',
 '  from json_table(',
-'         orac_code.preference_lov_api.get_lov_json(',
-'           p_pref_key      => :P6_PREF_KEY,',
-'           p_search        => :APEX$SEARCH,',
-'           p_current_value => coalesce(:P6_PREF_VALUE_POPUP_LOV, :P6_PREF_VALUE_SELECT_LIST, to_char(:P6_PREF_VALUE_NUMBER), :P6_PREF_VALUE_TEXT)',
-'         ),',
+'         case',
+'           when :P6_CONTROL_TYPE in (''popup_lov'', ''select_one'')',
+'                and :P6_PREF_KEY <> ''weather_location'' then',
+'             orac_code.preference_lov_api.get_lov_json(',
+'               p_pref_key      => :P6_PREF_KEY,',
+'               p_search        => :APEX$SEARCH,',
+'               p_current_value => coalesce(:P6_PREF_VALUE_POPUP_LOV, :P6_PREF_VALUE_SELECT_LIST, to_char(:P6_PREF_VALUE_NUMBER), :P6_PREF_VALUE_TEXT)',
+'             )',
+'           else',
+'             to_clob(json_array())',
+'         end,',
 '         ''$[*]''',
 '         columns (',
 '           display_value varchar2(4000) path ''$.display_value'',',
@@ -1629,13 +1635,18 @@ wwv_flow_imp_shared.create_list_of_values(
 'select jt.display_value d,',
 '       jt.return_value r',
 '  from json_table(',
-'         orac_code.preference_lov_api.get_lov_json(',
-'           p_pref_key      => :P6_PREF_KEY,',
-'           p_search        => case',
-'                                when :P6_PREF_KEY = ''weather_location'' then :P6_PREF_VALUE_SEARCH_TERM',
-'                              end,',
-'           p_current_value => :P6_PREF_VALUE_SELECT_LIST',
-'         ),',
+'         case',
+'           when :P6_CONTROL_TYPE = ''select_list'' then',
+'             orac_code.preference_lov_api.get_lov_json(',
+'               p_pref_key      => :P6_PREF_KEY,',
+'               p_search        => case',
+'                                    when :P6_PREF_KEY = ''weather_location'' then :P6_PREF_VALUE_SEARCH_TERM',
+'                                  end,',
+'               p_current_value => :P6_PREF_VALUE_SELECT_LIST',
+'             )',
+'           else',
+'             to_clob(json_array())',
+'         end,',
 '         ''$[*]''',
 '         columns (',
 '           display_value varchar2(4000) path ''$.display_value'',',
@@ -2993,10 +3004,21 @@ wwv_flow_imp_page.create_report_region(
 ,p_region_template_options=>'#DEFAULT#:t-Region--noPadding:t-Region--scrollBody'
 ,p_component_template_options=>'t-Report--stretch:#DEFAULT#:t-Report--altRowsDefault:t-Report--rowHighlight:t-Report--inline'
 ,p_source_type=>'NATIVE_SQL_REPORT'
-,p_query_type=>'TABLE'
-,p_query_table=>'USER_PREFERENCES_DISPLAY_V'
-,p_query_where=>'"USER_ID" = :P2_USER_ID'
-,p_include_rowid_column=>true
+,p_query_type=>'SQL'
+,p_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select pref_id as edit_pref_id,',
+'       pref_id,',
+'       user_id,',
+'       pref_key,',
+'       value_type,',
+'       row_version,',
+'       value_display,',
+'       pref_label',
+'  from user_preferences_display_v',
+' where user_id = :P2_USER_ID',
+'   and is_active = ''Y''',
+'   and is_user_editable = ''Y'''))
+,p_include_rowid_column=>false
 ,p_display_when_condition=>'P2_USER_ID'
 ,p_display_condition_type=>'ITEM_IS_NOT_NULL'
 ,p_ajax_enabled=>'Y'
@@ -3016,10 +3038,10 @@ wwv_flow_imp_page.create_report_region(
 wwv_flow_imp_page.create_report_columns(
  p_id=>wwv_flow_imp.id(12694149837390311)
 ,p_query_column_id=>1
-,p_column_alias=>'ROWID'
+,p_column_alias=>'EDIT_PREF_ID'
 ,p_column_display_sequence=>1
 ,p_column_heading=>'<span class="u-VisuallyHidden">Edit</span>'
-,p_column_link=>'f?p=&APP_ID.:6:&APP_SESSION.::&DEBUG.:RP:P6_ROWID:#ROWID#'
+,p_column_link=>'f?p=&APP_ID.:6:&APP_SESSION.::&DEBUG.:RP:P6_PREF_ID:#EDIT_PREF_ID#'
 ,p_column_linktext=>'<span role="img" aria-label="Edit" class="fa fa-edit" title="Edit"></span>'
 ,p_heading_alignment=>'LEFT'
 ,p_report_column_width=>32
@@ -4102,7 +4124,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_display_sequence=>10
 ,p_query_type=>'TABLE'
 ,p_query_table=>'USER_PREFERENCES_V'
-,p_include_rowid_column=>true
+,p_include_rowid_column=>false
 ,p_is_editable=>true
 ,p_edit_operations=>'u'
 ,p_lost_update_check_type=>'VALUES'
@@ -4217,7 +4239,7 @@ wwv_flow_imp_page.create_page_button(
 ,p_button_execute_validations=>'N'
 ,p_confirm_message=>'&APP_TEXT$DELETE_MSG!RAW.'
 ,p_confirm_style=>'danger'
-,p_button_condition=>'P6_ROWID'
+,p_button_condition=>'P6_PREF_ID'
 ,p_button_condition_type=>'NEVER'
 ,p_database_action=>'DELETE'
 );
@@ -4233,7 +4255,7 @@ wwv_flow_imp_page.create_page_button(
 ,p_button_image_alt=>'Apply Changes'
 ,p_button_position=>'NEXT'
 ,p_button_alignment=>'RIGHT'
-,p_button_condition=>'P6_ROWID'
+,p_button_condition=>'P6_PREF_ID'
 ,p_button_condition_type=>'ITEM_IS_NOT_NULL'
 ,p_database_action=>'UPDATE'
 );
@@ -4249,7 +4271,7 @@ wwv_flow_imp_page.create_page_button(
 ,p_button_image_alt=>'Create'
 ,p_button_position=>'NEXT'
 ,p_button_alignment=>'RIGHT'
-,p_button_condition=>'P6_ROWID'
+,p_button_condition=>'P6_PREF_ID'
 ,p_button_condition_type=>'NEVER'
 ,p_database_action=>'INSERT'
 );
@@ -4266,27 +4288,12 @@ wwv_flow_imp_page.create_page_button(
 ,p_button_alignment=>'RIGHT'
 );
 wwv_flow_imp_page.create_page_item(
- p_id=>wwv_flow_imp.id(12704156340390323)
-,p_name=>'P6_ROWID'
-,p_source_data_type=>'ROWID'
-,p_is_primary_key=>true
-,p_item_sequence=>10
-,p_item_plug_id=>wwv_flow_imp.id(12703743415390323)
-,p_item_source_plug_id=>wwv_flow_imp.id(12703743415390323)
-,p_source=>'ROWID'
-,p_source_type=>'REGION_SOURCE_COLUMN'
-,p_display_as=>'NATIVE_HIDDEN'
-,p_is_persistent=>'N'
-,p_protection_level=>'S'
-,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'value_protected', 'Y')).to_clob
-);
-wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(12704541646390323)
 ,p_name=>'P6_PREF_ID'
 ,p_source_data_type=>'NUMBER'
+,p_is_primary_key=>true
 ,p_is_required=>true
-,p_item_sequence=>20
+,p_item_sequence=>10
 ,p_item_plug_id=>wwv_flow_imp.id(12703743415390323)
 ,p_item_source_plug_id=>wwv_flow_imp.id(12703743415390323)
 ,p_use_cache_before_default=>'NO'
@@ -4295,6 +4302,7 @@ wwv_flow_imp_page.create_page_item(
 ,p_source_type=>'REGION_SOURCE_COLUMN'
 ,p_display_as=>'NATIVE_HIDDEN'
 ,p_is_persistent=>'N'
+,p_protection_level=>'S'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'value_protected', 'Y')).to_clob
 );
@@ -4476,13 +4484,18 @@ wwv_flow_imp_page.create_page_item(
 'select jt.display_value d,',
 '       jt.return_value r',
 '  from json_table(',
-'         orac_code.preference_lov_api.get_lov_json(',
-'           p_pref_key      => :P6_PREF_KEY,',
-'           p_search        => case',
-'                                when :P6_PREF_KEY = ''weather_location'' then :P6_PREF_VALUE_SEARCH_TERM',
-'                              end,',
-'           p_current_value => :P6_PREF_VALUE_SELECT_LIST',
-'         ),',
+'         case',
+'           when :P6_CONTROL_TYPE = ''select_list'' then',
+'             orac_code.preference_lov_api.get_lov_json(',
+'               p_pref_key      => :P6_PREF_KEY,',
+'               p_search        => case',
+'                                    when :P6_PREF_KEY = ''weather_location'' then :P6_PREF_VALUE_SEARCH_TERM',
+'                                  end,',
+'               p_current_value => :P6_PREF_VALUE_SELECT_LIST',
+'             )',
+'           else',
+'             to_clob(json_array())',
+'         end,',
 '         ''$[*]''',
 '         columns (',
 '           display_value varchar2(4000) path ''$.display_value'',',
@@ -4510,11 +4523,17 @@ wwv_flow_imp_page.create_page_item(
 'select jt.display_value d,',
 '       jt.return_value r',
 '  from json_table(',
-'         orac_code.preference_lov_api.get_lov_json(',
-'           p_pref_key      => :P6_PREF_KEY,',
-'           p_search        => :APEX$SEARCH,',
-'           p_current_value => coalesce(:P6_PREF_VALUE_POPUP_LOV, :P6_PREF_VALUE_SELECT_LIST, to_char(:P6_PREF_VALUE_NUMBER), :P6_PREF_VALUE_TEXT)',
-'         ),',
+'         case',
+'           when :P6_CONTROL_TYPE in (''popup_lov'', ''select_one'')',
+'                and :P6_PREF_KEY <> ''weather_location'' then',
+'             orac_code.preference_lov_api.get_lov_json(',
+'               p_pref_key      => :P6_PREF_KEY,',
+'               p_search        => :APEX$SEARCH,',
+'               p_current_value => coalesce(:P6_PREF_VALUE_POPUP_LOV, :P6_PREF_VALUE_SELECT_LIST, to_char(:P6_PREF_VALUE_NUMBER), :P6_PREF_VALUE_TEXT)',
+'             )',
+'           else',
+'             to_clob(json_array())',
+'         end,',
 '         ''$[*]''',
 '         columns (',
 '           display_value varchar2(4000) path ''$.display_value'',',
@@ -4827,7 +4846,7 @@ wwv_flow_imp_page.create_page_process(
 ,p_process_point=>'AFTER_SUBMIT'
 ,p_process_type=>'NATIVE_CLOSE_WINDOW'
 ,p_process_name=>'Close Dialog'
-,p_attribute_01=>'P6_ROWID,REQUEST'
+,p_attribute_01=>'P6_PREF_ID,REQUEST'
 ,p_error_display_location=>'INLINE_IN_NOTIFICATION'
 ,p_process_when=>'SAVE'
 ,p_process_when_type=>'REQUEST_IN_CONDITION'

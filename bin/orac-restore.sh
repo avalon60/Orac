@@ -255,6 +255,7 @@ work_dir = Path(sys.argv[4])
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 database = manifest.get("database") or {}
 schema_name_pattern = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+plugin_id_pattern = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 
 (work_dir / "backup_version.txt").write_text(str(manifest.get("orac_version", "unknown")) + "\n", encoding="utf-8")
 (work_dir / "dump_file.txt").write_text(str(database.get("dump_file") or "") + "\n", encoding="utf-8")
@@ -272,6 +273,24 @@ backup_plugins = {
     for item in manifest.get("plugins", [])
     if item.get("plugin_id")
 }
+schema_plugins = {}
+for backup_plugin in manifest.get("plugins", []):
+    plugin_id = str(backup_plugin.get("plugin_id") or "").strip()
+    if not plugin_id_pattern.fullmatch(plugin_id):
+        continue
+    for schema_name in backup_plugin.get("database_schemas") or []:
+        if not isinstance(schema_name, str) or not schema_name_pattern.fullmatch(schema_name):
+            continue
+        schema_plugins.setdefault(schema_name.lower(), set()).add(plugin_id)
+
+schema_plugin_lines = [
+    f"{schema_name}\t{','.join(sorted(plugin_ids))}"
+    for schema_name, plugin_ids in sorted(schema_plugins.items())
+]
+(work_dir / "schema_plugins.tsv").write_text(
+    "\n".join(schema_plugin_lines) + ("\n" if schema_plugin_lines else ""),
+    encoding="utf-8",
+)
 current_plugins = {}
 for plugin_path in sorted(plugins_dir.glob("*.json")):
     plugin_manifest = json.loads(plugin_path.read_text(encoding="utf-8"))
@@ -310,6 +329,93 @@ sql_quoted_csv_from_schema_file() {
 uppercase_csv_from_file() {
   local file_path="$1"
   awk 'NF { print toupper($0) }' "$file_path" | paste -sd, -
+}
+
+query_existing_restore_schemas() {
+  local schemas_path="$1"
+  local output_path="$2"
+  local owner_list
+
+  owner_list=$(sql_quoted_csv_from_schema_file "$schemas_path")
+  : >"$output_path"
+  [[ -n "$owner_list" ]] || return 0
+
+  if ! "$DOCKER_BIN" exec -i "$CONTAINER_NAME" sqlplus -L -s / as sysdba >"$output_path" <<SQL
+set heading off feedback off pagesize 0 verify off echo off trimspool on
+whenever sqlerror exit sql.sqlcode
+alter session set container=${ORACLE_PDB};
+select lower(username)
+  from dba_users
+ where username in (${owner_list})
+ order by username;
+exit
+SQL
+  then
+    fail "Restore schema preflight query failed"
+  fi
+  clean_sql_output_file "$output_path"
+}
+
+write_missing_schemas() {
+  local requested_path="$1"
+  local existing_path="$2"
+  local missing_path="$3"
+
+  awk 'NF { print tolower($0) }' "$existing_path" | sort >"${existing_path}.sorted"
+  awk 'NF { print tolower($0) }' "$requested_path" | sort >"${requested_path}.sorted"
+  comm -23 "${requested_path}.sorted" "${existing_path}.sorted" >"$missing_path"
+}
+
+print_missing_schema_guidance() {
+  local missing_path="$1"
+  local schema_plugins_path="$2"
+  local command_path="${WORK_PARENT}/missing_schema_install_commands.txt"
+  local schema_name
+  local plugin_ids
+  local plugin_id
+  local -a plugin_id_array
+
+  : >"$command_path"
+  log ""
+  log "Missing schema(s) required for data-only restore:"
+  while IFS= read -r schema_name; do
+    [[ -n "$schema_name" ]] || continue
+    plugin_ids=$(awk -F '\t' -v schema="$schema_name" '$1 == schema { print $2; exit }' "$schema_plugins_path")
+    if [[ -n "$plugin_ids" ]]; then
+      log "  - ${schema_name^^} (plugin: ${plugin_ids})"
+      IFS=',' read -ra plugin_id_array <<<"$plugin_ids"
+      for plugin_id in "${plugin_id_array[@]}"; do
+        [[ -n "$plugin_id" ]] || continue
+        printf 'bin/orac-plugin.sh install --bundled %s\n' "$plugin_id" >>"$command_path"
+      done
+    else
+      log "  - ${schema_name^^}"
+    fi
+  done <"$missing_path"
+
+  if [[ -s "$command_path" ]]; then
+    sort -u "$command_path" -o "$command_path"
+    log ""
+    log "Install missing plugin schema objects before rerunning restore, for example:"
+    sed 's/^/  - /' "$command_path"
+  fi
+}
+
+preflight_data_only_restore_schemas() {
+  local schemas_path="$1"
+  local schema_plugins_path="$2"
+  local existing_path="${WORK_PARENT}/existing_restore_schemas.txt"
+  local missing_path="${WORK_PARENT}/missing_restore_schemas.txt"
+
+  [[ "$ORAC_RESTORE_CONTENT" == "data_only" ]] || return 0
+
+  log "Checking target schemas for data-only restore."
+  query_existing_restore_schemas "$schemas_path" "$existing_path"
+  write_missing_schemas "$schemas_path" "$existing_path" "$missing_path"
+  if [[ -s "$missing_path" ]]; then
+    print_missing_schema_guidance "$missing_path" "$schema_plugins_path"
+    fail "Data-only restore requires all exported schemas to exist in the target database. Install the missing plugin schema objects or use an explicitly prepared full metadata restore target."
+  fi
 }
 
 ensure_datapump_directory() {
@@ -751,6 +857,8 @@ if [[ "$SKIP_DB" == "1" || -z "$DUMP_FILE" ]]; then
 fi
 
 verify_restore_recovery_api
+
+preflight_data_only_restore_schemas "${WORK_PARENT}/schemas.txt" "${WORK_PARENT}/schema_plugins.tsv"
 
 DUMP_PATH=$(find "$EXTRACT_DIR" -path "*/db/${DUMP_FILE}" -print -quit)
 [[ -n "$DUMP_PATH" ]] || fail "Dump file not found in archive: ${DUMP_FILE}"

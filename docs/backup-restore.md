@@ -94,14 +94,20 @@ the APEX app into the current workspace.
 For scratch recovery after recreating `orac-db`, use this order:
 
 ```bash
+bin/orac-plugin.sh install --bundled home_assistant
 bin/orac-restore.sh /tmp/orac-backups
 bin/orac-plugin.sh install --all
 bin/orac-plugin.sh check home_assistant
 ```
 
-Use `bin/orac-plugin.sh install --bundled <plugin-id>` instead of `--all` when
-you only want to recover selected bundled plugins. Successful plugin install
-updates the restored registry rows back to normal installed/enabled state.
+Use `bin/orac-plugin.sh install --all` before restore when you want to deploy
+all bundled plugin schema objects recorded in the backup. Use
+`bin/orac-plugin.sh install --bundled <plugin-id>` when you only need selected
+plugin schemas, such as `home_assistant` for `ORAC_HA`.
+
+Run plugin install again after restore so quarantined plugin registry and plugin
+APEX app rows are verified against the local package and moved back to normal
+installed/enabled state.
 
 The default mode restores data into an already deployed schema set:
 
@@ -109,6 +115,11 @@ The default mode restores data into an already deployed schema set:
 ORAC_RESTORE_CONTENT=data_only
 ORAC_RESTORE_TABLE_EXISTS_ACTION=truncate
 ```
+
+The default data-only mode requires the exported schemas and their tables to
+already exist in the target database. Restore preflights manifest-exported
+schemas before Data Pump import and reports missing plugin schema owners when it
+can derive them from the backup manifest.
 
 Supported data-only table actions are `skip`, `append`, and `truncate`.
 `append` can create duplicate-key failures when rows already exist.

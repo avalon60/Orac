@@ -470,6 +470,10 @@ create or replace package body orac_code.preference_lov_api as
       return l_rows.to_clob;
     end if;
 
+    if l_pref_definition.lov_type is null then
+      return l_rows.to_clob;
+    end if;
+
     case l_pref_definition.lov_type
       when 'static' then
         append_static_lov_rows(
@@ -486,6 +490,8 @@ create or replace package body orac_code.preference_lov_api as
           p_current_value => p_current_value,
           p_limit         => l_limit
         );
+      else
+        return l_rows.to_clob;
     end case;
 
     return l_rows.to_clob;
