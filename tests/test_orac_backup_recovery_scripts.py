@@ -398,6 +398,124 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
             self.assertIn("Restore import complete.", result.stdout)
             self.assertIn("Restore validation complete.", result.stdout)
 
+    def test_recovery_quarantines_plugin_state_before_validation(self) -> None:
+        """Recovery should quarantine restored plugin state before final validation."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = self._write_recovery_archive(temp_path)
+            docker_log = temp_path / "docker.log"
+            fake_docker = temp_path / "docker"
+            self._write_fake_restore_docker(fake_docker)
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), str(archive_path)],
+                cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "ORAC_DOCKER_BIN": str(fake_docker),
+                    "ORAC_FAKE_DOCKER_LOG": str(docker_log),
+                    "ORAC_PYTHON_BIN": sys.executable,
+                },
+                input="RECOVER\n",
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn(
+                "Quarantining restored plugin runtime state pending plugin reinstall.",
+                result.stdout,
+            )
+            docker_calls = docker_log.read_text(encoding="utf-8").splitlines()
+            import_index = self._first_call_index(docker_calls, " impdp ")
+            quarantine_index = self._first_call_index(
+                docker_calls,
+                "orac_code.restore_recovery_api.quarantine_plugin_state;",
+            )
+            validation_index = next(
+                index
+                for index, call in enumerate(
+                    docker_calls[quarantine_index + 1 :],
+                    quarantine_index + 1,
+                )
+                if "from all_objects" in call
+            )
+
+            self.assertLess(import_index, quarantine_index)
+            self.assertLess(quarantine_index, validation_index)
+
+    def test_recovery_preflight_requires_restore_recovery_api(self) -> None:
+        """Recovery should fail before import when quarantine API is missing."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = self._write_recovery_archive(temp_path)
+            docker_log = temp_path / "docker.log"
+            fake_docker = temp_path / "docker"
+            self._write_fake_restore_docker(fake_docker)
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), str(archive_path)],
+                cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "ORAC_DOCKER_BIN": str(fake_docker),
+                    "ORAC_FAKE_DOCKER_LOG": str(docker_log),
+                    "ORAC_FAKE_MISSING_RESTORE_RECOVERY_API": "1",
+                    "ORAC_PYTHON_BIN": sys.executable,
+                },
+                input="RECOVER\n",
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            combined_output = result.stdout + result.stderr
+            self.assertIn(
+                "Restore requires valid ORAC_CODE.RESTORE_RECOVERY_API",
+                combined_output,
+            )
+            docker_log_text = docker_log.read_text(encoding="utf-8")
+            self.assertIn("RESTORE_RECOVERY_API", docker_log_text)
+            self.assertNotIn(" cp ", f" {docker_log_text} ")
+            self.assertNotIn("chmod 640", docker_log_text)
+            self.assertNotIn(" impdp ", f" {docker_log_text} ")
+
+    def test_recovery_cleans_dump_when_plugin_quarantine_fails(self) -> None:
+        """Recovery should clean the copied dump if post-import quarantine fails."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = self._write_recovery_archive(temp_path)
+            docker_log = temp_path / "docker.log"
+            fake_docker = temp_path / "docker"
+            self._write_fake_restore_docker(fake_docker)
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), str(archive_path)],
+                cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "ORAC_DOCKER_BIN": str(fake_docker),
+                    "ORAC_FAKE_DOCKER_LOG": str(docker_log),
+                    "ORAC_FAKE_QUARANTINE_FAIL": "1",
+                    "ORAC_PYTHON_BIN": sys.executable,
+                },
+                input="RECOVER\n",
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            combined_output = result.stdout + result.stderr
+            self.assertIn("Post-restore plugin quarantine failed", combined_output)
+            docker_log_text = docker_log.read_text(encoding="utf-8")
+            self.assertIn(" impdp ", f" {docker_log_text} ")
+            self.assertIn("quarantine_plugin_state", docker_log_text)
+            self.assertIn("rm -f", docker_log_text)
+            self.assertIn("/home/oracle/orac/datapump/orac-test.dmp", docker_log_text)
+
     def test_recovery_exits_nonzero_when_validation_fails(self) -> None:
         """Recovery should fail after import when core validation fails."""
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -751,7 +869,17 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
                     '    if [[ "$*" == *"sqlplus"* ]]; then',
                     "      sql_input=$(cat)",
                     '      printf "%s\\n" "$sql_input" >> "$ORAC_FAKE_DOCKER_LOG"',
-                    '      if [[ "$sql_input" == *"from all_objects"* ]]; then',
+                    '      if [[ "$sql_input" == *"RESTORE_RECOVERY_API"* ]]; then',
+                    '        if [[ "${ORAC_FAKE_MISSING_RESTORE_RECOVERY_API:-0}" != "1" ]]; then',
+                    '          printf "PACKAGE\\tVALID\\n"',
+                    '          printf "PACKAGE BODY\\tVALID\\n"',
+                    "        fi",
+                    '      elif [[ "$sql_input" == *"quarantine_plugin_state"* ]]; then',
+                    '        if [[ "${ORAC_FAKE_QUARANTINE_FAIL:-0}" == "1" ]]; then',
+                    '          printf "ORA-06550: simulated quarantine failure\\n" >&2',
+                    "          exit 1",
+                    "        fi",
+                    '      elif [[ "$sql_input" == *"from all_objects"* ]]; then',
                     '        if [[ "${ORAC_FAKE_INVALID_OBJECTS:-0}" == "1" ]]; then',
                     '          printf "ORAC_CODE\\tPACKAGE BODY\\tBROKEN_API\\tINVALID\\n"',
                     "        fi",

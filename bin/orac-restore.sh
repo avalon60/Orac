@@ -475,6 +475,49 @@ normalize_restored_imported_state() {
   recompile_schema_list "$schemas_path"
 }
 
+verify_restore_recovery_api() {
+  local output_path="${WORK_PARENT}/restore_recovery_api_objects.tsv"
+  local object_count
+  local valid_count
+
+  log "Verifying post-restore recovery API is installed."
+  if ! "$DOCKER_BIN" exec -i "$CONTAINER_NAME" sqlplus -L -s / as sysdba >"$output_path" <<SQL
+set heading off feedback off pagesize 0 verify off echo off trimspool on linesize 32767
+whenever sqlerror exit sql.sqlcode
+alter session set container=${ORACLE_PDB};
+select object_type || chr(9) || status
+  from all_objects
+ where owner = 'ORAC_CODE'
+   and object_name = 'RESTORE_RECOVERY_API'
+   and object_type in ('PACKAGE', 'PACKAGE BODY')
+ order by object_type;
+exit
+SQL
+  then
+    fail "Restore recovery API preflight query failed"
+  fi
+  clean_sql_output_file "$output_path"
+
+  object_count=$(wc -l <"$output_path" | tr -d '[:space:]')
+  valid_count=$(awk -F '\t' 'NF == 2 && $2 == "VALID" { count++ } END { print count + 0 }' "$output_path")
+  if [[ "$object_count" -ne 2 || "$valid_count" -ne 2 ]]; then
+    fail "Restore requires valid ORAC_CODE.RESTORE_RECOVERY_API package and package body. Stage the restore_recovery_api SQL files into orac-db and run /home/oracle/orac/bin/deploy-orac-db.sh --validate then --update before restoring."
+  fi
+}
+
+quarantine_restored_plugin_state() {
+  log "Quarantining restored plugin runtime state pending plugin reinstall."
+  "$DOCKER_BIN" exec -i "$CONTAINER_NAME" sqlplus -L -s / as sysdba <<SQL
+whenever sqlerror exit sql.sqlcode
+alter session set container=${ORACLE_PDB};
+begin
+  orac_code.restore_recovery_api.quarantine_plugin_state;
+end;
+/
+exit
+SQL
+}
+
 query_invalid_objects() {
   local schemas_path="$1"
   local output_path="$2"
@@ -707,6 +750,8 @@ if [[ "$SKIP_DB" == "1" || -z "$DUMP_FILE" ]]; then
   exit 0
 fi
 
+verify_restore_recovery_api
+
 DUMP_PATH=$(find "$EXTRACT_DIR" -path "*/db/${DUMP_FILE}" -print -quit)
 [[ -n "$DUMP_PATH" ]] || fail "Dump file not found in archive: ${DUMP_FILE}"
 
@@ -738,6 +783,10 @@ if [[ "$IMPORT_STATUS" -ne 0 ]]; then
 fi
 
 normalize_restored_imported_state "${WORK_PARENT}/schemas.txt"
+quarantine_restored_plugin_state || {
+  remove_datapump_dump "$DUMP_FILE"
+  fail "Post-restore plugin quarantine failed. Verify ORAC_CODE.RESTORE_RECOVERY_API is installed and valid, then rerun restore."
+}
 remove_datapump_dump "$DUMP_FILE"
 
 log "Restore import complete."

@@ -85,6 +85,24 @@ requires the user to type `RECOVER` before import. It temporarily disables
 relevant foreign keys, runs Data Pump import, and restores the constraints it
 changed.
 
+When restored plugin registry or plugin APEX app rows are present, restore
+quarantines them before it reports success. Quarantined plugin rows are disabled
+and marked as requiring reinstall, and plugin APEX app rows are made
+non-launchable until the plugin lifecycle verifies the local package and imports
+the APEX app into the current workspace.
+
+For scratch recovery after recreating `orac-db`, use this order:
+
+```bash
+bin/orac-restore.sh /tmp/orac-backups
+bin/orac-plugin.sh install --all
+bin/orac-plugin.sh check home_assistant
+```
+
+Use `bin/orac-plugin.sh install --bundled <plugin-id>` instead of `--all` when
+you only want to recover selected bundled plugins. Successful plugin install
+updates the restored registry rows back to normal installed/enabled state.
+
 The default mode restores data into an already deployed schema set:
 
 ```bash
