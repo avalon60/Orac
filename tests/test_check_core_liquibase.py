@@ -145,5 +145,26 @@ def test_reports_custom_core_tracking_table_configuration(tmp_path: Path) -> Non
     assert any("custom databaseChangeLogTableName" in issue for issue in issues)
 
 
+def test_reports_stale_apex_exports_under_schema_root(tmp_path: Path) -> None:
+    stale_export = (
+        tmp_path
+        / "resources"
+        / "db"
+        / "schema"
+        / "orac_core"
+        / "orac_apps"
+        / "f1042.sql"
+    )
+    stale_export.parent.mkdir(parents=True, exist_ok=True)
+    stale_export.write_text("-- APEX export\n", encoding="utf-8")
+    _write_product_controller(tmp_path)
+    _write_schema_controller(tmp_path, "")
+    _write_properties(tmp_path)
+
+    issues = check_core_liquibase.run_checks(tmp_path)
+
+    assert any("APEX exports must live under resources/db/apex" in issue for issue in issues)
+
+
 def test_current_repository_core_liquibase_check_passes() -> None:
     assert check_core_liquibase.main(["--root", str(PROJECT_ROOT)]) == 0

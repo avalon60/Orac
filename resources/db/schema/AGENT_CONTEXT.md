@@ -104,7 +104,7 @@ Current Orac schema bundle mappings:
 
 | Folder | Owning schema | Object namespace | Purpose |
 |---|---|---|---|
-| `resources/db/schema/orac_core/` | `orac_core` | `orac` | Core Orac tables, constraints, indexes, seed data, APEX workspace exports, APEX application exports, and related schema-owned objects. |
+| `resources/db/schema/orac_core/` | `orac_core` | `orac` | Core Orac tables, constraints, indexes, seed data, and related schema-owned objects. |
 | `resources/db/schema/orac_api/` | `orac_api` | `orac` | API views, table API packages, API triggers, incoming core privileges, and outgoing grants. |
 | `resources/db/schema/orac_code/` | `orac_code` | `orac` | Business logic packages, business views, post-install assets, and outgoing grants. |
 | `resources/db/schema/orac/` | `orac` | `orac` | Internal runtime connection schema synonyms and compatibility access surfaces for the core Python stack. |
@@ -119,7 +119,7 @@ and grant direction from this context and the relevant guardrails.
 Orac has two distinct application surfaces:
 
 - APEX applications and APEX workspace exports are database-delivered
-  application assets under `resources/db/schema`.
+  application assets under `resources/db/apex`.
 - Web-based applications are browser/runtime applications under `web`.
 
 Do not treat these surfaces as interchangeable.
@@ -130,11 +130,12 @@ Current APEX database asset locations:
 
 | Path | Runtime surface | Purpose |
 |---|---|---|
-| `resources/db/schema/orac_core/orac_ws/` | Oracle APEX workspace | APEX workspace export assets, including workspace provisioning metadata and workspace-level configuration. |
-| `resources/db/schema/orac_core/orac_apps/` | Oracle APEX applications | APEX application export assets, including application `1042`. |
+| `resources/db/apex/orac_ws/` | Oracle APEX workspace | APEX workspace export assets, including workspace provisioning metadata and workspace-level configuration. |
+| `resources/db/apex/orac_apps/` | Oracle APEX applications | APEX application export assets, including application `1042`. |
 
-APEX workspace assets and APEX application assets are installed as part of the
-database schema bundle and must follow database, PL/SQL, security, grants, and
+APEX workspace assets and APEX application assets are SQL*Plus-installed after
+Liquibase has applied schema objects, grants, synonyms, and parsing-schema
+dependencies. They must follow database, PL/SQL, security, grants, and
 install-order guardrails. The APEX runtime access schema is `orac_apx_pub`.
 
 Do not move APEX exports into `web`, and do not apply web application build or

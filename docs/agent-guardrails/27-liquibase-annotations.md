@@ -714,10 +714,12 @@ Rules:
 ## SQLcl entrypoint scripts
 
 Repositories may use SQLcl entrypoint scripts to launch Liquibase control
-files. In Orac, database deployment assets live under `resources/db/schema` and
-are copied as a whole into the Oracle container under `${ORAC_HOME}/schema`.
-Keep Liquibase controller paths relative to that schema root so the same
-relative paths work before and after the container copy.
+files. In Orac, Liquibase-managed schema deployment assets live under
+`resources/db/schema` and are copied as a whole into the Oracle container under
+`${ORAC_HOME}/schema`. APEX exports live separately under `resources/db/apex`
+and must not be included from Liquibase controllers. Keep Liquibase controller
+paths relative to the schema root so the same relative paths work before and
+after the container copy.
 
 When this pattern is requested or already present, maintain these two
 entrypoints from the schema deployment root:
@@ -1180,16 +1182,6 @@ Standard shell:
     errorIfMissingOrEmpty="false"
     path="post_install"
   />
-  <includeAll
-    relativeToChangelogFile="true"
-    errorIfMissingOrEmpty="false"
-    path="orac_ws"
-  />
-  <includeAll
-    relativeToChangelogFile="true"
-    errorIfMissingOrEmpty="false"
-    path="orac_apps"
-  />
 </databaseChangeLog>
 ```
 
@@ -1197,6 +1189,9 @@ Rules:
 
 - Include only object-type directories that exist unless asked to instantiate
   the standard controller shell.
+- Do not include Orac-owned APEX export directories in schema controllers; those
+  exports live under `resources/db/apex` and are imported by the later APEX
+  SQL*Plus setup phase.
 - If creating a new schema/domain controller, use Orac's existing object-type
   sequence as the default ordering.
 - Directory names vary across repositories. Existing names such as

@@ -13,6 +13,7 @@ import unittest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = PROJECT_ROOT / "src"
+APEX_ROOT = PROJECT_ROOT / "resources/db/apex"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
@@ -37,6 +38,15 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         for relative_path in expected:
             with self.subTest(relative_path=relative_path):
                 self.assertTrue((PROJECT_ROOT / relative_path).is_file())
+
+    def test_core_apex_exports_live_outside_schema_root(self) -> None:
+        """Orac-owned APEX exports must not be mixed into schema controllers."""
+        old_schema_root = PROJECT_ROOT / "resources" / "db" / "schema" / "orac_core"
+
+        self.assertTrue((APEX_ROOT / "orac_ws").is_dir())
+        self.assertTrue((APEX_ROOT / "orac_apps").is_dir())
+        self.assertFalse((old_schema_root / "orac_ws").exists())
+        self.assertFalse((old_schema_root / "orac_apps").exists())
 
     def test_plugin_apex_app_admin_api_assets_are_declared(self) -> None:
         expected = (
@@ -116,7 +126,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1043_defines_acl_roles_and_seeds_admin(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1043.sql"
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
         ).read_text(encoding="utf-8").lower()
 
         self.assertIn("wwv_flow_imp_shared.create_acl_role", export_sql)
@@ -128,7 +138,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1043_renders_plugin_apps_cards_from_visible_view(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1043.sql"
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
         ).read_text(encoding="utf-8").lower()
 
         self.assertIn("p_plug_name=>'plugin apps'", export_sql)
@@ -149,7 +159,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1043_plugin_apps_cards_use_standard_dynamic_card_display(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1043.sql"
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
         ).read_text(encoding="utf-8").lower()
 
         self.assertIn("p_layout_type=>'grid'", export_sql)
@@ -162,7 +172,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1043_synchronizes_theme_when_launched_from_orac_admin(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1043.sql"
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
         ).read_text(encoding="utf-8").lower()
 
         self.assertIn("p_current_theme_style_id=>3544795214802435419", export_sql)
@@ -180,7 +190,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_has_plugins_navigation_entry(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1042.sql"
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
         ).read_text(encoding="utf-8").lower()
 
         self.assertIn("p_list_item_link_text=>'plugins'", export_sql)
@@ -193,7 +203,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_plugins_page_uses_standard_card_hub(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1042.sql"
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
         ).read_text(encoding="utf-8").lower()
 
         self.assertIn("p_id=>34", export_sql)
@@ -210,7 +220,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_plugins_card_launches_plugin_apps(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1042.sql"
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
         ).read_text(encoding="utf-8").lower()
 
         self.assertIn("p_list_item_link_text=>'plugin apps'", export_sql)
@@ -226,7 +236,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_plugins_page_links_to_plugin_app_maintenance(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1042.sql"
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
         ).read_text(encoding="utf-8").lower()
 
         self.assertIn("p_list_item_link_text=>'manage plugin apps'", export_sql)
@@ -239,7 +249,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_manage_plugin_apps_report_uses_code_view(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1042.sql"
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
         ).read_text(encoding="utf-8").lower()
 
         self.assertIn("p_id=>35", export_sql)
@@ -255,7 +265,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_plugin_app_form_toggles_enabled_via_admin_api(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1042.sql"
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
         ).read_text(encoding="utf-8").lower()
 
         self.assertIn("p_id=>36", export_sql)
@@ -274,7 +284,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_user_preferences_edit_route_uses_pref_id(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1042.sql"
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
         ).read_text(encoding="utf-8").lower()
 
         self.assertIn("p_column_alias=>'edit_pref_id'", export_sql)
@@ -287,7 +297,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_user_preferences_form_uses_pref_id_primary_key(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1042.sql"
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
         ).read_text(encoding="utf-8").lower()
 
         self.assertRegex(
@@ -299,7 +309,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_user_preferences_report_filters_editable_preferences(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1042.sql"
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
         ).read_text(encoding="utf-8").lower()
         display_view_sql = (
             PROJECT_ROOT
@@ -327,7 +337,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_user_preferences_lov_items_are_render_guarded(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1042.sql"
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
         ).read_text(encoding="utf-8").lower()
 
         self.assertIn("when :p6_control_type = ''select_list'' then", export_sql)
@@ -340,7 +350,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_weather_location_keeps_dedicated_search_path(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1042.sql"
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
         ).read_text(encoding="utf-8").lower()
 
         self.assertIn("p_name=>'weather location results'", export_sql)
@@ -527,7 +537,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_apex_exports_do_not_disable_session_rejoin(self) -> None:
         exports = (
-            PROJECT_ROOT / "resources/db/schema/orac_core/orac_apps/f1043.sql",
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql",
             PROJECT_ROOT / "plugins/home_assistant/apex/f10010.sql",
         )
 

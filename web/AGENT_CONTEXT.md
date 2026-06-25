@@ -8,7 +8,7 @@ under `web`.
 Orac has two distinct application surfaces:
 
 - APEX applications are database-delivered application assets under
-  `resources/db/schema`.
+  `resources/db/apex`.
 - Web applications are browser/runtime application assets under `web`.
 
 Do not treat these surfaces as interchangeable.

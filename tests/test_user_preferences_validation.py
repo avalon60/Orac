@@ -12,8 +12,9 @@ import unittest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_ROOT = PROJECT_ROOT / "resources" / "db" / "schema"
+APEX_ROOT = PROJECT_ROOT / "resources" / "db" / "apex"
 CODE_ROOT = SCHEMA_ROOT / "orac_code"
-APP_1042_EXPORT = SCHEMA_ROOT / "orac_core" / "orac_apps" / "f1042.sql"
+APP_1042_EXPORT = APEX_ROOT / "orac_apps" / "f1042.sql"
 
 
 class UserPreferencesValidationTests(unittest.TestCase):

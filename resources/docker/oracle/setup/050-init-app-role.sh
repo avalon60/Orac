@@ -3,9 +3,9 @@
 #
 # Orac script to add ADMINISTRATOR role etc. for the ORAC_ADMIN user.
 #
-# 038-init-app-role.sql
+# 050-init-app-role.sh
 #
-PROG="Orac: 038-init-app-role.sh"
+PROG="Orac: 050-init-app-role.sh"
 timestamp() { date +"%Y-%m-%d %H:%M:%S"; }
 echo "[$(timestamp)] ${PROG} Started"
 

@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 
 
 CORE_SCHEMAS = ("orac_core", "orac_api", "orac_code", "orac_apx_pub", "orac")
-EXCLUDED_SCHEMA_DIRS = {"orac_ws", "orac_apps"}
+APEX_SCHEMA_DIRS = {"orac_ws", "orac_apps"}
 HARD_OBJECT_DIRS = {
     "table",
     "sequence",
@@ -109,10 +109,20 @@ def core_schema_sql_files(root: Path) -> set[Path]:
     files: set[Path] = set()
     for schema in CORE_SCHEMAS:
         for path in sorted((schema_root(root) / schema).glob("*/*.sql")):
-            if path.parent.name in EXCLUDED_SCHEMA_DIRS:
-                continue
             files.add(path.resolve())
     return files
+
+
+def stale_apex_schema_dirs(root: Path) -> list[Path]:
+    """Return old APEX export directories found under schema bundles."""
+    stale_dirs: list[Path] = []
+    for schema in CORE_SCHEMAS:
+        schema_dir = schema_root(root) / schema
+        for apex_dir in sorted(APEX_SCHEMA_DIRS):
+            path = schema_dir / apex_dir
+            if path.exists():
+                stale_dirs.append(path)
+    return stale_dirs
 
 
 def parse_xml(path: Path) -> ET.Element:
@@ -287,6 +297,12 @@ def run_checks(root: Path) -> list[str]:
     reachable = reachable_sql_files(resolved_root)
 
     issues.extend(validate_controllers(resolved_root))
+    for path in stale_apex_schema_dirs(resolved_root):
+        issues.append(
+            f"{path.relative_to(resolved_root)}: APEX exports must live under "
+            "resources/db/apex, not resources/db/schema"
+        )
+
     for path in sorted(expected):
         issues.extend(validate_sql_file(path, resolved_root))
 

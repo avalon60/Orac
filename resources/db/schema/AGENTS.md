@@ -102,8 +102,8 @@ Common schema bundle subdirectories include:
 - `seed_data/` = seed data scripts
 - `pre_install/` = pre-install scripts
 - `post_install/` = post-install scripts
-- `orac_ws/` = APEX workspace export assets
-- `orac_apps/` = APEX application export assets
+APEX workspace and application exports live outside this schema tree under
+`resources/db/apex`.
 
 Use the closest existing directory convention when a schema bundle has
 additional object folders such as `type_spec`, `type_body`, `role`, `job`,

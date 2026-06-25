@@ -20,8 +20,8 @@ response.
 The `web` tree is for browser-based applications and related web runtime assets.
 
 APEX applications are not part of this tree. APEX workspace exports and APEX
-application exports are database assets under `resources/db/schema` and are
-governed by `resources/db/schema/AGENTS.md`.
+application exports are database-delivered assets under `resources/db/apex` and
+are governed by `resources/db/schema/AGENTS.md`.
 
 ## Working Rules
 

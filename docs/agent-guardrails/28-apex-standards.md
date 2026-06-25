@@ -7,8 +7,8 @@ exports that are delivered as database assets in Orac.
 
 These standards apply to files under:
 
-- `resources/db/schema/orac_core/orac_ws/`
-- `resources/db/schema/orac_core/orac_apps/`
+- `resources/db/apex/orac_ws/`
+- `resources/db/apex/orac_apps/`
 - plugin-supplied APEX exports under `plugins/<plugin-code>/apex/`
 
 APEX exports are database-delivered application assets. They are not web
@@ -18,6 +18,8 @@ application source files and must not be moved into the `web` tree.
 
 - Preserve the shared Orac workspace and parsing-schema model documented in
   `resources/db/schema/AGENT_CONTEXT.md`.
+- Keep Orac-owned APEX exports under `resources/db/apex`; do not place them
+  under schema-owned Liquibase controller trees.
 - Do not grant APEX applications direct access to `orac_core` tables.
 - Use approved `orac_code` views and packages for APEX-facing data access.
 - Preserve APEX authentication, authorization, and session behaviour unless the

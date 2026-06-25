@@ -15,7 +15,7 @@ I did not find evidence that the whole repo needs a rewrite. The right path is s
 - Voice: local voice loop, STT, TTS, VAD, AEC, barge-in under `src/orac_voice`.
 - Web display: browser display under `web/orac-display`, bridged by `web/orac-display/bridge.js`.
 - Protocol: canonical schema under `protocol/orac_protocol/resources/json_schema/protocol.schema.json`.
-- DB/APEX: object-oriented schema layout under `resources/db/schema`, with `orac_ha` explicitly plugin-bound per `resources/db/schema/AGENT_CONTEXT.md`.
+- DB/APEX: object-oriented schema layout under `resources/db/schema`, APEX exports under `resources/db/apex`, with `orac_ha` explicitly plugin-bound per `resources/db/schema/AGENT_CONTEXT.md`.
 
 ## Boundary Assessment
 

@@ -106,7 +106,7 @@ For Vite/React application changes, also read:
 - docs/agent-guardrails/35-frontend-vite-react-standards.md
 
 APEX applications are not part of the `web` tree. Treat APEX exports and APEX
-workspace assets as database assets under `resources/db/schema`.
+workspace assets as database-delivered assets under `resources/db/apex`.
 
 ## Plugins
 
