@@ -53,6 +53,7 @@ using (
     'Choose the model used by default for new requests.',
     'Y'
   from dual
+  union all
   select
     'personality_code',
     'Orac Personality',
