@@ -447,7 +447,15 @@ class OllamaConnector(LLMConnector):
 
         # config -> default hide reasoning (strip_reasoning_tags=true => default_show_reasoning False)
         strip_reasoning = (
-            self.config_mgr.config_value("settings", "strip_reasoning_tags", default="true")
+            self.config_mgr.config_value(
+                "settings",
+                "strip_reasoning_tags_default",
+                default=self.config_mgr.config_value(
+                    "settings",
+                    "strip_reasoning_tags",
+                    default="true",
+                ),
+            )
             .strip().lower() in {"1", "true", "yes", "on", "y"}
         )
         self.default_show_reasoning = not strip_reasoning
@@ -488,7 +496,7 @@ class OllamaConnector(LLMConnector):
         # Keep the connector hint minimal. User-facing behaviour belongs in
         # Orac's main system prompt policy, not the transport wrapper.
         self.system_hint = (
-            "You are Orac. Be concise. If the user poses a hypothetical or "
+            "You are Orac. If the user poses a hypothetical or "
             "counterfactual premise, answer under that premise and do not "
             "correct it unless the user explicitly asks you to verify facts."
         )

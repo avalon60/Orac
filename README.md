@@ -93,6 +93,7 @@ deployment script currently supports only `TOPOLOGY=db-local`.
 - [Documentation index](docs/README.md)
 - [Installation](docs/installation.md)
 - [Configuration reference](docs/configuration.md)
+- [Runtime user preferences](docs/user_preferences.md)
 - [Plugins](docs/plugins.md)
 - [Home Assistant](plugins/home_assistant/docs/home-assistant.md)
 - [Internet retrieval](docs/retrieval.md)

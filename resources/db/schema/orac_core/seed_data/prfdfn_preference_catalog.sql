@@ -53,30 +53,6 @@ using (
     'Choose the model used by default for new requests.',
     'Y'
   from dual
-  union all
-  select
-    'email_opt_in',
-    'Email Notifications',
-    'Whether the user wishes to receive email-based notifications.',
-    'boolean',
-    'checkbox',
-    cast(null as varchar2(30 byte)),
-    cast(null as varchar2(4000 byte)),
-    cast(null as varchar2(100 byte)),
-    json('true'),
-    cast(null as number),
-    cast(null as number),
-    cast(null as number),
-    cast(null as number),
-    cast(null as varchar2(1000 byte)),
-    'Y',
-    'Y',
-    30,
-    'notifications',
-    'Enable or disable email notifications.',
-    'Y'
-  from dual
-  union all
   select
     'personality_code',
     'Orac Personality',
@@ -125,7 +101,7 @@ using (
     cast(null as number),
     cast(null as varchar2(1000 byte)),
     'Y',
-    'Y',
+    'N',
     40,
     'ui',
     'Enable additional controls intended for experienced users.',
@@ -202,7 +178,7 @@ using (
     cast(null as number),
     cast(null as varchar2(1000 byte)),
     'Y',
-    'Y',
+    'N',
     70,
     'ui',
     'Determines the default page opened for the user.',
@@ -570,4 +546,10 @@ delete from orac_core.user_preferences
 delete from orac_core.preference_definitions
  where pref_key = 'theme_style';
 
---rollback delete from orac_core.preference_definitions where pref_key in ('date_format', 'default_llm_id', 'email_opt_in', 'personality_code', 'enable_advanced_mode', 'enable_feedback', 'force_concise', 'landing_page_id', 'max_tokens', 'push_opt_in', 'rows_per_report', 'show_reasoning', 'strip_reasoning_tags', 'temperature', 'weather_location', 'timezone', 'tts_pitch', 'tts_rate', 'tts_voice');
+delete from orac_core.user_preferences
+ where pref_key = 'email_opt_in';
+
+delete from orac_core.preference_definitions
+ where pref_key = 'email_opt_in';
+
+--rollback delete from orac_core.preference_definitions where pref_key in ('date_format', 'default_llm_id', 'personality_code', 'enable_advanced_mode', 'enable_feedback', 'force_concise', 'landing_page_id', 'max_tokens', 'push_opt_in', 'rows_per_report', 'show_reasoning', 'strip_reasoning_tags', 'temperature', 'weather_location', 'timezone', 'tts_pitch', 'tts_rate', 'tts_voice');

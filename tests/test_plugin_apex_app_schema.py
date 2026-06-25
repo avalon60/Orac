@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import configparser
 from pathlib import Path
 import re
 import sys
@@ -171,7 +172,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("s.application_id = 1042", export_sql)
         self.assertIn("s.application_id = :app_id", export_sql)
         self.assertIn("s.name           = l_theme_style_name", export_sql)
-        self.assertIn("apex_util.set_current_theme_style", export_sql)
+        self.assertTrue(
+            "apex_util.set_current_theme_style" in export_sql
+            or "apex_theme.set_session_style" in export_sql
+        )
         self.assertIn("when no_data_found then", export_sql)
 
     def test_f1042_has_plugins_navigation_entry(self) -> None:
@@ -357,6 +361,102 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertEqual(self._seeded_editable_flag(seed_sql, "push_opt_in"), "N")
         self.assertEqual(self._seeded_editable_flag(seed_sql, "rows_per_report"), "N")
         self.assertEqual(self._seeded_editable_flag(seed_sql, "temperature"), "N")
+        self.assertEqual(
+            self._seeded_editable_flag(seed_sql, "enable_advanced_mode"),
+            "N",
+        )
+        self.assertEqual(self._seeded_editable_flag(seed_sql, "landing_page_id"), "N")
+
+    def test_runtime_preference_catalogue_matches_documented_active_keys(self) -> None:
+        seed_sql = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_core/seed_data/prfdfn_preference_catalog.sql"
+        ).read_text(encoding="utf-8")
+        editable_runtime_preferences = (
+            "date_format",
+            "force_concise",
+            "max_tokens",
+            "show_reasoning",
+            "strip_reasoning_tags",
+            "timezone",
+            "tts_pitch",
+            "tts_rate",
+            "tts_voice",
+        )
+
+        for pref_key in editable_runtime_preferences:
+            with self.subTest(pref_key=pref_key):
+                self.assertEqual(self._seeded_editable_flag(seed_sql, pref_key), "Y")
+                self.assertEqual(self._seeded_active_flag(seed_sql, pref_key), "Y")
+
+    def test_shipped_config_uses_runtime_preference_default_keys(self) -> None:
+        config = configparser.ConfigParser()
+        config.optionxform = str
+        config.read(PROJECT_ROOT / "resources/config/orac.ini", encoding="utf-8")
+
+        expected_defaults = (
+            "date_format_default",
+            "force_concise_default",
+            "max_tokens_default",
+            "show_reasoning_default",
+            "strip_reasoning_tags_default",
+            "timezone_default",
+            "tts_pitch_default",
+            "tts_rate_default",
+        )
+        ambiguous_scalar_keys = (
+            "date_format",
+            "force_concise",
+            "max_tokens",
+            "show_reasoning",
+            "strip_reasoning_tags",
+            "timezone",
+            "tts_pitch",
+            "tts_rate",
+        )
+
+        self.assertTrue(config.has_section("settings"))
+        for key in expected_defaults:
+            with self.subTest(default_key=key):
+                self.assertTrue(config.has_option("settings", key))
+        for key in ambiguous_scalar_keys:
+            with self.subTest(ambiguous_key=key):
+                self.assertFalse(config.has_option("settings", key))
+
+    def test_email_opt_in_removed_from_preference_catalogue(self) -> None:
+        seed_sql = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_core/seed_data/prfdfn_preference_catalog.sql"
+        ).read_text(encoding="utf-8")
+        seed_merge = seed_sql.split(") src", maxsplit=1)[0]
+        rollback_text = "\n".join(
+            line for line in seed_sql.splitlines() if line.startswith("--rollback")
+        )
+        build_log = (PROJECT_ROOT / "build.log").read_text(encoding="utf-8")
+
+        self.assertNotIn("email_opt_in", seed_merge)
+        self.assertNotIn("email notifications", seed_merge.lower())
+        self.assertNotIn("email_opt_in", rollback_text)
+        self.assertNotIn("email_opt_in", build_log)
+
+    def test_email_opt_in_cleanup_sql_is_idempotent(self) -> None:
+        seed_sql = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_core/seed_data/prfdfn_preference_catalog.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn(
+            "delete from orac_core.user_preferences\n where pref_key = 'email_opt_in'",
+            seed_sql,
+        )
+        self.assertIn(
+            "delete from orac_core.preference_definitions\n where pref_key = 'email_opt_in'",
+            seed_sql,
+        )
+        self.assertLess(
+            seed_sql.index("delete from orac_core.user_preferences\n where pref_key = 'email_opt_in'"),
+            seed_sql.index("delete from orac_core.preference_definitions\n where pref_key = 'email_opt_in'"),
+        )
 
     def test_orac_prefs_seed_filters_user_editable_defaults(self) -> None:
         package_body = (
@@ -368,6 +468,34 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     @staticmethod
     def _seeded_editable_flag(seed_sql: str, pref_key: str) -> str:
+        row_sql = PluginApexAppSchemaTests._seeded_row(seed_sql, pref_key)
+        flag_match = re.search(
+            r"cast\(null as varchar2\(1000 byte\)\)"
+            r"(?:\s+as\s+regex_pattern)?,\s*"
+            r"'[YN]'(?:\s+as\s+is_required)?,\s*"
+            r"'([YN])'(?:\s+as\s+is_user_editable)?,\s*\d+",
+            row_sql,
+            re.DOTALL,
+        )
+        if flag_match is None:
+            raise AssertionError(f"Missing editable flag for {pref_key}")
+
+        return flag_match.group(1)
+
+    @staticmethod
+    def _seeded_active_flag(seed_sql: str, pref_key: str) -> str:
+        row_sql = PluginApexAppSchemaTests._seeded_row(seed_sql, pref_key)
+        flag_match = re.search(
+            r",\s*'([YN])'(?:\s+as\s+is_active)?\s*\n\s*from dual",
+            row_sql,
+        )
+        if flag_match is None:
+            raise AssertionError(f"Missing active flag for {pref_key}")
+
+        return flag_match.group(1)
+
+    @staticmethod
+    def _seeded_row(seed_sql: str, pref_key: str) -> str:
         row_match = re.search(
             rf"select\s+'{re.escape(pref_key)}'.*?\n\s*from dual",
             seed_sql,
@@ -376,16 +504,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         if row_match is None:
             raise AssertionError(f"Missing preference seed row for {pref_key}")
 
-        row_sql = row_match.group(0)
-        flag_match = re.search(
-            r"cast\(null as varchar2\(1000 byte\)\),\s*'Y',\s*'([YN])',\s*\d+,",
-            row_sql,
-            re.DOTALL,
-        )
-        if flag_match is None:
-            raise AssertionError(f"Missing editable flag for {pref_key}")
-
-        return flag_match.group(1)
+        return row_match.group(0)
 
     def test_plugin_apex_app_admin_api_only_toggles_enabled(self) -> None:
         package_spec = (
@@ -442,7 +561,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("s.application_id = 1042", export_sql)
         self.assertIn("s.application_id = :app_id", export_sql)
         self.assertIn("s.name           = l_theme_style_name", export_sql)
-        self.assertIn("apex_util.set_current_theme_style", export_sql)
+        self.assertTrue(
+            "apex_util.set_current_theme_style" in export_sql
+            or "apex_theme.set_session_style" in export_sql
+        )
         self.assertIn("when no_data_found then", export_sql)
 
     def test_plugin_docs_explain_apex_theme_inheritance(self) -> None:
@@ -452,7 +574,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("orac_theme_sync", docs)
         self.assertIn("application `1042`", docs)
         self.assertIn("apex_application_theme_styles", docs)
-        self.assertIn("apex_util.set_current_theme_style", docs)
+        self.assertTrue(
+            "apex_util.set_current_theme_style" in docs
+            or "apex_theme.set_session_style" in docs
+        )
         self.assertIn("orac_code.plugin_apex_app_menu_visible_v", docs)
 
     def test_home_assistant_status_dashboard_is_read_only(self) -> None:

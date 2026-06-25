@@ -114,6 +114,7 @@ class FallbackTtsEngine:
     *,
     session_id: str,
     turn_id: str,
+    tts_options: dict[str, object] | None = None,
   ) -> Path:
     """Synthesise with the primary engine, then fallback on failure."""
     try:
@@ -121,6 +122,7 @@ class FallbackTtsEngine:
         text,
         session_id=session_id,
         turn_id=turn_id,
+        tts_options=tts_options,
       )
     except Exception as exc:
       logger.warning(
@@ -133,6 +135,7 @@ class FallbackTtsEngine:
         text,
         session_id=session_id,
         turn_id=turn_id,
+        tts_options=tts_options,
       )
 
   def cancel(self) -> None:
@@ -808,6 +811,7 @@ class TtsWorker:
     turn_id: str,
     text: str,
     tts_voice: dict[str, object] | None = None,
+    tts_options: dict[str, object] | None = None,
   ) -> bool:
     """Queue a text chunk for speech without blocking the caller.
 
@@ -816,6 +820,7 @@ class TtsWorker:
       turn_id (str): Turn identifier.
       text (str): Speech-friendly text chunk.
       tts_voice (dict[str, object] | None): Optional selected voice row.
+      tts_options (dict[str, object] | None): Optional per-turn TTS options.
 
     Returns:
       bool: True when a non-empty chunk was queued.
@@ -840,6 +845,7 @@ class TtsWorker:
         utterance_id=f"utt-{uuid.uuid4().hex[:12]}",
         text=clean_text,
         tts_voice=tts_voice,
+        tts_options=tts_options,
       )
     )
     self._mark_turn_queued(session_id=session_id, turn_id=turn_id)
@@ -1292,11 +1298,25 @@ class TtsWorker:
       if self._is_cancelled(session_id=chunk.session_id, turn_id=chunk.turn_id):
         return
       tts_engine = self._tts_engine_for_chunk(chunk)
-      wav_path = tts_engine.synthesise_to_wav(
-        chunk.text,
-        session_id=chunk.session_id,
-        turn_id=chunk.turn_id,
-      )
+      try:
+        wav_path = tts_engine.synthesise_to_wav(
+          chunk.text,
+          session_id=chunk.session_id,
+          turn_id=chunk.turn_id,
+          tts_options=chunk.tts_options,
+        )
+      except TypeError as exc:
+        if "tts_options" not in str(exc):
+          raise
+        logger.debug(
+          "TTS engine {} does not accept per-turn options; retrying without them.",
+          tts_engine.__class__.__name__,
+        )
+        wav_path = tts_engine.synthesise_to_wav(
+          chunk.text,
+          session_id=chunk.session_id,
+          turn_id=chunk.turn_id,
+        )
       if self._is_cancelled(session_id=chunk.session_id, turn_id=chunk.turn_id):
         self._cancel_playback_reference_turn(
           session_id=chunk.session_id,

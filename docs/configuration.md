@@ -10,6 +10,8 @@ This is the canonical reference for `resources/config/orac.ini`. It documents ev
 - Empty optional values do not imply that secrets should be stored in the INI file.
 
 For installation context, see [Installation](installation.md). For subsystem behavior, see [Internet Retrieval](retrieval.md), [Voice Pipeline](voice-pipeline.md), and [Plugins](plugins.md).
+Runtime user preference precedence, validation, and post-resolution behaviour
+are documented in [Runtime User Preferences](user_preferences.md).
 
 ## `[global]`
 
@@ -165,7 +167,7 @@ Configures show timestamp for the `[client]` subsystem.
 
 General response-processing behavior.
 
-### `strip_reasoning_tags`
+### `strip_reasoning_tags_default`
 
 - **Type:** boolean
 - **Shipped value:** `false`
@@ -176,9 +178,106 @@ General response-processing behavior.
 
 Removes model reasoning-tag content from user-facing output when enabled.
 
-**Example:** `strip_reasoning_tags = false`
+**Example:** `strip_reasoning_tags_default = false`
 
-**Notes:** The runtime fallback differs from the shipped value; the configured value remains authoritative when present.
+**Notes:** This is a runtime preference default. Saved user preferences and explicit request metadata take precedence.
+
+### `timezone_default`
+
+- **Type:** string
+- **Shipped value:** `Europe/London`
+- **Runtime fallback:** `Europe/London`
+- **Required:** No; supplied by the shipped configuration
+- **Allowed values:** IANA timezone names
+- **Status:** active
+
+Default timezone used when no request metadata or saved user preference is set.
+
+**Example:** `timezone_default = Europe/London`
+
+### `date_format_default`
+
+- **Type:** string
+- **Shipped value:** `DD-MON-YYYY HH24:MI`
+- **Runtime fallback:** `DD-MON-YYYY HH24:MI`
+- **Required:** No; supplied by the shipped configuration
+- **Allowed values:** Values from the `DATE_FORMAT` preference LOV
+- **Status:** active
+
+Default user-facing date/time format used when no saved preference is set.
+
+**Example:** `date_format_default = DD-MON-YYYY HH24:MI`
+
+### `force_concise_default`
+
+- **Type:** boolean
+- **Shipped value:** `false`
+- **Runtime fallback:** `false`
+- **Required:** No; supplied by the shipped configuration
+- **Allowed values:** `true`, `false`
+- **Status:** active
+
+Default concise-response preference used when no saved preference is set.
+
+**Example:** `force_concise_default = false`
+
+### `max_tokens_default`
+
+- **Type:** integer
+- **Shipped value:** `2048`
+- **Runtime fallback:** no explicit runtime override
+- **Required:** No; supplied by the shipped configuration
+- **Allowed values:** Positive integers
+- **Status:** active
+
+Default maximum response-token budget used when no saved preference is set.
+
+**Example:** `max_tokens_default = 2048`
+
+### `show_reasoning_default`
+
+- **Type:** boolean
+- **Shipped value:** `false`
+- **Runtime fallback:** `false`
+- **Required:** No; supplied by the shipped configuration
+- **Allowed values:** `true`, `false`
+- **Status:** active
+
+Default permission flag for provider-visible reasoning summaries where supported.
+
+**Example:** `show_reasoning_default = false`
+
+### `tts_rate_default`
+
+- **Type:** number
+- **Shipped value:** `0.95`
+- **Runtime fallback:** provider default
+- **Required:** No; supplied by the shipped configuration
+- **Allowed values:** `0.25` to `4.0`
+- **Status:** active
+
+Default text-to-speech rate used when the provider supports per-request rate.
+
+**Example:** `tts_rate_default = 0.95`
+
+**Notes:** This is a runtime preference default. It is an engine-neutral hint;
+Kokoro maps it to `speed`, while Piper currently ignores it safely.
+
+### `tts_pitch_default`
+
+- **Type:** number
+- **Shipped value:** `0.0`
+- **Runtime fallback:** provider default
+- **Required:** No; supplied by the shipped configuration
+- **Allowed values:** `-10.0` to `10.0`
+- **Status:** active
+
+Default text-to-speech pitch used when the provider supports per-request pitch.
+
+**Example:** `tts_pitch_default = 0.0`
+
+**Notes:** This is a runtime preference default. It is an engine-neutral hint;
+Kokoro and Piper currently ignore pitch safely.
 
 ## `[context]`
 
@@ -276,19 +375,6 @@ Maximum recent user/assistant turn pairs considered for context.
 Configures reply language for the `[context]` subsystem.
 
 **Example:** `reply_language = English`
-
-### `timezone`
-
-- **Type:** string
-- **Shipped value:** `Europe/London`
-- **Runtime fallback:** The shipped value is authoritative; loaders without a separate default require the configured key
-- **Required:** No; supplied by the shipped configuration
-- **Allowed values:** Any value valid for the described subsystem
-- **Status:** active
-
-Configures timezone for the `[context]` subsystem.
-
-**Example:** `timezone = Europe/London`
 
 ### `system_prompt_policy_file`
 
@@ -1313,9 +1399,14 @@ Selects the backend used when primary synthesis fails.
 - **Allowed values:** Any value valid for the described subsystem
 - **Status:** active
 
-Configures tts voice for the `[voice]` subsystem.
+Configures the legacy Piper voice and the Piper fallback voice. Runtime
+`tts_voice` preferences resolve through the TTS voice catalogue; when the
+primary engine is Kokoro, `tts_kokoro_voice` is the configured engine voice.
 
 **Example:** `tts_voice = en_GB-alba-medium`
+
+**Notes:** Runtime voice selection is documented in
+[Runtime User Preferences](user_preferences.md).
 
 ### `tts_voice_dir`
 
@@ -1443,7 +1534,8 @@ Configures tts kokoro model for the `[voice]` subsystem.
 - **Allowed values:** Any value valid for the described subsystem
 - **Status:** active
 
-Configures tts kokoro voice for the `[voice]` subsystem.
+Configures the Kokoro voice used by the Kokoro engine and the Kokoro voice
+catalogue fallback.
 
 **Example:** `tts_kokoro_voice = bm_george`
 

@@ -27,6 +27,8 @@ to complete.
   list devices by area.
 - [Internet Retrieval](retrieval.md): configure SearXNG and Orac retrieval
   policy.
+- [Runtime User Preferences](user_preferences.md): runtime preference
+  precedence, validation, and TTS portability.
 - [Voice Pipeline](voice-pipeline.md): wake word, recording, STT, TTS,
   playback, barge-in, and AEC.
 - [Optional Atom Display](orac-atom-display.md): desktop display listener and

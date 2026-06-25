@@ -80,6 +80,19 @@ do not assume one threshold set is portable across devices.
 
 ## Text-to-Speech
 
+Runtime user preferences for speech are provider-neutral hints. See
+[Runtime User Preferences](user_preferences.md) for precedence, validation, and
+the complete preference matrix.
+
+| Engine | `tts_voice` | `tts_rate` | `tts_pitch` |
+|---|---|---|---|
+| Kokoro | Maps to Kokoro `voice` selection. | Mapped to OpenAI-compatible speech `speed`. | Unsupported; debug-logged and ignored. |
+| Piper | Maps to Piper voice/model path selection. | Unsupported; debug-logged and ignored. | Unsupported; debug-logged and ignored. |
+
+Only Kokoro and Piper are currently implemented local TTS engines. Voice
+catalogue provider fields are extension points, not evidence that another TTS
+provider is available.
+
 ### Kokoro
 
 Kokoro is the shipped primary TTS backend. Orac expects a local
@@ -117,6 +130,10 @@ file /tmp/orac-kokoro-test.wav
 The base URL may include or omit `/v1` and a trailing slash. Orac normalises it
 to the speech endpoint.
 
+Resolved `tts_rate` is sent to Kokoro as the OpenAI-compatible `speed` field.
+Resolved `tts_pitch` is not supported by the current Kokoro adapter; it is
+debug-logged and ignored.
+
 ### Piper
 
 Piper is the lightweight local fallback. Voice assets default to:
@@ -130,6 +147,10 @@ tts_voice_dir = ${ORAC_HOME}/var/models/piper
 
 Orac also packages an `en_GB-alba-medium` fallback under
 `${ORAC_HOME}/resources/models/piper`.
+
+Resolved `tts_voice` selects the Piper voice/model path. The current Piper
+adapter does not support per-turn `tts_rate` or `tts_pitch`; both options are
+debug-logged and ignored safely.
 
 ## Playback, Barge-In, and AEC
 

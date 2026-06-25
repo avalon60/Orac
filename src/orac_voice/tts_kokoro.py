@@ -530,6 +530,7 @@ class KokoroTtsEngine:
     *,
     session_id: str,
     turn_id: str,
+    tts_options: dict[str, object] | None = None,
   ) -> Path:
     """Synthesise text to a generated WAV file."""
     clean_text = text.strip()
@@ -549,6 +550,15 @@ class KokoroTtsEngine:
       "input": clean_text,
       "response_format": self.response_format,
     }
+    options = tts_options if isinstance(tts_options, dict) else {}
+    rate = options.get("tts_rate")
+    if rate not in (None, ""):
+      try:
+        payload["speed"] = max(0.25, min(4.0, float(rate)))
+      except Exception:
+        logger.debug("Ignoring invalid Kokoro tts_rate option: {}", rate)
+    if options.get("tts_pitch") not in (None, ""):
+      logger.debug("Kokoro TTS ignores unsupported tts_pitch option.")
     logger.debug(
       "Synthesising voice chunk with Kokoro voice {} to {}",
       self.voice_name,
