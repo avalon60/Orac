@@ -27,6 +27,16 @@ application source files and must not be moved into the `web` tree.
 - Do not expose secrets, raw credentials, bearer tokens, or unredacted plugin
   error values through APEX regions, card bodies, links, reports, or logs.
 
+## Application IDs
+
+- Orac internal APEX applications should use application IDs greater than or
+  equal to `1042`.
+- Plugin-supplied APEX applications should use application IDs greater than or
+  equal to `10010`.
+- Before adding or changing an APEX application ID, check both
+  `resources/db/apex/orac_apps/` and plugin manifests that declare APEX
+  applications to avoid ID collisions.
+
 ## Card Standards
 
 Hub-style APEX card pages in application `1042` must use the same visual card

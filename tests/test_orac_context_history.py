@@ -1034,12 +1034,12 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             clock,
         )
 
-    def test_clock_context_uses_weather_location_for_where_are_you(self) -> None:
+    def test_clock_context_uses_user_location_for_where_are_you(self) -> None:
         """Clock context should disambiguate location questions."""
         clock = orac_module.system_clock_line(
             {
                 "timezone": "Europe/London",
-                "weather_location": "Thornton Dale, England, United Kingdom",
+                "user_location": "Thornton Dale, England, United Kingdom",
             }
         )
 
@@ -1048,7 +1048,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             clock,
         )
         self.assertIn(
-            "This weather location is the preferred location context",
+            "This user location is the preferred location context",
             clock,
         )
         self.assertIn(
@@ -1064,7 +1064,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         clock = orac_module.system_clock_line({"timezone": "Europe/London"})
 
         self.assertIn(
-            "No explicit weather location is set. Assume your current location is London",
+            "No explicit user location is set. Assume your current location is London",
             clock,
         )
         self.assertIn(
@@ -1080,7 +1080,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             "What time is it?",
             {
                 "timezone": "Europe/London",
-                "weather_location": "Thornton Dale, England, United Kingdom",
+                "user_location": "Thornton Dale, England, United Kingdom",
             },
         )
 
@@ -1416,7 +1416,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
                 req_id="req-time",
                 meta={
                     "timezone": "Europe/London",
-                    "weather_location": "Thornton Dale, England, United Kingdom",
+                    "user_location": "Thornton Dale, England, United Kingdom",
                 },
             )
         )
@@ -1715,10 +1715,10 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("Current user message:\n\nWjat is today's date?", prompt)
 
-    def test_contextual_prompt_prefers_weather_location_over_timezone_location(
+    def test_contextual_prompt_prefers_user_location_over_timezone_location(
         self,
     ) -> None:
-        """Weather location should outrank timezone-derived location."""
+        """User location should outrank timezone-derived location."""
         orchestrator = self._make_orac_stub(llm_responses=[])
         orchestrator._default_timezone = "Europe/Paris"
 
@@ -1727,7 +1727,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             "Where are you?",
             {
                 "timezone": "America/New_York",
-                "weather_location": "Thornton Dale, England, United Kingdom",
+                "user_location": "Thornton Dale, England, United Kingdom",
             },
             "clive",
         )
@@ -1737,7 +1737,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             prompt,
         )
         self.assertIn(
-            "This weather location is the preferred location context",
+            "This user location is the preferred location context",
             prompt,
         )
         self.assertNotIn("Assume your current location is New York", prompt)

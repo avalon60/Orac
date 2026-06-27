@@ -345,9 +345,9 @@ using (
   from dual
   union all
   select
-    'weather_location',
-    'Weather Location',
-    'Default place used for weather questions when no explicit location is given.',
+    'user_location',
+    'User Location',
+    'Default operational location used when no explicit place is given.',
     'json',
     'select_one',
     'sql',
@@ -355,7 +355,7 @@ using (
               jt.return_value r
          from json_table(
                 orac_code.preference_lov_api.get_lov_json(
-                  p_pref_key      => 'weather_location',
+                  p_pref_key      => 'user_location',
                   p_search        => :APEX$SEARCH,
                   p_current_value => null
                 ),
@@ -375,8 +375,8 @@ using (
     'N',
     'Y',
     145,
-    'weather',
-    'Stores the user''s preferred place for weather lookups and location-aware forecasts.',
+    'profile',
+    'Stores the user''s preferred place for weather, local context, and other location-aware features.',
     'Y'
   from dual
   union all
@@ -589,4 +589,20 @@ delete from orac_core.user_preferences
 delete from orac_core.preference_definitions
  where pref_key = 'email_opt_in';
 
---rollback delete from orac_core.preference_definitions where pref_key in ('date_format', 'default_llm_id', 'personality_code', 'enable_advanced_mode', 'enable_feedback', 'force_concise', 'landing_page_id', 'max_tokens', 'push_opt_in', 'rows_per_report', 'show_reasoning', 'strip_reasoning_tags', 'temperature', 'weather_location', 'timezone', 'tts_pitch', 'tts_rate', 'tts_voice');
+delete from orac_core.user_preferences old_pref
+ where old_pref.pref_key = 'weather_location'
+   and exists (
+         select 1
+           from orac_core.user_preferences new_pref
+          where new_pref.user_id = old_pref.user_id
+            and new_pref.pref_key = 'user_location'
+       );
+
+update orac_core.user_preferences
+   set pref_key = 'user_location'
+ where pref_key = 'weather_location';
+
+delete from orac_core.preference_definitions
+ where pref_key = 'weather_location';
+
+--rollback delete from orac_core.preference_definitions where pref_key in ('date_format', 'default_llm_id', 'personality_code', 'enable_advanced_mode', 'enable_feedback', 'force_concise', 'landing_page_id', 'max_tokens', 'push_opt_in', 'rows_per_report', 'show_reasoning', 'strip_reasoning_tags', 'temperature', 'user_location', 'timezone', 'tts_pitch', 'tts_rate', 'tts_voice');

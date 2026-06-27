@@ -16,7 +16,7 @@ select
   coalesce(d.is_user_editable, 'N') as is_user_editable,
   d.display_sequence,
   case
-    when p.pref_key = 'weather_location' then
+    when p.pref_key = 'user_location' then
       case
         when json_value(p.pref_value, '$.name' returning varchar2(4000) null on error) is not null then
           json_value(p.pref_value, '$.name' returning varchar2(4000) null on error)

@@ -269,11 +269,11 @@ def _resolve_user_profile_field(context_manager: Any, username: str, field_name:
 
 
 _ENTITLEMENT_RESOLVERS = {
-    "user_preferences.weather_location": (
+    "user_preferences.user_location": (
         lambda context_manager, username: _resolve_user_preference(
             context_manager,
             username,
-            "weather_location",
+            "user_location",
         )
     ),
     "user_preferences.timezone": (

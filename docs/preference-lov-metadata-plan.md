@@ -7,7 +7,12 @@ metadata-driven model to a fully metadata-driven model.
 
 The immediate goal is to stop needing one-off code and APEX patches for
 normal scalar LOV preferences such as `timezone`,
-while preserving the current search-backed `weather_location` flow.
+while preserving the current search-backed `user_location` flow.
+
+`user_location` is the canonical key for the user's configured
+operational/home location. The former `weather_location` key was
+retired and migrated into `user_location`; runtime code and plugin
+entitlements should not keep compatibility fallbacks for the old key.
 
 The long-term goal is:
 
@@ -49,7 +54,7 @@ preference needs a new SQL-backed or search-backed LOV.
 Examples:
 
 - `timezone` required custom handling
-- `weather_location` needed a dedicated branch and HTTP integration
+- `user_location` needed a dedicated branch and HTTP integration
 
 This creates a mismatch between:
 
@@ -167,12 +172,12 @@ For popup-LOV or search-driven preferences, allow the SQL to consume:
 
 This is especially important for:
 
-- `weather_location`
+- `user_location`
 
 The resolver should allow current-value replay even when the search term
 is empty, so an already-saved selection can still render.
 
-For phase 1, `weather_location` remains a curated packaged path rather
+For phase 1, `user_location` remains a curated packaged path rather
 than a generic SQL LOV. Its metadata remains useful for form rendering,
 but its execution and page-6 interaction model stay specialised.
 
@@ -215,10 +220,10 @@ APEX should not need special preference-key logic for:
 
 Phase-1 exception:
 
-- `weather_location` keeps its dedicated page-6 search term item,
+- `user_location` keeps its dedicated page-6 search term item,
   selected-location display item, search button, results region, and
   JSON save/load handling
-- page 6 must preserve existing `weather_location` behaviour unchanged
+- page 6 must preserve existing `user_location` behaviour unchanged
   until a richer metadata model exists for search-backed JSON LOVs
 
 ## Preferences To Normalise First
@@ -243,14 +248,14 @@ These should be moved onto the generic metadata-driven LOV path first:
    - `landing_page_id`
    - `timezone`
    - `tts_voice`
-5. Keep `weather_location` as a special packaged path until a richer
+5. Keep `user_location` as a special packaged path until a richer
    metadata model exists for search-backed JSON preferences.
-6. Optionally move `weather_location` onto metadata-driven execution in
+6. Optionally move `user_location` onto metadata-driven execution in
    a later phase once page-6 interaction metadata exists.
 
-## Why `weather_location` May Stay Special Longer
+## Why `user_location` May Stay Special Longer
 
-`weather_location` differs from the others because it:
+`user_location` differs from the others because it:
 
 - calls an external service
 - requires search-aware behaviour
@@ -284,7 +289,7 @@ This plan does not include:
 
 - redesigning `user_preferences`
 - replacing JSON preference storage
-- changing the weather plugin contract
+- moving location data into a weather-plugin-owned table
 - full personality/preference integration work
 - moving APEX to direct execution of stored SQL metadata
 
@@ -296,5 +301,5 @@ The refactor is successful when:
   preference-key branches for normal LOVs
 - `timezone` works from metadata alone
 - packaged SQL LOVs can be introduced through seed data
-- `weather_location` remains usable without weakening security or
+- `user_location` remains usable without weakening security or
   changing current page-6 behaviour

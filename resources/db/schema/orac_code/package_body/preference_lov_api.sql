@@ -171,7 +171,7 @@ create or replace package body orac_code.preference_lov_api as
     );
   end append_location_row;
 
-  procedure append_current_weather_location(
+  procedure append_current_user_location(
     p_rows          in out nocopy json_array_t,
     p_current_value in varchar2
   ) is
@@ -217,7 +217,7 @@ create or replace package body orac_code.preference_lov_api as
   exception
     when others then
       null;
-  end append_current_weather_location;
+  end append_current_user_location;
 
   procedure validate_sql_lov_query(
     p_pref_key   in t_pref_key,
@@ -370,7 +370,7 @@ create or replace package body orac_code.preference_lov_api as
       raise;
   end append_dynamic_lov_rows;
 
-  procedure append_weather_location_rows(
+  procedure append_user_location_rows(
     p_rows          in out nocopy json_array_t,
     p_search        in varchar2,
     p_current_value in varchar2,
@@ -387,7 +387,7 @@ create or replace package body orac_code.preference_lov_api as
     end if;
 
     if l_search is null or length(l_search) < 3 then
-      append_current_weather_location(
+      append_current_user_location(
         p_rows          => p_rows,
         p_current_value => p_current_value
       );
@@ -434,11 +434,11 @@ create or replace package body orac_code.preference_lov_api as
     end loop;
   exception
     when others then
-      append_current_weather_location(
+      append_current_user_location(
         p_rows          => p_rows,
         p_current_value => p_current_value
       );
-  end append_weather_location_rows;
+  end append_user_location_rows;
 
   function get_lov_json(
     p_pref_key      in orac_api.preference_definitions_v.pref_key%type,
@@ -460,8 +460,8 @@ create or replace package body orac_code.preference_lov_api as
       return l_rows.to_clob;
     end if;
 
-    if l_pref_definition.pref_key = 'weather_location' then
-      append_weather_location_rows(
+    if l_pref_definition.pref_key = 'user_location' then
+      append_user_location_rows(
         p_rows          => l_rows,
         p_search        => p_search,
         p_current_value => p_current_value,

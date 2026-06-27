@@ -13,7 +13,7 @@
     "weather.short_forecast"
   ],
   "entitlements": [
-    "user_preferences.weather_location",
+    "user_preferences.user_location",
     "user_preferences.timezone"
   ],
   "entities": [
@@ -78,7 +78,7 @@
       "weather.short_forecast"
     ],
     "entitlements": [
-      "user_preferences.weather_location",
+      "user_preferences.user_location",
       "user_preferences.timezone"
     ]
   },
@@ -92,7 +92,7 @@
         "section": "weather",
         "key": "default_location",
         "type": "string",
-        "description": "Fallback weather location used when no user preference or explicit location is available."
+        "description": "Fallback user location used when no user preference or explicit location is available."
       }
     ]
   },

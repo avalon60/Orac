@@ -56,7 +56,7 @@ class UserPreferencesValidationTests(unittest.TestCase):
 
         self.assertIn("l_apex_page_item_name := case", export_sql)
         self.assertIn(
-            "when :p6_pref_key = ''weather_location'' "
+            "when :p6_pref_key = ''user_location'' "
             "then ''p6_pref_value_search_term''",
             export_sql,
         )
@@ -207,6 +207,25 @@ class UserPreferencesValidationTests(unittest.TestCase):
         self.assertNotIn("p6_max_number", process_sql)
         self.assertNotIn("p6_step_number", process_sql)
         self.assertNotIn("p6_unit_label", process_sql)
+
+    def test_weather_location_key_is_not_runtime_supported(self) -> None:
+        """The retired location key should only remain in seed migration SQL."""
+        retired_key = "weather" + "_location"
+        checked_paths = (
+            PROJECT_ROOT / "src/controller/orac.py",
+            PROJECT_ROOT / "src/model/plugin_runtime.py",
+            PROJECT_ROOT / "plugins/weather/plugin.py",
+            CODE_ROOT / "package_body/preference_lov_api.sql",
+            CODE_ROOT / "view/user_preferences_display_v.sql",
+            APP_1042_EXPORT,
+        )
+
+        for path in checked_paths:
+            with self.subTest(path=path):
+                self.assertNotIn(
+                    retired_key,
+                    path.read_text(encoding="utf-8"),
+                )
 
     def test_preference_slider_metadata_constraints_are_authoritative(self) -> None:
         """Database metadata should reject invalid slider definitions."""

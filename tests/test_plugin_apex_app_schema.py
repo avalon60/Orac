@@ -348,15 +348,18 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("else", export_sql)
         self.assertIn("to_clob(json_array())", export_sql)
 
-    def test_f1042_weather_location_keeps_dedicated_search_path(self) -> None:
+    def test_f1042_user_location_keeps_dedicated_search_path(self) -> None:
         export_sql = (
             PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
         ).read_text(encoding="utf-8").lower()
 
-        self.assertIn("p_name=>'weather location results'", export_sql)
+        self.assertIn("p_name=>'user location results'", export_sql)
+        self.assertIn("user-location-results", export_sql)
         self.assertIn("p6_pref_key,p6_pref_value_search_term", export_sql)
-        self.assertIn("and :p6_pref_key <> ''weather_location'' then", export_sql)
-        self.assertIn("$v(''p6_pref_key'') === ''weather_location''", export_sql)
+        self.assertIn("and :p6_pref_key <> ''user_location'' then", export_sql)
+        self.assertIn("$v(''p6_pref_key'') === ''user_location''", export_sql)
+        self.assertNotIn("p_name=>'weather location results'", export_sql)
+        self.assertNotIn("weather-location-results", export_sql)
 
     def test_user_preference_seed_hides_unwired_starred_preferences(self) -> None:
         seed_sql = (
@@ -392,12 +395,60 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             "tts_pitch",
             "tts_rate",
             "tts_voice",
+            "user_location",
         )
 
         for pref_key in editable_runtime_preferences:
             with self.subTest(pref_key=pref_key):
                 self.assertEqual(self._seeded_editable_flag(seed_sql, pref_key), "Y")
                 self.assertEqual(self._seeded_active_flag(seed_sql, pref_key), "Y")
+
+    def test_user_location_seed_retires_weather_location(self) -> None:
+        seed_sql = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_core/seed_data/prfdfn_preference_catalog.sql"
+        ).read_text(encoding="utf-8").lower()
+        seed_merge = seed_sql.split(") src", maxsplit=1)[0]
+        user_location_row = self._seeded_row(seed_sql, "user_location")
+
+        self.assertIn("'user location'", user_location_row)
+        self.assertIn("'json'", user_location_row)
+        self.assertIn("'select_one'", user_location_row)
+        self.assertIn("p_pref_key      => 'user_location'", user_location_row)
+        self.assertIn("'profile'", user_location_row)
+        self.assertIn("location-aware features", user_location_row)
+        self.assertNotIn("weather_location", seed_merge)
+        self.assertIn(
+            "delete from orac_core.user_preferences old_pref\n"
+            " where old_pref.pref_key = 'weather_location'",
+            seed_sql,
+        )
+        self.assertIn(
+            "and new_pref.pref_key = 'user_location'",
+            seed_sql,
+        )
+        self.assertIn(
+            "update orac_core.user_preferences\n"
+            "   set pref_key = 'user_location'\n"
+            " where pref_key = 'weather_location'",
+            seed_sql,
+        )
+        self.assertIn(
+            "delete from orac_core.preference_definitions\n"
+            " where pref_key = 'weather_location'",
+            seed_sql,
+        )
+        self.assertLess(
+            seed_sql.index("delete from orac_core.user_preferences old_pref"),
+            seed_sql.index("update orac_core.user_preferences"),
+        )
+        self.assertLess(
+            seed_sql.index("update orac_core.user_preferences"),
+            seed_sql.index(
+                "delete from orac_core.preference_definitions\n"
+                " where pref_key = 'weather_location'"
+            ),
+        )
 
     def test_shipped_config_uses_runtime_preference_default_keys(self) -> None:
         config = configparser.ConfigParser()

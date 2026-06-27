@@ -17,9 +17,16 @@ existing code, including:
 - application code
 - scripts and command line tools
 - database code and install logic
+- standalone utility scripts, even when placed at the repository root
+- SQL*Plus, SQLcl, shell, or PL/SQL helper scripts that execute database,
+  APEX, privilege, ACL, grant, install, restore, or provisioning actions
 - frontend components
 - tests and test harnesses
 - generated or scaffolded source files
+
+A new executable or operational helper is always in scope for review notes,
+even if it is short, manually invoked, environment-specific, or not part of a
+formal deployment path.
 
 Small mechanical edits, formatting-only changes, and documentation-only changes
 do not require a full reviewability note unless they materially affect code
