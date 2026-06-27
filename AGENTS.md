@@ -108,6 +108,16 @@ For Vite/React application changes, also read:
 APEX applications are not part of the `web` tree. Treat APEX exports and APEX
 workspace assets as database-delivered assets under `resources/db/apex`.
 
+## AI-generated code reviewability
+
+Read:
+
+- docs/agent-guardrails/45-ai-generated-code-reviewability.md
+
+when creating new code or making significant changes to existing code,
+including application code, scripts, database code, frontend components, tests,
+or generated/scaffolded source files.
+
 ## Plugins
 
 Read:
