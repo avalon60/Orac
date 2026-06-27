@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Author: Clive Bostock
 # Date: 21 Mar 2026
-# Description: Execute remaining SQL*Plus-owned database setup assets.
+# Description: Execute remaining SQL*Plus-owned database schema setup assets.
 #              Expects schema bundle directories beneath ${BASE_DIR}, with each
 #              bundle containing the ordered subdirectories in DIR_ORDER.
 #              Stops on first error by default; logs each file's output.
@@ -64,8 +64,6 @@ DIR_ORDER=(
   rest_module
   comment
   post_install
-  orac_ws
-  orac_apps
 )
 CORE_LIQUIBASE_BUNDLES=(
   orac_core
@@ -73,10 +71,6 @@ CORE_LIQUIBASE_BUNDLES=(
   orac_code
   orac_apx_pub
   orac
-)
-CORE_SQLPLUS_DIRS=(
-  orac_ws
-  orac_apps
 )
 
 # --- Setup -------------------------------------------------------------------
@@ -130,15 +124,7 @@ is_core_liquibase_bundle() {
 }
 
 is_core_sqlplus_dir() {
-  local dir="$1"
-  local sqlplus_dir
-
-  for sqlplus_dir in "${CORE_SQLPLUS_DIRS[@]}"; do
-    if [[ "$dir" == "$sqlplus_dir" ]]; then
-      return 0
-    fi
-  done
-
+  local _dir="$1"
   return 1
 }
 

@@ -8,7 +8,7 @@ under `web`.
 Orac has two distinct application surfaces:
 
 - APEX applications are database-delivered application assets under
-  `resources/db/schema`.
+  `resources/db/apex`.
 - Web applications are browser/runtime application assets under `web`.
 
 Do not treat these surfaces as interchangeable.
@@ -42,6 +42,8 @@ Key files:
 Runtime notes:
 
 - The app is Vite/React, not Next.js.
+- Active frontend guardrails live in
+  `docs/agent-guardrails/35-frontend-vite-react-standards.md`.
 - The default browser endpoint is `http://localhost:5173`.
 - The display WebSocket defaults to `ws://127.0.0.1:8767`.
 - `bin/orac-web-display.sh` is the preferred local launcher for the display

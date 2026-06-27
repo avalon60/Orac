@@ -38,6 +38,35 @@ create or replace package body orac_code.user_preferences_api as
     return l_value_txt;
   end serialise_pref_value;
 
+  function report_validation_failure(
+    p_message             in varchar2,
+    p_apex_page_item_name in varchar2 default null
+  ) return varchar2
+  as
+    l_app_id_txt varchar2(100);
+    l_page_item  varchar2(255);
+  begin
+    l_app_id_txt := nullif(sys_context('APEX$SESSION', 'APP_ID'), '');
+    l_page_item := nullif(trim(p_apex_page_item_name), '');
+
+    if l_app_id_txt is not null then
+      if l_page_item is not null then
+        apex_error.add_error(
+          p_message          => p_message,
+          p_display_location => apex_error.c_inline_with_field_and_notif,
+          p_page_item_name   => l_page_item
+        );
+      else
+        apex_error.add_error(
+          p_message          => p_message,
+          p_display_location => apex_error.c_inline_in_notification
+        );
+      end if;
+    end if;
+
+    return p_message;
+  end report_validation_failure;
+
   function select_value_allowed(
     p_pref_key        in orac_api.user_preferences_v.pref_key%type,
     p_lov_type        in orac_api.preference_definitions_v.lov_type%type,
@@ -152,9 +181,10 @@ create or replace package body orac_code.user_preferences_api as
   end select_value_allowed;
 
   function validate_preference_value(
-    p_pref_key     in orac_api.user_preferences_v.pref_key%type,
-    p_pref_value   in orac_api.user_preferences_v.pref_value%type,
-    p_value_type   in orac_api.user_preferences_v.value_type%type default null
+    p_pref_key             in orac_api.user_preferences_v.pref_key%type,
+    p_pref_value           in orac_api.user_preferences_v.pref_value%type,
+    p_value_type           in orac_api.user_preferences_v.value_type%type default null,
+    p_apex_page_item_name  in varchar2 default null
   ) return varchar2
   as
     l_pref_definition   orac_api.preference_definitions_v%rowtype;
@@ -165,7 +195,19 @@ create or replace package body orac_code.user_preferences_api as
     l_serialised_value  varchar2(4000);
     l_is_string_value   varchar2(1);
     l_number_value      number;
+    l_step_remainder    number;
     l_allow_zero_lov    boolean := false;
+
+    function fail(
+      p_message in varchar2
+    ) return varchar2
+    as
+    begin
+      return report_validation_failure(
+        p_message             => p_message,
+        p_apex_page_item_name => p_apex_page_item_name
+      );
+    end fail;
   begin
     begin
       select *
@@ -174,23 +216,38 @@ create or replace package body orac_code.user_preferences_api as
        where pref_key = p_pref_key;
     exception
       when no_data_found then
-        return 'Unknown preference key: ' || p_pref_key;
+        return fail('Unknown preference key: ' || p_pref_key);
     end;
 
     l_value_type := coalesce(p_value_type, l_pref_definition.value_type);
     l_display_label := coalesce(l_pref_definition.display_label, p_pref_key);
 
     if nvl(l_pref_definition.is_active, 'N') <> 'Y' then
-      return 'Preference "' || l_display_label || '" is not active.';
+      return fail('Preference "' || l_display_label || '" is not active.');
     end if;
 
     if nvl(l_pref_definition.is_user_editable, 'N') <> 'Y' then
-      return 'Preference "' || l_display_label || '" is not editable.';
+      return fail('Preference "' || l_display_label || '" is not editable.');
     end if;
 
     if l_value_type <> l_pref_definition.value_type then
-      return 'Preference "' || l_display_label || '" expects value type '
-        || l_pref_definition.value_type || '.';
+      return fail(
+        'Preference "' || l_display_label || '" expects value type '
+        || l_pref_definition.value_type || '.'
+      );
+    end if;
+
+    if l_pref_definition.control_type = 'slider' then
+      if l_pref_definition.value_type <> 'number'
+         or l_pref_definition.min_number is null
+         or l_pref_definition.max_number is null
+         or l_pref_definition.step_number is null
+         or l_pref_definition.step_number <= 0
+         or l_pref_definition.min_number > l_pref_definition.max_number then
+        return fail(
+          'Preference "' || l_display_label || '" has invalid slider metadata.'
+        );
+      end if;
     end if;
 
     l_serialised_value := serialise_pref_value(p_pref_value);
@@ -210,13 +267,13 @@ create or replace package body orac_code.user_preferences_api as
 
     if nvl(l_pref_definition.is_required, 'N') = 'Y' then
       if l_value_type = 'string' and trim(l_string_value) is null then
-        return 'Preference "' || l_display_label || '" is required.';
+        return fail('Preference "' || l_display_label || '" is required.');
       elsif l_value_type = 'number' and l_number_value is null then
-        return 'Preference "' || l_display_label || '" is required.';
+        return fail('Preference "' || l_display_label || '" is required.');
       elsif l_value_type = 'boolean' and l_boolean_value not in ('true', 'false') then
-        return 'Preference "' || l_display_label || '" is required.';
+        return fail('Preference "' || l_display_label || '" is required.');
       elsif l_value_type = 'json' and (l_serialised_value is null or trim(l_serialised_value) = 'null') then
-        return 'Preference "' || l_display_label || '" is required.';
+        return fail('Preference "' || l_display_label || '" is required.');
       end if;
     end if;
 
@@ -224,53 +281,86 @@ create or replace package body orac_code.user_preferences_api as
       if l_string_value is null
          and l_serialised_value is not null
          and l_is_string_value <> 'Y' then
-        return 'Preference "' || l_display_label || '" must be stored as text.';
+        return fail('Preference "' || l_display_label || '" must be stored as text.');
       end if;
 
       if l_pref_definition.min_length is not null
          and length(l_string_value) < l_pref_definition.min_length then
-        return 'Preference "' || l_display_label || '" must be at least '
-          || l_pref_definition.min_length || ' characters.';
+        return fail(
+          'Preference "' || l_display_label || '" must be at least '
+          || l_pref_definition.min_length || ' characters.'
+        );
       end if;
 
       if l_pref_definition.max_length is not null
          and length(l_string_value) > l_pref_definition.max_length then
-        return 'Preference "' || l_display_label || '" must be at most '
-          || l_pref_definition.max_length || ' characters.';
+        return fail(
+          'Preference "' || l_display_label || '" must be at most '
+          || l_pref_definition.max_length || ' characters.'
+        );
       end if;
 
       if l_pref_definition.regex_pattern is not null
          and l_string_value is not null
          and not regexp_like(l_string_value, l_pref_definition.regex_pattern) then
-        return 'Preference "' || l_display_label || '" has an invalid format.';
+        return fail('Preference "' || l_display_label || '" has an invalid format.');
       end if;
     elsif l_value_type = 'number' then
       if l_number_value is null and l_serialised_value is not null then
-        return 'Preference "' || l_display_label || '" must be numeric.';
+        return fail('Preference "' || l_display_label || '" must be numeric.');
       end if;
 
       if l_pref_definition.min_number is not null
          and l_number_value < l_pref_definition.min_number then
-        return 'Preference "' || l_display_label || '" must be at least '
-          || to_char(l_pref_definition.min_number) || '.';
+        return fail(
+          'Preference "' || l_display_label || '" must be at least '
+          || to_char(l_pref_definition.min_number) || '.'
+        );
       end if;
 
       if l_pref_definition.max_number is not null
          and l_number_value > l_pref_definition.max_number then
-        return 'Preference "' || l_display_label || '" must be at most '
-          || to_char(l_pref_definition.max_number) || '.';
+        return fail(
+          'Preference "' || l_display_label || '" must be at most '
+          || to_char(l_pref_definition.max_number) || '.'
+        );
+      end if;
+
+      if l_pref_definition.step_number is not null
+         and l_pref_definition.step_number <= 0 then
+        return fail(
+          'Preference "' || l_display_label || '" has invalid step metadata.'
+        );
+      end if;
+
+      if l_pref_definition.step_number is not null
+         and l_number_value is not null then
+        l_step_remainder := mod(
+          l_number_value - coalesce(l_pref_definition.min_number, 0),
+          l_pref_definition.step_number
+        );
+
+        if l_step_remainder <> 0 then
+          return fail(
+            'Preference "' || l_display_label
+            || '" must align to step '
+            || to_char(l_pref_definition.step_number) || '.'
+          );
+        end if;
       end if;
     elsif l_value_type = 'boolean' then
       if l_boolean_value is not null and l_boolean_value not in ('true', 'false') then
-        return 'Preference "' || l_display_label || '" must be true or false.';
+        return fail('Preference "' || l_display_label || '" must be true or false.');
       end if;
     elsif l_value_type = 'json' then
       if l_serialised_value is null and p_pref_value is not null then
-        return 'Preference "' || l_display_label || '" must contain valid JSON.';
+        return fail('Preference "' || l_display_label || '" must contain valid JSON.');
       end if;
     else
-      return 'Preference "' || l_display_label || '" has unsupported value type '
-        || l_value_type || '.';
+      return fail(
+        'Preference "' || l_display_label || '" has unsupported value type '
+        || l_value_type || '.'
+      );
     end if;
 
     if l_pref_definition.control_type in ('select_list', 'popup_lov')
@@ -293,7 +383,10 @@ create or replace package body orac_code.user_preferences_api as
                             end,
         p_allow_zero_lov => l_allow_zero_lov
       ) then
-        return 'Preference "' || l_display_label || '" must use one of the available selections.';
+        return fail(
+          'Preference "' || l_display_label
+          || '" must use one of the available selections.'
+        );
       end if;
     end if;
 
@@ -301,16 +394,18 @@ create or replace package body orac_code.user_preferences_api as
   end validate_preference_value;
 
   procedure assert_valid_preference_value(
-    p_pref_key     in orac_api.user_preferences_v.pref_key%type,
-    p_pref_value   in orac_api.user_preferences_v.pref_value%type,
-    p_value_type   in orac_api.user_preferences_v.value_type%type
+    p_pref_key             in orac_api.user_preferences_v.pref_key%type,
+    p_pref_value           in orac_api.user_preferences_v.pref_value%type,
+    p_value_type           in orac_api.user_preferences_v.value_type%type,
+    p_apex_page_item_name  in varchar2 default null
   ) as
     l_error_message varchar2(4000);
   begin
     l_error_message := validate_preference_value(
-      p_pref_key   => p_pref_key,
-      p_pref_value => p_pref_value,
-      p_value_type => p_value_type
+      p_pref_key             => p_pref_key,
+      p_pref_value           => p_pref_value,
+      p_value_type           => p_value_type,
+      p_apex_page_item_name  => p_apex_page_item_name
     );
 
     if l_error_message is not null then
@@ -324,13 +419,15 @@ create or replace package body orac_code.user_preferences_api as
     p_pref_key     in     orac_api.user_preferences_v.pref_key%type,
     p_pref_value   in     orac_api.user_preferences_v.pref_value%type,
     p_value_type   in     orac_api.user_preferences_v.value_type%type,
-    p_row_version     out orac_api.user_preferences_v.row_version%type
+    p_row_version     out orac_api.user_preferences_v.row_version%type,
+    p_apex_page_item_name in varchar2 default null
   ) as
   begin
     assert_valid_preference_value(
-      p_pref_key   => p_pref_key,
-      p_pref_value => p_pref_value,
-      p_value_type => p_value_type
+      p_pref_key             => p_pref_key,
+      p_pref_value           => p_pref_value,
+      p_value_type           => p_value_type,
+      p_apex_page_item_name  => p_apex_page_item_name
     );
 
     orac_api.user_preferences_tapi.ins(
@@ -349,13 +446,15 @@ create or replace package body orac_code.user_preferences_api as
     p_pref_key     in     orac_api.user_preferences_v.pref_key%type,
     p_pref_value   in     orac_api.user_preferences_v.pref_value%type,
     p_value_type   in     orac_api.user_preferences_v.value_type%type,
-    p_row_version     out orac_api.user_preferences_v.row_version%type
+    p_row_version     out orac_api.user_preferences_v.row_version%type,
+    p_apex_page_item_name in varchar2 default null
   ) as
   begin
     assert_valid_preference_value(
-      p_pref_key   => p_pref_key,
-      p_pref_value => p_pref_value,
-      p_value_type => p_value_type
+      p_pref_key             => p_pref_key,
+      p_pref_value           => p_pref_value,
+      p_value_type           => p_value_type,
+      p_apex_page_item_name  => p_apex_page_item_name
     );
 
     orac_api.user_preferences_tapi.upd(

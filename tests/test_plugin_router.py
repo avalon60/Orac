@@ -467,6 +467,34 @@ class PluginArbiterTests(unittest.TestCase):
         self.assertEqual(decision.decision_type, "execute_plugin")
         self.assertEqual(decision.selected_plugin_id, "home_assistant")
 
+    def test_home_assistant_resync_directives_execute(self) -> None:
+        arbiter = PluginArbiter()
+
+        for utterance in (
+            "Sync Home Assistant devices",
+            "Synchronize Home Assistant Devices",
+            "Synchronise Home Assistant Devices",
+            "Sink devices",
+        ):
+            with self.subTest(utterance=utterance):
+                decision = arbiter.arbitrate(
+                    utterance=utterance,
+                    candidates=(
+                        self._candidate(
+                            capability_id="home_assistant.resync",
+                            intent_name="resync_home_assistant",
+                            confidence=0.95,
+                        ),
+                    ),
+                )
+
+                self.assertEqual(decision.decision_type, "execute_plugin")
+                self.assertEqual(decision.selected_plugin_id, "home_assistant")
+                self.assertEqual(
+                    decision.selected_capability_id,
+                    "home_assistant.resync",
+                )
+
     def test_design_sentence_with_device_words_falls_back(self) -> None:
         decision = PluginArbiter().arbitrate(
             utterance="The lounge lamp problem is a good example for the design document",

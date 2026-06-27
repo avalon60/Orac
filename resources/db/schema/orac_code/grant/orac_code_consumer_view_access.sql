@@ -44,6 +44,10 @@ grant read on orac_code.plugin_apex_app_menu_v to orac_apx_pub;
 grant read on orac_code.plugin_apex_app_menu_visible_v to orac_apx_pub;
 --rollback revoke read on orac_code.plugin_apex_app_menu_visible_v from orac_apx_pub;
 
+--changeset clive:grant_orac_code_plugin_apex_apps_v_to_orac_apx_pub_22 context:core labels:core stripComments:false runOnChange:true
+grant read on orac_code.plugin_apex_apps_v to orac_apx_pub;
+--rollback revoke read on orac_code.plugin_apex_apps_v from orac_apx_pub;
+
 --changeset clive:grant_orac_code_messages_per_day_v_to_orac_10 context:core labels:core stripComments:false runOnChange:true
 grant select on orac_code.messages_per_day_v to orac;
 --rollback revoke select on orac_code.messages_per_day_v from orac;

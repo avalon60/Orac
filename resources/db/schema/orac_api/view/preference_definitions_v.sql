@@ -16,6 +16,11 @@ create or replace force view orac_api.preference_definitions_v as
       , default_value
       , min_number
       , max_number
+      , step_number
+      , unit_label
+      , display_min_label
+      , display_max_label
+      , display_value_format
       , min_length
       , max_length
       , regex_pattern

@@ -26,7 +26,16 @@ __description__ = "Dispatches narrow Home Assistant commands to managed services
 
 _RESYNC_COMMANDS = {
     "resync devices",
+    "resync home assistant devices",
     "sync devices",
+    "sync home assistant devices",
+    "synchronize devices",
+    "synchronize home assistant",
+    "synchronize home assistant devices",
+    "synchronise devices",
+    "synchronise home assistant",
+    "synchronise home assistant devices",
+    "sink devices",
     "resync home assistant",
 }
 

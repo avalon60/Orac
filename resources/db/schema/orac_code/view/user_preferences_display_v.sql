@@ -12,6 +12,9 @@ select
   p.pref_key,
   p.value_type,
   p.row_version,
+  coalesce(d.is_active, 'N') as is_active,
+  coalesce(d.is_user_editable, 'N') as is_user_editable,
+  d.display_sequence,
   case
     when p.pref_key = 'weather_location' then
       case

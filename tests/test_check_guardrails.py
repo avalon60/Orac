@@ -124,18 +124,36 @@ def test_valid_top_level_guardrail_names_are_allowed(tmp_path: Path) -> None:
     assert check_guardrails.validate_guardrail_tree(tmp_path) == []
 
 
-def test_nested_guardrail_docs_do_not_need_numeric_names(tmp_path: Path) -> None:
+def test_active_vite_react_guardrail_name_is_allowed(tmp_path: Path) -> None:
     guardrail_dir = tmp_path / "docs/agent-guardrails"
-    nested_dir = guardrail_dir / "frontend-nextjs/nextjs"
-    nested_dir.mkdir(parents=True)
-    (guardrail_dir / "35-frontend-nextjs-standards.md").write_text(
+    guardrail_dir.mkdir(parents=True)
+    (guardrail_dir / "35-frontend-vite-react-standards.md").write_text(
         "# ok\n",
         encoding="utf-8",
     )
-    (nested_dir / "index.md").write_text("# nested\n", encoding="utf-8")
-    (nested_dir / "async-patterns.md").write_text("# nested\n", encoding="utf-8")
 
     assert check_guardrails.validate_guardrail_tree(tmp_path) == []
+
+
+def test_non_guardrail_docs_are_not_active_guardrail_tree(tmp_path: Path) -> None:
+    guardrail_dir = tmp_path / "docs/agent-guardrails"
+    inactive_dir = tmp_path / "docs/notes"
+    guardrail_dir.mkdir(parents=True)
+    inactive_dir.mkdir(parents=True)
+    (guardrail_dir / "35-frontend-vite-react-standards.md").write_text(
+        "# ok\n",
+        encoding="utf-8",
+    )
+    (inactive_dir / "not-an-active-guardrail.md").write_text(
+        "[broken](missing-reference.md)\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "AGENTS.md").write_text(
+        "- docs/agent-guardrails/35-frontend-vite-react-standards.md\n",
+        encoding="utf-8",
+    )
+
+    assert check_guardrails.run_checks(tmp_path) == []
 
 
 def test_current_agents_guardrail_references_resolve() -> None:

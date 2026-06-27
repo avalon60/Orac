@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 import json
+import os
 import re
 from pathlib import Path
 import sys
@@ -173,6 +174,49 @@ class _FakeLLM:
         yield text
         if self.stream_usage_metadata is not None and on_usage_metadata is not None:
             on_usage_metadata(self.stream_usage_metadata)
+
+
+class _SplitThinkStreamingLLM(_FakeLLM):
+    """Streams a response with reasoning tags split across chunk boundaries."""
+
+    def stream_prompt_deltas(
+        self,
+        prompt_type: str,
+        prompt: str,
+        generation_options: dict | None = None,
+        on_usage_metadata=None,
+    ):
+        """Yield deliberately split deltas."""
+        del prompt_type, on_usage_metadata
+        self.prompts.append(prompt)
+        self.generation_options_seen.append(generation_options)
+        for delta in ("Visible ", "<thi", "nk>hidden</thi", "nk> done."):
+            yield delta
+
+
+class _FakeConfigManager:
+    """Small config manager for preference-resolution tests."""
+
+    def __init__(self, values: dict[tuple[str, str], object] | None = None) -> None:
+        self.values = values or {}
+
+    def config_value(
+        self,
+        section: str,
+        key: str,
+        default: str | None = None,
+    ) -> str:
+        value = self.values.get((section, key), default)
+        if value is None:
+            raise KeyError(f"Missing config key {section}.{key}")
+        return str(value)
+
+    def section_dict(self, section: str) -> dict[str, str]:
+        return {
+            key: str(value)
+            for (stored_section, key), value in self.values.items()
+            if stored_section == section
+        }
 
 
 class _ProbeLLM:
@@ -1399,6 +1443,213 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("Session timezone preference: America/New_York.", prompt)
         self.assertNotIn("Session timezone preference: Europe/Paris.", prompt)
+
+    def test_preference_resolution_records_sources_and_precedence(self) -> None:
+        """Runtime preferences should follow request > saved > config > built-in."""
+        context_manager = _MemoryContextManager()
+        context_manager.user_preferences[("clive", "timezone")] = "Europe/Paris"
+        context_manager.user_preferences[("clive", "force_concise")] = "true"
+        orchestrator = self._make_orac_stub(
+            llm_responses=[],
+            context_manager=context_manager,
+        )
+        orchestrator.config_mgr = _FakeConfigManager(
+            {
+                ("settings", "timezone_default"): "America/New_York",
+                ("settings", "date_format_default"): "YYYY-MM-DD HH24:MI",
+                ("settings", "force_concise_default"): "false",
+            }
+        )
+
+        with patch.object(orac_module, "resolve_tts_voice_selection", return_value=None):
+            meta = orchestrator._apply_user_preference_meta(
+                {"date_format": "DD/MM/YYYY HH24:MI"},
+                "clive",
+            )
+
+        self.assertEqual(meta["timezone"], "Europe/Paris")
+        self.assertEqual(meta["date_format"], "DD/MM/YYYY HH24:MI")
+        self.assertTrue(meta["force_concise"])
+        self.assertFalse(meta["show_reasoning"])
+        self.assertEqual(
+            meta["_preference_sources"]["timezone"],
+            "saved_preference",
+        )
+        self.assertEqual(meta["_preference_sources"]["date_format"], "request")
+        self.assertEqual(
+            meta["_preference_sources"]["show_reasoning"],
+            "built_in_default",
+        )
+
+    def test_invalid_saved_preference_falls_back_and_logs(self) -> None:
+        """Invalid saved values should fall back safely with a warning."""
+        context_manager = _MemoryContextManager()
+        context_manager.user_preferences[("clive", "timezone")] = "Not/AZone"
+        orchestrator = self._make_orac_stub(
+            llm_responses=[],
+            context_manager=context_manager,
+        )
+        orchestrator.config_mgr = _FakeConfigManager(
+            {("settings", "timezone_default"): "America/New_York"}
+        )
+
+        with patch.object(orac_module, "resolve_tts_voice_selection", return_value=None):
+            meta = orchestrator._apply_user_preference_meta({}, "clive")
+
+        self.assertEqual(meta["timezone"], "America/New_York")
+        self.assertEqual(meta["_preference_sources"]["timezone"], "config_default")
+        self.assertTrue(
+            any(
+                level == "warning" and "Ignoring invalid saved timezone" in message
+                for level, message in orac_module.logger.messages
+            )
+        )
+
+    def test_date_format_affects_clock_context(self) -> None:
+        """Date format should affect user-facing clock text."""
+        clock = orac_module.system_clock_line(
+            {
+                "timezone": "UTC",
+                "date_format": "YYYY-MM-DD HH24:MI",
+            }
+        )
+
+        self.assertRegex(clock, r"User-facing local time: \d{4}-\d{2}-\d{2} \d{2}:\d{2}")
+        self.assertIn("Use date format YYYY-MM-DD HH24:MI.", clock)
+
+    async def test_max_tokens_preference_reaches_generation_options(self) -> None:
+        """Saved max_tokens should set provider-neutral num_predict."""
+        context_manager = _MemoryContextManager()
+        context_manager.user_preferences[("clive", "max_tokens")] = "640"
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Bounded answer."],
+            context_manager=context_manager,
+        )
+
+        wire = await orchestrator.handle_request(
+            self._request("Answer with a bounded budget.", req_id="req-max-tokens")
+        )
+        response = json.loads(wire)
+
+        self.assertEqual(response["meta"]["status"], "ok")
+        self.assertEqual(
+            orchestrator.llm.generation_options_seen[-1]["num_predict"],
+            640,
+        )
+
+    async def test_non_streaming_reasoning_stripping_respects_preference(self) -> None:
+        """Resolved strip_reasoning_tags should control non-streaming output."""
+        context_manager = _MemoryContextManager()
+        context_manager.user_preferences[("clive", "strip_reasoning_tags")] = "true"
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Visible <think>hidden reasoning</think> done."],
+            context_manager=context_manager,
+        )
+
+        wire = await orchestrator.handle_request(
+            self._request("Reply visibly.", req_id="req-strip-nonstream")
+        )
+        response = json.loads(wire)
+        content = response["payload"]["content"]
+
+        self.assertIn("Visible", content)
+        self.assertIn("done.", content)
+        self.assertNotIn("hidden reasoning", content)
+        self.assertNotIn("<think>", content)
+
+    async def test_streaming_reasoning_stripping_is_chunk_boundary_safe(self) -> None:
+        """Streaming removal should handle split <think> tags safely."""
+        context_manager = _MemoryContextManager()
+        context_manager.user_preferences[("clive", "strip_reasoning_tags")] = "true"
+        orchestrator = self._make_orac_stub(
+            llm_responses=[],
+            context_manager=context_manager,
+        )
+        orchestrator.llm = _SplitThinkStreamingLLM([])
+        orchestrator._get_llm_connector = lambda **kwargs: orchestrator.llm
+        stream_frames: list[dict[str, object]] = []
+
+        async def _event_sink(event: dict[str, object]) -> None:
+            stream_frames.append(dict(event))
+
+        wire = await orchestrator.handle_request(
+            self._request(
+                "Stream visibly.",
+                req_id="req-strip-stream",
+                meta={"stream": True},
+            ),
+            event_sink=_event_sink,
+        )
+        response = json.loads(wire)
+        emitted = "".join(
+            str(frame.get("payload", {}).get("delta", ""))
+            for frame in stream_frames
+            if frame.get("type") == "text_delta"
+        )
+
+        self.assertEqual(response["meta"]["status"], "ok")
+        self.assertIn("Visible", emitted)
+        self.assertIn("done.", emitted)
+        self.assertNotIn("hidden", emitted)
+        self.assertNotIn("<think>", emitted)
+        self.assertNotIn("</think>", emitted)
+        self.assertEqual(response["payload"]["content"], emitted.strip())
+
+    def test_force_concise_prompt_instruction_is_conditional(self) -> None:
+        """Concise wording should only appear for a true resolved preference."""
+        orchestrator = self._make_orac_stub(llm_responses=[])
+
+        normal_prompt = orchestrator._build_contextual_prompt(
+            "session-1",
+            "Explain something.",
+            {"force_concise": False},
+            "clive",
+        )
+        concise_prompt = orchestrator._build_contextual_prompt(
+            "session-1",
+            "Explain something.",
+            {"force_concise": True},
+            "clive",
+        )
+
+        self.assertNotIn("Keep answers concise.", normal_prompt)
+        self.assertNotIn("Keep the reply concise.", normal_prompt)
+        self.assertIn("Keep answers concise.", concise_prompt)
+
+    def test_ambiguous_preference_config_keys_fail_in_strict_mode(self) -> None:
+        """Strict diagnostics should identify preference and config keys."""
+        orchestrator = Orac.__new__(Orac)
+        orchestrator.config_mgr = _FakeConfigManager(
+            {("settings", "strip_reasoning_tags"): "false"}
+        )
+        orchestrator._preference_config_checked = False
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "strip_reasoning_tags preference conflicts with ambiguous "
+            "config key settings.strip_reasoning_tags",
+        ):
+            orchestrator._check_runtime_preference_config_conflicts()
+
+    def test_ambiguous_preference_config_keys_warn_in_normal_mode(self) -> None:
+        """Normal diagnostics should warn without failing."""
+        orchestrator = Orac.__new__(Orac)
+        orchestrator.config_mgr = _FakeConfigManager(
+            {("settings", "timezone"): "Europe/London"}
+        )
+        orchestrator._preference_config_checked = False
+
+        with patch.dict(os.environ, {"ORAC_STRICT_PREFERENCE_CONFIG": "0"}):
+            orchestrator._check_runtime_preference_config_conflicts()
+
+        self.assertTrue(
+            any(
+                level == "warning"
+                and "timezone preference conflicts with ambiguous config key settings.timezone"
+                in message
+                for level, message in orac_module.logger.messages
+            )
+        )
 
     def test_contextual_prompt_tells_model_retrieval_already_happened(self) -> None:
         """Retrieved evidence should suppress generic no-internet disclaimers."""

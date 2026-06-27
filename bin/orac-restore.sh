@@ -3,9 +3,10 @@
 #
 # Author: Clive Bostock
 # Date: 20-May-2026
-# Purpose: Restore Orac database schemas from an Orac backup archive.
-# Usage: bin/orac-restore.sh [--container NAME] [--pdb NAME] BACKUP_TARBALL
+# Purpose: Restore Orac database schemas from an Orac backup archive or backup directory.
+# Usage: bin/orac-restore.sh [--container NAME] [--pdb NAME] BACKUP_SOURCE
 # Example: bin/orac-restore.sh /backups/orac/orac-backup-20260520-120000.tar.gz
+# Example: bin/orac-restore.sh /backups/orac
 #
 ################################################################################
 
@@ -21,6 +22,7 @@ DOCKER_BIN=${ORAC_DOCKER_BIN:-docker}
 TAR_BIN=${ORAC_TAR_BIN:-tar}
 PYTHON_BIN=${ORAC_PYTHON_BIN:-}
 DRY_RUN=0
+BACKUP_SOURCE=""
 BACKUP_TARBALL=""
 
 if [[ -f "$ENV_FILE" ]]; then
@@ -37,9 +39,12 @@ ORAC_RESTORE_TABLE_EXISTS_ACTION=${ORAC_RESTORE_TABLE_EXISTS_ACTION:-${ORAC_RECO
 
 usage() {
   cat <<EOF
-Usage: $PROG [options] BACKUP_TARBALL
+Usage: $PROG [options] BACKUP_SOURCE
 
-Restore Orac database schemas from a backup archive.
+Restore Orac database schemas from a backup archive or directory.
+
+When BACKUP_SOURCE is a directory, the newest direct orac-backup-*.tar.gz
+archive is selected by filename timestamp.
 
 Options:
   --container NAME   Oracle database container name. Default: ${CONTAINER_NAME}
@@ -138,6 +143,33 @@ clean_sql_output_file() {
   sed -i '/^[[:space:]]*$/d; s/^[[:space:]]*//; s/[[:space:]]*$//' "$output_path"
 }
 
+resolve_backup_tarball() {
+  local source="$1"
+  local -a archives=()
+
+  if [[ -f "$source" ]]; then
+    BACKUP_TARBALL="$source"
+    return 0
+  fi
+
+  if [[ -d "$source" ]]; then
+    mapfile -d '' -t archives < <(
+      find "$source" -maxdepth 1 -type f -name 'orac-backup-*.tar.gz' -print0 | sort -z
+    )
+
+    [[ "${#archives[@]}" -gt 0 ]] || fail "No Orac backup archives found in directory: $source"
+    BACKUP_TARBALL="${archives[$((${#archives[@]} - 1))]}"
+    log "Selected newest backup archive: ${BACKUP_TARBALL}"
+    return 0
+  fi
+
+  if [[ -e "$source" ]]; then
+    fail "Backup source is not a regular file or directory: $source"
+  fi
+
+  fail "Backup source not found: $source"
+}
+
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -163,15 +195,15 @@ parse_args() {
         fail "Unknown option: $1"
         ;;
       *)
-        [[ -z "$BACKUP_TARBALL" ]] || fail "Only one BACKUP_TARBALL may be supplied"
-        BACKUP_TARBALL="$1"
+        [[ -z "$BACKUP_SOURCE" ]] || fail "Only one BACKUP_SOURCE may be supplied"
+        BACKUP_SOURCE="$1"
         shift
         ;;
     esac
   done
 
-  [[ -n "$BACKUP_TARBALL" ]] || fail "BACKUP_TARBALL is required"
-  [[ -f "$BACKUP_TARBALL" ]] || fail "Backup tarball not found: $BACKUP_TARBALL"
+  [[ -n "$BACKUP_SOURCE" ]] || fail "BACKUP_SOURCE is required"
+  resolve_backup_tarball "$BACKUP_SOURCE"
 }
 
 read_current_version() {
@@ -223,6 +255,7 @@ work_dir = Path(sys.argv[4])
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 database = manifest.get("database") or {}
 schema_name_pattern = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+plugin_id_pattern = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 
 (work_dir / "backup_version.txt").write_text(str(manifest.get("orac_version", "unknown")) + "\n", encoding="utf-8")
 (work_dir / "dump_file.txt").write_text(str(database.get("dump_file") or "") + "\n", encoding="utf-8")
@@ -240,6 +273,24 @@ backup_plugins = {
     for item in manifest.get("plugins", [])
     if item.get("plugin_id")
 }
+schema_plugins = {}
+for backup_plugin in manifest.get("plugins", []):
+    plugin_id = str(backup_plugin.get("plugin_id") or "").strip()
+    if not plugin_id_pattern.fullmatch(plugin_id):
+        continue
+    for schema_name in backup_plugin.get("database_schemas") or []:
+        if not isinstance(schema_name, str) or not schema_name_pattern.fullmatch(schema_name):
+            continue
+        schema_plugins.setdefault(schema_name.lower(), set()).add(plugin_id)
+
+schema_plugin_lines = [
+    f"{schema_name}\t{','.join(sorted(plugin_ids))}"
+    for schema_name, plugin_ids in sorted(schema_plugins.items())
+]
+(work_dir / "schema_plugins.tsv").write_text(
+    "\n".join(schema_plugin_lines) + ("\n" if schema_plugin_lines else ""),
+    encoding="utf-8",
+)
 current_plugins = {}
 for plugin_path in sorted(plugins_dir.glob("*.json")):
     plugin_manifest = json.loads(plugin_path.read_text(encoding="utf-8"))
@@ -278,6 +329,93 @@ sql_quoted_csv_from_schema_file() {
 uppercase_csv_from_file() {
   local file_path="$1"
   awk 'NF { print toupper($0) }' "$file_path" | paste -sd, -
+}
+
+query_existing_restore_schemas() {
+  local schemas_path="$1"
+  local output_path="$2"
+  local owner_list
+
+  owner_list=$(sql_quoted_csv_from_schema_file "$schemas_path")
+  : >"$output_path"
+  [[ -n "$owner_list" ]] || return 0
+
+  if ! "$DOCKER_BIN" exec -i "$CONTAINER_NAME" sqlplus -L -s / as sysdba >"$output_path" <<SQL
+set heading off feedback off pagesize 0 verify off echo off trimspool on
+whenever sqlerror exit sql.sqlcode
+alter session set container=${ORACLE_PDB};
+select lower(username)
+  from dba_users
+ where username in (${owner_list})
+ order by username;
+exit
+SQL
+  then
+    fail "Restore schema preflight query failed"
+  fi
+  clean_sql_output_file "$output_path"
+}
+
+write_missing_schemas() {
+  local requested_path="$1"
+  local existing_path="$2"
+  local missing_path="$3"
+
+  awk 'NF { print tolower($0) }' "$existing_path" | sort >"${existing_path}.sorted"
+  awk 'NF { print tolower($0) }' "$requested_path" | sort >"${requested_path}.sorted"
+  comm -23 "${requested_path}.sorted" "${existing_path}.sorted" >"$missing_path"
+}
+
+print_missing_schema_guidance() {
+  local missing_path="$1"
+  local schema_plugins_path="$2"
+  local command_path="${WORK_PARENT}/missing_schema_install_commands.txt"
+  local schema_name
+  local plugin_ids
+  local plugin_id
+  local -a plugin_id_array
+
+  : >"$command_path"
+  log ""
+  log "Missing schema(s) required for data-only restore:"
+  while IFS= read -r schema_name; do
+    [[ -n "$schema_name" ]] || continue
+    plugin_ids=$(awk -F '\t' -v schema="$schema_name" '$1 == schema { print $2; exit }' "$schema_plugins_path")
+    if [[ -n "$plugin_ids" ]]; then
+      log "  - ${schema_name^^} (plugin: ${plugin_ids})"
+      IFS=',' read -ra plugin_id_array <<<"$plugin_ids"
+      for plugin_id in "${plugin_id_array[@]}"; do
+        [[ -n "$plugin_id" ]] || continue
+        printf 'bin/orac-plugin.sh install --bundled %s\n' "$plugin_id" >>"$command_path"
+      done
+    else
+      log "  - ${schema_name^^}"
+    fi
+  done <"$missing_path"
+
+  if [[ -s "$command_path" ]]; then
+    sort -u "$command_path" -o "$command_path"
+    log ""
+    log "Install missing plugin schema objects before rerunning restore, for example:"
+    sed 's/^/  - /' "$command_path"
+  fi
+}
+
+preflight_data_only_restore_schemas() {
+  local schemas_path="$1"
+  local schema_plugins_path="$2"
+  local existing_path="${WORK_PARENT}/existing_restore_schemas.txt"
+  local missing_path="${WORK_PARENT}/missing_restore_schemas.txt"
+
+  [[ "$ORAC_RESTORE_CONTENT" == "data_only" ]] || return 0
+
+  log "Checking target schemas for data-only restore."
+  query_existing_restore_schemas "$schemas_path" "$existing_path"
+  write_missing_schemas "$schemas_path" "$existing_path" "$missing_path"
+  if [[ -s "$missing_path" ]]; then
+    print_missing_schema_guidance "$missing_path" "$schema_plugins_path"
+    fail "Data-only restore requires all exported schemas to exist in the target database. Install the missing plugin schema objects or use an explicitly prepared full metadata restore target."
+  fi
 }
 
 ensure_datapump_directory() {
@@ -441,6 +579,49 @@ normalize_restored_imported_state() {
 
   log "Recompiling restored schemas."
   recompile_schema_list "$schemas_path"
+}
+
+verify_restore_recovery_api() {
+  local output_path="${WORK_PARENT}/restore_recovery_api_objects.tsv"
+  local object_count
+  local valid_count
+
+  log "Verifying post-restore recovery API is installed."
+  if ! "$DOCKER_BIN" exec -i "$CONTAINER_NAME" sqlplus -L -s / as sysdba >"$output_path" <<SQL
+set heading off feedback off pagesize 0 verify off echo off trimspool on linesize 32767
+whenever sqlerror exit sql.sqlcode
+alter session set container=${ORACLE_PDB};
+select object_type || chr(9) || status
+  from all_objects
+ where owner = 'ORAC_CODE'
+   and object_name = 'RESTORE_RECOVERY_API'
+   and object_type in ('PACKAGE', 'PACKAGE BODY')
+ order by object_type;
+exit
+SQL
+  then
+    fail "Restore recovery API preflight query failed"
+  fi
+  clean_sql_output_file "$output_path"
+
+  object_count=$(wc -l <"$output_path" | tr -d '[:space:]')
+  valid_count=$(awk -F '\t' 'NF == 2 && $2 == "VALID" { count++ } END { print count + 0 }' "$output_path")
+  if [[ "$object_count" -ne 2 || "$valid_count" -ne 2 ]]; then
+    fail "Restore requires valid ORAC_CODE.RESTORE_RECOVERY_API package and package body. Stage the restore_recovery_api SQL files into orac-db and run /home/oracle/orac/bin/deploy-orac-db.sh --validate then --update before restoring."
+  fi
+}
+
+quarantine_restored_plugin_state() {
+  log "Quarantining restored plugin runtime state pending plugin reinstall."
+  "$DOCKER_BIN" exec -i "$CONTAINER_NAME" sqlplus -L -s / as sysdba <<SQL
+whenever sqlerror exit sql.sqlcode
+alter session set container=${ORACLE_PDB};
+begin
+  orac_code.restore_recovery_api.quarantine_plugin_state;
+end;
+/
+exit
+SQL
 }
 
 query_invalid_objects() {
@@ -675,6 +856,10 @@ if [[ "$SKIP_DB" == "1" || -z "$DUMP_FILE" ]]; then
   exit 0
 fi
 
+verify_restore_recovery_api
+
+preflight_data_only_restore_schemas "${WORK_PARENT}/schemas.txt" "${WORK_PARENT}/schema_plugins.tsv"
+
 DUMP_PATH=$(find "$EXTRACT_DIR" -path "*/db/${DUMP_FILE}" -print -quit)
 [[ -n "$DUMP_PATH" ]] || fail "Dump file not found in archive: ${DUMP_FILE}"
 
@@ -706,6 +891,10 @@ if [[ "$IMPORT_STATUS" -ne 0 ]]; then
 fi
 
 normalize_restored_imported_state "${WORK_PARENT}/schemas.txt"
+quarantine_restored_plugin_state || {
+  remove_datapump_dump "$DUMP_FILE"
+  fail "Post-restore plugin quarantine failed. Verify ORAC_CODE.RESTORE_RECOVERY_API is installed and valid, then rerun restore."
+}
 remove_datapump_dump "$DUMP_FILE"
 
 log "Restore import complete."

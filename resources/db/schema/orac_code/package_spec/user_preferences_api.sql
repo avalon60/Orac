@@ -9,7 +9,8 @@ create or replace package orac_code.user_preferences_api as
   function validate_preference_value(
     p_pref_key     in orac_api.user_preferences_v.pref_key%type,
     p_pref_value   in orac_api.user_preferences_v.pref_value%type,
-    p_value_type   in orac_api.user_preferences_v.value_type%type default null
+    p_value_type   in orac_api.user_preferences_v.value_type%type default null,
+    p_apex_page_item_name in varchar2 default null
   ) return varchar2;
 
   procedure ins(
@@ -18,7 +19,8 @@ create or replace package orac_code.user_preferences_api as
     p_pref_key     in     orac_api.user_preferences_v.pref_key%type,
     p_pref_value   in     orac_api.user_preferences_v.pref_value%type,
     p_value_type   in     orac_api.user_preferences_v.value_type%type,
-    p_row_version     out orac_api.user_preferences_v.row_version%type
+    p_row_version     out orac_api.user_preferences_v.row_version%type,
+    p_apex_page_item_name in varchar2 default null
   );
 
   procedure upd(
@@ -27,7 +29,8 @@ create or replace package orac_code.user_preferences_api as
     p_pref_key     in     orac_api.user_preferences_v.pref_key%type,
     p_pref_value   in     orac_api.user_preferences_v.pref_value%type,
     p_value_type   in     orac_api.user_preferences_v.value_type%type,
-    p_row_version     out orac_api.user_preferences_v.row_version%type
+    p_row_version     out orac_api.user_preferences_v.row_version%type,
+    p_apex_page_item_name in varchar2 default null
   );
 
   procedure del(

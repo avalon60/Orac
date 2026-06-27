@@ -304,8 +304,17 @@ Recognised phrases:
 
 ```text
 Sync devices
+Sync Home Assistant devices
 Resync devices
 Resync Home Assistant
+Resync Home Assistant devices
+Synchronize devices
+Synchronize Home Assistant
+Synchronize Home Assistant devices
+Synchronise devices
+Synchronise Home Assistant
+Synchronise Home Assistant devices
+Sink devices
 ```
 
 These commands execute the same approved structural and current-state sync path

@@ -16,6 +16,7 @@ create or replace package body orac_code.orac_prefs_seed as
              json_serialize(default_value returning clob) as pref_value
         from orac_api.preference_definitions_v
        where is_active = 'Y'
+         and is_user_editable = 'Y'
          and default_value is not null
          and json_serialize(default_value returning varchar2(4000)) <> 'null'
        order by display_sequence, pref_key
@@ -50,6 +51,7 @@ create or replace package body orac_code.orac_prefs_seed as
              json_serialize(default_value returning clob) as pref_value
        from orac_api.preference_definitions_v
        where is_active = 'Y'
+         and is_user_editable = 'Y'
          and default_value is not null
          and json_serialize(default_value returning varchar2(4000)) <> 'null'
        order by display_sequence, pref_key

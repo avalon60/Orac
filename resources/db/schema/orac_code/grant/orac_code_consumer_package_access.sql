@@ -55,3 +55,7 @@ grant execute on orac_code.plugin_registry_api to orac;
 --changeset clive:grant_orac_code_plugin_apex_app_auth_api_to_orac_apx_pub_13 context:core labels:core stripComments:false runOnChange:true
 grant execute on orac_code.plugin_apex_app_auth_api to orac_apx_pub;
 --rollback revoke execute on orac_code.plugin_apex_app_auth_api from orac_apx_pub;
+
+--changeset clive:grant_orac_code_plugin_apex_app_admin_api_to_orac_apx_pub_14 context:core labels:core stripComments:false runOnChange:true
+grant execute on orac_code.plugin_apex_app_admin_api to orac_apx_pub;
+--rollback revoke execute on orac_code.plugin_apex_app_admin_api from orac_apx_pub;

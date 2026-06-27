@@ -534,7 +534,7 @@ class RetrievalDecisionService:
             self._log_decision(mode, decision)
             return decision
 
-        if effective_person_status_match is not None:
+        if effective_person_status_match is not None and factual_risk_match is None:
             should_retrieve = mode in {"explicit_only", "auto_safe"}
             decision = RetrievalDecision(
                 should_retrieve=should_retrieve,
@@ -554,6 +554,23 @@ class RetrievalDecisionService:
             return decision
 
         if factual_risk_match is not None:
+            if (
+                mode == "suggest_search"
+                and factual_risk_match.reason_code == "factual_risk_current_latest"
+                and previous_context is None
+            ):
+                decision = RetrievalDecision(
+                    should_retrieve=False,
+                    retrieval_type="internet",
+                    confidence=factual_risk_match.confidence,
+                    reason_code=factual_risk_match.reason_code,
+                    user_visible_reason=_CONFIRMATION_MESSAGE,
+                    explicit_request=True,
+                    requires_user_confirmation=True,
+                    search_query=factual_risk_match.search_query,
+                )
+                self._log_decision(mode, decision)
+                return decision
             decision = RetrievalDecision(
                 should_retrieve=True,
                 retrieval_type="internet",
@@ -628,7 +645,14 @@ class RetrievalDecisionService:
                     if freshness_match is not None and freshness_match.search_query
                     else search_query
                 )
-            if mode == "suggest_search" and explicit_freshness_request:
+            if (
+                mode == "suggest_search"
+                and (
+                    explicit_freshness_request
+                    or freshness_match is not None
+                    or _looks_fresh(normalized)
+                )
+            ):
                 decision = RetrievalDecision(
                     should_retrieve=False,
                     retrieval_type="internet",

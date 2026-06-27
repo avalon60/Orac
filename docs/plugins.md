@@ -468,6 +468,66 @@ go to **Shared Components** >
 open the active authentication scheme, expand **Session Sharing**, and set
 **Type** to **Workspace Sharing**.
 
+Plugin APEX apps that are launched from the Orac administration plugin hub
+should also support theme inheritance. The hub passes the request marker
+`ORAC_THEME_SYNC` when it opens the Plugin Apps launcher, and the launcher
+passes the same marker onward when it opens installed plugin apps. A plugin app
+that receives this marker should align its current Universal Theme style with
+application `1042` by matching the active style name.
+
+Add a Before Header PL/SQL process, normally on the plugin app entry page, with
+this pattern:
+
+```sql
+declare
+  l_theme_style_name  apex_application_theme_styles.name%type;
+  l_theme_number      apex_application_themes.theme_number%type;
+  l_target_style_name apex_application_theme_styles.name%type;
+begin
+  if :REQUEST = 'ORAC_THEME_SYNC' then
+    select t.theme_number
+      into l_theme_number
+      from apex_application_themes t
+     where t.application_id = :APP_ID
+       and t.is_current     = 'Yes';
+
+    select s.name
+      into l_theme_style_name
+      from apex_application_theme_styles s,
+           apex_application_themes t
+     where s.application_id = t.application_id
+       and s.theme_number   = t.theme_number
+       and s.application_id = 1042
+       and t.is_current     = 'Yes'
+       and s.is_current     = 'Yes';
+
+    select s.name
+      into l_target_style_name
+      from apex_application_theme_styles s
+     where s.application_id = :APP_ID
+       and s.theme_number   = l_theme_number
+       and s.name           = l_theme_style_name;
+
+    apex_theme.set_session_style(
+      p_application_id => :APP_ID,
+      p_theme_number   => l_theme_number,
+      p_name           => l_target_style_name
+    );
+  end if;
+exception
+  when no_data_found then
+    null;
+end;
+```
+
+The process sets the matching style for the current session only. It explicitly
+checks that the target application contains the hub style name before calling
+`apex_theme.set_session_style`, and remains tolerant of missing style names so
+plugin apps continue to open if the local export does not include a match.
+Plugin app links do not need to assemble this marker themselves when they are
+listed through `orac_code.plugin_apex_app_menu_visible_v`; that approved view
+prepares the launch URL and includes `ORAC_THEME_SYNC` for the installed app.
+
 When `install_required` is true, the plugin installer validates that
 `app_export` exists inside the plugin package and imports the export. Import
 output is captured in the plugin APEX app registry. The installed APEX

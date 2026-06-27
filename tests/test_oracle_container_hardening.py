@@ -16,8 +16,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ORACLE_ROOT = PROJECT_ROOT / "resources" / "docker" / "oracle"
 CHECK_WRAPPER = ORACLE_ROOT / "bin" / "checkDBStatus-orac.sh"
 DOCKERFILE = ORACLE_ROOT / "Dockerfile"
+FOUNDATION_SETUP = ORACLE_ROOT / "setup" / "005-orac-db-foundation.sh"
+OLD_EXTENDED_STRINGS_SETUP = ORACLE_ROOT / "setup" / "999-extended-strings.sh"
 ORDS_SETUP = ORACLE_ROOT / "setup" / "020-setup-ords.sh"
-APEX_ROLE_SETUP = ORACLE_ROOT / "setup" / "038-init-app-role.sh"
+APEX_ROLE_SETUP = ORACLE_ROOT / "setup" / "050-init-app-role.sh"
 ORDS_STARTUP = ORACLE_ROOT / "startup" / "010-start-ords.sh"
 LISTENER_REPAIR = ORACLE_ROOT / "startup" / "005-repair-listener.sh"
 ORDS_POST_INSTALL = ORACLE_ROOT / "setup" / "024-ords-post-install.sql"
@@ -147,14 +149,37 @@ def test_apex_admin_account_is_reset_and_unexpired_during_setup() -> None:
     assert "apex_util.expire_workspace_account" not in script
 
 
-def test_extended_strings_revalidates_before_completion_marker() -> None:
-    script = (ORACLE_ROOT / "setup" / "999-extended-strings.sh").read_text(
+def test_database_foundation_runs_early_and_does_not_complete_deployment() -> None:
+    script = FOUNDATION_SETUP.read_text(encoding="utf-8")
+    completion_script = (ORACLE_ROOT / "setup" / "998-complete-orac.sh").read_text(
         encoding="utf-8"
     )
+    setup_scripts = sorted(path.name for path in (ORACLE_ROOT / "setup").glob("*.sh"))
 
-    assert "emit_deployment_complete_marker" in script
-    assert "ORAC_DEPLOYMENT_COMPLETE_LIB_ONLY=1" in script
-    assert "orac_deployment_complete || return 1" in script
+    assert FOUNDATION_SETUP.is_file()
+    assert not OLD_EXTENDED_STRINGS_SETUP.exists()
+    assert (ORACLE_ROOT / "setup" / "998-complete-orac.sh").is_file()
+    assert setup_scripts.index("005-orac-db-foundation.sh") < setup_scripts.index(
+        "010-apex-install.sh"
+    )
+
+    assert "from v\\$database" in script
+    assert "log_mode" in script
+    assert "from v\\$parameter" in script
+    assert "max_string_size" in script
+    assert (
+        "shutdown immediate;\n"
+        "startup mount;\n"
+        "alter database noarchivelog;\n"
+        "alter database open;\n"
+        "alter pluggable database all open;\n"
+        "alter pluggable database all save state;"
+    ) in script
+    assert "startup mount;\n${noarchivelog_sql}\nalter database open upgrade;" in script
+    assert "emit_deployment_complete_marker" not in script
+    assert "ORAC_DEPLOYMENT_COMPLETE_LIB_ONLY" not in script
+    assert "ORAC deployment complete" not in script
+    assert "ORAC deployment complete" in completion_script
 
 
 def test_canonical_apex_url_is_documented_and_used_by_deploy() -> None:

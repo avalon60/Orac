@@ -20,8 +20,8 @@ response.
 The `web` tree is for browser-based applications and related web runtime assets.
 
 APEX applications are not part of this tree. APEX workspace exports and APEX
-application exports are database assets under `resources/db/schema` and are
-governed by `resources/db/schema/AGENTS.md`.
+application exports are database-delivered assets under `resources/db/apex` and
+are governed by `resources/db/schema/AGENTS.md`.
 
 ## Working Rules
 
@@ -43,5 +43,10 @@ Use the root frontend instructions for user-facing UI quality. Only use
 framework-specific guardrails when they match the application actually being
 changed.
 
-For the current Vite/React display app, do not apply Next.js-specific routing,
-server component, or app-router assumptions.
+For the current Vite/React display app, read:
+
+- docs/agent-guardrails/35-frontend-vite-react-standards.md
+
+Do not apply Next.js-specific routing, server component, or app-router
+assumptions unless a real Next.js app is added to this repository and documented
+in `web/AGENT_CONTEXT.md`.

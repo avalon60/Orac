@@ -13241,8 +13241,7 @@ SQL> SQL> create or replace package body orac.orac_prefs_seed as
  26  	 pipe row('landing_page_id'	 || sep || 'number'  || sep || '0');
  27  	 pipe row('rows_per_report'	 || sep || 'number'  || sep || '50');
  28  
- 29  	 pipe row('email_opt_in'	 || sep || 'boolean' || sep || 'true');
- 30  	 pipe row('push_opt_in' 	 || sep || 'boolean' || sep || 'false');
+ 29  	 pipe row('push_opt_in' 	 || sep || 'boolean' || sep || 'false');
  31  
  32  	 pipe row('tts_voice'		 || sep || 'string'  || sep || '"en-GB-female-1"');
  33  	 pipe row('tts_rate'		 || sep || 'number'  || sep || '0.95');

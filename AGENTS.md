@@ -51,6 +51,18 @@ when changing:
 
 Also read:
 
+- [APEX Standards](docs/agent-guardrails/28-apex-standards.md)
+
+when changing:
+
+- APEX workspace exports
+- APEX application exports
+- APEX pages, regions, cards, navigation, breadcrumbs, authentication, or
+  authorization metadata
+- plugin-supplied APEX exports
+
+Also read:
+
 - docs/agent-guardrails/25-plsql-standards.md
 
 when changing:
@@ -89,8 +101,22 @@ Also read the adjacent web application context file when it exists:
 
 - web/AGENT_CONTEXT.md
 
+For Vite/React application changes, also read:
+
+- docs/agent-guardrails/35-frontend-vite-react-standards.md
+
 APEX applications are not part of the `web` tree. Treat APEX exports and APEX
-workspace assets as database assets under `resources/db/schema`.
+workspace assets as database-delivered assets under `resources/db/apex`.
+
+## AI-generated code reviewability
+
+Read:
+
+- docs/agent-guardrails/45-ai-generated-code-reviewability.md
+
+when creating new code or making significant changes to existing code,
+including application code, scripts, database code, frontend components, tests,
+or generated/scaffolded source files.
 
 ## Plugins
 

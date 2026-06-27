@@ -53,6 +53,26 @@ comment on column orac_core.preference_definitions.max_number is
   'Optional maximum numeric value constraint.'
 ;
 
+comment on column orac_core.preference_definitions.step_number is
+  'Optional numeric increment used by slider rendering and server-side step validation.'
+;
+
+comment on column orac_core.preference_definitions.unit_label is
+  'Optional display suffix for numeric controls, such as tokens or percent.'
+;
+
+comment on column orac_core.preference_definitions.display_min_label is
+  'Optional label shown beside the minimum value for slider controls.'
+;
+
+comment on column orac_core.preference_definitions.display_max_label is
+  'Optional label shown beside the maximum value for slider controls.'
+;
+
+comment on column orac_core.preference_definitions.display_value_format is
+  'Optional UI formatting hint for displaying numeric preference values.'
+;
+
 comment on column orac_core.preference_definitions.min_length is
   'Optional minimum text length constraint.'
 ;

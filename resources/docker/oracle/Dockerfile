@@ -38,6 +38,7 @@ RUN mkdir -p \
     ${ORAC_HOME}/setup/apex \
     ${ORAC_HOME}/setup/sqlcl \
     ${ORAC_HOME}/app \
+    ${ORAC_HOME}/apex \
     ${ORAC_HOME}/schema \
     ${ORAC_HOME}/datapump \
     ${ORAC_HOME}/logs
@@ -50,6 +51,7 @@ RUN chown -R 54321:54321 \
     ${ORAC_HOME}/setup/sqlcl \
     ${ORAC_HOME}/ords \
     ${ORAC_HOME}/app \
+    ${ORAC_HOME}/apex \
     ${ORAC_HOME}/schema \
     ${ORAC_HOME}/datapump \
     ${ORAC_HOME}/logs
@@ -120,6 +122,11 @@ COPY --chown=54321 resources/docker/oracle/etc     ${ORAC_HOME}/etc
 COPY --chown=54321 resources/db/schema ${ORAC_HOME}/schema
 RUN find ${ORAC_HOME}/schema -type d -exec chmod 755 {} + \
  && find ${ORAC_HOME}/schema -type f -name "*.sql" -exec chmod 644 {} +
+
+# Copy APEX workspace/application exports separately from schema/Liquibase assets
+COPY --chown=54321 resources/db/apex ${ORAC_HOME}/apex
+RUN find ${ORAC_HOME}/apex -type d -exec chmod 755 {} + \
+ && find ${ORAC_HOME}/apex -type f -name "*.sql" -exec chmod 644 {} +
 
 # Copy Liquibase configuration separately from the schema bundle. Core
 # controllers live under ${ORAC_HOME}/schema so repository-relative paths are

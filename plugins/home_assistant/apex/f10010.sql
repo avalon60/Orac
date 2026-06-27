@@ -774,7 +774,7 @@ wwv_flow_imp_shared.create_theme(
 ,p_nav_bar_type=>'LIST'
 ,p_reference_id=>4072363937200175119
 ,p_is_locked=>false
-,p_current_theme_style_id=>2721322117358710262
+,p_current_theme_style_id=>3544795214802435419
 ,p_default_page_template=>4072355960268175073
 ,p_default_dialog_template=>2100407606326202693
 ,p_error_template=>2101157952850466385
@@ -911,7 +911,7 @@ wwv_flow_imp_page.create_page(
  p_id=>1
 ,p_name=>'Home'
 ,p_alias=>'HOME'
-,p_step_title=>'Plugin Apps'
+,p_step_title=>'Home Assistant Status'
 ,p_autocomplete_on_off=>'OFF'
 ,p_page_template_options=>'#DEFAULT#'
 ,p_required_role=>wwv_flow_imp.id(14538832508386634)
@@ -920,18 +920,150 @@ wwv_flow_imp_page.create_page(
 );
 wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(14546771722386650)
-,p_plug_name=>'Home Assistant'
-,p_region_template_options=>'#DEFAULT#'
+,p_plug_name=>'Home Assistant Status'
+,p_icon_css_classes=>'fa-home'
+,p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'
 ,p_plug_template=>2674017834225413037
 ,p_plug_display_sequence=>10
-,p_plug_display_point=>'REGION_POSITION_01'
+,p_plug_display_point=>'BODY'
 ,p_location=>null
+,p_function_body_language=>'PLSQL'
+,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'declare',
+'  l_last_startup_sync_at      varchar2(64);',
+'  l_last_startup_sync_status  varchar2(32);',
+'  l_last_state_sync_at        varchar2(64);',
+'  l_last_state_sync_status    varchar2(32);',
+'  l_last_areas_processed      number;',
+'  l_last_devices_processed    number;',
+'  l_last_entities_processed   number;',
+'  l_last_states_processed     number;',
+'  l_last_error_message        varchar2(4000);',
+'  l_updated_at                varchar2(64);',
+'',
+'  function status_label(',
+'    p_status in varchar2',
+'  ) return varchar2',
+'  is',
+'  begin',
+'    return apex_escape.html(initcap(coalesce(p_status, ''unknown'')));',
+'  end status_label;',
+'',
+'  function metric_card(',
+'    p_label in varchar2,',
+'    p_value in varchar2',
+'  ) return varchar2',
+'  is',
+'  begin',
+'    return ''<li class="t-Cards-item"><div class="t-Card"><div class="t-Card-wrap"><div class="t-Card-titleWrap">'' ||',
+'           ''<h3 class="t-Card-title">'' || apex_escape.html(p_label) || ''</h3></div>'' ||',
+'           ''<div class="t-Card-body"><span class="u-bold">'' || apex_escape.html(coalesce(p_value, ''Unknown'')) || ''</span></div>'' ||',
+'           ''</div></div></li>'';',
+'  end metric_card;',
+'begin',
+'  select coalesce(to_char(last_startup_sync_at, ''YYYY-MM-DD HH24:MI:SS TZH:TZM''), ''Not recorded''),',
+'         last_startup_sync_status,',
+'         coalesce(to_char(last_state_sync_at, ''YYYY-MM-DD HH24:MI:SS TZH:TZM''), ''Not recorded''),',
+'         last_state_sync_status,',
+'         last_areas_processed,',
+'         last_devices_processed,',
+'         last_entities_processed,',
+'         last_states_processed,',
+'         last_error_message_redacted,',
+'         to_char(updated_at, ''YYYY-MM-DD HH24:MI:SS TZH:TZM'')',
+'    into l_last_startup_sync_at,',
+'         l_last_startup_sync_status,',
+'         l_last_state_sync_at,',
+'         l_last_state_sync_status,',
+'         l_last_areas_processed,',
+'         l_last_devices_processed,',
+'         l_last_entities_processed,',
+'         l_last_states_processed,',
+'         l_last_error_message,',
+'         l_updated_at',
+'    from orac_ha.ha_status_summary_v',
+'   where plugin_id = ''home_assistant'';',
+'',
+'  return ''<div class="ha-status-dashboard">'' ||',
+'         ''<ul class="t-Cards t-Cards--displayCards t-Cards--4cols">'' ||',
+'         metric_card(''Last Structural Sync'', l_last_startup_sync_at || '' ('' || status_label(l_last_startup_sync_status) || '')'') ||',
+'         metric_card(''Last State Sync'', l_last_state_sync_at || '' ('' || status_label(l_last_state_sync_status) || '')'') ||',
+'         metric_card(''Areas'', to_char(l_last_areas_processed)) ||',
+'         metric_card(''Devices'', to_char(l_last_devices_processed)) ||',
+'         metric_card(''Entities'', to_char(l_last_entities_processed)) ||',
+'         metric_card(''Current States'', to_char(l_last_states_processed)) ||',
+'         metric_card(''Status Updated'', l_updated_at) ||',
+'         ''</ul>'' ||',
+'         case',
+'           when l_last_error_message is not null then',
+'             ''<div class="t-Alert t-Alert--warning t-Alert--defaultIcons"><div class="t-Alert-wrap"><div class="t-Alert-content">'' ||',
+'             ''<h2 class="t-Alert-title">Last Redacted Error</h2><div class="t-Alert-body">'' || apex_escape.html(l_last_error_message) || ''</div>'' ||',
+'             ''</div></div></div>''',
+'           else',
+'             ''''',
+'         end ||',
+'         ''</div>'';',
+'exception',
+'  when no_data_found then',
+'    return ''<div class="t-Alert t-Alert--info t-Alert--defaultIcons"><div class="t-Alert-wrap"><div class="t-Alert-content">'' ||',
+'           ''<h2 class="t-Alert-title">No Home Assistant status is available yet</h2>'' ||',
+'           ''</div></div></div>'';',
+'end;'))
+,p_plug_source_type=>'NATIVE_DYNAMIC_CONTENT'
 ,p_plug_query_num_rows=>15
-,p_region_image=>'#APP_FILES#icons/app-icon-512.png'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'expand_shortcuts', 'N',
   'output_as', 'HTML',
   'show_line_breaks', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(14545500000000001)
+,p_process_sequence=>10
+,p_process_point=>'BEFORE_HEADER'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Synchronize Orac Theme Style'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'declare',
+'  l_theme_style_name  apex_application_theme_styles.name%type;',
+'  l_theme_number      apex_application_themes.theme_number%type;',
+'  l_target_style_name apex_application_theme_styles.name%type;',
+'begin',
+'  if :REQUEST = ''ORAC_THEME_SYNC'' then',
+'    select t.theme_number',
+'      into l_theme_number',
+'      from apex_application_themes t',
+'     where t.application_id = :APP_ID',
+'       and t.is_current     = ''Yes'';',
+'',
+'    select s.name',
+'      into l_theme_style_name',
+'      from apex_application_theme_styles s,',
+'           apex_application_themes t',
+'     where s.application_id = t.application_id',
+'       and s.theme_number   = t.theme_number',
+'       and s.application_id = 1042',
+'       and t.is_current     = ''Yes''',
+'       and s.is_current     = ''Yes'';',
+'',
+'    select s.name',
+'      into l_target_style_name',
+'      from apex_application_theme_styles s',
+'     where s.application_id = :APP_ID',
+'       and s.theme_number   = l_theme_number',
+'       and s.name           = l_theme_style_name;',
+'',
+'    apex_theme.set_session_style(',
+'      p_application_id => :APP_ID,',
+'      p_theme_number   => l_theme_number,',
+'      p_name           => l_target_style_name',
+'    );',
+'  end if;',
+'exception',
+'  when no_data_found then',
+'    null;',
+'end;'))
+,p_process_clob_language=>'PLSQL'
+,p_internal_uid=>14545500000000001
 );
 end;
 /

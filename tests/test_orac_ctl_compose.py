@@ -19,6 +19,7 @@ CTL_SCRIPT = PROJECT_ROOT / "bin" / "orac-ctl.sh"
 DB_DEPLOY_SCRIPT = PROJECT_ROOT / "bin" / "orac-db-deploy.sh"
 ORACLE_SETUP_DIR = PROJECT_ROOT / "resources" / "docker" / "oracle" / "setup"
 ORACLE_STARTUP_DIR = PROJECT_ROOT / "resources" / "docker" / "oracle" / "startup"
+ORACLE_DOCKERFILE = PROJECT_ROOT / "resources" / "docker" / "oracle" / "Dockerfile"
 ORACLE_COMPOSE_FILE = PROJECT_ROOT / "resources" / "docker" / "oracle" / "docker-compose.yaml"
 SEARXNG_SETTINGS_FILE = PROJECT_ROOT / "resources" / "docker" / "oracle" / "searxng" / "settings.yml"
 
@@ -411,6 +412,9 @@ class OracleSetupScriptContractTests(unittest.TestCase):
             "010-apex-install.sh",
             "020-setup-ords.sh",
             "035-orac-schema_and_apps.sh",
+            "040-orac-liquibase-deltas.sh",
+            "045-orac-apex-import.sh",
+            "050-init-app-role.sh",
             "998-complete-orac.sh",
         }
 
@@ -419,6 +423,31 @@ class OracleSetupScriptContractTests(unittest.TestCase):
             expected_scripts <= actual_scripts,
             f"Missing setup scripts: {sorted(expected_scripts - actual_scripts)}",
         )
+
+    def test_apex_import_runs_after_core_liquibase_and_before_role_setup(self) -> None:
+        """APEX imports must wait for schema objects, grants, and synonyms."""
+        setup_scripts = sorted(path.name for path in ORACLE_SETUP_DIR.glob("*.sh"))
+
+        self.assertLess(
+            setup_scripts.index("040-orac-liquibase-deltas.sh"),
+            setup_scripts.index("045-orac-apex-import.sh"),
+        )
+        self.assertLess(
+            setup_scripts.index("045-orac-apex-import.sh"),
+            setup_scripts.index("050-init-app-role.sh"),
+        )
+        self.assertLess(
+            setup_scripts.index("050-init-app-role.sh"),
+            setup_scripts.index("998-complete-orac.sh"),
+        )
+
+    def test_docker_image_copies_apex_exports_outside_schema_root(self) -> None:
+        """The image must include APEX exports without widening Liquibase scope."""
+        dockerfile = ORACLE_DOCKERFILE.read_text(encoding="utf-8")
+
+        self.assertIn("resources/db/schema ${ORAC_HOME}/schema", dockerfile)
+        self.assertIn("resources/db/apex ${ORAC_HOME}/apex", dockerfile)
+        self.assertIn("find ${ORAC_HOME}/apex -type d", dockerfile)
 
     def test_home_assistant_schema_user_is_not_created_by_core_setup(self) -> None:
         """Plugin-owned schemas must be provisioned by plugin deployment."""
@@ -484,10 +513,20 @@ class OracleSetupScriptContractTests(unittest.TestCase):
 
         self.assertIn('RUN_CORE_OBJECTS_WITH_SQLPLUS="${RUN_CORE_OBJECTS_WITH_SQLPLUS:-0}"', script)
         self.assertIn("CORE_LIQUIBASE_BUNDLES=(", script)
-        self.assertIn("CORE_SQLPLUS_DIRS=(", script)
         self.assertIn('echo "-- $(timestamp) :: Skipping Liquibase-owned directory:', script)
+        self.assertNotIn("orac_ws", script)
+        self.assertNotIn("orac_apps", script)
+
+    def test_apex_import_uses_dedicated_resource_root(self) -> None:
+        """APEX export import should read from ${ORAC_HOME}/apex."""
+        script = (ORACLE_SETUP_DIR / "045-orac-apex-import.sh").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('APEX_BASE_DIR="${APEX_BASE_DIR:-${ORAC_HOME}/apex}"', script)
         self.assertIn("orac_ws", script)
         self.assertIn("orac_apps", script)
+        self.assertIn("ORAC_APEX_IMPORT_COMPLETE", script)
 
     def test_completion_requires_valid_ords_metadata(self) -> None:
         """The final deployment marker must require valid ORDS/APEX state."""

@@ -4,6 +4,26 @@
 merge into orac_core.preference_definitions tgt
 using (
   select
+    base.*,
+    case base.pref_key
+      when 'max_tokens' then 1
+      when 'tts_pitch' then 1
+      when 'tts_rate' then 0.05
+    end as step_number,
+    case base.pref_key
+      when 'max_tokens' then 'tokens'
+    end as unit_label,
+    case base.pref_key
+      when 'tts_pitch' then 'Lower'
+      when 'tts_rate' then 'Slower'
+    end as display_min_label,
+    case base.pref_key
+      when 'tts_pitch' then 'Higher'
+      when 'tts_rate' then 'Faster'
+    end as display_max_label,
+    cast(null as varchar2(100 byte)) as display_value_format
+  from (
+  select
     'date_format' as pref_key,
     'Date Format' as display_label,
     'Preferred date and time display format for the user interface.' as description,
@@ -55,29 +75,6 @@ using (
   from dual
   union all
   select
-    'email_opt_in',
-    'Email Notifications',
-    'Whether the user wishes to receive email-based notifications.',
-    'boolean',
-    'checkbox',
-    cast(null as varchar2(30 byte)),
-    cast(null as varchar2(4000 byte)),
-    cast(null as varchar2(100 byte)),
-    json('true'),
-    cast(null as number),
-    cast(null as number),
-    cast(null as number),
-    cast(null as number),
-    cast(null as varchar2(1000 byte)),
-    'Y',
-    'Y',
-    30,
-    'notifications',
-    'Enable or disable email notifications.',
-    'Y'
-  from dual
-  union all
-  select
     'personality_code',
     'Orac Personality',
     'Preferred Orac personality used to shape the assistant''s system prompt and response style.',
@@ -125,7 +122,7 @@ using (
     cast(null as number),
     cast(null as varchar2(1000 byte)),
     'Y',
-    'Y',
+    'N',
     40,
     'ui',
     'Enable additional controls intended for experienced users.',
@@ -148,7 +145,7 @@ using (
     cast(null as number),
     cast(null as varchar2(1000 byte)),
     'Y',
-    'Y',
+    'N',
     50,
     'ui',
     'Show or hide feedback actions in the user interface.',
@@ -202,7 +199,7 @@ using (
     cast(null as number),
     cast(null as varchar2(1000 byte)),
     'Y',
-    'Y',
+    'N',
     70,
     'ui',
     'Determines the default page opened for the user.',
@@ -214,7 +211,7 @@ using (
     'Max Tokens',
     'Default maximum token budget used for LLM responses.',
     'number',
-    'number',
+    'slider',
     cast(null as varchar2(30 byte)),
     cast(null as varchar2(4000 byte)),
     cast(null as varchar2(100 byte)),
@@ -248,7 +245,7 @@ using (
     cast(null as number),
     cast(null as varchar2(1000 byte)),
     'Y',
-    'Y',
+    'N',
     90,
     'notifications',
     'Enable or disable push notifications.',
@@ -271,7 +268,7 @@ using (
     cast(null as number),
     cast(null as varchar2(1000 byte)),
     'Y',
-    'Y',
+    'N',
     100,
     'ui',
     'Controls the default pagination size for reports.',
@@ -340,7 +337,7 @@ using (
     cast(null as number),
     cast(null as varchar2(1000 byte)),
     'Y',
-    'Y',
+    'N',
     130,
     'model',
     'Lower values favour determinism; higher values favour variation.',
@@ -414,7 +411,7 @@ using (
     'TTS Pitch',
     'Default text-to-speech pitch setting.',
     'number',
-    'number',
+    'slider',
     cast(null as varchar2(30 byte)),
     cast(null as varchar2(4000 byte)),
     cast(null as varchar2(100 byte)),
@@ -437,7 +434,7 @@ using (
     'TTS Rate',
     'Default text-to-speech playback rate.',
     'number',
-    'number',
+    'slider',
     cast(null as varchar2(30 byte)),
     cast(null as varchar2(4000 byte)),
     cast(null as varchar2(100 byte)),
@@ -498,6 +495,7 @@ using (
     'Chooses the preferred text-to-speech voice for local playback.',
     'Y'
   from dual
+  ) base
 ) src
 on (tgt.pref_key = src.pref_key)
 when matched then update set
@@ -511,6 +509,11 @@ when matched then update set
   tgt.default_value = src.default_value,
   tgt.min_number = src.min_number,
   tgt.max_number = src.max_number,
+  tgt.step_number = src.step_number,
+  tgt.unit_label = src.unit_label,
+  tgt.display_min_label = src.display_min_label,
+  tgt.display_max_label = src.display_max_label,
+  tgt.display_value_format = src.display_value_format,
   tgt.min_length = src.min_length,
   tgt.max_length = src.max_length,
   tgt.regex_pattern = src.regex_pattern,
@@ -532,6 +535,11 @@ when not matched then insert (
   default_value,
   min_number,
   max_number,
+  step_number,
+  unit_label,
+  display_min_label,
+  display_max_label,
+  display_value_format,
   min_length,
   max_length,
   regex_pattern,
@@ -553,6 +561,11 @@ when not matched then insert (
   src.default_value,
   src.min_number,
   src.max_number,
+  src.step_number,
+  src.unit_label,
+  src.display_min_label,
+  src.display_max_label,
+  src.display_value_format,
   src.min_length,
   src.max_length,
   src.regex_pattern,
@@ -570,4 +583,10 @@ delete from orac_core.user_preferences
 delete from orac_core.preference_definitions
  where pref_key = 'theme_style';
 
---rollback delete from orac_core.preference_definitions where pref_key in ('date_format', 'default_llm_id', 'email_opt_in', 'personality_code', 'enable_advanced_mode', 'enable_feedback', 'force_concise', 'landing_page_id', 'max_tokens', 'push_opt_in', 'rows_per_report', 'show_reasoning', 'strip_reasoning_tags', 'temperature', 'weather_location', 'timezone', 'tts_pitch', 'tts_rate', 'tts_voice');
+delete from orac_core.user_preferences
+ where pref_key = 'email_opt_in';
+
+delete from orac_core.preference_definitions
+ where pref_key = 'email_opt_in';
+
+--rollback delete from orac_core.preference_definitions where pref_key in ('date_format', 'default_llm_id', 'personality_code', 'enable_advanced_mode', 'enable_feedback', 'force_concise', 'landing_page_id', 'max_tokens', 'push_opt_in', 'rows_per_report', 'show_reasoning', 'strip_reasoning_tags', 'temperature', 'weather_location', 'timezone', 'tts_pitch', 'tts_rate', 'tts_voice');

@@ -107,8 +107,84 @@ class _PendingRetrievalIntent:
     expires_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class _PreferenceConfigRule:
+    """Runtime preference/config precedence diagnostic rule."""
+
+    pref_key: str
+    meta_key: str
+    default_key: tuple[str, str]
+    ambiguous_keys: tuple[tuple[str, str], ...]
+    forced_keys: tuple[tuple[str, str], ...] = ()
+
+
 VOICE_PLAYBACK_START_TIMEOUT_SECONDS = 120.0
 VOICE_PLAYBACK_FINISH_TIMEOUT_SECONDS = 120.0
+DATE_FORMAT_VALUES = {
+    "DD-MON-YYYY HH24:MI",
+    "YYYY-MM-DD HH24:MI",
+    "DD/MM/YYYY HH24:MI",
+    "DD Mon YYYY HH24:MI",
+}
+DATE_FORMAT_DEFAULT = "DD-MON-YYYY HH24:MI"
+RUNTIME_PREFERENCE_CONFIG_RULES: tuple[_PreferenceConfigRule, ...] = (
+    _PreferenceConfigRule(
+        pref_key="timezone",
+        meta_key="timezone",
+        default_key=("settings", "timezone_default"),
+        ambiguous_keys=(("settings", "timezone"), ("context", "timezone")),
+    ),
+    _PreferenceConfigRule(
+        pref_key="date_format",
+        meta_key="date_format",
+        default_key=("settings", "date_format_default"),
+        ambiguous_keys=(("settings", "date_format"),),
+    ),
+    _PreferenceConfigRule(
+        pref_key="force_concise",
+        meta_key="force_concise",
+        default_key=("settings", "force_concise_default"),
+        ambiguous_keys=(("settings", "force_concise"),),
+    ),
+    _PreferenceConfigRule(
+        pref_key="max_tokens",
+        meta_key="max_tokens",
+        default_key=("settings", "max_tokens_default"),
+        ambiguous_keys=(("settings", "max_tokens"),),
+        forced_keys=(
+            ("settings", "max_tokens_locked"),
+            ("settings", "max_tokens_limit"),
+        ),
+    ),
+    _PreferenceConfigRule(
+        pref_key="show_reasoning",
+        meta_key="show_reasoning",
+        default_key=("settings", "show_reasoning_default"),
+        ambiguous_keys=(("settings", "show_reasoning"),),
+    ),
+    _PreferenceConfigRule(
+        pref_key="strip_reasoning_tags",
+        meta_key="strip_reasoning_tags",
+        default_key=("settings", "strip_reasoning_tags_default"),
+        ambiguous_keys=(("settings", "strip_reasoning_tags"),),
+        forced_keys=(
+            ("settings", "strip_reasoning_tags_locked"),
+            ("settings", "force_strip_reasoning_tags"),
+        ),
+    ),
+    _PreferenceConfigRule(
+        pref_key="tts_rate",
+        meta_key="tts_rate",
+        default_key=("settings", "tts_rate_default"),
+        ambiguous_keys=(("settings", "tts_rate"),),
+    ),
+    _PreferenceConfigRule(
+        pref_key="tts_pitch",
+        meta_key="tts_pitch",
+        default_key=("settings", "tts_pitch_default"),
+        ambiguous_keys=(("settings", "tts_pitch"),),
+    ),
+)
 
 
 # --- Paths / Config -----------------------------------------------------------
@@ -246,6 +322,7 @@ def system_clock_line(prefs: dict) -> str:
     """Render time and location context for the current session."""
     tz_name = (prefs or {}).get("timezone", "Europe/London")
     weather_location = str((prefs or {}).get("weather_location") or "").strip()
+    date_format = _validate_date_format((prefs or {}).get("date_format")) or DATE_FORMAT_DEFAULT
     now_utc = datetime.now(timezone.utc)
     try:
         tz = ZoneInfo(tz_name)
@@ -254,7 +331,7 @@ def system_clock_line(prefs: dict) -> str:
         tz_name = "UTC"
 
     now_local = now_utc.astimezone(tz)
-    local_str = now_local.strftime("%d-%b-%Y %H:%M").upper()
+    local_str = _format_user_datetime(now_local, date_format)
     utc_iso = now_utc.isoformat(timespec="seconds").replace("+00:00", "Z")
     dow = now_local.strftime("%A").upper()
 
@@ -295,8 +372,7 @@ def system_clock_line(prefs: dict) -> str:
             "you lack a physical location unless the user explicitly asks about "
             "physical embodiment."
         )
-    if "date_format" in (prefs or {}):
-        lines.append(f"Use date format {prefs['date_format']}.")
+    lines.append(f"Use date format {date_format}.")
     if (prefs or {}).get("force_concise") is True:
         lines.append("Keep answers concise.")
     return "\n".join(lines)
@@ -355,10 +431,11 @@ def answer_local_date_time_query(prompt: str, prefs: dict) -> str | None:
     now_local = datetime.now(timezone.utc).astimezone(tz)
     location = str((prefs or {}).get("weather_location") or "").strip()
     location_suffix = f" in {location}" if location else f" in {tz_name}"
+    date_format = _validate_date_format((prefs or {}).get("date_format")) or DATE_FORMAT_DEFAULT
 
     if asks_time:
         return f"It's {now_local.strftime('%H:%M')}{location_suffix}."
-    return f"Today is {now_local.strftime('%A, %-d %B %Y')}{location_suffix}."
+    return f"Today is {_format_user_datetime(now_local, date_format)}{location_suffix}."
 
 
 def _load_system_prompt_policy(policy_path: Path) -> dict[str, Any]:
@@ -423,6 +500,199 @@ def _as_int(value: Any, default: int) -> int:
         return int(value)
     except Exception:
         return default
+
+
+def _as_float(value: Any) -> float | None:
+    """Return a float value, or ``None`` when conversion is unsafe."""
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _config_has_option(config_mgr: Any, section: str, key: str) -> bool:
+    """Return whether a config manager exposes a section/key."""
+    parser = getattr(config_mgr, "config", None)
+    if parser is not None and hasattr(parser, "has_option"):
+        try:
+            return bool(parser.has_option(section, key))
+        except Exception:
+            return False
+
+    section_dict = getattr(config_mgr, "section_dict", None)
+    if callable(section_dict):
+        try:
+            return key in section_dict(section)
+        except Exception:
+            return False
+
+    return False
+
+
+def _config_value_or_none(config_mgr: Any, section: str, key: str) -> str | None:
+    """Return a config value when available without raising for test stubs."""
+    config_value = getattr(config_mgr, "config_value", None)
+    if callable(config_value):
+        try:
+            value = config_value(section, key, default=None)
+        except Exception:
+            return None
+        if value in (None, ""):
+            return None
+        return str(value)
+    return None
+
+
+def _config_bool_or_none(config_mgr: Any, section: str, key: str) -> bool | None:
+    """Return a boolean config value when available."""
+    value = _config_value_or_none(config_mgr, section, key)
+    return _as_bool(value)
+
+
+def _config_int_or_none(config_mgr: Any, section: str, key: str) -> int | None:
+    """Return an integer config value when available."""
+    value = _config_value_or_none(config_mgr, section, key)
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def _config_float_or_none(config_mgr: Any, section: str, key: str) -> float | None:
+    """Return a float config value when available."""
+    return _as_float(_config_value_or_none(config_mgr, section, key))
+
+
+def _strict_preference_config_mode() -> bool:
+    """Return whether preference/config conflicts should fail hard."""
+    explicit = os.environ.get("ORAC_STRICT_PREFERENCE_CONFIG")
+    if explicit is not None:
+        return _bool_env_flag(explicit)
+    return "pytest" in sys.modules or bool(os.environ.get("PYTEST_CURRENT_TEST"))
+
+
+def _validate_timezone(value: Any) -> str | None:
+    """Return a valid IANA timezone name."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        ZoneInfo(text)
+    except Exception:
+        return None
+    return text
+
+
+def _validate_date_format(value: Any) -> str | None:
+    """Return a supported user-facing date format."""
+    text = str(value or "").strip()
+    return text if text in DATE_FORMAT_VALUES else None
+
+
+def _bounded_int(value: Any, *, minimum: int, maximum: int) -> int | None:
+    """Return a bounded integer, or ``None`` when conversion fails."""
+    if value in (None, ""):
+        return None
+    try:
+        number = int(value)
+    except Exception:
+        return None
+    return max(minimum, min(maximum, number))
+
+
+def _bounded_float(value: Any, *, minimum: float, maximum: float) -> float | None:
+    """Return a bounded float, or ``None`` when conversion fails."""
+    number = _as_float(value)
+    if number is None:
+        return None
+    return max(minimum, min(maximum, number))
+
+
+def _python_date_format(date_format: str) -> str:
+    """Translate supported Oracle-style display masks to ``strftime`` masks."""
+    return {
+        "DD-MON-YYYY HH24:MI": "%d-%b-%Y %H:%M",
+        "YYYY-MM-DD HH24:MI": "%Y-%m-%d %H:%M",
+        "DD/MM/YYYY HH24:MI": "%d/%m/%Y %H:%M",
+        "DD Mon YYYY HH24:MI": "%d %b %Y %H:%M",
+    }.get(date_format, "%d-%b-%Y %H:%M")
+
+
+def _format_user_datetime(value: datetime, date_format: str) -> str:
+    """Format a user-facing datetime using a supported preference mask."""
+    rendered = value.strftime(_python_date_format(date_format))
+    if date_format == "DD-MON-YYYY HH24:MI":
+        return rendered.upper()
+    return rendered
+
+
+class ReasoningTagStreamFilter:
+    """Streaming-safe remover for ``<think>...</think>`` blocks."""
+
+    _START = "<think>"
+    _END = "</think>"
+
+    def __init__(self) -> None:
+        """Initialise the stream filter state."""
+        self._buffer = ""
+        self._inside_think = False
+
+    def add_delta(self, text: str) -> str:
+        """Filter one streamed delta and return visible text."""
+        if not text:
+            return ""
+        self._buffer += str(text)
+        return self._drain(final=False)
+
+    def flush(self) -> str:
+        """Return any remaining visible text and clear buffered state."""
+        return self._drain(final=True)
+
+    def _drain(self, *, final: bool) -> str:
+        output: list[str] = []
+        while self._buffer:
+            lowered = self._buffer.lower()
+            if self._inside_think:
+                end_index = lowered.find(self._END)
+                if end_index < 0:
+                    self._buffer = "" if final else self._tag_tail(self._buffer, self._END)
+                    break
+                self._buffer = self._buffer[end_index + len(self._END):]
+                self._inside_think = False
+                continue
+
+            start_index = lowered.find(self._START)
+            if start_index < 0:
+                keep = 0 if final else len(self._tag_tail(self._buffer, self._START))
+                if keep:
+                    output.append(self._buffer[:-keep])
+                    self._buffer = self._buffer[-keep:]
+                else:
+                    output.append(self._buffer)
+                    self._buffer = ""
+                break
+
+            output.append(self._buffer[:start_index])
+            self._buffer = self._buffer[start_index + len(self._START):]
+            self._inside_think = True
+
+        if final:
+            self._buffer = ""
+            self._inside_think = False
+        return "".join(output)
+
+    @classmethod
+    def _tag_tail(cls, text: str, tag: str) -> str:
+        """Return a suffix that may be the start of ``tag``."""
+        lowered = text.lower()
+        for size in range(min(len(tag) - 1, len(text)), 0, -1):
+            if tag.startswith(lowered[-size:]):
+                return text[-size:]
+        return ""
 
 
 def _personality_rule_lines(personality: dict[str, Any]) -> list[str]:
@@ -677,9 +947,27 @@ class Orac:
             self._orac_run_dir = Path(os.environ.get("ORAC_RUN_DIR", "/run/orac"))
             self._dump_context_flag = self._orac_run_dir / "dump-context.once"
             self._force_prompt_dump = _bool_env_flag(os.environ.get("ORAC_FORCE_PROMPT_DUMP"))
+            self._preference_config_checked = False
+            self._check_runtime_preference_config_conflicts()
             self.strip_reasoning_tags = (
-                self.config_mgr.config_value("settings", "strip_reasoning_tags", default="true").lower() == "true"
+                _config_bool_or_none(
+                    self.config_mgr,
+                    "settings",
+                    "strip_reasoning_tags_default",
+                )
+                if _config_has_option(
+                    self.config_mgr,
+                    "settings",
+                    "strip_reasoning_tags_default",
+                )
+                else _config_bool_or_none(
+                    self.config_mgr,
+                    "settings",
+                    "strip_reasoning_tags",
+                )
             )
+            if self.strip_reasoning_tags is None:
+                self.strip_reasoning_tags = True
             policy_path_raw = self.config_mgr.config_value(
                 "context",
                 "system_prompt_policy_file",
@@ -695,9 +983,18 @@ class Orac:
             )
             self._reply_language = self.config_mgr.config_value("context", "reply_language", default="English")
             self._default_timezone = (
-                self.config_mgr.config_value("context", "timezone", default="Europe/London").strip()
+                _config_value_or_none(
+                    self.config_mgr,
+                    "settings",
+                    "timezone_default",
+                )
+                or _config_value_or_none(
+                    self.config_mgr,
+                    "context",
+                    "timezone",
+                )
                 or "Europe/London"
-            )
+            ).strip()
             self._retrieval_response_style = normalize_retrieval_response_style(
                 self.config_mgr.config_value(
                     "retrieval",
@@ -1161,17 +1458,53 @@ class Orac:
             and isinstance(request_meta.get("tts_voice"), dict)
             else None
         )
+        tts_options = (
+            request_meta.get("tts_options")
+            if isinstance(request_meta, dict)
+            and isinstance(request_meta.get("tts_options"), dict)
+            else {}
+        )
+
+        def enqueue_voice_text(
+            *,
+            queue_turn_id: str,
+            text: str,
+        ) -> bool:
+            """Queue text, tolerating workers that do not support options yet."""
+            try:
+                return bool(
+                    worker.enqueue_text(
+                        session_id=session_id,
+                        turn_id=queue_turn_id,
+                        text=text,
+                        tts_voice=tts_voice,
+                        tts_options=tts_options,
+                    )
+                )
+            except TypeError as exc:
+                if "tts_options" not in str(exc):
+                    raise
+                logger.log_debug(
+                    "TTS worker does not accept per-turn options; "
+                    "retrying without tts_options."
+                )
+                return bool(
+                    worker.enqueue_text(
+                        session_id=session_id,
+                        turn_id=queue_turn_id,
+                        text=text,
+                        tts_voice=tts_voice,
+                    )
+                )
 
         if event_type == "text_chunk":
             chunk_text = str(event_payload.get("chunk") or "").strip()
             if not chunk_text:
                 return
             if coalescer is None:
-                queued = worker.enqueue_text(
-                    session_id=session_id,
-                    turn_id=turn_id,
+                queued = enqueue_voice_text(
+                    queue_turn_id=turn_id,
                     text=chunk_text,
-                    tts_voice=tts_voice,
                 )
                 if queued:
                     self._mark_voice_playback_queued(
@@ -1188,11 +1521,9 @@ class Orac:
                 turn_id=turn_id,
                 text=chunk_text,
             ):
-                queued = worker.enqueue_text(
-                    session_id=session_id,
-                    turn_id=turn_id,
+                queued = enqueue_voice_text(
+                    queue_turn_id=turn_id,
                     text=speech_text,
-                    tts_voice=tts_voice,
                 )
                 if queued:
                     self._mark_voice_playback_queued(
@@ -1219,11 +1550,9 @@ class Orac:
                         coalescer.flush_session(session_id=session_id)
                     )
                 for terminal_turn_id, speech_text in terminal_texts:
-                    queued = worker.enqueue_text(
-                        session_id=session_id,
-                        turn_id=terminal_turn_id,
+                    queued = enqueue_voice_text(
+                        queue_turn_id=terminal_turn_id,
                         text=speech_text,
-                        tts_voice=tts_voice,
                     )
                     if queued:
                         self._mark_voice_playback_queued(
@@ -1419,6 +1748,7 @@ class Orac:
             prefs = {
                 "timezone": meta.get("timezone") or default_timezone,
                 "weather_location": meta.get("weather_location"),
+                "date_format": meta.get("date_format") or DATE_FORMAT_DEFAULT,
                 "force_concise": meta.get("force_concise"),
             }
             clock = system_clock_line(prefs)
@@ -1476,7 +1806,7 @@ class Orac:
                 lang = meta.get("reply_language", self._reply_language) or "English"
                 final_directive = (
                     f"\nFINAL DIRECTIVE: For the CURRENT user message below, respond in {lang} ONLY. "
-                    "Ignore any prior conversation for this reply. Keep the reply concise.\n"
+                    "Ignore any prior conversation for this reply.\n"
                     f"{retrieval_directive}"
                 )
                 preamble = (
@@ -1543,7 +1873,6 @@ class Orac:
                 "If a proper noun appears misspelled or variant, state the likely interpretation and answer under "
                 "that interpretation; ask for clarification only when multiple plausible meanings remain. "
                 "For personal/session facts, only claim facts present in authenticated context or recent exchange. "
-                "Keep the reply concise.\n"
                 f"{retrieval_directive}"
             )
 
@@ -2463,6 +2792,15 @@ class Orac:
             plugin_router = getattr(self, "plugin_router", None)
             if plugin_router is None:
                 return None
+            if getattr(self, "plugin_manager", None) is None:
+                return plugin_router.route(
+                    prompt,
+                    meta,
+                    plugin_routing_handoff,
+                    auth_user,
+                    audit_adapter=getattr(self, "plugin_audit_adapter", None),
+                    request_context=request_context,
+                )
             plugin_execution_service = PluginExecutionService(
                 plugin_router=plugin_router,
                 logger=logger,
@@ -2481,54 +2819,254 @@ class Orac:
             pending_context=pending_plugin_context,
         )
 
-    def _apply_user_preference_meta(
-        self,
-        meta: dict[str, Any],
-        auth_user: str,
-    ) -> dict[str, Any]:
-        """Overlay selected user preferences into request metadata."""
-        enriched_meta = dict(meta)
+    def _check_runtime_preference_config_conflicts(self) -> None:
+        """Warn or fail for ambiguous config keys that shadow preferences."""
+        if getattr(self, "_preference_config_checked", False):
+            return
 
+        self._preference_config_checked = True
+        config_mgr = getattr(self, "config_mgr", None)
+        if config_mgr is None:
+            return
+
+        issues: list[str] = []
+        for rule in RUNTIME_PREFERENCE_CONFIG_RULES:
+            forced = any(
+                _config_has_option(config_mgr, section, key)
+                for section, key in rule.forced_keys
+            )
+            if forced:
+                continue
+            for section, key in rule.ambiguous_keys:
+                if _config_has_option(config_mgr, section, key):
+                    issues.append(
+                        f"{rule.pref_key} preference conflicts with ambiguous "
+                        f"config key {section}.{key}"
+                    )
+
+        if not issues:
+            return
+
+        message = "; ".join(issues)
+        if _strict_preference_config_mode():
+            raise RuntimeError(message)
+        logger.log_warning(f"{Icons.warn} {message}")
+
+    def _get_user_preference_value(self, auth_user: str, pref_key: str) -> Any | None:
+        """Return one saved user preference value with consistent logging."""
         try:
-            default_llm_pref = self.ctx.get_user_preference_value(
+            return self.ctx.get_user_preference_value(
                 username=auth_user,
-                pref_key="default_llm_id",
+                pref_key=pref_key,
             )
         except Exception as e:
-            _log_exception("Failed to load default_llm_id preference", e)
-            default_llm_pref = None
+            _log_exception(f"Failed to load {pref_key} preference", e)
+            return None
 
+    def _record_preference_source(
+        self,
+        meta: dict[str, Any],
+        pref_key: str,
+        source: str,
+    ) -> None:
+        """Record where a runtime preference value came from."""
+        sources = meta.setdefault("_preference_sources", {})
+        if isinstance(sources, dict):
+            sources[pref_key] = source
+
+    def _resolve_runtime_preference(
+        self,
+        *,
+        meta: dict[str, Any],
+        auth_user: str,
+        pref_key: str,
+        meta_key: str,
+        validator: Callable[[Any], Any | None],
+        config_default: tuple[str, str],
+        built_in_default: Any,
+    ) -> tuple[Any, str]:
+        """Resolve a runtime preference using the project precedence order."""
+        if meta_key in meta and meta.get(meta_key) not in (None, ""):
+            value = validator(meta.get(meta_key))
+            if value is not None:
+                return value, "request"
+            logger.log_warning(
+                f"{Icons.warn} Ignoring invalid request metadata {meta_key}: "
+                f"{meta.get(meta_key)!r}"
+            )
+
+        saved = self._get_user_preference_value(auth_user, pref_key)
+        if saved not in (None, ""):
+            value = validator(saved)
+            if value is not None:
+                return value, "saved_preference"
+            logger.log_warning(
+                f"{Icons.warn} Ignoring invalid saved {pref_key} preference "
+                f"for user '{auth_user}': {saved!r}"
+            )
+
+        section, key = config_default
+        config_value = _config_value_or_none(getattr(self, "config_mgr", None), section, key)
+        if config_value not in (None, ""):
+            value = validator(config_value)
+            if value is not None:
+                return value, "config_default"
+            logger.log_warning(
+                f"{Icons.warn} Ignoring invalid config default "
+                f"{section}.{key}: {config_value!r}"
+            )
+
+        return built_in_default, "built_in_default"
+
+    def _apply_scalar_runtime_preferences(
+        self,
+        enriched_meta: dict[str, Any],
+        auth_user: str,
+    ) -> None:
+        """Overlay scalar runtime preferences into request metadata."""
+        scalar_specs: tuple[
+            tuple[str, str, Callable[[Any], Any | None], tuple[str, str], Any],
+            ...
+        ] = (
+            (
+                "timezone",
+                "timezone",
+                _validate_timezone,
+                ("settings", "timezone_default"),
+                "Europe/London",
+            ),
+            (
+                "date_format",
+                "date_format",
+                _validate_date_format,
+                ("settings", "date_format_default"),
+                DATE_FORMAT_DEFAULT,
+            ),
+            (
+                "force_concise",
+                "force_concise",
+                _as_bool,
+                ("settings", "force_concise_default"),
+                False,
+            ),
+            (
+                "max_tokens",
+                "max_tokens",
+                lambda value: _bounded_int(value, minimum=1, maximum=32768),
+                ("settings", "max_tokens_default"),
+                None,
+            ),
+            (
+                "show_reasoning",
+                "show_reasoning",
+                _as_bool,
+                ("settings", "show_reasoning_default"),
+                False,
+            ),
+            (
+                "strip_reasoning_tags",
+                "strip_reasoning_tags",
+                _as_bool,
+                ("settings", "strip_reasoning_tags_default"),
+                True,
+            ),
+            (
+                "tts_rate",
+                "tts_rate",
+                lambda value: _bounded_float(value, minimum=0.25, maximum=4.0),
+                ("settings", "tts_rate_default"),
+                None,
+            ),
+            (
+                "tts_pitch",
+                "tts_pitch",
+                lambda value: _bounded_float(value, minimum=-10.0, maximum=10.0),
+                ("settings", "tts_pitch_default"),
+                None,
+            ),
+        )
+
+        for pref_key, meta_key, validator, config_default, built_in in scalar_specs:
+            value, source = self._resolve_runtime_preference(
+                meta=enriched_meta,
+                auth_user=auth_user,
+                pref_key=pref_key,
+                meta_key=meta_key,
+                validator=validator,
+                config_default=config_default,
+                built_in_default=built_in,
+            )
+            if value is not None:
+                enriched_meta[meta_key] = value
+            else:
+                enriched_meta.pop(meta_key, None)
+            self._record_preference_source(enriched_meta, pref_key, source)
+
+    def _apply_default_llm_preference(
+        self,
+        enriched_meta: dict[str, Any],
+        auth_user: str,
+    ) -> None:
+        """Resolve the default LLM preference while preserving request metadata."""
+        if enriched_meta.get("default_llm_id") not in (None, ""):
+            default_llm_id = _bounded_int(
+                enriched_meta.get("default_llm_id"),
+                minimum=0,
+                maximum=999999999,
+            )
+            if default_llm_id is not None:
+                enriched_meta["default_llm_id"] = default_llm_id
+                self._record_preference_source(enriched_meta, "default_llm_id", "request")
+                return
+
+        default_llm_pref = self._get_user_preference_value(auth_user, "default_llm_id")
         default_llm_id: int | None = None
         if default_llm_pref not in (None, ""):
-            try:
-                default_llm_id = int(default_llm_pref)
-            except Exception:
+            default_llm_id = _bounded_int(default_llm_pref, minimum=0, maximum=999999999)
+            if default_llm_id is None:
                 logger.log_warning(
                     f"{Icons.warn} Ignoring non-numeric default_llm_id preference "
                     f"for user '{auth_user}': {default_llm_pref!r}"
                 )
         if default_llm_id is not None:
             enriched_meta["default_llm_id"] = default_llm_id
-
-        try:
-            tts_voice_pref = self.ctx.get_user_preference_value(
-                username=auth_user,
-                pref_key="tts_voice",
+            self._record_preference_source(
+                enriched_meta,
+                "default_llm_id",
+                "saved_preference",
             )
-        except Exception as e:
-            _log_exception("Failed to load tts_voice preference", e)
-            tts_voice_pref = None
+
+    def _apply_tts_voice_preference(
+        self,
+        enriched_meta: dict[str, Any],
+        auth_user: str,
+    ) -> None:
+        """Resolve selected TTS voice with request > preference > config fallback."""
+        preferred_voice_key: str | None = None
+        source = "config_default"
+
+        if isinstance(enriched_meta.get("tts_voice"), dict):
+            self._record_preference_source(enriched_meta, "tts_voice", "request")
+            return
+
+        if enriched_meta.get("tts_voice_key") not in (None, ""):
+            preferred_voice_key = str(enriched_meta.get("tts_voice_key")).strip()
+            source = "request"
+        elif enriched_meta.get("tts_voice") not in (None, ""):
+            preferred_voice_key = str(enriched_meta.get("tts_voice")).strip()
+            source = "request"
+        else:
+            tts_voice_pref = self._get_user_preference_value(auth_user, "tts_voice")
+            if tts_voice_pref not in (None, ""):
+                preferred_voice_key = str(tts_voice_pref).strip()
+                source = "saved_preference"
 
         tts_voice_selection_checked = False
         try:
             tts_voice = resolve_tts_voice_selection(
-                db_session=self.db_session,
+                db_session=getattr(self, "db_session", None),
                 config_mgr=self.config_mgr,
-                preferred_voice_key=(
-                    str(tts_voice_pref).strip()
-                    if tts_voice_pref not in (None, "")
-                    else None
-                ),
+                preferred_voice_key=preferred_voice_key,
                 username=auth_user,
             )
             tts_voice_selection_checked = True
@@ -2539,6 +3077,7 @@ class Orac:
         if tts_voice is not None:
             enriched_meta["tts_voice_key"] = tts_voice.tts_voice_key
             enriched_meta["tts_voice"] = tts_voice.to_runtime_dict()
+            self._record_preference_source(enriched_meta, "tts_voice", source)
         elif tts_voice_selection_checked:
             enriched_meta["tts_voice"] = {
                 "tts_voice_key": "__unavailable__",
@@ -2546,16 +3085,20 @@ class Orac:
                 "provider_voice_id": "",
             }
 
-        try:
-            personality_pref = self.ctx.get_user_preference_value(
-                username=auth_user,
-                pref_key="personality_code",
-            )
-        except Exception as e:
-            _log_exception("Failed to load personality_code preference", e)
-            personality_pref = None
+    def _apply_personality_preference(
+        self,
+        enriched_meta: dict[str, Any],
+        auth_user: str,
+    ) -> None:
+        """Resolve the selected Orac personality."""
+        if enriched_meta.get("personality_code") not in (None, ""):
+            personality_code = str(enriched_meta.get("personality_code")).strip().upper()
+            source = "request"
+        else:
+            personality_pref = self._get_user_preference_value(auth_user, "personality_code")
+            personality_code = str(personality_pref or "DEFAULT").strip().upper()
+            source = "saved_preference" if personality_pref not in (None, "") else "built_in_default"
 
-        personality_code = str(personality_pref or "DEFAULT").strip().upper()
         try:
             personality = self.ctx.get_orac_personality(personality_code)
             if not personality and personality_code != "DEFAULT":
@@ -2563,6 +3106,7 @@ class Orac:
                     f"{Icons.warn} Personality '{personality_code}' unavailable; falling back to DEFAULT."
                 )
                 personality = self.ctx.get_orac_personality("DEFAULT")
+                source = "built_in_default"
         except Exception as e:
             _log_exception("Failed to load selected Orac personality", e)
             personality = {}
@@ -2576,25 +3120,25 @@ class Orac:
             enriched_meta["orac_personality"] = personality
         else:
             enriched_meta["personality_code"] = personality_code or "DEFAULT"
+        self._record_preference_source(enriched_meta, "personality_code", source)
 
-        if meta.get("weather_location"):
-            return enriched_meta
+    def _apply_weather_location_preference(
+        self,
+        enriched_meta: dict[str, Any],
+        auth_user: str,
+    ) -> None:
+        """Resolve weather location while preserving explicit request metadata."""
+        if enriched_meta.get("weather_location"):
+            self._record_preference_source(enriched_meta, "weather_location", "request")
+            return
 
-        try:
-            weather_pref = self.ctx.get_user_preference_value(
-                username=auth_user,
-                pref_key="weather_location",
-            )
-        except Exception as e:
-            _log_exception("Failed to load weather_location preference", e)
-            return enriched_meta
-
+        weather_pref = self._get_user_preference_value(auth_user, "weather_location")
         if not isinstance(weather_pref, dict):
-            return enriched_meta
+            return
 
         name = str(weather_pref.get("name") or "").strip()
         if not name:
-            return enriched_meta
+            return
 
         parts = [name]
         admin1 = str(weather_pref.get("admin1") or "").strip()
@@ -2606,7 +3150,49 @@ class Orac:
 
         enriched_meta["weather_location"] = ", ".join(parts)
         enriched_meta["weather_location_pref"] = weather_pref
+        self._record_preference_source(
+            enriched_meta,
+            "weather_location",
+            "saved_preference",
+        )
+
+    def _apply_user_preference_meta(
+        self,
+        meta: dict[str, Any],
+        auth_user: str,
+    ) -> dict[str, Any]:
+        """Overlay runtime user preferences into request metadata."""
+        self._check_runtime_preference_config_conflicts()
+        enriched_meta = dict(meta)
+
+        self._apply_scalar_runtime_preferences(enriched_meta, auth_user)
+        self._apply_default_llm_preference(enriched_meta, auth_user)
+        self._apply_tts_voice_preference(enriched_meta, auth_user)
+        self._apply_personality_preference(enriched_meta, auth_user)
+        self._apply_weather_location_preference(enriched_meta, auth_user)
+
+        tts_options = {
+            key: enriched_meta[key]
+            for key in ("tts_rate", "tts_pitch")
+            if enriched_meta.get(key) is not None
+        }
+        if tts_options:
+            enriched_meta["tts_options"] = tts_options
+
         return enriched_meta
+
+    async def _run_blocking_retrieval_call(
+        self,
+        func: Callable[..., Any],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        """Run a synchronous retrieval helper without wedging sandboxed tests."""
+        if _strict_preference_config_mode():
+            result = func(*args, **kwargs)
+            await asyncio.sleep(0)
+            return result
+        return await asyncio.to_thread(func, *args, **kwargs)
 
     def _load_model_generation_preset(
         self,
@@ -2674,6 +3260,21 @@ class Orac:
                 option_key = key.lower()
                 if option_key in override:
                     resolved[option_key] = override[option_key]
+
+        max_tokens = _bounded_int(
+            request_meta.get("max_tokens"),
+            minimum=1,
+            maximum=32768,
+        )
+        max_tokens_limit = _config_int_or_none(
+            getattr(self, "config_mgr", None),
+            "settings",
+            "max_tokens_limit",
+        )
+        if max_tokens is not None:
+            if max_tokens_limit is not None and max_tokens_limit >= 1:
+                max_tokens = min(max_tokens, max_tokens_limit)
+            resolved["num_predict"] = max_tokens
 
         return resolved
 
@@ -3010,8 +3611,12 @@ class Orac:
         """
         if not isinstance(text, str):
             return ""
-        if "<think>" in text and "</think>" not in text:
-            return ""
+        if re.search(r"<think>", text, flags=re.I) and not re.search(
+            r"</think>",
+            text,
+            flags=re.I,
+        ):
+            return re.split(r"<think>", text, maxsplit=1, flags=re.I)[0].strip()
         return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
     # --- Session / policy helpers --------------------------------------------
@@ -3944,7 +4549,6 @@ class Orac:
                 logger.log_debug(
                     f"{Icons.warn} Dropped external meta.session_id='{dropped}' (using internal derivation)")
 
-            show_reasoning = bool(meta.get("show_reasoning", not self.strip_reasoning_tags))
             client = meta.get("client", "unknown")
             auth_user = getattr(auth_res, "user", "unknown")
             stream_requested = bool(meta.get("stream")) and event_sink is not None
@@ -3955,6 +4559,10 @@ class Orac:
                 _log_exception("Oracle session validation failed (non-fatal)", e)
 
             meta = self._apply_user_preference_meta(meta, auth_user)
+            show_reasoning = bool(_as_bool(meta.get("show_reasoning")) is True)
+            strip_reasoning_tags = bool(
+                _as_bool(meta.get("strip_reasoning_tags")) is not False
+            )
             profile_lookup = getattr(self.ctx, "get_user_profile", None)
             if callable(profile_lookup):
                 try:
@@ -3975,7 +4583,10 @@ class Orac:
 
             logger.log_info(f"{Icons.info} [{client}] user={auth_user} Prompt received")
             logger.log_debug(f"Prompt text: {prompt}")
-            logger.log_info(f"meta.show_reasoning={show_reasoning} (strip_reasoning_default={self.strip_reasoning_tags})")
+            logger.log_info(
+                f"meta.show_reasoning={show_reasoning} "
+                f"strip_reasoning_tags={strip_reasoning_tags}"
+            )
             request_flags = {"anonymous_user": False}
 
             # --- Session + conversation (timeout-aware) ---------------------------------
@@ -4468,6 +5079,13 @@ class Orac:
                     )
 
                 try:
+                    running_loop = asyncio.get_running_loop()
+                    if running_loop is retrieval_event_loop:
+                        retrieval_event_loop.create_task(_emit())
+                        return
+                except RuntimeError:
+                    pass
+                try:
                     future = asyncio.run_coroutine_threadsafe(
                         _emit(),
                         retrieval_event_loop,
@@ -4558,7 +5176,7 @@ class Orac:
                 person_resolver = getattr(self, "person_fact_resolver", None)
                 if person_query is not None and person_resolver is not None:
                     try:
-                        person_fact_resolution = await asyncio.to_thread(
+                        person_fact_resolution = await self._run_blocking_retrieval_call(
                             person_resolver.resolve,
                             person_query,
                             today=datetime.now(ZoneInfo("Europe/London")).date(),
@@ -4798,6 +5416,20 @@ class Orac:
                     try:
                         retrieval_service = getattr(self, "retrieval_service", None)
                         if retrieval_service is not None:
+                            reason_code = str(
+                                getattr(retrieval_decision, "reason_code", "") or ""
+                            )
+                            use_decision_search_query = reason_code.startswith(
+                                "factual_risk_"
+                            ) and (
+                                not retrieval_decision.explicit_request
+                                or previous_retrieval_context is not None
+                            )
+                            retrieval_event_query = (
+                                prompt
+                                if stream_requested
+                                else str(retrieval_decision.search_query or prompt)
+                            )
                             if stream_requested:
                                 await self._emit_stream_event(
                                     event_sink,
@@ -4821,9 +5453,7 @@ class Orac:
                                     req_env,
                                     "retrieval_query",
                                     payload={
-                                        "query": str(
-                                            retrieval_decision.search_query or prompt
-                                        ),
+                                        "query": retrieval_event_query,
                                         "provider": str(
                                             getattr(
                                                 retrieval_service,
@@ -4840,12 +5470,6 @@ class Orac:
                                         else "registered"
                                     ),
                                 )
-                            reason_code = str(
-                                getattr(retrieval_decision, "reason_code", "") or ""
-                            )
-                            use_decision_search_query = reason_code.startswith(
-                                "factual_risk_"
-                            )
                             if (
                                 retrieval_decision.explicit_request
                                 and not use_decision_search_query
@@ -4856,7 +5480,7 @@ class Orac:
                                     None,
                                 )
                                 if callable(build_outcome):
-                                    retrieval_outcome = await asyncio.to_thread(
+                                    retrieval_outcome = await self._run_blocking_retrieval_call(
                                         build_outcome,
                                         prompt,
                                         event_emitter=emit_retrieval_event,
@@ -4876,7 +5500,7 @@ class Orac:
                                                 query=str(retrieval_decision.search_query),
                                                 trigger_phrase=retrieval_decision.reason_code,
                                             )
-                                            retrieval_outcome = await asyncio.to_thread(
+                                            retrieval_outcome = await self._run_blocking_retrieval_call(
                                                 build_request_outcome,
                                                 retrieval_request,
                                                 event_emitter=emit_retrieval_event,
@@ -4895,7 +5519,7 @@ class Orac:
                                         query=str(retrieval_decision.search_query or prompt),
                                         trigger_phrase=retrieval_decision.reason_code,
                                     )
-                                    retrieval_outcome = await asyncio.to_thread(
+                                    retrieval_outcome = await self._run_blocking_retrieval_call(
                                         build_outcome,
                                         retrieval_request,
                                         event_emitter=emit_retrieval_event,
@@ -5108,6 +5732,9 @@ class Orac:
                 raw_parts: list[str] = []
                 speech_chunks: list[str] = []
                 stream_usage: LLMUsageMetadata | None = None
+                reasoning_filter = (
+                    ReasoningTagStreamFilter() if strip_reasoning_tags else None
+                )
 
                 def _capture_stream_usage(usage: LLMUsageMetadata) -> None:
                     """Capture final token metadata from a completed stream."""
@@ -5149,6 +5776,8 @@ class Orac:
                             )
                             break
                         delta_text = str(delta)
+                        if reasoning_filter is not None:
+                            delta_text = reasoning_filter.add_delta(delta_text)
                         if not delta_text:
                             continue
                         raw_parts.append(delta_text)
@@ -5219,6 +5848,43 @@ class Orac:
                     }
                     return json.dumps(err, ensure_ascii=False)
 
+                if not stream_cancelled and reasoning_filter is not None:
+                    trailing_visible = reasoning_filter.flush()
+                    if trailing_visible:
+                        raw_parts.append(trailing_visible)
+                        stream_emitted_delta = True
+                        await self._emit_stream_event(
+                            event_sink,
+                            req_env,
+                            "text_delta",
+                            payload={"delta": trailing_visible},
+                            model_name=effective_model_name,
+                            user_registration=(
+                                "anonymous"
+                                if request_flags["anonymous_user"]
+                                else "registered"
+                            ),
+                        )
+                        for chunk in chunker.add_delta(trailing_visible):
+                            speech_chunks.append(chunk)
+                            await self._emit_stream_event(
+                                event_sink,
+                                req_env,
+                                "text_chunk",
+                                payload={
+                                    "chunk": chunk,
+                                    "session_id": session_id,
+                                    "voice_session_id": voice_session_id,
+                                    "turn_id": voice_turn_id,
+                                },
+                                model_name=effective_model_name,
+                                user_registration=(
+                                    "anonymous"
+                                    if request_flags["anonymous_user"]
+                                    else "registered"
+                                ),
+                            )
+
                 final_chunk = "" if stream_cancelled else chunker.flush()
                 if final_chunk:
                     speech_chunks.append(final_chunk)
@@ -5280,12 +5946,12 @@ class Orac:
                 total_tokens = int(prompt_result.get("total_tokens") or 0)
                 tokens_used = total_tokens or None
 
-            # Apply local reasoning-strip unless explicitly requested
-            if show_reasoning:
-                content = raw
-            else:
+            # Apply local reasoning stripping according to resolved metadata.
+            if strip_reasoning_tags:
                 stripped = self._strip_reasoning_tags(raw)
                 content = stripped if stripped else raw
+            else:
+                content = raw
 
             if retrieval_pack is not None:
                 content = polish_retrieval_response_text(

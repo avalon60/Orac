@@ -274,6 +274,88 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
             self.assertIn("Restore cancelled", combined_output)
             self.assertNotIn("Preparing Data Pump directory", combined_output)
 
+    def test_recovery_directory_selects_newest_backup_filename(self) -> None:
+        """Directory restore should select the newest Orac backup archive by name."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            backup_dir = temp_path / "backups"
+            backup_dir.mkdir()
+            older_archive = self._write_recovery_archive(
+                backup_dir,
+                archive_name="orac-backup-20260623-101500.tar.gz",
+                orac_version="old-version",
+            )
+            newer_archive = self._write_recovery_archive(
+                backup_dir,
+                archive_name="orac-backup-20260623-102000.tar.gz",
+                orac_version="new-version",
+            )
+            self._write_recovery_archive(
+                backup_dir,
+                archive_name="not-an-orac-backup-20260623-103000.tar.gz",
+                orac_version="ignored-version",
+            )
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), "--dry-run", str(backup_dir)],
+                cwd=PROJECT_ROOT,
+                env={**os.environ, "ORAC_PYTHON_BIN": sys.executable},
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn(f"Selected newest backup archive: {newer_archive}", result.stdout)
+            self.assertIn("Backup Orac version : new-version", result.stdout)
+            self.assertNotIn(str(older_archive), result.stdout)
+            self.assertNotIn("ignored-version", result.stdout)
+            self.assertNotIn("Type RECOVER to continue", result.stdout + result.stderr)
+
+    def test_recovery_directory_without_backups_fails_before_prompt(self) -> None:
+        """Directory restore should reject directories without Orac backup archives."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            backup_dir = temp_path / "backups"
+            backup_dir.mkdir()
+            (backup_dir / "backup.tar.gz").write_text("not selected", encoding="utf-8")
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), str(backup_dir)],
+                cwd=PROJECT_ROOT,
+                env={**os.environ, "ORAC_PYTHON_BIN": sys.executable},
+                input="RECOVER\n",
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            combined_output = result.stdout + result.stderr
+            self.assertIn("No Orac backup archives found in directory", combined_output)
+            self.assertNotIn("Type RECOVER to continue", combined_output)
+            self.assertNotIn("Preparing Data Pump directory", combined_output)
+
+    def test_recovery_explicit_archive_path_still_dry_runs(self) -> None:
+        """A direct restore archive path should continue to work."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = self._write_recovery_archive(temp_path)
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), "--dry-run", str(archive_path)],
+                cwd=PROJECT_ROOT,
+                env={**os.environ, "ORAC_PYTHON_BIN": sys.executable},
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn("Backup Orac version : 0.0.0-test", result.stdout)
+            self.assertIn("Dry run only. No database import performed.", result.stdout)
+            self.assertNotIn("Selected newest backup archive", result.stdout)
+
     def test_recovery_makes_copied_dump_readable_before_import(self) -> None:
         """Recovery should fix dump ownership after docker cp and before impdp."""
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -315,6 +397,183 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
             self.assertIn("table_exists_action=truncate", docker_calls[import_index])
             self.assertIn("Restore import complete.", result.stdout)
             self.assertIn("Restore validation complete.", result.stdout)
+
+    def test_recovery_quarantines_plugin_state_before_validation(self) -> None:
+        """Recovery should quarantine restored plugin state before final validation."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = self._write_recovery_archive(temp_path)
+            docker_log = temp_path / "docker.log"
+            fake_docker = temp_path / "docker"
+            self._write_fake_restore_docker(fake_docker)
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), str(archive_path)],
+                cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "ORAC_DOCKER_BIN": str(fake_docker),
+                    "ORAC_FAKE_DOCKER_LOG": str(docker_log),
+                    "ORAC_PYTHON_BIN": sys.executable,
+                },
+                input="RECOVER\n",
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn(
+                "Quarantining restored plugin runtime state pending plugin reinstall.",
+                result.stdout,
+            )
+            docker_calls = docker_log.read_text(encoding="utf-8").splitlines()
+            import_index = self._first_call_index(docker_calls, " impdp ")
+            quarantine_index = self._first_call_index(
+                docker_calls,
+                "orac_code.restore_recovery_api.quarantine_plugin_state;",
+            )
+            validation_index = next(
+                index
+                for index, call in enumerate(
+                    docker_calls[quarantine_index + 1 :],
+                    quarantine_index + 1,
+                )
+                if "from all_objects" in call
+            )
+
+            self.assertLess(import_index, quarantine_index)
+            self.assertLess(quarantine_index, validation_index)
+
+    def test_recovery_preflight_requires_restore_recovery_api(self) -> None:
+        """Recovery should fail before import when quarantine API is missing."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = self._write_recovery_archive(temp_path)
+            docker_log = temp_path / "docker.log"
+            fake_docker = temp_path / "docker"
+            self._write_fake_restore_docker(fake_docker)
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), str(archive_path)],
+                cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "ORAC_DOCKER_BIN": str(fake_docker),
+                    "ORAC_FAKE_DOCKER_LOG": str(docker_log),
+                    "ORAC_FAKE_MISSING_RESTORE_RECOVERY_API": "1",
+                    "ORAC_PYTHON_BIN": sys.executable,
+                },
+                input="RECOVER\n",
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            combined_output = result.stdout + result.stderr
+            self.assertIn(
+                "Restore requires valid ORAC_CODE.RESTORE_RECOVERY_API",
+                combined_output,
+            )
+            docker_log_text = docker_log.read_text(encoding="utf-8")
+            self.assertIn("RESTORE_RECOVERY_API", docker_log_text)
+            self.assertNotIn(" cp ", f" {docker_log_text} ")
+            self.assertNotIn("chmod 640", docker_log_text)
+            self.assertNotIn(" impdp ", f" {docker_log_text} ")
+
+    def test_recovery_preflight_rejects_missing_plugin_schema(self) -> None:
+        """Data-only recovery should fail before import when plugin schemas are absent."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = self._write_recovery_archive(
+                temp_path,
+                exported_schemas=[
+                    "orac_core",
+                    "orac_api",
+                    "orac_code",
+                    "orac_ha",
+                ],
+                plugins=[
+                    {
+                        "plugin_id": "home_assistant",
+                        "name": "Home Assistant",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "database_schemas": ["orac_ha"],
+                    }
+                ],
+            )
+            docker_log = temp_path / "docker.log"
+            fake_docker = temp_path / "docker"
+            self._write_fake_restore_docker(fake_docker)
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), str(archive_path)],
+                cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "ORAC_DOCKER_BIN": str(fake_docker),
+                    "ORAC_FAKE_DOCKER_LOG": str(docker_log),
+                    "ORAC_FAKE_MISSING_ORAC_HA": "1",
+                    "ORAC_PYTHON_BIN": sys.executable,
+                },
+                input="RECOVER\n",
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            combined_output = result.stdout + result.stderr
+            self.assertIn("ORAC_HA", combined_output)
+            self.assertIn("home_assistant", combined_output)
+            self.assertIn(
+                "bin/orac-plugin.sh install --bundled home_assistant",
+                combined_output,
+            )
+            self.assertIn("Data-only restore requires all exported schemas", combined_output)
+            docker_log_text = docker_log.read_text(encoding="utf-8")
+            self.assertIn("from dba_users", docker_log_text)
+            self.assertNotIn("Preparing Data Pump directory", combined_output)
+            self.assertNotIn(" cp ", f" {docker_log_text} ")
+            self.assertNotIn("chmod 640", docker_log_text)
+            self.assertNotIn("disable constraint", docker_log_text)
+            self.assertNotIn(" impdp ", f" {docker_log_text} ")
+
+    def test_recovery_cleans_dump_when_plugin_quarantine_fails(self) -> None:
+        """Recovery should clean the copied dump if post-import quarantine fails."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = self._write_recovery_archive(temp_path)
+            docker_log = temp_path / "docker.log"
+            fake_docker = temp_path / "docker"
+            self._write_fake_restore_docker(fake_docker)
+
+            result = subprocess.run(
+                ["bash", str(RECOVERY_SCRIPT), str(archive_path)],
+                cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "ORAC_DOCKER_BIN": str(fake_docker),
+                    "ORAC_FAKE_DOCKER_LOG": str(docker_log),
+                    "ORAC_FAKE_QUARANTINE_FAIL": "1",
+                    "ORAC_PYTHON_BIN": sys.executable,
+                },
+                input="RECOVER\n",
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            combined_output = result.stdout + result.stderr
+            self.assertIn("Post-restore plugin quarantine failed", combined_output)
+            docker_log_text = docker_log.read_text(encoding="utf-8")
+            self.assertIn(" impdp ", f" {docker_log_text} ")
+            self.assertIn("quarantine_plugin_state", docker_log_text)
+            self.assertIn("rm -f", docker_log_text)
+            self.assertIn("/home/oracle/orac/datapump/orac-test.dmp", docker_log_text)
 
     def test_recovery_exits_nonzero_when_validation_fails(self) -> None:
         """Recovery should fail after import when core validation fails."""
@@ -613,11 +872,13 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
         temp_path: Path,
         exported_schemas: list[str] | None = None,
         plugins: list[dict[str, object]] | None = None,
+        archive_name: str = "backup.tar.gz",
+        orac_version: str = "0.0.0-test",
     ) -> Path:
         """Create a minimal database restore archive."""
         archive_root = temp_path / "orac-backup-test"
         db_dir = archive_root / "db"
-        db_dir.mkdir(parents=True)
+        db_dir.mkdir(parents=True, exist_ok=True)
         (db_dir / "orac-test.dmp").write_text("placeholder", encoding="utf-8")
         if exported_schemas is None:
             exported_schemas = ["orac_core"]
@@ -625,7 +886,7 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
             plugins = []
         manifest = {
             "backup_format_version": 1,
-            "orac_version": "0.0.0-test",
+            "orac_version": orac_version,
             "database": {
                 "container_name": "orac-db",
                 "pdb": "FREEPDB1",
@@ -642,7 +903,7 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
             json.dumps(manifest),
             encoding="utf-8",
         )
-        archive_path = temp_path / "backup.tar.gz"
+        archive_path = temp_path / archive_name
         with tarfile.open(archive_path, "w:gz") as archive:
             archive.add(archive_root, arcname=archive_root.name)
         return archive_path
@@ -667,7 +928,24 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
                     '    if [[ "$*" == *"sqlplus"* ]]; then',
                     "      sql_input=$(cat)",
                     '      printf "%s\\n" "$sql_input" >> "$ORAC_FAKE_DOCKER_LOG"',
-                    '      if [[ "$sql_input" == *"from all_objects"* ]]; then',
+                    '      if [[ "$sql_input" == *"RESTORE_RECOVERY_API"* ]]; then',
+                    '        if [[ "${ORAC_FAKE_MISSING_RESTORE_RECOVERY_API:-0}" != "1" ]]; then',
+                    '          printf "PACKAGE\\tVALID\\n"',
+                    '          printf "PACKAGE BODY\\tVALID\\n"',
+                    "        fi",
+                    '      elif [[ "$sql_input" == *"from dba_users"* ]]; then',
+                    '        printf "orac_api\\n"',
+                    '        printf "orac_code\\n"',
+                    '        printf "orac_core\\n"',
+                    '        if [[ "${ORAC_FAKE_MISSING_ORAC_HA:-0}" != "1" ]]; then',
+                    '          printf "orac_ha\\n"',
+                    "        fi",
+                    '      elif [[ "$sql_input" == *"quarantine_plugin_state"* ]]; then',
+                    '        if [[ "${ORAC_FAKE_QUARANTINE_FAIL:-0}" == "1" ]]; then',
+                    '          printf "ORA-06550: simulated quarantine failure\\n" >&2',
+                    "          exit 1",
+                    "        fi",
+                    '      elif [[ "$sql_input" == *"from all_objects"* ]]; then',
                     '        if [[ "${ORAC_FAKE_INVALID_OBJECTS:-0}" == "1" ]]; then',
                     '          printf "ORAC_CODE\\tPACKAGE BODY\\tBROKEN_API\\tINVALID\\n"',
                     "        fi",

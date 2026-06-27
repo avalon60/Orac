@@ -39,6 +39,7 @@ class TtsEngine(Protocol):
     *,
     session_id: str,
     turn_id: str,
+    tts_options: dict[str, object] | None = None,
   ) -> Path:
     """Synthesise text to a WAV file.
 
@@ -324,6 +325,7 @@ class PiperTtsEngine:
     *,
     session_id: str,
     turn_id: str,
+    tts_options: dict[str, object] | None = None,
   ) -> Path:
     """Synthesise text to a generated WAV file.
 
@@ -339,6 +341,17 @@ class PiperTtsEngine:
       ValueError: If text is empty.
       RuntimeError: If Piper fails.
     """
+    if tts_options:
+      unsupported = sorted(
+        key for key in tts_options
+        if key in {"tts_rate", "tts_pitch"}
+      )
+      if unsupported:
+        logger.debug(
+          "Piper TTS ignores unsupported per-turn option(s): {}",
+          ", ".join(unsupported),
+        )
+
     clean_text = text.strip()
     if not clean_text:
       raise ValueError("Cannot synthesise empty text")

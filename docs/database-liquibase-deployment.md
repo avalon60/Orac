@@ -17,20 +17,22 @@ database services and account provisioning:
 - `ORAC_CORE`, `ORAC_API`, `ORAC_CODE`, `ORAC_APX_PUB`, `ORAC`,
   `ORAC_PLUGIN`, quotas, account-level grants, and bootstrap privileges are
   created by the existing user-creation scripts.
-- APEX workspace and application exports remain installed by
-  `resources/docker/oracle/setup/035-orac-schema_and_apps.sh`.
-- APEX roles are initialised by
-  `resources/docker/oracle/setup/038-init-app-role.sh`.
 - core schema objects are probed, validated, and applied by
   `resources/docker/oracle/setup/040-orac-liquibase-deltas.sh`.
+- APEX workspace and application exports are imported by
+  `resources/docker/oracle/setup/045-orac-apex-import.sh` after core schema
+  objects, grants, synonyms, and parsing-schema dependencies exist.
+- APEX roles are initialised by
+  `resources/docker/oracle/setup/050-init-app-role.sh`.
 
 The first-setup order is:
 
 ```text
 030/031 SQL*Plus schema user bootstrap
-035 SQL*Plus APEX workspace/app install
-038 APEX role initialisation
+035 SQL*Plus non-Liquibase schema bundle runner
 040 Liquibase tracking probe plus validate/update for core objects
+045 SQL*Plus APEX workspace/app import
+050 APEX role initialisation
 998 final DB/APEX/ORDS completion checks
 999 extended string support and current completion marker
 ```
@@ -169,6 +171,9 @@ payload validation and staging.
 
 Liquibase is authoritative for core Orac database objects represented by
 `resources/db/schema/productController.xml`, which is mirrored into the
-container as `${ORAC_HOME}/schema/productController.xml`. The SQL*Plus
-schema runner no longer runs Liquibase-owned core object directories by default;
-set `RUN_CORE_OBJECTS_WITH_SQLPLUS=1` only for an explicit legacy recovery run.
+container as `${ORAC_HOME}/schema/productController.xml`. Orac-owned APEX
+exports live under `resources/db/apex`, are mirrored into the container as
+`${ORAC_HOME}/apex`, and are imported by SQL*Plus only after the Liquibase
+deployment succeeds. The SQL*Plus schema runner no longer runs Liquibase-owned
+core object directories by default; set `RUN_CORE_OBJECTS_WITH_SQLPLUS=1` only
+for an explicit legacy recovery run.

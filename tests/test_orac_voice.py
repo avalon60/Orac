@@ -140,6 +140,7 @@ class _FakeTtsEngine:
   def __init__(self, wav_path: Path) -> None:
     self.wav_path = wav_path
     self.calls: list[tuple[str, str, str]] = []
+    self.tts_options_seen: list[dict[str, object] | None] = []
     self.cancel_calls = 0
     self.block_event: threading.Event | None = None
 
@@ -149,9 +150,11 @@ class _FakeTtsEngine:
     *,
     session_id: str,
     turn_id: str,
+    tts_options: dict[str, object] | None = None,
   ) -> Path:
     """Record synthesis and return a fake WAV path."""
     self.calls.append((session_id, turn_id, text))
+    self.tts_options_seen.append(tts_options)
     if self.block_event is not None:
       self.block_event.wait(timeout=2.0)
     return self.wav_path
@@ -176,9 +179,10 @@ class _FailingTtsEngine:
     *,
     session_id: str,
     turn_id: str,
+    tts_options: dict[str, object] | None = None,
   ) -> Path:
     """Raise a configured synthesis error."""
-    del text, session_id, turn_id
+    del text, session_id, turn_id, tts_options
     raise RuntimeError(self.message)
 
   def cancel(self) -> None:
@@ -494,6 +498,7 @@ class _FakeVoiceWorker:
   def __init__(self) -> None:
     self.enqueued: list[tuple[str, str, str]] = []
     self.enqueued_tts_voice: list[dict[str, object] | None] = []
+    self.enqueued_tts_options: list[dict[str, object] | None] = []
     self.completed_turns: list[tuple[str, str]] = []
     self.cancelled_sessions: list[str] = []
     self.cancelled_turns: list[tuple[str, str]] = []
@@ -506,10 +511,12 @@ class _FakeVoiceWorker:
     turn_id: str,
     text: str,
     tts_voice: dict[str, object] | None = None,
+    tts_options: dict[str, object] | None = None,
   ) -> bool:
     """Record queued text."""
     self.enqueued.append((session_id, turn_id, text))
     self.enqueued_tts_voice.append(tts_voice)
+    self.enqueued_tts_options.append(tts_options)
     return True
 
   def mark_turn_input_complete(self, *, session_id: str, turn_id: str) -> None:
@@ -2444,6 +2451,52 @@ class OracVoiceTests(unittest.TestCase):
 
     self.assertTrue(str(wav_path).endswith(".wav"))
 
+  def test_piper_ignores_unsupported_per_turn_tts_options(self) -> None:
+    """Piper should not turn portable TTS hints into unsupported CLI flags."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      tmp_root = Path(tmp_name)
+      voice_dir = tmp_root / "voices"
+      voice_dir.mkdir()
+      (voice_dir / "test_voice.onnx").write_bytes(b"fake model")
+      args_path = tmp_root / "piper-args.txt"
+      piper_bin = tmp_root / "piper"
+      piper_bin.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"$@\" > {args_path}\n"
+        "while [ \"$#\" -gt 0 ]; do\n"
+        "  if [ \"$1\" = \"--output_file\" ]; then\n"
+        "    shift\n"
+        "    printf RIFFfake > \"$1\"\n"
+        "  fi\n"
+        "  shift\n"
+        "done\n"
+        "cat >/dev/null\n",
+        encoding="utf-8",
+      )
+      piper_bin.chmod(0o755)
+
+      with patch.dict(os.environ, {"ORAC_HOME": str(tmp_root)}, clear=False):
+        engine = PiperTtsEngine(
+          config_file_path=PROJECT_ROOT / "resources" / "config" / "orac.ini",
+          voice_name="test_voice",
+          voice_dir=voice_dir,
+          piper_bin=piper_bin,
+        )
+        wav_path = engine.synthesise_to_wav(
+          "Hello.",
+          session_id="session1",
+          turn_id="turn1",
+          tts_options={"tts_rate": 1.4, "tts_pitch": -2.0},
+        )
+      args = args_path.read_text(encoding="utf-8").splitlines()
+
+    self.assertTrue(str(wav_path).endswith(".wav"))
+    self.assertIn("--model", args)
+    self.assertIn("--output_file", args)
+    self.assertNotIn("--rate", args)
+    self.assertNotIn("--speed", args)
+    self.assertNotIn("--pitch", args)
+
   def test_faster_whisper_engine_reuses_loaded_model(self) -> None:
     """STT wrapper should use the cached model for transcription."""
 
@@ -2500,6 +2553,30 @@ class OracVoiceTests(unittest.TestCase):
     self.assertTrue(drained)
     self.assertEqual(tts_engine.calls, [("s1", "t1", "Hello there.")])
     self.assertEqual(playback.played, [wav_path])
+
+  def test_tts_worker_passes_per_turn_options_to_engine(self) -> None:
+    """Queued speech jobs should carry per-turn TTS options."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      wav_path = Path(tmp_name) / "out.wav"
+      wav_path.write_bytes(b"RIFFfake")
+      tts_engine = _FakeTtsEngine(wav_path=wav_path)
+      playback = _FakePlayback()
+      worker = TtsWorker(tts_engine=tts_engine, audio_playback=playback)
+      worker.start()
+      worker.enqueue_text(
+        session_id="s1",
+        turn_id="t1",
+        text="Hello there.",
+        tts_options={"tts_rate": 1.25, "tts_pitch": -0.5},
+      )
+      drained = worker.wait_until_idle(timeout=2.0)
+      worker.stop()
+
+    self.assertTrue(drained)
+    self.assertEqual(
+      tts_engine.tts_options_seen,
+      [{"tts_rate": 1.25, "tts_pitch": -0.5}],
+    )
 
   def test_tts_worker_skips_punctuation_only_chunks(self) -> None:
     """TTS worker should not queue chunks that Piper cannot speak usefully."""
@@ -2868,6 +2945,34 @@ class OracVoiceTests(unittest.TestCase):
       session.posts[0]["json"]["voice"],
       "af_bella(2)+af_heart(1)",
     )
+
+  def test_kokoro_tts_engine_passes_rate_as_speed(self) -> None:
+    """Kokoro should receive supported per-turn rate as speech speed."""
+    with tempfile.TemporaryDirectory() as tmp_name:
+      orac_home = Path(tmp_name)
+      session = _FakeHttpSession(
+        _FakeHttpResponse(_wav_bytes(np.array([0], dtype=np.int16).tobytes()))
+      )
+      with patch.object(
+        tts_kokoro_module,
+        "resolve_orac_home",
+        return_value=orac_home,
+      ):
+        engine = KokoroTtsEngine(
+          voice_name="af_heart",
+          output_dir=orac_home / "var" / "tmp",
+        )
+      engine._session = session
+
+      engine.synthesise_to_wav(
+        "Testing speed.",
+        session_id="s1",
+        turn_id="t1",
+        tts_options={"tts_rate": 1.3, "tts_pitch": 2.0},
+      )
+
+    self.assertEqual(session.posts[0]["json"]["speed"], 1.3)
+    self.assertNotIn("pitch", session.posts[0]["json"])
 
   def test_kokoro_speech_url_accepts_base_url_variants(self) -> None:
     """Kokoro speech URL builder should avoid duplicate v1 paths."""
@@ -3957,6 +4062,10 @@ class OracVoiceTests(unittest.TestCase):
           "provider_code": "piper",
           "provider_voice_id": "en_GB-alan-medium",
         },
+        "tts_options": {
+          "tts_rate": 1.1,
+          "tts_pitch": -1.0,
+        },
       },
     }
 
@@ -3976,6 +4085,10 @@ class OracVoiceTests(unittest.TestCase):
           "provider_voice_id": "en_GB-alan-medium",
         }
       ],
+    )
+    self.assertEqual(
+      worker.enqueued_tts_options,
+      [{"tts_rate": 1.1, "tts_pitch": -1.0}],
     )
 
   def test_tts_coalescer_merges_short_complete_chunks(self) -> None:

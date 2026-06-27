@@ -151,4 +151,6 @@ if [[ ${complete_status} -ne 0 ]]; then
   return "${complete_status}" 2>/dev/null || false
 fi
 
+echo "==================  ORAC deployment complete =================="
+
 return 0 2>/dev/null || true
