@@ -98,5 +98,48 @@
         }
       }
     ]
+  },
+  "apex_apps": [
+    {
+      "app_alias": "ORAC_DROPBOX_ADMIN",
+      "label": "Drop Box Admin",
+      "description": "Admin configuration and inspection app for drop-box ingestion locations and jobs.",
+      "app_export": "apex/f10020.sql",
+      "workspace": "ORAC",
+      "parsing_schema": "ORAC_APX_PUB",
+      "application_id": 10020,
+      "entry_page_id": 1,
+      "install_required": true,
+      "replace_existing": false,
+      "required_roles": [
+        "ORAC_ADMIN"
+      ],
+      "icon": "fa-folder-open",
+      "card_title": "Drop Box",
+      "card_subtitle": "Configure ingestion drop locations",
+      "enabled": true
+    }
+  ],
+  "ui": {
+    "surfaces": [
+      {
+        "id": "drop_box.admin_config",
+        "type": "admin_status",
+        "label": "Drop Box Admin",
+        "description": "Configure drop-box ingestion locations and inspect queued jobs.",
+        "target": "apex",
+        "audience": "admin",
+        "required_roles": [
+          "ORAC_ADMIN"
+        ],
+        "enabled": true,
+        "apex": {
+          "app_alias": "ORAC_DROPBOX_ADMIN",
+          "app_export": "apex/f10020.sql",
+          "entry_page_id": 1,
+          "install_required": true
+        }
+      }
+    ]
   }
 }

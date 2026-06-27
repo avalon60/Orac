@@ -21,4 +21,5 @@
   <include file="controllers/09_package_body.xml" relativeToChangelogFile="true"/>
   <include file="controllers/10_grant.xml" relativeToChangelogFile="true"/>
   <include file="controllers/11_comment.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/12_seed_data.xml" relativeToChangelogFile="true"/>
 </databaseChangeLog>

@@ -6,4 +6,7 @@
   <changeSet id="drop_box-09_package_body-drop_box_api" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
     <sqlFile path="../../schema/package_body/drop_box_api.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
   </changeSet>
+  <changeSet id="drop_box-09_package_body-drop_box_admin_api" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
+    <sqlFile path="../../schema/package_body/drop_box_admin_api.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
 </databaseChangeLog>

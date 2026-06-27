@@ -539,6 +539,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         exports = (
             PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql",
             PROJECT_ROOT / "plugins/home_assistant/apex/f10010.sql",
+            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql",
         )
 
         for export_path in exports:
@@ -558,6 +559,79 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("orac_code.plugin_apex_app_auth_api.has_required_role", export_sql)
         self.assertIn("''orac_admin''", export_sql)
         self.assertGreaterEqual(export_sql.count("p_required_role=>"), 3)
+
+    def test_drop_box_declares_required_admin_apex_app(self) -> None:
+        manifest = (PROJECT_ROOT / "plugins/drop_box.json").read_text(
+            encoding="utf-8"
+        ).lower()
+
+        self.assertIn('"app_alias": "orac_dropbox_admin"', manifest)
+        self.assertIn('"app_export": "apex/f10020.sql"', manifest)
+        self.assertIn('"workspace": "orac"', manifest)
+        self.assertIn('"parsing_schema": "orac_apx_pub"', manifest)
+        self.assertIn('"application_id": 10020', manifest)
+        self.assertIn('"install_required": true', manifest)
+        self.assertIn('"orac_admin"', manifest)
+
+    def test_drop_box_apex_app_uses_plugin_app_security_pattern(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("p_default_application_id=>10020", export_sql)
+        self.assertIn("drop box admin", export_sql)
+        self.assertIn("p_cookie_name=>'&workspace_cookie.'", export_sql)
+        self.assertIn("p_switch_in_session_yn=>'y'", export_sql)
+        self.assertIn("p_rejoin_existing_sessions=>'y'", export_sql)
+        self.assertIn("orac_code.plugin_apex_app_auth_api.has_required_role", export_sql)
+        self.assertIn("''orac_admin''", export_sql)
+        self.assertIn(":request = ''orac_theme_sync''", export_sql)
+        self.assertIn("s.application_id = 1042", export_sql)
+        self.assertIn("s.application_id = :app_id", export_sql)
+        self.assertGreaterEqual(export_sql.count("p_required_role=>"), 3)
+
+    def test_drop_box_apex_app_uses_admin_views_and_api_only(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("orac_dropbox.drop_location_admin_v", export_sql)
+        self.assertIn("orac_dropbox.drop_job_admin_v", export_sql)
+        self.assertIn("orac_dropbox.drop_job_event_admin_v", export_sql)
+        self.assertIn("orac_dropbox.drop_box_admin_api", export_sql)
+        self.assertIn("orac_code.plugin_lov_v", export_sql)
+        self.assertIn("p_name=>'drop location form'", export_sql)
+        self.assertIn("p_name=>'recent jobs'", export_sql)
+        self.assertIn("p_name=>'job events'", export_sql)
+        self.assertNotRegex(
+            export_sql,
+            r"\b(insert|update|delete|merge)\s+(into\s+)?orac_dropbox\.",
+        )
+        self.assertNotIn("orac_core.", export_sql)
+        self.assertNotIn("orac_api.", export_sql)
+
+    def test_plugin_lov_view_is_narrow_and_apex_granted(self) -> None:
+        view_sql = (
+            PROJECT_ROOT / "resources/db/schema/orac_code/view/plugin_lov_v.sql"
+        ).read_text(encoding="utf-8").lower()
+        grants_sql = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_code/grant/orac_code_consumer_view_access.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("create or replace view orac_code.plugin_lov_v", view_sql)
+        self.assertIn("plugin_id", view_sql)
+        self.assertIn("display_label", view_sql)
+        self.assertIn("plugin_version", view_sql)
+        self.assertIn("install_status", view_sql)
+        self.assertIn("readiness_status", view_sql)
+        self.assertIn("enabled", view_sql)
+        self.assertNotIn("manifest_hash", view_sql)
+        self.assertNotIn("package_hash", view_sql)
+        self.assertNotIn("installed_path", view_sql)
+        self.assertNotIn("config_path", view_sql)
+        self.assertIn("grant read on orac_code.plugin_lov_v to orac_apx_pub;", grants_sql)
+        self.assertNotIn("grant read on orac_code.plugin_registry_v to orac_apx_pub", grants_sql)
 
     def test_home_assistant_synchronizes_theme_when_launched_from_plugin_hub(self) -> None:
         export_sql = (

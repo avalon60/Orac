@@ -39,6 +39,15 @@ Important columns:
 - `max_file_size_mb`: optional size limit.
 - `stability_seconds`: unchanged size and mtime interval required before hash.
 
+The admin API performs configuration sanity checks before a location can be
+enabled: location and profile code formats, target scope type/key, Y/N flags,
+positive stability and file-size values, a non-empty absolute source path, and
+duplicate active source paths. Phase 1 does not enforce a configured allowed
+root directory because no project-wide drop-box base-directory concept exists
+yet. The scanner still performs runtime filesystem validation for existence,
+permissions, symlinks, file stability, and hashing safety before enqueueing
+jobs.
+
 Default ignore handling excludes hidden dotfiles and common partial files such
 as `*.tmp`, `*.part`, `*.partial`, `*.crdownload`, `.~*`, `~$*`, and `.DS_Store`.
 
@@ -47,8 +56,9 @@ as `*.tmp`, `*.part`, `*.partial`, `*.crdownload`, `.~*`, `~$*`, and `.DS_Store`
 Home Assistant conclusions:
 
 ```text
-location_code: HOME_ASSISTANT_CONCLUSIONS
-path: /mnt/orac-drop/home_assistant/conclusions
+location_code: HA_CONCLUSIONS
+enabled_yn: N
+path: /__orac_dropbox_examples__/home_assistant_conclusions
 target_scope_type: plugin
 target_scope_key: home_assistant
 processing_profile: concise_knowledge_note
@@ -58,7 +68,8 @@ Orac architecture notes:
 
 ```text
 location_code: ORAC_ARCHITECTURE_NOTES
-path: /mnt/orac-drop/orac_core/architecture
+enabled_yn: N
+path: /__orac_dropbox_examples__/orac_architecture_notes
 target_scope_type: project
 target_scope_key: ORAC_CORE
 processing_profile: implementation_decision_record
@@ -69,5 +80,5 @@ processing_profile: implementation_decision_record
 Future phases can consume `drop_job_handoff_v`, convert source material to
 canonical markdown, optionally synthesise notes, chunk, embed, and persist into
 the retrieval store through approved Orac interfaces. File-level directives,
-email ingestion, post-processing file movement, and admin UI surfaces are
-explicitly deferred.
+email ingestion, post-processing file movement, and delegated plugin
+administration are explicitly deferred.
