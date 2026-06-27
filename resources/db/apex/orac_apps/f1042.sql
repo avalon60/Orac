@@ -10740,6 +10740,29 @@ wwv_flow_imp_page.create_page(
 ,p_page_mode=>'MODAL'
 ,p_step_title=>'User Preferences'
 ,p_autocomplete_on_off=>'OFF'
+,p_inline_css=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'.orac-pref-slider-host-body,',
+'.orac-pref-slider {',
+'  width: 100%;',
+'}',
+'.orac-pref-slider-input {',
+'  box-sizing: border-box;',
+'  display: block;',
+'  margin: 0 0 .35rem 0;',
+'  width: 100%;',
+'}',
+'.orac-pref-slider-meta {',
+'  display: grid;',
+'  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);',
+'  width: 100%;',
+'}',
+'.orac-pref-slider-meta > :nth-child(2) {',
+'  justify-self: center;',
+'}',
+'.orac-pref-slider-meta > :last-child {',
+'  justify-self: end;',
+'  text-align: right;',
+'}'))
 ,p_step_template=>1661186590416509825
 ,p_page_template_options=>'#DEFAULT#:js-dialog-class-t-Drawer--pullOutEnd'
 ,p_dialog_chained=>'N'

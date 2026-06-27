@@ -121,6 +121,17 @@ class UserPreferencesValidationTests(unittest.TestCase):
         self.assertIn("orac-pref-slider-host-body", export_sql)
         self.assertNotIn("p_plug_source_type=>'native_static_content'", export_sql)
         self.assertIn("'output_as', 'html'", export_sql)
+        self.assertIn(".orac-pref-slider {", export_sql)
+        self.assertIn(".orac-pref-slider-input {", export_sql)
+        self.assertIn("box-sizing: border-box;", export_sql)
+        self.assertIn("width: 100%;", export_sql)
+        self.assertIn(".orac-pref-slider-meta {", export_sql)
+        self.assertIn(
+            "grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);",
+            export_sql,
+        )
+        self.assertIn(".orac-pref-slider-meta > :last-child {", export_sql)
+        self.assertIn("justify-self: end;", export_sql)
         self.assertIn("p_name=>'p6_min_number'", export_sql)
         self.assertIn("p_name=>'p6_max_number'", export_sql)
         self.assertIn("p_name=>'p6_step_number'", export_sql)
