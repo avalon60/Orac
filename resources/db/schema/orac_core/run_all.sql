@@ -4,6 +4,7 @@ spool run_all.log
 
 prompt === tables ===
 @table/preference_definitions.sql
+@table/preference_definitions_slider_metadata.sql
 @table/timezones.sql
 @table/conversations.sql
 @table/devices.sql
@@ -142,10 +143,12 @@ prompt === constraints_fk ===
 prompt === constraints_other ===
 @constraint_other/prfdfn_ck1.sql
 @constraint_other/prfdfn_ck2.sql
+@constraint_other/prfdfn_ck2_slider_control_type.sql
 @constraint_other/prfdfn_ck3.sql
 @constraint_other/prfdfn_ck4.sql
 @constraint_other/prfdfn_ck5.sql
 @constraint_other/prfdfn_ck6.sql
+@constraint_other/prfdfn_ck7.sql
 @constraint_other/tmzone_ck1.sql
 @constraint_other/convs_ck1.sql
 @constraint_other/device_ck1.sql

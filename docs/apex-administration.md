@@ -26,6 +26,19 @@ application:
 http://localhost:8042/ords/r/apex/workspace-sign-in/oracle-apex-sign-in
 ```
 
+## User Preference Sliders
+
+The administration preference editor renders slider-capable numeric
+preferences from catalogue metadata. Page 6 uses a native metadata-driven range
+input created with DOM APIs inside the fixed `ORAC_PREF_SLIDER_HOST` region.
+The submitted APEX item is hidden and carries only the selected value.
+
+The FOS Range Slider plug-in is already present in the exported application and
+is kept as a vendored optional APEX plug-in. Native Page 6 slider rendering does
+not use FOS because the vendored plug-in's min, max, and step settings are
+static APEX component attributes rather than row-specific preference metadata.
+It does not require a separate `com_fos_range_slider.sql` deployment step.
+
 ## Troubleshooting
 
 1. Confirm the stack and database are running:

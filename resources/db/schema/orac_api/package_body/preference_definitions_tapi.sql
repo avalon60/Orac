@@ -23,6 +23,11 @@ as
             , default_value
             , min_number
             , max_number
+            , step_number
+            , unit_label
+            , display_min_label
+            , display_max_label
+            , display_value_format
             , min_length
             , max_length
             , regex_pattern
@@ -46,6 +51,11 @@ as
             , p_row.default_value
             , p_row.min_number
             , p_row.max_number
+            , p_row.step_number
+            , p_row.unit_label
+            , p_row.display_min_label
+            , p_row.display_max_label
+            , p_row.display_value_format
             , p_row.min_length
             , p_row.max_length
             , p_row.regex_pattern
@@ -171,6 +181,11 @@ as
          , default_value
          , min_number
          , max_number
+         , step_number
+         , unit_label
+         , display_min_label
+         , display_max_label
+         , display_value_format
          , min_length
          , max_length
          , regex_pattern
@@ -198,6 +213,11 @@ as
          , p_row.default_value
          , p_row.min_number
          , p_row.max_number
+         , p_row.step_number
+         , p_row.unit_label
+         , p_row.display_min_label
+         , p_row.display_max_label
+         , p_row.display_value_format
          , p_row.min_length
          , p_row.max_length
          , p_row.regex_pattern
@@ -326,6 +346,11 @@ as
            , default_value    = p_row.default_value
            , min_number       = p_row.min_number
            , max_number       = p_row.max_number
+           , step_number      = p_row.step_number
+           , unit_label       = p_row.unit_label
+           , display_min_label = p_row.display_min_label
+           , display_max_label = p_row.display_max_label
+           , display_value_format = p_row.display_value_format
            , min_length       = p_row.min_length
            , max_length       = p_row.max_length
            , regex_pattern    = p_row.regex_pattern

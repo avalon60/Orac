@@ -4,6 +4,26 @@
 merge into orac_core.preference_definitions tgt
 using (
   select
+    base.*,
+    case base.pref_key
+      when 'max_tokens' then 1
+      when 'tts_pitch' then 1
+      when 'tts_rate' then 0.05
+    end as step_number,
+    case base.pref_key
+      when 'max_tokens' then 'tokens'
+    end as unit_label,
+    case base.pref_key
+      when 'tts_pitch' then 'Lower'
+      when 'tts_rate' then 'Slower'
+    end as display_min_label,
+    case base.pref_key
+      when 'tts_pitch' then 'Higher'
+      when 'tts_rate' then 'Faster'
+    end as display_max_label,
+    cast(null as varchar2(100 byte)) as display_value_format
+  from (
+  select
     'date_format' as pref_key,
     'Date Format' as display_label,
     'Preferred date and time display format for the user interface.' as description,
@@ -191,7 +211,7 @@ using (
     'Max Tokens',
     'Default maximum token budget used for LLM responses.',
     'number',
-    'number',
+    'slider',
     cast(null as varchar2(30 byte)),
     cast(null as varchar2(4000 byte)),
     cast(null as varchar2(100 byte)),
@@ -391,7 +411,7 @@ using (
     'TTS Pitch',
     'Default text-to-speech pitch setting.',
     'number',
-    'number',
+    'slider',
     cast(null as varchar2(30 byte)),
     cast(null as varchar2(4000 byte)),
     cast(null as varchar2(100 byte)),
@@ -414,7 +434,7 @@ using (
     'TTS Rate',
     'Default text-to-speech playback rate.',
     'number',
-    'number',
+    'slider',
     cast(null as varchar2(30 byte)),
     cast(null as varchar2(4000 byte)),
     cast(null as varchar2(100 byte)),
@@ -475,6 +495,7 @@ using (
     'Chooses the preferred text-to-speech voice for local playback.',
     'Y'
   from dual
+  ) base
 ) src
 on (tgt.pref_key = src.pref_key)
 when matched then update set
@@ -488,6 +509,11 @@ when matched then update set
   tgt.default_value = src.default_value,
   tgt.min_number = src.min_number,
   tgt.max_number = src.max_number,
+  tgt.step_number = src.step_number,
+  tgt.unit_label = src.unit_label,
+  tgt.display_min_label = src.display_min_label,
+  tgt.display_max_label = src.display_max_label,
+  tgt.display_value_format = src.display_value_format,
   tgt.min_length = src.min_length,
   tgt.max_length = src.max_length,
   tgt.regex_pattern = src.regex_pattern,
@@ -509,6 +535,11 @@ when not matched then insert (
   default_value,
   min_number,
   max_number,
+  step_number,
+  unit_label,
+  display_min_label,
+  display_max_label,
+  display_value_format,
   min_length,
   max_length,
   regex_pattern,
@@ -530,6 +561,11 @@ when not matched then insert (
   src.default_value,
   src.min_number,
   src.max_number,
+  src.step_number,
+  src.unit_label,
+  src.display_min_label,
+  src.display_max_label,
+  src.display_value_format,
   src.min_length,
   src.max_length,
   src.regex_pattern,

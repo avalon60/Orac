@@ -37,6 +37,22 @@ metadata, not just a scalar value:
 | `tts_rate` | Voice/TTS | Number. | Config default `settings.tts_rate_default`; bounded to `0.25..4.0`. | Added to `tts_options` as an engine-neutral speaking-rate hint. TTS adapters map it to supported engine options or safely ignore it. |
 | `tts_pitch` | Voice/TTS | Number. | Config default `settings.tts_pitch_default`; bounded to `-10.0..10.0`. | Added to `tts_options` as an engine-neutral pitch hint. TTS adapters map it to supported engine options or safely ignore it. |
 
+## Preference UI Metadata
+
+User preference definitions may include UI metadata such as `control_type`,
+`min_number`, `max_number`, `step_number`, `unit_label`,
+`display_min_label`, `display_max_label`, and `display_value_format`.
+`control_type = 'slider'` is UI sugar for bounded numeric preferences.
+
+APEX Page 6 uses this metadata only to render the editing control. Slider
+preferences are rendered as native range inputs created inside the fixed
+`ORAC_PREF_SLIDER_HOST` host; the submitted APEX slider item is hidden and
+contains only the selected value. Submitted values still pass through
+`orac_code.user_preferences_api`, which reloads the authoritative metadata from
+`preference_definitions_v` and validates the value server-side.
+Client-submitted Page 6 metadata such as `P6_MIN_NUMBER`, `P6_MAX_NUMBER`, or
+`P6_STEP_NUMBER` must not be trusted for validation.
+
 ## TTS Portability
 
 `tts_voice`, `tts_rate`, and `tts_pitch` are portable hints. They are not a

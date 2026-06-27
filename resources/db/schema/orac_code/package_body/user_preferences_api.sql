@@ -195,6 +195,7 @@ create or replace package body orac_code.user_preferences_api as
     l_serialised_value  varchar2(4000);
     l_is_string_value   varchar2(1);
     l_number_value      number;
+    l_step_remainder    number;
     l_allow_zero_lov    boolean := false;
 
     function fail(
@@ -234,6 +235,19 @@ create or replace package body orac_code.user_preferences_api as
         'Preference "' || l_display_label || '" expects value type '
         || l_pref_definition.value_type || '.'
       );
+    end if;
+
+    if l_pref_definition.control_type = 'slider' then
+      if l_pref_definition.value_type <> 'number'
+         or l_pref_definition.min_number is null
+         or l_pref_definition.max_number is null
+         or l_pref_definition.step_number is null
+         or l_pref_definition.step_number <= 0
+         or l_pref_definition.min_number > l_pref_definition.max_number then
+        return fail(
+          'Preference "' || l_display_label || '" has invalid slider metadata.'
+        );
+      end if;
     end if;
 
     l_serialised_value := serialise_pref_value(p_pref_value);
@@ -310,6 +324,29 @@ create or replace package body orac_code.user_preferences_api as
           'Preference "' || l_display_label || '" must be at most '
           || to_char(l_pref_definition.max_number) || '.'
         );
+      end if;
+
+      if l_pref_definition.step_number is not null
+         and l_pref_definition.step_number <= 0 then
+        return fail(
+          'Preference "' || l_display_label || '" has invalid step metadata.'
+        );
+      end if;
+
+      if l_pref_definition.step_number is not null
+         and l_number_value is not null then
+        l_step_remainder := mod(
+          l_number_value - coalesce(l_pref_definition.min_number, 0),
+          l_pref_definition.step_number
+        );
+
+        if l_step_remainder <> 0 then
+          return fail(
+            'Preference "' || l_display_label
+            || '" must align to step '
+            || to_char(l_pref_definition.step_number) || '.'
+          );
+        end if;
       end if;
     elsif l_value_type = 'boolean' then
       if l_boolean_value is not null and l_boolean_value not in ('true', 'false') then
