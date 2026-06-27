@@ -20,4 +20,7 @@ orac_core,user_preferences,user_pref
 orac_core,user_prompt_elements,user_pe
 orac_core,user_synonyms,user_syns
 orac_core,users,users
+orac_dropbox,drop_location,drp_loc
+orac_dropbox,drop_job,drp_job
+orac_dropbox,drop_job_event,drp_jobe
 orac_core,plugin_registry,plgreg

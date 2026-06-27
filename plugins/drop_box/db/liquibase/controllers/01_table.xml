@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <changeSet id="drop_box-01_table-drop_location" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
+    <sqlFile path="../../schema/table/drop_location.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+  <changeSet id="drop_box-01_table-drop_job" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
+    <sqlFile path="../../schema/table/drop_job.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+  <changeSet id="drop_box-01_table-drop_job_source_mtime_type" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
+    <sqlFile path="../../schema/table/drop_job_source_mtime_type.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+  <changeSet id="drop_box-01_table-drop_job_source_mtime_type_v2" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
+    <sqlFile path="../../schema/table/drop_job_source_mtime_type_v2.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+  <changeSet id="drop_box-01_table-drop_job_event" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
+    <sqlFile path="../../schema/table/drop_job_event.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+</databaseChangeLog>

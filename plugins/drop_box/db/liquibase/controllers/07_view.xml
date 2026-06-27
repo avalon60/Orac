@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <changeSet id="drop_box-07_view-drop_location_runtime_v" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
+    <sqlFile path="../../schema/view/drop_location_runtime_v.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+  <changeSet id="drop_box-07_view-drop_job_handoff_v" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
+    <sqlFile path="../../schema/view/drop_job_handoff_v.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+</databaseChangeLog>
