@@ -3,10 +3,6 @@
   xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
-  <changeSet id="drop_box-08_package_spec-drop_box_api" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
-    <sqlFile path="../../schema/package_spec/drop_box_api.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
-  </changeSet>
-  <changeSet id="drop_box-08_package_spec-drop_box_admin_api" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
-    <sqlFile path="../../schema/package_spec/drop_box_admin_api.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
-  </changeSet>
+  <include file="../../schema/package_spec/drop_box_api.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/package_spec/drop_box_admin_api.sql" relativeToChangelogFile="true"/>
 </databaseChangeLog>

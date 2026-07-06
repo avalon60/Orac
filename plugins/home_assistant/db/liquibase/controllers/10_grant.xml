@@ -9,20 +9,8 @@
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   logicalFilePath="plugins/home_assistant/db/liquibase/controllers/10_grant.xml"
   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
-
-  <changeSet id="home_assistant-10_grant-ha_sync_api_to_orac_plugin" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant" runOnChange="true">
-    <sqlFile path="../../schema/grant/ha_sync_api_to_orac_plugin.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
-  </changeSet>
-
-  <changeSet id="home_assistant-10_grant-ha_status_summary_v_to_orac_plugin" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant" runOnChange="true">
-    <sqlFile path="../../schema/grant/ha_status_summary_v_to_orac_plugin.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
-  </changeSet>
-
-  <changeSet id="home_assistant-10_grant-ha_status_summary_v_to_orac_apx_pub" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant" runOnChange="true">
-    <sqlFile path="../../schema/grant/ha_status_summary_v_to_orac_apx_pub.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
-  </changeSet>
-
-  <changeSet id="home_assistant-10_grant-ha_control_resolution_v_to_orac_plugin" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant" runOnChange="true">
-    <sqlFile path="../../schema/grant/ha_control_resolution_v_to_orac_plugin.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
-  </changeSet>
+  <include file="../../schema/grant/ha_sync_api_to_orac_plugin.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/grant/ha_status_summary_v_to_orac_plugin.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/grant/ha_status_summary_v_to_orac_apx_pub.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/grant/ha_control_resolution_v_to_orac_plugin.sql" relativeToChangelogFile="true"/>
 </databaseChangeLog>

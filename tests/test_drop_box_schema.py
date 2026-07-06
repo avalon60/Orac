@@ -236,9 +236,15 @@ class DropBoxSchemaTests(unittest.TestCase):
             r"active_yn\s+varchar2\(1 char\)\s+default 'y'\s+not null",
             r"system_yn\s+varchar2\(1 char\)\s+default 'n'\s+not null",
             r"sort_order\s+number default 100\s+not null",
-            r"created_at\s+timestamp default systimestamp\s+not null",
+            r"created_by\s+varchar2\(128 char\)[\s\S]*?not null",
+            r"created_on\s+timestamp with time zone default systimestamp\s+not null",
+            r"updated_by\s+varchar2\(128 char\)[\s\S]*?not null",
+            r"updated_on\s+timestamp with time zone default systimestamp\s+not null",
+            r"row_version\s+number default 1\s+not null",
         ):
             self.assertRegex(table_sql, pattern)
+        self.assertNotIn("created_at", table_sql)
+        self.assertNotIn("updated_at", table_sql)
 
         self.assertIn("drp_prf_pk", pk_sql)
         self.assertIn("drp_prf_active_ck", checks_sql)
@@ -257,6 +263,55 @@ class DropBoxSchemaTests(unittest.TestCase):
         self.assertIn("grant read on orac_dropbox.drop_processing_profile_admin_v to orac_apx_pub", grants)
         self.assertIn("grant select on orac_dropbox.drop_processing_profile_runtime_v to orac_plugin", grants)
         self.assertIn("grant select on orac_dropbox.drop_location_config_error_v to orac_plugin", grants)
+
+    def test_plugin_audit_triggers_own_local_maintenance_columns(self) -> None:
+        trigger_dir = SCHEMA_ROOT / "trigger"
+        for trigger_name in ("drp_loc_biu", "drp_job_biu", "drp_prf_biu"):
+            with self.subTest(trigger=trigger_name):
+                trigger_sql = (trigger_dir / f"{trigger_name}.sql").read_text(
+                    encoding="utf-8"
+                ).lower()
+                self.assertIn("--liquibase formatted sql", trigger_sql)
+                self.assertIn("--changeset", trigger_sql)
+                self.assertIn("before insert or update", trigger_sql)
+                self.assertIn("sys_context('apex$session', 'app_user')", trigger_sql)
+                self.assertIn("sys_context('userenv', 'proxy_user')", trigger_sql)
+                self.assertIn("sys_context('userenv', 'session_user')", trigger_sql)
+                self.assertIn(":new.row_version := nvl(:old.row_version, 1) + 1", trigger_sql)
+
+        package_text = "\n".join(
+            path.read_text(encoding="utf-8").lower()
+            for path in (SCHEMA_ROOT / "package_body").glob("drop_box*.sql")
+        )
+        self.assertNotIn("row_version   = row_version + 1", package_text)
+        self.assertNotIn("row_version = row_version + 1", package_text)
+        self.assertNotIn("updated_on    = systimestamp", package_text)
+        self.assertNotIn("updated_by    = coalesce", package_text)
+
+    def test_hard_object_liquibase_files_use_formatted_sql_preconditions(self) -> None:
+        for folder in (
+            "table",
+            "index",
+            "constraint_pk",
+            "constraint_uc",
+            "constraint_fk",
+            "constraint_other",
+        ):
+            for path in (SCHEMA_ROOT / folder).glob("*.sql"):
+                text = path.read_text(encoding="utf-8").lower()
+                with self.subTest(path=path):
+                    self.assertTrue(text.startswith("--liquibase formatted sql"))
+                    self.assertIn("--changeset", text)
+                    self.assertIn("--preconditions", text)
+                    self.assertNotIn("execute immediate", text)
+                    self.assertNotRegex(text, r"(?m)^declare\s*$")
+                    self.assertNotIn("runonchange:true", text)
+
+        controller_dir = PLUGIN_ROOT / "db" / "liquibase" / "controllers"
+        for path in controller_dir.glob("*.xml"):
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(path=path):
+                self.assertNotIn("<sqlFile", text)
 
     def test_processing_profile_seed_data_contains_required_profiles(self) -> None:
         seed_sql = (SCHEMA_ROOT / "seed_data" / "drop_processing_profiles.sql").read_text(

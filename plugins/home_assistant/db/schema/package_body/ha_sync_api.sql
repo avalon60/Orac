@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset cbostock:home_assistant_package_body_ha_sync_api context:plugin,prod labels:plugin,home_assistant stripComments:false runOnChange:true
 create or replace package body orac_ha.ha_sync_api as
 
   function safe_ts(
@@ -55,10 +58,7 @@ create or replace package body orac_ha.ha_sync_api as
       sync_type,
       status,
       rows_processed,
-      started_on,
-      row_version,
-      created_on,
-      updated_on
+      started_on
     )
     values
     (
@@ -66,9 +66,6 @@ create or replace package body orac_ha.ha_sync_api as
       p_sync_type,
       'running',
       0,
-      systimestamp,
-      1,
-      systimestamp,
       systimestamp
     );
   end begin_sync_run;
@@ -84,9 +81,7 @@ create or replace package body orac_ha.ha_sync_api as
        set status         = 'complete',
            rows_processed = nvl(p_rows_processed, 0),
            message        = substr(p_message, 1, 4000),
-           completed_on   = systimestamp,
-           row_version    = row_version + 1,
-           updated_on     = systimestamp
+           completed_on   = systimestamp
      where sync_run_id    = p_sync_run_id;
 
     if sql%rowcount = 0
@@ -104,9 +99,7 @@ create or replace package body orac_ha.ha_sync_api as
     update orac_ha.ha_sync_runs
        set status        = 'failed',
            error_message = substr(p_error_message, 1, 4000),
-           completed_on  = systimestamp,
-           row_version   = row_version + 1,
-           updated_on    = systimestamp
+           completed_on  = systimestamp
      where sync_run_id   = p_sync_run_id;
 
     if sql%rowcount = 0
@@ -131,8 +124,8 @@ create or replace package body orac_ha.ha_sync_api as
              substr(json_value(p_payload, '$.temperature_entity_id'), 1, 255) temperature_entity_id,
              json_query(p_payload, '$.aliases' returning clob null on error) aliases,
              json_query(p_payload, '$.labels' returning clob null on error) labels,
-             orac_ha.ha_sync_api.safe_ts(json_value(p_payload, '$.created_at')) created_at,
-             orac_ha.ha_sync_api.safe_ts(json_value(p_payload, '$.modified_at')) modified_at
+             orac_ha.ha_sync_api.safe_ts(json_value(p_payload, '$.created_at')) ha_created_at,
+             orac_ha.ha_sync_api.safe_ts(json_value(p_payload, '$.modified_at')) ha_modified_at
         from dual
     ) src
        on (dst.area_id = src.area_id)
@@ -145,10 +138,8 @@ create or replace package body orac_ha.ha_sync_api as
            dst.temperature_entity_id = src.temperature_entity_id,
            dst.aliases               = src.aliases,
            dst.labels                = src.labels,
-           dst.created_at            = src.created_at,
-           dst.modified_at           = src.modified_at,
-           dst.row_version           = dst.row_version + 1,
-           dst.updated_on            = systimestamp
+           dst.ha_created_at         = src.ha_created_at,
+           dst.ha_modified_at        = src.ha_modified_at
     when not matched then insert
     (
       area_id,
@@ -160,11 +151,8 @@ create or replace package body orac_ha.ha_sync_api as
       temperature_entity_id,
       aliases,
       labels,
-      created_at,
-      modified_at,
-      row_version,
-      created_on,
-      updated_on
+      ha_created_at,
+      ha_modified_at
     )
     values
     (
@@ -177,11 +165,8 @@ create or replace package body orac_ha.ha_sync_api as
       src.temperature_entity_id,
       src.aliases,
       src.labels,
-      src.created_at,
-      src.modified_at,
-      1,
-      systimestamp,
-      systimestamp
+      src.ha_created_at,
+      src.ha_modified_at
     );
   end merge_area;
 
@@ -212,8 +197,8 @@ create or replace package body orac_ha.ha_sync_api as
              json_query(p_payload, '$.config_entries' returning clob null on error) config_entries,
              json_query(p_payload, '$.config_entries_subentries' returning clob null on error) config_entries_subentries,
              json_query(p_payload, '$.labels' returning clob null on error) labels,
-             orac_ha.ha_sync_api.safe_ts(json_value(p_payload, '$.created_at')) created_at,
-             orac_ha.ha_sync_api.safe_ts(json_value(p_payload, '$.modified_at')) modified_at
+             orac_ha.ha_sync_api.safe_ts(json_value(p_payload, '$.created_at')) ha_created_at,
+             orac_ha.ha_sync_api.safe_ts(json_value(p_payload, '$.modified_at')) ha_modified_at
         from dual
     ) src
        on (dst.device_id = src.device_id)
@@ -237,10 +222,8 @@ create or replace package body orac_ha.ha_sync_api as
            dst.config_entries             = src.config_entries,
            dst.config_entries_subentries  = src.config_entries_subentries,
            dst.labels                     = src.labels,
-           dst.created_at                 = src.created_at,
-           dst.modified_at                = src.modified_at,
-           dst.row_version                = dst.row_version + 1,
-           dst.updated_on                 = systimestamp
+           dst.ha_created_at             = src.ha_created_at,
+           dst.ha_modified_at            = src.ha_modified_at
     when not matched then insert
     (
       device_id,
@@ -263,11 +246,8 @@ create or replace package body orac_ha.ha_sync_api as
       config_entries,
       config_entries_subentries,
       labels,
-      created_at,
-      modified_at,
-      row_version,
-      created_on,
-      updated_on
+      ha_created_at,
+      ha_modified_at
     )
     values
     (
@@ -291,11 +271,8 @@ create or replace package body orac_ha.ha_sync_api as
       src.config_entries,
       src.config_entries_subentries,
       src.labels,
-      src.created_at,
-      src.modified_at,
-      1,
-      systimestamp,
-      systimestamp
+      src.ha_created_at,
+      src.ha_modified_at
     );
   end merge_device;
 
@@ -325,8 +302,8 @@ create or replace package body orac_ha.ha_sync_api as
              substr(json_value(p_payload, '$.original_name'), 1, 255) original_name,
              substr(json_value(p_payload, '$.translation_key'), 1, 255) translation_key,
              substr(json_value(p_payload, '$.icon'), 1, 255) icon,
-             orac_ha.ha_sync_api.safe_ts(json_value(p_payload, '$.created_at')) created_at,
-             orac_ha.ha_sync_api.safe_ts(json_value(p_payload, '$.modified_at')) modified_at,
+             orac_ha.ha_sync_api.safe_ts(json_value(p_payload, '$.created_at')) ha_created_at,
+             orac_ha.ha_sync_api.safe_ts(json_value(p_payload, '$.modified_at')) ha_modified_at,
              json_query(p_payload, '$.options' returning clob null on error) options,
              json_query(p_payload, '$.categories' returning clob null on error) categories,
              json_query(p_payload, '$.labels' returning clob null on error) labels
@@ -349,13 +326,11 @@ create or replace package body orac_ha.ha_sync_api as
            dst.original_name      = src.original_name,
            dst.translation_key    = src.translation_key,
            dst.icon               = src.icon,
-           dst.created_at         = src.created_at,
-           dst.modified_at        = src.modified_at,
+           dst.ha_created_at      = src.ha_created_at,
+           dst.ha_modified_at     = src.ha_modified_at,
            dst.options            = src.options,
            dst.categories         = src.categories,
-           dst.labels             = src.labels,
-           dst.row_version        = dst.row_version + 1,
-           dst.updated_on         = systimestamp
+           dst.labels             = src.labels
     when not matched then insert
     (
       entity_id,
@@ -374,14 +349,11 @@ create or replace package body orac_ha.ha_sync_api as
       original_name,
       translation_key,
       icon,
-      created_at,
-      modified_at,
+      ha_created_at,
+      ha_modified_at,
       options,
       categories,
-      labels,
-      row_version,
-      created_on,
-      updated_on
+      labels
     )
     values
     (
@@ -401,14 +373,11 @@ create or replace package body orac_ha.ha_sync_api as
       src.original_name,
       src.translation_key,
       src.icon,
-      src.created_at,
-      src.modified_at,
+      src.ha_created_at,
+      src.ha_modified_at,
       src.options,
       src.categories,
-      src.labels,
-      1,
-      systimestamp,
-      systimestamp
+      src.labels
     );
   end merge_entity;
 
@@ -435,20 +404,14 @@ create or replace package body orac_ha.ha_sync_api as
       entity_id,
       ha_entity_id,
       platform,
-      name,
-      row_version,
-      created_on,
-      updated_on
+      name
     )
     values
     (
       src.entity_id,
       src.ha_entity_id,
       src.platform,
-      src.name,
-      1,
-      systimestamp,
-      systimestamp
+      src.name
     );
 
     merge into orac_ha.ha_states_current dst
@@ -473,9 +436,7 @@ create or replace package body orac_ha.ha_sync_api as
            dst.last_reported     = src.last_reported,
            dst.context_id        = src.context_id,
            dst.context_parent_id = src.context_parent_id,
-           dst.context_user_id   = src.context_user_id,
-           dst.row_version       = dst.row_version + 1,
-           dst.updated_on        = systimestamp
+           dst.context_user_id   = src.context_user_id
     when not matched then insert
     (
       entity_id,
@@ -486,10 +447,7 @@ create or replace package body orac_ha.ha_sync_api as
       last_reported,
       context_id,
       context_parent_id,
-      context_user_id,
-      row_version,
-      created_on,
-      updated_on
+      context_user_id
     )
     values
     (
@@ -501,10 +459,7 @@ create or replace package body orac_ha.ha_sync_api as
       src.last_reported,
       src.context_id,
       src.context_parent_id,
-      src.context_user_id,
-      1,
-      systimestamp,
-      systimestamp
+      src.context_user_id
     );
   end merge_state;
 

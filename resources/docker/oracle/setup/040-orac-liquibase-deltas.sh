@@ -12,6 +12,92 @@ timestamp() {
   date +"%Y-%m-%d %H:%M:%S"
 }
 
+compile_and_validate_core_runtime() {
+  local oracle_pdb="$1"
+  local compile_output
+
+  printf '%s Compiling core runtime schemas.\n' "${PROG}"
+  if ! compile_output=$(sqlplus -L -s / as sysdba <<SQL
+set heading off feedback off pagesize 0 verify off echo off serveroutput on
+whenever sqlerror exit failure rollback
+alter session set container=${oracle_pdb};
+begin
+  for schema_rec in (
+    select username as schema_name
+      from dba_users
+     where username in (
+             'ORAC_API',
+             'ORAC_CODE',
+             'ORAC_APX_PUB',
+             'ORAC',
+             'ORAC_PLUGIN'
+           )
+  )
+  loop
+    dbms_utility.compile_schema(
+      schema         => schema_rec.schema_name,
+      compile_all    => false,
+      reuse_settings => true
+    );
+  end loop;
+end;
+/
+with required_objects as (
+  select 'ORAC_CODE' owner, 'PLUGIN_REGISTRY_V' object_name, 'VIEW' object_type
+    from dual
+  union all
+  select 'ORAC_CODE', 'PLUGIN_SERVICE_STATUS_V', 'VIEW'
+    from dual
+  union all
+  select 'ORAC_CODE', 'PLUGIN_LOV_V', 'VIEW'
+    from dual
+),
+missing_or_invalid as (
+  select required_objects.owner,
+         required_objects.object_name,
+         required_objects.object_type,
+         coalesce(objects.status, 'MISSING') status
+    from required_objects
+    left join dba_objects objects
+      on objects.owner = required_objects.owner
+     and objects.object_name = required_objects.object_name
+     and objects.object_type = required_objects.object_type
+   where coalesce(objects.status, 'MISSING') <> 'VALID'
+),
+invalid_runtime_objects as (
+  select owner, object_name, object_type, status
+    from dba_objects
+   where owner in (
+           'ORAC_API',
+           'ORAC_CODE',
+           'ORAC_APX_PUB',
+           'ORAC',
+           'ORAC_PLUGIN'
+         )
+     and status <> 'VALID'
+)
+select case
+         when exists (select 1 from missing_or_invalid)
+           or exists (select 1 from invalid_runtime_objects)
+         then 'INVALID'
+         else 'VALID'
+       end
+  from dual;
+exit
+SQL
+); then
+    echo "ORAC_CORE_RUNTIME_VALIDATION_FAILED: core runtime validation command failed."
+    echo "${compile_output}"
+    return 1
+  fi
+
+  if ! grep -Eq '(^|[[:space:]])VALID([[:space:]]|$)' <<<"${compile_output}"; then
+    echo "ORAC_CORE_RUNTIME_VALIDATION_FAILED: core runtime objects are missing or invalid."
+    echo "${compile_output}"
+    return 1
+  fi
+}
+
 orac_liquibase_delta_setup() {
   set -Eeuo pipefail
 
@@ -99,6 +185,8 @@ orac_liquibase_delta_setup() {
       LIQUIBASE_HOME="${liquibase_home}" \
       LIQUIBASE_SEARCH_PATH="${liquibase_search_path}" \
       "${deploy_script}" --update --contexts core,prod --labels core
+
+    compile_and_validate_core_runtime "${oracle_pdb}"
 
     printf '[%s] %s Complete\n' "$(timestamp)" "${PROG}"
   } 2>&1 | tee "${log_file}"

@@ -531,6 +531,8 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
         schema_dir = Path("plugins") / "home_assistant" / "db" / "schema"
 
         self.assertTrue((schema_dir / "table" / "ha_sync_runs.sql").is_file())
+        self.assertTrue((schema_dir / "table" / "ha_source_timestamps.sql").is_file())
+        self.assertTrue((schema_dir / "table" / "ha_audit_columns.sql").is_file())
         self.assertTrue((schema_dir / "package_spec" / "ha_sync_api.sql").is_file())
         self.assertTrue((schema_dir / "package_body" / "ha_sync_api.sql").is_file())
         self.assertTrue(
@@ -551,6 +553,14 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
         self.assertIn("delete from orac_ha.ha_areas", package_body)
         self.assertIn("merge into orac_ha.ha_entities dst", package_body)
         self.assertIn("merge into orac_ha.ha_states_current dst", package_body)
+        self.assertIn("json_value(p_payload, '$.created_at')) ha_created_at", package_body)
+        self.assertIn("json_value(p_payload, '$.modified_at')) ha_modified_at", package_body)
+        self.assertIn("dst.ha_created_at", package_body)
+        self.assertIn("dst.ha_modified_at", package_body)
+        self.assertNotIn("dst.created_at", package_body)
+        self.assertNotIn("dst.modified_at", package_body)
+        self.assertNotIn("row_version = row_version + 1", package_body)
+        self.assertNotIn("updated_on     = systimestamp", package_body)
         self.assertIn(
             "grant execute on orac_ha.ha_sync_api to orac_plugin",
             grant_text,
@@ -598,23 +608,70 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
         )
         self.assertIn("device_aliases,dalias", abbreviation_text)
 
-    def test_home_assistant_object_creation_payload_is_safely_rerunnable(self) -> None:
+    def test_home_assistant_payload_uses_formatted_sql_changelogs(self) -> None:
         schema_dir = Path("plugins") / "home_assistant" / "db" / "schema"
-        expected_guards = {
-            "table": "from all_tables",
-            "index": "from all_indexes",
-            "constraint_fk": "from all_constraints",
-            "constraint_other": "from all_constraints",
-            "constraint_pk": "from all_constraints",
-            "constraint_uc": "from all_constraints",
-        }
-        for folder, expected_guard in expected_guards.items():
+        hard_folders = (
+            "table",
+            "index",
+            "constraint_fk",
+            "constraint_other",
+            "constraint_pk",
+            "constraint_uc",
+        )
+        for folder in hard_folders:
             for path in (schema_dir / folder).glob("*.sql"):
                 with self.subTest(path=path):
                     text = path.read_text(encoding="utf-8").lower()
-                    self.assertIn(expected_guard, text)
-                    self.assertIn("if l_count = 0", text)
-                    self.assertIn("execute immediate", text)
+                    self.assertTrue(text.startswith("--liquibase formatted sql"))
+                    self.assertIn("--changeset", text)
+                    self.assertIn("--preconditions", text)
+                    self.assertNotIn("execute immediate", text)
+                    self.assertNotRegex(text, r"(?m)^declare\\s*$")
+                    self.assertNotIn("runonchange:true", text)
+
+        controller_dir = Path("plugins") / "home_assistant" / "db" / "liquibase" / "controllers"
+        for path in controller_dir.glob("*.xml"):
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(path=path):
+                self.assertNotIn("<sqlFile", text)
+
+    def test_home_assistant_source_timestamps_and_audit_triggers_are_explicit(self) -> None:
+        schema_dir = Path("plugins") / "home_assistant" / "db" / "schema"
+        table_text = "\n".join(
+            (schema_dir / "table" / name).read_text(encoding="utf-8").lower()
+            for name in ("ha_areas.sql", "ha_devices.sql", "ha_entities.sql")
+        )
+        migration_text = (
+            schema_dir / "table" / "ha_source_timestamps.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("ha_created_at", table_text)
+        self.assertIn("ha_modified_at", table_text)
+        self.assertNotRegex(table_text, r"\\bcreated_at\\s+timestamp")
+        self.assertNotRegex(table_text, r"\\bmodified_at\\s+timestamp")
+        self.assertIn("set ha_created_at = coalesce(ha_created_at, created_at)", migration_text)
+        self.assertIn("set ha_modified_at = coalesce(ha_modified_at, modified_at)", migration_text)
+        self.assertIn("drop column created_at", migration_text)
+        self.assertIn("drop column modified_at", migration_text)
+
+        for trigger_name in (
+            "ha_areas_biu",
+            "ha_devices_biu",
+            "ha_entities_biu",
+            "ha_states_current_biu",
+            "ha_sync_runs_biu",
+            "dalias_biu",
+        ):
+            trigger_text = (
+                schema_dir / "trigger" / f"{trigger_name}.sql"
+            ).read_text(encoding="utf-8").lower()
+            with self.subTest(trigger=trigger_name):
+                self.assertIn("--liquibase formatted sql", trigger_text)
+                self.assertIn("before insert or update", trigger_text)
+                self.assertIn("sys_context('apex$session', 'app_user')", trigger_text)
+                self.assertIn("sys_context('userenv', 'proxy_user')", trigger_text)
+                self.assertIn("sys_context('userenv', 'session_user')", trigger_text)
+                self.assertIn(":new.row_version := nvl(:old.row_version, 1) + 1", trigger_text)
 
     def test_valid_schema_name_orac_ha_is_allowed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:

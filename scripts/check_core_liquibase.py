@@ -63,6 +63,10 @@ TRACKING_TABLE_KEYS = {
 }
 LIQUIBASE_NAMESPACE = {"db": "http://www.liquibase.org/xml/ns/dbchangelog"}
 CHANGESET_PATTERN = re.compile(r"^--changeset\s+(\S+):(\S+)(.*)$", re.MULTILINE)
+FORCE_VIEW_PATTERN = re.compile(
+    r"\bcreate\s+or\s+replace\s+force\s+view\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -216,6 +220,22 @@ def object_dir(path: Path) -> str:
     return path.parent.name
 
 
+def owning_schema(path: Path) -> str:
+    """Return the owning schema directory for a schema SQL file."""
+    return path.parent.parent.name
+
+
+def same_schema_view_references(text: str, schema_name: str) -> bool:
+    """Return whether view SQL references another object in its own schema."""
+    return bool(
+        re.search(
+            rf"\b(from|join)\s+{re.escape(schema_name)}\.",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
 def validate_sql_file(path: Path, root: Path) -> list[str]:
     """Validate one Liquibase-owned core SQL file."""
     issues: list[str] = []
@@ -223,6 +243,7 @@ def validate_sql_file(path: Path, root: Path) -> list[str]:
     relative = path.relative_to(root)
     directory = object_dir(path)
     file_changesets = changesets(text)
+    schema_name = owning_schema(path)
 
     if not has_formatted_sql_header(text):
         issues.append(f"{relative}: Liquibase-owned SQL lacks --liquibase formatted sql")
@@ -255,6 +276,16 @@ def validate_sql_file(path: Path, root: Path) -> list[str]:
                     f"{relative}: PL/SQL changeset {changeset.changeset_id} "
                     "lacks splitStatements:false endDelimiter:/"
                 )
+
+    if (
+        directory == "view"
+        and same_schema_view_references(text, schema_name)
+        and not FORCE_VIEW_PATTERN.search(text)
+    ):
+        issues.append(
+            f"{relative}: same-schema view dependency must use "
+            "create or replace force view or explicit controller ordering"
+        )
 
     if directory in ROLLBACK_REQUIRED_DIRS and "--rollback" not in text:
         issues.append(f"{relative}: changeset lacks required rollback annotation")

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  logicalFilePath="plugins/drop_box/db/liquibase/controllers/075_trigger.xml"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="../../schema/trigger/drp_loc_biu.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/trigger/drp_job_biu.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/trigger/drp_prf_biu.sql" relativeToChangelogFile="true"/>
+</databaseChangeLog>

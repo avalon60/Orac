@@ -80,6 +80,23 @@ def _write_formatted_table(path: Path) -> None:
     )
 
 
+def _write_formatted_view(path: Path, ddl: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        textwrap.dedent(
+            """\
+            --liquibase formatted sql
+
+            --changeset clive:create_view_orac_code_example_v context:core labels:core stripComments:false runOnChange:true
+            """
+        ),
+        encoding="utf-8",
+    )
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(ddl)
+        handle.write("--rollback drop view orac_code.example_v;\n")
+
+
 def test_reports_unformatted_core_schema_sql(tmp_path: Path) -> None:
     schema_file = tmp_path / "resources/db/schema/orac_core/table/users.sql"
     schema_file.parent.mkdir(parents=True, exist_ok=True)
@@ -102,6 +119,40 @@ def test_accepts_reachable_formatted_core_schema_sql(tmp_path: Path) -> None:
     _write_schema_controller(
         tmp_path,
         '<includeAll path="table" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>',
+    )
+    _write_properties(tmp_path)
+
+    assert check_core_liquibase.run_checks(tmp_path) == []
+
+
+def test_rejects_same_schema_view_dependency_without_force_view(tmp_path: Path) -> None:
+    _write_formatted_view(
+        tmp_path / "resources/db/schema/orac_code/view/example_v.sql",
+        "create or replace view orac_code.example_v as\n"
+        "select * from orac_code.base_v;\n",
+    )
+    _write_product_controller(tmp_path)
+    _write_schema_controller(
+        tmp_path,
+        '<includeAll path="../orac_code/view" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>',
+    )
+    _write_properties(tmp_path)
+
+    issues = check_core_liquibase.run_checks(tmp_path)
+
+    assert any("same-schema view dependency must use" in issue for issue in issues)
+
+
+def test_accepts_same_schema_view_dependency_with_force_view(tmp_path: Path) -> None:
+    _write_formatted_view(
+        tmp_path / "resources/db/schema/orac_code/view/example_v.sql",
+        "create or replace force view orac_code.example_v as\n"
+        "select * from orac_code.base_v;\n",
+    )
+    _write_product_controller(tmp_path)
+    _write_schema_controller(
+        tmp_path,
+        '<includeAll path="../orac_code/view" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>',
     )
     _write_properties(tmp_path)
 

@@ -180,6 +180,58 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("p_users=>wwv_flow_t_varchar2('orac_admin')", export_sql)
         self.assertNotIn("apex_acl.", export_sql)
 
+    def test_f1043_landing_page_exposes_plugin_service_operations(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("p_id=>1", export_sql)
+        self.assertIn("p_name=>'plugin operations'", export_sql)
+        self.assertIn("p_plug_name=>'service state summary'", export_sql)
+        self.assertIn("p_plug_name=>'plugin service status'", export_sql)
+        self.assertIn("from orac_code.plugin_service_status_v", export_sql)
+        self.assertIn("p_plug_source_type=>'native_ir'", export_sql)
+        for column in (
+            "plugin_id",
+            "service_code",
+            "service_name",
+            "effective_policy",
+            "current_state",
+            "owner_id",
+            "lease_active_yn",
+            "lease_expires_on",
+            "last_started_on",
+            "last_heartbeat_on",
+            "last_tick_on",
+            "last_error_message",
+        ):
+            self.assertIn(column, export_sql)
+        self.assertNotIn("lease_token", export_sql)
+
+    def test_f1043_plugin_navigation_page_preserves_launcher_cards(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("p_id=>2", export_sql)
+        self.assertIn("p_name=>'plugin navigation'", export_sql)
+        self.assertIn("p_alias=>'plugin-navigation'", export_sql)
+        self.assertIn("p_list_item_link_text=>'plugin navigation'", export_sql)
+        self.assertIn(
+            "p_list_item_link_target=>'f?p=&app_id.:2:&app_session.::&debug.:::'",
+            export_sql,
+        )
+        self.assertIn("from orac_code.plugin_apex_app_menu_visible_v", export_sql)
+
+    def test_f1043_service_operations_do_not_query_plugin_owned_tables(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertNotIn("orac_dropbox", export_sql)
+        self.assertNotRegex(export_sql, r"\bfrom\s+orac_(dropbox|ha)\.")
+        self.assertNotRegex(export_sql, r"\bjoin\s+orac_(dropbox|ha)\.")
+
     def test_f1043_renders_plugin_apps_cards_from_visible_view(self) -> None:
         export_sql = (
             PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
@@ -279,7 +331,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
         self.assertIn("p_list_item_link_text=>'plugin apps'", export_sql)
         self.assertIn(
-            "p_list_item_link_target=>'f?p=1043:1:&app_session.:orac_theme_sync:&debug.:rp::'",
+            "p_list_item_link_target=>'f?p=1043:2:&app_session.:orac_theme_sync:&debug.:rp::'",
             export_sql,
         )
         self.assertIn("p_list_item_icon=>'fa-plug'", export_sql)
@@ -1019,7 +1071,9 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             / "resources/db/schema/orac_code/grant/orac_code_consumer_view_access.sql"
         ).read_text(encoding="utf-8").lower()
 
-        self.assertIn("create or replace view orac_code.plugin_lov_v", view_sql)
+        self.assertIn("create or replace force view orac_code.plugin_lov_v", view_sql)
+        self.assertIn("from orac_code.plugin_registry_v", view_sql)
+        self.assertNotIn("from orac_api.plugin_registry_v", view_sql)
         self.assertIn("plugin_id", view_sql)
         self.assertIn("display_label", view_sql)
         self.assertIn("plugin_version", view_sql)
@@ -1132,6 +1186,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         )
         self.assertIn(
             "grant read on orac_code.plugin_apex_apps_v to orac_apx_pub;",
+            view_grants,
+        )
+        self.assertIn(
+            "grant read on orac_code.plugin_service_status_v to orac_apx_pub;",
             view_grants,
         )
         self.assertNotIn(

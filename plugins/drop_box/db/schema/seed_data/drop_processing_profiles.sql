@@ -34,8 +34,7 @@ declare
         dst.default_instruction = src.default_instruction,
         dst.active_yn           = 'Y',
         dst.system_yn           = 'Y',
-        dst.sort_order          = src.sort_order,
-        dst.updated_at          = systimestamp
+        dst.sort_order          = src.sort_order
     when not matched then
       insert (
         profile_code,

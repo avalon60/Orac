@@ -3,19 +3,9 @@
   xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
-  <changeSet id="drop_box-02_index-drp_loc_pk_idx" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
-    <sqlFile path="../../schema/index/drp_loc_pk_idx.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
-  </changeSet>
-  <changeSet id="drop_box-02_index-drp_prf_pk_idx" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
-    <sqlFile path="../../schema/index/drp_prf_pk_idx.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
-  </changeSet>
-  <changeSet id="drop_box-02_index-drp_job_pk_idx" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
-    <sqlFile path="../../schema/index/drp_job_pk_idx.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
-  </changeSet>
-  <changeSet id="drop_box-02_index-drp_jobe_pk_idx" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
-    <sqlFile path="../../schema/index/drp_jobe_pk_idx.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
-  </changeSet>
-  <changeSet id="drop_box-02_index-drp_job_location_status_idx" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
-    <sqlFile path="../../schema/index/drp_job_location_status_idx.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
-  </changeSet>
+  <include file="../../schema/index/drp_loc_pk_idx.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/drp_prf_pk_idx.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/drp_job_pk_idx.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/drp_jobe_pk_idx.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/drp_job_location_status_idx.sql" relativeToChangelogFile="true"/>
 </databaseChangeLog>

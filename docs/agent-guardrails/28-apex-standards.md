@@ -160,3 +160,12 @@ Plugin APEX applications launched from application `1042` should honour the
 `ORAC_THEME_SYNC` request marker. When present, the launched application should
 match the current `1042` Universal Theme style by style name, and must fail
 closed without changing behaviour if the matching style is unavailable.
+
+## Auto-maintained columns
+Typically Orac tables include the following columns:
+These are the Orac standard, trigger maintained columns.
+created_on      -- Orac local row-created timestamp
+updated_on      -- Orac local row-updated timestamp
+row_version     -- Orac local optimistic-lock/audit helper
+
+These are trigger maintainded, and must not be updated by APEX apps. Unless explicitly requested, they are not included in APEX applications.

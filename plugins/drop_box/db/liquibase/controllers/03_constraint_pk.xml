@@ -3,16 +3,8 @@
   xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
-  <changeSet id="drop_box-03_constraint_pk-drp_loc_pk" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
-    <sqlFile path="../../schema/constraint_pk/drp_loc_pk.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
-  </changeSet>
-  <changeSet id="drop_box-03_constraint_pk-drp_prf_pk" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
-    <sqlFile path="../../schema/constraint_pk/drp_prf_pk.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
-  </changeSet>
-  <changeSet id="drop_box-03_constraint_pk-drp_job_pk" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
-    <sqlFile path="../../schema/constraint_pk/drp_job_pk.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
-  </changeSet>
-  <changeSet id="drop_box-03_constraint_pk-drp_jobe_pk" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
-    <sqlFile path="../../schema/constraint_pk/drp_jobe_pk.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
-  </changeSet>
+  <include file="../../schema/constraint_pk/drp_loc_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/drp_prf_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/drp_job_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/drp_jobe_pk.sql" relativeToChangelogFile="true"/>
 </databaseChangeLog>

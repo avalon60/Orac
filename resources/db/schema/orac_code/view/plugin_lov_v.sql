@@ -5,7 +5,7 @@
 -- __date__: 2026-06-27
 -- __description__: narrow installed-plugin list of values for APEX configuration surfaces
 
-create or replace view orac_code.plugin_lov_v as
+create or replace force view orac_code.plugin_lov_v as
 select plugin_id,
        coalesce(plugin_name, plugin_id) display_label,
        plugin_version,

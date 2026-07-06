@@ -507,7 +507,7 @@ wwv_flow_imp_shared.create_list_item(
  p_id=>wwv_flow_imp.id(14600100000000002)
 ,p_list_item_display_sequence=>10
 ,p_list_item_link_text=>'Plugin Apps'
-,p_list_item_link_target=>'f?p=1043:1:&APP_SESSION.:ORAC_THEME_SYNC:&DEBUG.:RP::'
+,p_list_item_link_target=>'f?p=1043:2:&APP_SESSION.:ORAC_THEME_SYNC:&DEBUG.:RP::'
 ,p_list_item_icon=>'fa-plug'
 ,p_list_text_01=>'Launch installed plugin applications and administration surfaces.'
 );

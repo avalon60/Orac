@@ -1,4 +1,6 @@
 --liquibase formatted sql
+
+--changeset clive:drop_box_package_body_drop_box_api context:plugin,prod labels:plugin,drop_box stripComments:false runOnChange:true
 create or replace package body orac_dropbox.drop_box_api as
 
   function observation_exists(
@@ -136,15 +138,7 @@ create or replace package body orac_dropbox.drop_box_api as
            completed_on  = case
                              when p_status_code in ('completed', 'failed', 'quarantined') then systimestamp
                              else completed_on
-                           end,
-           updated_on    = systimestamp,
-           updated_by    = coalesce(
-                             sys_context('userenv', 'client_identifier'),
-                             sys_context('userenv', 'proxy_user'),
-                             sys_context('userenv', 'session_user'),
-                             user
-                           ),
-           row_version   = row_version + 1
+                           end
      where drop_job_id = p_drop_job_id;
 
     insert into orac_dropbox.drop_job_event (

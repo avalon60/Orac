@@ -96,6 +96,9 @@ class PluginServiceLifecycleSchemaTests(unittest.TestCase):
     def test_service_status_view_and_grants_are_narrow(self) -> None:
         status_view_sql = self._read("resources/db/schema/orac_code/view/plugin_service_status_v.sql")
         code_grant_sql = self._read("resources/db/schema/orac_code/grant/plugin_service_runtime_access.sql")
+        consumer_view_grant_sql = self._read(
+            "resources/db/schema/orac_code/grant/orac_code_consumer_view_access.sql"
+        )
         api_grant_sql = self._read("resources/db/schema/orac_api/grant/plugin_services_to_orac_code.sql")
 
         self.assertIn("create or replace view orac_code.plugin_service_status_v", status_view_sql)
@@ -117,6 +120,10 @@ class PluginServiceLifecycleSchemaTests(unittest.TestCase):
             self.assertIn(column, status_view_sql)
         self.assertIn("grant execute on orac_code.plugin_service_api to orac;", code_grant_sql)
         self.assertIn("grant read on orac_code.plugin_service_status_v to orac;", code_grant_sql)
+        self.assertIn(
+            "grant read on orac_code.plugin_service_status_v to orac_apx_pub;",
+            consumer_view_grant_sql,
+        )
         self.assertIn("grant execute on orac_api.plugin_services_tapi to orac_code;", api_grant_sql)
         self.assertNotIn("grant read on orac_core.plugin_services to orac", code_grant_sql)
 

@@ -248,15 +248,7 @@ create or replace package body orac_dropbox.drop_box_admin_api as
            processed_path         = trim(p_processed_path),
            failed_path            = trim(p_failed_path),
            max_file_size_mb       = p_max_file_size_mb,
-           stability_seconds      = p_stability_seconds,
-           updated_on             = systimestamp,
-           updated_by             = coalesce(
-                                      sys_context('userenv', 'client_identifier'),
-                                      sys_context('userenv', 'proxy_user'),
-                                      sys_context('userenv', 'session_user'),
-                                      user
-                                    ),
-           row_version            = row_version + 1
+           stability_seconds      = p_stability_seconds
      where drop_location_id = p_drop_location_id
        and row_version = p_row_version;
 
@@ -272,40 +264,62 @@ create or replace package body orac_dropbox.drop_box_admin_api as
     p_row_version      in orac_dropbox.drop_location.row_version%type
   )
   is
-    l_row orac_dropbox.drop_location%rowtype;
+    l_drop_location_id   orac_dropbox.drop_location.drop_location_id%type;
+    l_location_code      orac_dropbox.drop_location.location_code%type;
+    l_display_name       orac_dropbox.drop_location.display_name%type;
+    l_path               orac_dropbox.drop_location.path%type;
+    l_target_scope_type  orac_dropbox.drop_location.target_scope_type%type;
+    l_target_scope_key   orac_dropbox.drop_location.target_scope_key%type;
+    l_processing_profile orac_dropbox.drop_location.processing_profile%type;
+    l_recursive_yn       orac_dropbox.drop_location.recursive_yn%type;
+    l_move_processed_yn  orac_dropbox.drop_location.move_processed_yn%type;
+    l_max_file_size_mb   orac_dropbox.drop_location.max_file_size_mb%type;
+    l_stability_seconds  orac_dropbox.drop_location.stability_seconds%type;
   begin
     assert_yn(p_enabled_yn, 'Enabled flag');
 
-    select *
-      into l_row
+    select drop_location_id,
+           location_code,
+           display_name,
+           path,
+           target_scope_type,
+           target_scope_key,
+           processing_profile,
+           recursive_yn,
+           move_processed_yn,
+           max_file_size_mb,
+           stability_seconds
+      into l_drop_location_id,
+           l_location_code,
+           l_display_name,
+           l_path,
+           l_target_scope_type,
+           l_target_scope_key,
+           l_processing_profile,
+           l_recursive_yn,
+           l_move_processed_yn,
+           l_max_file_size_mb,
+           l_stability_seconds
       from orac_dropbox.drop_location
      where drop_location_id = p_drop_location_id;
 
     validate_location(
-      p_drop_location_id   => l_row.drop_location_id,
-      p_location_code      => l_row.location_code,
-      p_display_name       => l_row.display_name,
-      p_path               => l_row.path,
+      p_drop_location_id   => l_drop_location_id,
+      p_location_code      => l_location_code,
+      p_display_name       => l_display_name,
+      p_path               => l_path,
       p_enabled_yn         => p_enabled_yn,
-      p_target_scope_type  => l_row.target_scope_type,
-      p_target_scope_key   => l_row.target_scope_key,
-      p_processing_profile => l_row.processing_profile,
-      p_recursive_yn       => l_row.recursive_yn,
-      p_move_processed_yn  => l_row.move_processed_yn,
-      p_max_file_size_mb   => l_row.max_file_size_mb,
-      p_stability_seconds  => l_row.stability_seconds
+      p_target_scope_type  => l_target_scope_type,
+      p_target_scope_key   => l_target_scope_key,
+      p_processing_profile => l_processing_profile,
+      p_recursive_yn       => l_recursive_yn,
+      p_move_processed_yn  => l_move_processed_yn,
+      p_max_file_size_mb   => l_max_file_size_mb,
+      p_stability_seconds  => l_stability_seconds
     );
 
     update orac_dropbox.drop_location
-       set enabled_yn  = upper(p_enabled_yn),
-           updated_on  = systimestamp,
-           updated_by  = coalesce(
-                           sys_context('userenv', 'client_identifier'),
-                           sys_context('userenv', 'proxy_user'),
-                           sys_context('userenv', 'session_user'),
-                           user
-                         ),
-           row_version = row_version + 1
+       set enabled_yn = upper(p_enabled_yn)
      where drop_location_id = p_drop_location_id
        and row_version = p_row_version;
 

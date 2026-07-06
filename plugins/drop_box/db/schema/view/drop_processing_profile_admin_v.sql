@@ -13,8 +13,11 @@ select profile_code,
        active_yn,
        system_yn,
        sort_order,
-       created_at,
-       updated_at
+       created_by,
+       created_on,
+       updated_by,
+       updated_on,
+       row_version
   from orac_dropbox.drop_processing_profile;
 
 --rollback drop view orac_dropbox.drop_processing_profile_admin_v;

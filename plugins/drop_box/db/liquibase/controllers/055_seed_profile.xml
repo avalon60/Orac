@@ -3,7 +3,5 @@
   xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
-  <changeSet id="drop_box-055_seed_profile-drop_processing_profiles" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
-    <sqlFile path="../../schema/seed_data/drop_processing_profiles.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="false" stripComments="false"/>
-  </changeSet>
+  <include file="../../schema/seed_data/drop_processing_profiles.sql" relativeToChangelogFile="true"/>
 </databaseChangeLog>

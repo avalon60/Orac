@@ -1,4 +1,6 @@
 --liquibase formatted sql
+
+--changeset clive:drop_box_package_spec_drop_box_api context:plugin,prod labels:plugin,drop_box stripComments:false runOnChange:true
 create or replace package orac_dropbox.drop_box_api as
 
   function observation_exists(

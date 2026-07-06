@@ -9,12 +9,7 @@
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   logicalFilePath="plugins/home_assistant/db/liquibase/controllers/11_comment.xml"
   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
-
-  <changeSet id="home_assistant-11_comment-ha_sync_runs" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant" runOnChange="true">
-    <sqlFile path="../../schema/comment/ha_sync_runs.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
-  </changeSet>
-
-  <changeSet id="home_assistant-11_comment-device_aliases" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant" runOnChange="true">
-    <sqlFile path="../../schema/comment/device_aliases.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
-  </changeSet>
+  <include file="../../schema/comment/ha_sync_runs.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/device_aliases.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/ha_source_metadata.sql" relativeToChangelogFile="true"/>
 </databaseChangeLog>

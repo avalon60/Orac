@@ -1,4 +1,6 @@
 --liquibase formatted sql
+
+--changeset clive:drop_box_view_drop_job_handoff_v context:plugin,prod labels:plugin,drop_box stripComments:false runOnChange:true
 create or replace force view orac_dropbox.drop_job_handoff_v as
 select drop_job_id,
        drop_location_id,

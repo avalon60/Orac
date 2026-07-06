@@ -529,13 +529,18 @@ class OracleSetupScriptContractTests(unittest.TestCase):
         self.assertIn("ORAC_APEX_IMPORT_COMPLETE", script)
 
     def test_completion_requires_valid_ords_metadata(self) -> None:
-        """The final deployment marker must require valid ORDS/APEX state."""
+        """The final deployment marker must require valid ORDS/APEX/core state."""
         script = (ORACLE_SETUP_DIR / "998-complete-orac.sh").read_text(
             encoding="utf-8"
         )
 
         self.assertIn("owner = 'ORDS_METADATA'", script)
         self.assertIn("ORDS metadata objects are not VALID", script)
+        self.assertIn("PLUGIN_REGISTRY_V", script)
+        self.assertIn("PLUGIN_SERVICE_STATUS_V", script)
+        self.assertIn("PLUGIN_LOV_V", script)
+        self.assertIn("core runtime plugin objects are missing or invalid", script)
+        self.assertIn("status <> 'VALID'", script)
         self.assertIn("apex_workspace_apex_users", script)
         self.assertIn("apex_appl_acl_user_roles", script)
         self.assertIn("ORAC_ADMIN is not configured", script)

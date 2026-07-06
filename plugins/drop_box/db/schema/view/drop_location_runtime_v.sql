@@ -1,4 +1,6 @@
 --liquibase formatted sql
+
+--changeset clive:drop_box_view_drop_location_runtime_v context:plugin,prod labels:plugin,drop_box stripComments:false runOnChange:true
 create or replace force view orac_dropbox.drop_location_runtime_v as
 select loc.drop_location_id,
        loc.location_code,
