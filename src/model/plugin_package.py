@@ -274,8 +274,9 @@ def _sha256_file(path: Path) -> str:
 def validate_entry_point_files(manifest: PluginManifest) -> None:
     """Require modules declared by manifest entry points to exist in the package."""
     entry_points = [manifest.entry_point]
-    if manifest.service_runtime is not None:
-        entry_points.append(manifest.service_runtime.entry_point)
+    entry_points.extend(
+        service_runtime.entry_point for service_runtime in manifest.service_runtimes
+    )
     for entry_point in entry_points:
         if not entry_point:
             continue

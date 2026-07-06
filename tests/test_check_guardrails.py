@@ -169,5 +169,29 @@ def test_current_agents_guardrail_references_resolve() -> None:
     assert missing == []
 
 
+def test_apex_guardrail_requires_maintenance_dialog_action_review() -> None:
+    apex_standards = (
+        PROJECT_ROOT / "docs/agent-guardrails/28-apex-standards.md"
+    ).read_text(encoding="utf-8").lower()
+
+    assert "maintenance dialog actions" in apex_standards
+    assert "visible `cancel` and `save` actions by default" in apex_standards
+    assert "ask whether a `delete`" in apex_standards
+    assert "action is required" in apex_standards
+    assert "include a recommendation" in apex_standards
+    assert "make deletion conditional" in apex_standards
+    assert "confirmation-protected" in apex_standards
+    assert "skip validation" in apex_standards
+    assert "must not use direct table dml" in apex_standards
+    assert "native_close_window" in apex_standards
+    assert "apexafterclosedialog" in apex_standards
+    assert "do not redirect a full page" in apex_standards
+    assert "item-reference integrity checks" in apex_standards
+    assert "item-submit lists" in apex_standards
+    assert "must not reference page" in apex_standards
+    assert "items that are not defined in the current export" in apex_standards
+    assert "removed or renamed" in apex_standards
+
+
 def test_checker_passes_for_current_repository_root() -> None:
     assert check_guardrails.main(["--root", str(PROJECT_ROOT)]) == 0

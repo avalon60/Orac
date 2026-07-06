@@ -6,6 +6,9 @@
   <changeSet id="drop_box-11_comment-drop_location" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
     <sqlFile path="../../schema/comment/drop_location.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
   </changeSet>
+  <changeSet id="drop_box-11_comment-drop_processing_profile" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
+    <sqlFile path="../../schema/comment/drop_processing_profile.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
+  </changeSet>
   <changeSet id="drop_box-11_comment-drop_job" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
     <sqlFile path="../../schema/comment/drop_job.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
   </changeSet>

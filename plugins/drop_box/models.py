@@ -116,6 +116,7 @@ class ScanResult:
 class TickStats:
     """Operational counters for one service tick."""
 
+    configuration_errors: int = 0
     locations_loaded: int = 0
     stable_candidates: int = 0
     enqueued: int = 0

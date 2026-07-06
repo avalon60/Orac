@@ -26,6 +26,7 @@ create table orac_dropbox.drop_job
   effective_scope_type         varchar2(50 char) not null,
   effective_scope_key          varchar2(200 char) not null,
   effective_processing_profile varchar2(100 char) not null,
+  effective_profile_instruction clob,
   effective_instruction        clob,
   error_message                clob,
   document_id                  number,

@@ -45,7 +45,7 @@ MANIFEST_SCHEMA_VERSION = 2
 RUNTIME_MODES = {"on_demand", "service", "hybrid"}
 CONFIG_VALUE_TYPES = {"string", "bool", "int", "float", "path", "list"}
 SERVICE_EXECUTION_MODELS = {"scheduled", "long_running"}
-SERVICE_START_POLICIES = {"auto", "manual"}
+SERVICE_START_POLICIES = {"disabled", "auto", "manual"}
 SERVICE_RESTART_POLICIES = {"never", "on_failure"}
 DATABASE_ON_MISSING_POLICIES = {"warn_disable", "warn_only", "fail_refresh"}
 DATABASE_MANAGERS = {"orac"}
@@ -213,7 +213,8 @@ class PluginDiscovery:
         entities = self._require_string_list(data.get("entities", []), "entities")
         examples = self._require_string_list(data.get("examples", []), "examples")
         entry_point = self._require_optional_string(data.get("entry_point"), "entry_point")
-        runtime_mode, service_runtime = self._load_runtime(data["runtime"])
+        runtime_mode, service_runtimes = self._load_runtime(data["runtime"])
+        service_runtime = service_runtimes[0] if service_runtimes else None
         execution_policy = self._load_execution_policy(
             data.get("execution"),
             capabilities=capabilities,
@@ -263,6 +264,7 @@ class PluginDiscovery:
             manifest_hash=manifest_hash,
             runtime_mode=runtime_mode,
             service_runtime=service_runtime,
+            service_runtimes=service_runtimes,
             execution_policy=execution_policy,
             route_capabilities=tuple(route_capabilities),
             configuration_required=tuple(configuration_required),
@@ -402,11 +404,11 @@ class PluginDiscovery:
             )
         return route_capabilities
 
-    def _load_runtime(self, value: Any) -> tuple[str, PluginServiceRuntime | None]:
+    def _load_runtime(self, value: Any) -> tuple[str, tuple[PluginServiceRuntime, ...]]:
         if not isinstance(value, dict):
             raise PluginManifestError("runtime must be an object")
 
-        unknown_fields = sorted(set(value.keys()) - {"mode", "service"})
+        unknown_fields = sorted(set(value.keys()) - {"mode", "service", "services"})
         if unknown_fields:
             raise PluginManifestError(
                 f"runtime has unknown field(s): {', '.join(unknown_fields)}"
@@ -414,20 +416,39 @@ class PluginDiscovery:
 
         mode = self._require_enum(value.get("mode"), "runtime.mode", RUNTIME_MODES)
         service_value = value.get("service")
+        services_value = value.get("services")
+        if service_value is not None and services_value is not None:
+            raise PluginManifestError("runtime.service and runtime.services are mutually exclusive")
         if mode in {"service", "hybrid"}:
-            if service_value is None:
+            if service_value is None and services_value is None:
                 raise PluginManifestError(
-                    "runtime.service is required when runtime.mode is service or hybrid"
+                    "runtime.service or runtime.services is required when runtime.mode is service or hybrid"
                 )
-            service_runtime = self._load_service_runtime(service_value)
-        elif service_value is not None:
+            if services_value is not None:
+                if not isinstance(services_value, list) or not services_value:
+                    raise PluginManifestError("runtime.services must be a non-empty array")
+                service_runtimes = tuple(
+                    self._load_service_runtime(item, default_service_code=None)
+                    for item in services_value
+                )
+                service_codes = [runtime.service_code for runtime in service_runtimes]
+                if len(service_codes) != len(set(service_codes)):
+                    raise PluginManifestError("runtime.services service_code values must be unique")
+            else:
+                service_runtimes = (
+                    self._load_service_runtime(
+                        service_value,
+                        default_service_code="default",
+                    ),
+                )
+        elif service_value is not None or services_value is not None:
             raise PluginManifestError(
-                "runtime.service is only allowed when runtime.mode is service or hybrid"
+                "runtime service metadata is only allowed when runtime.mode is service or hybrid"
             )
         else:
-            service_runtime = None
+            service_runtimes = ()
 
-        return mode, service_runtime
+        return mode, service_runtimes
 
     def _load_execution_policy(
         self,
@@ -524,7 +545,12 @@ class PluginDiscovery:
             entitlements=tuple(entitlements),
         )
 
-    def _load_service_runtime(self, value: Any) -> PluginServiceRuntime:
+    def _load_service_runtime(
+        self,
+        value: Any,
+        *,
+        default_service_code: str | None,
+    ) -> PluginServiceRuntime:
         if not isinstance(value, dict):
             raise PluginManifestError("runtime.service must be an object")
 
@@ -535,9 +561,20 @@ class PluginDiscovery:
             "restart_policy",
             "shutdown_timeout_seconds",
         }
+        if default_service_code is None:
+            required_fields.add("service_code")
         optional_fields = {"health_check", "schedule"}
+        if default_service_code is not None:
+            optional_fields.add("service_code")
         self._reject_unknown_fields(value, required_fields | optional_fields, "runtime.service")
         self._require_fields(value, required_fields, "runtime.service")
+
+        service_code = self._require_non_empty_string(
+            value.get("service_code", default_service_code),
+            "runtime.service.service_code",
+        )
+        if not PLUGIN_ID_PATTERN.fullmatch(service_code):
+            raise PluginManifestError("runtime.service.service_code must match ^[a-z][a-z0-9_]*$")
 
         execution_model = self._require_enum(
             value["execution_model"],
@@ -571,6 +608,7 @@ class PluginDiscovery:
                 max_value=MAX_SERVICE_SECONDS,
             ),
             health_check=health_check,
+            service_code=service_code,
             schedule=schedule,
         )
 

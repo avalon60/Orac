@@ -17,6 +17,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from model.plugin_registry import PluginApexAppRegistryStore
+from model.plugin_registry import PluginRegistryError
 from model.plugin_registry import PluginRegistryStore
 
 
@@ -146,6 +147,34 @@ class PluginRegistryTests(unittest.TestCase):
         self.assertIn("plugin_apex_app_registry_api.upsert_app", cursor.sql)
         self.assertTrue(session.committed)
         self.assertTrue(session.closed)
+
+    def test_list_all_uses_registry_view_without_eligibility_filters(self) -> None:
+        cursor = _FakeCursor()
+        cursor.description = [("PLUGIN_ID",), ("INSTALL_STATUS",)]
+        cursor.rows = [("alpha", "success"), ("beta", "configuration_failed")]
+        session = _FakeSession(cursor)
+        store = PluginRegistryStore(session_factory=lambda: session)
+
+        rows = store.list_all()
+
+        self.assertEqual(
+            rows,
+            [
+                {"plugin_id": "alpha", "install_status": "success"},
+                {"plugin_id": "beta", "install_status": "configuration_failed"},
+            ],
+        )
+        self.assertIn("orac_code.plugin_registry_v", cursor.sql)
+        self.assertIn("order by plugin_id", cursor.sql)
+        self.assertNotIn("where enabled", cursor.sql.lower())
+
+    def test_list_all_wraps_connection_errors(self) -> None:
+        store = PluginRegistryStore(
+            session_factory=lambda: (_ for _ in ()).throw(RuntimeError("offline"))
+        )
+
+        with self.assertRaisesRegex(PluginRegistryError, "Unable to read"):
+            store.list_all()
 
     def test_apex_app_listing_uses_menu_view(self) -> None:
         cursor = _FakeCursor()

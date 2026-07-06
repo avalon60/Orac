@@ -61,6 +61,9 @@ class PluginRegistryWriter(Protocol):
     def get(self, plugin_id: str) -> dict[str, Any] | None:
         """Return the current registry row when available."""
 
+    def list_all(self) -> list[dict[str, Any]]:
+        """Return all current registry rows."""
+
 
 class PluginApexAppRegistryWriter(Protocol):
     """Persistence boundary used by the installer for plugin APEX apps."""
@@ -96,7 +99,9 @@ class PluginInstaller:
             config_root or Path("~/.Orac/plugin_config").expanduser()
         ).resolve()
         self._dependency_installer = dependency_installer or PluginDependencyInstaller()
-        self._database_deployer = database_deployer or PluginDatabaseDeployer(logger=logger)
+        self._database_deployer = database_deployer or PluginDatabaseDeployer(
+            logger=logger
+        )
         self._package_reader = package_reader or PluginPackageReader()
         self._registry = registry or PluginRegistryStore(logger=logger)
         self._apex_app_installer = apex_app_installer or DockerPluginApexAppInstaller(
@@ -157,6 +162,37 @@ class PluginInstaller:
         """Return the current persisted installation state for one plugin."""
         return self._registry.get(plugin_id)
 
+    def list_plugins(self) -> list[dict[str, Any]]:
+        """Return installed and unpacked plugin inventory without importing plugins."""
+        registry_rows = {
+            str(row["plugin_id"]): row
+            for row in self._registry.list_all()
+            if row.get("plugin_id")
+        }
+        manifests, errors = PluginDiscovery(self.project_root / "plugins").discover()
+        entries: list[dict[str, Any]] = []
+        unpacked_plugin_ids: set[str] = set()
+
+        for manifest in manifests:
+            row = registry_rows.get(manifest.plugin_id)
+            unpacked_plugin_ids.add(manifest.plugin_id)
+            entries.append(self._plugin_inventory_entry(manifest=manifest, row=row))
+
+        for plugin_id, row in registry_rows.items():
+            if plugin_id not in unpacked_plugin_ids:
+                entries.append(self._plugin_inventory_entry(manifest=None, row=row))
+
+        for error in errors:
+            entries.append(self._plugin_discovery_error_entry(error))
+
+        return sorted(
+            entries,
+            key=lambda entry: (
+                str(entry.get("plugin_id") or "~"),
+                str(entry.get("manifest_path") or ""),
+            ),
+        )
+
     def check(self, plugin_id: str) -> PluginInstallResult:
         """Re-run non-mutating readiness checks for an installed plugin."""
         row = self._registry.get(plugin_id)
@@ -194,6 +230,98 @@ class PluginInstaller:
             installed_path=installed_path,
             message="Plugin installation passed non-starting readiness checks.",
         )
+
+    def _plugin_inventory_entry(
+        self,
+        *,
+        manifest: PluginManifest | None,
+        row: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Build one plugin list row from registry and unpacked-manifest state."""
+        plugin_id = (
+            manifest.plugin_id
+            if manifest is not None
+            else str((row or {}).get("plugin_id") or "")
+        )
+        install_status = str((row or {}).get("install_status") or "not_installed")
+        installed = row is not None and install_status == "success"
+        return {
+            "plugin_id": plugin_id,
+            "name": (
+                manifest.name
+                if manifest is not None
+                else str((row or {}).get("plugin_name") or "")
+            ),
+            "installed": installed,
+            "unpacked": manifest is not None,
+            "enabled": self._inventory_enabled(manifest=manifest, row=row),
+            "installed_version": (
+                str(row.get("plugin_version"))
+                if row and row.get("plugin_version")
+                else None
+            ),
+            "unpacked_version": manifest.version if manifest is not None else None,
+            "install_status": install_status,
+            "readiness_status": (
+                str(row.get("readiness_status"))
+                if row and row.get("readiness_status")
+                else None
+            ),
+            "installed_path": (
+                str(row.get("installed_path"))
+                if row and row.get("installed_path")
+                else None
+            ),
+            "manifest_path": (
+                self._relative_inventory_path(manifest.manifest_path)
+                if manifest is not None
+                else None
+            ),
+            "plugin_dir": (
+                self._relative_inventory_path(manifest.plugin_dir)
+                if manifest is not None
+                else None
+            ),
+            "error": None,
+        }
+
+    def _plugin_discovery_error_entry(self, error: str) -> dict[str, Any]:
+        """Build one inventory row for an unpacked manifest discovery error."""
+        manifest_ref = error.split(":", 1)[0]
+        manifest_path = Path(manifest_ref)
+        return {
+            "plugin_id": manifest_path.stem or None,
+            "name": None,
+            "installed": False,
+            "unpacked": True,
+            "enabled": False,
+            "installed_version": None,
+            "unpacked_version": None,
+            "install_status": "discovery_error",
+            "readiness_status": None,
+            "installed_path": None,
+            "manifest_path": manifest_ref,
+            "plugin_dir": None,
+            "error": error,
+        }
+
+    def _inventory_enabled(
+        self,
+        *,
+        manifest: PluginManifest | None,
+        row: dict[str, Any] | None,
+    ) -> bool:
+        """Return the effective enabled flag visible in plugin inventory."""
+        if row is not None and row.get("enabled") is not None:
+            return str(row.get("enabled")).upper() == "Y"
+        return bool(manifest.enabled) if manifest is not None else False
+
+    def _relative_inventory_path(self, path: Path) -> str:
+        """Return a stable project-relative path for plugin inventory output."""
+        try:
+            return str(path.resolve().relative_to(self.project_root))
+        except ValueError:
+            return str(path)
 
     def _install(self, package: PluginPackage, staging: Path) -> PluginInstallResult:
         """Run all required installation gates for one validated package."""
@@ -300,7 +428,9 @@ class PluginInstaller:
                 database_status=database_result.status,
             )
 
-        installed_path, previous_path = self._activate_candidate(candidate_root, manifest)
+        installed_path, previous_path = self._activate_candidate(
+            candidate_root, manifest
+        )
         active_manifest = replace(
             manifest,
             manifest_path=installed_path / "manifest.json",
@@ -351,7 +481,9 @@ class PluginInstaller:
             message="Plugin installed and passed readiness checks.",
         )
 
-    def _initialise_config(self, package: PluginPackage, manifest: PluginManifest) -> Path:
+    def _initialise_config(
+        self, package: PluginPackage, manifest: PluginManifest
+    ) -> Path:
         """Create external mutable configuration once without overwriting it."""
         plugin_config_dir = self.config_root / manifest.plugin_id
         plugin_config_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -375,7 +507,8 @@ class PluginInstaller:
         return tuple(
             secret.key
             for secret in manifest.secrets.keys
-            if secret.required and not store.check_secret(manifest.plugin_id, secret.key)
+            if secret.required
+            and not store.check_secret(manifest.plugin_id, secret.key)
         )
 
     @staticmethod
@@ -387,19 +520,17 @@ class PluginInstaller:
                 raise PluginInstallationError(
                     f"Plugin '{manifest.plugin_id}' entry point does not expose execute()."
                 )
-        if manifest.service_runtime is not None:
-            service_class = load_plugin_service_class(manifest)
+        for service_runtime in manifest.service_runtimes:
+            service_class = load_plugin_service_class(manifest, service_runtime)
             required_method = (
-                "tick"
-                if manifest.service_runtime.execution_model == "scheduled"
-                else "run"
+                "tick" if service_runtime.execution_model == "scheduled" else "run"
             )
             if not callable(getattr(service_class, required_method, None)):
                 raise PluginInstallationError(
                     f"Plugin service '{manifest.plugin_id}' does not expose "
                     f"{required_method}()."
                 )
-            health_check = manifest.service_runtime.health_check
+            health_check = service_runtime.health_check
             if health_check.enabled and not callable(
                 getattr(service_class, health_check.method or "health", None)
             ):
@@ -491,7 +622,9 @@ class PluginInstaller:
         manifest: PluginManifest,
     ) -> tuple[Path, Path | None]:
         """Activate a candidate while retaining any prior version for rollback."""
-        destination = self.managed_root / "installed" / manifest.plugin_id / manifest.version
+        destination = (
+            self.managed_root / "installed" / manifest.plugin_id / manifest.version
+        )
         destination.parent.mkdir(parents=True, exist_ok=True)
         incoming = destination.parent / f".{manifest.version}.incoming"
         backup = destination.parent / f".{manifest.version}.previous"
@@ -538,7 +671,9 @@ class PluginInstaller:
                 configuration_status=configuration_status,
                 dependency_status=dependency_status,
                 database_status=database_status,
-                readiness_status="failed" if status == "readiness_failed" else "not_run",
+                readiness_status=(
+                    "failed" if status == "readiness_failed" else "not_run"
+                ),
                 enabled=False,
                 last_error_message=message,
             )

@@ -35,6 +35,7 @@ create or replace package body orac_dropbox.drop_box_admin_api as
   )
   is
     l_duplicate_count number;
+    l_profile_count   number;
   begin
     if not regexp_like(coalesce(p_location_code, ' '), '^[A-Z][A-Z0-9_]{1,99}$')
     then
@@ -78,8 +79,19 @@ create or replace package body orac_dropbox.drop_box_admin_api as
     then
       raise_application_error(
         -20008,
-        'Processing profile must be lowercase letters, digits, and underscores.'
+        'Processing profile must be a lowercase profile code.'
       );
+    end if;
+
+    select count(*)
+      into l_profile_count
+      from orac_dropbox.drop_processing_profile prf
+     where prf.profile_code = lower(trim(p_processing_profile))
+       and prf.active_yn = 'Y';
+
+    if l_profile_count = 0
+    then
+      raise_application_error(-20013, 'Processing profile is unknown or inactive.');
     end if;
 
     if p_stability_seconds is null or p_stability_seconds < 1
@@ -305,6 +317,44 @@ create or replace package body orac_dropbox.drop_box_admin_api as
     when no_data_found then
       raise_application_error(-20013, 'Drop location was not found.');
   end set_enabled;
+
+  procedure delete_location(
+    p_drop_location_id in orac_dropbox.drop_location.drop_location_id%type,
+    p_row_version      in orac_dropbox.drop_location.row_version%type
+  )
+  is
+    e_child_record_found exception;
+    pragma exception_init(e_child_record_found, -2292);
+    l_job_count number;
+  begin
+    select count(*)
+      into l_job_count
+      from orac_dropbox.drop_job job
+     where job.drop_location_id = p_drop_location_id;
+
+    if l_job_count > 0
+    then
+      raise_application_error(
+        -20014,
+        'Drop location has job history and cannot be deleted. Disable it instead.'
+      );
+    end if;
+
+    delete from orac_dropbox.drop_location
+     where drop_location_id = p_drop_location_id
+       and row_version = p_row_version;
+
+    if sql%rowcount = 0
+    then
+      raise_application_error(-20012, 'Drop location was not found or has changed.');
+    end if;
+  exception
+    when e_child_record_found then
+      raise_application_error(
+        -20014,
+        'Drop location has job history and cannot be deleted. Disable it instead.'
+      );
+  end delete_location;
 
 end drop_box_admin_api;
 /

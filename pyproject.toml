@@ -48,3 +48,9 @@ where = ["src"]
 # Additional metadata that may be required for pip to correctly identify the package
 [tool.setuptools.package-data]
 "orac" = ["**/*.py"]  # Make sure the Python files are included in the package
+
+[dependency-groups]
+dev = [
+    "black (>=26.5.1,<27.0.0)",
+    "ruff (>=0.15.20,<0.16.0)"
+]

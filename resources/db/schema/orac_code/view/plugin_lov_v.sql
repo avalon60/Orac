@@ -13,6 +13,16 @@ select plugin_id,
        readiness_status,
        enabled
   from orac_code.plugin_registry_v
- where install_status = 'installed';
+ where enabled = 'Y'
+   and install_status = 'success'
+   and configuration_status in ('success', 'not_required')
+   and dependency_status in ('success', 'not_required')
+   and database_status in (
+         'deployed',
+         'already_deployed',
+         'not_required',
+         'optional_missing'
+       )
+   and readiness_status = 'success';
 
 --rollback drop view orac_code.plugin_lov_v;

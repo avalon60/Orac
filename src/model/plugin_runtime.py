@@ -115,7 +115,10 @@ def load_plugin_class(manifest: PluginManifest) -> type:
     )
 
 
-def load_plugin_service_class(manifest: PluginManifest) -> type:
+def load_plugin_service_class(
+    manifest: PluginManifest,
+    service_runtime: Any | None = None,
+) -> type:
     """Load the service class declared by a service-capable manifest.
 
     Args:
@@ -127,13 +130,14 @@ def load_plugin_service_class(manifest: PluginManifest) -> type:
     Raises:
         PluginRuntimeError: If the service entry point is missing or invalid.
     """
-    if manifest.service_runtime is None:
+    service_runtime = service_runtime or manifest.service_runtime
+    if service_runtime is None:
         raise PluginRuntimeError(
             f"Plugin '{manifest.plugin_id}' has no runtime.service metadata."
         )
     return load_plugin_entry_point(
         manifest=manifest,
-        entry_point=manifest.service_runtime.entry_point,
+        entry_point=service_runtime.entry_point,
         field_name="runtime.service.entry_point",
     )
 

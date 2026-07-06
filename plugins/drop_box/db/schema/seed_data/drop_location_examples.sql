@@ -5,20 +5,22 @@
 -- __date__: 2026-06-27
 -- __description__: disabled example drop-box locations for admin configuration guidance
 
+delete from orac_dropbox.drop_location
+ where location_code = 'HA_CONCLUSIONS'
+   and enabled_yn = 'N'
+   and target_scope_type = 'plugin'
+   and target_scope_key = 'home_assistant'
+   and path in (
+         '/__orac_dropbox_examples__/home_assistant_conclusions',
+         '/tmp/orac-dropbox-examples/home_assistant_conclusions'
+       )
+   and processing_instruction like 'Example only.%';
+
 merge into orac_dropbox.drop_location dst
 using (
-  select 'HA_CONCLUSIONS' location_code,
-         'Home Assistant Conclusions' display_name,
-         '/__orac_dropbox_examples__/home_assistant_conclusions' path,
-         'plugin' target_scope_type,
-         'home_assistant' target_scope_key,
-         'concise_knowledge_note' processing_profile,
-         'Example only. Edit the path and enable after mounting the real Home Assistant conclusions drop directory.' processing_instruction
-    from dual
-  union all
   select 'ORAC_ARCHITECTURE_NOTES' location_code,
          'Orac Architecture Notes' display_name,
-         '/__orac_dropbox_examples__/orac_architecture_notes' path,
+         '/tmp/orac-dropbox-examples/orac_architecture_notes' path,
          'project' target_scope_type,
          'ORAC_CORE' target_scope_key,
          'implementation_decision_record' processing_profile,
@@ -26,6 +28,23 @@ using (
     from dual
 ) src
 on (dst.location_code = src.location_code)
+when matched then
+  update set
+    dst.display_name           = src.display_name,
+    dst.path                   = src.path,
+    dst.target_scope_type      = src.target_scope_type,
+    dst.target_scope_key       = src.target_scope_key,
+    dst.processing_profile     = src.processing_profile,
+    dst.processing_instruction = src.processing_instruction,
+    dst.allowed_extensions     = 'md,txt,pdf',
+    dst.ignore_patterns        = '*.tmp,*.part,*.partial,*.crdownload,.~*,~$*,.DS_Store',
+    dst.recursive_yn           = 'N',
+    dst.move_processed_yn      = 'N',
+    dst.processed_path         = null,
+    dst.failed_path            = null,
+    dst.max_file_size_mb       = 100,
+    dst.stability_seconds      = 10
+  where dst.enabled_yn = 'N'
 when not matched then
   insert (
     location_code,
@@ -63,4 +82,4 @@ when not matched then
     10
   );
 
---rollback delete from orac_dropbox.drop_location where location_code in ('HA_CONCLUSIONS', 'ORAC_ARCHITECTURE_NOTES') and enabled_yn = 'N';
+--rollback delete from orac_dropbox.drop_location where location_code in ('ORAC_ARCHITECTURE_NOTES') and enabled_yn = 'N';

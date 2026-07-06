@@ -6,6 +6,9 @@
   <changeSet id="drop_box-10_grant-drop_location_runtime_v_to_orac_plugin" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
     <sqlFile path="../../schema/grant/drop_location_runtime_v_to_orac_plugin.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
   </changeSet>
+  <changeSet id="drop_box-10_grant-drop_location_config_error_v_to_orac_plugin" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
+    <sqlFile path="../../schema/grant/drop_location_config_error_v_to_orac_plugin.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
+  </changeSet>
   <changeSet id="drop_box-10_grant-drop_job_handoff_v_to_orac_plugin" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
     <sqlFile path="../../schema/grant/drop_job_handoff_v_to_orac_plugin.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
   </changeSet>
@@ -23,5 +26,17 @@
   </changeSet>
   <changeSet id="drop_box-10_grant-drop_box_admin_api_to_orac_apx_pub" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
     <sqlFile path="../../schema/grant/drop_box_admin_api_to_orac_apx_pub.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
+  </changeSet>
+  <changeSet id="drop_box-10_grant-drop_location_summary_admin_v_to_orac_apx_pub" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
+    <sqlFile path="../../schema/grant/drop_location_summary_admin_v_to_orac_apx_pub.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
+  </changeSet>
+  <changeSet id="drop_box-10_grant-drop_processing_profile_lov_v_to_orac_apx_pub" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
+    <sqlFile path="../../schema/grant/drop_processing_profile_lov_v_to_orac_apx_pub.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
+  </changeSet>
+  <changeSet id="drop_box-10_grant-drop_processing_profile_admin_v_to_orac_apx_pub" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
+    <sqlFile path="../../schema/grant/drop_processing_profile_admin_v_to_orac_apx_pub.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
+  </changeSet>
+  <changeSet id="drop_box-10_grant-drop_processing_profile_runtime_v_to_orac_plugin" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
+    <sqlFile path="../../schema/grant/drop_processing_profile_runtime_v_to_orac_plugin.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
   </changeSet>
 </databaseChangeLog>

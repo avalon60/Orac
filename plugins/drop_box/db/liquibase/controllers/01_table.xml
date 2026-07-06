@@ -6,8 +6,14 @@
   <changeSet id="drop_box-01_table-drop_location" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
     <sqlFile path="../../schema/table/drop_location.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
   </changeSet>
-  <changeSet id="drop_box-01_table-drop_job" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
+  <changeSet id="drop_box-01_table-drop_processing_profile" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
+    <sqlFile path="../../schema/table/drop_processing_profile.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+  <changeSet id="drop_box-01_table-drop_job" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box" runOnChange="true">
     <sqlFile path="../../schema/table/drop_job.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
+  <changeSet id="drop_box-01_table-drop_job-effective_profile_instruction" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
+    <sqlFile path="../../schema/table/drop_job_effective_profile_instruction.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
   </changeSet>
   <changeSet id="drop_box-01_table-drop_job_source_mtime_type" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
     <sqlFile path="../../schema/table/drop_job_source_mtime_type.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>

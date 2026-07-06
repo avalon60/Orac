@@ -54,6 +54,11 @@ create or replace package orac_dropbox.drop_box_admin_api as
     p_row_version      in orac_dropbox.drop_location.row_version%type
   );
 
+  procedure delete_location(
+    p_drop_location_id in orac_dropbox.drop_location.drop_location_id%type,
+    p_row_version      in orac_dropbox.drop_location.row_version%type
+  );
+
 end drop_box_admin_api;
 /
 

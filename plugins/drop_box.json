@@ -51,26 +51,29 @@
   },
   "runtime": {
     "mode": "service",
-    "service": {
-      "entry_point": "service:DropBoxService",
-      "execution_model": "scheduled",
-      "start_policy": "manual",
-      "restart_policy": "on_failure",
-      "shutdown_timeout_seconds": 10,
-      "schedule": {
-        "interval_seconds": 30,
-        "run_on_start": true,
-        "jitter_seconds": 0,
-        "timeout_seconds": 120
-      },
-      "health_check": {
-        "enabled": true,
-        "method": "health",
-        "interval_seconds": 30,
-        "timeout_seconds": 5,
-        "failure_threshold": 3
+    "services": [
+      {
+        "service_code": "scanner",
+        "entry_point": "service:DropBoxService",
+        "execution_model": "scheduled",
+        "start_policy": "manual",
+        "restart_policy": "on_failure",
+        "shutdown_timeout_seconds": 10,
+        "schedule": {
+          "interval_seconds": 30,
+          "run_on_start": true,
+          "jitter_seconds": 0,
+          "timeout_seconds": 120
+        },
+        "health_check": {
+          "enabled": true,
+          "method": "health",
+          "interval_seconds": 30,
+          "timeout_seconds": 5,
+          "failure_threshold": 3
+        }
       }
-    }
+    ]
   },
   "configuration": {
     "required": [],

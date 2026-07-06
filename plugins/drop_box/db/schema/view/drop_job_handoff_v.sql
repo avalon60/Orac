@@ -13,6 +13,7 @@ select drop_job_id,
        effective_scope_type,
        effective_scope_key,
        effective_processing_profile,
+       effective_profile_instruction,
        effective_instruction,
        document_id,
        created_on

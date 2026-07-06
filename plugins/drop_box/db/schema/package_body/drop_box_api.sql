@@ -39,6 +39,7 @@ create or replace package body orac_dropbox.drop_box_api as
     l_scope_type         orac_dropbox.drop_location.target_scope_type%type;
     l_scope_key          orac_dropbox.drop_location.target_scope_key%type;
     l_processing_profile orac_dropbox.drop_location.processing_profile%type;
+    l_profile_instruction clob;
     l_instruction        orac_dropbox.drop_location.processing_instruction%type;
   begin
     if observation_exists(
@@ -54,12 +55,17 @@ create or replace package body orac_dropbox.drop_box_api as
     select loc.target_scope_type,
            loc.target_scope_key,
            loc.processing_profile,
+           prf.default_instruction,
            loc.processing_instruction
       into l_scope_type,
            l_scope_key,
            l_processing_profile,
+           l_profile_instruction,
            l_instruction
       from orac_dropbox.drop_location loc
+      join orac_dropbox.drop_processing_profile prf
+        on prf.profile_code = loc.processing_profile
+       and prf.active_yn = 'Y'
      where loc.drop_location_id = p_drop_location_id;
 
     insert into orac_dropbox.drop_job (
@@ -74,6 +80,7 @@ create or replace package body orac_dropbox.drop_box_api as
       effective_scope_type,
       effective_scope_key,
       effective_processing_profile,
+      effective_profile_instruction,
       effective_instruction
     )
     values (
@@ -88,6 +95,7 @@ create or replace package body orac_dropbox.drop_box_api as
       l_scope_type,
       l_scope_key,
       l_processing_profile,
+      l_profile_instruction,
       l_instruction
     )
     returning drop_job_id into l_job_id;
@@ -105,6 +113,11 @@ create or replace package body orac_dropbox.drop_box_api as
   exception
     when dup_val_on_index then
       null;
+    when no_data_found then
+      raise_application_error(
+        -20020,
+        'Drop location is missing an active processing profile.'
+      );
   end enqueue_job;
 
   procedure update_status(

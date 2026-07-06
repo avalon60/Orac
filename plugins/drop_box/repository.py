@@ -46,6 +46,25 @@ class DropBoxRepository:
         )
         return [DropLocation.from_row(row) for row in rows]
 
+    def load_configuration_errors(self) -> list[str]:
+        """Return enabled drop locations omitted from scanning for config errors."""
+        rows = self._db_session.fetch_dicts(
+            """
+            select location_code,
+                   processing_profile,
+                   error_message
+              from orac_dropbox.drop_location_config_error_v
+             order by location_code
+            """
+        )
+        return [
+            (
+                f"{row['LOCATION_CODE']}: {row['ERROR_MESSAGE']} "
+                f"processing_profile={row.get('PROCESSING_PROFILE') or '<null>'}"
+            )
+            for row in rows
+        ]
+
     def observation_exists(self, candidate: CandidateFile) -> bool:
         """Return whether this unchanged file observation already has a job."""
         result = self._db_session.call_function(

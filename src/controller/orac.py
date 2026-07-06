@@ -2684,10 +2684,6 @@ class Orac:
             for manifest in manifests
             if manifest.runtime_mode in {"service", "hybrid"}
         ]
-        if service_manager.service_ids():
-            logger.log_info(f"{Icons.info} Plugin service refresh stopping previously managed services.")
-            service_manager.stop_all()
-
         registration_status = service_manager.register_manifests(service_manifests)
         service_manager.start_auto_services()
         status = service_manager.status()
@@ -2705,7 +2701,7 @@ class Orac:
             return
         try:
             logger.log_info(f"{Icons.info} Plugin service shutdown requested.")
-            service_manager.stop_all()
+            service_manager.stop_all_services()
         except Exception as exc:
             _log_exception("Plugin service shutdown failed", exc)
 

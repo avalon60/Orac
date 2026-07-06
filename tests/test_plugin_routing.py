@@ -753,6 +753,8 @@ class PluginRoutingTests(unittest.TestCase):
             self.assertEqual(manifests[0].runtime_mode, "hybrid")
             self.assertEqual(manifests[0].service_runtime.entry_point, "plugin:AlphaService")
             self.assertEqual(manifests[0].service_runtime.execution_model, "long_running")
+            self.assertEqual(manifests[0].service_runtime.service_code, "default")
+            self.assertEqual(len(manifests[0].service_runtimes), 1)
             self.assertEqual(manifests[0].configuration_required[0].key, "host")
             self.assertEqual(manifests[0].database_schemas[0].schema_name, "orac_alpha")
 
@@ -797,8 +799,148 @@ class PluginRoutingTests(unittest.TestCase):
             self.assertEqual(errors, [])
             service_runtime = manifests[0].service_runtime
             self.assertEqual(service_runtime.execution_model, "scheduled")
+            self.assertEqual(service_runtime.service_code, "default")
             self.assertEqual(service_runtime.schedule.interval_seconds, 60)
             self.assertTrue(service_runtime.schedule.run_on_start)
+
+    def test_discovery_loads_multiple_service_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Multi-service plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.sync"],
+                        "entitlements": [],
+                        "runtime": {
+                            "mode": "service",
+                            "services": [
+                                {
+                                    "service_code": "scanner",
+                                    "entry_point": "plugin:ScannerService",
+                                    "execution_model": "scheduled",
+                                    "start_policy": "manual",
+                                    "restart_policy": "never",
+                                    "shutdown_timeout_seconds": 10,
+                                    "schedule": {
+                                        "interval_seconds": 60,
+                                        "run_on_start": True,
+                                    },
+                                },
+                                {
+                                    "service_code": "watcher",
+                                    "entry_point": "plugin:WatcherService",
+                                    "execution_model": "long_running",
+                                    "start_policy": "disabled",
+                                    "restart_policy": "never",
+                                    "shutdown_timeout_seconds": 10,
+                                },
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(errors, [])
+            self.assertEqual(
+                [runtime.service_code for runtime in manifests[0].service_runtimes],
+                ["scanner", "watcher"],
+            )
+            self.assertEqual(manifests[0].service_runtime.service_code, "scanner")
+            self.assertEqual(manifests[0].service_runtimes[1].start_policy, "disabled")
+
+    def test_discovery_rejects_duplicate_service_codes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Bad multi-service plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.sync"],
+                        "entitlements": [],
+                        "runtime": {
+                            "mode": "service",
+                            "services": [
+                                {
+                                    "service_code": "scanner",
+                                    "entry_point": "plugin:ScannerService",
+                                    "execution_model": "long_running",
+                                    "start_policy": "manual",
+                                    "restart_policy": "never",
+                                    "shutdown_timeout_seconds": 10,
+                                },
+                                {
+                                    "service_code": "scanner",
+                                    "entry_point": "plugin:OtherService",
+                                    "execution_model": "long_running",
+                                    "start_policy": "manual",
+                                    "restart_policy": "never",
+                                    "shutdown_timeout_seconds": 10,
+                                },
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(manifests, [])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("runtime.services service_code values must be unique", errors[0])
+
+    def test_discovery_rejects_service_and_services_together(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_dir = Path(temp_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Ambiguous service plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.sync"],
+                        "entitlements": [],
+                        "runtime": {
+                            "mode": "service",
+                            "service": {
+                                "entry_point": "plugin:AlphaService",
+                                "execution_model": "long_running",
+                                "start_policy": "manual",
+                                "restart_policy": "never",
+                                "shutdown_timeout_seconds": 10,
+                            },
+                            "services": [],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(manifests, [])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("runtime.service and runtime.services are mutually exclusive", errors[0])
 
     def test_discovery_rejects_invalid_service_execution_model(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1127,10 +1269,10 @@ class PluginRoutingTests(unittest.TestCase):
 
         self.assertEqual(report["embedding_model_id"], provider.model_id)
         self.assertEqual(report["intent_text_version"], INTENT_TEXT_VERSION)
-        self.assertEqual(report["discovered"], 3)
-        self.assertEqual(report["valid"], 3)
+        self.assertEqual(report["discovered"], 4)
+        self.assertEqual(report["valid"], 4)
         self.assertEqual(report["invalid"], 0)
-        self.assertEqual(report["enabled"], 3)
+        self.assertEqual(report["enabled"], 4)
         self.assertEqual(report["disabled"], 0)
         self.assertEqual(report["dependency_disabled"], 0)
         self.assertEqual(report["indexed_plugin_count"], 8)

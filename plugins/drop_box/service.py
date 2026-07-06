@@ -49,6 +49,13 @@ class DropBoxService:
         stats = TickStats()
         try:
             repository = self._repository_factory(context)
+            configuration_errors = repository.load_configuration_errors()
+            stats.configuration_errors = len(configuration_errors)
+            for configuration_error in configuration_errors:
+                self._log_warning(
+                    "Drop-box location skipped because of configuration error: "
+                    f"{configuration_error}."
+                )
             locations = repository.load_enabled_locations()
             stats.locations_loaded = len(locations)
             stats.scan = self._scanner.scan_locations(locations)
@@ -70,6 +77,7 @@ class DropBoxService:
             self._log_info(
                 "Drop-box scan tick complete: "
                 f"locations={stats.locations_loaded} "
+                f"configuration_errors={stats.configuration_errors} "
                 f"stable={stats.stable_candidates} "
                 f"enqueued={stats.enqueued} "
                 f"existing={stats.skipped_existing_observation} "

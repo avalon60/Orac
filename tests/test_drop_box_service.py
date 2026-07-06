@@ -23,11 +23,20 @@ from drop_box.service import DropBoxService
 
 
 class _Repository:
-    def __init__(self, *, exists: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        exists: bool = False,
+        configuration_errors: list[str] | None = None,
+    ) -> None:
         self.exists = exists
+        self.configuration_errors = configuration_errors or []
         self.enqueued: list[HashedCandidate] = []
         self.committed = False
         self.closed = False
+
+    def load_configuration_errors(self):
+        return self.configuration_errors
 
     def load_enabled_locations(self):
         return [_location()]
@@ -62,6 +71,14 @@ class _Scanner:
         if self.hash_changed:
             return None
         return HashedCandidate(candidate=candidate, source_hash="b" * 64)
+
+
+class _Logger:
+    def __init__(self) -> None:
+        self.warnings: list[str] = []
+
+    def log_warning(self, message: str) -> None:
+        self.warnings.append(message)
 
 
 class DropBoxServiceTests(unittest.TestCase):
@@ -109,6 +126,25 @@ class DropBoxServiceTests(unittest.TestCase):
 
         self.assertEqual(service.last_stats.deferred_changed_during_hash, 1)
         self.assertEqual(repository.enqueued, [])
+
+    def test_inactive_profile_configuration_errors_are_logged(self) -> None:
+        repository = _Repository(
+            configuration_errors=[
+                "LEGACY: Processing profile is inactive. processing_profile=old_profile"
+            ]
+        )
+        logger = _Logger()
+        service = DropBoxService(
+            logger=logger,
+            scanner=_Scanner(),
+            repository_factory=lambda _context: repository,
+        )
+
+        service.tick(object())
+
+        self.assertEqual(service.last_stats.configuration_errors, 1)
+        self.assertTrue(logger.warnings)
+        self.assertIn("Processing profile is inactive", logger.warnings[0])
 
     def test_overlapping_tick_is_skipped(self) -> None:
         repository = _Repository()

@@ -189,7 +189,15 @@ Direct access to `<DOMAIN>_API` should be avoided unless there is a reviewed rea
 
 Consumer/access schemas must not become alternative business-logic layers.
 
----
+--
+### Auto Maintained Columns
+The followingf columns should appear, by default, in all tables:
+  created_by           varchar2(64 char)
+  created_on           timestamp with time zone not null,
+  updated_by           varchar2(64 char)
+  updated_on           timestamp with time zone not null
+  row_version          number not null,
+The automaintained columns are managed by a biu table trigger.
 
 ### `<PLUGIN_SCHEMA>`
 

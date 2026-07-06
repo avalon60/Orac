@@ -1,14 +1,17 @@
 --liquibase formatted sql
 create or replace force view orac_dropbox.drop_location_runtime_v as
-select drop_location_id,
-       location_code,
-       display_name,
-       path,
-       allowed_extensions,
-       ignore_patterns,
-       recursive_yn,
-       max_file_size_mb,
-       stability_seconds
-  from orac_dropbox.drop_location
- where enabled_yn = 'Y';
+select loc.drop_location_id,
+       loc.location_code,
+       loc.display_name,
+       loc.path,
+       loc.allowed_extensions,
+       loc.ignore_patterns,
+       loc.recursive_yn,
+       loc.max_file_size_mb,
+       loc.stability_seconds
+  from orac_dropbox.drop_location loc
+  join orac_dropbox.drop_processing_profile prf
+    on prf.profile_code = loc.processing_profile
+   and prf.active_yn = 'Y'
+ where loc.enabled_yn = 'Y';
 /

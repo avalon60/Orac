@@ -6,6 +6,9 @@
   <changeSet id="drop_box-03_constraint_pk-drp_loc_pk" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
     <sqlFile path="../../schema/constraint_pk/drp_loc_pk.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
   </changeSet>
+  <changeSet id="drop_box-03_constraint_pk-drp_prf_pk" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
+    <sqlFile path="../../schema/constraint_pk/drp_prf_pk.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
+  </changeSet>
   <changeSet id="drop_box-03_constraint_pk-drp_job_pk" author="clive" contextFilter="plugin,prod" labels="plugin,drop_box">
     <sqlFile path="../../schema/constraint_pk/drp_job_pk.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
   </changeSet>

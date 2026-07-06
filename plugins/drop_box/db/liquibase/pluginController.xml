@@ -15,6 +15,7 @@
   <include file="controllers/03_constraint_pk.xml" relativeToChangelogFile="true"/>
   <include file="controllers/04_constraint_uc.xml" relativeToChangelogFile="true"/>
   <include file="controllers/05_constraint_other.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/055_seed_profile.xml" relativeToChangelogFile="true"/>
   <include file="controllers/06_constraint_fk.xml" relativeToChangelogFile="true"/>
   <include file="controllers/07_view.xml" relativeToChangelogFile="true"/>
   <include file="controllers/08_package_spec.xml" relativeToChangelogFile="true"/>
