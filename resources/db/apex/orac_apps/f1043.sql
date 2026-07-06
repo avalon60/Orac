@@ -153,6 +153,14 @@ wwv_flow_imp_shared.create_list_item(
 ,p_list_item_icon=>'fa-home'
 ,p_list_item_current_type=>'TARGET_PAGE'
 );
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(8910020000000001)
+,p_list_item_display_sequence=>20
+,p_list_item_link_text=>'Plugin Navigation'
+,p_list_item_link_target=>'f?p=&APP_ID.:2:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-plug'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
 end;
 /
 prompt --application/shared_components/navigation/lists/navigation_bar
@@ -944,66 +952,291 @@ prompt --application/pages/page_00001
 begin
 wwv_flow_imp_page.create_page(
  p_id=>1
-,p_name=>'Home'
+,p_name=>'Plugin Operations'
 ,p_alias=>'HOME'
-,p_step_title=>'Plugin Apps'
+,p_step_title=>'Plugin Operations'
 ,p_autocomplete_on_off=>'OFF'
 ,p_page_template_options=>'#DEFAULT#'
 ,p_protection_level=>'C'
 ,p_page_component_map=>'13'
 );
 wwv_flow_imp_page.create_page_plug(
- p_id=>wwv_flow_imp.id(8904422740580376)
-,p_plug_name=>'Plugin Apps'
+ p_id=>wwv_flow_imp.id(8910020000000002)
+,p_plug_name=>'Service State Summary'
 ,p_icon_css_classes=>'fa-plug'
 ,p_region_template_options=>'#DEFAULT#'
-,p_component_template_options=>'#DEFAULT#:u-colors:t-Cards--featured t-Cards--block force-fa-lg:t-Cards--displayIcons:t-Cards--3cols:t-Cards--animColorFill'
 ,p_plug_template=>4501440665235496320
 ,p_plug_display_sequence=>10
 ,p_plug_display_point=>'BODY'
 ,p_query_type=>'SQL'
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select plugin_id',
-'     , app_alias',
-'     , card_title',
-'     , card_subtitle',
-'     , description',
-'     , icon',
-'     , card_link',
-'  from orac_code.plugin_apex_app_menu_visible_v',
-' order by card_title, plugin_id'))
+'select current_state',
+'     , initcap(replace(current_state, ''_'', '' '')) as state_label',
+'     , count(*) as service_count',
+'     , case current_state',
+'         when ''running'' then ''Active service leases''',
+'         when ''stopped'' then ''Registered services not currently running''',
+'         when ''failed'' then ''Services reporting a failure''',
+'         when ''disabled'' then ''Services disabled by policy''',
+'         when ''lease_lost'' then ''Services that lost their database lease''',
+'         else ''Registered plugin services''',
+'       end as state_summary',
+'     , case current_state',
+'         when ''running'' then ''fa-play-circle-o''',
+'         when ''stopped'' then ''fa-stop-circle-o''',
+'         when ''failed'' then ''fa-exclamation-triangle''',
+'         when ''disabled'' then ''fa-ban''',
+'         when ''lease_lost'' then ''fa-unlink''',
+'         else ''fa-cog''',
+'       end as state_icon',
+'  from orac_code.plugin_service_status_v',
+' group by current_state',
+' order by case current_state',
+'            when ''running'' then 1',
+'            when ''failed'' then 2',
+'            when ''lease_lost'' then 3',
+'            when ''stopped'' then 4',
+'            when ''disabled'' then 5',
+'            else 6',
+'          end, current_state'))
 ,p_lazy_loading=>false
 ,p_plug_source_type=>'NATIVE_CARDS'
 ,p_plug_query_num_rows_type=>'SCROLL'
-,p_plug_query_no_data_found=>'No plugin applications are available.'
+,p_plug_query_no_data_found=>'No plugin services are registered.'
 ,p_show_total_row_count=>false
 );
 wwv_flow_imp_page.create_card(
- p_id=>wwv_flow_imp.id(8910010000000001)
-,p_region_id=>wwv_flow_imp.id(8904422740580376)
+ p_id=>wwv_flow_imp.id(8910020000000003)
+,p_region_id=>wwv_flow_imp.id(8910020000000002)
 ,p_layout_type=>'GRID'
 ,p_grid_column_count=>3
 ,p_title_adv_formatting=>false
-,p_title_column_name=>'CARD_TITLE'
+,p_title_column_name=>'STATE_LABEL'
 ,p_sub_title_adv_formatting=>false
-,p_sub_title_column_name=>'CARD_SUBTITLE'
+,p_sub_title_column_name=>'SERVICE_COUNT'
 ,p_body_adv_formatting=>false
-,p_body_column_name=>'DESCRIPTION'
+,p_body_column_name=>'STATE_SUMMARY'
 ,p_second_body_adv_formatting=>false
 ,p_icon_source_type=>'DYNAMIC_CLASS'
-,p_icon_class_column_name=>'ICON'
+,p_icon_class_column_name=>'STATE_ICON'
 ,p_icon_position=>'TOP'
 ,p_media_adv_formatting=>false
-,p_pk1_column_name=>'PLUGIN_ID'
-,p_pk2_column_name=>'APP_ALIAS'
+,p_pk1_column_name=>'CURRENT_STATE'
 );
-wwv_flow_imp_page.create_card_action(
- p_id=>wwv_flow_imp.id(8910010000000002)
-,p_card_id=>wwv_flow_imp.id(8910010000000001)
-,p_action_type=>'FULL_CARD'
-,p_display_sequence=>10
-,p_link_target_type=>'REDIRECT_URL'
-,p_link_target=>'&CARD_LINK.'
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(8910020000000004)
+,p_plug_name=>'Plugin Service Status'
+,p_region_template_options=>'#DEFAULT#:t-IRR-region--noBorders'
+,p_plug_template=>2100526641005906379
+,p_plug_display_sequence=>20
+,p_plug_display_point=>'BODY'
+,p_query_type=>'SQL'
+,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'with visible_apps as (',
+'  select plugin_id',
+'       , card_link',
+'       , count(*) over (partition by plugin_id) as visible_app_count',
+'       , row_number() over (partition by plugin_id order by card_title, app_alias) as app_rank',
+'    from orac_code.plugin_apex_app_menu_visible_v',
+')',
+'select svc.plugin_id',
+'     , svc.service_code',
+'     , svc.service_name',
+'     , svc.effective_policy',
+'     , svc.current_state',
+'     , svc.owner_id',
+'     , svc.lease_active_yn',
+'     , svc.lease_expires_on',
+'     , svc.last_started_on',
+'     , svc.last_heartbeat_on',
+'     , svc.last_tick_on',
+'     , svc.last_error_message',
+'     , case',
+'         when app.visible_app_count = 1 then app.card_link',
+'       end as plugin_app_link',
+'  from orac_code.plugin_service_status_v svc',
+'  left join visible_apps app',
+'    on app.plugin_id = svc.plugin_id',
+'   and app.app_rank = 1',
+' order by svc.plugin_id, svc.service_code'))
+,p_plug_source_type=>'NATIVE_IR'
+,p_prn_page_header=>'Plugin Service Status'
+);
+wwv_flow_imp_page.create_worksheet(
+ p_id=>wwv_flow_imp.id(8910020000000005)
+,p_name=>'Plugin Service Status'
+,p_max_row_count_message=>'The maximum row count for this report is #MAX_ROW_COUNT# rows. Please apply a filter to reduce the number of records in your query.'
+,p_no_data_found_message=>'No plugin services are registered.'
+,p_base_pk1=>'PLUGIN_ID'
+,p_base_pk2=>'SERVICE_CODE'
+,p_pagination_type=>'ROWS_X_TO_Y'
+,p_pagination_display_pos=>'BOTTOM_RIGHT'
+,p_report_list_mode=>'TABS'
+,p_lazy_loading=>false
+,p_show_detail_link=>'N'
+,p_show_notify=>'Y'
+,p_download_formats=>'CSV:HTML:XLSX:PDF'
+,p_enable_mail_download=>'Y'
+,p_owner=>'ORAC_ADMIN'
+,p_internal_uid=>8910020000000005
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000006)
+,p_db_column_name=>'PLUGIN_ID'
+,p_display_order=>1
+,p_is_primary_key=>'Y'
+,p_column_identifier=>'A'
+,p_column_label=>'Plugin'
+,p_column_link=>'#PLUGIN_APP_LINK#'
+,p_column_linktext=>'#PLUGIN_ID#'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000007)
+,p_db_column_name=>'SERVICE_CODE'
+,p_display_order=>2
+,p_is_primary_key=>'Y'
+,p_column_identifier=>'B'
+,p_column_label=>'Service'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000008)
+,p_db_column_name=>'SERVICE_NAME'
+,p_display_order=>3
+,p_column_identifier=>'C'
+,p_column_label=>'Service Name'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000009)
+,p_db_column_name=>'EFFECTIVE_POLICY'
+,p_display_order=>4
+,p_column_identifier=>'D'
+,p_column_label=>'Policy'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000010)
+,p_db_column_name=>'CURRENT_STATE'
+,p_display_order=>5
+,p_column_identifier=>'E'
+,p_column_label=>'State'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000011)
+,p_db_column_name=>'OWNER_ID'
+,p_display_order=>6
+,p_column_identifier=>'F'
+,p_column_label=>'Owner'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000012)
+,p_db_column_name=>'LEASE_ACTIVE_YN'
+,p_display_order=>7
+,p_column_identifier=>'G'
+,p_column_label=>'Lease Active'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000013)
+,p_db_column_name=>'LEASE_EXPIRES_ON'
+,p_display_order=>8
+,p_column_identifier=>'H'
+,p_column_label=>'Lease Expires'
+,p_column_type=>'DATE'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000014)
+,p_db_column_name=>'LAST_STARTED_ON'
+,p_display_order=>9
+,p_column_identifier=>'I'
+,p_column_label=>'Last Started'
+,p_column_type=>'DATE'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000015)
+,p_db_column_name=>'LAST_HEARTBEAT_ON'
+,p_display_order=>10
+,p_column_identifier=>'J'
+,p_column_label=>'Last Heartbeat'
+,p_column_type=>'DATE'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000016)
+,p_db_column_name=>'LAST_TICK_ON'
+,p_display_order=>11
+,p_column_identifier=>'K'
+,p_column_label=>'Last Tick'
+,p_column_type=>'DATE'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000017)
+,p_db_column_name=>'LAST_ERROR_MESSAGE'
+,p_display_order=>12
+,p_column_identifier=>'L'
+,p_column_label=>'Last Error'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000018)
+,p_db_column_name=>'PLUGIN_APP_LINK'
+,p_display_order=>13
+,p_column_identifier=>'M'
+,p_column_label=>'Plugin App Link'
+,p_column_type=>'STRING'
+,p_display_text_as=>'HIDDEN_ESCAPE_SC'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_rpt(
+ p_id=>wwv_flow_imp.id(8910020000000019)
+,p_application_user=>'APXWS_DEFAULT'
+,p_report_seq=>10
+,p_report_alias=>'891021'
+,p_status=>'PUBLIC'
+,p_is_default=>'Y'
+,p_report_columns=>'PLUGIN_ID:SERVICE_CODE:SERVICE_NAME:EFFECTIVE_POLICY:CURRENT_STATE:OWNER_ID:LEASE_ACTIVE_YN:LEASE_EXPIRES_ON:LAST_STARTED_ON:LAST_HEARTBEAT_ON:LAST_TICK_ON:LAST_ERROR_MESSAGE:'
+,p_sort_column_1=>'PLUGIN_ID'
+,p_sort_direction_1=>'ASC'
 );
 wwv_flow_imp_page.create_page_process(
  p_id=>wwv_flow_imp.id(8910010000000003)
@@ -1053,6 +1286,176 @@ wwv_flow_imp_page.create_page_process(
 'end;'))
 ,p_process_clob_language=>'PLSQL'
 ,p_internal_uid=>8910010000000003
+);
+end;
+/
+prompt --application/pages/page_00002
+begin
+wwv_flow_imp_page.create_page(
+ p_id=>2
+,p_name=>'Plugin Navigation'
+,p_alias=>'PLUGIN-NAVIGATION'
+,p_step_title=>'Plugin Navigation'
+,p_autocomplete_on_off=>'OFF'
+,p_inline_css=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'.orac-plugin-card-hub .a-CardView-items {',
+'  display: grid;',
+'  gap: 1rem;',
+'  grid-template-columns: repeat(auto-fit, minmax(min(100%, 26.25rem), 26.25rem));',
+'  justify-content: center;',
+'  margin-inline: auto;',
+'  max-width: 80.75rem;',
+'  width: 100%;',
+'}',
+'',
+'.orac-plugin-card-hub .a-CardView-item {',
+'  min-width: 0;',
+'  width: 100%;',
+'}',
+'',
+'.orac-plugin-card-hub .a-CardView-card {',
+'  background-color: var(--ut-region-background-color);',
+'  border: 1px solid var(--ut-component-border-color);',
+'  border-radius: 0;',
+'  min-height: 17.25rem;',
+'  overflow: hidden;',
+'}',
+'',
+'.orac-plugin-card-hub .a-CardView-header {',
+'  display: block;',
+'  padding: 0;',
+'}',
+'',
+'.orac-plugin-card-hub .a-CardView-iconWrap {',
+'  align-items: center;',
+'  background-color: var(--ut-palette-primary);',
+'  border-radius: 0;',
+'  display: flex;',
+'  justify-content: center;',
+'  min-height: 7rem;',
+'  width: 100%;',
+'}',
+'',
+'.orac-plugin-card-hub .a-CardView-item:nth-child(6n+1) .a-CardView-iconWrap {',
+'  background-color: #3ba1dc;',
+'}',
+'',
+'.orac-plugin-card-hub .a-CardView-item:nth-child(6n+2) .a-CardView-iconWrap {',
+'  background-color: #2bb7c9;',
+'}',
+'',
+'.orac-plugin-card-hub .a-CardView-item:nth-child(6n+3) .a-CardView-iconWrap {',
+'  background-color: #2cbd7a;',
+'}',
+'',
+'.orac-plugin-card-hub .a-CardView-item:nth-child(6n+4) .a-CardView-iconWrap {',
+'  background-color: #ed813e;',
+'}',
+'',
+'.orac-plugin-card-hub .a-CardView-item:nth-child(6n+5) .a-CardView-iconWrap {',
+'  background-color: #8b77d7;',
+'}',
+'',
+'.orac-plugin-card-hub .a-CardView-item:nth-child(6n) .a-CardView-iconWrap {',
+'  background-color: #d85c8a;',
+'}',
+'',
+'.orac-plugin-card-hub .a-CardView-icon {',
+'  align-items: center;',
+'  background-color: rgba(255,255,255,.16);',
+'  border-radius: 50%;',
+'  color: #fff;',
+'  display: flex;',
+'  font-size: 1.5rem;',
+'  height: 4rem;',
+'  justify-content: center;',
+'  width: 4rem;',
+'}',
+'',
+'.orac-plugin-card-hub .a-CardView-headerBody {',
+'  padding: 1.5rem 1rem;',
+'  text-align: center;',
+'}',
+'',
+'.orac-plugin-card-hub .a-CardView-title {',
+'  font-size: 1.125rem;',
+'  font-weight: 700;',
+'  line-height: 1.35;',
+'}',
+'',
+'.orac-plugin-card-hub .a-CardView-subTitle {',
+'  color: var(--ut-component-text-muted-color);',
+'  line-height: 1.35;',
+'  margin-top: .4rem;',
+'}',
+'',
+'.orac-plugin-card-hub .a-CardView-body {',
+'  border-top: 1px solid var(--ut-component-border-color);',
+'  padding: 1rem;',
+'}',
+'',
+'.orac-plugin-card-hub .a-CardView-mainContent {',
+'  line-height: 1.35;',
+'}'))
+,p_page_template_options=>'#DEFAULT#'
+,p_protection_level=>'C'
+,p_page_component_map=>'13'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(8910020000000020)
+,p_plug_name=>'Plugin Apps'
+,p_icon_css_classes=>'fa-plug'
+,p_region_template_options=>'#DEFAULT#'
+,p_component_template_options=>'#DEFAULT#:u-colors:t-Cards--featured t-Cards--block force-fa-lg:t-Cards--displayIcons:t-Cards--3cols:t-Cards--animColorFill'
+,p_region_css_classes=>'orac-plugin-card-hub'
+,p_plug_template=>4501440665235496320
+,p_plug_display_sequence=>10
+,p_plug_display_point=>'BODY'
+,p_query_type=>'SQL'
+,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select plugin_id',
+'     , app_alias',
+'     , card_title',
+'     , card_subtitle',
+'     , description',
+'     , icon',
+'     , card_link',
+'  from orac_code.plugin_apex_app_menu_visible_v',
+' order by card_title, plugin_id'))
+,p_lazy_loading=>false
+,p_plug_source_type=>'NATIVE_CARDS'
+,p_plug_query_num_rows_type=>'SCROLL'
+,p_plug_query_no_data_found=>'No plugin applications are available.'
+,p_show_total_row_count=>false
+);
+wwv_flow_imp_page.create_card(
+ p_id=>wwv_flow_imp.id(8910020000000021)
+,p_region_id=>wwv_flow_imp.id(8910020000000020)
+,p_layout_type=>'GRID'
+,p_grid_column_count=>3
+,p_component_css_classes=>'orac-plugin-card-hub'
+,p_card_css_classes=>'orac-plugin-card'
+,p_title_adv_formatting=>false
+,p_title_column_name=>'CARD_TITLE'
+,p_sub_title_adv_formatting=>false
+,p_sub_title_column_name=>'CARD_SUBTITLE'
+,p_body_adv_formatting=>false
+,p_body_column_name=>'DESCRIPTION'
+,p_second_body_adv_formatting=>false
+,p_icon_source_type=>'DYNAMIC_CLASS'
+,p_icon_class_column_name=>'ICON'
+,p_icon_position=>'TOP'
+,p_media_adv_formatting=>false
+,p_pk1_column_name=>'PLUGIN_ID'
+,p_pk2_column_name=>'APP_ALIAS'
+);
+wwv_flow_imp_page.create_card_action(
+ p_id=>wwv_flow_imp.id(8910020000000022)
+,p_card_id=>wwv_flow_imp.id(8910020000000021)
+,p_action_type=>'FULL_CARD'
+,p_display_sequence=>10
+,p_link_target_type=>'REDIRECT_URL'
+,p_link_target=>'&CARD_LINK.'
 );
 end;
 /

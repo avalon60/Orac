@@ -92,6 +92,7 @@ def _manifest(
         manifest_hash=f"{plugin_id}-hash",
         runtime_mode=runtime_mode,
         service_runtime=service_runtime,
+        service_runtimes=(service_runtime,) if service_runtime is not None else (),
     )
 
 
@@ -158,6 +159,9 @@ class _FakePluginServiceManager:
         self.start_auto_calls += 1
 
     def stop_all(self) -> None:
+        self.stop_all_calls += 1
+
+    def stop_all_services(self) -> None:
         self.stop_all_calls += 1
 
     def service_ids(self) -> tuple[str, ...]:
@@ -563,7 +567,7 @@ class OracPluginIntegrationTests(unittest.TestCase):
         self.assertEqual(service_manager.start_auto_calls, 1)
         self.assertEqual(report["service_lifecycle"]["registered"], 2)
 
-    def test_refresh_stops_existing_services_before_reregistering(self) -> None:
+    def test_refresh_registers_services_idempotently_without_stopping_running_loops(self) -> None:
         orchestrator = self._make_orac_stub()
         orchestrator.plugin_manager = _FakePluginManager(
             manifests=[_manifest("svc_auto", runtime_mode="service", start_policy="auto")]
@@ -574,7 +578,7 @@ class OracPluginIntegrationTests(unittest.TestCase):
 
         orchestrator.refresh_plugin_routing()
 
-        self.assertEqual(service_manager.stop_all_calls, 1)
+        self.assertEqual(service_manager.stop_all_calls, 0)
 
     def test_shutdown_stops_managed_plugin_services(self) -> None:
         orchestrator = self._make_orac_stub()

@@ -4,7 +4,7 @@
 # Description: Wrapper for the Orac plugin packaging and installation utility.
 #
 # Purpose: Package and install Orac plugins through the active Orac environment.
-# Usage: bin/orac-plugin.sh install --bundled home_assistant
+# Usage: bin/orac-plugin.sh list
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

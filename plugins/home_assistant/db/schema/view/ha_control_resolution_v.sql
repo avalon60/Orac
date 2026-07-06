@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset cbostock:home_assistant_view_ha_control_resolution_v context:plugin,prod labels:plugin,home_assistant stripComments:false runOnChange:true
 -- orac-expected-columns: alias_name, entity_id, domain, object_id, entity_name
 -- orac-expected-columns: original_name, disabled_by, friendly_name, device_class
 -- orac-expected-columns: unit_of_measurement, device_name, effective_area_id

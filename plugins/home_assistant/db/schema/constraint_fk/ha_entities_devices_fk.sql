@@ -1,15 +1,8 @@
-declare
-  l_count number;
-begin
-  select count(*)
-    into l_count
-    from all_constraints
-   where owner = 'ORAC_HA'
-     and constraint_name = 'HA_ENTITIES_DEVICES_FK';
+--liquibase formatted sql
 
-  if l_count = 0
-  then
-    execute immediate q'~
+--changeset cbostock:home_assistant_constraint_fk_ha_entities_devices_fk context:plugin,prod labels:plugin stripComments:false
+--preconditions onFail:MARK_RAN onError:HALT
+--precondition-sql-check expectedResult:0 select count(1) from all_constraints where owner = 'ORAC_HA' and constraint_name = 'HA_ENTITIES_DEVICES_FK'
 alter table orac_ha.ha_entities
   add constraint ha_entities_devices_fk
   foreign key
@@ -20,8 +13,6 @@ alter table orac_ha.ha_entities
   (
     device_id
   )
-  not deferrable
-    ~';
-  end if;
-end;
-/
+  not deferrable;
+
+--rollback alter table orac_ha.ha_entities drop constraint ha_entities_devices_fk;

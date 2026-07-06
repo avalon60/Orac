@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset cbostock:home_assistant_comment_device_aliases context:plugin,prod labels:plugin,home_assistant stripComments:false runOnChange:true
 comment on table orac_ha.device_aliases is
   'Persistent operator-maintained aliases for Home Assistant entities.'
 ;

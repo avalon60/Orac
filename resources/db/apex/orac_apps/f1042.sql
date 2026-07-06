@@ -507,7 +507,7 @@ wwv_flow_imp_shared.create_list_item(
  p_id=>wwv_flow_imp.id(14600100000000002)
 ,p_list_item_display_sequence=>10
 ,p_list_item_link_text=>'Plugin Apps'
-,p_list_item_link_target=>'f?p=1043:1:&APP_SESSION.:ORAC_THEME_SYNC:&DEBUG.:RP::'
+,p_list_item_link_target=>'f?p=1043:2:&APP_SESSION.:ORAC_THEME_SYNC:&DEBUG.:RP::'
 ,p_list_item_icon=>'fa-plug'
 ,p_list_text_01=>'Launch installed plugin applications and administration surfaces.'
 );
@@ -1610,7 +1610,7 @@ wwv_flow_imp_shared.create_list_of_values(
 '  from json_table(',
 '         case',
 '           when :P6_CONTROL_TYPE in (''popup_lov'', ''select_one'')',
-'                and :P6_PREF_KEY <> ''weather_location'' then',
+'                and :P6_PREF_KEY <> ''user_location'' then',
 '             orac_code.preference_lov_api.get_lov_json(',
 '               p_pref_key      => :P6_PREF_KEY,',
 '               p_search        => :APEX$SEARCH,',
@@ -1647,7 +1647,7 @@ wwv_flow_imp_shared.create_list_of_values(
 '             orac_code.preference_lov_api.get_lov_json(',
 '               p_pref_key      => :P6_PREF_KEY,',
 '               p_search        => case',
-'                                    when :P6_PREF_KEY = ''weather_location'' then :P6_PREF_VALUE_SEARCH_TERM',
+'                                    when :P6_PREF_KEY = ''user_location'' then :P6_PREF_VALUE_SEARCH_TERM',
 '                                  end,',
 '               p_current_value => :P6_PREF_VALUE_SELECT_LIST',
 '             )',
@@ -10786,11 +10786,11 @@ wwv_flow_imp_page.create_page_plug(
 );
 wwv_flow_imp_page.create_report_region(
  p_id=>wwv_flow_imp.id(13900100000000417)
-,p_name=>'Weather Location Results'
+,p_name=>'User Location Results'
 ,p_parent_plug_id=>wwv_flow_imp.id(12703743415390323)
 ,p_template=>4072358936313175081
 ,p_display_sequence=>16
-,p_region_css_classes=>'search-results weather-location-results'
+,p_region_css_classes=>'search-results user-location-results'
 ,p_region_template_options=>'#DEFAULT#:t-Region--noPadding:t-Region--scrollBody'
 ,p_component_template_options=>'t-Report--stretch:#DEFAULT#:t-Report--altRowsDefault:t-Report--rowHighlight:t-Report--inline'
 ,p_source_type=>'NATIVE_SQL_REPORT'
@@ -11244,7 +11244,7 @@ wwv_flow_imp_page.create_page_item(
 '             orac_code.preference_lov_api.get_lov_json(',
 '               p_pref_key      => :P6_PREF_KEY,',
 '               p_search        => case',
-'                                    when :P6_PREF_KEY = ''weather_location'' then :P6_PREF_VALUE_SEARCH_TERM',
+'                                    when :P6_PREF_KEY = ''user_location'' then :P6_PREF_VALUE_SEARCH_TERM',
 '                                  end,',
 '               p_current_value => :P6_PREF_VALUE_SELECT_LIST',
 '             )',
@@ -11280,7 +11280,7 @@ wwv_flow_imp_page.create_page_item(
 '  from json_table(',
 '         case',
 '           when :P6_CONTROL_TYPE in (''popup_lov'', ''select_one'')',
-'                and :P6_PREF_KEY <> ''weather_location'' then',
+'                and :P6_PREF_KEY <> ''user_location'' then',
 '             orac_code.preference_lov_api.get_lov_json(',
 '               p_pref_key      => :P6_PREF_KEY,',
 '               p_search        => :APEX$SEARCH,',
@@ -11360,6 +11360,24 @@ wwv_flow_imp_page.create_page_item(
   'send_on_page_submit', 'N',
   'show_line_breaks', 'Y')).to_clob
 );
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(13900100000000441)
+,p_name=>'P6_PREF_DESCRIPTION'
+,p_item_sequence=>900
+,p_item_plug_id=>wwv_flow_imp.id(12703743415390323)
+,p_prompt=>'Description'
+,p_display_as=>'NATIVE_DISPLAY_ONLY'
+,p_display_when=>'P6_PREF_DESCRIPTION'
+,p_display_when_type=>'ITEM_IS_NOT_NULL'
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'based_on', 'VALUE',
+  'format', 'PLAIN',
+  'send_on_page_submit', 'N',
+  'show_line_breaks', 'Y')).to_clob
+);
 wwv_flow_imp_page.create_page_da_event(
  p_id=>wwv_flow_imp.id(12712434173390326)
 ,p_name=>'Cancel Dialog'
@@ -11407,13 +11425,13 @@ wwv_flow_imp_page.create_page_da_action(
 'var selectItem = apex.item(''P6_PREF_VALUE_SELECT_LIST'');',
 'var popupItem = apex.item(''P6_PREF_VALUE_POPUP_LOV'');',
 'var searchButton = apex.jQuery(''#SEARCH_LOCATION'');',
-'var resultsRegion = apex.jQuery(''.weather-location-results'');',
+'var resultsRegion = apex.jQuery(''.user-location-results'');',
 'var resultsRegionBody = resultsRegion.find(''.t-Region-body'');',
 'var sliderHostRegion = apex.jQuery(''#ORAC_PREF_SLIDER_HOST'');',
 'var sliderHostBody = sliderHostRegion.find(''.orac-pref-slider-host-body'');',
 'var selectedContainer = selectedLocationItem.node ? apex.jQuery(selectedLocationItem.node).closest(''.t-Form-fieldContainer'') : apex.jQuery();',
 '',
-'var sizeWeatherResults = function () {',
+'var sizeUserLocationResults = function () {',
 '  if (!resultsRegion.length || !resultsRegionBody.length) {',
 '    return;',
 '  }',
@@ -11446,7 +11464,7 @@ wwv_flow_imp_page.create_page_da_action(
 'sliderHostRegion.hide();',
 'sliderItem.setValue('''');',
 '',
-'if ($v(''P6_PREF_KEY'') === ''weather_location'') {',
+'if ($v(''P6_PREF_KEY'') === ''user_location'') {',
 '  selectedLocationItem.show();',
 '  searchItem.show();',
 '  searchButton.show();',
@@ -11457,7 +11475,7 @@ wwv_flow_imp_page.create_page_da_action(
 '    resultsRegion.css({',
 '      marginTop: ''1rem''',
 '    }).show();',
-'    sizeWeatherResults();',
+'    sizeUserLocationResults();',
 '  }',
 '} else if (controlType === ''popup_lov'' || controlType === ''select_one'') {',
 '  popupItem.show();',
@@ -11557,7 +11575,7 @@ wwv_flow_imp_page.create_page_da_action(
 );
 wwv_flow_imp_page.create_page_da_event(
  p_id=>wwv_flow_imp.id(13900100000000412)
-,p_name=>'Refresh Weather Location Results'
+,p_name=>'Refresh User Location Results'
 ,p_event_sequence=>30
 ,p_triggering_element_type=>'BUTTON'
 ,p_triggering_button_id=>wwv_flow_imp.id(13900100000000415)
@@ -11575,7 +11593,7 @@ wwv_flow_imp_page.create_page_da_action(
 ,p_affected_elements_type=>'REGION'
 ,p_affected_region_id=>wwv_flow_imp.id(13900100000000417)
 ,p_client_condition_type=>'JAVASCRIPT_EXPRESSION'
-,p_client_condition_expression=>'$v(''P6_PREF_KEY'') === ''weather_location'''
+,p_client_condition_expression=>'$v(''P6_PREF_KEY'') === ''user_location'''
 );
 wwv_flow_imp_page.create_page_da_action(
  p_id=>wwv_flow_imp.id(13900100000000416)
@@ -11586,7 +11604,7 @@ wwv_flow_imp_page.create_page_da_action(
 ,p_action=>'NATIVE_JAVASCRIPT_CODE'
 ,p_attribute_01=>wwv_flow_string.join(wwv_flow_t_varchar2(
 'setTimeout(function () {',
-'  var region = document.querySelector(''.weather-location-results'');',
+'  var region = document.querySelector(''.user-location-results'');',
 '  var footer = apex.jQuery(''#SEARCH_LOCATION'').closest(''.ui-dialog-content, .t-DialogRegion, .t-DrawerRegion'').find(''.t-ButtonRegion, .t-Dialog-footer'').first();',
 '  var body = apex.jQuery(region).find(''.t-Region-body'');',
 '  if (region) {',
@@ -11605,7 +11623,7 @@ wwv_flow_imp_page.create_page_da_action(
 '  apex.item(''P6_PREF_VALUE_SEARCH_TERM'').setFocus();',
 '}, 150);'))
 ,p_client_condition_type=>'JAVASCRIPT_EXPRESSION'
-,p_client_condition_expression=>'$v(''P6_PREF_KEY'') === ''weather_location'''
+,p_client_condition_expression=>'$v(''P6_PREF_KEY'') === ''user_location'''
 );
 wwv_flow_imp_page.create_page_process(
  p_id=>wwv_flow_imp.id(12715386492390326)
@@ -11637,7 +11655,7 @@ wwv_flow_imp_page.create_page_process(
 '   where pref_key = :P6_PREF_KEY;',
 '',
 '  l_apex_page_item_name := case',
-'    when :P6_PREF_KEY = ''weather_location'' then ''P6_PREF_VALUE_SEARCH_TERM''',
+'    when :P6_PREF_KEY = ''user_location'' then ''P6_PREF_VALUE_SEARCH_TERM''',
 '    when l_control_type in (''popup_lov'', ''select_one'') then ''P6_PREF_VALUE_POPUP_LOV''',
 '    when l_control_type = ''select_list'' then ''P6_PREF_VALUE_SELECT_LIST''',
 '    when l_control_type = ''slider'' then ''P6_PREF_VALUE_SLIDER''',
@@ -11646,7 +11664,7 @@ wwv_flow_imp_page.create_page_process(
 '    when l_value_type in (''string'', ''json'') then ''P6_PREF_VALUE_TEXT''',
 '  end;',
 '',
-'  if :P6_PREF_KEY = ''weather_location'' then',
+'  if :P6_PREF_KEY = ''user_location'' then',
 '    l_pref_value_txt := case',
 '      when :P6_PREF_VALUE is null then',
 '        ''{"name":null,"latitude":null,"longitude":null,"timezone":null,"country":null,"admin1":null}''',
@@ -11655,7 +11673,7 @@ wwv_flow_imp_page.create_page_process(
 '  elsif l_control_type in (''popup_lov'', ''select_one'') then',
 '    if l_value_type = ''json'' then',
 '      l_pref_value_txt := case',
-'        when :P6_PREF_KEY = ''weather_location'' and :P6_PREF_VALUE_POPUP_LOV is null then',
+'        when :P6_PREF_KEY = ''user_location'' and :P6_PREF_VALUE_POPUP_LOV is null then',
 '          ''{"name":null,"latitude":null,"longitude":null,"timezone":null,"country":null,"admin1":null}''',
 '        else :P6_PREF_VALUE_POPUP_LOV',
 '      end;',
@@ -11748,6 +11766,7 @@ wwv_flow_imp_page.create_page_process(
 '         , d.display_min_label',
 '         , d.display_max_label',
 '         , d.display_value_format',
+'         , d.description',
 '      into :P6_PREF_LABEL',
 '         , :P6_VALUE_TYPE',
 '         , :P6_CONTROL_TYPE',
@@ -11760,6 +11779,7 @@ wwv_flow_imp_page.create_page_process(
 '         , :P6_DISPLAY_MIN_LABEL',
 '         , :P6_DISPLAY_MAX_LABEL',
 '         , :P6_DISPLAY_VALUE_FORMAT',
+'         , :P6_PREF_DESCRIPTION',
 '      from preference_definitions_v d',
 '     where d.pref_key = :P6_PREF_KEY;',
 '',
@@ -11778,11 +11798,11 @@ wwv_flow_imp_page.create_page_process(
 '               when ''json'' then json_serialize(p.pref_value returning varchar2(4000) null on error)',
 '             end as pref_value_text',
 '           , case',
-'               when :P6_PREF_KEY = ''weather_location'' then',
+'               when :P6_PREF_KEY = ''user_location'' then',
 '                 json_value(p.pref_value, ''$.name'' returning varchar2(4000) null on error)',
 '             end as pref_value_search_term',
 '           , case',
-'               when :P6_PREF_KEY = ''weather_location'' then',
+'               when :P6_PREF_KEY = ''user_location'' then',
 '                 case',
 '                   when json_value(p.pref_value, ''$.name'' returning varchar2(4000) null on error) is not null then',
 '                     json_value(p.pref_value, ''$.name'' returning varchar2(4000) null on error)',
@@ -11804,7 +11824,7 @@ wwv_flow_imp_page.create_page_process(
 '               when ''false'' then ''N''',
 '             end as pref_value_boolean',
 '           , case',
-'               when :P6_PREF_KEY = ''weather_location'' then',
+'               when :P6_PREF_KEY = ''user_location'' then',
 '                 json_serialize(p.pref_value returning varchar2(4000) null on error)',
 '               when :P6_CONTROL_TYPE in (''popup_lov'', ''select_one'') then',
 '                 case :P6_VALUE_TYPE',
@@ -11825,7 +11845,7 @@ wwv_flow_imp_page.create_page_process(
 '        from user_preferences_v p',
 '       where p.pref_id = :P6_PREF_ID;',
 '',
-'      if :P6_PREF_KEY = ''weather_location'' then',
+'      if :P6_PREF_KEY = ''user_location'' then',
 '        :P6_PREF_VALUE := :P6_PREF_VALUE_POPUP_LOV;',
 '        :P6_PREF_VALUE_SELECT_LIST := :P6_PREF_VALUE_POPUP_LOV;',
 '      elsif :P6_CONTROL_TYPE = ''select_list'' then',
@@ -11840,6 +11860,7 @@ wwv_flow_imp_page.create_page_process(
 '    end if;',
 '  else',
 '    :P6_PREF_LABEL := null;',
+'    :P6_PREF_DESCRIPTION := null;',
 '  end if;',
 'end;'))
 ,p_process_clob_language=>'PLSQL'

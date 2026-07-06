@@ -114,7 +114,7 @@ class PluginAuditPayloadTests(unittest.TestCase):
             "action_type": "informational_read_only",
             "status": "allowed",
             "capabilities": ("weather.current_conditions",),
-            "entitlements": ("user_preferences.weather_location",),
+            "entitlements": ("user_preferences.user_location",),
         }
 
         payload = PluginAuditPayload.from_provenance(
@@ -143,7 +143,7 @@ class PluginAuditPayloadTests(unittest.TestCase):
         self.assertEqual(payload.policy_decision, "allowed")
         self.assertEqual(payload.execution_status, "completed")
         self.assertEqual(payload.capabilities, ("weather.current_conditions",))
-        self.assertEqual(payload.entitlements, ("user_preferences.weather_location",))
+        self.assertEqual(payload.entitlements, ("user_preferences.user_location",))
 
     def test_policy_outcomes_normalise_to_payload(self) -> None:
         cases = [
@@ -268,7 +268,7 @@ class PluginAuditAdapterTests(unittest.TestCase):
                 "action_type": "informational_read_only",
                 "status": "allowed",
                 "capabilities": ("weather.current_conditions",),
-                "entitlements": ("user_preferences.weather_location",),
+                "entitlements": ("user_preferences.user_location",),
             },
             request_context={"request_id": "req-5"},
         )

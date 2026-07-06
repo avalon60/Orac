@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset cbostock:home_assistant_view_ha_status_summary_v context:plugin,prod labels:plugin,home_assistant stripComments:false runOnChange:true
 -- orac-expected-columns: plugin_id, service_running, api_reachable
 -- orac-expected-columns: last_startup_sync_at, last_startup_sync_status
 -- orac-expected-columns: last_state_sync_at, last_state_sync_status

@@ -1,0 +1,148 @@
+{
+  "schema_version": 2,
+  "plugin_id": "drop_box",
+  "name": "Drop Box",
+  "description": "Scans configured filesystem drop locations and creates durable ingestion jobs for later document processing.",
+  "version": "1.0.0",
+  "enabled": true,
+  "capabilities": [
+    "drop_box.scan_locations"
+  ],
+  "entitlements": [
+    "filesystem.drop_box_read",
+    "database.plugin_schema_write"
+  ],
+  "entities": [
+    "file",
+    "drop location",
+    "ingestion job",
+    "document"
+  ],
+  "examples": [],
+  "routing": {
+    "capabilities": [
+      {
+        "id": "drop_box.scan_locations",
+        "description": "Background scan of configured drop-box filesystem locations.",
+        "intents": [
+          {
+            "name": "scan_locations",
+            "examples": [],
+            "requires_confirmation": false,
+            "safety_level": "local_mutation"
+          }
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "action_type": "local_mutation",
+    "requires_confirmation": false,
+    "allowed_by_default": true,
+    "capabilities": [
+      "drop_box.scan_locations"
+    ],
+    "entitlements": [
+      "filesystem.drop_box_read",
+      "database.plugin_schema_write"
+    ],
+    "scaffold": false,
+    "notes": "Service-only scanner reads configured local files and writes plugin-owned ingestion jobs. It does not move, delete, convert, summarise, embed, or persist documents into core Orac stores."
+  },
+  "runtime": {
+    "mode": "service",
+    "services": [
+      {
+        "service_code": "scanner",
+        "entry_point": "service:DropBoxService",
+        "execution_model": "scheduled",
+        "start_policy": "manual",
+        "restart_policy": "on_failure",
+        "shutdown_timeout_seconds": 10,
+        "schedule": {
+          "interval_seconds": 30,
+          "run_on_start": true,
+          "jitter_seconds": 0,
+          "timeout_seconds": 120
+        },
+        "health_check": {
+          "enabled": true,
+          "method": "health",
+          "interval_seconds": 30,
+          "timeout_seconds": 5,
+          "failure_threshold": 3
+        }
+      }
+    ]
+  },
+  "configuration": {
+    "required": [],
+    "optional": []
+  },
+  "database": {
+    "required": true,
+    "on_missing": "warn_disable",
+    "deployment": {
+      "type": "liquibase",
+      "controller": "db/liquibase/pluginController.xml"
+    },
+    "schemas": [
+      {
+        "schema_name": "orac_dropbox",
+        "purpose": "Stores generic drop-box source configuration, durable ingestion jobs, and job audit events.",
+        "managed_by": "orac",
+        "minimum_version": "1.0.0",
+        "version_check": {
+          "enabled": false
+        },
+        "backup": {
+          "include": true,
+          "export_mode": "schema"
+        }
+      }
+    ]
+  },
+  "apex_apps": [
+    {
+      "app_alias": "ORAC_DROPBOX_ADMIN",
+      "label": "Drop Box Admin",
+      "description": "Admin configuration and inspection app for drop-box ingestion locations and jobs.",
+      "app_export": "apex/f10020.sql",
+      "workspace": "ORAC",
+      "parsing_schema": "ORAC_APX_PUB",
+      "application_id": 10020,
+      "entry_page_id": 1,
+      "install_required": true,
+      "replace_existing": false,
+      "required_roles": [
+        "ORAC_ADMIN"
+      ],
+      "icon": "fa-folder-open",
+      "card_title": "Drop Box",
+      "card_subtitle": "Configure ingestion drop locations",
+      "enabled": true
+    }
+  ],
+  "ui": {
+    "surfaces": [
+      {
+        "id": "drop_box.admin_config",
+        "type": "admin_status",
+        "label": "Drop Box Admin",
+        "description": "Configure drop-box ingestion locations and inspect queued jobs.",
+        "target": "apex",
+        "audience": "admin",
+        "required_roles": [
+          "ORAC_ADMIN"
+        ],
+        "enabled": true,
+        "apex": {
+          "app_alias": "ORAC_DROPBOX_ADMIN",
+          "app_export": "apex/f10020.sql",
+          "entry_page_id": 1,
+          "install_required": true
+        }
+      }
+    ]
+  }
+}

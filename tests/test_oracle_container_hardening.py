@@ -19,6 +19,7 @@ DOCKERFILE = ORACLE_ROOT / "Dockerfile"
 FOUNDATION_SETUP = ORACLE_ROOT / "setup" / "005-orac-db-foundation.sh"
 OLD_EXTENDED_STRINGS_SETUP = ORACLE_ROOT / "setup" / "999-extended-strings.sh"
 ORDS_SETUP = ORACLE_ROOT / "setup" / "020-setup-ords.sh"
+LIQUIBASE_SETUP = ORACLE_ROOT / "setup" / "040-orac-liquibase-deltas.sh"
 APEX_ROLE_SETUP = ORACLE_ROOT / "setup" / "050-init-app-role.sh"
 ORDS_STARTUP = ORACLE_ROOT / "startup" / "010-start-ords.sh"
 LISTENER_REPAIR = ORACLE_ROOT / "startup" / "005-repair-listener.sh"
@@ -189,6 +190,24 @@ def test_canonical_apex_url_is_documented_and_used_by_deploy() -> None:
     assert canonical_url in APEX_DOC.read_text(encoding="utf-8")
     assert canonical_url in INSTALL_DOC.read_text(encoding="utf-8")
     assert canonical_path in DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+
+def test_liquibase_setup_compiles_and_validates_core_runtime_objects() -> None:
+    script = LIQUIBASE_SETUP.read_text(encoding="utf-8")
+
+    assert "compile_and_validate_core_runtime" in script
+    assert "dbms_utility.compile_schema" in script
+    assert "PLUGIN_REGISTRY_V" in script
+    assert "PLUGIN_SERVICE_STATUS_V" in script
+    assert "PLUGIN_LOV_V" in script
+    assert "ORAC_CORE_RUNTIME_VALIDATION_FAILED" in script
+    assert "status <> 'VALID'" in script
+
+
+def test_deploy_wrapper_detects_core_liquibase_setup_failure_marker() -> None:
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert "ORAC_LIQUIBASE_DELTA_SETUP_FAILED" in script
 
 
 def _run_wrapper(

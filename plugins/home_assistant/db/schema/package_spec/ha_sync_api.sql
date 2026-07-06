@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset cbostock:home_assistant_package_spec_ha_sync_api context:plugin,prod labels:plugin,home_assistant stripComments:false runOnChange:true
 create or replace package orac_ha.ha_sync_api as
 
   function safe_ts(

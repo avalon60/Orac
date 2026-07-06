@@ -1,6 +1,6 @@
-# Optional Orac Atom Display
+# Orac Atom Display
 
-The atom display is an optional local visual companion for Orac. It is not
+The atom display is a local visual companion for Orac. It is not
 started as part of the backend stack by default.
 
 ## Configuration

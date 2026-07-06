@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="../../schema/comment/drop_location.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/drop_processing_profile.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/drop_job.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/drop_job_event.sql" relativeToChangelogFile="true"/>
+</databaseChangeLog>

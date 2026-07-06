@@ -1,3 +1,6 @@
+--liquibase formatted sql
+
+--changeset cbostock:home_assistant_comment_ha_sync_runs context:plugin,prod labels:plugin,home_assistant stripComments:false runOnChange:true
 comment on table orac_ha.ha_sync_runs is
   'Records Home Assistant plugin synchronisation runs.'
 ;

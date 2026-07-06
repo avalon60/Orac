@@ -101,7 +101,7 @@ class WeatherPlugin:
                 content=(
                     "I can answer weather questions, but I need a location. "
                     "Ask for a place like 'What's the weather in London?' "
-                    "or configure a default weather location."
+                    "or configure a default user location."
                 ),
             )
 
@@ -190,24 +190,26 @@ class WeatherPlugin:
         return candidates
 
     @staticmethod
-    def _resolved_location_from_meta(weather_pref: dict[str, Any] | None) -> ResolvedLocation | None:
-        """Build a resolved location directly from the saved weather preference payload."""
-        if not isinstance(weather_pref, dict):
+    def _resolved_location_from_meta(
+        user_location_pref: dict[str, Any] | None,
+    ) -> ResolvedLocation | None:
+        """Build a resolved location directly from the saved user preference payload."""
+        if not isinstance(user_location_pref, dict):
             return None
 
-        name = str(weather_pref.get("name") or "").strip()
-        timezone_name = str(weather_pref.get("timezone") or "").strip()
+        name = str(user_location_pref.get("name") or "").strip()
+        timezone_name = str(user_location_pref.get("timezone") or "").strip()
         if not name or not timezone_name:
             return None
 
         try:
-            latitude = float(weather_pref.get("latitude"))
-            longitude = float(weather_pref.get("longitude"))
+            latitude = float(user_location_pref.get("latitude"))
+            longitude = float(user_location_pref.get("longitude"))
         except (TypeError, ValueError):
             return None
 
-        country = str(weather_pref.get("country") or "").strip() or None
-        admin1 = str(weather_pref.get("admin1") or "").strip() or None
+        country = str(user_location_pref.get("country") or "").strip() or None
+        admin1 = str(user_location_pref.get("admin1") or "").strip() or None
         return ResolvedLocation(
             name=name,
             latitude=latitude,
@@ -219,18 +221,18 @@ class WeatherPlugin:
 
     @staticmethod
     def _country_hint_from_home_location(home_location: ResolvedLocation | None) -> str | None:
-        """Return a country hint from the saved weather location when available."""
+        """Return a country hint from the saved user location when available."""
         if home_location is None:
             return None
         country = str(home_location.country or "").strip()
         return country or None
 
     def _home_location(self) -> ResolvedLocation | None:
-        """Return the saved weather location through the entitlement-checked data API."""
+        """Return the saved user location through the entitlement-checked data API."""
         if self._data_access is None:
             return None
-        weather_pref = self._data_access.get("user_preferences.weather_location")
-        return self._resolved_location_from_meta(weather_pref)
+        user_location_pref = self._data_access.get("user_preferences.user_location")
+        return self._resolved_location_from_meta(user_location_pref)
 
     @staticmethod
     def _best_location_match(

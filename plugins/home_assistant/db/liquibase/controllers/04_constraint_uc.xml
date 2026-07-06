@@ -9,8 +9,5 @@
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   logicalFilePath="plugins/home_assistant/db/liquibase/controllers/04_constraint_uc.xml"
   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
-
-  <changeSet id="home_assistant-04_constraint_uc-ha_entities_uk1" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant">
-    <sqlFile path="../../schema/constraint_uc/ha_entities_uk1.sql" relativeToChangelogFile="true" endDelimiter="/" splitStatements="true" stripComments="false"/>
-  </changeSet>
+  <include file="../../schema/constraint_uc/ha_entities_uk1.sql" relativeToChangelogFile="true"/>
 </databaseChangeLog>

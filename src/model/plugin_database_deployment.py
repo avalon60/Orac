@@ -1129,9 +1129,9 @@ def _collect_liquibase_sql_references(
             f"APEX assets must not be included in plugin Liquibase changelog: {changelog_path}"
         )
     if resolved.suffix.lower() not in _SCANNED_CHANGELOG_SUFFIXES:
-        raise PluginDatabaseValidationError(
-            f"Plugin Liquibase changelog must be XML: {changelog_path}"
-        )
+        _validate_plugin_referenced_sql_path(resolved)
+        referenced_sql.append(resolved)
+        return
 
     try:
         root = ElementTree.parse(resolved).getroot()

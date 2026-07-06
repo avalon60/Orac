@@ -76,6 +76,9 @@ class _Registry:
     def get(self, plugin_id):
         return self.rows.get(plugin_id)
 
+    def list_all(self):
+        return list(self.rows.values())
+
 
 class _FailingRecordRegistry(_Registry):
     def record(self, values):
@@ -232,7 +235,9 @@ class PluginPackageTests(unittest.TestCase):
 
             installer._sync_helper_script()
 
-            self.assertEqual(commands[1][:5], ["docker", "exec", "--user", "0", "orac-db"])
+            self.assertEqual(
+                commands[1][:5], ["docker", "exec", "--user", "0", "orac-db"]
+            )
             self.assertIn("chmod", commands[1])
 
     def test_apex_helper_reuses_existing_app_without_replacement(self) -> None:
@@ -424,9 +429,7 @@ class PluginInstallerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             source = _write_source_plugin(root, "alpha")
-            destination = (
-                root / "var" / "plugins" / "installed" / "alpha" / "1.0.0"
-            )
+            destination = root / "var" / "plugins" / "installed" / "alpha" / "1.0.0"
             (destination / "plugin").mkdir(parents=True)
             (destination / "plugin" / "previous.txt").write_text(
                 "retained",
@@ -445,9 +448,7 @@ class PluginInstallerTests(unittest.TestCase):
                 installer.install_source(source)
 
             self.assertEqual(
-                (destination / "plugin" / "previous.txt").read_text(
-                    encoding="utf-8"
-                ),
+                (destination / "plugin" / "previous.txt").read_text(encoding="utf-8"),
                 "retained",
             )
 
@@ -459,6 +460,48 @@ class PluginInstallerTests(unittest.TestCase):
         assert clamped is not None
         self.assertEqual(len(clamped), 2000)
         self.assertTrue(clamped.endswith("... [truncated]"))
+
+    def test_list_plugins_combines_installed_and_unpacked_plugins(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_source_plugin(root, "alpha")
+            _write_source_plugin(root, "beta")
+            registry = _Registry()
+            registry.rows["alpha"] = {
+                "plugin_id": "alpha",
+                "plugin_name": "Alpha Installed",
+                "plugin_version": "1.0.0",
+                "install_status": "success",
+                "readiness_status": "success",
+                "enabled": "Y",
+                "installed_path": "var/plugins/installed/alpha/1.0.0",
+            }
+            registry.rows["gamma"] = {
+                "plugin_id": "gamma",
+                "plugin_name": "Gamma",
+                "plugin_version": "2.0.0",
+                "install_status": "success",
+                "readiness_status": "success",
+                "enabled": "N",
+                "installed_path": "var/plugins/installed/gamma/2.0.0",
+            }
+
+            entries = PluginInstaller(
+                project_root=root,
+                managed_root=root / "var" / "plugins",
+                config_root=root / "config",
+                dependency_installer=_DependencyInstaller(),
+                database_deployer=_DatabaseDeployer(),
+                registry=registry,
+            ).list_plugins()
+
+            by_id = {entry["plugin_id"]: entry for entry in entries}
+            self.assertTrue(by_id["alpha"]["installed"])
+            self.assertTrue(by_id["alpha"]["unpacked"])
+            self.assertFalse(by_id["beta"]["installed"])
+            self.assertTrue(by_id["beta"]["unpacked"])
+            self.assertTrue(by_id["gamma"]["installed"])
+            self.assertFalse(by_id["gamma"]["unpacked"])
 
     def test_install_required_apex_surface_requires_export_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -522,7 +565,9 @@ class PluginInstallerTests(unittest.TestCase):
                 },
             )
             (source / "apex").mkdir()
-            (source / "apex" / "alpha_status.sql").write_text("-- export\n", encoding="utf-8")
+            (source / "apex" / "alpha_status.sql").write_text(
+                "-- export\n", encoding="utf-8"
+            )
             apex_installer = _ApexAppInstaller()
             apex_registry = _ApexAppRegistry()
 
@@ -562,7 +607,9 @@ class PluginInstallerTests(unittest.TestCase):
                 },
             )
             (source / "apex").mkdir()
-            (source / "apex" / "alpha_status.sql").write_text("-- export\n", encoding="utf-8")
+            (source / "apex" / "alpha_status.sql").write_text(
+                "-- export\n", encoding="utf-8"
+            )
             registry = _Registry()
             apex_registry = _ApexAppRegistry()
 
@@ -581,7 +628,9 @@ class PluginInstallerTests(unittest.TestCase):
             self.assertEqual(result.status, "apex_failed")
             self.assertFalse(registry.rows["alpha"]["enabled"])
             self.assertEqual(apex_registry.rows[0]["install_status"], "failed")
-            self.assertIn("mock APEX import failure", apex_registry.rows[0]["last_error_message"])
+            self.assertIn(
+                "mock APEX import failure", apex_registry.rows[0]["last_error_message"]
+            )
 
     def test_optional_apex_app_is_registered_without_import(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -650,7 +699,9 @@ class PluginInstallerTests(unittest.TestCase):
 
             self.assertFalse(result.enabled)
             self.assertEqual(result.status, "readiness_failed")
-            self.assertIn("Plugin APEX app 'ALPHA_STATUS' declares missing export", result.message)
+            self.assertIn(
+                "Plugin APEX app 'ALPHA_STATUS' declares missing export", result.message
+            )
 
 
 class ExistingPluginDependencyTests(unittest.TestCase):
@@ -660,7 +711,9 @@ class ExistingPluginDependencyTests(unittest.TestCase):
         manifests, errors = PluginDiscovery(PROJECT_ROOT / "plugins").discover()
         self.assertEqual(errors, [])
         by_id = {manifest.plugin_id: manifest for manifest in manifests}
-        self.assertEqual(by_id["home_assistant"].python_dependencies, ("requests<3,>=2.32",))
+        self.assertEqual(
+            by_id["home_assistant"].python_dependencies, ("requests<3,>=2.32",)
+        )
         self.assertEqual(by_id["weather"].python_dependencies, ("requests<3,>=2.32",))
         self.assertEqual(by_id["media_control"].python_dependencies, ())
 
@@ -677,7 +730,9 @@ class ExistingPluginDependencyTests(unittest.TestCase):
             ).install_source(PROJECT_ROOT / "plugins" / "weather")
 
             self.assertTrue(result.enabled)
-            self.assertTrue((result.installed_path / "plugin" / "provider.py").is_file())
+            self.assertTrue(
+                (result.installed_path / "plugin" / "provider.py").is_file()
+            )
 
 
 def _write_source_plugin(

@@ -19,6 +19,7 @@ orac_deployment_complete() {
   local pdb_status
   local apex_status
   local apex_admin_status
+  local core_runtime_status
   local ords_metadata_status
   local ords_config_output
 
@@ -84,6 +85,60 @@ SQL
   if ! grep -Eq '(^|[[:space:]])VALID([[:space:]]|$)' <<<"${apex_admin_status}"; then
     echo "ORAC_DEPLOYMENT_INCOMPLETE: ORAC_ADMIN is not configured for APEX application 1042."
     echo "${apex_admin_status}"
+    return 1
+  fi
+
+  core_runtime_status=$(sqlplus -L -s / as sysdba <<SQL
+set heading off feedback off pagesize 0 verify off echo off
+whenever sqlerror exit failure rollback
+alter session set container=${oracle_pdb};
+with required_objects as (
+  select 'ORAC_CODE' owner, 'PLUGIN_REGISTRY_V' object_name, 'VIEW' object_type
+    from dual
+  union all
+  select 'ORAC_CODE', 'PLUGIN_SERVICE_STATUS_V', 'VIEW'
+    from dual
+  union all
+  select 'ORAC_CODE', 'PLUGIN_LOV_V', 'VIEW'
+    from dual
+),
+missing_or_invalid as (
+  select required_objects.owner,
+         required_objects.object_name,
+         required_objects.object_type,
+         coalesce(objects.status, 'MISSING') status
+    from required_objects
+    left join dba_objects objects
+      on objects.owner = required_objects.owner
+     and objects.object_name = required_objects.object_name
+     and objects.object_type = required_objects.object_type
+   where coalesce(objects.status, 'MISSING') <> 'VALID'
+),
+invalid_runtime_objects as (
+  select owner, object_name, object_type, status
+    from dba_objects
+   where owner in (
+           'ORAC_API',
+           'ORAC_CODE',
+           'ORAC_APX_PUB',
+           'ORAC',
+           'ORAC_PLUGIN'
+         )
+     and status <> 'VALID'
+)
+select case
+         when exists (select 1 from missing_or_invalid)
+           or exists (select 1 from invalid_runtime_objects)
+         then 'INVALID'
+         else 'VALID'
+       end
+  from dual;
+exit
+SQL
+)
+  if ! grep -Eq '(^|[[:space:]])VALID([[:space:]]|$)' <<<"${core_runtime_status}"; then
+    echo "ORAC_DEPLOYMENT_INCOMPLETE: core runtime plugin objects are missing or invalid."
+    echo "${core_runtime_status}"
     return 1
   fi
 

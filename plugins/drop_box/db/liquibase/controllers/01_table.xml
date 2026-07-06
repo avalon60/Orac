@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="../../schema/table/drop_location.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/table/drop_processing_profile.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/table/drop_job.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/table/drop_job_effective_profile_instruction.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/table/drop_job_source_mtime_type.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/table/drop_job_source_mtime_type_v2.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/table/drop_job_event.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/table/drop_processing_profile_audit.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/table/drop_audit_columns.sql" relativeToChangelogFile="true"/>
+</databaseChangeLog>

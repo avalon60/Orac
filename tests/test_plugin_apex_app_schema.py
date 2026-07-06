@@ -17,6 +17,50 @@ APEX_ROOT = PROJECT_ROOT / "resources/db/apex"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+PAGE_SECTION_RE = re.compile(
+    r"prompt --application/pages/page_(\d{5})(.*?)(?=prompt --application/pages/page_|\Z)",
+    re.IGNORECASE | re.DOTALL,
+)
+PAGE_ITEM_BLOCK_RE = re.compile(
+    r"wwv_flow_imp_page\.create_page_item\((.*?)\);",
+    re.IGNORECASE | re.DOTALL,
+)
+PAGE_DA_BLOCK_RE = re.compile(
+    r"wwv_flow_imp_page\.create_page_da_(?:event|action)\((.*?)\);",
+    re.IGNORECASE | re.DOTALL,
+)
+PAGE_ITEM_NAME_RE = re.compile(r"p_name=>'([^']+)'", re.IGNORECASE)
+PAGE_ITEM_REF_RE = re.compile(r"(?<![A-Z0-9_])P([0-9]+)_[A-Z0-9_]+", re.IGNORECASE)
+
+
+def _apex_page_sections(export_sql: str) -> dict[int, str]:
+    """Return APEX export page bodies keyed by page id."""
+    return {
+        int(match.group(1)): match.group(2)
+        for match in PAGE_SECTION_RE.finditer(export_sql)
+    }
+
+
+def _apex_page_item_names(page_body: str, page_id: int) -> set[str]:
+    """Return page item names defined in a single APEX export page body."""
+    prefix = f"P{page_id}_"
+    names: set[str] = set()
+    for block_match in PAGE_ITEM_BLOCK_RE.finditer(page_body):
+        name_match = PAGE_ITEM_NAME_RE.search(block_match.group(1))
+        if name_match:
+            item_name = name_match.group(1).upper()
+            if item_name.startswith(prefix):
+                names.add(item_name)
+    return names
+
+
+def _apex_item_references(text: str) -> set[tuple[int, str]]:
+    """Return page item references found in APEX export component text."""
+    return {
+        (int(match.group(1)), match.group(0).upper())
+        for match in PAGE_ITEM_REF_RE.finditer(text)
+    }
+
 
 class PluginApexAppSchemaTests(unittest.TestCase):
     """Verify static schema assets for plugin-supplied APEX app registration."""
@@ -136,6 +180,58 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("p_users=>wwv_flow_t_varchar2('orac_admin')", export_sql)
         self.assertNotIn("apex_acl.", export_sql)
 
+    def test_f1043_landing_page_exposes_plugin_service_operations(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("p_id=>1", export_sql)
+        self.assertIn("p_name=>'plugin operations'", export_sql)
+        self.assertIn("p_plug_name=>'service state summary'", export_sql)
+        self.assertIn("p_plug_name=>'plugin service status'", export_sql)
+        self.assertIn("from orac_code.plugin_service_status_v", export_sql)
+        self.assertIn("p_plug_source_type=>'native_ir'", export_sql)
+        for column in (
+            "plugin_id",
+            "service_code",
+            "service_name",
+            "effective_policy",
+            "current_state",
+            "owner_id",
+            "lease_active_yn",
+            "lease_expires_on",
+            "last_started_on",
+            "last_heartbeat_on",
+            "last_tick_on",
+            "last_error_message",
+        ):
+            self.assertIn(column, export_sql)
+        self.assertNotIn("lease_token", export_sql)
+
+    def test_f1043_plugin_navigation_page_preserves_launcher_cards(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("p_id=>2", export_sql)
+        self.assertIn("p_name=>'plugin navigation'", export_sql)
+        self.assertIn("p_alias=>'plugin-navigation'", export_sql)
+        self.assertIn("p_list_item_link_text=>'plugin navigation'", export_sql)
+        self.assertIn(
+            "p_list_item_link_target=>'f?p=&app_id.:2:&app_session.::&debug.:::'",
+            export_sql,
+        )
+        self.assertIn("from orac_code.plugin_apex_app_menu_visible_v", export_sql)
+
+    def test_f1043_service_operations_do_not_query_plugin_owned_tables(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertNotIn("orac_dropbox", export_sql)
+        self.assertNotRegex(export_sql, r"\bfrom\s+orac_(dropbox|ha)\.")
+        self.assertNotRegex(export_sql, r"\bjoin\s+orac_(dropbox|ha)\.")
+
     def test_f1043_renders_plugin_apps_cards_from_visible_view(self) -> None:
         export_sql = (
             PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
@@ -164,6 +260,16 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
         self.assertIn("p_layout_type=>'grid'", export_sql)
         self.assertIn("p_grid_column_count=>3", export_sql)
+        self.assertIn("p_inline_css=>wwv_flow_string.join", export_sql)
+        self.assertIn("grid-template-columns: repeat(auto-fit", export_sql)
+        self.assertIn("26.25rem", export_sql)
+        self.assertIn("max-width: 80.75rem", export_sql)
+        self.assertIn("nth-child(6n+2)", export_sql)
+        self.assertIn("orac-plugin-card-hub .a-cardview-iconwrap", export_sql)
+        self.assertIn("orac-plugin-card-hub .a-cardview-headerbody", export_sql)
+        self.assertIn("p_region_css_classes=>'orac-plugin-card-hub'", export_sql)
+        self.assertIn("p_component_css_classes=>'orac-plugin-card-hub'", export_sql)
+        self.assertIn("p_card_css_classes=>'orac-plugin-card'", export_sql)
         self.assertIn("p_icon_source_type=>'dynamic_class'", export_sql)
         self.assertIn("p_icon_position=>'top'", export_sql)
         self.assertIn("p_action_type=>'full_card'", export_sql)
@@ -225,7 +331,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
         self.assertIn("p_list_item_link_text=>'plugin apps'", export_sql)
         self.assertIn(
-            "p_list_item_link_target=>'f?p=1043:1:&app_session.:orac_theme_sync:&debug.:rp::'",
+            "p_list_item_link_target=>'f?p=1043:2:&app_session.:orac_theme_sync:&debug.:rp::'",
             export_sql,
         )
         self.assertIn("p_list_item_icon=>'fa-plug'", export_sql)
@@ -348,15 +454,18 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("else", export_sql)
         self.assertIn("to_clob(json_array())", export_sql)
 
-    def test_f1042_weather_location_keeps_dedicated_search_path(self) -> None:
+    def test_f1042_user_location_keeps_dedicated_search_path(self) -> None:
         export_sql = (
             PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
         ).read_text(encoding="utf-8").lower()
 
-        self.assertIn("p_name=>'weather location results'", export_sql)
+        self.assertIn("p_name=>'user location results'", export_sql)
+        self.assertIn("user-location-results", export_sql)
         self.assertIn("p6_pref_key,p6_pref_value_search_term", export_sql)
-        self.assertIn("and :p6_pref_key <> ''weather_location'' then", export_sql)
-        self.assertIn("$v(''p6_pref_key'') === ''weather_location''", export_sql)
+        self.assertIn("and :p6_pref_key <> ''user_location'' then", export_sql)
+        self.assertIn("$v(''p6_pref_key'') === ''user_location''", export_sql)
+        self.assertNotIn("p_name=>'weather location results'", export_sql)
+        self.assertNotIn("weather-location-results", export_sql)
 
     def test_user_preference_seed_hides_unwired_starred_preferences(self) -> None:
         seed_sql = (
@@ -392,12 +501,60 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             "tts_pitch",
             "tts_rate",
             "tts_voice",
+            "user_location",
         )
 
         for pref_key in editable_runtime_preferences:
             with self.subTest(pref_key=pref_key):
                 self.assertEqual(self._seeded_editable_flag(seed_sql, pref_key), "Y")
                 self.assertEqual(self._seeded_active_flag(seed_sql, pref_key), "Y")
+
+    def test_user_location_seed_retires_weather_location(self) -> None:
+        seed_sql = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_core/seed_data/prfdfn_preference_catalog.sql"
+        ).read_text(encoding="utf-8").lower()
+        seed_merge = seed_sql.split(") src", maxsplit=1)[0]
+        user_location_row = self._seeded_row(seed_sql, "user_location")
+
+        self.assertIn("'user location'", user_location_row)
+        self.assertIn("'json'", user_location_row)
+        self.assertIn("'select_one'", user_location_row)
+        self.assertIn("p_pref_key      => 'user_location'", user_location_row)
+        self.assertIn("'profile'", user_location_row)
+        self.assertIn("location-aware features", user_location_row)
+        self.assertNotIn("weather_location", seed_merge)
+        self.assertIn(
+            "delete from orac_core.user_preferences old_pref\n"
+            " where old_pref.pref_key = 'weather_location'",
+            seed_sql,
+        )
+        self.assertIn(
+            "and new_pref.pref_key = 'user_location'",
+            seed_sql,
+        )
+        self.assertIn(
+            "update orac_core.user_preferences\n"
+            "   set pref_key = 'user_location'\n"
+            " where pref_key = 'weather_location'",
+            seed_sql,
+        )
+        self.assertIn(
+            "delete from orac_core.preference_definitions\n"
+            " where pref_key = 'weather_location'",
+            seed_sql,
+        )
+        self.assertLess(
+            seed_sql.index("delete from orac_core.user_preferences old_pref"),
+            seed_sql.index("update orac_core.user_preferences"),
+        )
+        self.assertLess(
+            seed_sql.index("update orac_core.user_preferences"),
+            seed_sql.index(
+                "delete from orac_core.preference_definitions\n"
+                " where pref_key = 'weather_location'"
+            ),
+        )
 
     def test_shipped_config_uses_runtime_preference_default_keys(self) -> None:
         config = configparser.ConfigParser()
@@ -539,6 +696,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         exports = (
             PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql",
             PROJECT_ROOT / "plugins/home_assistant/apex/f10010.sql",
+            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql",
         )
 
         for export_path in exports:
@@ -549,6 +707,41 @@ class PluginApexAppSchemaTests(unittest.TestCase):
                 self.assertIn("p_cookie_name=>'&workspace_cookie.'", export_sql)
                 self.assertIn("p_switch_in_session_yn=>'y'", export_sql)
 
+    def test_plugin_apex_exports_have_no_undefined_page_item_references(self) -> None:
+        exports = sorted((PROJECT_ROOT / "plugins").glob("*/apex/f*.sql"))
+
+        self.assertTrue(exports)
+        for export_path in exports:
+            with self.subTest(export_path=export_path.relative_to(PROJECT_ROOT)):
+                export_sql = export_path.read_text(encoding="utf-8")
+                page_sections = _apex_page_sections(export_sql)
+                page_items = {
+                    page_id: _apex_page_item_names(page_body, page_id)
+                    for page_id, page_body in page_sections.items()
+                }
+                missing_references: list[str] = []
+                cross_page_da_references: list[str] = []
+
+                for source_page_id, page_body in page_sections.items():
+                    for referenced_page_id, item_name in _apex_item_references(page_body):
+                        if item_name not in page_items.get(referenced_page_id, set()):
+                            missing_references.append(
+                                f"page {source_page_id} references undefined {item_name}"
+                            )
+
+                    for da_match in PAGE_DA_BLOCK_RE.finditer(page_body):
+                        for referenced_page_id, item_name in _apex_item_references(
+                            da_match.group(1)
+                        ):
+                            if referenced_page_id != source_page_id:
+                                cross_page_da_references.append(
+                                    f"page {source_page_id} dynamic action references "
+                                    f"{item_name}"
+                                )
+
+                self.assertEqual(missing_references, [])
+                self.assertEqual(cross_page_da_references, [])
+
     def test_home_assistant_uses_plugin_app_authorization(self) -> None:
         export_sql = (
             PROJECT_ROOT / "plugins/home_assistant/apex/f10010.sql"
@@ -558,6 +751,349 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("orac_code.plugin_apex_app_auth_api.has_required_role", export_sql)
         self.assertIn("''orac_admin''", export_sql)
         self.assertGreaterEqual(export_sql.count("p_required_role=>"), 3)
+
+    def test_drop_box_declares_required_admin_apex_app(self) -> None:
+        manifest = (PROJECT_ROOT / "plugins/drop_box.json").read_text(
+            encoding="utf-8"
+        ).lower()
+
+        self.assertIn('"app_alias": "orac_dropbox_admin"', manifest)
+        self.assertIn('"app_export": "apex/f10020.sql"', manifest)
+        self.assertIn('"workspace": "orac"', manifest)
+        self.assertIn('"parsing_schema": "orac_apx_pub"', manifest)
+        self.assertIn('"application_id": 10020', manifest)
+        self.assertIn('"install_required": true', manifest)
+        self.assertIn('"orac_admin"', manifest)
+
+    def test_drop_box_apex_app_uses_plugin_app_security_pattern(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("p_default_application_id=>10020", export_sql)
+        self.assertIn("drop box admin", export_sql)
+        self.assertIn("p_cookie_name=>'&workspace_cookie.'", export_sql)
+        self.assertIn("p_switch_in_session_yn=>'y'", export_sql)
+        self.assertIn("p_rejoin_existing_sessions=>'y'", export_sql)
+        self.assertIn("orac_code.plugin_apex_app_auth_api.has_required_role", export_sql)
+        self.assertIn("''orac_admin''", export_sql)
+        self.assertIn(":request = ''orac_theme_sync''", export_sql)
+        self.assertIn("s.application_id = 1042", export_sql)
+        self.assertIn("s.application_id = :app_id", export_sql)
+        self.assertGreaterEqual(export_sql.count("p_required_role=>"), 3)
+
+    def test_drop_box_apex_app_uses_admin_views_and_api_only(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("create drop location", export_sql)
+        self.assertIn("about drop box locations", export_sql)
+        self.assertIn("drop box locations are folders watched by orac", export_sql)
+        self.assertIn("p_plug_source_type=>'native_ir'", export_sql)
+        self.assertIn("wwv_flow_imp_page.create_worksheet", export_sql)
+        self.assertIn("orac_dropbox.drop_location_admin_v", export_sql)
+        self.assertIn("orac_dropbox.drop_location_summary_admin_v", export_sql)
+        self.assertIn("orac_dropbox.drop_job_admin_v", export_sql)
+        self.assertIn("orac_dropbox.drop_job_event_admin_v", export_sql)
+        self.assertIn("orac_dropbox.drop_processing_profile_lov_v", export_sql)
+        self.assertIn("orac_dropbox.drop_box_admin_api.create_location", export_sql)
+        self.assertIn("orac_dropbox.drop_box_admin_api.update_location", export_sql)
+        self.assertIn("orac_dropbox.drop_box_admin_api.set_enabled", export_sql)
+        self.assertIn("orac_dropbox.drop_box_admin_api.delete_location", export_sql)
+        self.assertIn("orac_code.plugin_lov_v", export_sql)
+        self.assertIn("total_job_count", export_sql)
+        self.assertIn("p_name=>'drop location form'", export_sql)
+        self.assertIn("p_name=>'drop location detail'", export_sql)
+        self.assertIn("p_name=>'job detail'", export_sql)
+        self.assertIn("p_name=>'activity'", export_sql)
+        self.assertIn("p_list_item_link_text=>'activity'", export_sql)
+        self.assertIn("p_column_linktext=>'<span role=\"img\" aria-label=\"edit\"", export_sql)
+        self.assertIn("p_column_linktext=>'view jobs'", export_sql)
+        self.assertIn("view_jobs_location_id", export_sql)
+        self.assertIn("toggle_location", export_sql)
+        self.assertIn("p2_target_plugin_key", export_sql)
+        self.assertIn("p2_target_project_key", export_sql)
+        self.assertIn("p_name=>'dialog closed'", export_sql)
+        self.assertIn("p_bind_event_type=>'apexafterclosedialog'", export_sql)
+        self.assertIn("p_action=>'native_refresh'", export_sql)
+        self.assertNotRegex(
+            export_sql,
+            r"\b(insert|update|delete|merge)\s+(into\s+)?orac_dropbox\.",
+        )
+        self.assertNotRegex(
+            export_sql,
+            r"orac_dropbox\.drop_[a-z0-9_]+\.[a-z0-9_]+%type",
+        )
+        self.assertNotIn("orac_core.", export_sql)
+        self.assertNotIn("orac_api.", export_sql)
+
+    def test_drop_box_page_two_form_layout_and_switches(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql"
+        ).read_text(encoding="utf-8").lower()
+        page_two = export_sql[
+            export_sql.index("prompt --application/pages/page_00002") :
+            export_sql.index("prompt --application/pages/page_00003")
+        ]
+
+        self.assertIn("p_page_mode=>'modal'", page_two)
+        self.assertIn("p_dialog_chained=>'n'", page_two)
+        self.assertIn("p_dialog_resizable=>'y'", page_two)
+
+        for region in (
+            "basic details",
+            "target / routing",
+            "scanner rules",
+            "processing instructions",
+            "post-processing / future use",
+            "audit / metadata",
+        ):
+            self.assertIn(f"p_plug_name=>'{region}'", page_two)
+
+        ordered_tokens = (
+            "p_name=>'p2_location_code'",
+            "p_name=>'p2_display_name'",
+            "p_name=>'p2_enabled_yn'",
+            "p_name=>'p2_path'",
+            "p_name=>'p2_target_scope_type'",
+            "p_name=>'p2_target_plugin_key'",
+            "p_name=>'p2_target_project_key'",
+            "p_name=>'p2_processing_profile'",
+            "p_name=>'p2_allowed_extensions'",
+            "p_name=>'p2_recursive_yn'",
+            "p_name=>'p2_ignore_patterns'",
+            "p_name=>'p2_max_file_size_mb'",
+            "p_name=>'p2_stability_seconds'",
+            "p_name=>'p2_processing_instruction'",
+            "p_name=>'p2_move_processed_yn'",
+            "p_name=>'p2_processed_path'",
+            "p_name=>'p2_failed_path'",
+        )
+        positions = [page_two.index(token) for token in ordered_tokens]
+        self.assertEqual(positions, sorted(positions))
+
+        for item in ("p2_enabled_yn", "p2_recursive_yn", "p2_move_processed_yn"):
+            item_start = page_two.index(f"p_name=>'{item}'")
+            item_end = page_two.find("wwv_flow_imp_page.create_page_item", item_start + 1)
+            item_text = page_two[item_start : item_end if item_end != -1 else len(page_two)]
+            self.assertIn("p_display_as=>'native_yes_no'", item_text)
+            self.assertIn("'use_defaults', 'y'", item_text)
+
+        self.assertIn("p_cHeight=>12".lower(), page_two)
+        profile_start = page_two.index("p_name=>'p2_processing_profile'")
+        profile_end = page_two.find("wwv_flow_imp_page.create_page_item", profile_start + 1)
+        profile_text = page_two[
+            profile_start : profile_end if profile_end != -1 else len(page_two)
+        ]
+        self.assertIn("p_display_as=>'native_select_list'", profile_text)
+        self.assertIn("drop_processing_profile_lov_v", profile_text)
+        self.assertIn("display_label d", profile_text)
+        self.assertIn("profile_code r", profile_text)
+        self.assertNotIn("p_display_as=>'native_text_field'", profile_text)
+        self.assertIn("named ingestion recipe", profile_text)
+        self.assertNotIn("p_name=>'p2_profile_description'", page_two)
+        self.assertNotIn("p_name=>'p2_profile_default_instruction'", page_two)
+        self.assertIn("p_plug_name=>'audit / metadata'", page_two)
+        self.assertIn("p_plug_source_type=>'native_dynamic_content'", page_two)
+        self.assertIn("created at", page_two)
+        self.assertIn("updated at", page_two)
+        self.assertIn("row version", page_two)
+        self.assertNotIn("p_name=>'p2_created_on'", page_two)
+        self.assertNotIn("p_name=>'p2_updated_on'", page_two)
+        self.assertNotIn("p_name=>'p2_row_version_display'", page_two)
+        self.assertNotIn(":p2_created_on", page_two)
+        self.assertNotIn(":p2_updated_on", page_two)
+        self.assertNotIn(":p2_row_version_display", page_two)
+        page_two_items = _apex_page_item_names(page_two, 2)
+        self.assertNotIn("P2_CREATED_ON", page_two_items)
+        self.assertNotIn("P2_UPDATED_ON", page_two_items)
+        self.assertNotIn("P2_ROW_VERSION_DISPLAY", page_two_items)
+
+        load_process_start = page_two.index("p_process_name=>'load drop location'")
+        load_process_end = page_two.find(
+            "wwv_flow_imp_page.create_page_process",
+            load_process_start + 1,
+        )
+        load_process_text = page_two[
+            load_process_start : (
+                load_process_end if load_process_end != -1 else len(page_two)
+            )
+        ]
+        load_process_page_two_refs = {
+            item_name
+            for referenced_page_id, item_name in _apex_item_references(load_process_text)
+            if referenced_page_id == 2
+        }
+        self.assertLessEqual(load_process_page_two_refs, page_two_items)
+
+    def test_drop_box_page_two_submit_boundaries(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql"
+        ).read_text(encoding="utf-8").lower()
+        page_two = export_sql[
+            export_sql.index("prompt --application/pages/page_00002") :
+            export_sql.index("prompt --application/pages/page_00003")
+        ]
+
+        self.assertIn("p_button_name=>'cancel'", page_two)
+        self.assertIn("p_button_action=>'redirect_page'", page_two)
+        self.assertIn("p_button_position=>'close'", page_two)
+        self.assertIn("p_button_execute_validations=>'n'", page_two)
+        self.assertIn("p_button_name=>'save'", page_two)
+        self.assertIn("p_button_action=>'submit'", page_two)
+        self.assertIn("p_button_position=>'next'", page_two)
+        self.assertIn("p_button_name=>'delete'", page_two)
+        self.assertIn("p_button_position=>'delete'", page_two)
+        self.assertIn("t-button--danger", page_two)
+        self.assertIn("p_confirm_message=>'delete this drop location?", page_two)
+        self.assertIn("p_confirm_style=>'danger'", page_two)
+        self.assertIn("p_button_condition=>'p2_drop_location_id'", page_two)
+        self.assertIn("p_button_condition_type=>'item_is_not_null'", page_two)
+        self.assertEqual(
+            page_two.count("orac_dropbox.drop_box_admin_api.create_location"),
+            1,
+        )
+        self.assertEqual(
+            page_two.count("orac_dropbox.drop_box_admin_api.update_location"),
+            1,
+        )
+        self.assertEqual(
+            page_two.count("orac_dropbox.drop_box_admin_api.delete_location"),
+            1,
+        )
+        self.assertIn("p_process_when=>'save'", page_two)
+        self.assertIn("p_process_when_type=>'request_in_condition'", page_two)
+        self.assertIn("p_process_name=>'delete drop location'", page_two)
+        self.assertIn("p_process_when=>'delete'", page_two)
+        self.assertIn("p_process_type=>'native_close_window'", page_two)
+        self.assertIn("p_process_name=>'close dialog after save'", page_two)
+        self.assertIn("p_process_name=>'close dialog after delete'", page_two)
+        self.assertIn("p_attribute_01=>'p2_drop_location_id,request'", page_two)
+        self.assertNotIn("p_branch_type=>'redirect_url'", page_two)
+        self.assertNotIn("p_branch_name=>'after save'", page_two)
+        self.assertNotIn("p_branch_name=>'after delete'", page_two)
+        self.assertNotIn("p3_drop_location_id:&p2_drop_location_id", page_two)
+        self.assertIn("l_target_key varchar2(200 char)", page_two)
+        self.assertNotIn("orac_dropbox.drop_location.target_scope_key%type", page_two)
+        self.assertNotIn("native_form_dml", page_two)
+        self.assertNotIn("automatic row processing", page_two)
+        self.assertNotRegex(
+            page_two,
+            r"\b(insert|update|delete|merge)\s+(into\s+)?orac_dropbox\.",
+        )
+
+    def test_drop_box_page_two_toggles_plugin_target_by_scope(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql"
+        ).read_text(encoding="utf-8").lower()
+        page_two = export_sql[
+            export_sql.index("prompt --application/pages/page_00002") :
+            export_sql.index("prompt --application/pages/page_00003")
+        ]
+
+        self.assertIn("p_name=>'toggle plugin target'", page_two)
+        self.assertIn("p_triggering_element=>'p2_target_scope_type'", page_two)
+        self.assertIn("p_execute_on_page_init=>'y'", page_two)
+        self.assertIn("p_action=>'native_javascript_code'", page_two)
+        self.assertIn("$v(''p2_target_scope_type'') === ''plugin''", page_two)
+        self.assertIn("apex.item(''p2_target_plugin_key'').enable()", page_two)
+        self.assertIn("apex.item(''p2_target_plugin_key'').disable()", page_two)
+        self.assertNotIn("p2_target_plugin_key').setvalue", page_two)
+
+    def test_drop_box_page_two_profile_lov_and_field_behaviour(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql"
+        ).read_text(encoding="utf-8").lower()
+        page_two = export_sql[
+            export_sql.index("prompt --application/pages/page_00002") :
+            export_sql.index("prompt --application/pages/page_00003")
+        ]
+
+        self.assertNotIn("p_name=>'show profile description'", page_two)
+        self.assertNotIn("p_name=>'show profile default instruction'", page_two)
+        self.assertNotIn("p_affected_elements=>'p2_profile_description'", page_two)
+        self.assertNotIn("p_affected_elements=>'p2_profile_default_instruction'", page_two)
+        self.assertIn("from orac_dropbox.drop_processing_profile_lov_v", page_two)
+
+        self.assertIn("p_name=>'normalize case fields'", page_two)
+        self.assertIn(
+            "p_triggering_element=>'p2_location_code,p2_target_project_key,p2_allowed_extensions'",
+            page_two,
+        )
+        self.assertIn("apex.item(itemname).setvalue(transformvalue(value), null, true)", page_two)
+        self.assertIn("p2_location_code'', function(value) { return value.touppercase(); }", page_two)
+        self.assertIn("p2_target_project_key'', function(value) { return value.touppercase(); }", page_two)
+        self.assertIn("p2_allowed_extensions'', function(value) { return value.tolowercase(); }", page_two)
+
+        self.assertIn("p_name=>'toggle processed path'", page_two)
+        self.assertIn("p_triggering_element=>'p2_move_processed_yn'", page_two)
+        self.assertIn("$v(''p2_move_processed_yn'') === ''y''", page_two)
+        self.assertIn("apex.item(''p2_processed_path'').enable()", page_two)
+        self.assertIn("apex.item(''p2_processed_path'').disable()", page_two)
+        self.assertNotIn("apex.item(''p2_failed_path'').disable()", page_two)
+
+    def test_drop_box_activity_page_uses_persisted_event_view(self) -> None:
+        export_sql = (
+            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql"
+        ).read_text(encoding="utf-8").lower()
+        activity_page = export_sql[
+            export_sql.index("prompt --application/pages/page_00005") :
+            export_sql.index("prompt --application/pages/page_09999")
+        ]
+
+        self.assertIn("p_name=>'activity'", activity_page)
+        self.assertIn("from orac_dropbox.drop_job_event_admin_v evt", activity_page)
+        self.assertIn("join orac_dropbox.drop_job_admin_v job", activity_page)
+        self.assertIn("on job.drop_job_id = evt.drop_job_id", activity_page)
+        for token in (
+            "event_ts",
+            "location_code",
+            "location_display_name",
+            "drop_job_id",
+            "source_filename",
+            "source_path",
+            "event_type",
+            "event_message",
+        ):
+            self.assertIn(token, activity_page)
+        self.assertNotRegex(
+            activity_page,
+            r"\b(insert|update|delete|merge)\s+(into\s+)?orac_dropbox\.",
+        )
+
+    def test_plugin_lov_view_is_narrow_and_apex_granted(self) -> None:
+        view_sql = (
+            PROJECT_ROOT / "resources/db/schema/orac_code/view/plugin_lov_v.sql"
+        ).read_text(encoding="utf-8").lower()
+        grants_sql = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_code/grant/orac_code_consumer_view_access.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("create or replace force view orac_code.plugin_lov_v", view_sql)
+        self.assertIn("from orac_code.plugin_registry_v", view_sql)
+        self.assertNotIn("from orac_api.plugin_registry_v", view_sql)
+        self.assertIn("plugin_id", view_sql)
+        self.assertIn("display_label", view_sql)
+        self.assertIn("plugin_version", view_sql)
+        self.assertIn("install_status", view_sql)
+        self.assertIn("readiness_status", view_sql)
+        self.assertIn("enabled", view_sql)
+        self.assertIn("enabled = 'y'", view_sql)
+        self.assertIn("install_status = 'success'", view_sql)
+        self.assertIn("configuration_status in ('success', 'not_required')", view_sql)
+        self.assertIn("dependency_status in ('success', 'not_required')", view_sql)
+        self.assertIn("'already_deployed'", view_sql)
+        self.assertIn("'optional_missing'", view_sql)
+        self.assertIn("readiness_status = 'success'", view_sql)
+        self.assertNotIn("install_status = 'installed'", view_sql)
+        self.assertNotIn("manifest_hash", view_sql)
+        self.assertNotIn("package_hash", view_sql)
+        self.assertNotIn("installed_path", view_sql)
+        self.assertNotIn("config_path", view_sql)
+        self.assertIn("grant read on orac_code.plugin_lov_v to orac_apx_pub;", grants_sql)
+        self.assertNotIn("grant read on orac_code.plugin_registry_v to orac_apx_pub", grants_sql)
 
     def test_home_assistant_synchronizes_theme_when_launched_from_plugin_hub(self) -> None:
         export_sql = (
@@ -650,6 +1186,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         )
         self.assertIn(
             "grant read on orac_code.plugin_apex_apps_v to orac_apx_pub;",
+            view_grants,
+        )
+        self.assertIn(
+            "grant read on orac_code.plugin_service_status_v to orac_apx_pub;",
             view_grants,
         )
         self.assertNotIn(

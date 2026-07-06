@@ -11,6 +11,7 @@ from pathlib import Path
 import sys
 import tempfile
 import time
+from types import SimpleNamespace
 import unittest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -52,6 +53,117 @@ class _FakeLogger:
 
     def log_error(self, message: str) -> None:
         self.messages.append(("error", message))
+
+
+class _LifecycleStore:
+    """In-memory service lifecycle store for manager unit tests."""
+
+    def __init__(self) -> None:
+        self.rows: dict[tuple[str, str], SimpleNamespace] = {}
+        self.tokens: dict[tuple[str, str], str] = {}
+        self.active_owner: dict[tuple[str, str], str | None] = {}
+        self.active_token: dict[tuple[str, str], str | None] = {}
+        self.heartbeat_failures: set[tuple[str, str]] = set()
+        self.release_calls: list[tuple[str, str, str | None]] = []
+
+    def register_service(
+        self,
+        *,
+        plugin_id,
+        service_code,
+        service_name,
+        entry_point,
+        execution_model,
+        manifest_policy,
+    ):
+        key = (plugin_id, service_code)
+        row = self.rows.get(key)
+        if row is None:
+            row = SimpleNamespace(
+                plugin_id=plugin_id,
+                service_code=service_code,
+                service_name=service_name,
+                entry_point=entry_point,
+                execution_model=execution_model,
+                manifest_policy=manifest_policy,
+                effective_policy=manifest_policy,
+                current_state="disabled" if manifest_policy == "disabled" else "registered",
+                row_version=1,
+            )
+            self.rows[key] = row
+        else:
+            row.manifest_policy = manifest_policy
+            if getattr(row, "policy_override", None) is None:
+                row.effective_policy = manifest_policy
+            if row.effective_policy == "disabled":
+                row.current_state = "disabled"
+        return row
+
+    def try_acquire_lease(self, *, plugin_id, service_code, owner_id, lease_seconds):
+        key = (plugin_id, service_code)
+        active_owner = self.active_owner.get(key)
+        if active_owner and active_owner != owner_id:
+            return None
+        token = self.tokens.get(key) or f"token-{plugin_id}-{service_code}"
+        self.tokens[key] = token
+        self.active_owner[key] = owner_id
+        self.active_token[key] = token
+        row = self.rows[key]
+        row.current_state = "starting"
+        return token
+
+    def heartbeat_lease(self, *, plugin_id, service_code, owner_id, lease_token, lease_seconds):
+        key = (plugin_id, service_code)
+        if key in self.heartbeat_failures:
+            return False
+        return (
+            self.active_owner.get(key) == owner_id
+            and self.active_token.get(key) == lease_token
+        )
+
+    def release_lease(self, *, plugin_id, service_code, owner_id, lease_token):
+        key = (plugin_id, service_code)
+        self.release_calls.append((plugin_id, service_code, lease_token))
+        if (
+            self.active_owner.get(key) == owner_id
+            and self.active_token.get(key) == lease_token
+        ):
+            self.active_owner[key] = None
+            self.active_token[key] = None
+            self.rows[key].current_state = "stopped"
+            return True
+        return False
+
+    def mark_state(
+        self,
+        *,
+        plugin_id,
+        service_code,
+        owner_id,
+        lease_token,
+        state,
+        last_error_message=None,
+        touch_tick=False,
+    ):
+        key = (plugin_id, service_code)
+        if (
+            self.active_owner.get(key) != owner_id
+            or self.active_token.get(key) != lease_token
+        ):
+            return False
+        self.rows[key].current_state = state
+        self.rows[key].last_error_message = last_error_message
+        return True
+
+
+def _service_manager(**kwargs) -> PluginServiceManager:
+    return PluginServiceManager(
+        logger=kwargs.pop("logger", _FakeLogger()),
+        lifecycle_store=kwargs.pop("lifecycle_store", _LifecycleStore()),
+        heartbeat_interval_seconds=kwargs.pop("heartbeat_interval_seconds", 0.02),
+        lease_seconds=kwargs.pop("lease_seconds", 1),
+        **kwargs,
+    )
 
 
 def _wait_until(predicate, timeout_seconds: float = 1.0) -> bool:
@@ -274,7 +386,7 @@ class PluginServiceManagerTests(unittest.TestCase):
                 plugins_dir=plugins_dir,
                 cache_dir=Path(temp_cache),
             )
-            service_manager = PluginServiceManager(logger=_FakeLogger())
+            service_manager = _service_manager()
 
             routing_report = routing_manager.refresh()
             service_report = service_manager.register_manifests(_discover(plugins_dir))
@@ -305,7 +417,7 @@ class PluginServiceManagerTests(unittest.TestCase):
                 manifest,
                 LONG_RUNNING_SERVICE_CODE,
             )
-            service_manager = PluginServiceManager(logger=_FakeLogger())
+            service_manager = _service_manager()
 
             service_report = service_manager.register_manifests(_discover(plugins_dir))
 
@@ -348,8 +460,7 @@ class PluginServiceManagerTests(unittest.TestCase):
                 database_schema_root=schema_root,
                 database_deployer=_SuccessfulDatabaseDeployer(),
             )
-            service_manager = PluginServiceManager(
-                logger=_FakeLogger(),
+            service_manager = _service_manager(
                 database_schema_root=schema_root,
             )
 
@@ -386,8 +497,7 @@ class PluginServiceManagerTests(unittest.TestCase):
                 _base_manifest(plugin_id, runtime, database),
                 LONG_RUNNING_SERVICE_CODE,
             )
-            service_manager = PluginServiceManager(
-                logger=_FakeLogger(),
+            service_manager = _service_manager(
                 database_schema_root=Path(temp_schema),
             )
 
@@ -408,7 +518,7 @@ class PluginServiceManagerTests(unittest.TestCase):
                 manifest,
                 LONG_RUNNING_SERVICE_CODE,
             )
-            service_manager = PluginServiceManager(logger=_FakeLogger())
+            service_manager = _service_manager()
 
             report = service_manager.register_manifests(_discover(plugins_dir))
 
@@ -428,7 +538,7 @@ class PluginServiceManagerTests(unittest.TestCase):
                 ),
                 SCHEDULED_SERVICE_CODE,
             )
-            service_manager = PluginServiceManager(logger=_FakeLogger())
+            service_manager = _service_manager()
             service_manager.register_manifests(_discover(plugins_dir))
 
             service_manager.start(plugin_id)
@@ -454,7 +564,7 @@ class PluginServiceManagerTests(unittest.TestCase):
                 ),
                 SCHEDULED_SERVICE_CODE,
             )
-            service_manager = PluginServiceManager(logger=_FakeLogger())
+            service_manager = _service_manager()
             service_manager.register_manifests(_discover(plugins_dir))
 
             service_manager.start(plugin_id)
@@ -475,7 +585,7 @@ class PluginServiceManagerTests(unittest.TestCase):
                 _base_manifest(plugin_id, _long_running_runtime()),
                 LONG_RUNNING_SERVICE_CODE,
             )
-            service_manager = PluginServiceManager(logger=_FakeLogger())
+            service_manager = _service_manager()
             service_manager.register_manifests(_discover(plugins_dir))
 
             service_manager.start(plugin_id)
@@ -509,7 +619,7 @@ class PluginServiceManagerTests(unittest.TestCase):
                 ),
                 LONG_RUNNING_SERVICE_CODE,
             )
-            service_manager = PluginServiceManager(logger=_FakeLogger())
+            service_manager = _service_manager()
             service_manager.register_manifests(_discover(plugins_dir))
 
             service_manager.start_auto_services()
@@ -518,12 +628,112 @@ class PluginServiceManagerTests(unittest.TestCase):
                     lambda: service_manager.get_state(auto_plugin_id) == "running"
                 )
             )
-            self.assertEqual(service_manager.get_state(manual_plugin_id), "discovered")
+            self.assertEqual(service_manager.get_state(manual_plugin_id), "registered")
 
-            service_manager.stop_all()
+            service_manager.stop_all_services()
 
             self.assertEqual(service_manager.get_state(auto_plugin_id), "stopped")
             self.assertEqual(service_manager.get_state(manual_plugin_id), "stopped")
+
+    def test_disabled_policy_registers_but_does_not_start(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            plugin_id = "long_disabled"
+            _write_plugin(
+                plugins_dir,
+                plugin_id,
+                _base_manifest(
+                    plugin_id,
+                    _long_running_runtime(start_policy="disabled"),
+                ),
+                LONG_RUNNING_SERVICE_CODE,
+            )
+            service_manager = _service_manager()
+            service_manager.register_manifests(_discover(plugins_dir))
+
+            service_manager.start_auto_services()
+
+            self.assertEqual(service_manager.get_state(plugin_id), "disabled")
+            self.assertFalse(service_manager.start(plugin_id))
+
+    def test_active_external_lease_prevents_start(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            plugin_id = "leased_elsewhere"
+            lifecycle_store = _LifecycleStore()
+            _write_plugin(
+                plugins_dir,
+                plugin_id,
+                _base_manifest(plugin_id, _long_running_runtime()),
+                LONG_RUNNING_SERVICE_CODE,
+            )
+            service_manager = _service_manager(
+                lifecycle_store=lifecycle_store,
+                owner_id="unit-owner",
+            )
+            service_manager.register_manifests(_discover(plugins_dir))
+            lifecycle_store.active_owner[(plugin_id, "default")] = "other-owner"
+            lifecycle_store.active_token[(plugin_id, "default")] = "other-token"
+
+            self.assertFalse(service_manager.start(plugin_id))
+            self.assertEqual(service_manager.get_state(plugin_id), "registered")
+
+    def test_stale_or_released_lease_can_be_acquired(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            plugin_id = "lease_recovered"
+            lifecycle_store = _LifecycleStore()
+            lifecycle_store.active_owner[(plugin_id, "default")] = None
+            _write_plugin(
+                plugins_dir,
+                plugin_id,
+                _base_manifest(plugin_id, _long_running_runtime()),
+                LONG_RUNNING_SERVICE_CODE,
+            )
+            service_manager = _service_manager(
+                lifecycle_store=lifecycle_store,
+                owner_id="unit-owner",
+            )
+            service_manager.register_manifests(_discover(plugins_dir))
+
+            self.assertTrue(service_manager.start(plugin_id))
+            self.assertTrue(_wait_until(lambda: service_manager.get_state(plugin_id) == "running"))
+            service_manager.stop(plugin_id)
+
+            self.assertEqual(
+                lifecycle_store.release_calls[-1],
+                (plugin_id, "default", f"token-{plugin_id}-default"),
+            )
+
+    def test_heartbeat_loss_transitions_to_lease_lost(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            plugin_id = "lease_lost"
+            lifecycle_store = _LifecycleStore()
+            _write_plugin(
+                plugins_dir,
+                plugin_id,
+                _base_manifest(plugin_id, _long_running_runtime()),
+                LONG_RUNNING_SERVICE_CODE,
+            )
+            service_manager = _service_manager(
+                lifecycle_store=lifecycle_store,
+                owner_id="unit-owner",
+                heartbeat_interval_seconds=0.01,
+            )
+            service_manager.register_manifests(_discover(plugins_dir))
+
+            service_manager.start(plugin_id)
+            self.assertTrue(_wait_until(lambda: service_manager.get_state(plugin_id) == "running"))
+            lifecycle_store.heartbeat_failures.add((plugin_id, "default"))
+
+            self.assertTrue(
+                _wait_until(
+                    lambda: "lease_lost"
+                    in service_manager.status()["services"][plugin_id]["state_history"]
+                )
+            )
+            service_manager.stop(plugin_id)
 
     def test_failing_service_transitions_to_failed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:
@@ -535,7 +745,7 @@ class PluginServiceManagerTests(unittest.TestCase):
                 _base_manifest(plugin_id, _long_running_runtime()),
                 FAILING_SERVICE_CODE,
             )
-            service_manager = PluginServiceManager(logger=_FakeLogger())
+            service_manager = _service_manager()
             service_manager.register_manifests(_discover(plugins_dir))
 
             service_manager.start(plugin_id)
@@ -556,7 +766,7 @@ class PluginServiceManagerTests(unittest.TestCase):
                 ),
                 RESTARTING_SERVICE_CODE,
             )
-            service_manager = PluginServiceManager(logger=_FakeLogger())
+            service_manager = _service_manager()
             service_manager.register_manifests(_discover(plugins_dir))
 
             service_manager.start(plugin_id)
@@ -581,7 +791,7 @@ class PluginServiceManagerTests(unittest.TestCase):
                 ),
                 FAILING_SERVICE_CODE,
             )
-            service_manager = PluginServiceManager(logger=_FakeLogger())
+            service_manager = _service_manager()
             service_manager.register_manifests(_discover(plugins_dir))
 
             service_manager.start(plugin_id)
@@ -601,8 +811,7 @@ class PluginServiceManagerTests(unittest.TestCase):
                 _base_manifest(plugin_id, _long_running_runtime()),
                 DB_SESSION_REQUESTING_SERVICE_CODE,
             )
-            service_manager = PluginServiceManager(
-                logger=_FakeLogger(),
+            service_manager = _service_manager(
                 plugin_db_session_factory=lambda: (_raise_missing_orac_plugin_credentials()),
             )
             service_manager.register_manifests(_discover(plugins_dir))
@@ -626,7 +835,7 @@ class PluginServiceManagerTests(unittest.TestCase):
                 _base_manifest(plugin_id, _long_running_runtime()),
                 SERVICE_COMMAND_CODE,
             )
-            service_manager = PluginServiceManager(logger=_FakeLogger())
+            service_manager = _service_manager()
             service_manager.register_manifests(_discover(plugins_dir))
 
             service_manager.start(plugin_id)

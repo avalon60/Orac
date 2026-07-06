@@ -321,7 +321,7 @@ def _timezone_location_label(tz_name: str) -> str:
 def system_clock_line(prefs: dict) -> str:
     """Render time and location context for the current session."""
     tz_name = (prefs or {}).get("timezone", "Europe/London")
-    weather_location = str((prefs or {}).get("weather_location") or "").strip()
+    user_location = str((prefs or {}).get("user_location") or "").strip()
     date_format = _validate_date_format((prefs or {}).get("date_format")) or DATE_FORMAT_DEFAULT
     now_utc = datetime.now(timezone.utc)
     try:
@@ -349,10 +349,10 @@ def system_clock_line(prefs: dict) -> str:
         "approximate time.",
         f"Current UTC time for logs and technical timestamps only: {utc_iso}.",
     ]
-    if weather_location:
-        lines.append(f"Assume your current location is {weather_location}.")
+    if user_location:
+        lines.append(f"Assume your current location is {user_location}.")
         lines.append(
-            "This weather location is the preferred location context; do not "
+            "This user location is the preferred location context; do not "
             "replace it with a location inferred from the timezone."
         )
         lines.append(
@@ -363,7 +363,7 @@ def system_clock_line(prefs: dict) -> str:
         )
     else:
         lines.append(
-            f"No explicit weather location is set. Assume your current location is "
+            f"No explicit user location is set. Assume your current location is "
             f"{_timezone_location_label(tz_name)} based on the session timezone."
         )
         lines.append(
@@ -384,7 +384,7 @@ def answer_local_date_time_query(prompt: str, prefs: dict) -> str | None:
     Args:
         prompt: Current user prompt.
         prefs: Runtime preferences containing at least ``timezone`` and
-            optionally ``weather_location``.
+            optionally ``user_location``.
 
     Returns:
         A concise local date/time answer, or ``None`` when the prompt is not a
@@ -429,7 +429,7 @@ def answer_local_date_time_query(prompt: str, prefs: dict) -> str | None:
         tz = ZoneInfo("UTC")
         tz_name = "UTC"
     now_local = datetime.now(timezone.utc).astimezone(tz)
-    location = str((prefs or {}).get("weather_location") or "").strip()
+    location = str((prefs or {}).get("user_location") or "").strip()
     location_suffix = f" in {location}" if location else f" in {tz_name}"
     date_format = _validate_date_format((prefs or {}).get("date_format")) or DATE_FORMAT_DEFAULT
 
@@ -1747,7 +1747,7 @@ class Orac:
             default_timezone = getattr(self, "_default_timezone", "Europe/London")
             prefs = {
                 "timezone": meta.get("timezone") or default_timezone,
-                "weather_location": meta.get("weather_location"),
+                "user_location": meta.get("user_location"),
                 "date_format": meta.get("date_format") or DATE_FORMAT_DEFAULT,
                 "force_concise": meta.get("force_concise"),
             }
@@ -2684,10 +2684,6 @@ class Orac:
             for manifest in manifests
             if manifest.runtime_mode in {"service", "hybrid"}
         ]
-        if service_manager.service_ids():
-            logger.log_info(f"{Icons.info} Plugin service refresh stopping previously managed services.")
-            service_manager.stop_all()
-
         registration_status = service_manager.register_manifests(service_manifests)
         service_manager.start_auto_services()
         status = service_manager.status()
@@ -2705,7 +2701,7 @@ class Orac:
             return
         try:
             logger.log_info(f"{Icons.info} Plugin service shutdown requested.")
-            service_manager.stop_all()
+            service_manager.stop_all_services()
         except Exception as exc:
             _log_exception("Plugin service shutdown failed", exc)
 
@@ -3122,37 +3118,37 @@ class Orac:
             enriched_meta["personality_code"] = personality_code or "DEFAULT"
         self._record_preference_source(enriched_meta, "personality_code", source)
 
-    def _apply_weather_location_preference(
+    def _apply_user_location_preference(
         self,
         enriched_meta: dict[str, Any],
         auth_user: str,
     ) -> None:
-        """Resolve weather location while preserving explicit request metadata."""
-        if enriched_meta.get("weather_location"):
-            self._record_preference_source(enriched_meta, "weather_location", "request")
+        """Resolve user location while preserving explicit request metadata."""
+        if enriched_meta.get("user_location"):
+            self._record_preference_source(enriched_meta, "user_location", "request")
             return
 
-        weather_pref = self._get_user_preference_value(auth_user, "weather_location")
-        if not isinstance(weather_pref, dict):
+        user_location_pref = self._get_user_preference_value(auth_user, "user_location")
+        if not isinstance(user_location_pref, dict):
             return
 
-        name = str(weather_pref.get("name") or "").strip()
+        name = str(user_location_pref.get("name") or "").strip()
         if not name:
             return
 
         parts = [name]
-        admin1 = str(weather_pref.get("admin1") or "").strip()
-        country = str(weather_pref.get("country") or "").strip()
+        admin1 = str(user_location_pref.get("admin1") or "").strip()
+        country = str(user_location_pref.get("country") or "").strip()
         if admin1:
             parts.append(admin1)
         if country:
             parts.append(country)
 
-        enriched_meta["weather_location"] = ", ".join(parts)
-        enriched_meta["weather_location_pref"] = weather_pref
+        enriched_meta["user_location"] = ", ".join(parts)
+        enriched_meta["user_location_pref"] = user_location_pref
         self._record_preference_source(
             enriched_meta,
-            "weather_location",
+            "user_location",
             "saved_preference",
         )
 
@@ -3169,7 +3165,7 @@ class Orac:
         self._apply_default_llm_preference(enriched_meta, auth_user)
         self._apply_tts_voice_preference(enriched_meta, auth_user)
         self._apply_personality_preference(enriched_meta, auth_user)
-        self._apply_weather_location_preference(enriched_meta, auth_user)
+        self._apply_user_location_preference(enriched_meta, auth_user)
 
         tts_options = {
             key: enriched_meta[key]
@@ -5156,7 +5152,7 @@ class Orac:
                 {
                     "timezone": meta.get("timezone")
                     or getattr(self, "_default_timezone", "Europe/London"),
-                    "weather_location": meta.get("weather_location"),
+                    "user_location": meta.get("user_location"),
                 },
             )
             if local_date_time_answer is not None:

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="../../schema/constraint_fk/drp_job_location_fk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_fk/drp_loc_profile_fk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_fk/drp_jobe_job_fk.sql" relativeToChangelogFile="true"/>
+</databaseChangeLog>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  logicalFilePath="plugins/home_assistant/db/liquibase/controllers/075_trigger.xml"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="../../schema/trigger/ha_areas_biu.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/trigger/ha_devices_biu.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/trigger/ha_entities_biu.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/trigger/ha_states_current_biu.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/trigger/ha_sync_runs_biu.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/trigger/dalias_biu.sql" relativeToChangelogFile="true"/>
+</databaseChangeLog>

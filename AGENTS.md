@@ -116,7 +116,8 @@ Read:
 
 when creating new code or making significant changes to existing code,
 including application code, scripts, database code, frontend components, tests,
-or generated/scaffolded source files.
+generated/scaffolded source files, root-level utility scripts, SQL*Plus/SQLcl
+helpers, and operational provisioning scripts.
 
 ## Plugins
 

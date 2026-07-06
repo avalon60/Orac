@@ -16,8 +16,31 @@ if str(SRC_ROOT) not in sys.path:
 
 from model.plugin_routing.discovery import PluginDiscovery
 from model.plugin_config import PluginConfigManager
+from model.plugin_runtime import PluginDataAccess, PluginRuntimeError
 from model.plugin_runtime import load_plugin_class, load_plugin_service_class
 from model.plugin_runtime import PluginRuntimeContext
+
+
+class _FakeContextManager:
+    """Minimal context manager for plugin entitlement tests."""
+
+    def __init__(self) -> None:
+        self.requests: list[tuple[str, str]] = []
+
+    def get_user_preference_value(
+        self,
+        username: str,
+        pref_key: str,
+    ) -> dict[str, str]:
+        self.requests.append((username, pref_key))
+        return {"name": "Thornton Dale"}
+
+
+class _FakeLogger:
+    """Minimal logger for plugin entitlement tests."""
+
+    def log_error(self, message: str) -> None:
+        self.last_error = message
 
 
 class PluginRuntimeTests(unittest.TestCase):
@@ -26,14 +49,44 @@ class PluginRuntimeTests(unittest.TestCase):
     def test_weather_plugin_entry_point_loads(self) -> None:
         manifests, errors = PluginDiscovery(Path("plugins")).discover()
         self.assertEqual(errors, [])
-        weather_manifest = next(manifest for manifest in manifests if manifest.plugin_id == "weather")
+        weather_manifest = next(
+            manifest for manifest in manifests if manifest.plugin_id == "weather"
+        )
 
         plugin_class = load_plugin_class(weather_manifest)
 
         self.assertEqual(plugin_class.__name__, "WeatherPlugin")
-        self.assertEqual(weather_manifest.execution_policy.action_type, "informational_read_only")
+        self.assertEqual(
+            weather_manifest.execution_policy.action_type,
+            "informational_read_only",
+        )
         self.assertTrue(weather_manifest.execution_policy.allowed_by_default)
         self.assertFalse(weather_manifest.execution_policy.requires_confirmation)
+        self.assertIn("user_preferences.user_location", weather_manifest.entitlements)
+        self.assertNotIn("user_preferences.weather_location", weather_manifest.entitlements)
+
+    def test_user_location_entitlement_is_runtime_supported(self) -> None:
+        manifests, errors = PluginDiscovery(Path("plugins")).discover()
+        self.assertEqual(errors, [])
+        manifest = next(
+            manifest for manifest in manifests if manifest.plugin_id == "weather"
+        )
+        context_manager = _FakeContextManager()
+        data_access = PluginDataAccess(
+            manifest=manifest,
+            context_manager=context_manager,
+            auth_user="clive",
+            logger=_FakeLogger(),
+        )
+
+        self.assertEqual(
+            data_access.get("user_preferences.user_location"),
+            {"name": "Thornton Dale"},
+        )
+        self.assertEqual(context_manager.requests, [("clive", "user_location")])
+
+        with self.assertRaises(PluginRuntimeError):
+            data_access.get("user_preferences.weather_location")
 
     def test_home_assistant_service_entry_point_loads(self) -> None:
         manifests, errors = PluginDiscovery(Path("plugins")).discover()

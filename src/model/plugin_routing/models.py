@@ -12,7 +12,7 @@ from typing import Any, Literal
 PluginRuntimeMode = Literal["on_demand", "service", "hybrid"]
 PluginConfigValueType = Literal["string", "bool", "int", "float", "path", "list"]
 PluginServiceExecutionModel = Literal["scheduled", "long_running"]
-PluginServiceStartPolicy = Literal["auto", "manual"]
+PluginServiceStartPolicy = Literal["disabled", "auto", "manual"]
 PluginServiceRestartPolicy = Literal["never", "on_failure"]
 PluginDatabaseOnMissing = Literal["warn_disable", "warn_only", "fail_refresh"]
 PluginDatabaseManagedBy = Literal["orac"]
@@ -72,6 +72,7 @@ class PluginServiceRuntime:
     restart_policy: PluginServiceRestartPolicy
     shutdown_timeout_seconds: int
     health_check: PluginHealthCheck
+    service_code: str = "default"
     schedule: PluginServiceSchedule | None = None
 
 
@@ -275,6 +276,7 @@ class PluginManifest:
     manifest_hash: str
     runtime_mode: PluginRuntimeMode = "on_demand"
     service_runtime: PluginServiceRuntime | None = None
+    service_runtimes: tuple[PluginServiceRuntime, ...] = ()
     execution_policy: PluginExecutionPolicy | None = None
     route_capabilities: tuple[PluginRouteCapability, ...] = ()
     configuration_required: tuple[PluginConfigKey, ...] = ()

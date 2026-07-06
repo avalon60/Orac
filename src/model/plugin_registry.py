@@ -105,6 +105,14 @@ class PluginRegistryStore:
         )
         return rows[0] if rows else None
 
+    def list_all(self) -> list[dict[str, Any]]:
+        """Return all current plugin registry records."""
+        return self._query(
+            f"select {self._SELECT_COLUMNS} "
+            "from orac_code.plugin_registry_v order by plugin_id",
+            {},
+        )
+
     def list_enabled(self) -> list[dict[str, Any]]:
         """Return registry rows that passed every runtime eligibility gate."""
         return self._query(
@@ -156,16 +164,20 @@ class PluginRegistryStore:
 
     def _query(self, sql: str, binds: dict[str, Any]) -> list[dict[str, Any]]:
         """Execute a read against the approved ORAC_CODE registry view."""
-        session = self._connect()
+        session = None
         try:
+            session = self._connect()
             with session.cursor() as cursor:
                 cursor.execute(sql, binds)
                 columns = [description[0].lower() for description in cursor.description]
-                return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
+                return [
+                    dict(zip(columns, row, strict=True)) for row in cursor.fetchall()
+                ]
         except Exception as exc:
             raise PluginRegistryError(f"Unable to read plugin registry: {exc}") from exc
         finally:
-            _close_quietly(session)
+            if session is not None:
+                _close_quietly(session)
 
     def _connect(self) -> Any:
         """Return an ORAC runtime database session."""
@@ -243,18 +255,22 @@ class PluginApexAppRegistryStore:
 
     def _query(self, sql: str, binds: dict[str, Any]) -> list[dict[str, Any]]:
         """Execute a read against approved ORAC_CODE plugin APEX app views."""
-        session = self._connect()
+        session = None
         try:
+            session = self._connect()
             with session.cursor() as cursor:
                 cursor.execute(sql, binds)
                 columns = [description[0].lower() for description in cursor.description]
-                return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
+                return [
+                    dict(zip(columns, row, strict=True)) for row in cursor.fetchall()
+                ]
         except Exception as exc:
             raise PluginRegistryError(
                 f"Unable to read plugin APEX app registry: {exc}"
             ) from exc
         finally:
-            _close_quietly(session)
+            if session is not None:
+                _close_quietly(session)
 
     def _connect(self) -> Any:
         """Return an ORAC runtime database session."""

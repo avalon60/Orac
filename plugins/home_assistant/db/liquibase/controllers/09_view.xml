@@ -9,12 +9,6 @@
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   logicalFilePath="plugins/home_assistant/db/liquibase/controllers/09_view.xml"
   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
-
-  <changeSet id="home_assistant-09_view-ha_status_summary_v" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant" runOnChange="true">
-    <sqlFile path="../../schema/view/ha_status_summary_v.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
-  </changeSet>
-
-  <changeSet id="home_assistant-09_view-ha_control_resolution_v" author="cbostock" contextFilter="plugin,prod" labels="plugin,home_assistant" runOnChange="true">
-    <sqlFile path="../../schema/view/ha_control_resolution_v.sql" relativeToChangelogFile="true" endDelimiter=";" splitStatements="true" stripComments="false"/>
-  </changeSet>
+  <include file="../../schema/view/ha_status_summary_v.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/view/ha_control_resolution_v.sql" relativeToChangelogFile="true"/>
 </databaseChangeLog>
