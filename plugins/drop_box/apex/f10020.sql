@@ -33,15 +33,16 @@ prompt APPLICATION 10020 - ORAC_DROPBOX_ADMIN
 -- Application Export:
 --   Application:     10020
 --   Name:            ORAC_DROPBOX_ADMIN
---   Date and Time:   13:44 Sunday June 28, 2026
+--   Date and Time:   12:19 Tuesday July 7, 2026
 --   Exported By:     ORAC_ADMIN
 --   Flashback:       0
 --   Export Type:     Application Export
 --     Pages:                      9
---       Items:                   31
---       Processes:                8
---       Regions:                 17
---       Buttons:                  4
+--       Items:                   28
+--       Processes:               11
+--       Regions:                 16
+--       Buttons:                  5
+--       Dynamic Actions:          4
 --     Shared Components:
 --       Logic:
 --         Build Options:          2
@@ -61,7 +62,7 @@ prompt APPLICATION 10020 - ORAC_DROPBOX_ADMIN
 --       E-Mail:
 --     Supporting Objects:  Included
 --   Version:         24.2.0
---   Instance ID:     1101156294854190
+--   Instance ID:     1048984561694884
 --
 
 prompt --application/delete_application
@@ -106,7 +107,7 @@ wwv_imp_workspace.create_flow(
 ,p_substitution_value_01=>'Drop Box'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>6
-,p_version_scn=>2489037
+,p_version_scn=>2272011
 ,p_print_server_type=>'NATIVE'
 ,p_file_storage=>'DB'
 ,p_is_pwa=>'Y'
@@ -1206,26 +1207,6 @@ wwv_flow_imp_page.create_page_button(
 ,p_button_redirect_url=>'f?p=&APP_ID.:2:&APP_SESSION.::&DEBUG.:RP,2::'
 ,p_icon_css_classes=>'fa-plus'
 );
-wwv_flow_imp_page.create_page_da_event(
- p_id=>wwv_flow_imp.id(34600100000000305)
-,p_name=>'Dialog Closed'
-,p_event_sequence=>10
-,p_triggering_element_type=>'REGION'
-,p_triggering_region_id=>wwv_flow_imp.id(34600100000000102)
-,p_bind_type=>'bind'
-,p_execution_type=>'IMMEDIATE'
-,p_bind_event_type=>'apexafterclosedialog'
-);
-wwv_flow_imp_page.create_page_da_action(
- p_id=>wwv_flow_imp.id(34600100000000306)
-,p_event_id=>wwv_flow_imp.id(34600100000000305)
-,p_event_result=>'TRUE'
-,p_action_sequence=>10
-,p_execute_on_page_init=>'N'
-,p_action=>'NATIVE_REFRESH'
-,p_affected_elements_type=>'REGION'
-,p_affected_region_id=>wwv_flow_imp.id(34600100000000102)
-);
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(34600100000000302)
 ,p_name=>'P1_TOGGLE_LOCATION_ID'
@@ -1258,6 +1239,26 @@ wwv_flow_imp_page.create_page_item(
 ,p_protection_level=>'S'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'value_protected', 'N')).to_clob
+);
+wwv_flow_imp_page.create_page_da_event(
+ p_id=>wwv_flow_imp.id(34600100000000305)
+,p_name=>'Dialog Closed'
+,p_event_sequence=>10
+,p_triggering_element_type=>'REGION'
+,p_triggering_region_id=>wwv_flow_imp.id(34600100000000102)
+,p_bind_type=>'bind'
+,p_execution_type=>'IMMEDIATE'
+,p_bind_event_type=>'apexafterclosedialog'
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(34600100000000306)
+,p_event_id=>wwv_flow_imp.id(34600100000000305)
+,p_event_result=>'TRUE'
+,p_action_sequence=>10
+,p_execute_on_page_init=>'N'
+,p_action=>'NATIVE_REFRESH'
+,p_affected_elements_type=>'REGION'
+,p_affected_region_id=>wwv_flow_imp.id(34600100000000102)
 );
 wwv_flow_imp_page.create_page_process(
  p_id=>wwv_flow_imp.id(34600100000000401)
@@ -1413,47 +1414,6 @@ wwv_flow_imp_page.create_page_plug(
   'output_as', 'TEXT',
   'show_line_breaks', 'Y')).to_clob
 );
-wwv_flow_imp_page.create_page_plug(
- p_id=>wwv_flow_imp.id(34600200000000107)
-,p_plug_name=>'Audit / Metadata'
-,p_region_template_options=>'#DEFAULT#'
-,p_plug_template=>4501440665235496320
-,p_plug_display_sequence=>60
-,p_function_body_language=>'PLSQL'
-,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'declare',
-'  l_html clob;',
-'begin',
-'  if :P2_DROP_LOCATION_ID is null then',
-'    return ''<dl class="t-AVPList t-AVPList--leftAligned">'' ||',
-'           ''<dt>Created At</dt><dd>New location</dd>'' ||',
-'           ''<dt>Updated At</dt><dd>New location</dd>'' ||',
-'           ''<dt>Row Version</dt><dd>New location</dd>'' ||',
-'           ''</dl>'';',
-'  end if;',
-'',
-'  for loc in (',
-'    select created_on, updated_on, row_version',
-'      from orac_dropbox.drop_location_admin_v',
-'     where drop_location_id = to_number(:P2_DROP_LOCATION_ID)',
-'  )',
-'  loop',
-'    l_html := ''<dl class="t-AVPList t-AVPList--leftAligned">'' ||',
-'              ''<dt>Created At</dt><dd>'' || apex_escape.html(to_char(loc.created_on, ''YYYY-MM-DD HH24:MI:SS TZH:TZM'')) || ''</dd>'' ||',
-'              ''<dt>Updated At</dt><dd>'' || apex_escape.html(to_char(loc.updated_on, ''YYYY-MM-DD HH24:MI:SS TZH:TZM'')) || ''</dd>'' ||',
-'              ''<dt>Row Version</dt><dd>'' || apex_escape.html(to_char(loc.row_version)) || ''</dd>'' ||',
-'              ''</dl>'';',
-'  end loop;',
-'',
-'  return coalesce(l_html, ''<p>No audit metadata is available.</p>'');',
-'end;'))
-,p_plug_source_type=>'NATIVE_DYNAMIC_CONTENT'
-,p_plug_query_num_rows=>15
-,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'expand_shortcuts', 'N',
-  'output_as', 'HTML',
-  'show_line_breaks', 'Y')).to_clob
-);
 wwv_flow_imp_page.create_page_button(
  p_id=>wwv_flow_imp.id(34600200000000301)
 ,p_button_sequence=>10
@@ -1559,21 +1519,6 @@ wwv_flow_imp_page.create_page_item(
   'trim_spaces', 'BOTH')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
- p_id=>wwv_flow_imp.id(34600200000000206)
-,p_name=>'P2_ENABLED_YN'
-,p_is_required=>true
-,p_item_sequence=>50
-,p_item_plug_id=>wwv_flow_imp.id(34600200000000101)
-,p_prompt=>'Enabled'
-,p_display_as=>'NATIVE_YES_NO'
-,p_field_template=>1609122147107268652
-,p_item_template_options=>'#DEFAULT#'
-,p_is_persistent=>'N'
-,p_inline_help_text=>'Disabled locations remain configured but are not scanned.'
-,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'use_defaults', 'Y')).to_clob
-);
-wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(34600200000000205)
 ,p_name=>'P2_PATH'
 ,p_is_required=>true
@@ -1592,6 +1537,21 @@ wwv_flow_imp_page.create_page_item(
   'submit_when_enter_pressed', 'N',
   'subtype', 'TEXT',
   'trim_spaces', 'BOTH')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(34600200000000206)
+,p_name=>'P2_ENABLED_YN'
+,p_is_required=>true
+,p_item_sequence=>50
+,p_item_plug_id=>wwv_flow_imp.id(34600200000000101)
+,p_prompt=>'Enabled'
+,p_display_as=>'NATIVE_YES_NO'
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_inline_help_text=>'Disabled locations remain configured but are not scanned.'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'use_defaults', 'Y')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(34600200000000207)
@@ -1678,6 +1638,25 @@ wwv_flow_imp_page.create_page_item(
   'page_action_on_selection', 'NONE')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(34600200000000211)
+,p_name=>'P2_PROCESSING_INSTRUCTION'
+,p_item_sequence=>10
+,p_item_plug_id=>wwv_flow_imp.id(34600200000000105)
+,p_prompt=>'Processing Instruction'
+,p_display_as=>'NATIVE_TEXTAREA'
+,p_cSize=>120
+,p_cHeight=>12
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_inline_help_text=>'Optional instruction copied onto queued jobs.'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'auto_height', 'N',
+  'character_counter', 'N',
+  'resizable', 'Y',
+  'trim_spaces', 'BOTH')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(34600200000000212)
 ,p_name=>'P2_ALLOWED_EXTENSIONS'
 ,p_item_sequence=>10
@@ -1695,20 +1674,6 @@ wwv_flow_imp_page.create_page_item(
   'submit_when_enter_pressed', 'N',
   'subtype', 'TEXT',
   'trim_spaces', 'BOTH')).to_clob
-);
-wwv_flow_imp_page.create_page_item(
- p_id=>wwv_flow_imp.id(34600200000000214)
-,p_name=>'P2_RECURSIVE_YN'
-,p_is_required=>true
-,p_item_sequence=>20
-,p_item_plug_id=>wwv_flow_imp.id(34600200000000104)
-,p_prompt=>'Recursive Scan'
-,p_display_as=>'NATIVE_YES_NO'
-,p_field_template=>1609122147107268652
-,p_item_template_options=>'#DEFAULT#'
-,p_is_persistent=>'N'
-,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'use_defaults', 'Y')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(34600200000000213)
@@ -1731,55 +1696,18 @@ wwv_flow_imp_page.create_page_item(
   'trim_spaces', 'BOTH')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
- p_id=>wwv_flow_imp.id(34600200000000218)
-,p_name=>'P2_MAX_FILE_SIZE_MB'
-,p_item_sequence=>40
-,p_item_plug_id=>wwv_flow_imp.id(34600200000000104)
-,p_prompt=>'Maximum File Size MB'
-,p_display_as=>'NATIVE_NUMBER_FIELD'
-,p_cSize=>20
-,p_field_template=>1609121967514267634
-,p_item_template_options=>'#DEFAULT#'
-,p_is_persistent=>'N'
-,p_inline_help_text=>'Optional maximum file size. Values must be greater than zero.'
-,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'virtual_keyboard', 'decimal')).to_clob
-);
-wwv_flow_imp_page.create_page_item(
- p_id=>wwv_flow_imp.id(34600200000000219)
-,p_name=>'P2_STABILITY_SECONDS'
+ p_id=>wwv_flow_imp.id(34600200000000214)
+,p_name=>'P2_RECURSIVE_YN'
 ,p_is_required=>true
-,p_item_sequence=>50
+,p_item_sequence=>20
 ,p_item_plug_id=>wwv_flow_imp.id(34600200000000104)
-,p_prompt=>'Stable Seconds'
-,p_display_as=>'NATIVE_NUMBER_FIELD'
-,p_cSize=>20
-,p_begin_on_new_line=>'N'
+,p_prompt=>'Recursive Scan'
+,p_display_as=>'NATIVE_YES_NO'
 ,p_field_template=>1609122147107268652
 ,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
-,p_inline_help_text=>'Number of seconds size and mtime must remain unchanged before hashing.'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'virtual_keyboard', 'decimal')).to_clob
-);
-wwv_flow_imp_page.create_page_item(
- p_id=>wwv_flow_imp.id(34600200000000211)
-,p_name=>'P2_PROCESSING_INSTRUCTION'
-,p_item_sequence=>10
-,p_item_plug_id=>wwv_flow_imp.id(34600200000000105)
-,p_prompt=>'Processing Instruction'
-,p_display_as=>'NATIVE_TEXTAREA'
-,p_cSize=>120
-,p_cHeight=>12
-,p_field_template=>1609121967514267634
-,p_item_template_options=>'#DEFAULT#'
-,p_is_persistent=>'N'
-,p_inline_help_text=>'Optional instruction copied onto queued jobs.'
-,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'auto_height', 'N',
-  'character_counter', 'N',
-  'resizable', 'Y',
-  'trim_spaces', 'BOTH')).to_clob
+  'use_defaults', 'Y')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(34600200000000215)
@@ -1833,6 +1761,38 @@ wwv_flow_imp_page.create_page_item(
   'submit_when_enter_pressed', 'N',
   'subtype', 'TEXT',
   'trim_spaces', 'BOTH')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(34600200000000218)
+,p_name=>'P2_MAX_FILE_SIZE_MB'
+,p_item_sequence=>40
+,p_item_plug_id=>wwv_flow_imp.id(34600200000000104)
+,p_prompt=>'Maximum File Size MB'
+,p_display_as=>'NATIVE_NUMBER_FIELD'
+,p_cSize=>20
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_inline_help_text=>'Optional maximum file size. Values must be greater than zero.'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'virtual_keyboard', 'decimal')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(34600200000000219)
+,p_name=>'P2_STABILITY_SECONDS'
+,p_is_required=>true
+,p_item_sequence=>50
+,p_item_plug_id=>wwv_flow_imp.id(34600200000000104)
+,p_prompt=>'Stable Seconds'
+,p_display_as=>'NATIVE_NUMBER_FIELD'
+,p_cSize=>20
+,p_begin_on_new_line=>'N'
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_inline_help_text=>'Number of seconds size and mtime must remain unchanged before hashing.'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'virtual_keyboard', 'decimal')).to_clob
 );
 wwv_flow_imp_page.create_page_da_event(
  p_id=>wwv_flow_imp.id(34600200000000301)
