@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Package, install, inspect, and validate Orac plugins."""
+
 # Author: Clive Bostock
 # Date: 07-Jun-2026
 # Description: Command-line interface for Orac-owned plugin installation.
@@ -32,6 +33,8 @@ from model.plugin_registry import PluginRegistryStore
 from model.plugin_runtime import PluginRuntimeError
 from model.plugin_service_lifecycle import PluginServiceLifecycleStore
 from model.plugin_service_manager import PluginServiceManager
+
+VALID_SERVICE_POLICIES = ("auto", "manual", "disabled")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -103,6 +106,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     service_status.add_argument("plugin_id", nargs="?")
     service_status.add_argument("service_code", nargs="?")
+    service_policy = service_subparsers.add_parser(
+        "policy",
+        help="Set plugin service startup policy.",
+    )
+    service_policy.add_argument("plugin_id")
+    service_policy.add_argument("service_code")
+    service_policy.add_argument("policy", choices=VALID_SERVICE_POLICIES)
     return parser
 
 
@@ -122,6 +132,12 @@ def main(argv: list[str] | None = None) -> int:
                 return show_plugin_service_status(
                     plugin_id=args.plugin_id,
                     service_code=args.service_code,
+                )
+            if args.service_command == "policy":
+                return set_plugin_service_policy(
+                    plugin_id=args.plugin_id,
+                    service_code=args.service_code,
+                    policy=args.policy,
                 )
             return 1
         installer = PluginInstaller(
@@ -322,6 +338,28 @@ def show_plugin_service_status(
             [row.__dict__ for row in rows], indent=2, default=str, sort_keys=True
         )
     )
+    return 0
+
+
+def set_plugin_service_policy(
+    *,
+    plugin_id: str,
+    service_code: str,
+    policy: str,
+    lifecycle_store: PluginServiceLifecycleStore | None = None,
+) -> int:
+    """Set plugin service startup policy and print the updated lifecycle row."""
+    if policy not in VALID_SERVICE_POLICIES:
+        values = ", ".join(VALID_SERVICE_POLICIES)
+        raise ValueError(f"policy must be one of: {values}")
+
+    lifecycle_store = lifecycle_store or PluginServiceLifecycleStore()
+    updated = lifecycle_store.set_service_policy(
+        plugin_id=plugin_id,
+        service_code=service_code,
+        policy=policy,
+    )
+    print(json.dumps(updated.__dict__, indent=2, default=str, sort_keys=True))
     return 0
 
 

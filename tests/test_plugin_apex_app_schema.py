@@ -1,4 +1,5 @@
 """Static checks for plugin APEX app registry schema assets."""
+
 # Author: Clive Bostock
 # Date: 2026-06-20
 # Description: Verifies plugin APEX app registry DDL and grants remain narrow.
@@ -109,21 +110,74 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
         self.assertIn("orac_core,plugin_apex_apps,plg_apxapp", abbreviations)
 
+    def test_plugin_registry_ui_metadata_is_projected_through_approved_path(
+        self,
+    ) -> None:
+        table_sql = (
+            (
+                PROJECT_ROOT
+                / "resources/db/schema/orac_core/table/plugin_registry_ui_metadata.sql"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        api_view_sql = (
+            (PROJECT_ROOT / "resources/db/schema/orac_api/view/plugin_registry_v.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        code_view_sql = (
+            (PROJECT_ROOT / "resources/db/schema/orac_code/view/plugin_registry_v.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        package_spec = (
+            (
+                PROJECT_ROOT
+                / "resources/db/schema/orac_code/package_spec/plugin_registry_api.sql"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+
+        self.assertIn("ui_icon_class   varchar2(128 char)", table_sql)
+        self.assertIn("ui_accent_class varchar2(128 char)", table_sql)
+        self.assertNotIn("default 'fa fa-plug'", table_sql)
+        self.assertIn("ui_icon_class", api_view_sql)
+        self.assertIn("ui_accent_class", api_view_sql)
+        self.assertIn("ui_icon_class", code_view_sql)
+        self.assertIn("ui_accent_class", code_view_sql)
+        self.assertIn("p_ui_icon_class", package_spec)
+        self.assertIn("p_ui_accent_class", package_spec)
+
     def test_menu_view_lists_only_installed_enabled_apps(self) -> None:
         view_sql = (
             PROJECT_ROOT
             / "resources/db/schema/orac_code/view/plugin_apex_app_menu_v.sql"
         ).read_text(encoding="utf-8")
 
+        self.assertIn(
+            "create or replace force view orac_code.plugin_apex_app_menu_v",
+            view_sql,
+        )
         self.assertIn("enabled = 'Y'", view_sql)
         self.assertIn("install_status = 'installed'", view_sql)
         self.assertIn("installed_app_id is not null", view_sql)
+        self.assertIn("left join orac_code.plugin_registry_v plugin", view_sql)
+        self.assertIn(
+            "coalesce(app.icon, plugin.ui_icon_class, 'fa fa-plug') as icon",
+            view_sql,
+        )
 
     def test_visible_menu_view_generates_safe_card_links(self) -> None:
         view_sql = (
-            PROJECT_ROOT
-            / "resources/db/schema/orac_code/view/plugin_apex_app_menu_visible_v.sql"
-        ).read_text(encoding="utf-8").lower()
+            (
+                PROJECT_ROOT
+                / "resources/db/schema/orac_code/view/plugin_apex_app_menu_visible_v.sql"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn(
             "create or replace force view orac_code.plugin_apex_app_menu_visible_v",
@@ -141,17 +195,29 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_visible_menu_view_fails_closed_for_required_roles(self) -> None:
         view_sql = (
-            PROJECT_ROOT
-            / "resources/db/schema/orac_code/view/plugin_apex_app_menu_visible_v.sql"
-        ).read_text(encoding="utf-8").lower()
+            (
+                PROJECT_ROOT
+                / "resources/db/schema/orac_code/view/plugin_apex_app_menu_visible_v.sql"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         package_spec = (
-            PROJECT_ROOT
-            / "resources/db/schema/orac_code/package_spec/plugin_apex_app_auth_api.sql"
-        ).read_text(encoding="utf-8").lower()
+            (
+                PROJECT_ROOT
+                / "resources/db/schema/orac_code/package_spec/plugin_apex_app_auth_api.sql"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         package_body = (
-            PROJECT_ROOT
-            / "resources/db/schema/orac_code/package_body/plugin_apex_app_auth_api.sql"
-        ).read_text(encoding="utf-8").lower()
+            (
+                PROJECT_ROOT
+                / "resources/db/schema/orac_code/package_body/plugin_apex_app_auth_api.sql"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("required_roles is null", view_sql)
         self.assertIn("json_serialize(required_roles", view_sql)
@@ -170,8 +236,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1043_defines_acl_roles_and_seeds_admin(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("wwv_flow_imp_shared.create_acl_role", export_sql)
         self.assertIn("p_static_id=>'administrator'", export_sql)
@@ -182,12 +250,28 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1043_landing_page_exposes_plugin_service_operations(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        page_1 = _apex_page_sections(export_sql)[1]
 
         self.assertIn("p_id=>1", export_sql)
         self.assertIn("p_name=>'plugin operations'", export_sql)
+        self.assertIn("p_plug_name=>'plugin operations heading'", page_1)
+        self.assertIn("<h1>plugin operations</h1>", page_1)
         self.assertIn("p_plug_name=>'service state summary'", export_sql)
+        self.assertIn("orac-ops-summary", page_1)
+        for icon in (
+            "fa fa-list",
+            "fa fa-play",
+            "fa fa-stop",
+            "fa fa-exclamation-triangle",
+            "fa fa-ban",
+            "fa fa-sliders",
+            "fa fa-key",
+        ):
+            self.assertIn(icon, page_1)
         self.assertIn("p_plug_name=>'plugin service status'", export_sql)
         self.assertIn("from orac_code.plugin_service_status_v", export_sql)
         self.assertIn("p_plug_source_type=>'native_ir'", export_sql)
@@ -204,14 +288,47 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             "last_heartbeat_on",
             "last_tick_on",
             "last_error_message",
+            "row_version",
+            "set_auto_action",
+            "set_manual_action",
+            "disable_action",
         ):
             self.assertIn(column, export_sql)
         self.assertNotIn("lease_token", export_sql)
+        for token in (
+            "p1_policy_plugin_id",
+            "p1_policy_service_code",
+            "p1_policy_row_version",
+            "p1_policy_target",
+            "set_service_policy_auto",
+            "set_service_policy_manual",
+            "set_service_policy_disabled",
+            "orac_code.plugin_service_admin_api.set_policy",
+            "p_row_version  => to_number(:p1_policy_row_version)",
+        ):
+            self.assertIn(token, page_1)
+        self.assertIn("effective_policy_badge_class", page_1)
+        self.assertIn("current_state_badge_class", page_1)
+        self.assertIn("lease_active_badge_class", page_1)
+        self.assertIn("dd-mon-yyyy hh24:mi:ss", page_1)
+        self.assertIn(
+            "p_report_columns=>'plugin_id:service_code:service_name:effective_policy:"
+            "current_state:lease_active_yn:lease_expires_on:last_heartbeat_on:"
+            "last_error_message:'",
+            page_1,
+        )
+        self.assertIn("p_db_column_name=>'owner_id'", page_1)
+        self.assertNotIn("ui_icon_class", page_1)
+        self.assertNotIn("ui_accent_class", page_1)
+        self.assertNotIn("p_icon_class_column_name=>'icon'", page_1)
 
     def test_f1043_plugin_navigation_page_preserves_launcher_cards(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        page_2 = _apex_page_sections(export_sql)[2]
 
         self.assertIn("p_id=>2", export_sql)
         self.assertIn("p_name=>'plugin navigation'", export_sql)
@@ -222,11 +339,15 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             export_sql,
         )
         self.assertIn("from orac_code.plugin_apex_app_menu_visible_v", export_sql)
+        self.assertIn("p_icon_class_column_name=>'icon'", page_2)
+        self.assertNotIn("metric_icon", page_2)
 
     def test_f1043_service_operations_do_not_query_plugin_owned_tables(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertNotIn("orac_dropbox", export_sql)
         self.assertNotRegex(export_sql, r"\bfrom\s+orac_(dropbox|ha)\.")
@@ -234,8 +355,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1043_renders_plugin_apps_cards_from_visible_view(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("p_plug_name=>'plugin apps'", export_sql)
         self.assertIn("p_plug_display_point=>'body'", export_sql)
@@ -255,8 +378,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1043_plugin_apps_cards_use_standard_dynamic_card_display(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("p_layout_type=>'grid'", export_sql)
         self.assertIn("p_grid_column_count=>3", export_sql)
@@ -278,8 +403,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1043_synchronizes_theme_when_launched_from_orac_admin(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("p_current_theme_style_id=>3544795214802435419", export_sql)
         self.assertIn("p_process_name=>'synchronize orac theme style'", export_sql)
@@ -296,8 +423,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_has_plugins_navigation_entry(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("p_list_item_link_text=>'plugins'", export_sql)
         self.assertIn(
@@ -309,8 +438,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_plugins_page_uses_standard_card_hub(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("p_id=>34", export_sql)
         self.assertIn("p_name=>'plugins'", export_sql)
@@ -326,8 +457,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_plugins_card_launches_plugin_apps(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("p_list_item_link_text=>'plugin apps'", export_sql)
         self.assertIn(
@@ -342,8 +475,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_plugins_page_links_to_plugin_app_maintenance(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("p_list_item_link_text=>'manage plugin apps'", export_sql)
         self.assertIn(
@@ -355,8 +490,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_manage_plugin_apps_report_uses_code_view(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("p_id=>35", export_sql)
         self.assertIn("p_name=>'manage plugin apps'", export_sql)
@@ -371,8 +508,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_plugin_app_form_toggles_enabled_via_admin_api(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("p_id=>36", export_sql)
         self.assertIn("p_name=>'plugin app'", export_sql)
@@ -390,8 +529,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_user_preferences_edit_route_uses_pref_id(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("p_column_alias=>'edit_pref_id'", export_sql)
         self.assertIn(
@@ -403,8 +544,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_user_preferences_form_uses_pref_id_primary_key(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertRegex(
             export_sql,
@@ -415,12 +558,18 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_user_preferences_report_filters_editable_preferences(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         display_view_sql = (
-            PROJECT_ROOT
-            / "resources/db/schema/orac_code/view/user_preferences_display_v.sql"
-        ).read_text(encoding="utf-8").lower()
+            (
+                PROJECT_ROOT
+                / "resources/db/schema/orac_code/view/user_preferences_display_v.sql"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("from user_preferences_display_v", export_sql)
         self.assertIn("and is_active = ''y''", export_sql)
@@ -433,9 +582,13 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_preference_lov_api_returns_empty_lov_for_non_lov_preferences(self) -> None:
         package_body = (
-            PROJECT_ROOT
-            / "resources/db/schema/orac_code/package_body/preference_lov_api.sql"
-        ).read_text(encoding="utf-8").lower()
+            (
+                PROJECT_ROOT
+                / "resources/db/schema/orac_code/package_body/preference_lov_api.sql"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("if l_pref_definition.lov_type is null then", package_body)
         self.assertIn("return l_rows.to_clob;", package_body)
@@ -443,8 +596,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_user_preferences_lov_items_are_render_guarded(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("when :p6_control_type = ''select_list'' then", export_sql)
         self.assertIn(
@@ -456,8 +611,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_f1042_user_location_keeps_dedicated_search_path(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("p_name=>'user location results'", export_sql)
         self.assertIn("user-location-results", export_sql)
@@ -511,9 +668,13 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_user_location_seed_retires_weather_location(self) -> None:
         seed_sql = (
-            PROJECT_ROOT
-            / "resources/db/schema/orac_core/seed_data/prfdfn_preference_catalog.sql"
-        ).read_text(encoding="utf-8").lower()
+            (
+                PROJECT_ROOT
+                / "resources/db/schema/orac_core/seed_data/prfdfn_preference_catalog.sql"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         seed_merge = seed_sql.split(") src", maxsplit=1)[0]
         user_location_row = self._seeded_row(seed_sql, "user_location")
 
@@ -608,9 +769,13 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_email_opt_in_cleanup_sql_is_idempotent(self) -> None:
         seed_sql = (
-            PROJECT_ROOT
-            / "resources/db/schema/orac_core/seed_data/prfdfn_preference_catalog.sql"
-        ).read_text(encoding="utf-8").lower()
+            (
+                PROJECT_ROOT
+                / "resources/db/schema/orac_core/seed_data/prfdfn_preference_catalog.sql"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn(
             "delete from orac_core.user_preferences\n where pref_key = 'email_opt_in'",
@@ -621,15 +786,23 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             seed_sql,
         )
         self.assertLess(
-            seed_sql.index("delete from orac_core.user_preferences\n where pref_key = 'email_opt_in'"),
-            seed_sql.index("delete from orac_core.preference_definitions\n where pref_key = 'email_opt_in'"),
+            seed_sql.index(
+                "delete from orac_core.user_preferences\n where pref_key = 'email_opt_in'"
+            ),
+            seed_sql.index(
+                "delete from orac_core.preference_definitions\n where pref_key = 'email_opt_in'"
+            ),
         )
 
     def test_orac_prefs_seed_filters_user_editable_defaults(self) -> None:
         package_body = (
-            PROJECT_ROOT
-            / "resources/db/schema/orac_code/package_body/orac_prefs_seed.sql"
-        ).read_text(encoding="utf-8").lower()
+            (
+                PROJECT_ROOT
+                / "resources/db/schema/orac_code/package_body/orac_prefs_seed.sql"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertEqual(package_body.count("and is_user_editable = 'y'"), 2)
 
@@ -675,13 +848,21 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_plugin_apex_app_admin_api_only_toggles_enabled(self) -> None:
         package_spec = (
-            PROJECT_ROOT
-            / "resources/db/schema/orac_code/package_spec/plugin_apex_app_admin_api.sql"
-        ).read_text(encoding="utf-8").lower()
+            (
+                PROJECT_ROOT
+                / "resources/db/schema/orac_code/package_spec/plugin_apex_app_admin_api.sql"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         package_body = (
-            PROJECT_ROOT
-            / "resources/db/schema/orac_code/package_body/plugin_apex_app_admin_api.sql"
-        ).read_text(encoding="utf-8").lower()
+            (
+                PROJECT_ROOT
+                / "resources/db/schema/orac_code/package_body/plugin_apex_app_admin_api.sql"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("procedure set_enabled", package_spec)
         self.assertNotIn("upsert_app", package_spec)
@@ -723,7 +904,9 @@ class PluginApexAppSchemaTests(unittest.TestCase):
                 cross_page_da_references: list[str] = []
 
                 for source_page_id, page_body in page_sections.items():
-                    for referenced_page_id, item_name in _apex_item_references(page_body):
+                    for referenced_page_id, item_name in _apex_item_references(
+                        page_body
+                    ):
                         if item_name not in page_items.get(referenced_page_id, set()):
                             missing_references.append(
                                 f"page {source_page_id} references undefined {item_name}"
@@ -744,18 +927,22 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_home_assistant_uses_plugin_app_authorization(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "plugins/home_assistant/apex/f10010.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "plugins/home_assistant/apex/f10010.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertNotIn("p_attribute_01=>'return true;'", export_sql)
-        self.assertIn("orac_code.plugin_apex_app_auth_api.has_required_role", export_sql)
+        self.assertIn(
+            "orac_code.plugin_apex_app_auth_api.has_required_role", export_sql
+        )
         self.assertIn("''orac_admin''", export_sql)
         self.assertGreaterEqual(export_sql.count("p_required_role=>"), 3)
 
     def test_drop_box_declares_required_admin_apex_app(self) -> None:
-        manifest = (PROJECT_ROOT / "plugins/drop_box.json").read_text(
-            encoding="utf-8"
-        ).lower()
+        manifest = (
+            (PROJECT_ROOT / "plugins/drop_box.json").read_text(encoding="utf-8").lower()
+        )
 
         self.assertIn('"app_alias": "orac_dropbox_admin"', manifest)
         self.assertIn('"app_export": "apex/f10020.sql"', manifest)
@@ -767,15 +954,19 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_drop_box_apex_app_uses_plugin_app_security_pattern(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("p_default_application_id=>10020", export_sql)
         self.assertIn("drop box admin", export_sql)
         self.assertIn("p_cookie_name=>'&workspace_cookie.'", export_sql)
         self.assertIn("p_switch_in_session_yn=>'y'", export_sql)
         self.assertIn("p_rejoin_existing_sessions=>'y'", export_sql)
-        self.assertIn("orac_code.plugin_apex_app_auth_api.has_required_role", export_sql)
+        self.assertIn(
+            "orac_code.plugin_apex_app_auth_api.has_required_role", export_sql
+        )
         self.assertIn("''orac_admin''", export_sql)
         self.assertIn(":request = ''orac_theme_sync''", export_sql)
         self.assertIn("s.application_id = 1042", export_sql)
@@ -784,8 +975,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_drop_box_apex_app_uses_admin_views_and_api_only(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("create drop location", export_sql)
         self.assertIn("about drop box locations", export_sql)
@@ -808,7 +1001,9 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("p_name=>'job detail'", export_sql)
         self.assertIn("p_name=>'activity'", export_sql)
         self.assertIn("p_list_item_link_text=>'activity'", export_sql)
-        self.assertIn("p_column_linktext=>'<span role=\"img\" aria-label=\"edit\"", export_sql)
+        self.assertIn(
+            'p_column_linktext=>\'<span role="img" aria-label="edit"', export_sql
+        )
         self.assertIn("p_column_linktext=>'view jobs'", export_sql)
         self.assertIn("view_jobs_location_id", export_sql)
         self.assertIn("toggle_location", export_sql)
@@ -830,11 +1025,14 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_drop_box_page_two_form_layout_and_switches(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         page_two = export_sql[
-            export_sql.index("prompt --application/pages/page_00002") :
-            export_sql.index("prompt --application/pages/page_00003")
+            export_sql.index(
+                "prompt --application/pages/page_00002"
+            ) : export_sql.index("prompt --application/pages/page_00003")
         ]
 
         self.assertIn("p_page_mode=>'modal'", page_two)
@@ -875,14 +1073,20 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
         for item in ("p2_enabled_yn", "p2_recursive_yn", "p2_move_processed_yn"):
             item_start = page_two.index(f"p_name=>'{item}'")
-            item_end = page_two.find("wwv_flow_imp_page.create_page_item", item_start + 1)
-            item_text = page_two[item_start : item_end if item_end != -1 else len(page_two)]
+            item_end = page_two.find(
+                "wwv_flow_imp_page.create_page_item", item_start + 1
+            )
+            item_text = page_two[
+                item_start : item_end if item_end != -1 else len(page_two)
+            ]
             self.assertIn("p_display_as=>'native_yes_no'", item_text)
             self.assertIn("'use_defaults', 'y'", item_text)
 
         self.assertIn("p_cHeight=>12".lower(), page_two)
         profile_start = page_two.index("p_name=>'p2_processing_profile'")
-        profile_end = page_two.find("wwv_flow_imp_page.create_page_item", profile_start + 1)
+        profile_end = page_two.find(
+            "wwv_flow_imp_page.create_page_item", profile_start + 1
+        )
         profile_text = page_two[
             profile_start : profile_end if profile_end != -1 else len(page_two)
         ]
@@ -922,18 +1126,23 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         ]
         load_process_page_two_refs = {
             item_name
-            for referenced_page_id, item_name in _apex_item_references(load_process_text)
+            for referenced_page_id, item_name in _apex_item_references(
+                load_process_text
+            )
             if referenced_page_id == 2
         }
         self.assertLessEqual(load_process_page_two_refs, page_two_items)
 
     def test_drop_box_page_two_submit_boundaries(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         page_two = export_sql[
-            export_sql.index("prompt --application/pages/page_00002") :
-            export_sql.index("prompt --application/pages/page_00003")
+            export_sql.index(
+                "prompt --application/pages/page_00002"
+            ) : export_sql.index("prompt --application/pages/page_00003")
         ]
 
         self.assertIn("p_button_name=>'cancel'", page_two)
@@ -985,11 +1194,14 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_drop_box_page_two_toggles_plugin_target_by_scope(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         page_two = export_sql[
-            export_sql.index("prompt --application/pages/page_00002") :
-            export_sql.index("prompt --application/pages/page_00003")
+            export_sql.index(
+                "prompt --application/pages/page_00002"
+            ) : export_sql.index("prompt --application/pages/page_00003")
         ]
 
         self.assertIn("p_name=>'toggle plugin target'", page_two)
@@ -1003,17 +1215,22 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_drop_box_page_two_profile_lov_and_field_behaviour(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         page_two = export_sql[
-            export_sql.index("prompt --application/pages/page_00002") :
-            export_sql.index("prompt --application/pages/page_00003")
+            export_sql.index(
+                "prompt --application/pages/page_00002"
+            ) : export_sql.index("prompt --application/pages/page_00003")
         ]
 
         self.assertNotIn("p_name=>'show profile description'", page_two)
         self.assertNotIn("p_name=>'show profile default instruction'", page_two)
         self.assertNotIn("p_affected_elements=>'p2_profile_description'", page_two)
-        self.assertNotIn("p_affected_elements=>'p2_profile_default_instruction'", page_two)
+        self.assertNotIn(
+            "p_affected_elements=>'p2_profile_default_instruction'", page_two
+        )
         self.assertIn("from orac_dropbox.drop_processing_profile_lov_v", page_two)
 
         self.assertIn("p_name=>'normalize case fields'", page_two)
@@ -1021,10 +1238,21 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             "p_triggering_element=>'p2_location_code,p2_target_project_key,p2_allowed_extensions'",
             page_two,
         )
-        self.assertIn("apex.item(itemname).setvalue(transformvalue(value), null, true)", page_two)
-        self.assertIn("p2_location_code'', function(value) { return value.touppercase(); }", page_two)
-        self.assertIn("p2_target_project_key'', function(value) { return value.touppercase(); }", page_two)
-        self.assertIn("p2_allowed_extensions'', function(value) { return value.tolowercase(); }", page_two)
+        self.assertIn(
+            "apex.item(itemname).setvalue(transformvalue(value), null, true)", page_two
+        )
+        self.assertIn(
+            "p2_location_code'', function(value) { return value.touppercase(); }",
+            page_two,
+        )
+        self.assertIn(
+            "p2_target_project_key'', function(value) { return value.touppercase(); }",
+            page_two,
+        )
+        self.assertIn(
+            "p2_allowed_extensions'', function(value) { return value.tolowercase(); }",
+            page_two,
+        )
 
         self.assertIn("p_name=>'toggle processed path'", page_two)
         self.assertIn("p_triggering_element=>'p2_move_processed_yn'", page_two)
@@ -1035,11 +1263,14 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_drop_box_activity_page_uses_persisted_event_view(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         activity_page = export_sql[
-            export_sql.index("prompt --application/pages/page_00005") :
-            export_sql.index("prompt --application/pages/page_09999")
+            export_sql.index(
+                "prompt --application/pages/page_00005"
+            ) : export_sql.index("prompt --application/pages/page_09999")
         ]
 
         self.assertIn("p_name=>'activity'", activity_page)
@@ -1064,12 +1295,18 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_plugin_lov_view_is_narrow_and_apex_granted(self) -> None:
         view_sql = (
-            PROJECT_ROOT / "resources/db/schema/orac_code/view/plugin_lov_v.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "resources/db/schema/orac_code/view/plugin_lov_v.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         grants_sql = (
-            PROJECT_ROOT
-            / "resources/db/schema/orac_code/grant/orac_code_consumer_view_access.sql"
-        ).read_text(encoding="utf-8").lower()
+            (
+                PROJECT_ROOT
+                / "resources/db/schema/orac_code/grant/orac_code_consumer_view_access.sql"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("create or replace force view orac_code.plugin_lov_v", view_sql)
         self.assertIn("from orac_code.plugin_registry_v", view_sql)
@@ -1092,13 +1329,21 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertNotIn("package_hash", view_sql)
         self.assertNotIn("installed_path", view_sql)
         self.assertNotIn("config_path", view_sql)
-        self.assertIn("grant read on orac_code.plugin_lov_v to orac_apx_pub;", grants_sql)
-        self.assertNotIn("grant read on orac_code.plugin_registry_v to orac_apx_pub", grants_sql)
+        self.assertIn(
+            "grant read on orac_code.plugin_lov_v to orac_apx_pub;", grants_sql
+        )
+        self.assertNotIn(
+            "grant read on orac_code.plugin_registry_v to orac_apx_pub", grants_sql
+        )
 
-    def test_home_assistant_synchronizes_theme_when_launched_from_plugin_hub(self) -> None:
+    def test_home_assistant_synchronizes_theme_when_launched_from_plugin_hub(
+        self,
+    ) -> None:
         export_sql = (
-            PROJECT_ROOT / "plugins/home_assistant/apex/f10010.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "plugins/home_assistant/apex/f10010.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("p_current_theme_style_id=>3544795214802435419", export_sql)
         self.assertIn("p_process_name=>'synchronize orac theme style'", export_sql)
@@ -1126,10 +1371,28 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         )
         self.assertIn("orac_code.plugin_apex_app_menu_visible_v", docs)
 
+    def test_plugin_docs_explain_manifest_icon_configuration(self) -> None:
+        docs = (PROJECT_ROOT / "docs/plugins.md").read_text(encoding="utf-8").lower()
+
+        self.assertIn("ui.icon_class", docs)
+        self.assertIn("apex_apps[].icon_class", docs)
+        self.assertIn("legacy `apex_apps[].icon`", docs)
+        self.assertIn("fa-folder-open", docs)
+        self.assertIn("fa fa-folder-open", docs)
+        self.assertIn("fa fa-[a-z0-9-]+", docs)
+        self.assertIn("fa fa-plug", docs)
+        self.assertIn("registry value\nas `null`", docs)
+        self.assertIn("plugin manifest icons must not influence", docs)
+        self.assertIn("operational dashboard sql", docs)
+        self.assertIn("ui.accent_class", docs)
+        self.assertIn("fixed safe allowlist", docs)
+
     def test_home_assistant_status_dashboard_is_read_only(self) -> None:
         export_sql = (
-            PROJECT_ROOT / "plugins/home_assistant/apex/f10010.sql"
-        ).read_text(encoding="utf-8").lower()
+            (PROJECT_ROOT / "plugins/home_assistant/apex/f10010.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("p_plug_name=>'home assistant status'", export_sql)
         self.assertIn("p_plug_source_type=>'native_dynamic_content'", export_sql)
@@ -1175,7 +1438,17 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             "grant execute on orac_code.plugin_apex_app_admin_api to orac_apx_pub;",
             package_grants,
         )
-        self.assertIn("grant read on orac_code.plugin_apex_app_menu_v to orac;", view_grants)
+        self.assertIn(
+            "grant execute on orac_code.plugin_service_admin_api to orac_apx_pub;",
+            package_grants,
+        )
+        self.assertNotIn(
+            "grant execute on orac_code.plugin_service_api to orac_apx_pub;",
+            package_grants,
+        )
+        self.assertIn(
+            "grant read on orac_code.plugin_apex_app_menu_v to orac;", view_grants
+        )
         self.assertIn(
             "grant read on orac_code.plugin_apex_app_menu_v to orac_apx_pub;",
             view_grants,

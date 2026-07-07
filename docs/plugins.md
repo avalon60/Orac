@@ -121,7 +121,9 @@ Service plugins declare their service entry point under `runtime.service`.
 
 Only enabled `on_demand` and `hybrid` plugins with satisfied dependencies are
 eligible for the routing index. Service registration is handled separately by
-the plugin service manager.
+the plugin service manager. Successful plugin install creates service lifecycle
+rows but does not start services; Orac startup starts services whose effective
+policy is `auto`.
 
 Long-running or scheduled services use the optional `runtime.service` object:
 
@@ -143,6 +145,15 @@ Long-running or scheduled services use the optional `runtime.service` object:
     }
   }
 }
+```
+
+The first service registration uses the manifest `start_policy` as the initial
+policy. Later manifest changes refresh the manifest policy while preserving an
+operator override. Operators change startup policy through the Plugin Service
+Status report in App 1043 or the CLI:
+
+```bash
+bin/orac-plugin.sh service policy <plugin_id> <service_code> <auto|manual|disabled>
 ```
 
 `execution_model` is `long_running` or `scheduled`. Scheduled services may also
@@ -288,6 +299,38 @@ report failures without destabilising the core runtime. Plugin startup does not
 grant authority to bypass confirmation, database, filesystem, network, or
 context boundaries.
 
+### Service Registration After Database Rebuilds
+
+Plugin service status rows are runtime lifecycle state. They are stored in
+`orac_core.plugin_services` and are registered by Orac during plugin routing
+startup or refresh; plugin installation records the plugin metadata, but it
+does not by itself guarantee that the service lifecycle table has been
+repopulated after a database rebuild.
+
+After a database rebuild or any operation that recreates core schema tables:
+
+1. Apply the core database schema and APEX assets.
+2. Install or reinstall the required plugins so the plugin registry and plugin
+   APEX metadata are present.
+3. Restart the Orac runtime, normally with `bin/orac-ctl.sh restart` for the
+   managed stack or `bin/orac.sh restart` when controlling only the host AI
+   engine.
+4. Verify service registration from the approved status view:
+
+   ```sql
+   select service_id,
+          effective_policy,
+          current_state,
+          lease_active_yn
+     from orac_code.plugin_service_status_v
+    order by service_id;
+   ```
+
+If the Plugin Apps operations page shows all service counts as zero after a
+rebuild, first check whether `orac_code.plugin_service_status_v` is empty. An
+empty status view with valid objects usually means Orac has not refreshed
+plugin service discovery since the lifecycle table was recreated.
+
 ## Database Payloads
 
 A plugin may declare owned database schemas and deployment assets. Plugin-owned
@@ -361,6 +404,7 @@ These are admin and diagnostic metadata, not voice/chat routing metadata:
 
 ```json
 "ui": {
+  "icon_class": "fa-plug",
   "status_provider": {
     "id": "example.status_summary",
     "description": "Aggregated plugin health and sync status.",
@@ -418,6 +462,67 @@ URLs, or raw sensitive configuration values.
 UI surface declarations do not create capabilities, do not enter prompt routing,
 and do not grant access to plugin-private data.
 
+### Plugin Icons
+
+`ui.icon_class` is optional plugin identity metadata. It is intended for
+navigation surfaces that represent the plugin or one of its applications, such
+as the Plugin Navigation page in APEX application `1043`.
+
+Use Font APEX icon names in one of these forms:
+
+```json
+"ui": {
+  "icon_class": "fa-folder-open"
+}
+```
+
+or:
+
+```json
+"ui": {
+  "icon_class": "fa fa-folder-open"
+}
+```
+
+Discovery normalises a single icon token such as `fa-folder-open` to
+`fa fa-folder-open`. Already-normalised values such as `fa fa-folder-open` are
+kept as-is. If a plugin does not supply an icon, Orac keeps the registry value
+as `NULL` and applies the fallback `fa fa-plug` only at the approved
+APEX/menu rendering boundary. This preserves the difference between "no icon
+supplied" and "the plugin explicitly chose the plug icon."
+
+Icon values are deliberately narrow for safety. The accepted form is only:
+
+```text
+fa fa-[a-z0-9-]+
+```
+
+Additional class tokens, HTML, JavaScript, URL-like syntax, quotes, angle
+brackets, parentheses, semicolons, slashes, whitespace tricks, uppercase class
+names, and arbitrary punctuation are rejected. For example, these values are
+invalid:
+
+```text
+<span class='fa fa-plug'>
+javascript:alert(1)
+url(foo)
+fa fa-plug extra-class
+fa fa-plug; color:red
+fa / fa-plug
+```
+
+`ui.icon_class` is never an operational status icon. Aggregate operational
+dashboard cards must use fixed operational icons chosen by the dashboard, such
+as `fa fa-play`, `fa fa-list`, `fa fa-stop`,
+`fa fa-exclamation-triangle`, `fa fa-ban`, `fa fa-sliders`, or `fa fa-key`.
+Plugin manifest icons must not influence operational dashboard SQL, card icon
+expressions, CSS classes, conditional rendering, or layout decisions.
+
+`ui.accent_class` is reserved nullable metadata. It is validated only against a
+fixed safe allowlist when configured and is not rendered by APEX navigation
+surfaces unless a fixed safe Universal Theme colour mechanism is explicitly
+used. Do not rely on arbitrary `u-*` class names being accepted.
+
 ## Plugin-Supplied APEX Apps
 
 Plugin packages may declare installable APEX application exports in the
@@ -440,7 +545,7 @@ is separate from conversational capabilities and from `ui.surfaces`.
     "required_roles": [
       "ORAC_ADMIN"
     ],
-    "icon": "fa-plug",
+    "icon_class": "fa-plug",
     "card_title": "Example",
     "card_subtitle": "Plugin health and sync status",
     "enabled": true
@@ -450,10 +555,27 @@ is separate from conversational capabilities and from `ui.surfaces`.
 
 `app_alias` is the stable logical key for the app. `application_id` is optional
 and should be used when the export expects a specific APEX application id.
-`parsing_schema` defaults to `ORAC_APX_PUB`. Plugin-supplied APEX applications
-must target the shared Orac workspace, `ORAC`; plugin menu links and
-app-to-app navigation rely on a common workspace session context and do not
-support arbitrary plugin workspaces.
+`parsing_schema` defaults to `ORAC_APX_PUB`. `icon_class` is the preferred
+app-level icon field. The legacy `icon` field remains supported for older
+manifests, but new manifests should use `icon_class`.
+
+The effective navigation icon for a plugin-supplied APEX app is resolved in
+this order:
+
+1. `apex_apps[].icon_class`
+2. legacy `apex_apps[].icon`
+3. plugin-level `ui.icon_class`
+4. the approved view/rendering fallback `fa fa-plug`
+
+App-level icon metadata is useful when a plugin has multiple APEX apps and each
+app needs a distinct navigation identity. App-level icon values use the same
+safe Font APEX validation and normalisation rules as `ui.icon_class`. If both
+`apex_apps[].icon_class` and legacy `apex_apps[].icon` are supplied,
+`icon_class` wins.
+
+Plugin-supplied APEX applications must target the shared Orac workspace,
+`ORAC`; plugin menu links and app-to-app navigation rely on a common workspace
+session context and do not support arbitrary plugin workspaces.
 
 Plugin-supplied APEX applications must also configure their authentication
 scheme with **Session Sharing** set to **Workspace Sharing**. This is required

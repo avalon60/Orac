@@ -1,4 +1,5 @@
 """Tests for Orac plugin packaging and dependency installation."""
+
 # Author: Clive Bostock
 # Date: 07-Jun-2026
 # Description: Verifies safe plugin archives, dependencies, and installation gates.
@@ -114,6 +115,22 @@ class _ApexAppInstaller:
             install_status="installed",
             install_log="ORAC_PLUGIN_APEX_APP_ID=2042",
         )
+
+
+class _ServiceManager:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.registered: list[str] = []
+        self.start_auto_called = False
+
+    def register_manifests(self, manifests):
+        if self.fail:
+            raise RuntimeError("mock service registration failure")
+        self.registered.extend(manifest.plugin_id for manifest in manifests)
+        return {"registered": len(self.registered)}
+
+    def start_auto_services(self):
+        self.start_auto_called = True
 
 
 class PluginDependencyTests(unittest.TestCase):
@@ -359,6 +376,92 @@ class PluginInstallerTests(unittest.TestCase):
             self.assertEqual(database.calls, ["alpha"])
             self.assertTrue(registry.rows["alpha"]["enabled"])
 
+    def test_service_plugin_install_registers_lifecycle_without_starting(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = _write_source_plugin(
+                root,
+                "alpha",
+                extra_manifest={
+                    "runtime": {
+                        "mode": "service",
+                        "service": {
+                            "entry_point": "service:AlphaService",
+                            "execution_model": "scheduled",
+                            "start_policy": "auto",
+                            "restart_policy": "on_failure",
+                            "shutdown_timeout_seconds": 10,
+                            "schedule": {
+                                "interval_seconds": 30,
+                                "run_on_start": True,
+                            },
+                        },
+                    }
+                },
+            )
+            (source / "service.py").write_text(
+                "class AlphaService:\n    def tick(self, context):\n        return None\n",
+                encoding="utf-8",
+            )
+            service_manager = _ServiceManager()
+
+            result = PluginInstaller(
+                project_root=root,
+                managed_root=root / "var" / "plugins",
+                config_root=root / "config",
+                dependency_installer=_DependencyInstaller(),
+                database_deployer=_DatabaseDeployer(),
+                registry=_Registry(),
+                service_manager=service_manager,
+            ).install_source(source)
+
+            self.assertTrue(result.enabled)
+            self.assertEqual(service_manager.registered, ["alpha"])
+            self.assertFalse(service_manager.start_auto_called)
+
+    def test_service_registration_failure_keeps_plugin_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = _write_source_plugin(
+                root,
+                "alpha",
+                extra_manifest={
+                    "runtime": {
+                        "mode": "service",
+                        "service": {
+                            "entry_point": "service:AlphaService",
+                            "execution_model": "scheduled",
+                            "start_policy": "auto",
+                            "restart_policy": "on_failure",
+                            "shutdown_timeout_seconds": 10,
+                            "schedule": {
+                                "interval_seconds": 30,
+                                "run_on_start": True,
+                            },
+                        },
+                    }
+                },
+            )
+            (source / "service.py").write_text(
+                "class AlphaService:\n    def tick(self, context):\n        return None\n",
+                encoding="utf-8",
+            )
+            registry = _Registry()
+
+            result = PluginInstaller(
+                project_root=root,
+                managed_root=root / "var" / "plugins",
+                config_root=root / "config",
+                dependency_installer=_DependencyInstaller(),
+                database_deployer=_DatabaseDeployer(),
+                registry=registry,
+                service_manager=_ServiceManager(fail=True),
+            ).install_source(source)
+
+            self.assertFalse(result.enabled)
+            self.assertEqual(result.status, "service_registration_failed")
+            self.assertFalse(registry.rows["alpha"]["enabled"])
+
     def test_existing_external_config_is_not_overwritten(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -550,6 +653,7 @@ class PluginInstallerTests(unittest.TestCase):
                 root,
                 "alpha",
                 extra_manifest={
+                    "ui": {"icon_class": "fa-cogs"},
                     "apex_apps": [
                         {
                             "app_alias": "ALPHA_STATUS",
@@ -560,8 +664,10 @@ class PluginInstallerTests(unittest.TestCase):
                             "install_required": True,
                             "required_roles": ["ORAC_ADMIN"],
                             "replace_existing": True,
+                            "icon": "fa-home",
+                            "icon_class": "fa-folder-open",
                         }
-                    ]
+                    ],
                 },
             )
             (source / "apex").mkdir()
@@ -588,6 +694,95 @@ class PluginInstallerTests(unittest.TestCase):
             self.assertEqual(apex_registry.rows[0]["installed_app_id"], 2042)
             self.assertEqual(apex_registry.rows[0]["declared_application_id"], 1043)
             self.assertEqual(apex_registry.rows[0]["required_roles"], '["ORAC_ADMIN"]')
+            self.assertEqual(apex_registry.rows[0]["icon"], "fa fa-folder-open")
+
+    def test_registry_preserves_missing_plugin_icon_as_null(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = _write_source_plugin(root, "alpha")
+            registry = _Registry()
+
+            result = PluginInstaller(
+                project_root=root,
+                managed_root=root / "var" / "plugins",
+                config_root=root / "config",
+                dependency_installer=_DependencyInstaller(),
+                database_deployer=_DatabaseDeployer(),
+                registry=registry,
+            ).install_source(source)
+
+            self.assertTrue(result.enabled)
+            self.assertIsNone(registry.rows["alpha"]["ui_icon_class"])
+            self.assertIsNone(registry.rows["alpha"]["ui_accent_class"])
+
+    def test_apex_app_legacy_icon_overrides_plugin_icon_when_icon_class_absent(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = _write_source_plugin(
+                root,
+                "alpha",
+                extra_manifest={
+                    "ui": {"icon_class": "fa-cogs"},
+                    "apex_apps": [
+                        {
+                            "app_alias": "ALPHA_STATUS",
+                            "label": "Alpha Status",
+                            "app_export": "apex/alpha_status.sql",
+                            "install_required": False,
+                            "icon": "fa-home",
+                        }
+                    ],
+                },
+            )
+            apex_registry = _ApexAppRegistry()
+
+            result = PluginInstaller(
+                project_root=root,
+                managed_root=root / "var" / "plugins",
+                config_root=root / "config",
+                dependency_installer=_DependencyInstaller(),
+                database_deployer=_DatabaseDeployer(),
+                registry=_Registry(),
+                apex_app_registry=apex_registry,
+            ).install_source(source)
+
+            self.assertTrue(result.enabled)
+            self.assertEqual(apex_registry.rows[0]["icon"], "fa fa-home")
+
+    def test_apex_app_uses_plugin_icon_when_app_icon_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = _write_source_plugin(
+                root,
+                "alpha",
+                extra_manifest={
+                    "ui": {"icon_class": "fa-cogs"},
+                    "apex_apps": [
+                        {
+                            "app_alias": "ALPHA_STATUS",
+                            "label": "Alpha Status",
+                            "app_export": "apex/alpha_status.sql",
+                            "install_required": False,
+                        }
+                    ],
+                },
+            )
+            apex_registry = _ApexAppRegistry()
+
+            result = PluginInstaller(
+                project_root=root,
+                managed_root=root / "var" / "plugins",
+                config_root=root / "config",
+                dependency_installer=_DependencyInstaller(),
+                database_deployer=_DatabaseDeployer(),
+                registry=_Registry(),
+                apex_app_registry=apex_registry,
+            ).install_source(source)
+
+            self.assertTrue(result.enabled)
+            self.assertEqual(apex_registry.rows[0]["icon"], "fa fa-cogs")
 
     def test_required_apex_app_failure_blocks_plugin_success(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

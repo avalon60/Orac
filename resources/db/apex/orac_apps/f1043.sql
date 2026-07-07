@@ -956,49 +956,142 @@ wwv_flow_imp_page.create_page(
 ,p_alias=>'HOME'
 ,p_step_title=>'Plugin Operations'
 ,p_autocomplete_on_off=>'OFF'
+,p_inline_css=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'.orac-ops-heading h1 {',
+'  font-size: 1.75rem;',
+'  font-weight: 700;',
+'  line-height: 1.2;',
+'  margin: 0 0 1rem;',
+'}',
+'',
+'.orac-ops-summary .a-CardView-items {',
+'  display: grid;',
+'  gap: .75rem;',
+'  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));',
+'}',
+'',
+'.orac-ops-summary .a-CardView-card {',
+'  min-height: 8.25rem;',
+'}',
+'',
+'.orac-ops-summary .a-CardView-headerBody,',
+'.orac-ops-summary .a-CardView-body {',
+'  padding: .75rem;',
+'}',
+'',
+'.orac-ops-summary .a-CardView-icon {',
+'  font-size: 1.15rem;',
+'  height: 2.5rem;',
+'  width: 2.5rem;',
+'}',
+'',
+'.orac-status-badge {',
+'  border-radius: .75rem;',
+'  display: inline-block;',
+'  font-size: .75rem;',
+'  font-weight: 700;',
+'  line-height: 1;',
+'  padding: .25rem .5rem;',
+'  white-space: nowrap;',
+'}',
+'',
+'.orac-status-badge--neutral { background: rgba(128,128,128,.18); }',
+'.orac-status-badge--success { background: rgba(45,157,86,.25); }',
+'.orac-status-badge--warning { background: rgba(245,171,53,.25); }',
+'.orac-status-badge--danger { background: rgba(220,53,69,.25); }',
+'.orac-status-badge--info { background: rgba(49,132,253,.22); }',
+'',
+'.orac-plugin-service-status .a-IRR-table td {',
+'  vertical-align: top;',
+'}',
+'',
+'.orac-plugin-service-status .a-IRR-table td[headers*="LAST_ERROR_MESSAGE"] {',
+'  max-width: 24rem;',
+'  white-space: normal;',
+'}'))
 ,p_page_template_options=>'#DEFAULT#'
 ,p_protection_level=>'C'
 ,p_page_component_map=>'13'
 );
 wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(8910020000000030)
+,p_plug_name=>'Plugin Operations Heading'
+,p_region_template_options=>'#DEFAULT#:t-Region--removeHeader'
+,p_plug_template=>4072358936313175081
+,p_plug_display_sequence=>5
+,p_plug_display_point=>'BODY'
+,p_plug_source=>'<div class="orac-ops-heading"><h1>Plugin Operations</h1></div>'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'expand_shortcuts', 'N',
+  'output_as', 'HTML',
+  'show_line_breaks', 'N')).to_clob
+);
+wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(8910020000000002)
 ,p_plug_name=>'Service State Summary'
-,p_icon_css_classes=>'fa-plug'
 ,p_region_template_options=>'#DEFAULT#'
+,p_region_css_classes=>'orac-ops-summary'
 ,p_plug_template=>4501440665235496320
 ,p_plug_display_sequence=>10
 ,p_plug_display_point=>'BODY'
 ,p_query_type=>'SQL'
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select current_state',
-'     , initcap(replace(current_state, ''_'', '' '')) as state_label',
-'     , count(*) as service_count',
-'     , case current_state',
-'         when ''running'' then ''Active service leases''',
-'         when ''stopped'' then ''Registered services not currently running''',
-'         when ''failed'' then ''Services reporting a failure''',
-'         when ''disabled'' then ''Services disabled by policy''',
-'         when ''lease_lost'' then ''Services that lost their database lease''',
-'         else ''Registered plugin services''',
-'       end as state_summary',
-'     , case current_state',
-'         when ''running'' then ''fa-play-circle-o''',
-'         when ''stopped'' then ''fa-stop-circle-o''',
-'         when ''failed'' then ''fa-exclamation-triangle''',
-'         when ''disabled'' then ''fa-ban''',
-'         when ''lease_lost'' then ''fa-unlink''',
-'         else ''fa-cog''',
-'       end as state_icon',
-'  from orac_code.plugin_service_status_v',
-' group by current_state',
-' order by case current_state',
-'            when ''running'' then 1',
-'            when ''failed'' then 2',
-'            when ''lease_lost'' then 3',
-'            when ''stopped'' then 4',
-'            when ''disabled'' then 5',
-'            else 6',
-'          end, current_state'))
+'with service_status as (',
+'  select current_state',
+'       , effective_policy',
+'       , lease_active_yn',
+'    from orac_code.plugin_service_status_v',
+')',
+'select ''registered'' as metric_key',
+'     , ''Registered'' as metric_label',
+'     , (select count(*) from service_status where current_state = ''registered'') as service_count',
+'     , ''Registered plugin services'' as metric_summary',
+'     , ''fa fa-list'' as metric_icon',
+'     , 10 as metric_order',
+'  from dual',
+'union all',
+'select ''running'', ''Running'',',
+'       (select count(*) from service_status where current_state = ''running''),',
+'       ''Services currently running'',',
+'       ''fa fa-play'',',
+'       20',
+'  from dual',
+'union all',
+'select ''stopped'', ''Stopped'',',
+'       (select count(*) from service_status where current_state = ''stopped''),',
+'       ''Services not currently running'',',
+'       ''fa fa-stop'',',
+'       30',
+'  from dual',
+'union all',
+'select ''error'', ''Error'',',
+'       (select count(*) from service_status where current_state in (''failed'', ''lease_lost'')),',
+'       ''Services reporting an error state'',',
+'       ''fa fa-exclamation-triangle'',',
+'       40',
+'  from dual',
+'union all',
+'select ''disabled'', ''Disabled'',',
+'       (select count(*) from service_status where current_state = ''disabled'' or effective_policy = ''disabled''),',
+'       ''Services disabled by policy'',',
+'       ''fa fa-ban'',',
+'       50',
+'  from dual',
+'union all',
+'select ''manual'', ''Manual'',',
+'       (select count(*) from service_status where effective_policy = ''manual''),',
+'       ''Services controlled manually'',',
+'       ''fa fa-sliders'',',
+'       60',
+'  from dual',
+'union all',
+'select ''active_leases'', ''Active leases'',',
+'       (select count(*) from service_status where lease_active_yn = ''Y''),',
+'       ''Currently held service leases'',',
+'       ''fa fa-key'',',
+'       70',
+'  from dual',
+' order by metric_order'))
 ,p_lazy_loading=>false
 ,p_plug_source_type=>'NATIVE_CARDS'
 ,p_plug_query_num_rows_type=>'SCROLL'
@@ -1009,24 +1102,27 @@ wwv_flow_imp_page.create_card(
  p_id=>wwv_flow_imp.id(8910020000000003)
 ,p_region_id=>wwv_flow_imp.id(8910020000000002)
 ,p_layout_type=>'GRID'
-,p_grid_column_count=>3
+,p_grid_column_count=>7
+,p_component_css_classes=>'orac-ops-summary'
+,p_card_css_classes=>'orac-ops-summary-card'
 ,p_title_adv_formatting=>false
-,p_title_column_name=>'STATE_LABEL'
+,p_title_column_name=>'METRIC_LABEL'
 ,p_sub_title_adv_formatting=>false
 ,p_sub_title_column_name=>'SERVICE_COUNT'
 ,p_body_adv_formatting=>false
-,p_body_column_name=>'STATE_SUMMARY'
+,p_body_column_name=>'METRIC_SUMMARY'
 ,p_second_body_adv_formatting=>false
 ,p_icon_source_type=>'DYNAMIC_CLASS'
-,p_icon_class_column_name=>'STATE_ICON'
+,p_icon_class_column_name=>'METRIC_ICON'
 ,p_icon_position=>'TOP'
 ,p_media_adv_formatting=>false
-,p_pk1_column_name=>'CURRENT_STATE'
+,p_pk1_column_name=>'METRIC_KEY'
 );
 wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(8910020000000004)
 ,p_plug_name=>'Plugin Service Status'
 ,p_region_template_options=>'#DEFAULT#:t-IRR-region--noBorders'
+,p_region_css_classes=>'orac-plugin-service-status'
 ,p_plug_template=>2100526641005906379
 ,p_plug_display_sequence=>20
 ,p_plug_display_point=>'BODY'
@@ -1043,17 +1139,89 @@ wwv_flow_imp_page.create_page_plug(
 '     , svc.service_code',
 '     , svc.service_name',
 '     , svc.effective_policy',
+'     , case svc.effective_policy',
+'         when ''auto'' then ''Auto''',
+'         when ''manual'' then ''Manual''',
+'         when ''disabled'' then ''Disabled''',
+'         else initcap(replace(svc.effective_policy, ''_'', '' ''))',
+'       end as effective_policy_label',
+'     , case svc.effective_policy',
+'         when ''auto'' then ''orac-status-badge orac-status-badge--success''',
+'         when ''manual'' then ''orac-status-badge orac-status-badge--info''',
+'         when ''disabled'' then ''orac-status-badge orac-status-badge--danger''',
+'         else ''orac-status-badge orac-status-badge--neutral''',
+'       end as effective_policy_badge_class',
 '     , svc.current_state',
+'     , case svc.current_state',
+'         when ''running'' then ''Running''',
+'         when ''registered'' then ''Registered''',
+'         when ''stopped'' then ''Stopped''',
+'         when ''failed'' then ''Error''',
+'         when ''lease_lost'' then ''Lease Lost''',
+'         when ''disabled'' then ''Disabled''',
+'         else initcap(replace(svc.current_state, ''_'', '' ''))',
+'       end as current_state_label',
+'     , case svc.current_state',
+'         when ''running'' then ''orac-status-badge orac-status-badge--success''',
+'         when ''registered'' then ''orac-status-badge orac-status-badge--info''',
+'         when ''stopped'' then ''orac-status-badge orac-status-badge--neutral''',
+'         when ''failed'' then ''orac-status-badge orac-status-badge--danger''',
+'         when ''lease_lost'' then ''orac-status-badge orac-status-badge--warning''',
+'         when ''disabled'' then ''orac-status-badge orac-status-badge--danger''',
+'         else ''orac-status-badge orac-status-badge--neutral''',
+'       end as current_state_badge_class',
 '     , svc.owner_id',
 '     , svc.lease_active_yn',
+'     , case svc.lease_active_yn',
+'         when ''Y'' then ''Active''',
+'         else ''Inactive''',
+'       end as lease_active_label',
+'     , case svc.lease_active_yn',
+'         when ''Y'' then ''orac-status-badge orac-status-badge--success''',
+'         else ''orac-status-badge orac-status-badge--neutral''',
+'       end as lease_active_badge_class',
 '     , svc.lease_expires_on',
 '     , svc.last_started_on',
 '     , svc.last_heartbeat_on',
 '     , svc.last_tick_on',
 '     , svc.last_error_message',
+'     , svc.row_version',
 '     , case',
 '         when app.visible_app_count = 1 then app.card_link',
 '       end as plugin_app_link',
+'     , case',
+'         when svc.effective_policy <> ''auto'' then',
+'           ''<a href="'' || apex_escape.html_attribute(',
+'             apex_page.get_url(',
+'               p_page    => 1,',
+'               p_request => ''SET_SERVICE_POLICY_AUTO'',',
+'               p_items   => ''P1_POLICY_PLUGIN_ID,P1_POLICY_SERVICE_CODE,P1_POLICY_ROW_VERSION,P1_POLICY_TARGET'',',
+'               p_values  => svc.plugin_id || '','' || svc.service_code || '','' || svc.row_version || '',auto''',
+'             )',
+'           ) || ''">Set Auto</a>''',
+'       end as set_auto_action',
+'     , case',
+'         when svc.effective_policy <> ''manual'' then',
+'           ''<a href="'' || apex_escape.html_attribute(',
+'             apex_page.get_url(',
+'               p_page    => 1,',
+'               p_request => ''SET_SERVICE_POLICY_MANUAL'',',
+'               p_items   => ''P1_POLICY_PLUGIN_ID,P1_POLICY_SERVICE_CODE,P1_POLICY_ROW_VERSION,P1_POLICY_TARGET'',',
+'               p_values  => svc.plugin_id || '','' || svc.service_code || '','' || svc.row_version || '',manual''',
+'             )',
+'           ) || ''">Set Manual</a>''',
+'       end as set_manual_action',
+'     , case',
+'         when svc.effective_policy <> ''disabled'' then',
+'           ''<a href="'' || apex_escape.html_attribute(',
+'             apex_page.get_url(',
+'               p_page    => 1,',
+'               p_request => ''SET_SERVICE_POLICY_DISABLED'',',
+'               p_items   => ''P1_POLICY_PLUGIN_ID,P1_POLICY_SERVICE_CODE,P1_POLICY_ROW_VERSION,P1_POLICY_TARGET'',',
+'               p_values  => svc.plugin_id || '','' || svc.service_code || '','' || svc.row_version || '',disabled''',
+'             )',
+'           ) || ''">Disable</a>''',
+'       end as disable_action',
 '  from orac_code.plugin_service_status_v svc',
 '  left join visible_apps app',
 '    on app.plugin_id = svc.plugin_id',
@@ -1123,7 +1291,9 @@ wwv_flow_imp_page.create_worksheet_column(
 ,p_display_order=>4
 ,p_column_identifier=>'D'
 ,p_column_label=>'Policy'
+,p_column_html_expression=>'<span class="#EFFECTIVE_POLICY_BADGE_CLASS#">#EFFECTIVE_POLICY_LABEL#</span>'
 ,p_column_type=>'STRING'
+,p_display_text_as=>'WITHOUT_MODIFICATION'
 ,p_heading_alignment=>'LEFT'
 ,p_tz_dependent=>'N'
 ,p_use_as_row_header=>'N'
@@ -1134,7 +1304,9 @@ wwv_flow_imp_page.create_worksheet_column(
 ,p_display_order=>5
 ,p_column_identifier=>'E'
 ,p_column_label=>'State'
+,p_column_html_expression=>'<span class="#CURRENT_STATE_BADGE_CLASS#">#CURRENT_STATE_LABEL#</span>'
 ,p_column_type=>'STRING'
+,p_display_text_as=>'WITHOUT_MODIFICATION'
 ,p_heading_alignment=>'LEFT'
 ,p_tz_dependent=>'N'
 ,p_use_as_row_header=>'N'
@@ -1156,7 +1328,9 @@ wwv_flow_imp_page.create_worksheet_column(
 ,p_display_order=>7
 ,p_column_identifier=>'G'
 ,p_column_label=>'Lease Active'
+,p_column_html_expression=>'<span class="#LEASE_ACTIVE_BADGE_CLASS#">#LEASE_ACTIVE_LABEL#</span>'
 ,p_column_type=>'STRING'
+,p_display_text_as=>'WITHOUT_MODIFICATION'
 ,p_heading_alignment=>'LEFT'
 ,p_tz_dependent=>'N'
 ,p_use_as_row_header=>'N'
@@ -1169,6 +1343,7 @@ wwv_flow_imp_page.create_worksheet_column(
 ,p_column_label=>'Lease Expires'
 ,p_column_type=>'DATE'
 ,p_heading_alignment=>'LEFT'
+,p_format_mask=>'DD-Mon-YYYY HH24:MI:SS'
 ,p_tz_dependent=>'N'
 ,p_use_as_row_header=>'N'
 );
@@ -1180,6 +1355,7 @@ wwv_flow_imp_page.create_worksheet_column(
 ,p_column_label=>'Last Started'
 ,p_column_type=>'DATE'
 ,p_heading_alignment=>'LEFT'
+,p_format_mask=>'DD-Mon-YYYY HH24:MI:SS'
 ,p_tz_dependent=>'N'
 ,p_use_as_row_header=>'N'
 );
@@ -1191,6 +1367,7 @@ wwv_flow_imp_page.create_worksheet_column(
 ,p_column_label=>'Last Heartbeat'
 ,p_column_type=>'DATE'
 ,p_heading_alignment=>'LEFT'
+,p_format_mask=>'DD-Mon-YYYY HH24:MI:SS'
 ,p_tz_dependent=>'N'
 ,p_use_as_row_header=>'N'
 );
@@ -1202,6 +1379,7 @@ wwv_flow_imp_page.create_worksheet_column(
 ,p_column_label=>'Last Tick'
 ,p_column_type=>'DATE'
 ,p_heading_alignment=>'LEFT'
+,p_format_mask=>'DD-Mon-YYYY HH24:MI:SS'
 ,p_tz_dependent=>'N'
 ,p_use_as_row_header=>'N'
 );
@@ -1227,6 +1405,119 @@ wwv_flow_imp_page.create_worksheet_column(
 ,p_tz_dependent=>'N'
 ,p_use_as_row_header=>'N'
 );
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000031)
+,p_db_column_name=>'EFFECTIVE_POLICY_LABEL'
+,p_display_order=>14
+,p_column_identifier=>'N'
+,p_column_label=>'Policy Label'
+,p_column_type=>'STRING'
+,p_display_text_as=>'HIDDEN_ESCAPE_SC'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000032)
+,p_db_column_name=>'EFFECTIVE_POLICY_BADGE_CLASS'
+,p_display_order=>15
+,p_column_identifier=>'O'
+,p_column_label=>'Policy Badge Class'
+,p_column_type=>'STRING'
+,p_display_text_as=>'HIDDEN_ESCAPE_SC'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000033)
+,p_db_column_name=>'CURRENT_STATE_LABEL'
+,p_display_order=>16
+,p_column_identifier=>'P'
+,p_column_label=>'State Label'
+,p_column_type=>'STRING'
+,p_display_text_as=>'HIDDEN_ESCAPE_SC'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000034)
+,p_db_column_name=>'CURRENT_STATE_BADGE_CLASS'
+,p_display_order=>17
+,p_column_identifier=>'Q'
+,p_column_label=>'State Badge Class'
+,p_column_type=>'STRING'
+,p_display_text_as=>'HIDDEN_ESCAPE_SC'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000035)
+,p_db_column_name=>'LEASE_ACTIVE_LABEL'
+,p_display_order=>18
+,p_column_identifier=>'R'
+,p_column_label=>'Lease Active Label'
+,p_column_type=>'STRING'
+,p_display_text_as=>'HIDDEN_ESCAPE_SC'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000036)
+,p_db_column_name=>'LEASE_ACTIVE_BADGE_CLASS'
+,p_display_order=>19
+,p_column_identifier=>'S'
+,p_column_label=>'Lease Active Badge Class'
+,p_column_type=>'STRING'
+,p_display_text_as=>'HIDDEN_ESCAPE_SC'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000037)
+,p_db_column_name=>'ROW_VERSION'
+,p_display_order=>20
+,p_column_identifier=>'T'
+,p_column_label=>'Row Version'
+,p_column_type=>'NUMBER'
+,p_display_text_as=>'HIDDEN_ESCAPE_SC'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000038)
+,p_db_column_name=>'SET_AUTO_ACTION'
+,p_display_order=>21
+,p_column_identifier=>'U'
+,p_column_label=>'Set Auto'
+,p_column_type=>'STRING'
+,p_display_text_as=>'WITHOUT_MODIFICATION'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000039)
+,p_db_column_name=>'SET_MANUAL_ACTION'
+,p_display_order=>22
+,p_column_identifier=>'V'
+,p_column_label=>'Set Manual'
+,p_column_type=>'STRING'
+,p_display_text_as=>'WITHOUT_MODIFICATION'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(8910020000000040)
+,p_db_column_name=>'DISABLE_ACTION'
+,p_display_order=>23
+,p_column_identifier=>'W'
+,p_column_label=>'Disable'
+,p_column_type=>'STRING'
+,p_display_text_as=>'WITHOUT_MODIFICATION'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
 wwv_flow_imp_page.create_worksheet_rpt(
  p_id=>wwv_flow_imp.id(8910020000000019)
 ,p_application_user=>'APXWS_DEFAULT'
@@ -1234,9 +1525,70 @@ wwv_flow_imp_page.create_worksheet_rpt(
 ,p_report_alias=>'891021'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'PLUGIN_ID:SERVICE_CODE:SERVICE_NAME:EFFECTIVE_POLICY:CURRENT_STATE:OWNER_ID:LEASE_ACTIVE_YN:LEASE_EXPIRES_ON:LAST_STARTED_ON:LAST_HEARTBEAT_ON:LAST_TICK_ON:LAST_ERROR_MESSAGE:'
+,p_report_columns=>'PLUGIN_ID:SERVICE_CODE:SERVICE_NAME:EFFECTIVE_POLICY:CURRENT_STATE:LEASE_ACTIVE_YN:LEASE_EXPIRES_ON:LAST_HEARTBEAT_ON:LAST_ERROR_MESSAGE:'
 ,p_sort_column_1=>'PLUGIN_ID'
 ,p_sort_direction_1=>'ASC'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(8910020000000041)
+,p_name=>'P1_POLICY_PLUGIN_ID'
+,p_item_sequence=>10
+,p_display_as=>'NATIVE_HIDDEN'
+,p_protection_level=>'S'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(8910020000000042)
+,p_name=>'P1_POLICY_SERVICE_CODE'
+,p_item_sequence=>20
+,p_display_as=>'NATIVE_HIDDEN'
+,p_protection_level=>'S'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(8910020000000043)
+,p_name=>'P1_POLICY_ROW_VERSION'
+,p_item_sequence=>30
+,p_display_as=>'NATIVE_HIDDEN'
+,p_protection_level=>'S'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(8910020000000044)
+,p_name=>'P1_POLICY_TARGET'
+,p_item_sequence=>40
+,p_display_as=>'NATIVE_HIDDEN'
+,p_protection_level=>'S'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(8910020000000045)
+,p_process_sequence=>20
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Set Plugin Service Policy'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'begin',
+'  orac_code.plugin_service_admin_api.set_policy(',
+'    p_plugin_id    => :P1_POLICY_PLUGIN_ID,',
+'    p_service_code => :P1_POLICY_SERVICE_CODE,',
+'    p_policy       => :P1_POLICY_TARGET,',
+'    p_row_version  => to_number(:P1_POLICY_ROW_VERSION)',
+'  );',
+'end;'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_process_when=>'SET_SERVICE_POLICY_AUTO,SET_SERVICE_POLICY_MANUAL,SET_SERVICE_POLICY_DISABLED'
+,p_process_when_type=>'REQUEST_IN_CONDITION'
+,p_process_success_message=>'Plugin service policy updated.'
 );
 wwv_flow_imp_page.create_page_process(
  p_id=>wwv_flow_imp.id(8910010000000003)

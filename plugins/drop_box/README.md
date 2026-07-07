@@ -25,10 +25,10 @@ chunk, embed, or write to a knowledge store.
 
 ## Runtime
 
-The plugin is a service-only plugin. It uses a manual start policy so operators
-can configure mounts and drop locations before scanning begins. When started,
-`run_on_start` is enabled, so Orac runs one scan immediately and then repeats on
-the configured 30-second schedule.
+The plugin is a service-only plugin. It uses an automatic start policy so a
+restart starts scanning after install once drop locations are enabled. When
+started, `run_on_start` is enabled, so Orac runs one scan immediately and then
+repeats on the configured 30-second schedule.
 
 The scanner prevents overlapping ticks in the same process. It also skips
 hashing when a job already exists for the same location, source path, source
@@ -219,10 +219,10 @@ processing_profile: implementation_decision_record
    ignore patterns.
 7. Enable the location only after the filesystem mount and permissions are
    ready.
-8. Leave the service policy as `manual` for diagnostic-only testing, or set the
-   Drop Box scanner service policy to `auto` when normal scanning should start
-   with Orac core. The first scan runs immediately because `run_on_start` is
-   true.
+8. Leave the scanner service policy as `auto` for normal operation, or set it to
+   `manual` or `disabled` from App 1043 or `bin/orac-plugin.sh` for diagnostic
+   or paused operation. The first scan runs immediately because `run_on_start`
+   is true.
 9. Use the location and job detail pages to inspect queued jobs and audit
    events.
 
@@ -234,21 +234,14 @@ checks their effective policy, acquires the database lease, starts `auto`
 services, keeps heartbeats current, and releases leases during shutdown.
 
 Drop Box declares one service: `(plugin_id, service_code) = (drop_box,
-scanner)`. It defaults to `manual` after install, so it is visible in service
-status but does not scan automatically until an operator opts in. Set the policy
-to `auto` through the core service API path when normal scanning should run with
-Orac startup:
+scanner)`. It defaults to `auto` after install, so it is visible in service
+status and starts on the next Orac restart. Change startup policy through the
+Plugin Service Status report in App 1043, or from the CLI:
 
-```sql
-begin
-  orac_code.plugin_service_api.set_service_policy(
-    p_plugin_id    => 'drop_box',
-    p_service_code => 'scanner',
-    p_policy       => 'auto',
-    p_row_version  => :row_version
-  );
-end;
-/
+```bash
+bin/orac-plugin.sh service policy drop_box scanner manual
+bin/orac-plugin.sh service policy drop_box scanner auto
+bin/orac-plugin.sh service policy drop_box scanner disabled
 ```
 
 Find the current `row_version`, policy, state, owner, lease, heartbeat, tick,
@@ -269,6 +262,12 @@ select service_id,
  where plugin_id = 'drop_box'
    and service_code = 'scanner';
 ```
+
+After a database rebuild, install or reinstall the Drop Box plugin and restart
+the Orac runtime before expecting the service to appear in the Plugin Apps
+operations page. Installation restores the plugin registry and APEX metadata;
+the restart runs plugin routing/service refresh and recreates the
+`drop_box:scanner` lifecycle row in `orac_core.plugin_services`.
 
 `bin/orac-plugin.sh service run drop_box` remains a foreground diagnostic
 command only. It uses the same service implementation and database lease path

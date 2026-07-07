@@ -1,4 +1,5 @@
 """Install packaged or bundled plugins through Orac-owned lifecycle controls."""
+
 # Author: Clive Bostock
 # Date: 07-Jun-2026
 # Description: Orchestrates plugin validation, dependencies, database deployment, and readiness.
@@ -34,6 +35,7 @@ from model.plugin_registry import PluginRegistryStore
 from model.plugin_runtime import load_plugin_class
 from model.plugin_runtime import load_plugin_service_class
 from model.plugin_secret_vault import PluginPatVaultStore
+from model.plugin_service_manager import PluginServiceManager
 
 
 class PluginInstallationError(RuntimeError):
@@ -87,6 +89,7 @@ class PluginInstaller:
         registry: PluginRegistryWriter | None = None,
         apex_app_installer: PluginApexAppInstaller | None = None,
         apex_app_registry: PluginApexAppRegistryWriter | None = None,
+        service_manager: Any | None = None,
         logger: Any | None = None,
         keep_failed_staging: bool = False,
     ) -> None:
@@ -110,6 +113,7 @@ class PluginInstaller:
         self._apex_app_registry = apex_app_registry or PluginApexAppRegistryStore(
             logger=logger
         )
+        self._service_manager = service_manager
         self._logger = logger
         self._keep_failed_staging = keep_failed_staging
 
@@ -449,6 +453,19 @@ class PluginInstaller:
                 dependency_status=dependency_result.status,
                 database_status=database_result.status,
             )
+        try:
+            self._register_service_lifecycle(active_manifest)
+        except PluginInstallationError as exc:
+            self._rollback_activation(installed_path, previous_path)
+            return self._failure(
+                manifest,
+                package,
+                "service_registration_failed",
+                str(exc),
+                configuration_status="success",
+                dependency_status=dependency_result.status,
+                database_status=database_result.status,
+            )
         values = self._registry_values(
             active_manifest,
             package,
@@ -616,6 +633,21 @@ class PluginInstaller:
                     )
                 )
 
+    def _register_service_lifecycle(self, manifest: PluginManifest) -> None:
+        """Register installed service descriptors without starting services."""
+        if manifest.runtime_mode not in {"service", "hybrid"}:
+            return
+
+        service_manager = self._service_manager or PluginServiceManager(
+            logger=self._logger
+        )
+        try:
+            service_manager.register_manifests([manifest])
+        except Exception as exc:
+            raise PluginInstallationError(
+                f"Unable to register plugin service lifecycle rows: {exc}"
+            ) from exc
+
     def _activate_candidate(
         self,
         candidate_root: Path,
@@ -720,6 +752,12 @@ class PluginInstaller:
             "database_schemas_summary": json.dumps(
                 [schema.schema_name for schema in manifest.database_schemas]
             ),
+            "ui_icon_class": (
+                manifest.ui.icon_class if manifest.ui is not None else None
+            ),
+            "ui_accent_class": (
+                manifest.ui.accent_class if manifest.ui is not None else None
+            ),
             "dependency_declarations": json.dumps(manifest.python_dependencies),
             "dependency_fingerprint": dependency_fingerprint(
                 manifest.python_dependencies
@@ -759,7 +797,7 @@ class PluginInstaller:
             "label": app.label,
             "description": app.description,
             "required_roles": json.dumps(app.required_roles),
-            "icon": app.icon,
+            "icon": _effective_apex_app_icon(manifest, app),
             "card_title": app.card_title,
             "card_subtitle": app.card_subtitle,
             "install_status": install_status,
@@ -807,6 +845,19 @@ class PluginInstaller:
     def _log_error(self, message: str) -> None:
         if self._logger and hasattr(self._logger, "log_error"):
             self._logger.log_error(message)
+
+
+def _effective_apex_app_icon(
+    manifest: PluginManifest, app: PluginApexApp
+) -> str | None:
+    """Return the app icon resolved from app and plugin manifest metadata."""
+    if app.icon_class:
+        return app.icon_class
+    if app.icon:
+        return app.icon
+    if manifest.ui is not None:
+        return manifest.ui.icon_class
+    return None
 
 
 class _RetainedDirectory:

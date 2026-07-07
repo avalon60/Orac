@@ -56,7 +56,7 @@
         "service_code": "scanner",
         "entry_point": "service:DropBoxService",
         "execution_model": "scheduled",
-        "start_policy": "manual",
+        "start_policy": "auto",
         "restart_policy": "on_failure",
         "shutdown_timeout_seconds": 10,
         "schedule": {
@@ -117,13 +117,14 @@
       "required_roles": [
         "ORAC_ADMIN"
       ],
-      "icon": "fa-folder-open",
+      "icon_class": "fa-folder-open",
       "card_title": "Drop Box",
       "card_subtitle": "Configure ingestion drop locations",
       "enabled": true
     }
   ],
   "ui": {
+    "icon_class": "fa-folder-open",
     "surfaces": [
       {
         "id": "drop_box.admin_config",
