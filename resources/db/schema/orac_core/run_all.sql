@@ -18,6 +18,7 @@ prompt === tables ===
 @table/plugin_db_deployments.sql
 @table/plugin_apex_apps.sql
 @table/plugin_registry.sql
+@table/plugin_registry_ui_metadata.sql
 @table/plugin_services.sql
 @table/orac_search_queries.sql
 @table/orac_search_results.sql

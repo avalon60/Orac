@@ -17,6 +17,8 @@ select plugin_registry_id
      , capabilities_summary
      , entitlements_summary
      , database_schemas_summary
+     , ui_icon_class
+     , ui_accent_class
      , dependency_declarations
      , dependency_fingerprint
      , install_status

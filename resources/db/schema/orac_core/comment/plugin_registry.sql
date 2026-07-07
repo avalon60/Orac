@@ -13,5 +13,11 @@ comment on column orac_core.plugin_registry.installed_path is
 comment on column orac_core.plugin_registry.enabled is
   'Y only when all required installation and readiness gates succeeded.';
 
+comment on column orac_core.plugin_registry.ui_icon_class is
+  'Optional validated Font APEX icon class declared by plugin UI metadata.';
+
+comment on column orac_core.plugin_registry.ui_accent_class is
+  'Optional validated, non-rendered plugin UI accent metadata.';
+
 comment on column orac_core.plugin_registry.row_version is
   'Optimistic locking version maintained on update.';

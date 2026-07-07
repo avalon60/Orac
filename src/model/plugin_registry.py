@@ -28,7 +28,8 @@ class PluginRegistryStore:
         "package_hash, install_source_type, install_source_ref, installed_path, "
         "config_path, dependency_fingerprint, install_status, configuration_status, "
         "dependency_status, database_status, readiness_status, enabled, "
-        "last_error_code, last_error_message, row_version"
+        "ui_icon_class, ui_accent_class, last_error_code, last_error_message, "
+        "row_version"
     )
 
     def __init__(
@@ -74,6 +75,8 @@ class PluginRegistryStore:
                         "database_schemas_summary": _json_bind_value(
                             values.get("database_schemas_summary")
                         ),
+                        "ui_icon_class": values.get("ui_icon_class"),
+                        "ui_accent_class": values.get("ui_accent_class"),
                         "dependency_declarations": _json_bind_value(
                             values.get("dependency_declarations")
                         ),
@@ -339,6 +342,8 @@ begin
     p_capabilities_summary     => :capabilities_summary,
     p_entitlements_summary     => :entitlements_summary,
     p_database_schemas_summary => :database_schemas_summary,
+    p_ui_icon_class            => :ui_icon_class,
+    p_ui_accent_class          => :ui_accent_class,
     p_dependency_declarations  => :dependency_declarations,
     p_dependency_fingerprint   => :dependency_fingerprint,
     p_install_status           => :install_status,

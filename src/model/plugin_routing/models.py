@@ -228,6 +228,8 @@ class PluginUi:
 
     status_provider: PluginUiStatusProvider | None = None
     surfaces: tuple[PluginUiSurface, ...] = ()
+    icon_class: str | None = None
+    accent_class: str | None = None
 
 
 @dataclass(frozen=True)
@@ -246,6 +248,7 @@ class PluginApexApp:
     replace_existing: bool = False
     required_roles: tuple[str, ...] = ()
     icon: str | None = None
+    icon_class: str | None = None
     card_title: str | None = None
     card_subtitle: str | None = None
     enabled: bool = True

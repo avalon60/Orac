@@ -15,7 +15,7 @@ select plugin_id
      , label
      , description
      , required_roles
-     , coalesce(icon, 'fa-plug') icon
+     , icon
      , coalesce(card_title, label) card_title
      , card_subtitle
      , apex_util.prepare_url(

@@ -288,6 +288,7 @@
     }
   ],
   "ui": {
+    "icon_class": "fa-home",
     "status_provider": {
       "id": "home_assistant.status_summary",
       "description": "Aggregated Home Assistant plugin health, API reachability, runtime state, and sync status.",
