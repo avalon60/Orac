@@ -18,17 +18,11 @@ select plugin_id
      , icon
      , coalesce(card_title, label) card_title
      , card_subtitle
-     , apex_util.prepare_url(
-         p_url           => 'f?p='
-                            || installed_app_id
-                            || ':'
-                            || coalesce(entry_page_id, 1)
-                            || ':'
-                            || v('APP_SESSION')
-                            || ':ORAC_THEME_SYNC:'
-                            || v('DEBUG')
-                            || ':RP::',
-         p_checksum_type => 'SESSION'
+     , orac_code.apex_return_nav_api.launch_url(
+         p_target_app_id  => installed_app_id,
+         p_target_page_id => coalesce(entry_page_id, 1),
+         p_request        => 'ORAC_THEME_SYNC',
+         p_clear_cache    => 'RP'
        ) card_link
   from orac_code.plugin_apex_app_menu_v
  where required_roles is null

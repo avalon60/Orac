@@ -39,6 +39,19 @@ not use FOS because the vendored plug-in's min, max, and step settings are
 static APEX component attributes rather than row-specific preference metadata.
 It does not require a separate `com_fos_range_slider.sql` deployment step.
 
+## Cross-App Return Navigation
+
+Orac-managed APEX applications use a validated session-state return stack for
+cross-application navigation. The stack is rendered through a Page 0 header
+list region named `Cross-App Return Navigation`.
+
+The Universal Theme Navigation Bar list template renders a parent entry with
+child entries as a menu button, not as a direct link. Keep the immediate return
+destination as a separate primary list entry, and put deeper return targets
+under an adjacent compact menu entry. Return labels and URLs must continue to
+come from `orac_code.apex_return_nav_api`; do not construct return URLs in the
+APEX export or browser-side JavaScript.
+
 ## Troubleshooting
 
 1. Confirm the stack and database are running:

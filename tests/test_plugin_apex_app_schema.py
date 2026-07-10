@@ -30,6 +30,10 @@ PAGE_DA_BLOCK_RE = re.compile(
     r"wwv_flow_imp_page\.create_page_da_(?:event|action)\((.*?)\);",
     re.IGNORECASE | re.DOTALL,
 )
+LIST_ITEM_BLOCK_RE = re.compile(
+    r"wwv_flow_imp_shared\.create_list_item\((.*?)\);",
+    re.IGNORECASE | re.DOTALL,
+)
 PAGE_ITEM_NAME_RE = re.compile(r"p_name=>'([^']+)'", re.IGNORECASE)
 PAGE_ITEM_REF_RE = re.compile(r"(?<![A-Z0-9_])P([0-9]+)_[A-Z0-9_]+", re.IGNORECASE)
 
@@ -61,6 +65,13 @@ def _apex_item_references(text: str) -> set[tuple[int, str]]:
         (int(match.group(1)), match.group(0).upper())
         for match in PAGE_ITEM_REF_RE.finditer(text)
     }
+
+
+def _apex_prompt_block(export_sql: str, prompt: str) -> str:
+    """Return a shared-component export block that starts with a prompt line."""
+    start = export_sql.index(prompt.lower())
+    end = export_sql.index("end;\n/", start) + len("end;\n/")
+    return export_sql[start:end]
 
 
 class PluginApexAppSchemaTests(unittest.TestCase):
@@ -184,14 +195,51 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             view_sql,
         )
         self.assertIn("from orac_code.plugin_apex_app_menu_v", view_sql)
-        self.assertIn("apex_util.prepare_url", view_sql)
+        self.assertIn("orac_code.apex_return_nav_api.launch_url", view_sql)
         self.assertIn("installed_app_id", view_sql)
         self.assertIn("coalesce(entry_page_id, 1)", view_sql)
-        self.assertTrue("v('app_session')" in view_sql or "app_session" in view_sql)
-        self.assertIn("p_checksum_type => 'session'", view_sql)
+        self.assertIn("p_target_app_id  => installed_app_id", view_sql)
+        self.assertIn("p_target_page_id => coalesce(entry_page_id, 1)", view_sql)
+        self.assertIn("p_request        => 'orac_theme_sync'", view_sql)
+        self.assertIn("p_clear_cache    => 'rp'", view_sql)
         self.assertIn("card_link", view_sql)
-        self.assertIn(":orac_theme_sync:", view_sql)
-        self.assertIn(":rp::", view_sql)
+        self.assertNotIn("apex_util.prepare_url", view_sql)
+
+    def test_apex_return_nav_api_validates_and_derives_navigation(self) -> None:
+        package_spec = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_code/package_spec/apex_return_nav_api.sql"
+        ).read_text(encoding="utf-8").lower()
+        package_body = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_code/package_body/apex_return_nav_api.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("create or replace package orac_code.apex_return_nav_api", package_spec)
+        self.assertIn("c_max_depth constant pls_integer := 5", package_spec)
+        self.assertIn("normalize_stack", package_spec)
+        self.assertIn("launch_url", package_spec)
+        self.assertIn("return_label", package_spec)
+        self.assertIn("return_url", package_spec)
+        self.assertNotIn("p_return_url", package_spec)
+        self.assertNotIn("p_return_label", package_spec)
+
+        self.assertIn("c_stack_item_name constant varchar2(30 char) := 'orac_nav_stack'", package_body)
+        self.assertIn("regexp_like(l_source", package_body)
+        self.assertIn("[0-9]{1,10}\\.[0-9]{1,10}", package_body)
+        self.assertIn("is_valid_frame", package_body)
+        self.assertIn("p_app_id = c_admin_app_id", package_body)
+        self.assertIn("p_app_id = c_plugin_app_id and p_page_id in (1, 2)", package_body)
+        self.assertIn("from orac_code.plugin_apex_app_menu_v", package_body)
+        self.assertIn("apex_util.prepare_url", package_body)
+        self.assertIn("p_checksum_type => 'session'", package_body)
+        self.assertIn("return 'orac admin'", package_body)
+        self.assertIn("return 'plugin operations'", package_body)
+        self.assertIn("return 'plugin navigation'", package_body)
+        self.assertIn("coalesce(menu.card_title, menu.label, menu.app_alias)", package_body)
+        self.assertIn("p_count > c_max_depth", package_body)
+        self.assertNotIn("http://", package_body)
+        self.assertNotIn("https://", package_body)
 
     def test_visible_menu_view_fails_closed_for_required_roles(self) -> None:
         view_sql = (
@@ -338,6 +386,8 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             "p_list_item_link_target=>'f?p=&app_id.:2:&app_session.::&debug.:::'",
             export_sql,
         )
+        self.assertIn("plugin navigation", export_sql)
+        self.assertIn("plugin operations", export_sql)
         self.assertIn("from orac_code.plugin_apex_app_menu_visible_v", export_sql)
         self.assertIn("p_icon_class_column_name=>'icon'", page_2)
         self.assertNotIn("metric_icon", page_2)
@@ -449,7 +499,9 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("p_name=>'plugins cards'", export_sql)
         self.assertIn("p_plug_name=>'plugins'", export_sql)
         self.assertIn("p_plug_source_type=>'native_list'", export_sql)
+        self.assertNotIn("p_plug_source_type=>'native_cards'", export_sql)
         self.assertIn("p_list_template_id=>2886769488667748277", export_sql)
+        self.assertIn("p_list_id=>wwv_flow_imp.id(14600100000000001)", export_sql)
         self.assertIn("p_plug_template=>4501440665235496320", export_sql)
         self.assertIn("t-cards--featured t-cards--block", export_sql)
         self.assertIn("force-fa-lg:t-cards--displayicons:t-cards--3cols", export_sql)
@@ -464,14 +516,139 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
         self.assertIn("p_list_item_link_text=>'plugin apps'", export_sql)
         self.assertIn(
-            "p_list_item_link_target=>'f?p=1043:2:&app_session.:orac_theme_sync:&debug.:rp::'",
+            "p_list_item_link_target=>'f?p=&app_id.:34:&app_session.:launch_plugin_navigation:&debug.:rp::'",
             export_sql,
         )
+        self.assertNotIn("p_list_item_link_target=>'&orac_launch_plugin_navigation_url", export_sql)
+        self.assertIn("p_process_name=>'launch plugin navigation'", export_sql)
+        self.assertIn("p_process_point=>'before_header'", export_sql)
+        self.assertIn("p_process_when=>'launch_plugin_navigation'", export_sql)
+        self.assertIn("p_process_when_type=>'request_in_condition'", export_sql)
+        self.assertIn(
+            "l_url := orac_code.apex_return_nav_api.launch_url(1043, 2, ''orac_theme_sync'', ''rp'')",
+            export_sql,
+        )
+        self.assertIn("apex_util.redirect_url(p_url => l_url)", export_sql)
+        self.assertIn("apex_application.stop_apex_engine", export_sql)
         self.assertIn("p_list_item_icon=>'fa-plug'", export_sql)
         self.assertIn(
             "p_list_text_01=>'launch installed plugin applications and administration surfaces.'",
             export_sql,
         )
+
+    def test_managed_apex_apps_define_cross_app_return_navigation(self) -> None:
+        managed_exports = (
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql",
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql",
+            PROJECT_ROOT / "plugins/home_assistant/apex/f10010.sql",
+            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql",
+        )
+        required_items = (
+            "orac_nav_stack",
+            "orac_return_depth",
+            "orac_return_label_1",
+            "orac_return_label_2",
+            "orac_return_label_3",
+            "orac_return_label_4",
+            "orac_return_label_5",
+            "orac_return_url_1",
+            "orac_return_url_2",
+            "orac_return_url_3",
+            "orac_return_url_4",
+            "orac_return_url_5",
+        )
+
+        for export_path in managed_exports:
+            export_sql = export_path.read_text(encoding="utf-8").lower()
+            with self.subTest(export=export_path.name):
+                nav_bar = _apex_prompt_block(
+                    export_sql,
+                    "prompt --application/shared_components/navigation/lists/navigation_bar",
+                )
+                return_list = _apex_prompt_block(
+                    export_sql,
+                    "prompt --application/shared_components/navigation/lists/cross_app_return_navigation",
+                )
+                application_processes = _apex_prompt_block(
+                    export_sql,
+                    "prompt --application/shared_components/logic/application_processes",
+                )
+                page_0 = _apex_page_sections(export_sql)[0]
+                list_items = [
+                    block_match.group(1)
+                    for block_match in LIST_ITEM_BLOCK_RE.finditer(return_list)
+                ]
+                more_items = [
+                    item
+                    for item in list_items
+                    if "p_list_item_link_text=>'more'" in item
+                ]
+
+                for item_name in required_items:
+                    self.assertIn(f"p_name=>'{item_name.upper()}'".lower(), export_sql)
+
+                self.assertIn("prepare cross-app return navigation", application_processes)
+                self.assertIn("wwv_flow_imp_shared.create_flow_process", application_processes)
+                self.assertIn("p_process_point=>'before_header'", application_processes)
+                self.assertIn("p_process_type=>'native_plsql'", application_processes)
+                self.assertIn(
+                    ":orac_nav_stack := orac_code.apex_return_nav_api.normalize_stack(:orac_nav_stack);",
+                    application_processes,
+                )
+                self.assertIn(
+                    ":orac_return_label_1 := orac_code.apex_return_nav_api.return_label(1, :orac_nav_stack);",
+                    application_processes,
+                )
+                self.assertIn(
+                    ":orac_return_url_1 := orac_code.apex_return_nav_api.return_url(1, :orac_nav_stack);",
+                    application_processes,
+                )
+                self.assertNotIn("p_process_name=>'prepare cross-app return navigation'", page_0)
+
+                self.assertNotIn("return to &orac_return_label_", nav_bar)
+                self.assertIn("p_name=>'cross-app return navigation'", return_list)
+                self.assertIn("p_list_item_link_text=>'return to &orac_return_label_1.'", return_list)
+                self.assertIn("p_list_item_link_target=>'&orac_return_url_1!raw.'", return_list)
+                self.assertIn("p_list_item_icon=>'fa-arrow-left'", return_list)
+                self.assertIn(
+                    "p_list_item_disp_condition=>':orac_return_depth > 0 and "
+                    ":orac_return_label_1 is not null and :orac_return_url_1 is not null'",
+                    return_list,
+                )
+                self.assertEqual(1, len(more_items))
+                self.assertIn("p_list_item_link_text=>'more'", more_items[0])
+                self.assertIn("p_list_item_icon=>'fa-chevron-down'", more_items[0])
+                self.assertIn("p_list_item_disp_condition=>':orac_return_depth > 1'", more_items[0])
+                self.assertNotIn("p_list_item_link_target", more_items[0])
+                for position in range(2, 6):
+                    self.assertIn(
+                        f"p_list_item_link_text=>'return to &orac_return_label_{position}.'",
+                        return_list,
+                    )
+                    self.assertIn(
+                        f"p_list_item_link_target=>'&orac_return_url_{position}!raw.'",
+                        return_list,
+                    )
+                    self.assertIn(
+                        f":orac_return_label_{position} is not null and "
+                        f":orac_return_url_{position} is not null",
+                        return_list,
+                    )
+                self.assertNotIn("orac_return_label_1!raw", return_list)
+                self.assertNotIn("orac_return_label_2!raw", return_list)
+                self.assertNotIn("orac_return_label_3!raw", return_list)
+                self.assertNotIn("orac_return_label_4!raw", return_list)
+                self.assertNotIn("orac_return_label_5!raw", return_list)
+                self.assertEqual(1, page_0.count("p_plug_name=>'cross-app return navigation'"))
+                self.assertIn("p_plug_display_point=>'before_navigation_bar'", page_0)
+                self.assertIn("p_plug_source_type=>'native_list'", page_0)
+                self.assertIn("p_list_template_id=>wwv_flow_imp.id(2847543055748234966)", page_0)
+                self.assertNotIn("p_plug_display_point=>'region_position_01'", page_0)
+                self.assertNotIn("p_plug_source_type=>'native_breadcrumb'", page_0)
+                self.assertNotIn("regexp_substr(:orac_nav_stack", export_sql)
+                self.assertNotIn("split(:orac_nav_stack", export_sql)
+                self.assertNotIn("f?p=' ||", export_sql)
+                self.assertNotIn("launched_from_1042", export_sql)
 
     def test_f1042_plugins_page_links_to_plugin_app_maintenance(self) -> None:
         export_sql = (
@@ -1440,6 +1617,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         )
         self.assertIn(
             "grant execute on orac_code.plugin_service_admin_api to orac_apx_pub;",
+            package_grants,
+        )
+        self.assertIn(
+            "grant execute on orac_code.apex_return_nav_api to orac_apx_pub;",
             package_grants,
         )
         self.assertNotIn(
