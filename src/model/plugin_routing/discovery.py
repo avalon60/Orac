@@ -41,6 +41,8 @@ PLUGIN_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 DATABASE_SCHEMA_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$", re.IGNORECASE)
 SECRET_KEY_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 APEX_ALIAS_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+ICON_TOKEN_PATTERN = re.compile(r"^fa-[a-z0-9][a-z0-9-]*$")
+ICON_CLASS_PATTERN = re.compile(r"^fa fa-[a-z0-9][a-z0-9-]*$")
 MANIFEST_SCHEMA_VERSION = 2
 RUNTIME_MODES = {"on_demand", "service", "hybrid"}
 CONFIG_VALUE_TYPES = {"string", "bool", "int", "float", "path", "list"}
@@ -55,6 +57,23 @@ PLUGIN_UI_SURFACE_TARGETS = {"apex", "react"}
 PLUGIN_UI_SURFACE_TYPES = {"admin_status", "diagnostic_panel"}
 PLUGIN_UI_AUDIENCES = {"admin", "user", "system"}
 SUPPORTED_APEX_WORKSPACES = {"ORAC"}
+PLUGIN_UI_ACCENT_CLASSES = {
+    "u-color-1",
+    "u-color-2",
+    "u-color-3",
+    "u-color-4",
+    "u-color-5",
+    "u-color-6",
+    "u-color-7",
+    "u-color-8",
+    "u-color-9",
+    "u-color-10",
+    "u-color-11",
+    "u-color-12",
+    "u-color-13",
+    "u-color-14",
+    "u-color-15",
+}
 PLUGIN_ACTION_TYPES = {
     "informational_read_only",
     "external_read",
@@ -957,7 +976,11 @@ class PluginDiscovery:
             return None
         if not isinstance(value, dict):
             raise PluginManifestError("ui must be an object")
-        self._reject_unknown_fields(value, {"status_provider", "surfaces"}, "ui")
+        self._reject_unknown_fields(
+            value,
+            {"status_provider", "surfaces", "icon_class", "accent_class"},
+            "ui",
+        )
         status_provider = self._load_ui_status_provider(value.get("status_provider"))
         surfaces_value = value.get("surfaces", [])
         if not isinstance(surfaces_value, list):
@@ -966,7 +989,18 @@ class PluginDiscovery:
             self._load_ui_surface(surface_value, index)
             for index, surface_value in enumerate(surfaces_value)
         )
-        return PluginUi(status_provider=status_provider, surfaces=surfaces)
+        return PluginUi(
+            status_provider=status_provider,
+            surfaces=surfaces,
+            icon_class=self._require_optional_icon_class(
+                value.get("icon_class"),
+                "ui.icon_class",
+            ),
+            accent_class=self._require_optional_accent_class(
+                value.get("accent_class"),
+                "ui.accent_class",
+            ),
+        )
 
     def _load_ui_status_provider(self, value: Any) -> PluginUiStatusProvider | None:
         """Load one status provider declaration."""
@@ -1150,6 +1184,7 @@ class PluginDiscovery:
             "replace_existing",
             "required_roles",
             "icon",
+            "icon_class",
             "card_title",
             "card_subtitle",
             "enabled",
@@ -1210,7 +1245,14 @@ class PluginDiscovery:
                     f"{field_name}.required_roles",
                 )
             ),
-            icon=self._require_optional_string(value.get("icon"), f"{field_name}.icon"),
+            icon=self._require_optional_icon_class(
+                value.get("icon"),
+                f"{field_name}.icon",
+            ),
+            icon_class=self._require_optional_icon_class(
+                value.get("icon_class"),
+                f"{field_name}.icon_class",
+            ),
             card_title=self._require_optional_string(
                 value.get("card_title"),
                 f"{field_name}.card_title",
@@ -1236,6 +1278,38 @@ class PluginDiscovery:
         if value is None:
             return None
         return PluginDiscovery._require_non_empty_string(value, field_name)
+
+    @staticmethod
+    def _require_optional_icon_class(value: Any, field_name: str) -> str | None:
+        """Return a normalized safe Font APEX icon class string."""
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise PluginManifestError(f"{field_name} must be a string")
+        if value != value.strip():
+            raise PluginManifestError(
+                f"{field_name} must be a safe Font APEX icon class"
+            )
+        if ICON_TOKEN_PATTERN.fullmatch(value):
+            return f"fa {value}"
+        if ICON_CLASS_PATTERN.fullmatch(value):
+            return value
+        raise PluginManifestError(
+            f"{field_name} must match fa fa-[a-z0-9-]+ or fa-[a-z0-9-]+"
+        )
+
+    @staticmethod
+    def _require_optional_accent_class(value: Any, field_name: str) -> str | None:
+        """Return a fixed-allowlist Universal Theme accent class."""
+        if value is None:
+            return None
+        cleaned = PluginDiscovery._require_non_empty_string(value, field_name)
+        if cleaned not in PLUGIN_UI_ACCENT_CLASSES:
+            raise PluginManifestError(
+                f"{field_name} must be one of: "
+                f"{', '.join(sorted(PLUGIN_UI_ACCENT_CLASSES))}"
+            )
+        return cleaned
 
     @staticmethod
     def _require_apex_alias(value: Any, field_name: str) -> str:

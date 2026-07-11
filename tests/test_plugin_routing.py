@@ -202,6 +202,7 @@ class PluginRoutingTests(unittest.TestCase):
             manifest.ui.status_provider.provider_id,
             "home_assistant.status_summary",
         )
+        self.assertEqual(manifest.ui.icon_class, "fa fa-home")
         self.assertTrue(manifest.ui.status_provider.redaction_required)
         self.assertEqual(
             [surface.surface_id for surface in manifest.ui.surfaces],
@@ -239,6 +240,86 @@ class PluginRoutingTests(unittest.TestCase):
         self.assertFalse(app.replace_existing)
         self.assertEqual(app.required_roles, ("ORAC_ADMIN",))
         self.assertTrue(app.enabled)
+
+    def test_discovery_normalises_plugin_ui_icon_class(self) -> None:
+        manifest = self._load_temp_manifest({"ui": {"icon_class": "fa-folder-open"}})
+
+        self.assertIsNotNone(manifest.ui)
+        assert manifest.ui is not None
+        self.assertEqual(manifest.ui.icon_class, "fa fa-folder-open")
+
+    def test_discovery_keeps_normalised_plugin_ui_icon_class(self) -> None:
+        manifest = self._load_temp_manifest(
+            {"ui": {"icon_class": "fa fa-folder-open"}}
+        )
+
+        self.assertIsNotNone(manifest.ui)
+        assert manifest.ui is not None
+        self.assertEqual(manifest.ui.icon_class, "fa fa-folder-open")
+
+    def test_discovery_accepts_app_icon_class_and_legacy_icon(self) -> None:
+        manifest = self._load_temp_manifest(
+            {
+                "ui": {"icon_class": "fa-cogs"},
+                "apex_apps": [
+                    {
+                        "app_alias": "ALPHA_STATUS",
+                        "label": "Alpha Status",
+                        "app_export": "apex/alpha_status.sql",
+                        "install_required": True,
+                        "icon": "fa-home",
+                        "icon_class": "fa-folder-open",
+                    }
+                ],
+            }
+        )
+
+        app = manifest.apex_apps[0]
+        self.assertEqual(manifest.ui.icon_class, "fa fa-cogs")
+        self.assertEqual(app.icon, "fa fa-home")
+        self.assertEqual(app.icon_class, "fa fa-folder-open")
+
+    def test_discovery_accepts_legacy_app_icon_without_icon_class(self) -> None:
+        manifest = self._load_temp_manifest(
+            {
+                "apex_apps": [
+                    {
+                        "app_alias": "ALPHA_STATUS",
+                        "label": "Alpha Status",
+                        "app_export": "apex/alpha_status.sql",
+                        "install_required": True,
+                        "icon": "fa-home",
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(manifest.apex_apps[0].icon, "fa fa-home")
+        self.assertIsNone(manifest.apex_apps[0].icon_class)
+
+    def test_discovery_rejects_unsafe_icon_classes(self) -> None:
+        unsafe_values = (
+            "<span class='fa fa-plug'>",
+            "javascript:alert(1)",
+            "url(foo)",
+            "fa fa-plug extra-class",
+            "fa fa-plug; color:red",
+            "fa / fa-plug",
+            " fa-folder-open",
+            "fa  fa-folder-open",
+            "fa fa-Folder",
+        )
+        for unsafe_value in unsafe_values:
+            with self.subTest(unsafe_value=unsafe_value):
+                with self.assertRaisesRegex(ValueError, "ui.icon_class"):
+                    self._load_temp_manifest({"ui": {"icon_class": unsafe_value}})
+
+    def test_discovery_validates_accent_class_against_fixed_allowlist(self) -> None:
+        manifest = self._load_temp_manifest({"ui": {"accent_class": "u-color-1"}})
+
+        self.assertEqual(manifest.ui.accent_class, "u-color-1")
+        with self.assertRaisesRegex(ValueError, "ui.accent_class"):
+            self._load_temp_manifest({"ui": {"accent_class": "u-anything"}})
 
     def test_ui_surface_metadata_is_not_routing_metadata(self) -> None:
         manifest = PluginDiscovery(PROJECT_ROOT / "plugins").load_manifest(

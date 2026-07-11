@@ -28,6 +28,8 @@ create or replace package body orac_code.plugin_registry_api as
     p_database_status          in orac_api.plugin_registry_v.database_status%type,
     p_readiness_status         in orac_api.plugin_registry_v.readiness_status%type,
     p_enabled                  in orac_api.plugin_registry_v.enabled%type,
+    p_ui_icon_class            in orac_api.plugin_registry_v.ui_icon_class%type default null,
+    p_ui_accent_class          in orac_api.plugin_registry_v.ui_accent_class%type default null,
     p_last_error_code          in orac_api.plugin_registry_v.last_error_code%type default null,
     p_last_error_message       in orac_api.plugin_registry_v.last_error_message%type default null
   )
@@ -57,6 +59,8 @@ create or replace package body orac_code.plugin_registry_api as
     l_row.capabilities_summary := p_capabilities_summary;
     l_row.entitlements_summary := p_entitlements_summary;
     l_row.database_schemas_summary := p_database_schemas_summary;
+    l_row.ui_icon_class := p_ui_icon_class;
+    l_row.ui_accent_class := p_ui_accent_class;
     l_row.dependency_declarations := p_dependency_declarations;
     l_row.dependency_fingerprint := p_dependency_fingerprint;
     l_row.install_status := p_install_status;

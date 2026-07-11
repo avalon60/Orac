@@ -79,3 +79,7 @@ grant select, insert, update, delete on orac_core.plugin_apex_apps to orac_api w
 --changeset clive:grant_orac_core_plugin_registry_to_orac_api_19 context:core labels:core stripComments:false runOnChange:true
 grant select, insert, update, delete on orac_core.plugin_registry to orac_api with grant option;
 --rollback revoke select, insert, update, delete on orac_core.plugin_registry from orac_api;
+
+--changeset clive:grant_orac_core_project_registry_to_orac_api_20 context:core labels:core stripComments:false runOnChange:true
+grant select, insert, update, delete on orac_core.project_registry to orac_api with grant option;
+--rollback revoke select, insert, update, delete on orac_core.project_registry from orac_api;

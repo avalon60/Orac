@@ -1,4 +1,5 @@
 """Database-backed lifecycle access for Orac-managed plugin services."""
+
 # Author: Clive Bostock
 # Date: 02-Jul-2026
 # Description: Calls ORAC_CODE service lifecycle APIs for plugin service managers.
@@ -109,6 +110,42 @@ class PluginServiceLifecycleStore:
         finally:
             _close_quietly(session)
 
+    def set_service_policy(
+        self,
+        *,
+        plugin_id: str,
+        service_code: str,
+        policy: str,
+        row_version: int | None = None,
+    ) -> PluginServiceStatus:
+        """Set service startup policy through the approved ORAC_CODE API."""
+        current = (
+            self.get_service(plugin_id, service_code) if row_version is None else None
+        )
+        effective_row_version = (
+            current.row_version if current is not None else row_version
+        )
+        if effective_row_version is None:
+            raise PluginServiceLifecycleError(
+                f"Plugin service has no row version: {plugin_id}:{service_code}"
+            )
+
+        session = self._connect()
+        try:
+            with session.cursor() as cursor:
+                cursor.callproc(
+                    f"{self._PACKAGE}.set_service_policy",
+                    [plugin_id, service_code, policy, effective_row_version],
+                )
+            session.commit()
+            return self.get_service(plugin_id, service_code)
+        except Exception as exc:
+            raise PluginServiceLifecycleError(
+                f"Unable to set plugin service policy {plugin_id}:{service_code}: {exc}"
+            ) from exc
+        finally:
+            _close_quietly(session)
+
     def try_acquire_lease(
         self,
         *,
@@ -145,10 +182,13 @@ class PluginServiceLifecycleStore:
         lease_seconds: int,
     ) -> bool:
         """Refresh an active lease using database time."""
-        return self._call_number_function(
-            "heartbeat_service_lease",
-            [plugin_id, service_code, owner_id, lease_token, lease_seconds],
-        ) == 1
+        return (
+            self._call_number_function(
+                "heartbeat_service_lease",
+                [plugin_id, service_code, owner_id, lease_token, lease_seconds],
+            )
+            == 1
+        )
 
     def release_lease(
         self,
@@ -159,10 +199,13 @@ class PluginServiceLifecycleStore:
         lease_token: str,
     ) -> bool:
         """Release an active lease."""
-        return self._call_number_function(
-            "release_service_lease",
-            [plugin_id, service_code, owner_id, lease_token],
-        ) == 1
+        return (
+            self._call_number_function(
+                "release_service_lease",
+                [plugin_id, service_code, owner_id, lease_token],
+            )
+            == 1
+        )
 
     def mark_state(
         self,
@@ -176,18 +219,21 @@ class PluginServiceLifecycleStore:
         touch_tick: bool = False,
     ) -> bool:
         """Persist a lifecycle state for the current lease owner."""
-        return self._call_number_function(
-            "mark_service_state",
-            [
-                plugin_id,
-                service_code,
-                owner_id,
-                lease_token,
-                state,
-                last_error_message,
-                "Y" if touch_tick else "N",
-            ],
-        ) == 1
+        return (
+            self._call_number_function(
+                "mark_service_state",
+                [
+                    plugin_id,
+                    service_code,
+                    owner_id,
+                    lease_token,
+                    state,
+                    last_error_message,
+                    "Y" if touch_tick else "N",
+                ],
+            )
+            == 1
+        )
 
     def get_service(self, plugin_id: str, service_code: str) -> PluginServiceStatus:
         """Return current lifecycle status for one service."""
@@ -250,7 +296,9 @@ class PluginServiceLifecycleStore:
         session = self._connect()
         try:
             with session.cursor() as cursor:
-                result = cursor.callfunc(f"{self._PACKAGE}.{function_name}", int, parameters)
+                result = cursor.callfunc(
+                    f"{self._PACKAGE}.{function_name}", int, parameters
+                )
             session.commit()
             return int(result or 0)
         except Exception as exc:

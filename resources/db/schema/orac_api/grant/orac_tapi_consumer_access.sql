@@ -332,6 +332,14 @@ grant read on orac_api.plugin_apex_apps_v to orac_code with grant option;
 grant read on orac_api.plugin_registry_v to orac_code with grant option;
 --rollback revoke read on orac_api.plugin_registry_v from orac_code;
 
+--changeset clive:grant_orac_api_project_registry_v_to_orac_code_dml context:core labels:core stripComments:false runOnChange:true
+grant select, insert, update, delete on orac_api.project_registry_v to orac_code with grant option;
+--rollback revoke select, insert, update, delete on orac_api.project_registry_v from orac_code;
+
+--changeset clive:grant_orac_api_project_registry_v_to_orac_code_read context:core labels:core stripComments:false runOnChange:true
+grant read on orac_api.project_registry_v to orac_code with grant option;
+--rollback revoke read on orac_api.project_registry_v from orac_code;
+
 --changeset clive:grant_orac_api_preference_definitions_tapi_to_orac_code_83 context:core labels:core stripComments:false runOnChange:true
 grant execute on orac_api.preference_definitions_tapi to orac_code;
 --rollback revoke execute on orac_api.preference_definitions_tapi from orac_code;
@@ -395,3 +403,7 @@ grant execute on orac_api.plugin_apex_apps_tapi to orac_code;
 --changeset clive:grant_orac_api_plugin_registry_tapi_to_orac_code_98 context:core labels:core stripComments:false runOnChange:true
 grant execute on orac_api.plugin_registry_tapi to orac_code;
 --rollback revoke execute on orac_api.plugin_registry_tapi from orac_code;
+
+--changeset clive:grant_orac_api_project_registry_tapi_to_orac_code_99 context:core labels:core stripComments:false runOnChange:true
+grant execute on orac_api.project_registry_tapi to orac_code;
+--rollback revoke execute on orac_api.project_registry_tapi from orac_code;

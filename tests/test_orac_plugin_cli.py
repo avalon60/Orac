@@ -1,4 +1,5 @@
 """Tests for the Orac plugin command-line interface."""
+
 # Author: Clive Bostock
 # Date: 28-Jun-2026
 # Description: Verifies narrow foreground service-runner command behaviour.
@@ -39,6 +40,9 @@ class _Registry:
 
 
 class _LifecycleStore:
+    def __init__(self) -> None:
+        self.policy_updates: list[tuple[str, str, str]] = []
+
     def list_services(self):
         return [
             SimpleNamespace(
@@ -60,6 +64,13 @@ class _LifecycleStore:
 
     def get_service(self, plugin_id, service_code):
         return self.list_services()[0]
+
+    def set_service_policy(self, *, plugin_id, service_code, policy):
+        self.policy_updates.append((plugin_id, service_code, policy))
+        row = self.get_service(plugin_id, service_code)
+        row.effective_policy = policy
+        row.row_version = 2
+        return row
 
 
 class _ServiceManager:
@@ -145,6 +156,23 @@ class OracPluginCliTests(unittest.TestCase):
         self.assertEqual(args.plugin_id, "drop_box")
         self.assertEqual(args.service_code, "scanner")
 
+    def test_parser_supports_service_policy_surface(self) -> None:
+        parser = self.cli.build_parser()
+
+        args = parser.parse_args(["service", "policy", "drop_box", "scanner", "auto"])
+
+        self.assertEqual(args.command, "service")
+        self.assertEqual(args.service_command, "policy")
+        self.assertEqual(args.plugin_id, "drop_box")
+        self.assertEqual(args.service_code, "scanner")
+        self.assertEqual(args.policy, "auto")
+
+    def test_parser_rejects_invalid_service_policy(self) -> None:
+        parser = self.cli.build_parser()
+
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["service", "policy", "drop_box", "scanner", "always"])
+
     def test_parser_supports_plugin_inventory_list_json(self) -> None:
         parser = self.cli.build_parser()
 
@@ -211,6 +239,33 @@ class OracPluginCliTests(unittest.TestCase):
             "last_error_message",
         ):
             self.assertIn(token, payload)
+
+    def test_service_policy_updates_hide_row_version_input(self) -> None:
+        output = io.StringIO()
+        store = _LifecycleStore()
+
+        with contextlib.redirect_stdout(output):
+            status = self.cli.set_plugin_service_policy(
+                plugin_id="drop_box",
+                service_code="scanner",
+                policy="auto",
+                lifecycle_store=store,
+            )
+
+        self.assertEqual(status, 0)
+        self.assertEqual(store.policy_updates, [("drop_box", "scanner", "auto")])
+        payload = output.getvalue()
+        self.assertIn('"effective_policy": "auto"', payload)
+        self.assertIn('"row_version": 2', payload)
+
+    def test_service_policy_function_rejects_invalid_policy(self) -> None:
+        with self.assertRaisesRegex(ValueError, "policy must be one of"):
+            self.cli.set_plugin_service_policy(
+                plugin_id="drop_box",
+                service_code="scanner",
+                policy="always",
+                lifecycle_store=_LifecycleStore(),
+            )
 
     def test_service_run_starts_only_named_foreground_service(self) -> None:
         manifest = SimpleNamespace(plugin_id="drop_box", runtime_mode="service")

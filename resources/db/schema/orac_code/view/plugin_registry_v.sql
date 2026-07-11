@@ -17,6 +17,8 @@ select plugin_id
      , installed_path
      , config_path
      , dependency_fingerprint
+     , ui_icon_class
+     , ui_accent_class
      , install_status
      , configuration_status
      , dependency_status

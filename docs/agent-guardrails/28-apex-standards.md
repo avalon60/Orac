@@ -152,6 +152,24 @@ display.
 Plugin-supplied APEX applications must be installed into the shared Orac
 workspace and listed through the approved plugin APEX app registry path.
 
+New plugin APEX applications should be derived from the maintained scaffold:
+
+```text
+resources/db/apex/orac_apps/f10042.sql
+```
+
+Scaffold-derived apps must preserve the cross-app return navigation application
+items, application-level `BEFORE_HEADER` preparation process, Page 0 return
+region, and `ORAC_THEME_SYNC` behaviour unless a reviewed change explicitly
+replaces them. Do not recreate return navigation with browser-side stack
+parsing, raw return URLs, or plugin-owned navigation logic.
+
+Scaffold-derived apps should preserve the approved plugin card styling pattern
+for launcher or entry cards. If a plugin app needs a different page pattern,
+document why the standard scaffold cards are not suitable and keep full-card
+navigation, Font APEX icons, and responsive Universal Theme layout conventions
+where applicable.
+
 Listing pages must hide disabled, failed, and metadata-only plugin app rows.
 Dynamic plugin app card links must be prepared by the approved view or package
 path and must not be assembled from raw user input in the APEX export.
@@ -162,10 +180,22 @@ match the current `1042` Universal Theme style by style name, and must fail
 closed without changing behaviour if the matching style is unavailable.
 
 ## Auto-maintained columns
-Typically Orac tables include the following columns:
-These are the Orac standard, trigger maintained columns.
+
+Orac tables typically include standard trigger-maintained audit and concurrency
+columns:
+
+```text
 created_on      -- Orac local row-created timestamp
 updated_on      -- Orac local row-updated timestamp
 row_version     -- Orac local optimistic-lock/audit helper
+```
 
-These are trigger maintainded, and must not be updated by APEX apps. Unless explicitly requested, they are not included in APEX applications.
+These columns must remain in the database when present. Do not remove, rename,
+or alter the underlying columns, triggers, optimistic-lock checks, or
+concurrency behaviour to simplify an APEX page.
+
+APEX applications must not update these columns directly. Standard APEX
+maintenance forms also must not display these columns unless the change request
+explicitly asks for a reviewed audit display. This means they should not be
+added as page items, display-only items, hidden display helpers, or through a
+dynamic-content `Audit / Metadata` region on the form.

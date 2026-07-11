@@ -28,6 +28,8 @@ create or replace package orac_code.plugin_registry_api as
     p_database_status          in orac_api.plugin_registry_v.database_status%type,
     p_readiness_status         in orac_api.plugin_registry_v.readiness_status%type,
     p_enabled                  in orac_api.plugin_registry_v.enabled%type,
+    p_ui_icon_class            in orac_api.plugin_registry_v.ui_icon_class%type default null,
+    p_ui_accent_class          in orac_api.plugin_registry_v.ui_accent_class%type default null,
     p_last_error_code          in orac_api.plugin_registry_v.last_error_code%type default null,
     p_last_error_message       in orac_api.plugin_registry_v.last_error_message%type default null
   );

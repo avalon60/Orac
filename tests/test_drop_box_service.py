@@ -1,4 +1,5 @@
 """Tests for the drop-box scheduled service."""
+
 # Author: Clive Bostock
 # Date: 27-Jun-2026
 # Description: Verifies service orchestration, duplicate skips, and tick locking.
@@ -17,7 +18,12 @@ for path in (SRC_ROOT, PLUGINS_ROOT):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from drop_box.models import CandidateFile, DropLocation, FileObservation, HashedCandidate
+from drop_box.models import (
+    CandidateFile,
+    DropLocation,
+    FileObservation,
+    HashedCandidate,
+)
 from drop_box.models import ScanResult
 from drop_box.service import DropBoxService
 
@@ -160,12 +166,12 @@ class DropBoxServiceTests(unittest.TestCase):
 
         self.assertTrue(service.last_stats.overlapping_tick_skipped)
 
-    def test_manifest_declares_manual_start_and_run_on_start(self) -> None:
+    def test_manifest_declares_auto_start_and_run_on_start(self) -> None:
         manifest = (PROJECT_ROOT / "plugins" / "drop_box.json").read_text(
             encoding="utf-8"
         )
 
-        self.assertIn('"start_policy": "manual"', manifest)
+        self.assertIn('"start_policy": "auto"', manifest)
         self.assertIn('"run_on_start": true', manifest)
 
 

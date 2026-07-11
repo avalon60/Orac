@@ -85,6 +85,8 @@ class PluginRegistryTests(unittest.TestCase):
                 "capabilities_summary": '["home_assistant.device_control"]',
                 "entitlements_summary": '["network.local_http"]',
                 "database_schemas_summary": '["orac_ha"]',
+                "ui_icon_class": None,
+                "ui_accent_class": None,
                 "dependency_declarations": '["requests<3,>=2.32"]',
                 "dependency_fingerprint": "c" * 64,
                 "install_status": "success",
@@ -108,6 +110,10 @@ class PluginRegistryTests(unittest.TestCase):
             cursor.binds["dependency_declarations"],
             ["requests<3,>=2.32"],
         )
+        self.assertIsNone(cursor.binds["ui_icon_class"])
+        self.assertIsNone(cursor.binds["ui_accent_class"])
+        self.assertIn("p_ui_icon_class", cursor.sql)
+        self.assertIn("p_ui_accent_class", cursor.sql)
         self.assertNotIn("json(:capabilities_summary)", cursor.sql)
         self.assertTrue(session.committed)
         self.assertTrue(session.closed)

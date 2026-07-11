@@ -14,7 +14,8 @@ as
         plugin_id, plugin_name, plugin_version, runtime_mode, manifest_hash,
         package_hash, install_source_type, install_source_ref, installed_path,
         config_path, capabilities_summary, entitlements_summary,
-        database_schemas_summary, dependency_declarations,
+        database_schemas_summary, ui_icon_class, ui_accent_class,
+        dependency_declarations,
         dependency_fingerprint, install_status, configuration_status,
         dependency_status, database_status, readiness_status, enabled,
         last_error_code, last_error_message
@@ -26,6 +27,7 @@ as
         p_row.install_source_type, p_row.install_source_ref,
         p_row.installed_path, p_row.config_path, p_row.capabilities_summary,
         p_row.entitlements_summary, p_row.database_schemas_summary,
+        p_row.ui_icon_class, p_row.ui_accent_class,
         p_row.dependency_declarations, p_row.dependency_fingerprint,
         p_row.install_status, p_row.configuration_status,
         p_row.dependency_status, p_row.database_status,
@@ -55,6 +57,8 @@ as
          , capabilities_summary     = p_row.capabilities_summary
          , entitlements_summary     = p_row.entitlements_summary
          , database_schemas_summary = p_row.database_schemas_summary
+         , ui_icon_class            = p_row.ui_icon_class
+         , ui_accent_class          = p_row.ui_accent_class
          , dependency_declarations  = p_row.dependency_declarations
          , dependency_fingerprint   = p_row.dependency_fingerprint
          , install_status           = p_row.install_status

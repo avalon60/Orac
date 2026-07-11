@@ -1,4 +1,5 @@
 """Static tests for the drop-box plugin database and runtime boundary."""
+
 # Author: Clive Bostock
 # Date: 27-Jun-2026
 # Description: Verifies DDL constraints, grants, varchar2 semantics, and DML boundaries.
@@ -8,7 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 import re
 import unittest
-
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PLUGIN_ROOT = PROJECT_ROOT / "plugins" / "drop_box"
@@ -48,13 +48,32 @@ class DropBoxSchemaTests(unittest.TestCase):
             for path in (SCHEMA_ROOT / "grant").glob("*.sql")
         )
 
-        self.assertIn("grant execute on orac_dropbox.drop_box_api to orac_plugin", grant_text)
-        self.assertIn("grant select on orac_dropbox.drop_location_runtime_v to orac_plugin", grant_text)
-        self.assertIn("grant execute on orac_dropbox.drop_box_admin_api to orac_apx_pub", grant_text)
-        self.assertIn("grant read on orac_dropbox.drop_location_admin_v to orac_apx_pub", grant_text)
-        self.assertIn("grant read on orac_dropbox.drop_location_summary_admin_v to orac_apx_pub", grant_text)
-        self.assertIn("grant read on orac_dropbox.drop_job_admin_v to orac_apx_pub", grant_text)
-        self.assertIn("grant read on orac_dropbox.drop_job_event_admin_v to orac_apx_pub", grant_text)
+        self.assertIn(
+            "grant execute on orac_dropbox.drop_box_api to orac_plugin", grant_text
+        )
+        self.assertIn(
+            "grant select on orac_dropbox.drop_location_runtime_v to orac_plugin",
+            grant_text,
+        )
+        self.assertIn(
+            "grant execute on orac_dropbox.drop_box_admin_api to orac_apx_pub",
+            grant_text,
+        )
+        self.assertIn(
+            "grant read on orac_dropbox.drop_location_admin_v to orac_apx_pub",
+            grant_text,
+        )
+        self.assertIn(
+            "grant read on orac_dropbox.drop_location_summary_admin_v to orac_apx_pub",
+            grant_text,
+        )
+        self.assertIn(
+            "grant read on orac_dropbox.drop_job_admin_v to orac_apx_pub", grant_text
+        )
+        self.assertIn(
+            "grant read on orac_dropbox.drop_job_event_admin_v to orac_apx_pub",
+            grant_text,
+        )
         self.assertNotIn("grant all", grant_text)
         self.assertNotIn(" to orac_core", grant_text)
         self.assertNotIn(" to orac_api", grant_text)
@@ -75,9 +94,11 @@ class DropBoxSchemaTests(unittest.TestCase):
                     self.assertNotIn(token, text)
 
     def test_package_copies_effective_instruction_from_drop_location(self) -> None:
-        package_text = (SCHEMA_ROOT / "package_body" / "drop_box_api.sql").read_text(
-            encoding="utf-8"
-        ).lower()
+        package_text = (
+            (SCHEMA_ROOT / "package_body" / "drop_box_api.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("loc.processing_instruction", package_text)
         self.assertIn("loc.target_scope_type", package_text)
@@ -88,7 +109,9 @@ class DropBoxSchemaTests(unittest.TestCase):
         self.assertIn("prf.default_instruction", package_text)
         self.assertIn("effective_processing_profile", package_text)
         self.assertIn("effective_profile_instruction", package_text)
-        self.assertIn("drop location is missing an active processing profile", package_text)
+        self.assertIn(
+            "drop location is missing an active processing profile", package_text
+        )
 
     def test_table_abbreviations_are_registered(self) -> None:
         text = (
@@ -102,11 +125,15 @@ class DropBoxSchemaTests(unittest.TestCase):
 
     def test_admin_api_validates_drop_location_configuration(self) -> None:
         package_spec = (
-            SCHEMA_ROOT / "package_spec" / "drop_box_admin_api.sql"
-        ).read_text(encoding="utf-8").lower()
+            (SCHEMA_ROOT / "package_spec" / "drop_box_admin_api.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         package_body = (
-            SCHEMA_ROOT / "package_body" / "drop_box_admin_api.sql"
-        ).read_text(encoding="utf-8").lower()
+            (SCHEMA_ROOT / "package_body" / "drop_box_admin_api.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("procedure delete_location", package_spec)
         self.assertIn("p_drop_location_id", package_spec)
@@ -117,7 +144,9 @@ class DropBoxSchemaTests(unittest.TestCase):
         self.assertIn("procedure delete_location", package_body)
         self.assertIn("regexp_like(coalesce(p_location_code", package_body)
         self.assertIn("target scope type must be plugin or project", package_body)
-        self.assertIn("processing profile must be a lowercase profile code", package_body)
+        self.assertIn(
+            "processing profile must be a lowercase profile code", package_body
+        )
         self.assertIn("from orac_dropbox.drop_processing_profile prf", package_body)
         self.assertIn("prf.active_yn = 'y'", package_body)
         self.assertIn("processing profile is unknown or inactive", package_body)
@@ -131,18 +160,26 @@ class DropBoxSchemaTests(unittest.TestCase):
         self.assertIn("delete from orac_dropbox.drop_location", package_body)
 
     def test_admin_views_expose_required_inspection_fields(self) -> None:
-        location_view = (SCHEMA_ROOT / "view" / "drop_location_admin_v.sql").read_text(
-            encoding="utf-8"
-        ).lower()
-        job_view = (SCHEMA_ROOT / "view" / "drop_job_admin_v.sql").read_text(
-            encoding="utf-8"
-        ).lower()
-        event_view = (SCHEMA_ROOT / "view" / "drop_job_event_admin_v.sql").read_text(
-            encoding="utf-8"
-        ).lower()
+        location_view = (
+            (SCHEMA_ROOT / "view" / "drop_location_admin_v.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        job_view = (
+            (SCHEMA_ROOT / "view" / "drop_job_admin_v.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        event_view = (
+            (SCHEMA_ROOT / "view" / "drop_job_event_admin_v.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         summary_view = (
-            SCHEMA_ROOT / "view" / "drop_location_summary_admin_v.sql"
-        ).read_text(encoding="utf-8").lower()
+            (SCHEMA_ROOT / "view" / "drop_location_summary_admin_v.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         for token in (
             "location_code",
@@ -196,33 +233,49 @@ class DropBoxSchemaTests(unittest.TestCase):
             self.assertIn(token, summary_view)
 
     def test_processing_profile_reference_table_constraints_and_views(self) -> None:
-        table_sql = (SCHEMA_ROOT / "table" / "drop_processing_profile.sql").read_text(
-            encoding="utf-8"
-        ).lower()
-        job_table_sql = (SCHEMA_ROOT / "table" / "drop_job.sql").read_text(
-            encoding="utf-8"
-        ).lower()
+        table_sql = (
+            (SCHEMA_ROOT / "table" / "drop_processing_profile.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        job_table_sql = (
+            (SCHEMA_ROOT / "table" / "drop_job.sql").read_text(encoding="utf-8").lower()
+        )
         alter_sql = (
-            SCHEMA_ROOT / "table" / "drop_job_effective_profile_instruction.sql"
-        ).read_text(encoding="utf-8").lower()
-        pk_sql = (SCHEMA_ROOT / "constraint_pk" / "drp_prf_pk.sql").read_text(
-            encoding="utf-8"
-        ).lower()
-        checks_sql = (SCHEMA_ROOT / "constraint_other" / "drp_prf_checks.sql").read_text(
-            encoding="utf-8"
-        ).lower()
-        fk_sql = (SCHEMA_ROOT / "constraint_fk" / "drp_loc_profile_fk.sql").read_text(
-            encoding="utf-8"
-        ).lower()
-        lov_view = (SCHEMA_ROOT / "view" / "drop_processing_profile_lov_v.sql").read_text(
-            encoding="utf-8"
-        ).lower()
+            (SCHEMA_ROOT / "table" / "drop_job_effective_profile_instruction.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        pk_sql = (
+            (SCHEMA_ROOT / "constraint_pk" / "drp_prf_pk.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        checks_sql = (
+            (SCHEMA_ROOT / "constraint_other" / "drp_prf_checks.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        fk_sql = (
+            (SCHEMA_ROOT / "constraint_fk" / "drp_loc_profile_fk.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        lov_view = (
+            (SCHEMA_ROOT / "view" / "drop_processing_profile_lov_v.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         runtime_view = (
-            SCHEMA_ROOT / "view" / "drop_processing_profile_runtime_v.sql"
-        ).read_text(encoding="utf-8").lower()
+            (SCHEMA_ROOT / "view" / "drop_processing_profile_runtime_v.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         config_error_view = (
-            SCHEMA_ROOT / "view" / "drop_location_config_error_v.sql"
-        ).read_text(encoding="utf-8").lower()
+            (SCHEMA_ROOT / "view" / "drop_location_config_error_v.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         grants = "\n".join(
             path.read_text(encoding="utf-8").lower()
             for path in (SCHEMA_ROOT / "grant").glob("*.sql")
@@ -259,25 +312,41 @@ class DropBoxSchemaTests(unittest.TestCase):
         self.assertIn("display_label", lov_view)
         self.assertIn("where active_yn = 'y'", runtime_view)
         self.assertIn("processing profile is inactive", config_error_view)
-        self.assertIn("grant read on orac_dropbox.drop_processing_profile_lov_v to orac_apx_pub", grants)
-        self.assertIn("grant read on orac_dropbox.drop_processing_profile_admin_v to orac_apx_pub", grants)
-        self.assertIn("grant select on orac_dropbox.drop_processing_profile_runtime_v to orac_plugin", grants)
-        self.assertIn("grant select on orac_dropbox.drop_location_config_error_v to orac_plugin", grants)
+        self.assertIn(
+            "grant read on orac_dropbox.drop_processing_profile_lov_v to orac_apx_pub",
+            grants,
+        )
+        self.assertIn(
+            "grant read on orac_dropbox.drop_processing_profile_admin_v to orac_apx_pub",
+            grants,
+        )
+        self.assertIn(
+            "grant select on orac_dropbox.drop_processing_profile_runtime_v to orac_plugin",
+            grants,
+        )
+        self.assertIn(
+            "grant select on orac_dropbox.drop_location_config_error_v to orac_plugin",
+            grants,
+        )
 
     def test_plugin_audit_triggers_own_local_maintenance_columns(self) -> None:
         trigger_dir = SCHEMA_ROOT / "trigger"
         for trigger_name in ("drp_loc_biu", "drp_job_biu", "drp_prf_biu"):
             with self.subTest(trigger=trigger_name):
-                trigger_sql = (trigger_dir / f"{trigger_name}.sql").read_text(
-                    encoding="utf-8"
-                ).lower()
+                trigger_sql = (
+                    (trigger_dir / f"{trigger_name}.sql")
+                    .read_text(encoding="utf-8")
+                    .lower()
+                )
                 self.assertIn("--liquibase formatted sql", trigger_sql)
                 self.assertIn("--changeset", trigger_sql)
                 self.assertIn("before insert or update", trigger_sql)
                 self.assertIn("sys_context('apex$session', 'app_user')", trigger_sql)
                 self.assertIn("sys_context('userenv', 'proxy_user')", trigger_sql)
                 self.assertIn("sys_context('userenv', 'session_user')", trigger_sql)
-                self.assertIn(":new.row_version := nvl(:old.row_version, 1) + 1", trigger_sql)
+                self.assertIn(
+                    ":new.row_version := nvl(:old.row_version, 1) + 1", trigger_sql
+                )
 
         package_text = "\n".join(
             path.read_text(encoding="utf-8").lower()
@@ -314,9 +383,11 @@ class DropBoxSchemaTests(unittest.TestCase):
                 self.assertNotIn("<sqlFile", text)
 
     def test_processing_profile_seed_data_contains_required_profiles(self) -> None:
-        seed_sql = (SCHEMA_ROOT / "seed_data" / "drop_processing_profiles.sql").read_text(
-            encoding="utf-8"
-        ).lower()
+        seed_sql = (
+            (SCHEMA_ROOT / "seed_data" / "drop_processing_profiles.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         for profile_code in (
             "raw_reference",
@@ -335,9 +406,11 @@ class DropBoxSchemaTests(unittest.TestCase):
         self.assertIn("default_instruction", seed_sql)
 
     def test_runtime_view_filters_locations_with_inactive_profiles(self) -> None:
-        runtime_view = (SCHEMA_ROOT / "view" / "drop_location_runtime_v.sql").read_text(
-            encoding="utf-8"
-        ).lower()
+        runtime_view = (
+            (SCHEMA_ROOT / "view" / "drop_location_runtime_v.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         repository = (PLUGIN_ROOT / "repository.py").read_text(encoding="utf-8").lower()
         service = (PLUGIN_ROOT / "service.py").read_text(encoding="utf-8").lower()
 
@@ -348,9 +421,11 @@ class DropBoxSchemaTests(unittest.TestCase):
         self.assertIn("location skipped because of configuration error", service)
 
     def test_disabled_example_seed_rows_use_safe_placeholders(self) -> None:
-        seed_sql = (SCHEMA_ROOT / "seed_data" / "drop_location_examples.sql").read_text(
-            encoding="utf-8"
-        ).lower()
+        seed_sql = (
+            (SCHEMA_ROOT / "seed_data" / "drop_location_examples.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("delete from orac_dropbox.drop_location", seed_sql)
         self.assertIn("location_code = 'ha_conclusions'", seed_sql)
@@ -376,7 +451,7 @@ class DropBoxSchemaTests(unittest.TestCase):
             "bind-mounted",
             "service lifecycle",
             "(drop_box, scanner)",
-            "orac_code.plugin_service_api.set_service_policy",
+            "bin/orac-plugin.sh service policy drop_box scanner auto",
             "orac_code.plugin_service_status_v",
             "effective_policy",
             "last_heartbeat_on",
