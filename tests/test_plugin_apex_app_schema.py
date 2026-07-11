@@ -689,6 +689,17 @@ class PluginApexAppSchemaTests(unittest.TestCase):
                 self.assertNotIn("f?p=' ||", export_sql)
                 self.assertNotIn("launched_from_1042", export_sql)
 
+    def test_plugin_apex_apps_do_not_reuse_scaffold_component_ids(self) -> None:
+        plugin_exports = (
+            PROJECT_ROOT / "plugins/home_assistant/apex/f10010.sql",
+            PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql",
+        )
+
+        for export_path in plugin_exports:
+            export_sql = export_path.read_text(encoding="utf-8").lower()
+            with self.subTest(export=export_path.name):
+                self.assertNotIn("wwv_flow_imp.id(145", export_sql)
+
     def test_f1042_plugins_page_links_to_plugin_app_maintenance(self) -> None:
         export_sql = (
             (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
@@ -742,6 +753,116 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             export_sql,
             r"\b(update|insert|delete|merge)\s+(into\s+)?orac_(core|api)\.plugin_apex_apps",
         )
+
+    def test_f1042_projects_navigation_entry_exists(self) -> None:
+        export_sql = (
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+
+        self.assertIn("p_list_item_link_text=>'projects'", export_sql)
+        self.assertIn(
+            "p_list_item_link_target=>'f?p=&app_id.:37:&app_session.::&debug.:::'",
+            export_sql,
+        )
+        self.assertIn("p_list_item_current_for_pages=>'37,38'", export_sql)
+        self.assertIn("p_short_name=>'projects'", export_sql)
+        self.assertIn("p_page_id=>37", export_sql)
+        self.assertIn("p_short_name=>'project'", export_sql)
+        self.assertIn("p_page_id=>38", export_sql)
+
+    def test_f1042_projects_report_uses_project_registry_code_view(self) -> None:
+        export_sql = (
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        page_37 = _apex_page_sections(export_sql)[37]
+
+        self.assertIn("p_id=>37", page_37)
+        self.assertIn("p_name=>'projects'", page_37)
+        self.assertIn("p_plug_source_type=>'native_ir'", page_37)
+        self.assertIn("from orac_code.project_registry_v", page_37)
+        self.assertNotIn("from orac_api.project_registry_v", page_37)
+        self.assertNotIn("from orac_core.project_registry", page_37)
+        self.assertIn("p_column_link=>'f?p=&app_id.:38:", page_37)
+        self.assertIn("p38_project_id:#project_id#", page_37)
+        for column_name in (
+            "project_code",
+            "display_name",
+            "description",
+            "active_yn",
+        ):
+            self.assertIn(f"p_db_column_name=>'{column_name}'", page_37)
+        for forbidden in (
+            "created_by",
+            "created_on",
+            "updated_by",
+            "updated_on",
+            "row_version",
+            "row_checksum",
+        ):
+            self.assertNotIn(f"p_db_column_name=>'{forbidden}'", page_37)
+
+    def test_f1042_project_form_uses_registry_api(self) -> None:
+        export_sql = (
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        page_38 = _apex_page_sections(export_sql)[38]
+
+        self.assertIn("p_id=>38", page_38)
+        self.assertIn("p_name=>'project'", page_38)
+        self.assertIn("p_name=>'p38_project_id'", page_38)
+        self.assertIn("p_name=>'p38_project_code'", page_38)
+        self.assertIn("p_name=>'p38_display_name'", page_38)
+        self.assertIn("p_name=>'p38_description'", page_38)
+        self.assertIn("p_name=>'p38_active_yn'", page_38)
+        self.assertIn("p_name=>'p38_row_checksum'", page_38)
+        self.assertIn("from orac_code.project_registry_v", page_38)
+        self.assertIn("orac_code.project_registry_api.create_project", page_38)
+        self.assertIn("orac_code.project_registry_api.update_project", page_38)
+        self.assertIn("orac_code.project_registry_api.deactivate_project", page_38)
+        self.assertNotIn("orac_code.project_registry_api.delete_project", page_38)
+        self.assertIn("p_row_checksum => :p38_row_checksum", page_38)
+        self.assertIn("p_read_only_when=>'p38_project_id'", page_38)
+        self.assertIn("p_read_only_when_type=>'item_is_not_null'", page_38)
+        self.assertIn("p_button_name=>'deactivate'", page_38)
+        self.assertIn("p_button_image_alt=>'deactivate'", page_38)
+        self.assertIn("p_button_condition=>'p38_project_id'", page_38)
+        self.assertIn("p_confirm_style=>'danger'", page_38)
+        self.assertIn("p_process_when=>'deactivate'", page_38)
+        self.assertIn("project deactivated", page_38)
+        self.assertIn("p_display_as=>'native_select_list'", page_38)
+        self.assertIn("p_named_lov=>'yes_no_yn'", page_38)
+        self.assertIn("p38_active_yn := upper(trim(:p38_active_yn))", page_38)
+        self.assertIn("^[a-z][a-z0-9_]{1,99}$", page_38)
+        self.assertIn("project code already exists", page_38)
+        self.assertIn("p_process_type=>'native_close_window'", page_38)
+        self.assertNotIn("p_database_action=>'delete'", page_38)
+        self.assertNotRegex(
+            page_38,
+            r"\b(update|insert|delete|merge)\s+(into\s+)?orac_(core|api)\.project_registry",
+        )
+
+    def test_f1042_project_form_has_no_audit_or_row_version_items(self) -> None:
+        export_sql = (
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        page_38 = _apex_page_sections(export_sql)[38]
+
+        for forbidden_item in (
+            "p38_created_by",
+            "p38_created_on",
+            "p38_updated_by",
+            "p38_updated_on",
+            "p38_row_version",
+        ):
+            self.assertNotIn(f"p_name=>'{forbidden_item}'", page_38)
 
     def test_f1042_user_preferences_edit_route_uses_pref_id(self) -> None:
         export_sql = (
@@ -1211,6 +1332,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("orac_dropbox.drop_box_admin_api.set_enabled", export_sql)
         self.assertIn("orac_dropbox.drop_box_admin_api.delete_location", export_sql)
         self.assertIn("orac_code.plugin_lov_v", export_sql)
+        self.assertIn("orac_code.ingestion_target_lov_v", export_sql)
         self.assertIn("total_job_count", export_sql)
         self.assertIn("p_name=>'drop location form'", export_sql)
         self.assertIn("p_name=>'drop location detail'", export_sql)
@@ -1225,6 +1347,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("toggle_location", export_sql)
         self.assertIn("p2_target_plugin_key", export_sql)
         self.assertIn("p2_target_project_key", export_sql)
+        self.assertIn("project target exists", export_sql)
         self.assertIn("p_name=>'dialog closed'", export_sql)
         self.assertIn("p_bind_event_type=>'apexafterclosedialog'", export_sql)
         self.assertIn("p_action=>'native_refresh'", export_sql)
@@ -1261,28 +1384,27 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             "scanner rules",
             "processing instructions",
             "post-processing / future use",
-            "audit / metadata",
         ):
             self.assertIn(f"p_plug_name=>'{region}'", page_two)
 
         ordered_tokens = (
             "p_name=>'p2_location_code'",
             "p_name=>'p2_display_name'",
-            "p_name=>'p2_enabled_yn'",
             "p_name=>'p2_path'",
+            "p_name=>'p2_enabled_yn'",
             "p_name=>'p2_target_scope_type'",
             "p_name=>'p2_target_plugin_key'",
             "p_name=>'p2_target_project_key'",
             "p_name=>'p2_processing_profile'",
-            "p_name=>'p2_allowed_extensions'",
-            "p_name=>'p2_recursive_yn'",
-            "p_name=>'p2_ignore_patterns'",
-            "p_name=>'p2_max_file_size_mb'",
-            "p_name=>'p2_stability_seconds'",
             "p_name=>'p2_processing_instruction'",
+            "p_name=>'p2_allowed_extensions'",
+            "p_name=>'p2_ignore_patterns'",
+            "p_name=>'p2_recursive_yn'",
             "p_name=>'p2_move_processed_yn'",
             "p_name=>'p2_processed_path'",
             "p_name=>'p2_failed_path'",
+            "p_name=>'p2_max_file_size_mb'",
+            "p_name=>'p2_stability_seconds'",
         )
         positions = [page_two.index(token) for token in ordered_tokens]
         self.assertEqual(positions, sorted(positions))
@@ -1314,11 +1436,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("named ingestion recipe", profile_text)
         self.assertNotIn("p_name=>'p2_profile_description'", page_two)
         self.assertNotIn("p_name=>'p2_profile_default_instruction'", page_two)
-        self.assertIn("p_plug_name=>'audit / metadata'", page_two)
-        self.assertIn("p_plug_source_type=>'native_dynamic_content'", page_two)
-        self.assertIn("created at", page_two)
-        self.assertIn("updated at", page_two)
-        self.assertIn("row version", page_two)
+        self.assertNotIn("p_plug_name=>'audit / metadata'", page_two)
         self.assertNotIn("p_name=>'p2_created_on'", page_two)
         self.assertNotIn("p_name=>'p2_updated_on'", page_two)
         self.assertNotIn("p_name=>'p2_row_version_display'", page_two)
@@ -1348,6 +1466,20 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             if referenced_page_id == 2
         }
         self.assertLessEqual(load_process_page_two_refs, page_two_items)
+
+        project_start = page_two.index("p_name=>'p2_target_project_key'")
+        project_end = page_two.find(
+            "wwv_flow_imp_page.create_page_item", project_start + 1
+        )
+        project_text = page_two[
+            project_start : project_end if project_end != -1 else len(page_two)
+        ]
+        self.assertIn("p_display_as=>'native_select_list'", project_text)
+        self.assertIn("orac_code.ingestion_target_lov_v", project_text)
+        self.assertIn("target_scope_type = ''project''", project_text)
+        self.assertIn("target_scope_key r", project_text)
+        self.assertNotIn("native_text_field", project_text)
+        self.assertNotIn("project metadata is not available yet", project_text)
 
     def test_drop_box_page_two_submit_boundaries(self) -> None:
         export_sql = (
@@ -1389,6 +1521,9 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         )
         self.assertIn("p_process_when=>'save'", page_two)
         self.assertIn("p_process_when_type=>'request_in_condition'", page_two)
+        self.assertIn("p_validation_name=>'project target exists'", page_two)
+        self.assertIn("from orac_code.ingestion_target_lov_v", page_two)
+        self.assertIn("choose a registered project target", page_two)
         self.assertIn("p_process_name=>'delete drop location'", page_two)
         self.assertIn("p_process_when=>'delete'", page_two)
         self.assertIn("p_process_type=>'native_close_window'", page_two)
@@ -1426,7 +1561,11 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("p_action=>'native_javascript_code'", page_two)
         self.assertIn("$v(''p2_target_scope_type'') === ''plugin''", page_two)
         self.assertIn("apex.item(''p2_target_plugin_key'').enable()", page_two)
+        self.assertIn("apex.item(''p2_target_project_key'').disable()", page_two)
+        self.assertIn("$v(''p2_target_scope_type'') === ''project''", page_two)
         self.assertIn("apex.item(''p2_target_plugin_key'').disable()", page_two)
+        self.assertIn("apex.item(''p2_target_project_key'').enable()", page_two)
+        self.assertNotIn("p2_target_project_key').setvalue", page_two)
         self.assertNotIn("p2_target_plugin_key').setvalue", page_two)
 
     def test_drop_box_page_two_profile_lov_and_field_behaviour(self) -> None:

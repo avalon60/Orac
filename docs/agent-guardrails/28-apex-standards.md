@@ -180,10 +180,22 @@ match the current `1042` Universal Theme style by style name, and must fail
 closed without changing behaviour if the matching style is unavailable.
 
 ## Auto-maintained columns
-Typically Orac tables include the following columns:
-These are the Orac standard, trigger maintained columns.
+
+Orac tables typically include standard trigger-maintained audit and concurrency
+columns:
+
+```text
 created_on      -- Orac local row-created timestamp
 updated_on      -- Orac local row-updated timestamp
 row_version     -- Orac local optimistic-lock/audit helper
+```
 
-These are trigger maintainded, and must not be updated by APEX apps. Unless explicitly requested, they are not included in APEX applications.
+These columns must remain in the database when present. Do not remove, rename,
+or alter the underlying columns, triggers, optimistic-lock checks, or
+concurrency behaviour to simplify an APEX page.
+
+APEX applications must not update these columns directly. Standard APEX
+maintenance forms also must not display these columns unless the change request
+explicitly asks for a reviewed audit display. This means they should not be
+added as page items, display-only items, hidden display helpers, or through a
+dynamic-content `Audit / Metadata` region on the form.

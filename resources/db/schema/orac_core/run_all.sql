@@ -20,6 +20,7 @@ prompt === tables ===
 @table/plugin_registry.sql
 @table/plugin_registry_ui_metadata.sql
 @table/plugin_services.sql
+@table/project_registry.sql
 @table/orac_search_queries.sql
 @table/orac_search_results.sql
 @table/orac_fetched_sources.sql
@@ -69,6 +70,8 @@ prompt === indexes ===
 @index/plgreg_uk1_idx.sql
 @index/plgsvc_pk.sql
 @index/plgsvc_uk1_idx.sql
+@index/prjreg_pk.sql
+@index/prjreg_uk1_idx.sql
 @index/orac_srch_q_pk.sql
 @index/orac_srch_res_pk.sql
 @index/orac_srch_res_srch_q_fk1_idx.sql
@@ -102,6 +105,7 @@ prompt === constraints_pk ===
 @constraint_pk/plg_apxapp_pk.sql
 @constraint_pk/plgreg_pk.sql
 @constraint_pk/plgsvc_pk.sql
+@constraint_pk/prjreg_pk.sql
 @constraint_pk/orac_srch_q_pk.sql
 @constraint_pk/orac_srch_res_pk.sql
 @constraint_pk/orac_fch_src_pk.sql
@@ -125,6 +129,7 @@ prompt === constraints_uc ===
 @constraint_uc/plg_apxapp_uk1.sql
 @constraint_uc/plgreg_uk1.sql
 @constraint_uc/plgsvc_uk1.sql
+@constraint_uc/prjreg_uk1.sql
 @constraint_uc/user_pref_uk1.sql
 @constraint_uc/users_uk1.sql
 
@@ -183,6 +188,8 @@ prompt === constraints_other ===
 @constraint_other/plgsvc_ck1.sql
 @constraint_other/plgsvc_ck2.sql
 @constraint_other/plgsvc_ck3.sql
+@constraint_other/prjreg_ck1.sql
+@constraint_other/prjreg_ck2.sql
 @constraint_other/orpers_ck1.sql
 @constraint_other/orpers_ck2.sql
 @constraint_other/orpers_ck3.sql
@@ -207,6 +214,7 @@ prompt === comments ===
 @comment/plugin_apex_apps.sql
 @comment/plugin_registry.sql
 @comment/plugin_services.sql
+@comment/project_registry.sql
 @comment/orac_personalities.sql
 @comment/user_preferences.sql
 @comment/users.sql
@@ -226,6 +234,7 @@ prompt === triggers ===
 @trigger/plg_apxapp_bu.sql
 @trigger/plgreg_bu.sql
 @trigger/plgsvc_bu.sql
+@trigger/prjreg_bu.sql
 @trigger/user_pe_bu.sql
 @trigger/user_pref_bu.sql
 @trigger/user_syns_bu.sql

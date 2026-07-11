@@ -26,3 +26,4 @@ orac_dropbox,drop_job,drp_job
 orac_dropbox,drop_job_event,drp_jobe
 orac_core,plugin_registry,plgreg
 orac_core,plugin_services,plgsvc
+orac_core,project_registry,prjreg

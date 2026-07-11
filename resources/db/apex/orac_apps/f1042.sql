@@ -177,7 +177,7 @@ wwv_flow_imp_shared.create_list_item(
 ,p_list_item_link_target=>'f?p=&APP_ID.:32:&SESSION.::&DEBUG.::::'
 ,p_list_item_icon=>'fa-user-wrench'
 ,p_list_item_current_type=>'COLON_DELIMITED_PAGE_LIST'
-,p_list_item_current_for_pages=>'7,8,9,10,30,31,32'
+,p_list_item_current_for_pages=>'7,8,9,10,30,31,32,37,38'
 );
 wwv_flow_imp_shared.create_list_item(
  p_id=>wwv_flow_imp.id(14500100000000010)
@@ -670,6 +670,16 @@ wwv_flow_imp_shared.create_list_item(
 ,p_list_item_icon=>'fa-sliders'
 ,p_list_text_01=>'Manage reusable generation settings for model requests.'
 ,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(14400100000000005)
+,p_list_item_display_sequence=>40
+,p_list_item_link_text=>'Projects'
+,p_list_item_link_target=>'f?p=&APP_ID.:37:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-folder-open-o'
+,p_list_text_01=>'Manage registered projects available to routed ingestion configuration.'
+,p_list_item_current_for_pages=>'37,38'
+,p_list_item_current_type=>'COLON_DELIMITED_PAGE_LIST'
 );
 end;
 /
@@ -2149,6 +2159,20 @@ wwv_flow_imp_shared.create_menu_option(
 ,p_short_name=>'Plugin App'
 ,p_link=>'f?p=&APP_ID.:36:&APP_SESSION.::&DEBUG.:::'
 ,p_page_id=>36
+);
+wwv_flow_imp_shared.create_menu_option(
+ p_id=>wwv_flow_imp.id(14900100000000011)
+,p_parent_id=>wwv_flow_imp.id(14400100000000011)
+,p_short_name=>'Projects'
+,p_link=>'f?p=&APP_ID.:37:&APP_SESSION.::&DEBUG.:::'
+,p_page_id=>37
+);
+wwv_flow_imp_shared.create_menu_option(
+ p_id=>wwv_flow_imp.id(15000100000000011)
+,p_parent_id=>wwv_flow_imp.id(14900100000000011)
+,p_short_name=>'Project'
+,p_link=>'f?p=&APP_ID.:38:&APP_SESSION.::&DEBUG.:::'
+,p_page_id=>38
 );
 end;
 /
@@ -15954,6 +15978,549 @@ wwv_flow_imp_page.create_page_process(
 ,p_process_clob_language=>'PLSQL'
 ,p_error_display_location=>'INLINE_IN_NOTIFICATION'
 ,p_internal_uid=>14800100000000316
+);
+end;
+/
+prompt --application/pages/page_00037
+begin
+wwv_flow_imp_page.create_page(
+ p_id=>37
+,p_name=>'Projects'
+,p_alias=>'PROJECTS'
+,p_step_title=>'Projects'
+,p_warn_on_unsaved_changes=>'N'
+,p_autocomplete_on_off=>'OFF'
+,p_step_template=>2526643373347724467
+,p_page_template_options=>'#DEFAULT#'
+,p_protection_level=>'C'
+,p_page_component_map=>'18'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(14900100000000201)
+,p_plug_name=>'Breadcrumb'
+,p_region_template_options=>'#DEFAULT#:t-BreadcrumbRegion--useBreadcrumbTitle'
+,p_component_template_options=>'#DEFAULT#'
+,p_plug_template=>2531463326621247859
+,p_plug_display_sequence=>10
+,p_plug_display_point=>'REGION_POSITION_01'
+,p_menu_id=>wwv_flow_imp.id(11444266688769030)
+,p_plug_source_type=>'NATIVE_BREADCRUMB'
+,p_menu_template_id=>4072363345357175094
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(14900100000000202)
+,p_plug_name=>'Projects'
+,p_region_template_options=>'#DEFAULT#:t-IRR-region--noBorders'
+,p_plug_template=>2100526641005906379
+,p_plug_display_sequence=>20
+,p_query_type=>'SQL'
+,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select project_id,',
+'       project_code,',
+'       display_name,',
+'       description,',
+'       active_yn',
+'  from orac_code.project_registry_v',
+' order by display_name, project_code'))
+,p_plug_source_type=>'NATIVE_IR'
+,p_prn_page_header=>'Projects'
+);
+wwv_flow_imp_page.create_worksheet(
+ p_id=>wwv_flow_imp.id(14900100000000501)
+,p_name=>'Projects'
+,p_max_row_count_message=>'The maximum row count for this report is #MAX_ROW_COUNT# rows. Please apply a filter to reduce the number of records in your query.'
+,p_no_data_found_message=>'No projects found.'
+,p_base_pk1=>'PROJECT_ID'
+,p_pagination_type=>'ROWS_X_TO_Y'
+,p_pagination_display_pos=>'BOTTOM_RIGHT'
+,p_report_list_mode=>'TABS'
+,p_lazy_loading=>false
+,p_show_detail_link=>'N'
+,p_show_notify=>'Y'
+,p_download_formats=>'CSV:HTML:XLSX:PDF'
+,p_enable_mail_download=>'Y'
+,p_owner=>'ORAC_ADMIN'
+,p_internal_uid=>14900100000000501
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(14900100000000502)
+,p_db_column_name=>'PROJECT_ID'
+,p_display_order=>1
+,p_is_primary_key=>'Y'
+,p_column_identifier=>'A'
+,p_column_label=>'<span class="u-VisuallyHidden">Edit</span>'
+,p_column_link=>'f?p=&APP_ID.:38:&APP_SESSION.::&DEBUG.:RP:P38_PROJECT_ID:#PROJECT_ID#'
+,p_column_linktext=>'<span role="img" aria-label="Edit" class="fa fa-edit" title="Edit"></span>'
+,p_column_type=>'NUMBER'
+,p_display_text_as=>'HIDDEN_ESCAPE_SC'
+,p_heading_alignment=>'RIGHT'
+,p_column_alignment=>'RIGHT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(14900100000000503)
+,p_db_column_name=>'PROJECT_CODE'
+,p_display_order=>2
+,p_column_identifier=>'B'
+,p_column_label=>'Project Code'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(14900100000000504)
+,p_db_column_name=>'DISPLAY_NAME'
+,p_display_order=>3
+,p_column_identifier=>'C'
+,p_column_label=>'Display Name'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(14900100000000505)
+,p_db_column_name=>'DESCRIPTION'
+,p_display_order=>4
+,p_column_identifier=>'D'
+,p_column_label=>'Description'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(14900100000000506)
+,p_db_column_name=>'ACTIVE_YN'
+,p_display_order=>5
+,p_column_identifier=>'E'
+,p_column_label=>'Active'
+,p_column_type=>'STRING'
+,p_display_text_as=>'LOV_ESCAPE_SC'
+,p_heading_alignment=>'LEFT'
+,p_rpt_named_lov=>wwv_flow_imp.id(13042552942059931)
+,p_rpt_show_filter_lov=>'1'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_rpt(
+ p_id=>wwv_flow_imp.id(14900100000000507)
+,p_application_user=>'APXWS_DEFAULT'
+,p_report_seq=>10
+,p_report_alias=>'149011'
+,p_status=>'PUBLIC'
+,p_is_default=>'Y'
+,p_report_columns=>'PROJECT_ID:PROJECT_CODE:DISPLAY_NAME:DESCRIPTION:ACTIVE_YN:'
+,p_sort_column_1=>'DISPLAY_NAME'
+,p_sort_direction_1=>'ASC'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(14900100000000203)
+,p_button_sequence=>10
+,p_button_plug_id=>wwv_flow_imp.id(14900100000000202)
+,p_button_name=>'CREATE_PROJECT'
+,p_button_action=>'REDIRECT_PAGE'
+,p_button_template_options=>'#DEFAULT#:t-Button--noUI'
+,p_button_template_id=>2349107722467437027
+,p_button_image_alt=>'Create Project'
+,p_button_position=>'EDIT'
+,p_button_redirect_url=>'f?p=&APP_ID.:38:&APP_SESSION.::&DEBUG.:RP,38::'
+,p_icon_css_classes=>'fa-plus'
+);
+wwv_flow_imp_page.create_page_da_event(
+ p_id=>wwv_flow_imp.id(14900100000000204)
+,p_name=>'Dialog Closed'
+,p_event_sequence=>10
+,p_triggering_element_type=>'REGION'
+,p_triggering_region_id=>wwv_flow_imp.id(14900100000000202)
+,p_bind_type=>'bind'
+,p_execution_type=>'IMMEDIATE'
+,p_bind_event_type=>'apexafterclosedialog'
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(14900100000000205)
+,p_event_id=>wwv_flow_imp.id(14900100000000204)
+,p_event_result=>'TRUE'
+,p_action_sequence=>10
+,p_execute_on_page_init=>'N'
+,p_action=>'NATIVE_REFRESH'
+,p_affected_elements_type=>'REGION'
+,p_affected_region_id=>wwv_flow_imp.id(14900100000000202)
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(14900100000000206)
+,p_event_id=>wwv_flow_imp.id(14900100000000204)
+,p_event_result=>'TRUE'
+,p_action_sequence=>20
+,p_execute_on_page_init=>'N'
+,p_action=>'NATIVE_JAVASCRIPT_CODE'
+,p_attribute_01=>'apex.message.showPageSuccess(''Project row updated.'');'
+);
+end;
+/
+prompt --application/pages/page_00038
+begin
+wwv_flow_imp_page.create_page(
+ p_id=>38
+,p_name=>'Project'
+,p_alias=>'PROJECT'
+,p_page_mode=>'MODAL'
+,p_step_title=>'Project'
+,p_autocomplete_on_off=>'OFF'
+,p_step_template=>1661186590416509825
+,p_page_template_options=>'#DEFAULT#:js-dialog-class-t-Drawer--pullOutEnd'
+,p_dialog_chained=>'N'
+,p_dialog_resizable=>'Y'
+,p_protection_level=>'C'
+,p_page_component_map=>'16'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(15000100000000301)
+,p_plug_name=>'Project'
+,p_region_template_options=>'#DEFAULT#'
+,p_plug_template=>4501440665235496320
+,p_plug_display_sequence=>10
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'expand_shortcuts', 'N',
+  'output_as', 'TEXT',
+  'show_line_breaks', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(15000100000000302)
+,p_plug_name=>'Buttons'
+,p_region_template_options=>'#DEFAULT#'
+,p_plug_template=>2126429139436695430
+,p_plug_display_sequence=>20
+,p_plug_display_point=>'REGION_POSITION_03'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'expand_shortcuts', 'N',
+  'output_as', 'TEXT',
+  'show_line_breaks', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(15000100000000303)
+,p_button_sequence=>10
+,p_button_plug_id=>wwv_flow_imp.id(15000100000000302)
+,p_button_name=>'CANCEL'
+,p_button_action=>'DEFINED_BY_DA'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>4072362960822175091
+,p_button_image_alt=>'Cancel'
+,p_button_position=>'CLOSE'
+,p_button_alignment=>'RIGHT'
+,p_button_execute_validations=>'N'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(15000100000000304)
+,p_button_sequence=>20
+,p_button_plug_id=>wwv_flow_imp.id(15000100000000302)
+,p_button_name=>'DEACTIVATE'
+,p_button_action=>'SUBMIT'
+,p_button_template_options=>'#DEFAULT#:t-Button--danger:t-Button--simple'
+,p_button_template_id=>4072362960822175091
+,p_button_image_alt=>'Deactivate'
+,p_button_position=>'DELETE'
+,p_button_alignment=>'RIGHT'
+,p_button_execute_validations=>'N'
+,p_confirm_message=>'Deactivate this project? It will remain available for existing references.'
+,p_confirm_style=>'danger'
+,p_button_condition=>'P38_PROJECT_ID'
+,p_button_condition_type=>'ITEM_IS_NOT_NULL'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(15000100000000305)
+,p_button_sequence=>30
+,p_button_plug_id=>wwv_flow_imp.id(15000100000000302)
+,p_button_name=>'SAVE'
+,p_button_action=>'SUBMIT'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>4072362960822175091
+,p_button_is_hot=>'Y'
+,p_button_image_alt=>'Apply Changes'
+,p_button_position=>'NEXT'
+,p_button_alignment=>'RIGHT'
+,p_button_condition=>'P38_PROJECT_ID'
+,p_button_condition_type=>'ITEM_IS_NOT_NULL'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(15000100000000306)
+,p_button_sequence=>40
+,p_button_plug_id=>wwv_flow_imp.id(15000100000000302)
+,p_button_name=>'CREATE'
+,p_button_action=>'SUBMIT'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>4072362960822175091
+,p_button_is_hot=>'Y'
+,p_button_image_alt=>'Create'
+,p_button_position=>'NEXT'
+,p_button_alignment=>'RIGHT'
+,p_button_condition=>'P38_PROJECT_ID'
+,p_button_condition_type=>'ITEM_IS_NULL'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15000100000000307)
+,p_name=>'P38_PROJECT_ID'
+,p_source_data_type=>'NUMBER'
+,p_item_sequence=>10
+,p_item_plug_id=>wwv_flow_imp.id(15000100000000301)
+,p_display_as=>'NATIVE_HIDDEN'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15000100000000308)
+,p_name=>'P38_PROJECT_CODE'
+,p_source_data_type=>'VARCHAR2'
+,p_is_required=>true
+,p_item_sequence=>20
+,p_item_plug_id=>wwv_flow_imp.id(15000100000000301)
+,p_prompt=>'Project Code'
+,p_display_as=>'NATIVE_TEXT_FIELD'
+,p_cSize=>30
+,p_cMaxlength=>100
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_read_only_when=>'P38_PROJECT_ID'
+,p_read_only_when_type=>'ITEM_IS_NOT_NULL'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'disabled', 'N',
+  'submit_when_enter_pressed', 'N',
+  'subtype', 'TEXT',
+  'trim_spaces', 'BOTH')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15000100000000309)
+,p_name=>'P38_DISPLAY_NAME'
+,p_source_data_type=>'VARCHAR2'
+,p_is_required=>true
+,p_item_sequence=>30
+,p_item_plug_id=>wwv_flow_imp.id(15000100000000301)
+,p_prompt=>'Display Name'
+,p_display_as=>'NATIVE_TEXT_FIELD'
+,p_cSize=>50
+,p_cMaxlength=>200
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'disabled', 'N',
+  'submit_when_enter_pressed', 'N',
+  'subtype', 'TEXT',
+  'trim_spaces', 'BOTH')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15000100000000310)
+,p_name=>'P38_DESCRIPTION'
+,p_source_data_type=>'VARCHAR2'
+,p_item_sequence=>40
+,p_item_plug_id=>wwv_flow_imp.id(15000100000000301)
+,p_prompt=>'Description'
+,p_display_as=>'NATIVE_TEXTAREA'
+,p_cSize=>60
+,p_cMaxlength=>1000
+,p_cHeight=>4
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'auto_height', 'Y',
+  'character_counter', 'Y',
+  'resizable', 'Y',
+  'trim_spaces', 'BOTH')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15000100000000311)
+,p_name=>'P38_ACTIVE_YN'
+,p_source_data_type=>'VARCHAR2'
+,p_is_required=>true
+,p_item_sequence=>50
+,p_item_plug_id=>wwv_flow_imp.id(15000100000000301)
+,p_prompt=>'Active'
+,p_display_as=>'NATIVE_SELECT_LIST'
+,p_named_lov=>'YES_NO_YN'
+,p_lov=>'.'||wwv_flow_imp.id(13042552942059931)||'.'
+,p_lov_display_null=>'NO'
+,p_cHeight=>1
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'NO'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15000100000000312)
+,p_name=>'P38_ROW_CHECKSUM'
+,p_source_data_type=>'VARCHAR2'
+,p_item_sequence=>60
+,p_item_plug_id=>wwv_flow_imp.id(15000100000000301)
+,p_display_as=>'NATIVE_HIDDEN'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_da_event(
+ p_id=>wwv_flow_imp.id(15000100000000313)
+,p_name=>'Cancel Dialog'
+,p_event_sequence=>10
+,p_triggering_element_type=>'BUTTON'
+,p_triggering_button_id=>wwv_flow_imp.id(15000100000000303)
+,p_bind_type=>'bind'
+,p_execution_type=>'IMMEDIATE'
+,p_bind_event_type=>'click'
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(15000100000000314)
+,p_event_id=>wwv_flow_imp.id(15000100000000313)
+,p_event_result=>'TRUE'
+,p_action_sequence=>10
+,p_execute_on_page_init=>'N'
+,p_action=>'NATIVE_DIALOG_CANCEL'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(15000100000000315)
+,p_process_sequence=>5
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Normalize Project Values'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+':P38_PROJECT_CODE := upper(trim(:P38_PROJECT_CODE));',
+':P38_ACTIVE_YN := upper(trim(:P38_ACTIVE_YN));'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_process_when=>'CREATE,SAVE'
+,p_process_when_type=>'REQUEST_IN_CONDITION'
+);
+wwv_flow_imp_page.create_page_validation(
+ p_id=>wwv_flow_imp.id(15000100000000316)
+,p_validation_name=>'Project Code Format'
+,p_validation_sequence=>10
+,p_validation=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'return regexp_like(:P38_PROJECT_CODE, ''^[A-Z][A-Z0-9_]{1,99}$'');'))
+,p_validation2=>'PLSQL'
+,p_validation_type=>'FUNC_BODY_RETURNING_BOOLEAN'
+,p_error_message=>'Project code must start with an uppercase letter and contain only uppercase letters, digits, and underscores.'
+,p_associated_item=>wwv_flow_imp.id(15000100000000308)
+,p_error_display_location=>'INLINE_WITH_FIELD_AND_NOTIFICATION'
+);
+wwv_flow_imp_page.create_page_validation(
+ p_id=>wwv_flow_imp.id(15000100000000317)
+,p_validation_name=>'Active Flag Is Y Or N'
+,p_validation_sequence=>20
+,p_validation=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'return :P38_ACTIVE_YN in (''Y'', ''N'');'))
+,p_validation2=>'PLSQL'
+,p_validation_type=>'FUNC_BODY_RETURNING_BOOLEAN'
+,p_error_message=>'Active must be Yes or No.'
+,p_associated_item=>wwv_flow_imp.id(15000100000000311)
+,p_error_display_location=>'INLINE_WITH_FIELD_AND_NOTIFICATION'
+);
+wwv_flow_imp_page.create_page_validation(
+ p_id=>wwv_flow_imp.id(15000100000000318)
+,p_validation_name=>'Project Code Is Unique'
+,p_validation_sequence=>30
+,p_validation=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select 1',
+'    from orac_code.project_registry_v',
+'   where project_code = :P38_PROJECT_CODE'))
+,p_validation_type=>'NOT_EXISTS'
+,p_error_message=>'Project code already exists.'
+,p_validation_condition=>'CREATE'
+,p_validation_condition_type=>'REQUEST_EQUALS_CONDITION'
+,p_associated_item=>wwv_flow_imp.id(15000100000000308)
+,p_error_display_location=>'INLINE_WITH_FIELD_AND_NOTIFICATION'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(15000100000000319)
+,p_process_sequence=>10
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Create Project'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'orac_code.project_registry_api.create_project(',
+'  p_project_code => :P38_PROJECT_CODE,',
+'  p_display_name => :P38_DISPLAY_NAME,',
+'  p_description  => :P38_DESCRIPTION,',
+'  p_active_yn    => :P38_ACTIVE_YN',
+');'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_process_when=>'CREATE'
+,p_process_when_type=>'REQUEST_IN_CONDITION'
+,p_process_success_message=>'Project created.'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(15000100000000320)
+,p_process_sequence=>20
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Update Project'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'orac_code.project_registry_api.update_project(',
+'  p_project_id   => :P38_PROJECT_ID,',
+'  p_project_code => :P38_PROJECT_CODE,',
+'  p_display_name => :P38_DISPLAY_NAME,',
+'  p_description  => :P38_DESCRIPTION,',
+'  p_active_yn    => :P38_ACTIVE_YN,',
+'  p_row_checksum => :P38_ROW_CHECKSUM',
+');'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_process_when=>'SAVE'
+,p_process_when_type=>'REQUEST_IN_CONDITION'
+,p_process_success_message=>'Project updated.'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(15000100000000321)
+,p_process_sequence=>30
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Deactivate Project'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'orac_code.project_registry_api.deactivate_project(',
+'  p_project_id   => :P38_PROJECT_ID,',
+'  p_row_checksum => :P38_ROW_CHECKSUM',
+');'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_process_when=>'DEACTIVATE'
+,p_process_when_type=>'REQUEST_IN_CONDITION'
+,p_process_success_message=>'Project deactivated.'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(15000100000000322)
+,p_process_sequence=>50
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_CLOSE_WINDOW'
+,p_process_name=>'Close Dialog'
+,p_attribute_01=>'P38_PROJECT_ID,REQUEST'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_process_when=>'CREATE,SAVE,DEACTIVATE'
+,p_process_when_type=>'REQUEST_IN_CONDITION'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(15000100000000323)
+,p_process_sequence=>10
+,p_process_point=>'BEFORE_HEADER'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Initialize Project'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'if :P38_PROJECT_ID is not null then',
+'  select project_code,',
+'         display_name,',
+'         description,',
+'         active_yn,',
+'         row_checksum',
+'    into :P38_PROJECT_CODE,',
+'         :P38_DISPLAY_NAME,',
+'         :P38_DESCRIPTION,',
+'         :P38_ACTIVE_YN,',
+'         :P38_ROW_CHECKSUM',
+'    from orac_code.project_registry_v',
+'   where project_id = :P38_PROJECT_ID;',
+'else',
+'  :P38_ACTIVE_YN := coalesce(:P38_ACTIVE_YN, ''Y'');',
+'end if;'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
 );
 end;
 /

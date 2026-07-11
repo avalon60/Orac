@@ -1813,18 +1813,22 @@ wwv_flow_imp_page.create_page_item(
 ,p_item_sequence=>30
 ,p_item_plug_id=>wwv_flow_imp.id(34600200000000103)
 ,p_prompt=>'Project Code'
-,p_display_as=>'NATIVE_TEXT_FIELD'
-,p_cSize=>40
-,p_cMaxlength=>200
+,p_display_as=>'NATIVE_SELECT_LIST'
+,p_lov=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select display_label d,',
+'       target_scope_key r',
+'  from orac_code.ingestion_target_lov_v',
+' where target_scope_type = ''project''',
+' order by sort_order, display_label'))
+,p_lov_display_null=>'YES'
+,p_cHeight=>1
 ,p_field_template=>1609121967514267634
 ,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
-,p_inline_help_text=>'Used when target scope type is Project. Project metadata is not available yet, so enter the project code.'
+,p_lov_display_extra=>'YES'
+,p_inline_help_text=>'Used when target scope type is Project.'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'disabled', 'N',
-  'submit_when_enter_pressed', 'N',
-  'subtype', 'TEXT',
-  'trim_spaces', 'BOTH')).to_clob
+  'page_action_on_selection', 'NONE')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(34600200000000210)
@@ -2027,8 +2031,13 @@ wwv_flow_imp_page.create_page_da_action(
 ,p_attribute_01=>wwv_flow_string.join(wwv_flow_t_varchar2(
 'if ($v(''P2_TARGET_SCOPE_TYPE'') === ''plugin'') {',
 '  apex.item(''P2_TARGET_PLUGIN_KEY'').enable();',
+'  apex.item(''P2_TARGET_PROJECT_KEY'').disable();',
+'} else if ($v(''P2_TARGET_SCOPE_TYPE'') === ''project'') {',
+'  apex.item(''P2_TARGET_PLUGIN_KEY'').disable();',
+'  apex.item(''P2_TARGET_PROJECT_KEY'').enable();',
 '} else {',
 '  apex.item(''P2_TARGET_PLUGIN_KEY'').disable();',
+'  apex.item(''P2_TARGET_PROJECT_KEY'').disable();',
 '}'))
 );
 wwv_flow_imp_page.create_page_da_event(
@@ -2148,6 +2157,31 @@ wwv_flow_imp_page.create_page_process(
 ,p_process_when=>'SAVE'
 ,p_process_when_type=>'REQUEST_IN_CONDITION'
 ,p_internal_uid=>34600200000000402
+);
+wwv_flow_imp_page.create_page_validation(
+ p_id=>wwv_flow_imp.id(34600200000000420)
+,p_validation_name=>'Project Target Exists'
+,p_validation_sequence=>10
+,p_validation=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'if :P2_TARGET_SCOPE_TYPE <> ''project'' then',
+'  return true;',
+'end if;',
+'',
+'for target in (',
+'  select 1',
+'    from orac_code.ingestion_target_lov_v',
+'   where target_scope_type = ''project''',
+'     and target_scope_key = :P2_TARGET_PROJECT_KEY',
+') loop',
+'  return true;',
+'end loop;',
+'',
+'return false;'))
+,p_validation2=>'PLSQL'
+,p_validation_type=>'FUNC_BODY_RETURNING_BOOLEAN'
+,p_error_message=>'Choose a registered project target.'
+,p_associated_item=>wwv_flow_imp.id(34600200000000209)
+,p_error_display_location=>'INLINE_WITH_FIELD_AND_NOTIFICATION'
 );
 wwv_flow_imp_page.create_page_process(
  p_id=>wwv_flow_imp.id(34600200000000403)
