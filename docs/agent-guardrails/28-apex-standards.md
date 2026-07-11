@@ -152,6 +152,24 @@ display.
 Plugin-supplied APEX applications must be installed into the shared Orac
 workspace and listed through the approved plugin APEX app registry path.
 
+New plugin APEX applications should be derived from the maintained scaffold:
+
+```text
+resources/db/apex/orac_apps/f10042.sql
+```
+
+Scaffold-derived apps must preserve the cross-app return navigation application
+items, application-level `BEFORE_HEADER` preparation process, Page 0 return
+region, and `ORAC_THEME_SYNC` behaviour unless a reviewed change explicitly
+replaces them. Do not recreate return navigation with browser-side stack
+parsing, raw return URLs, or plugin-owned navigation logic.
+
+Scaffold-derived apps should preserve the approved plugin card styling pattern
+for launcher or entry cards. If a plugin app needs a different page pattern,
+document why the standard scaffold cards are not suitable and keep full-card
+navigation, Font APEX icons, and responsive Universal Theme layout conventions
+where applicable.
+
 Listing pages must hide disabled, failed, and metadata-only plugin app rows.
 Dynamic plugin app card links must be prepared by the approved view or package
 path and must not be assembled from raw user input in the APEX export.

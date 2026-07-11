@@ -52,6 +52,21 @@ under an adjacent compact menu entry. Return labels and URLs must continue to
 come from `orac_code.apex_return_nav_api`; do not construct return URLs in the
 APEX export or browser-side JavaScript.
 
+## Plugin App Scaffold
+
+New plugin APEX applications should start from the maintained scaffold export:
+
+```text
+resources/db/apex/orac_apps/f10042.sql
+```
+
+The scaffold includes the approved cross-app return navigation items, Page 0
+return control, application-level return preparation process, theme sync
+process, and standard plugin card styling. When deriving a real plugin app,
+change the application id, alias, name, card content, and manifest `apex_apps`
+metadata, but preserve the navigation and security patterns unless the change
+has been explicitly reviewed.
+
 ## Troubleshooting
 
 1. Confirm the stack and database are running:

@@ -371,6 +371,13 @@ section. This section is installation and registration metadata only. It must
 not create conversational capabilities and must not be indexed by prompt
 routing.
 
+New plugin APEX app exports should be derived from the maintained scaffold at
+`resources/db/apex/orac_apps/f10042.sql`. The derived export should live inside
+the plugin package and be referenced by the manifest `apex_apps` metadata.
+Preserve the scaffold's cross-app return navigation, theme sync, shared `ORAC`
+workspace model, and `ORAC_APX_PUB` parsing schema unless an explicitly
+reviewed design requires a different boundary.
+
 Each APEX app declaration must use `app_alias` or `alias` as the stable logical
 identifier, may declare an expected `application_id`, and may declare
 `parsing_schema`. Plugin-supplied APEX apps must be installed into the shared

@@ -111,6 +111,25 @@ to normal conversation.
 
 Service plugins declare their service entry point under `runtime.service`.
 
+## Plugin APEX Apps
+
+Plugin APEX applications should be derived from the maintained scaffold export:
+
+```text
+resources/db/apex/orac_apps/f10042.sql
+```
+
+Copy the scaffold into the plugin package, then change the application id,
+application alias, application name, card content, and any plugin-specific
+pages. Keep the scaffold's cross-app return navigation, Page 0 return control,
+application-level return preparation process, theme sync process, shared `ORAC`
+workspace model, and default `ORAC_APX_PUB` parsing schema unless a reviewed
+design explicitly requires otherwise.
+
+Declare the derived export in the plugin manifest `apex_apps` section so the
+plugin installer can import it, register the installed application id, and show
+it through the Plugin Navigation app.
+
 ## Runtime Modes
 
 | Mode | Meaning |

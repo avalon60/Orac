@@ -536,10 +536,49 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             export_sql,
         )
 
+    def test_plugin_app_scaffold_export_defines_standard_cards(self) -> None:
+        scaffold_path = PROJECT_ROOT / "resources/db/apex/orac_apps/f10042.sql"
+        self.assertTrue(scaffold_path.is_file())
+
+        export_sql = scaffold_path.read_text(encoding="utf-8").lower()
+        page_one = _apex_page_sections(export_sql)[1]
+
+        self.assertIn("prompt application 10042 - plugin app scaffold", export_sql)
+        self.assertIn("p_default_application_id=>10042", export_sql)
+        self.assertIn("p_default_owner=>'orac_apx_pub'", export_sql)
+        self.assertIn(
+            "p_name=>nvl(wwv_flow_application_install.get_application_name,"
+            "'plugin app scaffold')",
+            export_sql,
+        )
+        self.assertIn(
+            "p_alias=>nvl(wwv_flow_application_install.get_application_alias,"
+            "'plugin-app-scaffold')",
+            export_sql,
+        )
+        self.assertIn("p_theme_id=>42", export_sql)
+        self.assertIn("p_scheme_type=>'native_apex_accounts'", export_sql)
+        self.assertNotIn("orac_ha.", export_sql)
+
+        self.assertIn("p_plug_name=>'scaffold cards'", page_one)
+        self.assertIn("p_region_css_classes=>'orac-plugin-card-hub'", page_one)
+        self.assertIn("p_plug_source_type=>'native_cards'", page_one)
+        self.assertIn("p_component_css_classes=>'orac-plugin-card-hub'", page_one)
+        self.assertIn("p_card_css_classes=>'orac-plugin-card'", page_one)
+        self.assertIn("p_action_type=>'full_card'", page_one)
+        self.assertIn("p_link_target=>'&card_link.'", page_one)
+        self.assertEqual(3, page_one.count(" card_id'"))
+        self.assertIn("''example console'' card_title", page_one)
+        self.assertIn("''example setup'' card_title", page_one)
+        self.assertIn("''example activity'' card_title", page_one)
+        self.assertIn("p_icon_source_type=>'dynamic_class'", page_one)
+        self.assertIn("p_icon_position=>'top'", page_one)
+
     def test_managed_apex_apps_define_cross_app_return_navigation(self) -> None:
         managed_exports = (
             PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql",
             PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql",
+            PROJECT_ROOT / "resources/db/apex/orac_apps/f10042.sql",
             PROJECT_ROOT / "plugins/home_assistant/apex/f10010.sql",
             PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql",
         )
