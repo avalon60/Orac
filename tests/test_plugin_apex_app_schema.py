@@ -207,15 +207,25 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
     def test_apex_return_nav_api_validates_and_derives_navigation(self) -> None:
         package_spec = (
-            PROJECT_ROOT
-            / "resources/db/schema/orac_code/package_spec/apex_return_nav_api.sql"
-        ).read_text(encoding="utf-8").lower()
+            (
+                PROJECT_ROOT
+                / "resources/db/schema/orac_code/package_spec/apex_return_nav_api.sql"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         package_body = (
-            PROJECT_ROOT
-            / "resources/db/schema/orac_code/package_body/apex_return_nav_api.sql"
-        ).read_text(encoding="utf-8").lower()
+            (
+                PROJECT_ROOT
+                / "resources/db/schema/orac_code/package_body/apex_return_nav_api.sql"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
-        self.assertIn("create or replace package orac_code.apex_return_nav_api", package_spec)
+        self.assertIn(
+            "create or replace package orac_code.apex_return_nav_api", package_spec
+        )
         self.assertIn("c_max_depth constant pls_integer := 5", package_spec)
         self.assertIn("normalize_stack", package_spec)
         self.assertIn("launch_url", package_spec)
@@ -224,19 +234,29 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertNotIn("p_return_url", package_spec)
         self.assertNotIn("p_return_label", package_spec)
 
-        self.assertIn("c_stack_item_name constant varchar2(30 char) := 'orac_nav_stack'", package_body)
+        self.assertIn(
+            "c_stack_item_name constant varchar2(30 char) := 'orac_nav_stack'",
+            package_body,
+        )
         self.assertIn("regexp_like(l_source", package_body)
         self.assertIn("[0-9]{1,10}\\.[0-9]{1,10}", package_body)
         self.assertIn("is_valid_frame", package_body)
         self.assertIn("p_app_id = c_admin_app_id", package_body)
-        self.assertIn("p_app_id = c_plugin_app_id and p_page_id in (1, 2)", package_body)
+        self.assertIn(
+            "p_app_id = c_plugin_app_id and p_page_id in (1, 2, 3, 4)",
+            package_body,
+        )
         self.assertIn("from orac_code.plugin_apex_app_menu_v", package_body)
         self.assertIn("apex_util.prepare_url", package_body)
         self.assertIn("p_checksum_type => 'session'", package_body)
         self.assertIn("return 'orac admin'", package_body)
         self.assertIn("return 'plugin operations'", package_body)
         self.assertIn("return 'plugin navigation'", package_body)
-        self.assertIn("coalesce(menu.card_title, menu.label, menu.app_alias)", package_body)
+        self.assertIn("return 'manage plugin apps'", package_body)
+        self.assertIn("return 'plugin app'", package_body)
+        self.assertIn(
+            "coalesce(menu.card_title, menu.label, menu.app_alias)", package_body
+        )
         self.assertIn("p_count > c_max_depth", package_body)
         self.assertNotIn("http://", package_body)
         self.assertNotIn("https://", package_body)
@@ -471,70 +491,75 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         )
         self.assertIn("when no_data_found then", export_sql)
 
-    def test_f1042_has_plugins_navigation_entry(self) -> None:
+    def test_f1043_is_branded_as_plugin_control(self) -> None:
+        export_sql = (
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+
+        self.assertIn("prompt application 1043 - plugin control", export_sql)
+        self.assertIn("--   name:            plugin control", export_sql)
+        self.assertIn(
+            "p_name=>nvl(wwv_flow_application_install.get_application_name,"
+            "'plugin control')",
+            export_sql,
+        )
+        self.assertIn("p_logo_text=>'plugin control'", export_sql)
+        self.assertIn("p_substitution_value_01=>'plugin control'", export_sql)
+        self.assertIn("p_step_title=>'plugin control - log in'", export_sql)
+        self.assertIn("p_plug_name=>'plugin control'", export_sql)
+        self.assertIn(
+            "p_alias=>nvl(wwv_flow_application_install.get_application_alias,'plugin-apps1043')",
+            export_sql,
+        )
+
+    def test_f1042_removes_dedicated_plugins_navigation(self) -> None:
+        export_sql = (
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        pages = _apex_page_sections(export_sql)
+
+        self.assertNotIn("p_list_item_link_text=>'plugins'", export_sql)
+        self.assertNotIn("p_name=>'plugins cards'", export_sql)
+        self.assertNotIn("p_process_name=>'launch plugin navigation'", export_sql)
+        self.assertNotIn("p_short_name=>'plugins'", export_sql)
+        self.assertNotIn("p_short_name=>'manage plugin apps'", export_sql)
+        self.assertNotIn("p_short_name=>'plugin app'", export_sql)
+        self.assertNotIn(34, pages)
+        self.assertNotIn(35, pages)
+        self.assertNotIn(36, pages)
+
+    def test_f1042_orac_admin_card_launches_plugin_control(self) -> None:
         export_sql = (
             (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
             .read_text(encoding="utf-8")
             .lower()
         )
 
-        self.assertIn("p_list_item_link_text=>'plugins'", export_sql)
+        self.assertIn("p_name=>'orac admin cards'", export_sql)
+        self.assertIn("p_list_item_link_text=>'plugin control'", export_sql)
         self.assertIn(
-            "p_list_item_link_target=>'f?p=&app_id.:34:&session.::&debug.::::'",
+            "p_list_item_link_target=>'&orac_launch_plugin_control_url!raw.'",
             export_sql,
         )
-        self.assertIn("p_list_item_icon=>'fa-plug'", export_sql)
-        self.assertIn("p_list_item_current_for_pages=>'34,35,36'", export_sql)
-
-    def test_f1042_plugins_page_uses_standard_card_hub(self) -> None:
-        export_sql = (
-            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
-            .read_text(encoding="utf-8")
-            .lower()
-        )
-
-        self.assertIn("p_id=>34", export_sql)
-        self.assertIn("p_name=>'plugins'", export_sql)
-        self.assertIn("p_alias=>'plugins'", export_sql)
-        self.assertIn("p_name=>'plugins cards'", export_sql)
-        self.assertIn("p_plug_name=>'plugins'", export_sql)
-        self.assertIn("p_plug_source_type=>'native_list'", export_sql)
-        self.assertNotIn("p_plug_source_type=>'native_cards'", export_sql)
-        self.assertIn("p_list_template_id=>2886769488667748277", export_sql)
-        self.assertIn("p_list_id=>wwv_flow_imp.id(14600100000000001)", export_sql)
-        self.assertIn("p_plug_template=>4501440665235496320", export_sql)
-        self.assertIn("t-cards--featured t-cards--block", export_sql)
-        self.assertIn("force-fa-lg:t-cards--displayicons:t-cards--3cols", export_sql)
-        self.assertIn("t-cards--animcolorfill", export_sql)
-
-    def test_f1042_plugins_card_launches_plugin_apps(self) -> None:
-        export_sql = (
-            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
-            .read_text(encoding="utf-8")
-            .lower()
-        )
-
-        self.assertIn("p_list_item_link_text=>'plugin apps'", export_sql)
+        self.assertIn("p_list_item_icon=>'fa fa-plug'", export_sql)
         self.assertIn(
-            "p_list_item_link_target=>'f?p=&app_id.:34:&app_session.:launch_plugin_navigation:&debug.:rp::'",
+            "p_list_text_01=>'monitor plugin services, manage registered applications "
+            "and launch plugin administration tools.'",
             export_sql,
         )
-        self.assertNotIn("p_list_item_link_target=>'&orac_launch_plugin_navigation_url", export_sql)
-        self.assertIn("p_process_name=>'launch plugin navigation'", export_sql)
-        self.assertIn("p_process_point=>'before_header'", export_sql)
-        self.assertIn("p_process_when=>'launch_plugin_navigation'", export_sql)
-        self.assertIn("p_process_when_type=>'request_in_condition'", export_sql)
+        self.assertIn("p_name=>'orac_launch_plugin_control_url'", export_sql)
         self.assertIn(
-            "l_url := orac_code.apex_return_nav_api.launch_url(1043, 2, ''orac_theme_sync'', ''rp'')",
+            ":orac_launch_plugin_control_url := "
+            "orac_code.apex_return_nav_api.launch_url(1043, 1, "
+            "''orac_theme_sync'', ''rp'')",
             export_sql,
         )
-        self.assertIn("apex_util.redirect_url(p_url => l_url)", export_sql)
-        self.assertIn("apex_application.stop_apex_engine", export_sql)
-        self.assertIn("p_list_item_icon=>'fa-plug'", export_sql)
-        self.assertIn(
-            "p_list_text_01=>'launch installed plugin applications and administration surfaces.'",
-            export_sql,
-        )
+        self.assertNotIn("orac_launch_plugin_navigation_url", export_sql)
+        self.assertNotIn("orac_launch_plugin_operations_url", export_sql)
 
     def test_plugin_app_scaffold_export_defines_standard_cards(self) -> None:
         scaffold_path = PROJECT_ROOT / "resources/db/apex/orac_apps/f10042.sql"
@@ -626,8 +651,12 @@ class PluginApexAppSchemaTests(unittest.TestCase):
                 for item_name in required_items:
                     self.assertIn(f"p_name=>'{item_name.upper()}'".lower(), export_sql)
 
-                self.assertIn("prepare cross-app return navigation", application_processes)
-                self.assertIn("wwv_flow_imp_shared.create_flow_process", application_processes)
+                self.assertIn(
+                    "prepare cross-app return navigation", application_processes
+                )
+                self.assertIn(
+                    "wwv_flow_imp_shared.create_flow_process", application_processes
+                )
                 self.assertIn("p_process_point=>'before_header'", application_processes)
                 self.assertIn("p_process_type=>'native_plsql'", application_processes)
                 self.assertIn(
@@ -642,12 +671,19 @@ class PluginApexAppSchemaTests(unittest.TestCase):
                     ":orac_return_url_1 := orac_code.apex_return_nav_api.return_url(1, :orac_nav_stack);",
                     application_processes,
                 )
-                self.assertNotIn("p_process_name=>'prepare cross-app return navigation'", page_0)
+                self.assertNotIn(
+                    "p_process_name=>'prepare cross-app return navigation'", page_0
+                )
 
                 self.assertNotIn("return to &orac_return_label_", nav_bar)
                 self.assertIn("p_name=>'cross-app return navigation'", return_list)
-                self.assertIn("p_list_item_link_text=>'return to &orac_return_label_1.'", return_list)
-                self.assertIn("p_list_item_link_target=>'&orac_return_url_1!raw.'", return_list)
+                self.assertIn(
+                    "p_list_item_link_text=>'return to &orac_return_label_1.'",
+                    return_list,
+                )
+                self.assertIn(
+                    "p_list_item_link_target=>'&orac_return_url_1!raw.'", return_list
+                )
                 self.assertIn("p_list_item_icon=>'fa-arrow-left'", return_list)
                 self.assertIn(
                     "p_list_item_disp_condition=>':orac_return_depth > 0 and "
@@ -657,7 +693,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
                 self.assertEqual(1, len(more_items))
                 self.assertIn("p_list_item_link_text=>'more'", more_items[0])
                 self.assertIn("p_list_item_icon=>'fa-chevron-down'", more_items[0])
-                self.assertIn("p_list_item_disp_condition=>':orac_return_depth > 1'", more_items[0])
+                self.assertIn(
+                    "p_list_item_disp_condition=>':orac_return_depth > 1'",
+                    more_items[0],
+                )
                 self.assertNotIn("p_list_item_link_target", more_items[0])
                 for position in range(2, 6):
                     self.assertIn(
@@ -678,10 +717,14 @@ class PluginApexAppSchemaTests(unittest.TestCase):
                 self.assertNotIn("orac_return_label_3!raw", return_list)
                 self.assertNotIn("orac_return_label_4!raw", return_list)
                 self.assertNotIn("orac_return_label_5!raw", return_list)
-                self.assertEqual(1, page_0.count("p_plug_name=>'cross-app return navigation'"))
+                self.assertEqual(
+                    1, page_0.count("p_plug_name=>'cross-app return navigation'")
+                )
                 self.assertIn("p_plug_display_point=>'before_navigation_bar'", page_0)
                 self.assertIn("p_plug_source_type=>'native_list'", page_0)
-                self.assertIn("p_list_template_id=>wwv_flow_imp.id(2847543055748234966)", page_0)
+                self.assertIn(
+                    "p_list_template_id=>wwv_flow_imp.id(2847543055748234966)", page_0
+                )
                 self.assertNotIn("p_plug_display_point=>'region_position_01'", page_0)
                 self.assertNotIn("p_plug_source_type=>'native_breadcrumb'", page_0)
                 self.assertNotIn("regexp_substr(:orac_nav_stack", export_sql)
@@ -700,57 +743,72 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             with self.subTest(export=export_path.name):
                 self.assertNotIn("wwv_flow_imp.id(145", export_sql)
 
-    def test_f1042_plugins_page_links_to_plugin_app_maintenance(self) -> None:
+    def test_f1043_navigation_links_to_plugin_app_maintenance(self) -> None:
         export_sql = (
-            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql")
             .read_text(encoding="utf-8")
             .lower()
         )
 
         self.assertIn("p_list_item_link_text=>'manage plugin apps'", export_sql)
         self.assertIn(
-            "p_list_item_link_target=>'f?p=&app_id.:35:&app_session.::&debug.:::'",
+            "p_list_item_link_target=>'f?p=&app_id.:3:&app_session.::&debug.:::'",
             export_sql,
         )
         self.assertIn("p_list_item_icon=>'fa-list-alt'", export_sql)
-        self.assertIn("p_list_item_current_for_pages=>'35,36'", export_sql)
+        self.assertIn("p_list_item_current_for_pages=>'3,4'", export_sql)
 
-    def test_f1042_manage_plugin_apps_report_uses_code_view(self) -> None:
+    def test_f1043_manage_plugin_apps_report_uses_code_view(self) -> None:
         export_sql = (
-            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql")
             .read_text(encoding="utf-8")
             .lower()
         )
+        page_3 = _apex_page_sections(export_sql)[3]
 
-        self.assertIn("p_id=>35", export_sql)
-        self.assertIn("p_name=>'manage plugin apps'", export_sql)
-        self.assertIn("p_plug_name=>'plugin apps'", export_sql)
-        self.assertIn("p_plug_source_type=>'native_ir'", export_sql)
-        self.assertIn("from orac_code.plugin_apex_apps_v", export_sql)
-        self.assertNotIn("from orac_core.plugin_apex_apps", export_sql)
-        self.assertIn("p_column_link=>'f?p=&app_id.:36:", export_sql)
-        self.assertIn("p36_plugin_id,p36_app_alias:#plugin_id#,#app_alias#", export_sql)
-        self.assertIn("p_db_column_name=>'enabled'", export_sql)
-        self.assertIn("p_db_column_name=>'row_version'", export_sql)
+        self.assertIn("p_id=>3", page_3)
+        self.assertIn("p_name=>'manage plugin apps'", page_3)
+        self.assertIn("p_plug_name=>'plugin apps'", page_3)
+        self.assertIn("p_plug_source_type=>'native_ir'", page_3)
+        self.assertIn("from orac_code.plugin_apex_apps_v", page_3)
+        self.assertNotIn("from orac_core.plugin_apex_apps", page_3)
+        self.assertIn("p_column_link=>'f?p=&app_id.:4:", page_3)
+        self.assertIn("p4_plugin_id,p4_app_alias:#plugin_id#,#app_alias#", page_3)
+        for column_name in (
+            "label",
+            "app_alias",
+            "plugin_version",
+            "installed_app_id",
+            "install_status",
+            "enabled",
+        ):
+            self.assertIn(f"p_db_column_name=>'{column_name}'", page_3)
+        self.assertIn("p_db_column_name=>'row_version'", page_3)
 
-    def test_f1042_plugin_app_form_toggles_enabled_via_admin_api(self) -> None:
+    def test_f1043_plugin_app_form_toggles_enabled_via_admin_api(self) -> None:
         export_sql = (
-            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql")
             .read_text(encoding="utf-8")
             .lower()
         )
+        page_4 = _apex_page_sections(export_sql)[4]
 
-        self.assertIn("p_id=>36", export_sql)
-        self.assertIn("p_name=>'plugin app'", export_sql)
-        self.assertIn("p_name=>'p36_enabled'", export_sql)
-        self.assertIn("p_display_as=>'native_yes_no'", export_sql)
-        self.assertIn("p_name=>'p36_row_version'", export_sql)
-        self.assertIn("orac_code.plugin_apex_app_admin_api.set_enabled", export_sql)
-        self.assertIn("p_enabled     => :p36_enabled", export_sql)
-        self.assertIn("p_row_version => :p36_row_version", export_sql)
-        self.assertIn("from orac_code.plugin_apex_apps_v", export_sql)
+        self.assertIn("p_id=>4", page_4)
+        self.assertIn("p_name=>'plugin app'", page_4)
+        self.assertIn("p_page_mode=>'modal'", page_4)
+        self.assertIn("p_name=>'p4_plugin_id'", page_4)
+        self.assertIn("p_name=>'p4_app_alias'", page_4)
+        self.assertIn("p_name=>'p4_enabled'", page_4)
+        self.assertIn("p_display_as=>'native_yes_no'", page_4)
+        self.assertIn("p_name=>'p4_row_version'", page_4)
+        self.assertIn("orac_code.plugin_apex_app_admin_api.set_enabled", page_4)
+        self.assertIn("p_enabled     => :p4_enabled", page_4)
+        self.assertIn("p_row_version => :p4_row_version", page_4)
+        self.assertIn("from orac_code.plugin_apex_apps_v", page_4)
+        self.assertIn("p_process_type=>'native_close_window'", page_4)
+        self.assertIn("p_action=>'native_dialog_cancel'", page_4)
         self.assertNotRegex(
-            export_sql,
+            page_4,
             r"\b(update|insert|delete|merge)\s+(into\s+)?orac_(core|api)\.plugin_apex_apps",
         )
 

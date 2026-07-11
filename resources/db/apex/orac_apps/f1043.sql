@@ -28,11 +28,11 @@ wwv_flow_imp.import_begin (
 end;
 /
  
-prompt APPLICATION 1043 - Plugin Apps
+prompt APPLICATION 1043 - Plugin Control
 --
 -- Application Export:
 --   Application:     1043
---   Name:            Plugin Apps
+--   Name:            Plugin Control
 --   Date and Time:   22:42 Monday June 22, 2026
 --   Exported By:     ORAC_ADMIN
 --   Flashback:       0
@@ -75,7 +75,7 @@ begin
 wwv_imp_workspace.create_flow(
  p_id=>wwv_flow.g_flow_id
 ,p_owner=>nvl(wwv_flow_application_install.get_schema,'ORAC_APX_PUB')
-,p_name=>nvl(wwv_flow_application_install.get_application_name,'Plugin Apps')
+,p_name=>nvl(wwv_flow_application_install.get_application_name,'Plugin Control')
 ,p_alias=>nvl(wwv_flow_application_install.get_application_alias,'PLUGIN-APPS1043')
 ,p_page_view_logging=>'YES'
 ,p_page_protection_enabled_y_n=>'Y'
@@ -92,7 +92,7 @@ wwv_imp_workspace.create_flow(
 ,p_authentication_id=>wwv_flow_imp.id(8890689477580331)
 ,p_application_tab_set=>1
 ,p_logo_type=>'T'
-,p_logo_text=>'Plugin Apps'
+,p_logo_text=>'Plugin Control'
 ,p_proxy_server=>nvl(wwv_flow_application_install.get_proxy,'')
 ,p_no_proxy_domains=>nvl(wwv_flow_application_install.get_no_proxy_domains,'')
 ,p_flow_version=>'Release 1.0'
@@ -104,7 +104,7 @@ wwv_imp_workspace.create_flow(
 ,p_csv_encoding=>'Y'
 ,p_auto_time_zone=>'N'
 ,p_substitution_string_01=>'APP_NAME'
-,p_substitution_value_01=>'Plugin Apps'
+,p_substitution_value_01=>'Plugin Control'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>6
 ,p_version_scn=>2376413
@@ -148,9 +148,9 @@ wwv_flow_imp_shared.create_list(
 wwv_flow_imp_shared.create_list_item(
  p_id=>wwv_flow_imp.id(8903488072580374)
 ,p_list_item_display_sequence=>10
-,p_list_item_link_text=>'Home'
+,p_list_item_link_text=>'Plugin Operations'
 ,p_list_item_link_target=>'f?p=&APP_ID.:1:&APP_SESSION.::&DEBUG.:::'
-,p_list_item_icon=>'fa-home'
+,p_list_item_icon=>'fa-cogs'
 ,p_list_item_current_type=>'TARGET_PAGE'
 );
 wwv_flow_imp_shared.create_list_item(
@@ -160,6 +160,15 @@ wwv_flow_imp_shared.create_list_item(
 ,p_list_item_link_target=>'f?p=&APP_ID.:2:&APP_SESSION.::&DEBUG.:::'
 ,p_list_item_icon=>'fa-plug'
 ,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(8910030000000001)
+,p_list_item_display_sequence=>30
+,p_list_item_link_text=>'Manage Plugin Apps'
+,p_list_item_link_target=>'f?p=&APP_ID.:3:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-list-alt'
+,p_list_item_current_for_pages=>'3,4'
+,p_list_item_current_type=>'COLON_DELIMITED_PAGE_LIST'
 );
 end;
 /
@@ -397,18 +406,6 @@ wwv_flow_imp_shared.create_flow_item(
 ,p_protection_level=>'S'
 ,p_item_comment=>'Server-derived cross-app return URL.'
 );
-wwv_flow_imp_shared.create_flow_item(
- p_id=>wwv_flow_imp.id(10439990000020013)
-,p_name=>'ORAC_LAUNCH_PLUGIN_NAVIGATION_URL'
-,p_protection_level=>'S'
-,p_item_comment=>'Server-derived launch URL for Plugin Navigation.'
-);
-wwv_flow_imp_shared.create_flow_item(
- p_id=>wwv_flow_imp.id(10439990000020014)
-,p_name=>'ORAC_LAUNCH_PLUGIN_OPERATIONS_URL'
-,p_protection_level=>'S'
-,p_item_comment=>'Server-derived launch URL for Plugin Operations.'
-);
 end;
 /
 prompt --application/shared_components/logic/application_processes
@@ -433,8 +430,6 @@ wwv_flow_imp_shared.create_flow_process(
 '  :ORAC_RETURN_URL_3 := orac_code.apex_return_nav_api.return_url(3, :ORAC_NAV_STACK);',
 '  :ORAC_RETURN_URL_4 := orac_code.apex_return_nav_api.return_url(4, :ORAC_NAV_STACK);',
 '  :ORAC_RETURN_URL_5 := orac_code.apex_return_nav_api.return_url(5, :ORAC_NAV_STACK);',
-'  :ORAC_LAUNCH_PLUGIN_NAVIGATION_URL := orac_code.apex_return_nav_api.launch_url(1043, 2, ''ORAC_THEME_SYNC'', ''RP'');',
-'  :ORAC_LAUNCH_PLUGIN_OPERATIONS_URL := orac_code.apex_return_nav_api.launch_url(1043, 1, ''ORAC_THEME_SYNC'', ''RP'');',
 'end;'))
 ,p_process_clob_language=>'PLSQL'
 ,p_error_display_location=>'INLINE_IN_NOTIFICATION'
@@ -986,9 +981,28 @@ wwv_flow_imp_shared.create_menu(
 );
 wwv_flow_imp_shared.create_menu_option(
  p_id=>wwv_flow_imp.id(8891239187580332)
-,p_short_name=>'Home'
+,p_short_name=>'Plugin Operations'
 ,p_link=>'f?p=&APP_ID.:1:&APP_SESSION.::&DEBUG.:::'
 ,p_page_id=>1
+);
+wwv_flow_imp_shared.create_menu_option(
+ p_id=>wwv_flow_imp.id(8910020000000023)
+,p_short_name=>'Plugin Navigation'
+,p_link=>'f?p=&APP_ID.:2:&APP_SESSION.::&DEBUG.:::'
+,p_page_id=>2
+);
+wwv_flow_imp_shared.create_menu_option(
+ p_id=>wwv_flow_imp.id(8910030000000002)
+,p_short_name=>'Manage Plugin Apps'
+,p_link=>'f?p=&APP_ID.:3:&APP_SESSION.::&DEBUG.:::'
+,p_page_id=>3
+);
+wwv_flow_imp_shared.create_menu_option(
+ p_id=>wwv_flow_imp.id(8910040000000002)
+,p_parent_id=>wwv_flow_imp.id(8910030000000002)
+,p_short_name=>'Plugin App'
+,p_link=>'f?p=&APP_ID.:4:&APP_SESSION.::&DEBUG.:::'
+,p_page_id=>4
 );
 end;
 /
@@ -1224,6 +1238,18 @@ wwv_flow_imp_page.create_page(
 ,p_page_template_options=>'#DEFAULT#'
 ,p_protection_level=>'C'
 ,p_page_component_map=>'13'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(8910020000000046)
+,p_plug_name=>'Breadcrumb'
+,p_region_template_options=>'#DEFAULT#:t-BreadcrumbRegion--useBreadcrumbTitle'
+,p_component_template_options=>'#DEFAULT#'
+,p_plug_template=>2531463326621247859
+,p_plug_display_sequence=>10
+,p_plug_display_point=>'REGION_POSITION_01'
+,p_menu_id=>wwv_flow_imp.id(8890959233580332)
+,p_plug_source_type=>'NATIVE_BREADCRUMB'
+,p_menu_template_id=>4072363345357175094
 );
 wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(8910020000000030)
@@ -1966,6 +1992,18 @@ wwv_flow_imp_page.create_page(
 ,p_page_component_map=>'13'
 );
 wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(8910020000000047)
+,p_plug_name=>'Breadcrumb'
+,p_region_template_options=>'#DEFAULT#:t-BreadcrumbRegion--useBreadcrumbTitle'
+,p_component_template_options=>'#DEFAULT#'
+,p_plug_template=>2531463326621247859
+,p_plug_display_sequence=>10
+,p_plug_display_point=>'REGION_POSITION_01'
+,p_menu_id=>wwv_flow_imp.id(8890959233580332)
+,p_plug_source_type=>'NATIVE_BREADCRUMB'
+,p_menu_template_id=>4072363345357175094
+);
+wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(8910020000000020)
 ,p_plug_name=>'Plugin Apps'
 ,p_icon_css_classes=>'fa-plug'
@@ -2023,13 +2061,489 @@ wwv_flow_imp_page.create_card_action(
 );
 end;
 /
+prompt --application/pages/page_00003
+begin
+wwv_flow_imp_page.create_page(
+ p_id=>3
+,p_name=>'Manage Plugin Apps'
+,p_alias=>'MANAGE-PLUGIN-APPS'
+,p_step_title=>'Manage Plugin Apps'
+,p_warn_on_unsaved_changes=>'N'
+,p_autocomplete_on_off=>'OFF'
+,p_step_template=>2526643373347724467
+,p_page_template_options=>'#DEFAULT#'
+,p_protection_level=>'C'
+,p_page_component_map=>'18'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(89100300000000201)
+,p_plug_name=>'Breadcrumb'
+,p_region_template_options=>'#DEFAULT#:t-BreadcrumbRegion--useBreadcrumbTitle'
+,p_component_template_options=>'#DEFAULT#'
+,p_plug_template=>2531463326621247859
+,p_plug_display_sequence=>10
+,p_plug_display_point=>'REGION_POSITION_01'
+,p_menu_id=>wwv_flow_imp.id(8890959233580332)
+,p_plug_source_type=>'NATIVE_BREADCRUMB'
+,p_menu_template_id=>4072363345357175094
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(89100300000000202)
+,p_plug_name=>'Plugin Apps'
+,p_region_template_options=>'#DEFAULT#:t-IRR-region--noBorders'
+,p_plug_template=>2100526641005906379
+,p_plug_display_sequence=>20
+,p_query_type=>'SQL'
+,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select plugin_id,',
+'       plugin_version,',
+'       app_alias,',
+'       label,',
+'       installed_app_id,',
+'       install_status,',
+'       enabled,',
+'       case when upper(enabled) = ''Y''',
+'         then ''fa fa-check u-success-text''',
+'       end as enabled_icon,',
+'       row_version',
+'  from orac_code.plugin_apex_apps_v',
+' order by plugin_id, app_alias'))
+,p_plug_source_type=>'NATIVE_IR'
+,p_prn_page_header=>'Plugin Apps'
+);
+wwv_flow_imp_page.create_worksheet(
+ p_id=>wwv_flow_imp.id(89100300000000203)
+,p_name=>'Plugin Apps'
+,p_max_row_count_message=>'The maximum row count for this report is #MAX_ROW_COUNT# rows. Please apply a filter to reduce the number of records in your query.'
+,p_no_data_found_message=>'No plugin APEX apps found.'
+,p_base_pk1=>'PLUGIN_ID'
+,p_base_pk2=>'APP_ALIAS'
+,p_pagination_type=>'ROWS_X_TO_Y'
+,p_pagination_display_pos=>'BOTTOM_RIGHT'
+,p_report_list_mode=>'TABS'
+,p_lazy_loading=>false
+,p_show_detail_link=>'N'
+,p_show_notify=>'Y'
+,p_download_formats=>'CSV:HTML:XLSX:PDF'
+,p_enable_mail_download=>'Y'
+,p_owner=>'ORAC_ADMIN'
+,p_internal_uid=>89100300000000203
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(89100300000000204)
+,p_db_column_name=>'PLUGIN_ID'
+,p_display_order=>1
+,p_is_primary_key=>'Y'
+,p_column_identifier=>'A'
+,p_column_label=>'<span class="u-VisuallyHidden">Edit</span>'
+,p_column_link=>'f?p=&APP_ID.:4:&APP_SESSION.::&DEBUG.:RP:P4_PLUGIN_ID,P4_APP_ALIAS:#PLUGIN_ID#,#APP_ALIAS#'
+,p_column_linktext=>'<span role="img" aria-label="Edit" class="fa fa-edit" title="Edit"></span>'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(89100300000000205)
+,p_db_column_name=>'PLUGIN_VERSION'
+,p_display_order=>2
+,p_column_identifier=>'B'
+,p_column_label=>'Version'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(89100300000000206)
+,p_db_column_name=>'APP_ALIAS'
+,p_display_order=>3
+,p_is_primary_key=>'Y'
+,p_column_identifier=>'C'
+,p_column_label=>'App Alias'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(89100300000000207)
+,p_db_column_name=>'LABEL'
+,p_display_order=>4
+,p_column_identifier=>'D'
+,p_column_label=>'Label'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(89100300000000208)
+,p_db_column_name=>'INSTALLED_APP_ID'
+,p_display_order=>5
+,p_column_identifier=>'E'
+,p_column_label=>'Installed App ID'
+,p_column_type=>'NUMBER'
+,p_heading_alignment=>'RIGHT'
+,p_column_alignment=>'RIGHT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(89100300000000209)
+,p_db_column_name=>'INSTALL_STATUS'
+,p_display_order=>6
+,p_column_identifier=>'F'
+,p_column_label=>'Install Status'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(89100300000000210)
+,p_db_column_name=>'ENABLED'
+,p_display_order=>7
+,p_column_identifier=>'G'
+,p_column_label=>'Enabled'
+,p_column_html_expression=>'<span class="#ENABLED_ICON#" aria-hidden="true" title="#ENABLED#"></span>'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(89100300000000211)
+,p_db_column_name=>'ENABLED_ICON'
+,p_display_order=>8
+,p_column_identifier=>'H'
+,p_column_label=>'Enabled Icon'
+,p_column_type=>'STRING'
+,p_display_text_as=>'HIDDEN_ESCAPE_SC'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(89100300000000212)
+,p_db_column_name=>'ROW_VERSION'
+,p_display_order=>9
+,p_column_identifier=>'I'
+,p_column_label=>'Row Version'
+,p_column_type=>'NUMBER'
+,p_display_text_as=>'HIDDEN_ESCAPE_SC'
+,p_heading_alignment=>'RIGHT'
+,p_column_alignment=>'RIGHT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_rpt(
+ p_id=>wwv_flow_imp.id(89100300000000213)
+,p_application_user=>'APXWS_DEFAULT'
+,p_report_seq=>10
+,p_report_alias=>'891031'
+,p_status=>'PUBLIC'
+,p_is_default=>'Y'
+,p_report_columns=>'PLUGIN_ID:LABEL:APP_ALIAS:PLUGIN_VERSION:INSTALLED_APP_ID:INSTALL_STATUS:ENABLED:'
+,p_sort_column_1=>'PLUGIN_ID'
+,p_sort_direction_1=>'ASC'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(89100300000000214)
+,p_button_sequence=>20
+,p_button_plug_id=>wwv_flow_imp.id(89100300000000202)
+,p_button_name=>'RESET_REPORT'
+,p_button_action=>'REDIRECT_PAGE'
+,p_button_template_options=>'t-Button--iconLeft'
+,p_button_template_id=>2082829544945815391
+,p_button_image_alt=>'Reset'
+,p_button_position=>'RIGHT_OF_IR_SEARCH_BAR'
+,p_button_redirect_url=>'f?p=&APP_ID.:&APP_PAGE_ID.:&APP_SESSION.::&DEBUG.:&APP_PAGE_ID.,RR::'
+,p_icon_css_classes=>'fa-undo-alt'
+);
+wwv_flow_imp_page.create_page_da_event(
+ p_id=>wwv_flow_imp.id(89100300000000215)
+,p_name=>'Dialog Closed'
+,p_event_sequence=>10
+,p_triggering_element_type=>'REGION'
+,p_triggering_region_id=>wwv_flow_imp.id(89100300000000202)
+,p_bind_type=>'bind'
+,p_execution_type=>'IMMEDIATE'
+,p_bind_event_type=>'apexafterclosedialog'
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(89100300000000216)
+,p_event_id=>wwv_flow_imp.id(89100300000000215)
+,p_event_result=>'TRUE'
+,p_action_sequence=>10
+,p_execute_on_page_init=>'N'
+,p_action=>'NATIVE_REFRESH'
+,p_affected_elements_type=>'REGION'
+,p_affected_region_id=>wwv_flow_imp.id(89100300000000202)
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(89100300000000217)
+,p_event_id=>wwv_flow_imp.id(89100300000000215)
+,p_event_result=>'TRUE'
+,p_action_sequence=>20
+,p_execute_on_page_init=>'N'
+,p_action=>'NATIVE_JAVASCRIPT_CODE'
+,p_attribute_01=>'apex.message.showPageSuccess(''Plugin app row updated.'');'
+);
+end;
+/
+prompt --application/pages/page_00004
+begin
+wwv_flow_imp_page.create_page(
+ p_id=>4
+,p_name=>'Plugin App'
+,p_alias=>'PLUGIN-APP'
+,p_page_mode=>'MODAL'
+,p_step_title=>'Plugin App'
+,p_autocomplete_on_off=>'OFF'
+,p_step_template=>1661186590416509825
+,p_page_template_options=>'#DEFAULT#:js-dialog-class-t-Drawer--pullOutEnd'
+,p_dialog_chained=>'N'
+,p_dialog_resizable=>'Y'
+,p_protection_level=>'C'
+,p_page_component_map=>'16'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(89100400000000301)
+,p_plug_name=>'Plugin App'
+,p_region_template_options=>'#DEFAULT#'
+,p_plug_template=>4501440665235496320
+,p_plug_display_sequence=>10
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'expand_shortcuts', 'N',
+  'output_as', 'TEXT',
+  'show_line_breaks', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(89100400000000302)
+,p_plug_name=>'Buttons'
+,p_region_template_options=>'#DEFAULT#'
+,p_plug_template=>2126429139436695430
+,p_plug_display_sequence=>20
+,p_plug_display_point=>'REGION_POSITION_03'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'expand_shortcuts', 'N',
+  'output_as', 'TEXT',
+  'show_line_breaks', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(89100400000000303)
+,p_button_sequence=>10
+,p_button_plug_id=>wwv_flow_imp.id(89100400000000302)
+,p_button_name=>'CANCEL'
+,p_button_action=>'DEFINED_BY_DA'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>4072362960822175091
+,p_button_image_alt=>'Cancel'
+,p_button_position=>'CLOSE'
+,p_button_alignment=>'RIGHT'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(89100400000000304)
+,p_button_sequence=>20
+,p_button_plug_id=>wwv_flow_imp.id(89100400000000302)
+,p_button_name=>'SAVE'
+,p_button_action=>'SUBMIT'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>4072362960822175091
+,p_button_is_hot=>'Y'
+,p_button_image_alt=>'Apply Changes'
+,p_button_position=>'NEXT'
+,p_button_alignment=>'RIGHT'
+,p_database_action=>'UPDATE'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(89100400000000305)
+,p_name=>'P4_PLUGIN_ID'
+,p_source_data_type=>'VARCHAR2'
+,p_item_sequence=>10
+,p_item_plug_id=>wwv_flow_imp.id(89100400000000301)
+,p_display_as=>'NATIVE_HIDDEN'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(89100400000000306)
+,p_name=>'P4_APP_ALIAS'
+,p_source_data_type=>'VARCHAR2'
+,p_item_sequence=>20
+,p_item_plug_id=>wwv_flow_imp.id(89100400000000301)
+,p_display_as=>'NATIVE_HIDDEN'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(89100400000000307)
+,p_name=>'P4_LABEL'
+,p_source_data_type=>'VARCHAR2'
+,p_item_sequence=>30
+,p_item_plug_id=>wwv_flow_imp.id(89100400000000301)
+,p_prompt=>'Label'
+,p_display_as=>'NATIVE_DISPLAY_ONLY'
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'NO'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'based_on', 'VALUE',
+  'format', 'PLAIN',
+  'send_on_page_submit', 'Y',
+  'show_line_breaks', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(89100400000000308)
+,p_name=>'P4_INSTALLED_APP_ID'
+,p_source_data_type=>'NUMBER'
+,p_item_sequence=>40
+,p_item_plug_id=>wwv_flow_imp.id(89100400000000301)
+,p_prompt=>'Installed App ID'
+,p_display_as=>'NATIVE_DISPLAY_ONLY'
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'NO'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'based_on', 'VALUE',
+  'format', 'PLAIN',
+  'send_on_page_submit', 'Y',
+  'show_line_breaks', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(89100400000000309)
+,p_name=>'P4_INSTALL_STATUS'
+,p_source_data_type=>'VARCHAR2'
+,p_item_sequence=>50
+,p_item_plug_id=>wwv_flow_imp.id(89100400000000301)
+,p_prompt=>'Install Status'
+,p_display_as=>'NATIVE_DISPLAY_ONLY'
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'NO'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'based_on', 'VALUE',
+  'format', 'PLAIN',
+  'send_on_page_submit', 'Y',
+  'show_line_breaks', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(89100400000000310)
+,p_name=>'P4_ENABLED'
+,p_source_data_type=>'VARCHAR2'
+,p_is_required=>true
+,p_item_sequence=>60
+,p_item_plug_id=>wwv_flow_imp.id(89100400000000301)
+,p_prompt=>'Enabled'
+,p_display_as=>'NATIVE_YES_NO'
+,p_cSize=>64
+,p_cMaxlength=>4000
+,p_field_template=>2318601014859922299
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_lov_display_extra=>'NO'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'use_defaults', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(89100400000000311)
+,p_name=>'P4_ROW_VERSION'
+,p_source_data_type=>'NUMBER'
+,p_item_sequence=>70
+,p_item_plug_id=>wwv_flow_imp.id(89100400000000301)
+,p_display_as=>'NATIVE_HIDDEN'
+,p_is_persistent=>'N'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_da_event(
+ p_id=>wwv_flow_imp.id(89100400000000312)
+,p_name=>'Cancel Dialog'
+,p_event_sequence=>10
+,p_triggering_element_type=>'BUTTON'
+,p_triggering_button_id=>wwv_flow_imp.id(89100400000000303)
+,p_bind_type=>'bind'
+,p_execution_type=>'IMMEDIATE'
+,p_bind_event_type=>'click'
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(89100400000000313)
+,p_event_id=>wwv_flow_imp.id(89100400000000312)
+,p_event_result=>'TRUE'
+,p_action_sequence=>10
+,p_execute_on_page_init=>'N'
+,p_action=>'NATIVE_DIALOG_CANCEL'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(89100400000000314)
+,p_process_sequence=>10
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Process form Plugin App'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'orac_code.plugin_apex_app_admin_api.set_enabled(',
+'  p_plugin_id   => :P4_PLUGIN_ID,',
+'  p_app_alias   => :P4_APP_ALIAS,',
+'  p_enabled     => :P4_ENABLED,',
+'  p_row_version => :P4_ROW_VERSION',
+');'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_process_when=>'SAVE'
+,p_process_when_type=>'REQUEST_IN_CONDITION'
+,p_process_success_message=>'Plugin app updated.'
+,p_internal_uid=>89100400000000314
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(89100400000000315)
+,p_process_sequence=>50
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_CLOSE_WINDOW'
+,p_process_name=>'Close Dialog'
+,p_attribute_01=>'P4_PLUGIN_ID,P4_APP_ALIAS,REQUEST'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_process_when=>'SAVE'
+,p_process_when_type=>'REQUEST_IN_CONDITION'
+,p_internal_uid=>89100400000000315
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(89100400000000316)
+,p_process_sequence=>10
+,p_process_point=>'BEFORE_HEADER'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Initialize Plugin App'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select label,',
+'       installed_app_id,',
+'       install_status,',
+'       enabled,',
+'       row_version',
+'  into :P4_LABEL,',
+'       :P4_INSTALLED_APP_ID,',
+'       :P4_INSTALL_STATUS,',
+'       :P4_ENABLED,',
+'       :P4_ROW_VERSION',
+'  from orac_code.plugin_apex_apps_v',
+' where plugin_id = :P4_PLUGIN_ID',
+'   and app_alias = :P4_APP_ALIAS;'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_internal_uid=>89100400000000316
+);
+end;
+/
 prompt --application/pages/page_09999
 begin
 wwv_flow_imp_page.create_page(
  p_id=>9999
 ,p_name=>'Login Page'
 ,p_alias=>'LOGIN'
-,p_step_title=>'Plugin Apps - Log In'
+,p_step_title=>'Plugin Control - Log In'
 ,p_warn_on_unsaved_changes=>'N'
 ,p_first_item=>'AUTO_FIRST_ITEM'
 ,p_autocomplete_on_off=>'OFF'
@@ -2041,7 +2555,7 @@ wwv_flow_imp_page.create_page(
 );
 wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(8897431453580365)
-,p_plug_name=>'Plugin Apps'
+,p_plug_name=>'Plugin Control'
 ,p_region_template_options=>'#DEFAULT#'
 ,p_plug_template=>2674157997338192145
 ,p_plug_display_sequence=>10
@@ -2258,7 +2772,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_template=>2322115667525957943
 ,p_plug_display_sequence=>20
 ,p_location=>null
-,p_plug_source=>'Plugin Apps provides a central place to discover and launch user interfaces supplied by installed Orac plugins. The apps shown here depend on the plugins installed and the access roles assigned to your user account.'
+,p_plug_source=>'Plugin Control provides a central place to discover and launch user interfaces supplied by installed Orac plugins. The apps shown here depend on the plugins installed and the access roles assigned to your user account.'
 ,p_plug_query_num_rows=>15
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'expand_shortcuts', 'N',

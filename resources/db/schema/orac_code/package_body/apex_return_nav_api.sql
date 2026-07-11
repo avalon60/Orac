@@ -37,7 +37,7 @@ create or replace package body orac_code.apex_return_nav_api as
       return true;
     end if;
 
-    if p_app_id = c_plugin_app_id and p_page_id in (1, 2)
+    if p_app_id = c_plugin_app_id and p_page_id in (1, 2, 3, 4)
     then
       return true;
     end if;
@@ -178,6 +178,16 @@ create or replace package body orac_code.apex_return_nav_api as
     if p_app_id = c_plugin_app_id and p_page_id = 2
     then
       return 'Plugin Navigation';
+    end if;
+
+    if p_app_id = c_plugin_app_id and p_page_id = 3
+    then
+      return 'Manage Plugin Apps';
+    end if;
+
+    if p_app_id = c_plugin_app_id and p_page_id = 4
+    then
+      return 'Plugin App';
     end if;
 
     select coalesce(menu.card_title, menu.label, menu.app_alias)
