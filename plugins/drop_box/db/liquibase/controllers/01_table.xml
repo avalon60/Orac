@@ -6,6 +6,7 @@
   <include file="../../schema/table/drop_location.sql" relativeToChangelogFile="true"/>
   <include file="../../schema/table/drop_processing_profile.sql" relativeToChangelogFile="true"/>
   <include file="../../schema/table/drop_job.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/table/drop_job_knowledge_ingestion_request.sql" relativeToChangelogFile="true"/>
   <include file="../../schema/table/drop_job_effective_profile_instruction.sql" relativeToChangelogFile="true"/>
   <include file="../../schema/table/drop_job_source_mtime_type.sql" relativeToChangelogFile="true"/>
   <include file="../../schema/table/drop_job_source_mtime_type_v2.sql" relativeToChangelogFile="true"/>

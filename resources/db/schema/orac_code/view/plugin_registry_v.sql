@@ -6,7 +6,8 @@
 -- __description__: approved runtime projection of active plugin registry state
 
 create or replace view orac_code.plugin_registry_v as
-select plugin_id
+select plugin_registry_id
+     , plugin_id
      , plugin_name
      , plugin_version
      , runtime_mode

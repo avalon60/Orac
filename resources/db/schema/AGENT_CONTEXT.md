@@ -176,6 +176,18 @@ Rules:
   `orac_plugin`, or plugin-owned schemas.
 - Do not grant broad plugin schema privileges to `orac_plugin`.
 
+Physical placement follows the receiving-schema convention in this repository:
+
+- Core-to-API privilege scripts live under
+  `resources/db/schema/orac_api/privilege`, not under `orac_core/grant`.
+- `orac_api/schemaController.xml` must install `privilege` before `view` so
+  API pass-through views have the required `orac_core` access before they are
+  created.
+- Outgoing API grants live under `resources/db/schema/orac_api/grant`.
+- Outgoing CODE grants live under `resources/db/schema/orac_code/grant`.
+- Runtime and APEX private synonyms live under the receiving schema's
+  `synonym` directory.
+
 ## Explicitly Out Of Normal Scope
 
 `orac_ha` is destined to be implemented through a plugin boundary. Do not

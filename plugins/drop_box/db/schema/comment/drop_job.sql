@@ -9,3 +9,5 @@ comment on column orac_dropbox.drop_job.effective_profile_instruction is 'Proces
 ;
 comment on column orac_dropbox.drop_job.effective_instruction is 'Processing instruction copied from drop_location when the job was enqueued.'
 ;
+comment on column orac_dropbox.drop_job.knowledge_ingestion_request_id is 'Loose Core knowledge ingestion request correlation id. This is deliberately not physically foreign-keyed to ORAC_CORE because plugin schemas must not depend directly on Core tables.'
+;

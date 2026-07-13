@@ -1160,6 +1160,49 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertEqual(len(provisioner.calls), 0)
             self.assertEqual(len(runner.calls), 0)
 
+    def test_liquibase_stale_checksum_runs_update_even_when_objects_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache, tempfile.TemporaryDirectory() as temp_archive:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest(
+                    "alpha",
+                    database=_database(
+                        deployment={"type": "liquibase", "controller": "db/liquibase/pluginController.xml"}
+                    ),
+                ),
+                with_schema=True,
+                with_liquibase=True,
+            )
+            runner = _FakeRunner(
+                already_deployed=False,
+                payload_objects_deployed=True,
+            )
+            provisioner = _FakeProvisioner()
+            deployer = PluginDatabaseDeployer(
+                liquibase_runner=runner,
+                schema_provisioner=provisioner,
+                archive_root=Path(temp_archive),
+                clock=lambda: datetime(2026, 6, 3, 12, 0, tzinfo=UTC),
+            )
+            manager = PluginManager(
+                embedding_provider=HashEmbeddingProvider(),
+                plugins_dir=plugins_dir,
+                cache_dir=Path(temp_cache),
+                database_deployer=deployer,
+            )
+
+            report = manager.refresh()
+
+            self.assertEqual(report["indexed_plugin_count"], 1)
+            self.assertEqual(report["deployment_status"]["alpha"], "deployed")
+            self.assertEqual(len(runner.already_deployed_calls), 1)
+            self.assertEqual(len(runner.payload_objects_deployed_calls), 0)
+            self.assertEqual(len(runner.mark_payload_deployed_calls), 0)
+            self.assertEqual(len(provisioner.calls), 1)
+            self.assertEqual(len(runner.calls), 1)
+
     def test_schema_provisioner_creates_missing_plugin_schema(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:
             plugins_dir = Path(temp_plugins)

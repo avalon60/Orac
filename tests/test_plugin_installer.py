@@ -24,6 +24,7 @@ if str(SRC_ROOT) not in sys.path:
 from model.plugin_dependencies import PluginDependencyError
 from model.plugin_dependencies import PluginDependencyInstaller
 from model.plugin_dependencies import normalise_requirements
+from model.plugin_dependencies import validate_declared_imports
 from model.plugin_dependencies import validate_requirements_mirror
 from model.plugin_apex_installation import PluginApexAppInstallError
 from model.plugin_apex_installation import PluginApexAppInstallResult
@@ -156,6 +157,16 @@ class PluginDependencyTests(unittest.TestCase):
             with self.subTest(value=value):
                 with self.assertRaises(PluginDependencyError):
                     normalise_requirements(value)
+
+    def test_declared_imports_treat_orac_core_as_first_party(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugin_dir = Path(temp_dir)
+            (plugin_dir / "service.py").write_text(
+                "from orac_core.knowledge import KnowledgeManagedFileCaptureService\n",
+                encoding="utf-8",
+            )
+
+            validate_declared_imports(plugin_dir, (), plugin_id="drop_box")
 
     def test_dependency_installer_uses_argument_lists_without_shell(self) -> None:
         calls: list[tuple[list[str], dict]] = []

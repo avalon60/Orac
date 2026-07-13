@@ -115,3 +115,11 @@ grant read on orac_code.project_registry_v to orac;
 --changeset clive:grant_orac_code_ingestion_target_lov_v_to_orac_28 context:core labels:core stripComments:false runOnChange:true
 grant read on orac_code.ingestion_target_lov_v to orac;
 --rollback revoke read on orac_code.ingestion_target_lov_v from orac;
+
+--changeset clive:grant_orac_code_knowledge_ingestion_requests_v_to_orac_29 context:core labels:core stripComments:false runOnChange:true
+grant read on orac_code.knowledge_ingestion_requests_v to orac;
+--rollback revoke read on orac_code.knowledge_ingestion_requests_v from orac;
+
+--changeset clive:grant_orac_code_knowledge_ingestion_requests_v_to_orac_apx_pub_30 context:core labels:core stripComments:false runOnChange:true
+grant read on orac_code.knowledge_ingestion_requests_v to orac_apx_pub;
+--rollback revoke read on orac_code.knowledge_ingestion_requests_v from orac_apx_pub;

@@ -75,6 +75,7 @@ from orac_core.retrieval import SearchRequest
 from orac_core.retrieval import detect_explicit_search_request
 from orac_core.retrieval import enforce_high_risk_factual_grounding
 from orac_core.retrieval import PersonFactResolver
+from orac_core.knowledge.service_manifest import core_knowledge_service_manifest
 from orac_core import answer_date_reasoning_query
 from lib.session_manager import DBSession
 from lib.user_security import UserSecurity
@@ -2684,6 +2685,16 @@ class Orac:
             for manifest in manifests
             if manifest.runtime_mode in {"service", "hybrid"}
         ]
+        config_mgr = getattr(self, "config_mgr", None)
+        knowledge_enabled = False
+        if hasattr(config_mgr, "bool_config_value"):
+            knowledge_enabled = config_mgr.bool_config_value(
+                "knowledge",
+                "enabled",
+                default=True,
+            )
+        if knowledge_enabled:
+            service_manifests.append(core_knowledge_service_manifest())
         registration_status = service_manager.register_manifests(service_manifests)
         service_manager.start_auto_services()
         status = service_manager.status()

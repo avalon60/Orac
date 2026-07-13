@@ -306,6 +306,107 @@ Generated dependency scripts are part of the security boundary. A missing grant 
 
 ---
 
+## Schema Object Dependency Closure
+
+A database object change is not complete until its dependency graph is complete
+for the active installation path.
+
+This rule applies to object creation, object removal, renamed objects, renamed
+columns, added or removed columns, datatype changes, nullability changes,
+changed package signatures, and changed exposure requirements.
+
+For each new, altered, renamed, or dropped database object, the same change must
+assess and update all applicable companion artefacts:
+
+- table constraints
+- indexes
+- comments
+- Oracle Database annotations
+- source-to-API privileges
+- API pass-through views
+- TAPI package specifications and bodies
+- audit and row-version triggers
+- API-to-CODE grants
+- CODE packages or business views
+- runtime, consumer, plugin, or APEX parsing-schema grants
+- private synonyms
+- seed data
+- tests
+- controller, changelog, or install-driver registration
+
+Not every object requires every companion artefact. Each applicable dependency
+must be implemented, updated, removed, or explicitly recorded as not applicable
+through a reviewed project mechanism. Silence is not an intentional no-consumer
+decision.
+
+Every new or materially changed table, view, package, procedure, function, type,
+or materialized view must have an explicit downstream exposure decision. The
+decision must identify intended consumers where applicable, such as owner-only,
+API layer, CODE layer, runtime schema, APEX parsing schema, consumer/access
+schema, plugin bridge schema, or plugin-owned schema. The source of truth may be
+repository configuration, annotations, generator inputs, a dependency inventory,
+tests, or another documented project mechanism. Do not invent a new metadata
+format unless the repository already has a suitable mechanism or the change
+clearly requires one.
+
+Every required SQL script must be in the active installation path, included
+exactly once, placed after its prerequisites, and placed before objects that
+depend on it. A SQL file that exists in the repository but is not reached by the
+active `schemaController.xml`, Liquibase changelog, or install driver is absent
+for dependency-closure purposes.
+
+Logical grant direction is defined by this document. Physical script placement,
+directory naming, and controller ordering may be defined by the nearest relevant
+`AGENT_CONTEXT.md`; when explicitly documented there, that repository-specific
+placement rule takes precedence over the generic directory examples in this
+document.
+
+Lifecycle changes must remove or update obsolete views, grants, synonyms,
+controller entries, tests, generated files, and installation references in the
+same change. Do not leave stale access surfaces in place after an object or
+exposure requirement is removed.
+
+Dependency-incomplete DDL must not be placed in an active installation path.
+Partially implemented feature objects must remain outside active controllers, or
+behind an explicitly inactive and documented feature installation path, until
+their required dependency graph is complete. Active Liquibase or install runs
+must not knowingly leave invalid or unreachable feature objects behind.
+
+Database dependency changes require mechanical verification. Use the
+repository's existing checks where possible. Verification must detect, where
+applicable:
+
+- scripts missing from active controller, changelog, or install-driver paths
+- unexpected invalid objects
+- PL/SQL compilation errors
+- unresolved view dependencies
+- missing grants
+- missing private synonyms
+- downstream objects compiled before prerequisites
+- unexpected direct access to `<DOMAIN>_CORE`
+- unintended or excessive grants
+
+Forced object creation, including `create or replace force view`, is not proof
+of successful installation. Unexpected invalid objects after installation are
+defects.
+
+For active `<DOMAIN>_CORE` tables, mechanical verification must establish that
+the required `<DOMAIN>_API` pass-through view exists or a reviewed exception
+exists, that the required source-to-API privilege exists in the active
+installation path, that downstream grants required by declared consumers exist,
+and that prohibited direct grants from `<DOMAIN>_CORE` to CODE, runtime,
+consumer, parsing, plugin bridge, or plugin-owned schemas have not been added.
+Do not assume all core tables require exposure beyond `<DOMAIN>_API`.
+
+Plugin-private and APEX-facing database changes must assess plugin-private
+object dependencies, approved API or CODE access, grants to plugin runtime
+schemas, grants to APEX parsing schemas, required private synonyms, APEX
+application parsing-schema dependencies, plugin install and uninstall ordering,
+and clean installation with the plugin enabled or absent as applicable. Do not
+broaden plugin access to core tables.
+
+---
+
 ## Data access rules
 
 Business logic packages in `<DOMAIN>_CODE` must insert, update, delete, merge, or upsert data only through TAPI packages in `<DOMAIN>_API`.
@@ -1248,8 +1349,11 @@ When generating or modifying database code, agents must:
     where new tables or columns are created; if annotation names or values are
     not known, ask for the project vocabulary or source of truth.
 12. Add constraints for controlled values.
-13. Add tests or install verification where appropriate.
-14. Regenerate or update schema dependency scripts when source DDL changes affect generated views or grants.
+13. Add mechanical dependency-closure verification for database dependency
+    changes.
+14. Regenerate or update schema dependency scripts when source DDL changes
+    affect generated views or grants, and verify that every required script is
+    in the active installation path.
 15. Stop and ask before introducing a new schema, grant pattern, or naming convention.
 
 ---

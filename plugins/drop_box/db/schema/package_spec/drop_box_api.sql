@@ -27,5 +27,13 @@ create or replace package orac_dropbox.drop_box_api as
     p_document_id   in orac_dropbox.drop_job.document_id%type default null
   );
 
+  procedure record_core_acceptance(
+    p_drop_job_id                    in orac_dropbox.drop_job.drop_job_id%type,
+    p_knowledge_ingestion_request_id in orac_dropbox.drop_job.knowledge_ingestion_request_id%type
+  );
+
+  function repair_missing_core_failures
+    return number;
+
 end drop_box_api;
 /

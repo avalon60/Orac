@@ -85,3 +85,62 @@ class RetrievalSchemaTests(unittest.TestCase):
         self.assertIn("@constraint_pk/orac_fch_src_pk.sql", run_all)
         self.assertIn("@constraint_fk/orac_srch_res_orac_srch_q_fk1.sql", run_all)
         self.assertIn("@constraint_fk/orac_fch_src_srch_res_fk1.sql", run_all)
+
+    def test_api_layer_exposes_retrieval_cache_tables(self) -> None:
+        expected_views = (
+            (
+                "resources/db/schema/orac_api/view/orac_search_queries_v.sql",
+                "create or replace force view orac_api.orac_search_queries_v",
+                "from orac_core.orac_search_queries",
+            ),
+            (
+                "resources/db/schema/orac_api/view/orac_search_results_v.sql",
+                "create or replace force view orac_api.orac_search_results_v",
+                "from orac_core.orac_search_results",
+            ),
+            (
+                "resources/db/schema/orac_api/view/orac_fetched_sources_v.sql",
+                "create or replace force view orac_api.orac_fetched_sources_v",
+                "from orac_core.orac_fetched_sources",
+            ),
+        )
+
+        for relative_path, create_view, source_table in expected_views:
+            view_sql = self._read(relative_path).lower()
+            with self.subTest(relative_path=relative_path):
+                self.assertIn(create_view, view_sql)
+                self.assertIn(source_table, view_sql)
+                self.assertIn("row_version", view_sql)
+
+        privileges = self._read(
+            "resources/db/schema/orac_api/privilege/orac_api_core_table_access.sql"
+        ).lower()
+        for table_name in (
+            "orac_search_queries",
+            "orac_search_results",
+            "orac_fetched_sources",
+        ):
+            self.assertIn(
+                f"grant select, insert, update, delete on "
+                f"orac_core.{table_name} to orac_api with grant option",
+                privileges,
+            )
+
+    def test_retrieval_cache_has_no_downstream_grants_yet(self) -> None:
+        downstream_grants = "\n".join(
+            self._read(relative_path).lower()
+            for relative_path in (
+                "resources/db/schema/orac_api/grant/orac_tapi_consumer_access.sql",
+                "resources/db/schema/orac_code/grant/orac_code_consumer_view_access.sql",
+            )
+        )
+
+        for object_name in (
+            "orac_search_queries",
+            "orac_search_results",
+            "orac_fetched_sources",
+            "orac_search_queries_v",
+            "orac_search_results_v",
+            "orac_fetched_sources_v",
+        ):
+            self.assertNotIn(object_name, downstream_grants)

@@ -12,7 +12,7 @@ select plugin_id,
        install_status,
        readiness_status,
        enabled
-  from orac_code.plugin_registry_v
+  from orac_api.plugin_registry_v
  where enabled = 'Y'
    and install_status = 'success'
    and configuration_status in ('success', 'not_required')

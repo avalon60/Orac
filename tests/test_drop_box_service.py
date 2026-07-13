@@ -20,11 +20,14 @@ for path in (SRC_ROOT, PLUGINS_ROOT):
 
 from drop_box.models import (
     CandidateFile,
+    DropBoxHandoffJob,
     DropLocation,
     FileObservation,
     HashedCandidate,
 )
 from drop_box.models import ScanResult
+from orac_core.knowledge import ManagedCaptureResult
+from orac_core.knowledge.capture import KnowledgeCaptureError
 from drop_box.service import DropBoxService
 
 
@@ -34,10 +37,15 @@ class _Repository:
         *,
         exists: bool = False,
         configuration_errors: list[str] | None = None,
+        handoff_available: bool = False,
     ) -> None:
         self.exists = exists
         self.configuration_errors = configuration_errors or []
+        self.handoff_available = handoff_available
         self.enqueued: list[HashedCandidate] = []
+        self.handoff_jobs: list[DropBoxHandoffJob] = []
+        self.status_updates: list[dict] = []
+        self.core_acceptances: list[dict] = []
         self.committed = False
         self.closed = False
 
@@ -52,6 +60,18 @@ class _Repository:
 
     def enqueue_job(self, hashed):
         self.enqueued.append(hashed)
+
+    def load_handoff_jobs(self):
+        return self.handoff_jobs
+
+    def core_handoff_available(self):
+        return self.handoff_available
+
+    def update_status(self, **kwargs):
+        self.status_updates.append(kwargs)
+
+    def record_core_acceptance(self, **kwargs):
+        self.core_acceptances.append(kwargs)
 
     def commit(self):
         self.committed = True
@@ -174,6 +194,84 @@ class DropBoxServiceTests(unittest.TestCase):
         self.assertIn('"start_policy": "auto"', manifest)
         self.assertIn('"run_on_start": true', manifest)
 
+    def test_handoff_success_marks_job_handed_off_after_core_capture(self) -> None:
+        repository = _Repository(handoff_available=True)
+        repository.handoff_jobs = [_handoff_job()]
+        capture = _CaptureService()
+        service = DropBoxService(
+            scanner=_Scanner(),
+            repository_factory=lambda _context: repository,
+            capture_service_factory=lambda _context: capture,
+        )
+
+        service.tick(object())
+
+        self.assertEqual(capture.requests[0].drop_job_id, 99)
+        self.assertEqual(repository.status_updates, [])
+        self.assertEqual(
+            repository.core_acceptances[-1]["knowledge_ingestion_request_id"],
+            1234,
+        )
+        self.assertEqual(service.last_stats.handed_off, 1)
+
+    def test_capture_validation_failure_marks_job_failed(self) -> None:
+        repository = _Repository(handoff_available=True)
+        repository.handoff_jobs = [_handoff_job()]
+        service = DropBoxService(
+            logger=_Logger(),
+            scanner=_Scanner(),
+            repository_factory=lambda _context: repository,
+            capture_service_factory=lambda _context: _CaptureService(
+                fail=KnowledgeCaptureError("source file changed")
+            ),
+        )
+
+        service.tick(object())
+
+        self.assertEqual(repository.status_updates[-1]["status_code"], "failed")
+        self.assertIn("Drop Box managed-file capture failed", repository.status_updates[-1]["error_message"])
+        self.assertEqual(service.last_stats.handoff_failed, 1)
+
+    def test_transient_core_handoff_failure_leaves_job_queued(self) -> None:
+        repository = _Repository(handoff_available=True)
+        repository.handoff_jobs = [_handoff_job()]
+        logger = _Logger()
+        service = DropBoxService(
+            logger=logger,
+            scanner=_Scanner(),
+            repository_factory=lambda _context: repository,
+            capture_service_factory=lambda _context: _CaptureService(
+                fail=RuntimeError("package invalid")
+            ),
+        )
+
+        service.tick(object())
+
+        self.assertEqual(repository.status_updates, [])
+        self.assertEqual(repository.core_acceptances, [])
+        self.assertEqual(service.last_stats.handoff_failed, 0)
+        self.assertIn("remains queued", logger.warnings[-1])
+
+    def test_missing_core_handoff_leaves_jobs_queued(self) -> None:
+        repository = _Repository(handoff_available=False)
+        repository.handoff_jobs = [_handoff_job()]
+        capture = _CaptureService()
+        logger = _Logger()
+        service = DropBoxService(
+            logger=logger,
+            scanner=_Scanner(),
+            repository_factory=lambda _context: repository,
+            capture_service_factory=lambda _context: capture,
+        )
+
+        service.tick(object())
+
+        self.assertEqual(capture.requests, [])
+        self.assertEqual(repository.status_updates, [])
+        self.assertEqual(service.last_stats.handoff_failed, 0)
+        self.assertTrue(logger.warnings)
+        self.assertIn("Core handoff skipped", logger.warnings[-1])
+
 
 def _location() -> DropLocation:
     return DropLocation(
@@ -195,6 +293,41 @@ def _candidate() -> CandidateFile:
             source_mtime=observed_at,
             observed_at=observed_at,
         ),
+    )
+
+
+class _CaptureService:
+    def __init__(self, *, fail: Exception | None = None) -> None:
+        self.fail = fail
+        self.requests = []
+
+    def capture_drop_box_file(self, request):
+        self.requests.append(request)
+        if self.fail:
+            raise self.fail
+        return ManagedCaptureResult(
+            ingestion_request_id=1234,
+            content_uri="sha256/aa/bb/" + "a" * 64,
+            content_sha256="a" * 64,
+        )
+
+
+def _handoff_job() -> DropBoxHandoffJob:
+    observed_at = datetime(2026, 6, 27, 12, 0, tzinfo=UTC)
+    return DropBoxHandoffJob(
+        drop_job_id=99,
+        drop_location_id=1,
+        location_code="TEST",
+        location_root=Path("/tmp/drop"),
+        source_path=Path("/tmp/drop/source.md"),
+        source_filename="source.md",
+        source_hash="a" * 64,
+        source_size_bytes=12,
+        source_mtime=observed_at,
+        effective_scope_type="PROJECT",
+        effective_scope_key="orac",
+        effective_processing_profile="markdown",
+        effective_instruction="ingest",
     )
 
 

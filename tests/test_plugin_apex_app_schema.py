@@ -1674,7 +1674,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("apex.item(''p2_processed_path'').disable()", page_two)
         self.assertNotIn("apex.item(''p2_failed_path'').disable()", page_two)
 
-    def test_drop_box_activity_page_uses_persisted_event_view(self) -> None:
+    def test_drop_box_activity_page_uses_current_job_and_core_status_views(self) -> None:
         export_sql = (
             (PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql")
             .read_text(encoding="utf-8")
@@ -1687,9 +1687,16 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         ]
 
         self.assertIn("p_name=>'activity'", activity_page)
-        self.assertIn("from orac_dropbox.drop_job_event_admin_v evt", activity_page)
-        self.assertIn("join orac_dropbox.drop_job_admin_v job", activity_page)
-        self.assertIn("on job.drop_job_id = evt.drop_job_id", activity_page)
+        self.assertIn("from orac_dropbox.drop_job_admin_v job", activity_page)
+        self.assertIn(
+            "left join orac_code.knowledge_ingestion_requests_v core",
+            activity_page,
+        )
+        self.assertIn(
+            "on core.ingestion_request_id = job.knowledge_ingestion_request_id",
+            activity_page,
+        )
+        self.assertNotIn("drop_job_event_admin_v evt", activity_page)
         for token in (
             "event_ts",
             "location_code",
@@ -1699,6 +1706,9 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             "source_path",
             "event_type",
             "event_message",
+            "core request",
+            "core state",
+            "latest error",
         ):
             self.assertIn(token, activity_page)
         self.assertNotRegex(
@@ -1722,8 +1732,8 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         )
 
         self.assertIn("create or replace force view orac_code.plugin_lov_v", view_sql)
-        self.assertIn("from orac_code.plugin_registry_v", view_sql)
-        self.assertNotIn("from orac_api.plugin_registry_v", view_sql)
+        self.assertIn("from orac_api.plugin_registry_v", view_sql)
+        self.assertNotIn("from orac_code.plugin_registry_v", view_sql)
         self.assertIn("plugin_id", view_sql)
         self.assertIn("display_label", view_sql)
         self.assertIn("plugin_version", view_sql)

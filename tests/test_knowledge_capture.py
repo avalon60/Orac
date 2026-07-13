@@ -1,0 +1,145 @@
+"""Tests for Core managed-file capture."""
+# Author: Clive Bostock
+# Date: 12-Jul-2026
+# Description: Verifies path, hash, UTF-8, and idempotent capture behaviour.
+
+from __future__ import annotations
+
+from datetime import datetime
+import hashlib
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+SRC_ROOT = PROJECT_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from orac_core.knowledge import DropBoxCaptureRequest
+from orac_core.knowledge import KnowledgeManagedFileCaptureService
+from orac_core.knowledge.capture import KnowledgeCaptureError
+
+
+class _Repository:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def submit_managed_file(self, **kwargs) -> int:
+        self.calls.append(kwargs)
+        return 456
+
+
+class KnowledgeCaptureTests(unittest.TestCase):
+    """Tests Core-managed file capture safety."""
+
+    def test_capture_copies_hashes_and_registers_managed_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "drop"
+            managed = Path(temp) / "managed"
+            root.mkdir()
+            source = root / "note.md"
+            source.write_text("# Note\nhello", encoding="utf-8")
+            repo = _Repository()
+
+            result = KnowledgeManagedFileCaptureService(
+                managed_root=managed,
+                repository=repo,
+            ).capture_drop_box_file(_request(root, source))
+
+            self.assertEqual(result.ingestion_request_id, 456)
+            self.assertTrue((managed / result.content_uri).is_file())
+            self.assertEqual(repo.calls[0]["source_reference"], "drop_box:drop_job:7")
+            self.assertEqual(repo.calls[0]["source_modified_on"], _request(root, source).source_mtime)
+
+    def test_rejects_path_outside_location_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "drop"
+            other = Path(temp) / "other"
+            root.mkdir()
+            other.mkdir()
+            source = other / "note.md"
+            source.write_text("hello", encoding="utf-8")
+
+            with self.assertRaisesRegex(KnowledgeCaptureError, "outside"):
+                KnowledgeManagedFileCaptureService(
+                    managed_root=Path(temp) / "managed",
+                    repository=_Repository(),
+                ).capture_drop_box_file(_request(root, source))
+
+    def test_rejects_hash_mismatch_and_cleans_temp(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "drop"
+            managed = Path(temp) / "managed"
+            root.mkdir()
+            source = root / "note.md"
+            source.write_text("hello", encoding="utf-8")
+            request = _request(root, source, sha256="0" * 64)
+
+            with self.assertRaisesRegex(KnowledgeCaptureError, "hash"):
+                KnowledgeManagedFileCaptureService(
+                    managed_root=managed,
+                    repository=_Repository(),
+                ).capture_drop_box_file(request)
+
+            temp_dir = managed / ".tmp"
+            self.assertEqual(list(temp_dir.glob("*")) if temp_dir.exists() else [], [])
+
+    def test_rejects_non_utf8_markdown(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "drop"
+            root.mkdir()
+            source = root / "note.md"
+            source.write_bytes(b"\xff\xfe")
+
+            with self.assertRaisesRegex(KnowledgeCaptureError, "UTF-8"):
+                KnowledgeManagedFileCaptureService(
+                    managed_root=Path(temp) / "managed",
+                    repository=_Repository(),
+                ).capture_drop_box_file(_request(root, source))
+
+    def test_duplicate_capture_reuses_existing_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "drop"
+            managed = Path(temp) / "managed"
+            root.mkdir()
+            source = root / "note.txt"
+            source.write_text("hello", encoding="utf-8")
+            service = KnowledgeManagedFileCaptureService(
+                managed_root=managed,
+                repository=_Repository(),
+            )
+
+            first = service.capture_drop_box_file(_request(root, source))
+            second = service.capture_drop_box_file(_request(root, source))
+
+            self.assertFalse(first.duplicate_payload)
+            self.assertTrue(second.duplicate_payload)
+
+
+def _request(
+    root: Path,
+    source: Path,
+    *,
+    sha256: str | None = None,
+) -> DropBoxCaptureRequest:
+    payload = source.read_bytes()
+    return DropBoxCaptureRequest(
+        drop_job_id=7,
+        drop_location_id=3,
+        location_root=root,
+        source_path=source,
+        source_filename=source.name,
+        source_sha256=sha256 or hashlib.sha256(payload).hexdigest(),
+        source_size_bytes=len(payload),
+        source_mtime=datetime(2026, 7, 12, 12, 0),
+        target_scope_type="PROJECT",
+        target_scope_key="orac",
+        processing_profile="markdown",
+        processing_instruction="ingest",
+    )
+
+
+if __name__ == "__main__":
+    unittest.main()

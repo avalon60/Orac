@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from orac_core.knowledge import DropBoxCaptureRequest
+
 __author__ = "Clive Bostock"
 __date__ = "27-Jun-2026"
 __description__ = "Defines scanner, repository, and service transfer objects."
@@ -98,6 +100,65 @@ class HashedCandidate:
     source_hash: str
 
 
+@dataclass(frozen=True)
+class DropBoxHandoffJob:
+    """Queued Drop Box job ready for Core-managed file capture."""
+
+    drop_job_id: int
+    drop_location_id: int
+    location_code: str
+    location_root: Path
+    source_path: Path
+    source_filename: str
+    source_hash: str
+    source_size_bytes: int
+    source_mtime: datetime | None
+    effective_scope_type: str
+    effective_scope_key: str
+    effective_processing_profile: str | None = None
+    effective_profile_instruction: str | None = None
+    effective_instruction: str | None = None
+
+    @classmethod
+    def from_row(cls, row: dict) -> "DropBoxHandoffJob":
+        """Create a handoff job from ``drop_job_handoff_v``."""
+        return cls(
+            drop_job_id=int(row["DROP_JOB_ID"]),
+            drop_location_id=int(row["DROP_LOCATION_ID"]),
+            location_code=str(row["LOCATION_CODE"]),
+            location_root=Path(str(row["LOCATION_ROOT"])),
+            source_path=Path(str(row["SOURCE_PATH"])),
+            source_filename=str(row["SOURCE_FILENAME"]),
+            source_hash=str(row["SOURCE_HASH"]),
+            source_size_bytes=int(row["SOURCE_SIZE_BYTES"]),
+            source_mtime=row.get("SOURCE_MTIME"),
+            effective_scope_type=str(row["EFFECTIVE_SCOPE_TYPE"]),
+            effective_scope_key=str(row["EFFECTIVE_SCOPE_KEY"]),
+            effective_processing_profile=row.get("EFFECTIVE_PROCESSING_PROFILE"),
+            effective_profile_instruction=row.get("EFFECTIVE_PROFILE_INSTRUCTION"),
+            effective_instruction=row.get("EFFECTIVE_INSTRUCTION"),
+        )
+
+    def to_capture_request(self) -> DropBoxCaptureRequest:
+        """Return the Core capture request for this Drop Box job."""
+        instruction = self.effective_instruction or self.effective_profile_instruction
+        return DropBoxCaptureRequest(
+            drop_job_id=self.drop_job_id,
+            drop_location_id=self.drop_location_id,
+            location_root=self.location_root,
+            source_path=self.source_path,
+            source_filename=self.source_filename,
+            source_sha256=self.source_hash,
+            source_size_bytes=self.source_size_bytes,
+            source_mtime=self.source_mtime,
+            target_scope_type=self.effective_scope_type,
+            target_scope_key=self.effective_scope_key,
+            processing_profile=self.effective_processing_profile,
+            processing_instruction=instruction,
+            source_key=f"{self.location_code}:{self.source_path}",
+        )
+
+
 @dataclass
 class ScanResult:
     """Result of scanning one or more drop locations."""
@@ -120,6 +181,8 @@ class TickStats:
     locations_loaded: int = 0
     stable_candidates: int = 0
     enqueued: int = 0
+    handed_off: int = 0
+    handoff_failed: int = 0
     skipped_existing_observation: int = 0
     deferred_changed_during_hash: int = 0
     overlapping_tick_skipped: bool = False

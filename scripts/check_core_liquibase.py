@@ -63,10 +63,24 @@ TRACKING_TABLE_KEYS = {
 }
 LIQUIBASE_NAMESPACE = {"db": "http://www.liquibase.org/xml/ns/dbchangelog"}
 CHANGESET_PATTERN = re.compile(r"^--changeset\s+(\S+):(\S+)(.*)$", re.MULTILINE)
+CREATE_CORE_TABLE_PATTERN = re.compile(
+    r"\bcreate\s+table\s+orac_core\.([a-z][a-z0-9_]*)\b",
+    re.IGNORECASE,
+)
 FORCE_VIEW_PATTERN = re.compile(
     r"\bcreate\s+or\s+replace\s+force\s+view\b",
     re.IGNORECASE,
 )
+GRANT_ON_CORE_PATTERN = re.compile(
+    r"\bgrant\s+[^;]+?\s+on\s+orac_core\.([a-z][a-z0-9_]*)\s+to\s+([a-z][a-z0-9_]*)\b",
+    re.IGNORECASE,
+)
+PROHIBITED_CORE_GRANT_GRANTEES = {
+    "orac",
+    "orac_apx_pub",
+    "orac_code",
+    "orac_plugin",
+}
 
 
 @dataclass(frozen=True)
@@ -152,9 +166,14 @@ def controller_xml_files(root: Path) -> list[Path]:
     return controllers
 
 
-def reachable_sql_files(root: Path) -> set[Path]:
-    """Return SQL files reachable from productController.xml."""
-    reachable: set[Path] = set()
+def reachable_sql_file_counts(root: Path) -> dict[Path, int]:
+    """Return counts for SQL files reachable from productController.xml."""
+    reachable: dict[Path, int] = {}
+
+    def add_reachable(path: Path) -> None:
+        resolved = path.resolve()
+        reachable[resolved] = reachable.get(resolved, 0) + 1
+
     controllers = controller_xml_files(root)
     for controller in controllers:
         if not controller.exists():
@@ -163,19 +182,25 @@ def reachable_sql_files(root: Path) -> set[Path]:
         for sql_file in document.findall(".//db:sqlFile", LIQUIBASE_NAMESPACE):
             raw_path = sql_file.attrib.get("path", "")
             if raw_path:
-                reachable.add(resolve_relative(controller, raw_path))
+                add_reachable(resolve_relative(controller, raw_path))
         for include in document.findall(".//db:include", LIQUIBASE_NAMESPACE):
             raw_file = include.attrib.get("file", "")
             if raw_file.endswith(".sql"):
-                reachable.add(resolve_relative(controller, raw_file))
+                add_reachable(resolve_relative(controller, raw_file))
         for include_all in document.findall(".//db:includeAll", LIQUIBASE_NAMESPACE):
             raw_path = include_all.attrib.get("path", "")
             if not raw_path:
                 continue
             directory = resolve_relative(controller, raw_path)
             if directory.is_dir():
-                reachable.update(path.resolve() for path in sorted(directory.glob("*.sql")))
+                for path in sorted(directory.glob("*.sql")):
+                    add_reachable(path)
     return reachable
+
+
+def reachable_sql_files(root: Path) -> set[Path]:
+    """Return SQL files reachable from productController.xml."""
+    return set(reachable_sql_file_counts(root))
 
 
 def liquibase_core_properties(root: Path) -> Path:
@@ -225,6 +250,26 @@ def owning_schema(path: Path) -> str:
     return path.parent.parent.name
 
 
+def sql_without_line_comments(text: str) -> str:
+    """Return SQL text with line comments removed for lightweight parsing."""
+    return "\n".join(line.split("--", 1)[0] for line in text.splitlines())
+
+
+def active_core_tables(root: Path, reachable: set[Path]) -> dict[str, Path]:
+    """Return active ORAC_CORE tables declared by reachable create-table DDL."""
+    tables: dict[str, Path] = {}
+    table_dir = (schema_root(root) / "orac_core/table").resolve()
+    for path in sorted(reachable):
+        if path.parent.resolve() != table_dir or not path.exists():
+            continue
+        text = sql_without_line_comments(
+            path.read_text(encoding="utf-8", errors="replace")
+        )
+        for match in CREATE_CORE_TABLE_PATTERN.finditer(text):
+            tables[match.group(1).lower()] = path
+    return tables
+
+
 def same_schema_view_references(text: str, schema_name: str) -> bool:
     """Return whether view SQL references another object in its own schema."""
     return bool(
@@ -234,6 +279,114 @@ def same_schema_view_references(text: str, schema_name: str) -> bool:
             flags=re.IGNORECASE,
         )
     )
+
+
+def core_to_api_grant_pattern(table_name: str) -> re.Pattern[str]:
+    """Return the required core-table grant pattern for an API dependency."""
+    return re.compile(
+        rf"\bgrant\s+[^;]+?\s+on\s+orac_core\.{re.escape(table_name)}"
+        r"\s+to\s+orac_api\s+with\s+grant\s+option\b",
+        re.IGNORECASE,
+    )
+
+
+def validate_api_view_dependency(
+    root: Path,
+    reachable: set[Path],
+    table_name: str,
+) -> list[str]:
+    """Validate the active API pass-through view for a core table."""
+    issues: list[str] = []
+    view_path = (schema_root(root) / f"orac_api/view/{table_name}_v.sql").resolve()
+    relative_view = view_path.relative_to(root)
+    if view_path not in reachable:
+        issues.append(
+            f"{relative_view}: active core table orac_core.{table_name} lacks "
+            "a reachable API pass-through view"
+        )
+        return issues
+
+    text = sql_without_line_comments(
+        view_path.read_text(encoding="utf-8", errors="replace")
+    )
+    if not re.search(
+        rf"\bcreate\s+or\s+replace\s+force\s+view\s+orac_api\.{re.escape(table_name)}_v\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        issues.append(
+            f"{relative_view}: API pass-through view must create "
+            f"orac_api.{table_name}_v"
+        )
+    if not re.search(
+        rf"\bfrom\s+orac_core\.{re.escape(table_name)}\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        issues.append(
+            f"{relative_view}: API pass-through view must select from "
+            f"orac_core.{table_name}"
+        )
+    return issues
+
+
+def validate_core_to_api_privilege(
+    root: Path,
+    reachable: set[Path],
+    table_name: str,
+) -> list[str]:
+    """Validate reachable ORAC_CORE to ORAC_API privilege coverage."""
+    privilege_dir = (schema_root(root) / "orac_api/privilege").resolve()
+    privilege_text = "\n".join(
+        sql_without_line_comments(path.read_text(encoding="utf-8", errors="replace"))
+        for path in sorted(reachable)
+        if path.parent.resolve() == privilege_dir and path.exists()
+    )
+    if core_to_api_grant_pattern(table_name).search(privilege_text):
+        return []
+    return [
+        f"resources/db/schema/orac_api/privilege: active core table "
+        f"orac_core.{table_name} lacks a reachable grant to orac_api with grant option"
+    ]
+
+
+def prohibited_direct_core_grant(grantee: str) -> bool:
+    """Return whether a grantee bypasses the approved core-to-api route."""
+    normalized = grantee.lower()
+    return normalized in PROHIBITED_CORE_GRANT_GRANTEES or (
+        normalized.startswith("orac_") and normalized != "orac_api"
+    )
+
+
+def validate_prohibited_core_grants(root: Path, reachable: set[Path]) -> list[str]:
+    """Return issues for direct grants from ORAC_CORE to prohibited consumers."""
+    issues: list[str] = []
+    for path in sorted(reachable):
+        if not path.exists():
+            continue
+        text = sql_without_line_comments(
+            path.read_text(encoding="utf-8", errors="replace")
+        )
+        for match in GRANT_ON_CORE_PATTERN.finditer(text):
+            table_name = match.group(1).lower()
+            grantee = match.group(2).lower()
+            if prohibited_direct_core_grant(grantee):
+                issues.append(
+                    f"{path.relative_to(root)}: prohibited direct grant on "
+                    f"orac_core.{table_name} to {grantee}; route access "
+                    "through orac_api and orac_code"
+                )
+    return issues
+
+
+def validate_core_table_dependency_closure(root: Path, reachable: set[Path]) -> list[str]:
+    """Validate API-layer dependency closure for active ORAC_CORE tables."""
+    issues: list[str] = []
+    for table_name in sorted(active_core_tables(root, reachable)):
+        issues.extend(validate_api_view_dependency(root, reachable, table_name))
+        issues.extend(validate_core_to_api_privilege(root, reachable, table_name))
+    issues.extend(validate_prohibited_core_grants(root, reachable))
+    return issues
 
 
 def validate_sql_file(path: Path, root: Path) -> list[str]:
@@ -325,17 +478,25 @@ def run_checks(root: Path) -> list[str]:
     resolved_root = root.resolve()
     issues: list[str] = []
     expected = core_schema_sql_files(resolved_root)
-    reachable = reachable_sql_files(resolved_root)
+    reachable_counts = reachable_sql_file_counts(resolved_root)
+    reachable = set(reachable_counts)
 
     issues.extend(validate_controllers(resolved_root))
+    for path, count in sorted(reachable_counts.items()):
+        if count > 1:
+            issues.append(
+                f"{path.relative_to(resolved_root)}: formatted SQL is included "
+                f"{count} times from resources/db/schema/productController.xml"
+            )
     for path in stale_apex_schema_dirs(resolved_root):
         issues.append(
             f"{path.relative_to(resolved_root)}: APEX exports must live under "
             "resources/db/apex, not resources/db/schema"
         )
-
     for path in sorted(expected):
         issues.extend(validate_sql_file(path, resolved_root))
+
+    issues.extend(validate_core_table_dependency_closure(resolved_root, reachable))
 
     for path in sorted(expected - reachable):
         issues.append(

@@ -239,6 +239,7 @@ def validate_declared_imports(
         "lib",
         "controller",
         "view",
+        "orac_core",
         plugin_dir.name,
     }
     if plugin_id:

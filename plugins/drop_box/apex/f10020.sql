@@ -33,21 +33,24 @@ prompt APPLICATION 10020 - ORAC_DROPBOX_ADMIN
 -- Application Export:
 --   Application:     10020
 --   Name:            ORAC_DROPBOX_ADMIN
---   Date and Time:   12:19 Tuesday July 7, 2026
+--   Date and Time:   11:34 Monday July 13, 2026
 --   Exported By:     ORAC_ADMIN
 --   Flashback:       0
 --   Export Type:     Application Export
 --     Pages:                      9
 --       Items:                   28
+--       Validations:              1
 --       Processes:               11
---       Regions:                 16
+--       Regions:                 17
 --       Buttons:                  5
 --       Dynamic Actions:          4
 --     Shared Components:
 --       Logic:
+--         Items:                 14
+--         Processes:              1
 --         Build Options:          2
 --       Navigation:
---         Lists:                  2
+--         Lists:                  3
 --         Breadcrumbs:            1
 --           Entries:              1
 --       Security:
@@ -62,7 +65,7 @@ prompt APPLICATION 10020 - ORAC_DROPBOX_ADMIN
 --       E-Mail:
 --     Supporting Objects:  Included
 --   Version:         24.2.0
---   Instance ID:     1048984561694884
+--   Instance ID:     1081680462704710
 --
 
 prompt --application/delete_application
@@ -107,7 +110,7 @@ wwv_imp_workspace.create_flow(
 ,p_substitution_value_01=>'Drop Box'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>6
-,p_version_scn=>2272011
+,p_version_scn=>2337160
 ,p_print_server_type=>'NATIVE'
 ,p_file_storage=>'DB'
 ,p_is_pwa=>'Y'
@@ -134,6 +137,85 @@ wwv_flow_imp_shared.create_user_interface(
 ,p_nav_bar_list_id=>wwv_flow_imp.id(34535027227386623)
 ,p_nav_bar_list_template_id=>2847543055748234966
 ,p_nav_bar_template_options=>'#DEFAULT#'
+);
+end;
+/
+prompt --application/shared_components/navigation/lists/cross_app_return_navigation
+begin
+wwv_flow_imp_shared.create_list(
+ p_id=>wwv_flow_imp.id(10020999000040000)
+,p_name=>'Cross-App Return Navigation'
+,p_list_status=>'PUBLIC'
+,p_version_scn=>2391749
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(10020999000040001)
+,p_list_item_display_sequence=>10
+,p_list_item_link_text=>'Return to &ORAC_RETURN_LABEL_1.'
+,p_list_item_link_target=>'&ORAC_RETURN_URL_1!RAW.'
+,p_list_item_icon=>'fa-arrow-left'
+,p_list_item_disp_cond_type=>'EXPRESSION'
+,p_list_item_disp_condition=>':ORAC_RETURN_DEPTH > 0 and :ORAC_RETURN_LABEL_1 is not null and :ORAC_RETURN_URL_1 is not null'
+,p_list_item_disp_condition2=>'PLSQL'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(10020999000040002)
+,p_list_item_display_sequence=>20
+,p_list_item_link_text=>'More'
+,p_list_item_icon=>'fa-chevron-down'
+,p_list_item_disp_cond_type=>'EXPRESSION'
+,p_list_item_disp_condition=>':ORAC_RETURN_DEPTH > 1'
+,p_list_item_disp_condition2=>'PLSQL'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(10020999000040003)
+,p_list_item_display_sequence=>30
+,p_list_item_link_text=>'Return to &ORAC_RETURN_LABEL_2.'
+,p_list_item_link_target=>'&ORAC_RETURN_URL_2!RAW.'
+,p_list_item_icon=>'fa-arrow-left'
+,p_list_item_disp_cond_type=>'EXPRESSION'
+,p_list_item_disp_condition=>':ORAC_RETURN_LABEL_2 is not null and :ORAC_RETURN_URL_2 is not null'
+,p_list_item_disp_condition2=>'PLSQL'
+,p_parent_list_item_id=>wwv_flow_imp.id(10020999000040002)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(10020999000040004)
+,p_list_item_display_sequence=>40
+,p_list_item_link_text=>'Return to &ORAC_RETURN_LABEL_3.'
+,p_list_item_link_target=>'&ORAC_RETURN_URL_3!RAW.'
+,p_list_item_icon=>'fa-arrow-left'
+,p_list_item_disp_cond_type=>'EXPRESSION'
+,p_list_item_disp_condition=>':ORAC_RETURN_LABEL_3 is not null and :ORAC_RETURN_URL_3 is not null'
+,p_list_item_disp_condition2=>'PLSQL'
+,p_parent_list_item_id=>wwv_flow_imp.id(10020999000040002)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(10020999000040005)
+,p_list_item_display_sequence=>50
+,p_list_item_link_text=>'Return to &ORAC_RETURN_LABEL_4.'
+,p_list_item_link_target=>'&ORAC_RETURN_URL_4!RAW.'
+,p_list_item_icon=>'fa-arrow-left'
+,p_list_item_disp_cond_type=>'EXPRESSION'
+,p_list_item_disp_condition=>':ORAC_RETURN_LABEL_4 is not null and :ORAC_RETURN_URL_4 is not null'
+,p_list_item_disp_condition2=>'PLSQL'
+,p_parent_list_item_id=>wwv_flow_imp.id(10020999000040002)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(10020999000040006)
+,p_list_item_display_sequence=>60
+,p_list_item_link_text=>'Return to &ORAC_RETURN_LABEL_5.'
+,p_list_item_link_target=>'&ORAC_RETURN_URL_5!RAW.'
+,p_list_item_icon=>'fa-arrow-left'
+,p_list_item_disp_cond_type=>'EXPRESSION'
+,p_list_item_disp_condition=>':ORAC_RETURN_LABEL_5 is not null and :ORAC_RETURN_URL_5 is not null'
+,p_list_item_disp_condition2=>'PLSQL'
+,p_parent_list_item_id=>wwv_flow_imp.id(10020999000040002)
+,p_list_item_current_type=>'TARGET_PAGE'
 );
 end;
 /
@@ -239,206 +321,9 @@ wwv_flow_imp_shared.create_list_item(
 );
 end;
 /
-prompt --application/shared_components/navigation/lists/cross_app_return_navigation
-begin
-wwv_flow_imp_shared.create_list(
- p_id=>wwv_flow_imp.id(10020999000040000)
-,p_name=>'Cross-App Return Navigation'
-,p_list_status=>'PUBLIC'
-,p_version_scn=>2391749
-);
-wwv_flow_imp_shared.create_list_item(
- p_id=>wwv_flow_imp.id(10020999000040001)
-,p_list_item_display_sequence=>10
-,p_list_item_link_text=>'Return to &ORAC_RETURN_LABEL_1.'
-,p_list_item_link_target=>'&ORAC_RETURN_URL_1!RAW.'
-,p_list_item_icon=>'fa-arrow-left'
-,p_list_item_disp_cond_type=>'EXPRESSION'
-,p_list_item_disp_condition=>':ORAC_RETURN_DEPTH > 0 and :ORAC_RETURN_LABEL_1 is not null and :ORAC_RETURN_URL_1 is not null'
-,p_list_item_disp_condition2=>'PLSQL'
-,p_list_item_current_type=>'TARGET_PAGE'
-);
-wwv_flow_imp_shared.create_list_item(
- p_id=>wwv_flow_imp.id(10020999000040002)
-,p_list_item_display_sequence=>20
-,p_list_item_link_text=>'More'
-,p_list_item_icon=>'fa-chevron-down'
-,p_list_item_disp_cond_type=>'EXPRESSION'
-,p_list_item_disp_condition=>':ORAC_RETURN_DEPTH > 1'
-,p_list_item_disp_condition2=>'PLSQL'
-,p_list_item_current_type=>'TARGET_PAGE'
-);
-wwv_flow_imp_shared.create_list_item(
- p_id=>wwv_flow_imp.id(10020999000040003)
-,p_list_item_display_sequence=>30
-,p_list_item_link_text=>'Return to &ORAC_RETURN_LABEL_2.'
-,p_list_item_link_target=>'&ORAC_RETURN_URL_2!RAW.'
-,p_list_item_icon=>'fa-arrow-left'
-,p_list_item_disp_cond_type=>'EXPRESSION'
-,p_list_item_disp_condition=>':ORAC_RETURN_LABEL_2 is not null and :ORAC_RETURN_URL_2 is not null'
-,p_list_item_disp_condition2=>'PLSQL'
-,p_parent_list_item_id=>wwv_flow_imp.id(10020999000040002)
-,p_list_item_current_type=>'TARGET_PAGE'
-);
-wwv_flow_imp_shared.create_list_item(
- p_id=>wwv_flow_imp.id(10020999000040004)
-,p_list_item_display_sequence=>40
-,p_list_item_link_text=>'Return to &ORAC_RETURN_LABEL_3.'
-,p_list_item_link_target=>'&ORAC_RETURN_URL_3!RAW.'
-,p_list_item_icon=>'fa-arrow-left'
-,p_list_item_disp_cond_type=>'EXPRESSION'
-,p_list_item_disp_condition=>':ORAC_RETURN_LABEL_3 is not null and :ORAC_RETURN_URL_3 is not null'
-,p_list_item_disp_condition2=>'PLSQL'
-,p_parent_list_item_id=>wwv_flow_imp.id(10020999000040002)
-,p_list_item_current_type=>'TARGET_PAGE'
-);
-wwv_flow_imp_shared.create_list_item(
- p_id=>wwv_flow_imp.id(10020999000040005)
-,p_list_item_display_sequence=>50
-,p_list_item_link_text=>'Return to &ORAC_RETURN_LABEL_4.'
-,p_list_item_link_target=>'&ORAC_RETURN_URL_4!RAW.'
-,p_list_item_icon=>'fa-arrow-left'
-,p_list_item_disp_cond_type=>'EXPRESSION'
-,p_list_item_disp_condition=>':ORAC_RETURN_LABEL_4 is not null and :ORAC_RETURN_URL_4 is not null'
-,p_list_item_disp_condition2=>'PLSQL'
-,p_parent_list_item_id=>wwv_flow_imp.id(10020999000040002)
-,p_list_item_current_type=>'TARGET_PAGE'
-);
-wwv_flow_imp_shared.create_list_item(
- p_id=>wwv_flow_imp.id(10020999000040006)
-,p_list_item_display_sequence=>60
-,p_list_item_link_text=>'Return to &ORAC_RETURN_LABEL_5.'
-,p_list_item_link_target=>'&ORAC_RETURN_URL_5!RAW.'
-,p_list_item_icon=>'fa-arrow-left'
-,p_list_item_disp_cond_type=>'EXPRESSION'
-,p_list_item_disp_condition=>':ORAC_RETURN_LABEL_5 is not null and :ORAC_RETURN_URL_5 is not null'
-,p_list_item_disp_condition2=>'PLSQL'
-,p_parent_list_item_id=>wwv_flow_imp.id(10020999000040002)
-,p_list_item_current_type=>'TARGET_PAGE'
-);
-end;
-/
 prompt --application/shared_components/navigation/listentry
 begin
 null;
-end;
-/
-prompt --application/shared_components/logic/application_items
-begin
-wwv_flow_imp_shared.create_flow_item(
- p_id=>wwv_flow_imp.id(10020999000020001)
-,p_name=>'ORAC_NAV_STACK'
-,p_protection_level=>'S'
-,p_item_comment=>'Validated cross-app return stack; app/page pairs only.'
-);
-wwv_flow_imp_shared.create_flow_item(
- p_id=>wwv_flow_imp.id(10020999000020002)
-,p_name=>'ORAC_RETURN_DEPTH'
-,p_protection_level=>'S'
-,p_item_comment=>'Server-derived cross-app return depth.'
-);
-wwv_flow_imp_shared.create_flow_item(
- p_id=>wwv_flow_imp.id(10020999000020003)
-,p_name=>'ORAC_RETURN_LABEL_1'
-,p_protection_level=>'S'
-,p_item_comment=>'Server-derived cross-app return label.'
-);
-wwv_flow_imp_shared.create_flow_item(
- p_id=>wwv_flow_imp.id(10020999000020004)
-,p_name=>'ORAC_RETURN_LABEL_2'
-,p_protection_level=>'S'
-,p_item_comment=>'Server-derived cross-app return label.'
-);
-wwv_flow_imp_shared.create_flow_item(
- p_id=>wwv_flow_imp.id(10020999000020005)
-,p_name=>'ORAC_RETURN_LABEL_3'
-,p_protection_level=>'S'
-,p_item_comment=>'Server-derived cross-app return label.'
-);
-wwv_flow_imp_shared.create_flow_item(
- p_id=>wwv_flow_imp.id(10020999000020006)
-,p_name=>'ORAC_RETURN_LABEL_4'
-,p_protection_level=>'S'
-,p_item_comment=>'Server-derived cross-app return label.'
-);
-wwv_flow_imp_shared.create_flow_item(
- p_id=>wwv_flow_imp.id(10020999000020007)
-,p_name=>'ORAC_RETURN_LABEL_5'
-,p_protection_level=>'S'
-,p_item_comment=>'Server-derived cross-app return label.'
-);
-wwv_flow_imp_shared.create_flow_item(
- p_id=>wwv_flow_imp.id(10020999000020008)
-,p_name=>'ORAC_RETURN_URL_1'
-,p_protection_level=>'S'
-,p_item_comment=>'Server-derived cross-app return URL.'
-);
-wwv_flow_imp_shared.create_flow_item(
- p_id=>wwv_flow_imp.id(10020999000020009)
-,p_name=>'ORAC_RETURN_URL_2'
-,p_protection_level=>'S'
-,p_item_comment=>'Server-derived cross-app return URL.'
-);
-wwv_flow_imp_shared.create_flow_item(
- p_id=>wwv_flow_imp.id(10020999000020010)
-,p_name=>'ORAC_RETURN_URL_3'
-,p_protection_level=>'S'
-,p_item_comment=>'Server-derived cross-app return URL.'
-);
-wwv_flow_imp_shared.create_flow_item(
- p_id=>wwv_flow_imp.id(10020999000020011)
-,p_name=>'ORAC_RETURN_URL_4'
-,p_protection_level=>'S'
-,p_item_comment=>'Server-derived cross-app return URL.'
-);
-wwv_flow_imp_shared.create_flow_item(
- p_id=>wwv_flow_imp.id(10020999000020012)
-,p_name=>'ORAC_RETURN_URL_5'
-,p_protection_level=>'S'
-,p_item_comment=>'Server-derived cross-app return URL.'
-);
-wwv_flow_imp_shared.create_flow_item(
- p_id=>wwv_flow_imp.id(10020999000020013)
-,p_name=>'ORAC_LAUNCH_PLUGIN_NAVIGATION_URL'
-,p_protection_level=>'S'
-,p_item_comment=>'Server-derived launch URL for Plugin Navigation.'
-);
-wwv_flow_imp_shared.create_flow_item(
- p_id=>wwv_flow_imp.id(10020999000020014)
-,p_name=>'ORAC_LAUNCH_PLUGIN_OPERATIONS_URL'
-,p_protection_level=>'S'
-,p_item_comment=>'Server-derived launch URL for Plugin Operations.'
-);
-end;
-/
-prompt --application/shared_components/logic/application_processes
-begin
-wwv_flow_imp_shared.create_flow_process(
- p_id=>wwv_flow_imp.id(10020999000030001)
-,p_process_sequence=>10
-,p_process_point=>'BEFORE_HEADER'
-,p_process_type=>'NATIVE_PLSQL'
-,p_process_name=>'Prepare Cross-App Return Navigation'
-,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'begin',
-'  :ORAC_NAV_STACK := orac_code.apex_return_nav_api.normalize_stack(:ORAC_NAV_STACK);',
-'  :ORAC_RETURN_DEPTH := orac_code.apex_return_nav_api.return_depth(:ORAC_NAV_STACK);',
-'  :ORAC_RETURN_LABEL_1 := orac_code.apex_return_nav_api.return_label(1, :ORAC_NAV_STACK);',
-'  :ORAC_RETURN_LABEL_2 := orac_code.apex_return_nav_api.return_label(2, :ORAC_NAV_STACK);',
-'  :ORAC_RETURN_LABEL_3 := orac_code.apex_return_nav_api.return_label(3, :ORAC_NAV_STACK);',
-'  :ORAC_RETURN_LABEL_4 := orac_code.apex_return_nav_api.return_label(4, :ORAC_NAV_STACK);',
-'  :ORAC_RETURN_LABEL_5 := orac_code.apex_return_nav_api.return_label(5, :ORAC_NAV_STACK);',
-'  :ORAC_RETURN_URL_1 := orac_code.apex_return_nav_api.return_url(1, :ORAC_NAV_STACK);',
-'  :ORAC_RETURN_URL_2 := orac_code.apex_return_nav_api.return_url(2, :ORAC_NAV_STACK);',
-'  :ORAC_RETURN_URL_3 := orac_code.apex_return_nav_api.return_url(3, :ORAC_NAV_STACK);',
-'  :ORAC_RETURN_URL_4 := orac_code.apex_return_nav_api.return_url(4, :ORAC_NAV_STACK);',
-'  :ORAC_RETURN_URL_5 := orac_code.apex_return_nav_api.return_url(5, :ORAC_NAV_STACK);',
-'  :ORAC_LAUNCH_PLUGIN_NAVIGATION_URL := orac_code.apex_return_nav_api.launch_url(1043, 2, ''ORAC_THEME_SYNC'', ''RP'');',
-'  :ORAC_LAUNCH_PLUGIN_OPERATIONS_URL := orac_code.apex_return_nav_api.launch_url(1043, 1, ''ORAC_THEME_SYNC'', ''RP'');',
-'end;'))
-,p_process_clob_language=>'PLSQL'
-,p_error_display_location=>'INLINE_IN_NOTIFICATION'
-);
 end;
 /
 prompt --application/shared_components/files/icons_app_icon_32_png
@@ -916,6 +801,191 @@ begin
 null;
 end;
 /
+prompt --application/shared_components/logic/application_processes/prepare_cross_app_return_navigation
+begin
+wwv_flow_imp_shared.create_flow_process(
+ p_id=>wwv_flow_imp.id(10020999000030001)
+,p_process_sequence=>10
+,p_process_point=>'BEFORE_HEADER'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Prepare Cross-App Return Navigation'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'begin',
+'  :ORAC_NAV_STACK := orac_code.apex_return_nav_api.normalize_stack(:ORAC_NAV_STACK);',
+'  :ORAC_RETURN_DEPTH := orac_code.apex_return_nav_api.return_depth(:ORAC_NAV_STACK);',
+'  :ORAC_RETURN_LABEL_1 := orac_code.apex_return_nav_api.return_label(1, :ORAC_NAV_STACK);',
+'  :ORAC_RETURN_LABEL_2 := orac_code.apex_return_nav_api.return_label(2, :ORAC_NAV_STACK);',
+'  :ORAC_RETURN_LABEL_3 := orac_code.apex_return_nav_api.return_label(3, :ORAC_NAV_STACK);',
+'  :ORAC_RETURN_LABEL_4 := orac_code.apex_return_nav_api.return_label(4, :ORAC_NAV_STACK);',
+'  :ORAC_RETURN_LABEL_5 := orac_code.apex_return_nav_api.return_label(5, :ORAC_NAV_STACK);',
+'  :ORAC_RETURN_URL_1 := orac_code.apex_return_nav_api.return_url(1, :ORAC_NAV_STACK);',
+'  :ORAC_RETURN_URL_2 := orac_code.apex_return_nav_api.return_url(2, :ORAC_NAV_STACK);',
+'  :ORAC_RETURN_URL_3 := orac_code.apex_return_nav_api.return_url(3, :ORAC_NAV_STACK);',
+'  :ORAC_RETURN_URL_4 := orac_code.apex_return_nav_api.return_url(4, :ORAC_NAV_STACK);',
+'  :ORAC_RETURN_URL_5 := orac_code.apex_return_nav_api.return_url(5, :ORAC_NAV_STACK);',
+'  :ORAC_LAUNCH_PLUGIN_NAVIGATION_URL := orac_code.apex_return_nav_api.launch_url(1043, 2, ''ORAC_THEME_SYNC'', ''RP'');',
+'  :ORAC_LAUNCH_PLUGIN_OPERATIONS_URL := orac_code.apex_return_nav_api.launch_url(1043, 1, ''ORAC_THEME_SYNC'', ''RP'');',
+'end;'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_version_scn=>2333021
+);
+end;
+/
+prompt --application/shared_components/logic/application_items/orac_launch_plugin_navigation_url
+begin
+wwv_flow_imp_shared.create_flow_item(
+ p_id=>wwv_flow_imp.id(10020999000020013)
+,p_name=>'ORAC_LAUNCH_PLUGIN_NAVIGATION_URL'
+,p_protection_level=>'S'
+,p_item_comment=>'Server-derived launch URL for Plugin Navigation.'
+,p_version_scn=>2333021
+);
+end;
+/
+prompt --application/shared_components/logic/application_items/orac_launch_plugin_operations_url
+begin
+wwv_flow_imp_shared.create_flow_item(
+ p_id=>wwv_flow_imp.id(10020999000020014)
+,p_name=>'ORAC_LAUNCH_PLUGIN_OPERATIONS_URL'
+,p_protection_level=>'S'
+,p_item_comment=>'Server-derived launch URL for Plugin Operations.'
+,p_version_scn=>2333021
+);
+end;
+/
+prompt --application/shared_components/logic/application_items/orac_nav_stack
+begin
+wwv_flow_imp_shared.create_flow_item(
+ p_id=>wwv_flow_imp.id(10020999000020001)
+,p_name=>'ORAC_NAV_STACK'
+,p_protection_level=>'S'
+,p_item_comment=>'Validated cross-app return stack; app/page pairs only.'
+,p_version_scn=>2333021
+);
+end;
+/
+prompt --application/shared_components/logic/application_items/orac_return_depth
+begin
+wwv_flow_imp_shared.create_flow_item(
+ p_id=>wwv_flow_imp.id(10020999000020002)
+,p_name=>'ORAC_RETURN_DEPTH'
+,p_protection_level=>'S'
+,p_item_comment=>'Server-derived cross-app return depth.'
+,p_version_scn=>2333021
+);
+end;
+/
+prompt --application/shared_components/logic/application_items/orac_return_label_1
+begin
+wwv_flow_imp_shared.create_flow_item(
+ p_id=>wwv_flow_imp.id(10020999000020003)
+,p_name=>'ORAC_RETURN_LABEL_1'
+,p_protection_level=>'S'
+,p_item_comment=>'Server-derived cross-app return label.'
+,p_version_scn=>2333021
+);
+end;
+/
+prompt --application/shared_components/logic/application_items/orac_return_label_2
+begin
+wwv_flow_imp_shared.create_flow_item(
+ p_id=>wwv_flow_imp.id(10020999000020004)
+,p_name=>'ORAC_RETURN_LABEL_2'
+,p_protection_level=>'S'
+,p_item_comment=>'Server-derived cross-app return label.'
+,p_version_scn=>2333021
+);
+end;
+/
+prompt --application/shared_components/logic/application_items/orac_return_label_3
+begin
+wwv_flow_imp_shared.create_flow_item(
+ p_id=>wwv_flow_imp.id(10020999000020005)
+,p_name=>'ORAC_RETURN_LABEL_3'
+,p_protection_level=>'S'
+,p_item_comment=>'Server-derived cross-app return label.'
+,p_version_scn=>2333021
+);
+end;
+/
+prompt --application/shared_components/logic/application_items/orac_return_label_4
+begin
+wwv_flow_imp_shared.create_flow_item(
+ p_id=>wwv_flow_imp.id(10020999000020006)
+,p_name=>'ORAC_RETURN_LABEL_4'
+,p_protection_level=>'S'
+,p_item_comment=>'Server-derived cross-app return label.'
+,p_version_scn=>2333021
+);
+end;
+/
+prompt --application/shared_components/logic/application_items/orac_return_label_5
+begin
+wwv_flow_imp_shared.create_flow_item(
+ p_id=>wwv_flow_imp.id(10020999000020007)
+,p_name=>'ORAC_RETURN_LABEL_5'
+,p_protection_level=>'S'
+,p_item_comment=>'Server-derived cross-app return label.'
+,p_version_scn=>2333021
+);
+end;
+/
+prompt --application/shared_components/logic/application_items/orac_return_url_1
+begin
+wwv_flow_imp_shared.create_flow_item(
+ p_id=>wwv_flow_imp.id(10020999000020008)
+,p_name=>'ORAC_RETURN_URL_1'
+,p_protection_level=>'S'
+,p_item_comment=>'Server-derived cross-app return URL.'
+,p_version_scn=>2333021
+);
+end;
+/
+prompt --application/shared_components/logic/application_items/orac_return_url_2
+begin
+wwv_flow_imp_shared.create_flow_item(
+ p_id=>wwv_flow_imp.id(10020999000020009)
+,p_name=>'ORAC_RETURN_URL_2'
+,p_protection_level=>'S'
+,p_item_comment=>'Server-derived cross-app return URL.'
+,p_version_scn=>2333021
+);
+end;
+/
+prompt --application/shared_components/logic/application_items/orac_return_url_3
+begin
+wwv_flow_imp_shared.create_flow_item(
+ p_id=>wwv_flow_imp.id(10020999000020010)
+,p_name=>'ORAC_RETURN_URL_3'
+,p_protection_level=>'S'
+,p_item_comment=>'Server-derived cross-app return URL.'
+,p_version_scn=>2333021
+);
+end;
+/
+prompt --application/shared_components/logic/application_items/orac_return_url_4
+begin
+wwv_flow_imp_shared.create_flow_item(
+ p_id=>wwv_flow_imp.id(10020999000020011)
+,p_name=>'ORAC_RETURN_URL_4'
+,p_protection_level=>'S'
+,p_item_comment=>'Server-derived cross-app return URL.'
+,p_version_scn=>2333021
+);
+end;
+/
+prompt --application/shared_components/logic/application_items/orac_return_url_5
+begin
+wwv_flow_imp_shared.create_flow_item(
+ p_id=>wwv_flow_imp.id(10020999000020012)
+,p_name=>'ORAC_RETURN_URL_5'
+,p_protection_level=>'S'
+,p_item_comment=>'Server-derived cross-app return URL.'
+,p_version_scn=>2333021
+);
+end;
+/
 prompt --application/shared_components/logic/application_settings
 begin
 null;
@@ -1114,7 +1184,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_name=>'Cross-App Return Navigation'
 ,p_region_template_options=>'#DEFAULT#:t-Region--removeHeader:t-Region--noBorder:t-Region--noPadding'
 ,p_component_template_options=>'#DEFAULT#'
-,p_plug_template=>wwv_flow_imp.id(3371237801798025892)
+,p_plug_template=>3371237801798025892
 ,p_plug_display_sequence=>1
 ,p_plug_display_point=>'BEFORE_NAVIGATION_BAR'
 ,p_location=>null
@@ -2010,6 +2080,31 @@ wwv_flow_imp_page.create_page_item(
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'virtual_keyboard', 'decimal')).to_clob
 );
+wwv_flow_imp_page.create_page_validation(
+ p_id=>wwv_flow_imp.id(34600200000000420)
+,p_validation_name=>'Project Target Exists'
+,p_validation_sequence=>10
+,p_validation=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'if :P2_TARGET_SCOPE_TYPE <> ''project'' then',
+'  return true;',
+'end if;',
+'',
+'for target in (',
+'  select 1',
+'    from orac_code.ingestion_target_lov_v',
+'   where target_scope_type = ''project''',
+'     and target_scope_key = :P2_TARGET_PROJECT_KEY',
+') loop',
+'  return true;',
+'end loop;',
+'',
+'return false;'))
+,p_validation2=>'PLSQL'
+,p_validation_type=>'FUNC_BODY_RETURNING_BOOLEAN'
+,p_error_message=>'Choose a registered project target.'
+,p_associated_item=>wwv_flow_imp.id(34600200000000209)
+,p_error_display_location=>'INLINE_WITH_FIELD_AND_NOTIFICATION'
+);
 wwv_flow_imp_page.create_page_da_event(
  p_id=>wwv_flow_imp.id(34600200000000301)
 ,p_name=>'Toggle Plugin Target'
@@ -2157,31 +2252,6 @@ wwv_flow_imp_page.create_page_process(
 ,p_process_when=>'SAVE'
 ,p_process_when_type=>'REQUEST_IN_CONDITION'
 ,p_internal_uid=>34600200000000402
-);
-wwv_flow_imp_page.create_page_validation(
- p_id=>wwv_flow_imp.id(34600200000000420)
-,p_validation_name=>'Project Target Exists'
-,p_validation_sequence=>10
-,p_validation=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'if :P2_TARGET_SCOPE_TYPE <> ''project'' then',
-'  return true;',
-'end if;',
-'',
-'for target in (',
-'  select 1',
-'    from orac_code.ingestion_target_lov_v',
-'   where target_scope_type = ''project''',
-'     and target_scope_key = :P2_TARGET_PROJECT_KEY',
-') loop',
-'  return true;',
-'end loop;',
-'',
-'return false;'))
-,p_validation2=>'PLSQL'
-,p_validation_type=>'FUNC_BODY_RETURNING_BOOLEAN'
-,p_error_message=>'Choose a registered project target.'
-,p_associated_item=>wwv_flow_imp.id(34600200000000209)
-,p_error_display_location=>'INLINE_WITH_FIELD_AND_NOTIFICATION'
 );
 wwv_flow_imp_page.create_page_process(
  p_id=>wwv_flow_imp.id(34600200000000403)
@@ -2622,27 +2692,45 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_display_sequence=>10
 ,p_query_type=>'SQL'
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select evt.drop_job_event_id,',
-'       evt.event_ts,',
-'       evt.location_code,',
+'select job.drop_job_id as drop_job_event_id,',
+'       job.updated_on as event_ts,',
+'       job.location_code,',
 '       job.location_display_name,',
-'       evt.drop_location_id,',
-'       evt.drop_job_id,',
+'       job.drop_location_id,',
+'       job.drop_job_id,',
 '       job.source_filename,',
 '       job.source_path,',
-'       evt.event_type,',
-'       evt.event_message',
-'  from orac_dropbox.drop_job_event_admin_v evt',
-'  join orac_dropbox.drop_job_admin_v job',
-'    on job.drop_job_id = evt.drop_job_id',
-' order by evt.event_ts desc'))
+'       case job.status_code',
+'         when ''queued'' then ''Queued - awaiting Core acceptance''',
+'         when ''handed_off'' then ''Handed off - Core processing''',
+'         when ''completed'' then ''Completed''',
+'         when ''failed'' then ''Failed''',
+'         else job.status_code',
+'       end as event_type,',
+'       ''Drop Box status='' || job.status_code ||',
+'         case when job.knowledge_ingestion_request_id is not null',
+'              then ''; Core request='' || to_char(job.knowledge_ingestion_request_id)',
+'              else '''' end ||',
+'         case when core.status_code is not null',
+'              then ''; Core state='' || core.status_label',
+'              else '''' end ||',
+'         case when core.last_error_message is not null',
+'              then ''; Latest error='' || dbms_lob.substr(core.last_error_message, 1000, 1)',
+'              when job.error_message is not null',
+'              then ''; Latest error='' || dbms_lob.substr(job.error_message, 1000, 1)',
+'              else '''' end',
+'       as event_message',
+'  from orac_dropbox.drop_job_admin_v job',
+'  left join orac_code.knowledge_ingestion_requests_v core',
+'    on core.ingestion_request_id = job.knowledge_ingestion_request_id',
+' order by job.updated_on desc, job.drop_job_id desc'))
 ,p_plug_source_type=>'NATIVE_IR'
 ,p_prn_page_header=>'Drop Box Activity'
 );
 wwv_flow_imp_page.create_worksheet(
  p_id=>wwv_flow_imp.id(34600500000000201)
 ,p_name=>'Activity'
-,p_no_data_found_message=>'No persisted drop-box job events are recorded.'
+,p_no_data_found_message=>'No drop-box jobs are recorded.'
 ,p_base_pk1=>'DROP_JOB_EVENT_ID'
 ,p_pagination_type=>'ROWS_X_TO_Y'
 ,p_pagination_display_pos=>'BOTTOM_RIGHT'
@@ -2659,7 +2747,7 @@ wwv_flow_imp_page.create_worksheet_column(
 ,p_display_order=>1
 ,p_is_primary_key=>'Y'
 ,p_column_identifier=>'A'
-,p_column_label=>'Event ID'
+,p_column_label=>'Job ID'
 ,p_column_type=>'NUMBER'
 ,p_display_text_as=>'HIDDEN_ESCAPE_SC'
 ,p_heading_alignment=>'RIGHT'
@@ -2674,6 +2762,7 @@ wwv_flow_imp_page.create_worksheet_column(
 ,p_column_label=>'Event Time'
 ,p_column_type=>'DATE'
 ,p_heading_alignment=>'LEFT'
+,p_format_mask=>'DD-Mon-YYYY'
 ,p_tz_dependent=>'N'
 ,p_use_as_row_header=>'N'
 );

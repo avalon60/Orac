@@ -27,3 +27,14 @@ orac_dropbox,drop_job_event,drp_jobe
 orac_core,plugin_registry,plgreg
 orac_core,plugin_services,plgsvc
 orac_core,project_registry,prjreg
+orac_core,knowledge_source_objects,kn_srcobj
+orac_core,knowledge_ingestion_requests,kn_ingreq
+orac_core,knowledge_documents,kn_doc
+orac_core,knowledge_document_scopes,kn_docscp
+orac_core,knowledge_document_versions,kn_docver
+orac_core,knowledge_extractions,kn_ext
+orac_core,knowledge_chunk_sets,kn_chset
+orac_core,knowledge_chunks,kn_chnk
+orac_core,knowledge_embedding_models,kn_embmod
+orac_core,knowledge_chunk_embeddings,kn_chnkemb
+orac_core,knowledge_ingestion_events,kn_inge

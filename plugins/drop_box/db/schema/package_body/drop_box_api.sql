@@ -153,5 +153,104 @@ create or replace package body orac_dropbox.drop_box_api as
     );
   end update_status;
 
+  procedure record_core_acceptance(
+    p_drop_job_id                    in orac_dropbox.drop_job.drop_job_id%type,
+    p_knowledge_ingestion_request_id in orac_dropbox.drop_job.knowledge_ingestion_request_id%type
+  )
+  is
+    l_existing_request_id orac_dropbox.drop_job.knowledge_ingestion_request_id%type;
+    l_existing_status     orac_dropbox.drop_job.status_code%type;
+  begin
+    if p_knowledge_ingestion_request_id is null
+    then
+      raise_application_error(-20021, 'Knowledge ingestion request id is required.');
+    end if;
+
+    select knowledge_ingestion_request_id,
+           status_code
+      into l_existing_request_id,
+           l_existing_status
+      from orac_dropbox.drop_job
+     where drop_job_id = p_drop_job_id
+       for update;
+
+    if l_existing_status = 'handed_off'
+       and l_existing_request_id = p_knowledge_ingestion_request_id
+    then
+      return;
+    end if;
+
+    update orac_dropbox.drop_job
+       set status_code = 'handed_off',
+           knowledge_ingestion_request_id = p_knowledge_ingestion_request_id,
+           error_message = null,
+           started_on = coalesce(started_on, systimestamp),
+           completed_on = null
+     where drop_job_id = p_drop_job_id;
+
+    insert into orac_dropbox.drop_job_event (
+      drop_job_id,
+      event_type,
+      event_message
+    )
+    values (
+      p_drop_job_id,
+      'handed_off',
+      'Core accepted managed-file ingestion request '
+      || to_char(p_knowledge_ingestion_request_id)
+      || '.'
+    );
+  exception
+    when no_data_found then
+      raise_application_error(-20022, 'Drop Box job not found.');
+  end record_core_acceptance;
+
+  function repair_missing_core_failures
+    return number
+  is
+    l_repaired_count number := 0;
+    l_event_count    number;
+  begin
+    for job in (
+      select drop_job_id
+        from orac_dropbox.drop_job
+       where status_code = 'failed'
+         and dbms_lob.instr(error_message, 'KNOWLEDGE_INGESTION_API') > 0
+         and dbms_lob.instr(error_message, 'must be declared') > 0
+       order by drop_job_id
+       for update
+    )
+    loop
+      select count(*)
+        into l_event_count
+        from orac_dropbox.drop_job_event evt
+       where evt.drop_job_id = job.drop_job_id
+         and evt.event_type = 'repair_requeued_core_handoff';
+
+      update orac_dropbox.drop_job
+         set status_code = 'queued',
+             error_message = null,
+             completed_on = null,
+             knowledge_ingestion_request_id = null
+       where drop_job_id = job.drop_job_id;
+
+      if l_event_count = 0
+      then
+        insert into orac_dropbox.drop_job_event (
+          drop_job_id,
+          event_type,
+          event_message
+        )
+        values (
+          job.drop_job_id,
+          'repair_requeued_core_handoff',
+          'Requeued after Core knowledge ingestion API became available; previous failed event retained as audit history.'
+        );
+      end if;
+      l_repaired_count := l_repaired_count + 1;
+    end loop;
+    return l_repaired_count;
+  end repair_missing_core_failures;
+
 end drop_box_api;
 /

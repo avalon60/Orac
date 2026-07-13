@@ -10,7 +10,7 @@ select 'project' target_scope_type
      , project_code target_scope_key
      , display_name || ' (' || project_code || ')' display_label
      , 10 sort_order
-  from orac_code.project_registry_v
+  from orac_api.project_registry_v
  where active_yn = 'Y';
 
 --rollback drop view orac_code.ingestion_target_lov_v;

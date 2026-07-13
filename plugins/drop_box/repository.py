@@ -9,7 +9,7 @@ from typing import Any
 
 from model.plugin_database_session import ORAC_PLUGIN_DATABASE_USER
 
-from .models import CandidateFile, DropLocation, HashedCandidate
+from .models import CandidateFile, DropBoxHandoffJob, DropLocation, HashedCandidate
 
 __author__ = "Clive Bostock"
 __date__ = "27-Jun-2026"
@@ -94,6 +94,90 @@ class DropBoxRepository:
                 hashed.source_hash,
             ],
         )
+
+    def load_handoff_jobs(self) -> list[DropBoxHandoffJob]:
+        """Return queued jobs requiring Core managed-file capture."""
+        rows = self._db_session.fetch_dicts(
+            """
+            select drop_job_id,
+                   drop_location_id,
+                   location_code,
+                   location_root,
+                   source_path,
+                   source_filename,
+                   source_hash,
+                   source_size_bytes,
+                   source_mtime,
+                   effective_scope_type,
+                   effective_scope_key,
+                   effective_processing_profile,
+                   effective_profile_instruction,
+                   effective_instruction,
+                   knowledge_ingestion_request_id
+              from orac_dropbox.drop_job_handoff_v
+             order by stable_on nulls last, drop_job_id
+            """
+        )
+        return [DropBoxHandoffJob.from_row(row) for row in rows]
+
+    def core_handoff_available(self) -> bool:
+        """Return whether the Core knowledge handoff package is visible."""
+        rows = self._db_session.fetch_dicts(
+            """
+            select count(*) as available_count
+              from all_objects
+             where owner = 'ORAC_CODE'
+               and object_name = 'KNOWLEDGE_INGESTION_API'
+               and object_type = 'PACKAGE'
+               and status = 'VALID'
+            """
+        )
+        if not rows:
+            return False
+        return int(rows[0].get("AVAILABLE_COUNT") or 0) > 0
+
+    def update_status(
+        self,
+        *,
+        drop_job_id: int,
+        status_code: str,
+        error_message: str | None = None,
+        document_id: int | None = None,
+    ) -> None:
+        """Persist a Drop Box job status transition through the package API."""
+        self._db_session.call_procedure(
+            f"{self._PACKAGE}.update_status",
+            [
+                int(drop_job_id),
+                status_code,
+                error_message,
+                document_id,
+            ],
+        )
+
+    def record_core_acceptance(
+        self,
+        *,
+        drop_job_id: int,
+        knowledge_ingestion_request_id: int,
+    ) -> None:
+        """Persist the durable Core request accepted for a Drop Box job."""
+        self._db_session.call_procedure(
+            f"{self._PACKAGE}.record_core_acceptance",
+            [
+                int(drop_job_id),
+                int(knowledge_ingestion_request_id),
+            ],
+        )
+
+    def repair_missing_core_failures(self) -> int:
+        """Requeue jobs failed only by the previously unavailable Core API."""
+        result = self._db_session.call_function(
+            f"{self._PACKAGE}.repair_missing_core_failures",
+            return_type=int,
+            parameters=[],
+        )
+        return int(result or 0)
 
     def commit(self) -> None:
         """Commit current plugin database work."""

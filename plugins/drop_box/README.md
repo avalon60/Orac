@@ -143,10 +143,10 @@ Runtime scanner access:
   because their processing profile is unknown or inactive.
 - `drop_box_api.observation_exists`: unchanged-file pre-check.
 - `drop_box_api.enqueue_job`: creates queued jobs.
-- `drop_box_api.update_status`: future handoff status updates.
-- `drop_job_handoff_v`: future ingestion queue handoff.
-- `drop_processing_profile_runtime_v`: active profile definitions for future
-  workers.
+- `drop_box_api.update_status`: records Core handoff success/failure.
+- `drop_job_handoff_v`: queued or retryable jobs ready for Core managed-file
+  capture.
+- `drop_processing_profile_runtime_v`: active profile definitions.
 
 Admin access:
 
@@ -179,6 +179,40 @@ Enabled locations that reference inactive legacy profiles are omitted from
 `drop_location_runtime_v`. The service logs a configuration warning from
 `drop_location_config_error_v`; no job event can be persisted for that skip in
 Phase 1 because `drop_job_event` requires an existing `drop_job_id`.
+
+## Core Managed-File Handoff
+
+Drop Box owns filesystem discovery only. After enqueueing stable jobs it calls
+`orac_core.knowledge.capture.KnowledgeManagedFileCaptureService`, passing the
+trusted Drop Box job id, configured location root, source path, source hash,
+source size, scope, profile, and instruction.
+
+The Core capture service validates that the source resolves under the configured
+Drop Box root, rejects unsupported file types, oversized files, hash mismatches,
+symlink escapes, and non-UTF-8 `.txt`/`.md` payloads, then copies to a temporary
+file under the Core managed content root. It verifies SHA-256 before atomically
+renaming into the content-addressed `sha256/ab/cd/<full-sha256>` path and only
+then calls `orac_code.knowledge_ingestion_api.submit_managed_file`.
+
+Failure boundary:
+
+- Capture failure before rename removes the temporary file where possible. No
+  Core database request is created, and the Drop Box job is marked failed for
+  retry.
+- Rename success followed by database registration failure may leave an orphaned
+  content-addressed file. Retry verifies the same file and hash before retrying
+  registration; the job is not marked successful.
+- A Drop Box job is marked `handed_off` only after Core returns an ingestion
+  request id. The Core ingestion feature owns that request id.
+- If a later Core worker sees a database request whose managed payload is
+  missing, it marks the request failed with a missing-payload error and does not
+  complete the request.
+
+`drop_job.knowledge_ingestion_request_id` is deliberately not physically
+present while the Core knowledge feature is paused. Plugin schemas must not
+reference protected ORAC_CORE objects directly; the Core request itself owns the
+physical foreign keys from source object through document, extraction, chunk,
+and embedding rows.
 
 ## Examples
 
@@ -395,14 +429,9 @@ cp docs/agent-guardrails/50-plugin-standards.md /tmp/orac-dropbox-test/inbox/plu
 ```
 
 After the next stable scan, verify that `plugin-standards.md` appears as a
-queued drop job with job event history. A successful Phase 1 result is a queued
-job plus audit events. Phase 1 does not convert, summarise, chunk, embed, move,
-delete, or quarantine files.
+handed-off drop job with job event history. Drop Box still does not convert, summarise, chunk, embed, move files, delete, or quarantine files; those responsibilities belong to Core ingestion.
 
 ## Future Extensions
 
-Future phases can consume `drop_job_handoff_v`, convert source material to
-canonical markdown, optionally synthesise notes, chunk, embed, and persist into
-the retrieval store through approved Orac interfaces. File-level directives,
-email ingestion, post-processing file movement, and delegated plugin
-administration are explicitly deferred.
+File-level directives, email ingestion, post-processing file movement, and
+delegated plugin administration are explicitly deferred.

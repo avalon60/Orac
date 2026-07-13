@@ -43,6 +43,8 @@ class _FakeSession:
 
     def fetch_dicts(self, sql_query: str, bind_vars=None) -> list[dict]:
         self.fetch_queries.append(sql_query)
+        if "knowledge_ingestion_api" in sql_query.lower():
+            return [{"AVAILABLE_COUNT": 1}]
         return self.rows
 
     def call_function(self, function_name: str, *, return_type, parameters=None, auto_commit=False):
@@ -117,6 +119,56 @@ class DropBoxRepositoryTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "ORAC_PLUGIN"):
             DropBoxRepository(_FakeContext(session))
+
+    def test_load_handoff_jobs_reads_handoff_view(self) -> None:
+        session = _FakeSession()
+        session.rows = [
+            {
+                "DROP_JOB_ID": 10,
+                "DROP_LOCATION_ID": 1,
+                "LOCATION_CODE": "TEST",
+                "LOCATION_ROOT": "/tmp/drop",
+                "SOURCE_PATH": "/tmp/drop/source.md",
+                "SOURCE_FILENAME": "source.md",
+                "SOURCE_HASH": "a" * 64,
+                "SOURCE_SIZE_BYTES": 7,
+                "SOURCE_MTIME": datetime(2026, 6, 27, 12, 0),
+                "EFFECTIVE_SCOPE_TYPE": "PROJECT",
+                "EFFECTIVE_SCOPE_KEY": "orac",
+                "EFFECTIVE_PROCESSING_PROFILE": "markdown",
+                "EFFECTIVE_PROFILE_INSTRUCTION": "profile instruction",
+                "EFFECTIVE_INSTRUCTION": "location instruction",
+            }
+        ]
+        repository = DropBoxRepository(_FakeContext(session))
+
+        jobs = repository.load_handoff_jobs()
+
+        self.assertEqual(jobs[0].drop_job_id, 10)
+        self.assertEqual(jobs[0].to_capture_request().target_scope_key, "orac")
+        self.assertIn("orac_dropbox.drop_job_handoff_v", session.fetch_queries[-1])
+
+    def test_core_handoff_available_checks_visible_core_package(self) -> None:
+        session = _FakeSession()
+        repository = DropBoxRepository(_FakeContext(session))
+
+        self.assertTrue(repository.core_handoff_available())
+
+        self.assertIn("all_objects", session.fetch_queries[-1].lower())
+        self.assertIn("knowledge_ingestion_api", session.fetch_queries[-1].lower())
+
+    def test_update_status_matches_database_package_signature(self) -> None:
+        session = _FakeSession()
+        repository = DropBoxRepository(_FakeContext(session))
+
+        repository.update_status(
+            drop_job_id=10,
+            status_code="handed_off",
+        )
+
+        procedure_name, parameters = session.procedure_calls[0]
+        self.assertEqual(procedure_name, "orac_dropbox.drop_box_api.update_status")
+        self.assertEqual(parameters, [10, "handed_off", None, None])
 
 
 def _candidate() -> CandidateFile:

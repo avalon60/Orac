@@ -53,16 +53,21 @@ create or replace package body orac_code.project_registry_api as
     p_row in orac_api.project_registry_v%rowtype
   ) return varchar2
   is
+    l_checksum varchar2(64 char);
   begin
-    return standard_hash(
-      p_row.project_id
-      || ':' || p_row.project_code
-      || ':' || p_row.display_name
-      || ':' || nvl(p_row.description, chr(0))
-      || ':' || p_row.active_yn
-      || ':' || p_row.row_version,
-      'SHA256'
-    );
+    select standard_hash(
+             p_row.project_id
+             || ':' || p_row.project_code
+             || ':' || p_row.display_name
+             || ':' || nvl(p_row.description, chr(0))
+             || ':' || p_row.active_yn
+             || ':' || p_row.row_version,
+             'SHA256'
+           )
+      into l_checksum
+      from dual;
+
+    return l_checksum;
   end row_checksum;
 
   procedure assert_display_name(

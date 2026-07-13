@@ -967,6 +967,101 @@ Configures recent death days for the `[retrieval.person_facts]` subsystem.
 
 **Example:** `recent_death_days = 90`
 
+## `[knowledge]`
+
+Core knowledge ingestion, managed content storage, chunking, and embedding settings.
+
+### `enabled`
+
+- **Type:** boolean
+- **Shipped value:** `true`
+- **Runtime fallback:** `true`
+- **Required:** No; supplied by the shipped configuration
+- **Allowed values:** `true`, `false`
+- **Status:** active
+
+Enables the Core-owned knowledge ingestion worker service.
+
+**Example:** `enabled = true`
+
+### `managed_root`
+
+- **Type:** path/string
+- **Shipped value:** `${ORAC_HOME}/var/knowledge/content`
+- **Runtime fallback:** `${ORAC_HOME}/var/knowledge/content`
+- **Required:** No; supplied by the shipped configuration
+- **Allowed values:** Any valid local path owned by the Core runtime
+- **Status:** active
+
+Root directory for Core-managed content-addressed knowledge payloads.
+
+**Example:** `managed_root = ${ORAC_HOME}/var/knowledge/content`
+
+### `request_lease_seconds`
+
+- **Type:** integer
+- **Shipped value:** `300`
+- **Runtime fallback:** `300`
+- **Required:** No; supplied by the shipped configuration
+- **Allowed values:** Positive integer seconds
+- **Status:** active
+
+Lease duration for a worker-claimed ingestion request.
+
+**Example:** `request_lease_seconds = 300`
+
+### `chunk_size_tokens`
+
+- **Type:** integer
+- **Shipped value:** `384`
+- **Runtime fallback:** `384`
+- **Required:** No; supplied by the shipped configuration
+- **Allowed values:** Positive integer token estimate
+- **Status:** active
+
+Target word-window size used when chunking extracted knowledge text.
+
+**Example:** `chunk_size_tokens = 384`
+
+### `chunk_overlap_tokens`
+
+- **Type:** integer
+- **Shipped value:** `48`
+- **Runtime fallback:** `48`
+- **Required:** No; supplied by the shipped configuration
+- **Allowed values:** Non-negative integer smaller than `chunk_size_tokens`
+- **Status:** active
+
+Overlap retained between adjacent knowledge chunks.
+
+**Example:** `chunk_overlap_tokens = 48`
+
+### `embedding_model_id`
+
+- **Type:** string
+- **Shipped value:** `hash-embedding-v1`
+- **Runtime fallback:** `hash-embedding-v1`
+- **Required:** No; supplied by the shipped configuration
+- **Allowed values:** Any registered embedding model identifier
+- **Status:** active
+
+Embedding model identifier used by the default local knowledge worker.
+
+**Example:** `embedding_model_id = hash-embedding-v1`
+
+### `embedding_dimensions`
+
+- **Type:** integer
+- **Shipped value:** `32`
+- **Runtime fallback:** `32`
+- **Required:** No; supplied by the shipped configuration
+- **Allowed values:** Positive integer dimension count
+- **Status:** active
+
+Vector dimension count for the default local embedding provider.
+
+**Example:** `embedding_dimensions = 32`
+
 ## `[display]`
 
 Optional local display event transport.

@@ -202,6 +202,7 @@ class DropBoxSchemaTests(unittest.TestCase):
             "source_hash",
             "error_message",
             "document_id",
+            "knowledge_ingestion_request_id",
             "effective_processing_profile",
             "effective_profile_instruction",
             "effective_instruction",
@@ -419,6 +420,50 @@ class DropBoxSchemaTests(unittest.TestCase):
         self.assertIn("drop_location_config_error_v", repository)
         self.assertIn("load_configuration_errors", service)
         self.assertIn("location skipped because of configuration error", service)
+
+    def test_handoff_view_exposes_location_context_required_by_runtime(self) -> None:
+        handoff_view = (
+            (SCHEMA_ROOT / "view" / "drop_job_handoff_v.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        repository = (PLUGIN_ROOT / "repository.py").read_text(encoding="utf-8").lower()
+
+        self.assertIn("loc.location_code", handoff_view)
+        self.assertIn("loc.path as location_root", handoff_view)
+        self.assertIn("join orac_dropbox.drop_location loc", handoff_view)
+        self.assertIn("on loc.drop_location_id = job.drop_location_id", handoff_view)
+        self.assertIn("location_code", repository)
+        self.assertIn("location_root", repository)
+
+    def test_core_knowledge_handoff_is_active_without_core_fk(
+        self,
+    ) -> None:
+        controller_sql = (
+            PLUGIN_ROOT / "db" / "liquibase" / "controllers" / "01_table.xml"
+        ).read_text(encoding="utf-8").lower()
+        package_sql = "\n".join(
+            path.read_text(encoding="utf-8").lower()
+            for path in (SCHEMA_ROOT / "package_spec").glob("drop_box*.sql")
+        )
+        package_sql += "\n" + "\n".join(
+            path.read_text(encoding="utf-8").lower()
+            for path in (SCHEMA_ROOT / "package_body").glob("drop_box*.sql")
+        )
+        view_sql = "\n".join(
+            path.read_text(encoding="utf-8").lower()
+            for path in (SCHEMA_ROOT / "view").glob("drop_job*.sql")
+        )
+
+        self.assertIn("drop_job_knowledge_ingestion_request.sql", controller_sql)
+        self.assertTrue(
+            (SCHEMA_ROOT / "table" / "drop_job_knowledge_ingestion_request.sql").exists()
+        )
+        self.assertIn("knowledge_ingestion_request_id", package_sql)
+        self.assertIn("record_core_acceptance", package_sql)
+        self.assertIn("repair_missing_core_failures", package_sql)
+        self.assertIn("knowledge_ingestion_request_id", view_sql)
+        self.assertNotIn("references orac_core", package_sql + view_sql)
 
     def test_disabled_example_seed_rows_use_safe_placeholders(self) -> None:
         seed_sql = (

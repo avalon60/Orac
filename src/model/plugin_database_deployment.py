@@ -948,6 +948,17 @@ class PluginDatabaseDeployer:
         has_verifiable_payload = bool(expected["objects"] or expected["grants"])
         if not state_says_deployed and not has_verifiable_payload:
             return False
+        if (
+            not state_says_deployed
+            and manifest.database_deployment.deployment_type == "liquibase"
+        ):
+            self._log_warning(
+                "Plugin Liquibase payload for "
+                f"'{manifest.plugin_id}' has no recorded successful deployment "
+                "for the current checksum; running Liquibase update so changed "
+                "runOnChange objects are applied."
+            )
+            return False
 
         try:
             objects_present = bool(

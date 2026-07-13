@@ -8,6 +8,9 @@ from __future__ import annotations
 import threading
 from typing import Any, Callable
 
+from orac_core.knowledge import KnowledgeManagedFileCaptureService
+from orac_core.knowledge.capture import KnowledgeCaptureError
+
 from .models import TickStats
 from .repository import DropBoxRepository
 from .scanner import DropBoxScanner
@@ -28,6 +31,9 @@ class DropBoxService:
         *,
         scanner: DropBoxScanner | None = None,
         repository_factory: Callable[[Any], DropBoxRepository] | None = None,
+        capture_service_factory: Callable[
+            [Any], KnowledgeManagedFileCaptureService
+        ] | None = None,
     ) -> None:
         """Initialise the service with injectable scanner and repository."""
         self._logger = logger
@@ -35,6 +41,10 @@ class DropBoxService:
         self._manifest = manifest
         self._scanner = scanner or DropBoxScanner()
         self._repository_factory = repository_factory or DropBoxRepository
+        self._capture_service_factory = (
+            capture_service_factory
+            or (lambda _context: KnowledgeManagedFileCaptureService(logger=logger))
+        )
         self._tick_lock = threading.Lock()
         self.last_stats = TickStats()
         self.last_error: str | None = None
@@ -72,6 +82,14 @@ class DropBoxService:
                 repository.enqueue_job(hashed)
                 stats.enqueued += 1
             repository.commit()
+            if repository.core_handoff_available():
+                self._handoff_jobs(context, repository, stats)
+            else:
+                self._log_warning(
+                    "Drop-box Core handoff skipped because "
+                    "ORAC_CODE.KNOWLEDGE_INGESTION_API is not available."
+                )
+            repository.commit()
             self.last_error = None
             self.last_stats = stats
             self._log_info(
@@ -80,6 +98,8 @@ class DropBoxService:
                 f"configuration_errors={stats.configuration_errors} "
                 f"stable={stats.stable_candidates} "
                 f"enqueued={stats.enqueued} "
+                f"handed_off={stats.handed_off} "
+                f"handoff_failed={stats.handoff_failed} "
                 f"existing={stats.skipped_existing_observation} "
                 f"changed={stats.deferred_changed_during_hash}."
             )
@@ -100,6 +120,39 @@ class DropBoxService:
                 except Exception:
                     pass
             self._tick_lock.release()
+
+    def _handoff_jobs(
+        self,
+        context: Any,
+        repository: DropBoxRepository,
+        stats: TickStats,
+    ) -> None:
+        """Pass queued jobs to Core capture and persist handoff status."""
+        capture_service = self._capture_service_factory(context)
+        for job in repository.load_handoff_jobs():
+            try:
+                result = capture_service.capture_drop_box_file(job.to_capture_request())
+                repository.record_core_acceptance(
+                    drop_job_id=job.drop_job_id,
+                    knowledge_ingestion_request_id=result.ingestion_request_id,
+                )
+                stats.handed_off += 1
+            except KnowledgeCaptureError as exc:
+                repository.update_status(
+                    drop_job_id=job.drop_job_id,
+                    status_code="failed",
+                    error_message=f"Drop Box managed-file capture failed: {exc}",
+                )
+                stats.handoff_failed += 1
+                self._log_warning(
+                    f"Drop-box job {job.drop_job_id} failed managed-file capture: {exc}"
+                )
+            except Exception as exc:
+                self._log_warning(
+                    "Drop-box job "
+                    f"{job.drop_job_id} remains queued because Core handoff "
+                    f"is temporarily unavailable: {exc}"
+                )
 
     def health(self, context: Any) -> bool:
         """Return whether the service has no currently recorded error."""
