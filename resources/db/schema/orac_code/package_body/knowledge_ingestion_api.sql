@@ -28,6 +28,46 @@ as
     );
   end add_event;
 
+  procedure add_event_for_source(
+    p_source_object_id in number,
+    p_event_type       in varchar2,
+    p_event_message    in clob default null
+  )
+  is
+  begin
+    for req in (
+      select ingestion_request_id
+        from orac_api.knowledge_ingestion_requests_v
+       where source_object_id = p_source_object_id
+       order by ingestion_request_id
+    )
+    loop
+      add_event(req.ingestion_request_id, p_event_type, p_event_message);
+    end loop;
+  end add_event_for_source;
+
+  function vector_dimension(
+    p_embedding_vector in clob
+  ) return number
+  is
+    l_array   json_array_t;
+    l_element json_element_t;
+  begin
+    l_array := json_array_t.parse(p_embedding_vector);
+    for l_index in 0 .. l_array.get_size - 1
+    loop
+      l_element := l_array.get(l_index);
+      if not l_element.is_number
+      then
+        return -1;
+      end if;
+    end loop;
+    return l_array.get_size;
+  exception
+    when others then
+      return -1;
+  end vector_dimension;
+
   function normalised_scope(
     p_scope_type in varchar2
   ) return varchar2
@@ -108,7 +148,8 @@ as
     p_target_scope_key         in varchar2,
     p_processing_profile_code  in varchar2 default null,
     p_processing_instruction   in clob default null,
-    p_source_modified_on       in timestamp with time zone default null
+    p_source_modified_on       in timestamp with time zone default null,
+    p_legacy_parent_source_reference in varchar2 default null
   ) return number
   is
     l_source_type          varchar2(50);
@@ -122,6 +163,8 @@ as
     l_document_id          number;
     l_document_version_id  number;
     l_ingestion_request_id number;
+    l_legacy_count         number;
+    l_existing_count       number;
   begin
     l_source_type := upper(normalised_required(p_source_type, 'Source type'));
     l_source_reference := normalised_required(p_source_reference, 'Source reference');
@@ -151,21 +194,74 @@ as
        where source_object_id = l_source_object_id;
     exception
       when no_data_found then
-        insert into orac_api.knowledge_source_objects_v (
-          source_type,
-          source_reference,
-          parent_source_reference,
-          target_scope_type,
-          target_scope_key
-        )
-        values (
-          l_source_type,
-          l_source_reference,
-          p_parent_source_reference,
-          l_scope_type,
-          l_scope_key
-        )
-        returning source_object_id into l_source_object_id;
+        select count(*)
+          into l_existing_count
+          from orac_api.knowledge_source_objects_v
+         where source_type = l_source_type
+           and source_reference = l_source_reference;
+
+        if l_existing_count > 0
+        then
+          raise_application_error(-20407, 'Stable source reference collision detected.');
+        end if;
+
+        if l_source_type = 'DROP_BOX'
+           and p_legacy_parent_source_reference is not null
+        then
+          select count(*),
+                 min(source_object_id)
+            into l_legacy_count,
+                 l_source_object_id
+            from orac_api.knowledge_source_objects_v
+           where source_type = l_source_type
+             and source_reference like 'drop_box:drop_job:%'
+             and target_scope_type = l_scope_type
+             and target_scope_key = l_scope_key
+             and parent_source_reference in (
+                   p_parent_source_reference,
+                   p_legacy_parent_source_reference
+                 );
+
+          if l_legacy_count = 1
+          then
+            update orac_api.knowledge_source_objects_v
+               set source_reference        = l_source_reference,
+                   parent_source_reference = p_parent_source_reference,
+                   target_scope_type       = l_scope_type,
+                   target_scope_key        = l_scope_key
+             where source_object_id = l_source_object_id;
+
+            add_event_for_source(
+              l_source_object_id,
+              'source_rekeyed',
+              'Conservatively re-keyed legacy Drop Box job source to stable source identity.'
+            );
+          elsif l_legacy_count > 1
+          then
+            raise_application_error(-20408, 'Ambiguous legacy Drop Box source identity; refusing re-key.');
+          end if;
+        else
+          l_legacy_count := 0;
+        end if;
+
+        if l_legacy_count = 0
+        then
+          insert into orac_api.knowledge_source_objects_v (
+            source_type,
+            source_reference,
+            parent_source_reference,
+            target_scope_type,
+            target_scope_key
+          )
+          values (
+            l_source_type,
+            l_source_reference,
+            p_parent_source_reference,
+            l_scope_type,
+            l_scope_key
+          )
+          returning source_object_id into l_source_object_id;
+        end if;
     end;
 
     begin
@@ -599,26 +695,99 @@ as
     p_lease_token          in varchar2
   )
   is
-    l_embedding_count number;
+    l_request_count          number;
+    l_chunk_count            number := 0;
+    l_embedding_count        number := 0;
+    l_missing_embedding_count number := 0;
+    l_bad_chunk_count        number := 0;
+    l_bad_vector_count       number := 0;
+    l_model_key              varchar2(600);
+    l_expected_model_key     varchar2(600);
   begin
     assert_lease(p_ingestion_request_id, p_owner_id, p_lease_token);
 
     select count(*)
-      into l_embedding_count
+      into l_request_count
       from orac_api.knowledge_ingestion_requests_v req
-      join orac_api.knowledge_extractions_v ext
-        on ext.document_version_id = req.document_version_id
-      join orac_api.knowledge_chunk_sets_v chs
-        on chs.extraction_id = ext.extraction_id
-      join orac_api.knowledge_chunks_v chn
-        on chn.chunk_set_id = chs.chunk_set_id
-      join orac_api.knowledge_chunk_embeddings_v emb
-        on emb.chunk_id = chn.chunk_id
+      join orac_api.knowledge_documents_v doc
+        on doc.document_id = req.document_id
+      join orac_api.knowledge_document_versions_v ver
+        on ver.document_version_id = req.document_version_id
+       and ver.document_id = doc.document_id
      where req.ingestion_request_id = p_ingestion_request_id;
 
-    if l_embedding_count = 0
+    if l_request_count <> 1
     then
-      raise_application_error(-20406, 'Cannot complete a knowledge request without at least one chunk embedding.');
+      raise_application_error(-20406, 'Cannot complete a knowledge request without a valid document and revision.');
+    end if;
+
+    for rec in (
+      select chn.chunk_id,
+             chn.chunk_text,
+             emb.chunk_embedding_id,
+             emb.embedding_vector,
+             modl.provider_code,
+             modl.model_name,
+             modl.model_revision,
+             modl.dimensions
+        from orac_api.knowledge_ingestion_requests_v req
+        join orac_api.knowledge_extractions_v ext
+          on ext.document_version_id = req.document_version_id
+        join orac_api.knowledge_chunk_sets_v chs
+          on chs.extraction_id = ext.extraction_id
+        join orac_api.knowledge_chunks_v chn
+          on chn.chunk_set_id = chs.chunk_set_id
+        left join orac_api.knowledge_chunk_embeddings_v emb
+          on emb.chunk_id = chn.chunk_id
+        left join orac_api.knowledge_embedding_models_v modl
+          on modl.embedding_model_id = emb.embedding_model_id
+       where req.ingestion_request_id = p_ingestion_request_id
+       order by chn.chunk_id
+    )
+    loop
+      l_chunk_count := l_chunk_count + 1;
+      if rec.chunk_text is null
+         or dbms_lob.getlength(rec.chunk_text) = 0
+         or trim(dbms_lob.substr(rec.chunk_text, 4000, 1)) is null
+      then
+        l_bad_chunk_count := l_bad_chunk_count + 1;
+      end if;
+
+      if rec.chunk_embedding_id is null
+      then
+        l_missing_embedding_count := l_missing_embedding_count + 1;
+      else
+        l_embedding_count := l_embedding_count + 1;
+        l_model_key := rec.provider_code || ':' || rec.model_name || ':'
+          || rec.model_revision || ':' || to_char(rec.dimensions);
+        if l_expected_model_key is null
+        then
+          l_expected_model_key := l_model_key;
+        elsif l_expected_model_key <> l_model_key
+        then
+          l_bad_vector_count := l_bad_vector_count + 1;
+        end if;
+
+        if rec.dimensions is null
+           or vector_dimension(rec.embedding_vector) <> rec.dimensions
+        then
+          l_bad_vector_count := l_bad_vector_count + 1;
+        end if;
+      end if;
+    end loop;
+
+    if l_chunk_count = 0
+    then
+      raise_application_error(-20409, 'Cannot complete a knowledge request without searchable chunks.');
+    elsif l_bad_chunk_count > 0
+    then
+      raise_application_error(-20410, 'Cannot complete a knowledge request with empty or whitespace-only chunks.');
+    elsif l_missing_embedding_count > 0 or l_embedding_count <> l_chunk_count
+    then
+      raise_application_error(-20411, 'Cannot complete a knowledge request until every searchable chunk has an embedding.');
+    elsif l_bad_vector_count > 0 or l_expected_model_key is null
+    then
+      raise_application_error(-20412, 'Cannot complete a knowledge request with inconsistent or malformed chunk embeddings.');
     end if;
 
     update orac_api.knowledge_ingestion_requests_v

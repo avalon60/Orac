@@ -187,6 +187,23 @@ Drop Box owns filesystem discovery only. After enqueueing stable jobs it calls
 trusted Drop Box job id, configured location root, source path, source hash,
 source size, scope, profile, and instruction.
 
+Core source identity is derived from the configured location code plus the
+canonical relative POSIX path under that location root:
+`<location_code>:<canonical-relative-posix-path>`. The persisted
+`source_reference` is `drop_box:source:<sha256(source_key)>`; the readable
+`source_key` is stored as the parent source reference. The identity deliberately
+excludes absolute host paths.
+
+Changed content at the same `source_key` creates a new document revision for
+the same document. A rename or move changes the relative path and therefore
+creates a new source/document identity. Moving the location root while
+preserving the same `location_code` and relative path preserves identity;
+changing `location_code` creates a new identity. Legacy `drop_box:drop_job:<id>`
+sources may be re-keyed only by Core when exactly one matching legacy source is
+found for the same source path and target scope, no stable-reference collision
+exists, and the transactional update records an ingestion event. Ambiguous
+legacy cases are refused.
+
 The Core capture service validates that the source resolves under the configured
 Drop Box root, rejects unsupported file types, oversized files, hash mismatches,
 symlink escapes, and non-UTF-8 `.txt`/`.md` payloads, then copies to a temporary
@@ -196,9 +213,13 @@ then calls `orac_code.knowledge_ingestion_api.submit_managed_file`.
 
 Failure boundary:
 
-- Capture failure before rename removes the temporary file where possible. No
-  Core database request is created, and the Drop Box job is marked failed for
-  retry.
+- Capture failure before rename removes the temporary file through the common
+  cleanup path. No Core database request is created, and the Drop Box job is
+  marked failed for retry.
+- Duplicate payload reuse, validation failure, database failure, embedding
+  failure, and cancellation all use the same temporary-file cleanup path. Core
+  retains files only after they have been promoted into the content-addressed
+  managed store and are explicitly available for retry.
 - Rename success followed by database registration failure may leave an orphaned
   content-addressed file. Retry verifies the same file and hash before retrying
   registration; the job is not marked successful.

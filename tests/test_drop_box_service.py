@@ -207,12 +207,39 @@ class DropBoxServiceTests(unittest.TestCase):
         service.tick(object())
 
         self.assertEqual(capture.requests[0].drop_job_id, 99)
+        self.assertEqual(capture.requests[0].location_code, "TEST")
+        self.assertEqual(capture.requests[0].source_key, "TEST:source.md")
+        self.assertEqual(
+            capture.requests[0].legacy_source_key, "TEST:/tmp/drop/source.md"
+        )
         self.assertEqual(repository.status_updates, [])
         self.assertEqual(
             repository.core_acceptances[-1]["knowledge_ingestion_request_id"],
             1234,
         )
         self.assertEqual(service.last_stats.handed_off, 1)
+
+    def test_handoff_source_key_uses_location_code_and_relative_path(self) -> None:
+        first = _handoff_job(
+            location_root=Path("/old/root"),
+            source_path=Path("/old/root/sub/source.md"),
+            source_filename="source.md",
+        ).to_capture_request()
+        migrated = _handoff_job(
+            location_root=Path("/new/root"),
+            source_path=Path("/new/root/sub/source.md"),
+            source_filename="source.md",
+        ).to_capture_request()
+        renamed = _handoff_job(
+            location_root=Path("/old/root"),
+            source_path=Path("/old/root/sub/renamed.md"),
+            source_filename="renamed.md",
+        ).to_capture_request()
+
+        self.assertEqual(first.source_key, "TEST:sub/source.md")
+        self.assertEqual(migrated.source_key, first.source_key)
+        self.assertEqual(renamed.source_key, "TEST:sub/renamed.md")
+        self.assertNotEqual(renamed.source_key, first.source_key)
 
     def test_capture_validation_failure_marks_job_failed(self) -> None:
         repository = _Repository(handoff_available=True)
@@ -229,7 +256,10 @@ class DropBoxServiceTests(unittest.TestCase):
         service.tick(object())
 
         self.assertEqual(repository.status_updates[-1]["status_code"], "failed")
-        self.assertIn("Drop Box managed-file capture failed", repository.status_updates[-1]["error_message"])
+        self.assertIn(
+            "Drop Box managed-file capture failed",
+            repository.status_updates[-1]["error_message"],
+        )
         self.assertEqual(service.last_stats.handoff_failed, 1)
 
     def test_transient_core_handoff_failure_leaves_job_queued(self) -> None:
@@ -312,15 +342,20 @@ class _CaptureService:
         )
 
 
-def _handoff_job() -> DropBoxHandoffJob:
+def _handoff_job(
+    *,
+    location_root: Path = Path("/tmp/drop"),
+    source_path: Path = Path("/tmp/drop/source.md"),
+    source_filename: str = "source.md",
+) -> DropBoxHandoffJob:
     observed_at = datetime(2026, 6, 27, 12, 0, tzinfo=UTC)
     return DropBoxHandoffJob(
         drop_job_id=99,
         drop_location_id=1,
         location_code="TEST",
-        location_root=Path("/tmp/drop"),
-        source_path=Path("/tmp/drop/source.md"),
-        source_filename="source.md",
+        location_root=location_root,
+        source_path=source_path,
+        source_filename=source_filename,
         source_hash="a" * 64,
         source_size_bytes=12,
         source_mtime=observed_at,

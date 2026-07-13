@@ -1,4 +1,5 @@
 """Scheduled worker for Core knowledge ingestion requests."""
+
 # Author: Clive Bostock
 # Date: 12-Jul-2026
 # Description: Extracts, chunks, embeds, and completes Core knowledge requests.
@@ -17,7 +18,6 @@ from lib.fsutils import project_home
 from model.plugin_routing.embeddings import EmbeddingProvider, HashEmbeddingProvider
 
 from .repository import KnowledgeIngestionRepository
-
 
 EXTRACTOR_CODE = "core_text_v1"
 EXTRACTOR_VERSION = "1"
@@ -54,9 +54,13 @@ class KnowledgeIngestionService:
         self._config_mgr = config_mgr
         self._manifest = manifest
         self._repository = repository or KnowledgeIngestionRepository()
-        self._managed_root = Path(managed_root) if managed_root else self._config_path(
-            "managed_root",
-            project_home() / "var" / "knowledge" / "content",
+        self._managed_root = (
+            Path(managed_root)
+            if managed_root
+            else self._config_path(
+                "managed_root",
+                project_home() / "var" / "knowledge" / "content",
+            )
         )
         chunk_size = self._config_int("chunk_size_tokens", 384)
         overlap = self._config_int("chunk_overlap_tokens", 48)
@@ -69,38 +73,47 @@ class KnowledgeIngestionService:
             dimensions=dimensions,
         )
         self._lease_seconds = self._config_int("request_lease_seconds", 300)
+        self._batch_size = max(1, self._config_int("batch_size", 5))
         self._owner_id = f"knowledge:{socket.gethostname()}:{os.getpid()}"
         self.last_processed_request_id: int | None = None
         self.last_error: str | None = None
 
     def tick(self, context: Any) -> None:
-        """Process at most one available ingestion request."""
+        """Process a bounded batch of available ingestion requests."""
         del context
-        request_id = self._repository.try_claim_next_request(
-            owner_id=self._owner_id,
-            lease_seconds=self._lease_seconds,
-        )
-        if request_id is None:
-            self.last_error = None
-            return
-        self.last_processed_request_id = request_id
-        detail = self._repository.request_detail(request_id)
-        owner_id = str(detail["lease_owner"])
-        lease_token = str(detail["lease_token"])
-        try:
-            self._process_request(detail, owner_id=owner_id, lease_token=lease_token)
-            self.last_error = None
-        except Exception as exc:
-            self.last_error = str(exc)
-            self._fail_request(
-                request_id=request_id,
-                owner_id=owner_id,
-                lease_token=lease_token,
-                error_code="KNOWLEDGE_WORKER_ERROR",
-                error_message=str(exc),
-                retryable=True,
+        first_error: str | None = None
+        processed = 0
+        for _index in range(self._batch_size):
+            request_id = self._repository.try_claim_next_request(
+                owner_id=self._owner_id,
+                lease_seconds=self._lease_seconds,
             )
-            self._log_warning(f"Knowledge ingestion request {request_id} failed: {exc}")
+            if request_id is None:
+                break
+            processed += 1
+            self.last_processed_request_id = request_id
+            detail = self._repository.request_detail(request_id)
+            owner_id = str(detail["lease_owner"])
+            lease_token = str(detail["lease_token"])
+            try:
+                self._process_request(
+                    detail, owner_id=owner_id, lease_token=lease_token
+                )
+            except Exception as exc:
+                if first_error is None:
+                    first_error = str(exc)
+                self._fail_request(
+                    request_id=request_id,
+                    owner_id=owner_id,
+                    lease_token=lease_token,
+                    error_code="KNOWLEDGE_WORKER_ERROR",
+                    error_message=str(exc),
+                    retryable=True,
+                )
+                self._log_warning(
+                    f"Knowledge ingestion request {request_id} failed: {exc}"
+                )
+        self.last_error = first_error if processed else None
 
     def health(self, context: Any) -> bool:
         """Return whether the last worker tick finished without an error."""
@@ -128,7 +141,9 @@ class KnowledgeIngestionService:
             )
             return
         if _sha256_file(payload_path) != str(detail["content_sha256"]).lower():
-            raise RuntimeError("Managed payload hash no longer matches the registered source object.")
+            raise RuntimeError(
+                "Managed payload hash no longer matches the registered source object."
+            )
 
         self._repository.mark_stage(
             ingestion_request_id=request_id,
@@ -138,6 +153,16 @@ class KnowledgeIngestionService:
             stage="EXTRACT",
         )
         text = payload_path.read_text(encoding="utf-8")
+        if not text.strip():
+            self._fail_request(
+                request_id=request_id,
+                owner_id=owner_id,
+                lease_token=lease_token,
+                error_code="EMPTY_MANAGED_PAYLOAD",
+                error_message="Managed Markdown/text payload is empty or whitespace-only.",
+                retryable=False,
+            )
+            return
         text_sha = _sha256_text(text)
         document_version_id = self._repository.ensure_document_version(
             ingestion_request_id=request_id,
@@ -191,8 +216,12 @@ class KnowledgeIngestionService:
             status="PROCESSING",
             stage="EMBED",
         )
-        vectors = self._embedding_provider.embed_texts([chunk.text for _, chunk in chunk_ids])
-        dimensions = len(vectors[0]) if vectors else self._config_int("embedding_dimensions", 32)
+        vectors = self._embedding_provider.embed_texts(
+            [chunk.text for _, chunk in chunk_ids]
+        )
+        dimensions = (
+            len(vectors[0]) if vectors else self._config_int("embedding_dimensions", 32)
+        )
         embedding_model_id = self._repository.upsert_embedding_model(
             provider_code="hash",
             model_name=self._embedding_provider.model_id,

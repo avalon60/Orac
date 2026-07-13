@@ -1,4 +1,5 @@
 """Database repository for Core knowledge ingestion APIs."""
+
 # Author: Clive Bostock
 # Date: 12-Jul-2026
 # Description: Calls ORAC_CODE knowledge APIs through an Orac-owned runtime database session.
@@ -16,8 +17,12 @@ from lib.user_security import UserSecurity
 
 def default_orac_session() -> Any:
     """Open the saved Orac runtime database connection."""
-    config_mgr = ConfigManager(config_file_path=project_home() / "resources" / "config" / "orac.ini")
-    project_identifier = config_mgr.config_value("global", "project_identifier", default="Orac")
+    config_mgr = ConfigManager(
+        config_file_path=project_home() / "resources" / "config" / "orac.ini"
+    )
+    project_identifier = config_mgr.config_value(
+        "global", "project_identifier", default="Orac"
+    )
     security = UserSecurity(project_identifier=project_identifier, resource_type="dsn")
     username, password, dsn = security.named_connection_creds(connection_name="orac")
     wallet = security.connection_property(
@@ -63,6 +68,7 @@ class KnowledgeIngestionRepository:
         processing_profile_code: str | None,
         processing_instruction: str | None,
         source_modified_on: Any | None = None,
+        legacy_parent_source_reference: str | None = None,
     ) -> int:
         """Register a captured managed file and return its ingestion request id."""
         session = self._session_factory()
@@ -85,6 +91,7 @@ class KnowledgeIngestionRepository:
                         processing_profile_code,
                         processing_instruction,
                         source_modified_on,
+                        legacy_parent_source_reference,
                     ],
                 )
             session.commit()
@@ -97,7 +104,9 @@ class KnowledgeIngestionRepository:
         detail = self.request_detail(ingestion_request_id)
         return str(detail["status_code"])
 
-    def try_claim_next_request(self, *, owner_id: str, lease_seconds: int) -> int | None:
+    def try_claim_next_request(
+        self, *, owner_id: str, lease_seconds: int
+    ) -> int | None:
         """Claim the next available ingestion request, if any."""
         session = self._session_factory()
         try:
@@ -142,9 +151,70 @@ class KnowledgeIngestionRepository:
                 )
                 row = cursor.fetchone()
                 if row is None:
-                    raise LookupError(f"Knowledge request not found: {ingestion_request_id}")
+                    raise LookupError(
+                        f"Knowledge request not found: {ingestion_request_id}"
+                    )
                 columns = [description[0].lower() for description in cursor.description]
                 return dict(zip(columns, row, strict=True))
+        finally:
+            _close_quietly(session)
+
+    def load_searchable_chunks(
+        self,
+        *,
+        target_scope_type: str | None,
+        target_scope_key: str | None,
+        embedding_model_identifier: str,
+        embedding_dimensions: int,
+        allow_cross_scope: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Load searchable chunks visible to a retrieval scope."""
+        session = self._session_factory()
+        try:
+            scope_clause = ""
+            parameters: dict[str, Any] = {
+                "embedding_model_identifier": embedding_model_identifier,
+                "embedding_dimensions": int(embedding_dimensions),
+            }
+            if not allow_cross_scope:
+                scope_clause = """
+                   and target_scope_type = :target_scope_type
+                   and target_scope_key = :target_scope_key
+                """
+                parameters["target_scope_type"] = target_scope_type
+                parameters["target_scope_key"] = target_scope_key
+
+            with session.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select ingestion_request_id,
+                           source_object_id,
+                           source_reference,
+                           parent_source_reference,
+                           document_id,
+                           document_version_id,
+                           target_scope_type,
+                           target_scope_key,
+                           chunk_id,
+                           chunk_no,
+                           chunk_text,
+                           embedding_vector,
+                           embedding_model_identifier,
+                           embedding_dimensions
+                      from orac_code.knowledge_searchable_chunks_v
+                     where embedding_model_identifier = :embedding_model_identifier
+                       and embedding_dimensions = :embedding_dimensions
+                       {scope_clause}
+                     order by document_id,
+                              document_version_id,
+                              chunk_no
+                    """,
+                    parameters,
+                )
+                columns = [description[0].lower() for description in cursor.description]
+                return [
+                    dict(zip(columns, row, strict=True)) for row in cursor.fetchall()
+                ]
         finally:
             _close_quietly(session)
 
@@ -286,7 +356,9 @@ class KnowledgeIngestionRepository:
         session = self._session_factory()
         try:
             with session.cursor() as cursor:
-                result = cursor.callfunc(f"{self._PACKAGE}.{name}", return_type, parameters)
+                result = cursor.callfunc(
+                    f"{self._PACKAGE}.{name}", return_type, parameters
+                )
             session.commit()
             return result
         finally:

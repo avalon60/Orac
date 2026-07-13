@@ -1,4 +1,5 @@
 """Data models for Core knowledge ingestion runtime workflows."""
+
 # Author: Clive Bostock
 # Date: 12-Jul-2026
 # Description: Defines transfer objects shared by knowledge capture and worker code.
@@ -27,6 +28,8 @@ class DropBoxCaptureRequest:
     processing_profile: str | None = None
     processing_instruction: str | None = None
     source_key: str | None = None
+    location_code: str | None = None
+    legacy_source_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -38,6 +41,26 @@ class ManagedCaptureResult:
     content_sha256: str
     status_code: str = "QUEUED"
     duplicate_payload: bool = False
+
+
+@dataclass(frozen=True)
+class KnowledgeSearchResult:
+    """One scope-bound searchable knowledge chunk match."""
+
+    ingestion_request_id: int
+    document_id: int
+    document_version_id: int
+    source_object_id: int
+    source_reference: str
+    parent_source_reference: str | None
+    chunk_id: int
+    chunk_no: int
+    score: float
+    target_scope_type: str
+    target_scope_key: str
+    embedding_model_identifier: str
+    embedding_dimensions: int
+    chunk_text: str
 
 
 @dataclass(frozen=True)

@@ -17,7 +17,8 @@ as
     p_target_scope_key         in varchar2,
     p_processing_profile_code  in varchar2 default null,
     p_processing_instruction   in clob default null,
-    p_source_modified_on       in timestamp with time zone default null
+    p_source_modified_on       in timestamp with time zone default null,
+    p_legacy_parent_source_reference in varchar2 default null
   ) return number;
 
   function try_claim_next_request(

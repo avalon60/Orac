@@ -1674,7 +1674,9 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("apex.item(''p2_processed_path'').disable()", page_two)
         self.assertNotIn("apex.item(''p2_failed_path'').disable()", page_two)
 
-    def test_drop_box_activity_page_uses_current_job_and_core_status_views(self) -> None:
+    def test_drop_box_activity_page_uses_current_job_and_core_status_views(
+        self,
+    ) -> None:
         export_sql = (
             (PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql")
             .read_text(encoding="utf-8")
@@ -1706,11 +1708,28 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             "source_path",
             "event_type",
             "event_message",
+            "core_request_id",
+            "drop_box_state",
+            "core_state",
+            "core_accepted_on",
+            "core_claimed_on",
+            "core_completed_on",
+            "document_id",
+            "document_version_id",
+            "chunk_count",
+            "embedded_chunk_count",
+            "searchable_yn",
+            "latest_core_error",
             "core request",
             "core state",
             "latest error",
         ):
             self.assertIn(token, activity_page)
+        self.assertIn(
+            "left join orac_code.knowledge_ingestion_requests_v core", activity_page
+        )
+        self.assertNotIn("knowledge_chunks_v", activity_page)
+        self.assertNotIn("knowledge_chunk_embeddings_v", activity_page)
         self.assertNotRegex(
             activity_page,
             r"\b(insert|update|delete|merge)\s+(into\s+)?orac_dropbox\.",

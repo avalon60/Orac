@@ -1010,6 +1010,20 @@ Lease duration for a worker-claimed ingestion request.
 
 **Example:** `request_lease_seconds = 300`
 
+### `batch_size`
+
+- **Type:** integer
+- **Shipped value:** `5`
+- **Runtime fallback:** `5`
+- **Required:** No; supplied by the shipped configuration
+- **Allowed values:** Positive integer
+- **Status:** active
+
+Maximum number of knowledge ingestion requests processed per worker tick. Each
+request is claimed and processed under its own transaction and error boundary.
+
+**Example:** `batch_size = 5`
+
 ### `chunk_size_tokens`
 
 - **Type:** integer

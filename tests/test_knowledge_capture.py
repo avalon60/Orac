@@ -1,4 +1,5 @@
 """Tests for Core managed-file capture."""
+
 # Author: Clive Bostock
 # Date: 12-Jul-2026
 # Description: Verifies path, hash, UTF-8, and idempotent capture behaviour.
@@ -50,8 +51,21 @@ class KnowledgeCaptureTests(unittest.TestCase):
 
             self.assertEqual(result.ingestion_request_id, 456)
             self.assertTrue((managed / result.content_uri).is_file())
-            self.assertEqual(repo.calls[0]["source_reference"], "drop_box:drop_job:7")
-            self.assertEqual(repo.calls[0]["source_modified_on"], _request(root, source).source_mtime)
+            source_key = "TEST:note.md"
+            expected_reference = (
+                "drop_box:source:"
+                + hashlib.sha256(source_key.encode("utf-8")).hexdigest()
+            )
+            self.assertEqual(repo.calls[0]["source_reference"], expected_reference)
+            self.assertEqual(repo.calls[0]["parent_source_reference"], source_key)
+            self.assertEqual(
+                repo.calls[0]["legacy_parent_source_reference"],
+                f"TEST:{source}",
+            )
+            self.assertEqual(
+                repo.calls[0]["source_modified_on"],
+                _request(root, source).source_mtime,
+            )
 
     def test_rejects_path_outside_location_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -116,6 +130,8 @@ class KnowledgeCaptureTests(unittest.TestCase):
 
             self.assertFalse(first.duplicate_payload)
             self.assertTrue(second.duplicate_payload)
+            temp_dir = managed / ".tmp"
+            self.assertEqual(list(temp_dir.glob("*")) if temp_dir.exists() else [], [])
 
 
 def _request(
@@ -138,6 +154,8 @@ def _request(
         target_scope_key="orac",
         processing_profile="markdown",
         processing_instruction="ingest",
+        location_code="TEST",
+        legacy_source_key=f"TEST:{source}",
     )
 
 

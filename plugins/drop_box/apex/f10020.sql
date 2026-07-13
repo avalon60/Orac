@@ -2700,8 +2700,21 @@ wwv_flow_imp_page.create_page_plug(
 '       job.drop_job_id,',
 '       job.source_filename,',
 '       job.source_path,',
+'       job.status_code as drop_box_state,',
+'       job.knowledge_ingestion_request_id as core_request_id,',
+'       core.status_code as core_state,',
+'       core.status_label as core_state_label,',
+'       core.accepted_on as core_accepted_on,',
+'       core.claimed_on as core_claimed_on,',
+'       core.completed_on as core_completed_on,',
+'       core.document_id,',
+'       core.document_version_id,',
+'       core.chunk_count,',
+'       core.embedded_chunk_count,',
+'       core.searchable_yn,',
+'       dbms_lob.substr(core.last_error_message, 1000, 1) as latest_core_error,',
 '       case job.status_code',
-'         when ''queued'' then ''Queued - awaiting Core acceptance''',
+'         when ''queued'' then ''Queued - awaiting Core worker claim''',
 '         when ''handed_off'' then ''Handed off - Core processing''',
 '         when ''completed'' then ''Completed''',
 '         when ''failed'' then ''Failed''',
@@ -2834,9 +2847,150 @@ wwv_flow_imp_page.create_worksheet_column(
 ,p_use_as_row_header=>'N'
 );
 wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000212)
+,p_db_column_name=>'DROP_BOX_STATE'
+,p_display_order=>9
+,p_column_identifier=>'K'
+,p_column_label=>'Drop Box State'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000213)
+,p_db_column_name=>'CORE_REQUEST_ID'
+,p_display_order=>10
+,p_column_identifier=>'L'
+,p_column_label=>'Core Request ID'
+,p_column_type=>'NUMBER'
+,p_heading_alignment=>'RIGHT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000214)
+,p_db_column_name=>'CORE_STATE'
+,p_display_order=>11
+,p_column_identifier=>'M'
+,p_column_label=>'Core State'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000215)
+,p_db_column_name=>'CORE_STATE_LABEL'
+,p_display_order=>12
+,p_column_identifier=>'N'
+,p_column_label=>'Core State Label'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000216)
+,p_db_column_name=>'CORE_ACCEPTED_ON'
+,p_display_order=>13
+,p_column_identifier=>'O'
+,p_column_label=>'Core Accepted'
+,p_column_type=>'DATE'
+,p_heading_alignment=>'LEFT'
+,p_format_mask=>'DD-Mon-YYYY HH24:MI:SS'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000217)
+,p_db_column_name=>'CORE_CLAIMED_ON'
+,p_display_order=>14
+,p_column_identifier=>'P'
+,p_column_label=>'Core Claimed'
+,p_column_type=>'DATE'
+,p_heading_alignment=>'LEFT'
+,p_format_mask=>'DD-Mon-YYYY HH24:MI:SS'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000218)
+,p_db_column_name=>'CORE_COMPLETED_ON'
+,p_display_order=>15
+,p_column_identifier=>'Q'
+,p_column_label=>'Core Completed'
+,p_column_type=>'DATE'
+,p_heading_alignment=>'LEFT'
+,p_format_mask=>'DD-Mon-YYYY HH24:MI:SS'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000219)
+,p_db_column_name=>'DOCUMENT_ID'
+,p_display_order=>16
+,p_column_identifier=>'R'
+,p_column_label=>'Document ID'
+,p_column_type=>'NUMBER'
+,p_heading_alignment=>'RIGHT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000221)
+,p_db_column_name=>'DOCUMENT_VERSION_ID'
+,p_display_order=>17
+,p_column_identifier=>'S'
+,p_column_label=>'Revision ID'
+,p_column_type=>'NUMBER'
+,p_heading_alignment=>'RIGHT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000222)
+,p_db_column_name=>'CHUNK_COUNT'
+,p_display_order=>18
+,p_column_identifier=>'T'
+,p_column_label=>'Chunks'
+,p_column_type=>'NUMBER'
+,p_heading_alignment=>'RIGHT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000223)
+,p_db_column_name=>'EMBEDDED_CHUNK_COUNT'
+,p_display_order=>19
+,p_column_identifier=>'U'
+,p_column_label=>'Embedded Chunks'
+,p_column_type=>'NUMBER'
+,p_heading_alignment=>'RIGHT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000224)
+,p_db_column_name=>'SEARCHABLE_YN'
+,p_display_order=>20
+,p_column_identifier=>'V'
+,p_column_label=>'Searchable'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000225)
+,p_db_column_name=>'LATEST_CORE_ERROR'
+,p_display_order=>21
+,p_column_identifier=>'W'
+,p_column_label=>'Latest Core Error'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000210)
 ,p_db_column_name=>'EVENT_TYPE'
-,p_display_order=>9
+,p_display_order=>22
 ,p_column_identifier=>'I'
 ,p_column_label=>'Event Type'
 ,p_column_type=>'STRING'
@@ -2846,7 +3000,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000211)
 ,p_db_column_name=>'EVENT_MESSAGE'
-,p_display_order=>10
+,p_display_order=>23
 ,p_column_identifier=>'J'
 ,p_column_label=>'Message'
 ,p_column_type=>'STRING'
@@ -2860,7 +3014,7 @@ wwv_flow_imp_page.create_worksheet_rpt(
 ,p_report_alias=>'346051'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'EVENT_TS:LOCATION_CODE:LOCATION_DISPLAY_NAME:DROP_JOB_ID:SOURCE_FILENAME:SOURCE_PATH:EVENT_TYPE:EVENT_MESSAGE:'
+,p_report_columns=>'EVENT_TS:LOCATION_CODE:LOCATION_DISPLAY_NAME:DROP_JOB_ID:SOURCE_FILENAME:DROP_BOX_STATE:CORE_REQUEST_ID:CORE_STATE_LABEL:CORE_ACCEPTED_ON:CORE_CLAIMED_ON:CORE_COMPLETED_ON:DOCUMENT_ID:DOCUMENT_VERSION_ID:CHUNK_COUNT:EMBEDDED_CHUNK_COUNT:SEARCHABLE_YN:LATEST_CORE_ERROR:SOURCE_PATH:EVENT_MESSAGE:'
 ,p_sort_column_1=>'EVENT_TS'
 ,p_sort_direction_1=>'DESC'
 );

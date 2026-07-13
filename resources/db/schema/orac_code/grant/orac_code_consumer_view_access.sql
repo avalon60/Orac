@@ -123,3 +123,7 @@ grant read on orac_code.knowledge_ingestion_requests_v to orac;
 --changeset clive:grant_orac_code_knowledge_ingestion_requests_v_to_orac_apx_pub_30 context:core labels:core stripComments:false runOnChange:true
 grant read on orac_code.knowledge_ingestion_requests_v to orac_apx_pub;
 --rollback revoke read on orac_code.knowledge_ingestion_requests_v from orac_apx_pub;
+
+--changeset clive:grant_orac_code_knowledge_searchable_chunks_v_to_orac_31 context:core labels:core stripComments:false runOnChange:true
+grant read on orac_code.knowledge_searchable_chunks_v to orac;
+--rollback revoke read on orac_code.knowledge_searchable_chunks_v from orac;

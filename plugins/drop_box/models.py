@@ -1,4 +1,5 @@
 """Data models for the drop-box ingestion plugin."""
+
 # Author: Clive Bostock
 # Date: 27-Jun-2026
 # Description: Defines scanner, repository, and service transfer objects.
@@ -142,6 +143,7 @@ class DropBoxHandoffJob:
     def to_capture_request(self) -> DropBoxCaptureRequest:
         """Return the Core capture request for this Drop Box job."""
         instruction = self.effective_instruction or self.effective_profile_instruction
+        source_key = self._source_key()
         return DropBoxCaptureRequest(
             drop_job_id=self.drop_job_id,
             drop_location_id=self.drop_location_id,
@@ -155,8 +157,20 @@ class DropBoxHandoffJob:
             target_scope_key=self.effective_scope_key,
             processing_profile=self.effective_processing_profile,
             processing_instruction=instruction,
-            source_key=f"{self.location_code}:{self.source_path}",
+            source_key=source_key,
+            location_code=self.location_code,
+            legacy_source_key=f"{self.location_code}:{self.source_path}",
         )
+
+    def _source_key(self) -> str:
+        """Return the stable Drop Box source identity for this job."""
+        try:
+            relative = self.source_path.resolve(strict=False).relative_to(
+                self.location_root.resolve(strict=False)
+            )
+        except ValueError:
+            relative = Path(self.source_filename)
+        return f"{self.location_code}:{relative.as_posix()}"
 
 
 @dataclass
@@ -208,6 +222,4 @@ def _optional_float(value: object) -> float | None:
 
 def datetime_from_mtime_ns(mtime_ns: int) -> datetime:
     """Convert nanosecond filesystem mtime to a naive UTC database timestamp."""
-    return datetime.fromtimestamp(mtime_ns / 1_000_000_000, tz=UTC).replace(
-        tzinfo=None
-    )
+    return datetime.fromtimestamp(mtime_ns / 1_000_000_000, tz=UTC).replace(tzinfo=None)
