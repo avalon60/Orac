@@ -16,6 +16,13 @@ import tarfile
 from typing import BinaryIO
 
 from model.plugin_dependencies import validate_requirements_mirror
+from model.plugin_package_layout import PLUGIN_DIRECTORY_BOM
+from model.plugin_package_layout import PLUGIN_ROOT_FILE_BOM
+from model.plugin_package_layout import PluginDirectorySpec
+from model.plugin_package_layout import claimed_source_directories
+from model.plugin_package_layout import is_ignored_source_file
+from model.plugin_package_layout import repository_install_root
+from model.plugin_package_layout import source_root_for_spec
 from model.plugin_routing.discovery import PluginDiscovery
 from model.plugin_routing.models import PluginManifest
 
@@ -84,25 +91,50 @@ class PluginPackageBuilder:
 
     @staticmethod
     def _source_entries(manifest: PluginManifest) -> list[tuple[Path, str]]:
-        """Return deterministic package inputs, excluding mutable/generated files."""
-        ignored_parts = {"__pycache__", ".venv", "venv", ".git", "logs"}
-        ignored_suffixes = {".pyc", ".pyo", ".log"}
+        """Return deterministic package inputs defined by the directory BOM."""
         entries: list[tuple[Path, str]] = []
-        for path in sorted(manifest.plugin_dir.rglob("*")):
-            relative = path.relative_to(manifest.plugin_dir)
-            if path.is_dir() or any(part in ignored_parts for part in relative.parts):
+        claimed_directories = claimed_source_directories()
+
+        for spec in PLUGIN_DIRECTORY_BOM:
+            source_root = source_root_for_spec(manifest.plugin_dir, spec)
+            if not source_root.exists():
+                if spec.required:
+                    raise PluginPackageError(
+                        "Required plugin source directory is missing: "
+                        f"{spec.source_path}"
+                    )
                 continue
-            if path.suffix in ignored_suffixes or path.name == "plugin.ini":
-                continue
-            entries.append((path, f"plugin/{relative.as_posix()}"))
-        readme = manifest.plugin_dir / "README.md"
-        if readme.is_file():
-            entries = [item for item in entries if item[0] != readme]
-            entries.append((readme, "README.md"))
-        requirements = manifest.plugin_dir / "requirements.txt"
-        if requirements.is_file():
-            entries = [item for item in entries if item[0] != requirements]
-            entries.append((requirements, "requirements.txt"))
+            if not source_root.is_dir():
+                raise PluginPackageError(
+                    f"Plugin source entry must be a directory: {spec.source_path}"
+                )
+
+            for path in sorted(source_root.rglob("*")):
+                if not path.is_file():
+                    continue
+                relative = path.relative_to(source_root)
+                source_relative = path.relative_to(manifest.plugin_dir)
+
+                if is_ignored_source_file(source_relative):
+                    continue
+
+                if spec.catch_all:
+                    if (
+                        source_relative.parts
+                        and source_relative.parts[0] in claimed_directories
+                    ):
+                        continue
+                    if source_relative.as_posix() in PLUGIN_ROOT_FILE_BOM:
+                        continue
+
+                archive_name = PurePosixPath(spec.package_name, relative.as_posix())
+                entries.append((path, archive_name.as_posix()))
+
+        for file_name in PLUGIN_ROOT_FILE_BOM:
+            path = manifest.plugin_dir / file_name
+            if path.is_file():
+                entries.append((path, file_name))
+
         return sorted(entries, key=lambda item: item[1])
 
     @staticmethod
@@ -171,6 +203,7 @@ class PluginPackageReader:
             raise PluginPackageError(
                 "Plugin package must contain manifest.json and plugin/"
             )
+        _validate_package_directory_bom(destination)
         manifest = PluginDiscovery(destination).load_manifest(
             manifest_path,
             plugin_dir=plugin_dir,
@@ -252,14 +285,125 @@ def source_package(source_dir: Path) -> PluginPackage:
 
 
 def _source_hash(manifest: PluginManifest) -> str:
-    """Hash manifest and immutable source files for source installations."""
+    """Hash manifest and canonical BOM-defined package inputs."""
     digest = hashlib.sha256(manifest.manifest_path.read_bytes())
-    for path in sorted(manifest.plugin_dir.rglob("*")):
-        if not path.is_file() or "__pycache__" in path.parts or path.name == "plugin.ini":
-            continue
-        digest.update(path.relative_to(manifest.plugin_dir).as_posix().encode("utf-8"))
+    for path, archive_name in PluginPackageBuilder._source_entries(manifest):
+        digest.update(archive_name.encode("utf-8"))
         digest.update(path.read_bytes())
     return digest.hexdigest()
+
+
+def materialise_repository_plugin(
+    package: PluginPackage,
+    plugins_root: Path,
+) -> Path:
+    """Install a validated package into ``plugins/<plugin_id>``.
+
+    Archive ``plugin/`` contents are flattened into the plugin directory,
+    archive ``resources/`` remains a sibling resources directory, root README
+    and requirements files are copied into the plugin directory, and
+    ``manifest.json`` becomes ``plugins/<plugin_id>.json``.
+    """
+    destination_root = Path(plugins_root).resolve()
+    destination_root.mkdir(parents=True, exist_ok=True)
+    plugin_destination = destination_root / package.manifest.plugin_id
+    plugin_destination.mkdir(parents=True, exist_ok=True)
+
+    claimed_directories = claimed_source_directories()
+
+    for spec in PLUGIN_DIRECTORY_BOM:
+        source_root = _package_directory_source(package, spec)
+        if not source_root.exists():
+            if spec.required:
+                raise PluginPackageError(
+                    "Required package directory is missing: "
+                    f"{spec.package_name}"
+                )
+            continue
+        if not source_root.is_dir():
+            raise PluginPackageError(
+                f"Package entry must be a directory: {spec.package_name}"
+            )
+
+        install_root = repository_install_root(plugin_destination, spec)
+        install_root.mkdir(parents=True, exist_ok=True)
+
+        for path in sorted(source_root.rglob("*")):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(source_root)
+
+            if package.source_type != "tarball":
+                source_relative = path.relative_to(package.plugin_dir)
+                if is_ignored_source_file(source_relative):
+                    continue
+                if spec.catch_all:
+                    if (
+                        source_relative.parts
+                        and source_relative.parts[0] in claimed_directories
+                    ):
+                        continue
+                    if source_relative.as_posix() in PLUGIN_ROOT_FILE_BOM:
+                        continue
+
+            target = install_root / relative
+            _copy_file_unless_same(path, target)
+
+    for file_name in PLUGIN_ROOT_FILE_BOM:
+        source_file = (
+            package.package_root / file_name
+            if package.source_type == "tarball"
+            else package.plugin_dir / file_name
+        )
+        if source_file.is_file():
+            _copy_file_unless_same(
+                source_file,
+                plugin_destination / file_name,
+            )
+
+    _copy_file_unless_same(
+        package.manifest.manifest_path,
+        destination_root / f"{package.manifest.plugin_id}.json",
+    )
+    return plugin_destination
+
+
+def _package_directory_source(
+    package: PluginPackage,
+    spec: PluginDirectorySpec,
+) -> Path:
+    """Resolve one BOM directory for archive or source installations."""
+    if package.source_type == "tarball":
+        return package.package_root / spec.package_name
+    if spec.source_path in {"", "."}:
+        return package.plugin_dir
+    return package.plugin_dir / spec.source_path
+
+
+def _validate_package_directory_bom(package_root: Path) -> None:
+    """Validate directory types and required entries without relocating them."""
+    for spec in PLUGIN_DIRECTORY_BOM:
+        path = package_root / spec.package_name
+        if not path.exists():
+            if spec.required:
+                raise PluginPackageError(
+                    f"Plugin package must contain {spec.package_name}/"
+                )
+            continue
+        if not path.is_dir():
+            raise PluginPackageError(
+                f"Plugin package entry must be a directory: {spec.package_name}"
+            )
+
+
+def _copy_file_unless_same(source: Path, target: Path) -> None:
+    """Copy a file while safely handling bundled source installs."""
+    source = source.resolve()
+    target = target.resolve()
+    if source == target:
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
 
 
 def _sha256_file(path: Path) -> str:

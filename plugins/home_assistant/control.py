@@ -105,6 +105,50 @@ class ControlRequest:
     requested_domain: str | None = None
 
 
+def build_control_request(action: str, target: str) -> ControlRequest:
+    """Build and validate a low-risk control request from structured parts.
+
+    Args:
+        action: Canonical action such as ``turn_on``, ``turn_off``, ``toggle``,
+            or ``activate``.
+        target: Device, entity, area, or scene reference.
+
+    Returns:
+        A normalised and validated control request.
+
+    Raises:
+        HomeAssistantControlError: If the action is unsupported or the command
+            addresses the whole home.
+    """
+    canonical_action = str(action or "").strip().lower()
+    if canonical_action not in {"turn_on", "turn_off", "toggle", "activate"}:
+        raise HomeAssistantControlError(
+            "unsupported_action",
+            f"Home Assistant action '{action}' is not supported.",
+        )
+    canonical_target = _normalise_target(target)
+    if not canonical_target:
+        raise HomeAssistantControlError(
+            "missing_target",
+            "A Home Assistant target is required.",
+        )
+    if canonical_target in _WHOLE_HOME_TARGETS:
+        raise HomeAssistantControlError(
+            "whole_home_refused",
+            "Whole-home Home Assistant commands are not allowed.",
+        )
+    requested_domain = _requested_domain(canonical_target, canonical_action)
+    if requested_domain == "scene" and canonical_action == "turn_on":
+        canonical_action = "activate"
+    if requested_domain == "scene" and canonical_target.startswith("scene "):
+        canonical_target = canonical_target.removeprefix("scene ").strip()
+    return ControlRequest(
+        action=canonical_action,
+        target=canonical_target,
+        requested_domain=requested_domain,
+    )
+
+
 @dataclass(frozen=True)
 class AreaListRequest:
     """Parsed read-only request to list devices in a Home Assistant area."""
@@ -205,21 +249,7 @@ def parse_control_command(prompt: str) -> ControlRequest | None:
         target = _normalise_target(target)
         if fixed_action == "terse" and _looks_like_question(target):
             return None
-        if target in _WHOLE_HOME_TARGETS:
-            raise HomeAssistantControlError(
-                "whole_home_refused",
-                "Whole-home Home Assistant commands are not allowed.",
-            )
-        requested_domain = _requested_domain(target, action)
-        if requested_domain == "scene" and action == "turn_on":
-            action = "activate"
-        if requested_domain == "scene" and target.startswith("scene "):
-            target = target.removeprefix("scene ").strip()
-        return ControlRequest(
-            action=action,
-            target=target,
-            requested_domain=requested_domain,
-        )
+        return build_control_request(action, target)
     return None
 
 
@@ -367,6 +397,12 @@ def resolve_control_target(
         row for row in exact_matches if _domain_matches(row, request.requested_domain)
     ]
     if len(eligible_exact_matches) > 1:
+        preferred_exact_matches = _preferred_identifier_matches(
+            eligible_exact_matches,
+            request.target,
+        )
+        if len(preferred_exact_matches) == 1:
+            return _build_resolution(request, preferred_exact_matches, "entity")
         raise HomeAssistantControlError(
             "ambiguous_target",
             f"Home Assistant target '{request.target}' is ambiguous.",
@@ -486,7 +522,26 @@ def _matches_exact_name(row: Mapping[str, Any], request: ControlRequest) -> bool
         row["friendly_name"],
         row["device_name"],
     }
+    names.update(_space_variants(names))
     return target in names
+
+
+def _preferred_identifier_matches(
+    rows: list[dict[str, Any]],
+    target: str,
+) -> list[dict[str, Any]]:
+    """Return exact entity/object-id matches from duplicate friendly-name rows."""
+    normalised_target = _normalise(target)
+    return [
+        row
+        for row in rows
+        if normalised_target
+        in {
+            row["entity_id"],
+            row["object_id"],
+            row["object_id"].replace("_", " "),
+        }
+    ]
 
 
 def _matches_area(row: Mapping[str, Any], request: ControlRequest) -> bool:
@@ -589,6 +644,11 @@ def _deduplicate_entities(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]
     for row in rows:
         by_entity.setdefault(row["entity_id"], row)
     return list(by_entity.values())
+
+
+def _space_variants(names: set[str]) -> set[str]:
+    """Return safe spoken variants for underscore-separated Home Assistant IDs."""
+    return {name.replace("_", " ") for name in names if "_" in name}
 
 
 def _normalise(value: Any) -> str:

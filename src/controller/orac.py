@@ -2532,9 +2532,21 @@ class Orac:
                 dimensions=embedding_dimensions,
             )
             self.plugin_manager = PluginManager(embedding_provider=embedding_provider, logger=logger)
+            plugin_service_lease_seconds = self.config_mgr.int_config_value(
+                "plugin_services",
+                "lease_seconds",
+                default=30,
+            )
+            plugin_service_lease_retry_seconds = self.config_mgr.int_config_value(
+                "plugin_services",
+                "lease_acquire_retry_seconds",
+                default=plugin_service_lease_seconds + 2,
+            )
             self.plugin_service_manager = PluginServiceManager(
                 logger=logger,
                 config_mgr=self.config_mgr,
+                lease_seconds=plugin_service_lease_seconds,
+                lease_acquire_retry_seconds=plugin_service_lease_retry_seconds,
             )
             self.plugin_audit_adapter = PluginAuditAdapter(
                 db_session=self.db_session,

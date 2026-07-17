@@ -1,43 +1,32 @@
 """Home Assistant plugin on-demand command entry point."""
 # Author: Clive Bostock
-# Date: 04-Jun-2026
-# Description: Dispatches narrow Home Assistant commands to managed services.
+# Date: 15-Jul-2026
+# Description: Dispatches Home Assistant commands selected by plugin-owned interception metadata.
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from model.plugin_runtime import PluginExecutionResult
 
 from .control import ControlRequest
+from .control import build_control_request
 from .control import parse_area_inventory_command
 from .control import HomeAssistantControlError
 from .control import parse_area_list_command
 from .control import parse_control_command
 from .light_control import parse_light_control_command
 from .light_state_query import parse_light_state_query
+from .intercept_metadata import InterceptMatch, InterceptMetadata
 from .sensor_query import HomeAssistantSensorQueryError
 from .sensor_query import parse_sensor_query
 
 __author__ = "Clive Bostock"
-__date__ = "04-Jun-2026"
-__description__ = "Dispatches narrow Home Assistant commands to managed services."
-
-_RESYNC_COMMANDS = {
-    "resync devices",
-    "resync home assistant devices",
-    "sync devices",
-    "sync home assistant devices",
-    "synchronize devices",
-    "synchronize home assistant",
-    "synchronize home assistant devices",
-    "synchronise devices",
-    "synchronise home assistant",
-    "synchronise home assistant devices",
-    "sink devices",
-    "resync home assistant",
-}
+__date__ = "15-Jul-2026"
+__description__ = (
+    "Dispatches Home Assistant commands selected by plugin-owned "
+    "interception metadata."
+)
 
 
 class HomeAssistantPlugin:
@@ -55,22 +44,25 @@ class HomeAssistantPlugin:
         self._config_mgr = config_mgr
         self._data_access = data_access
         self._runtime_context = runtime_context
+        self._intercept_metadata = self._load_intercept_metadata()
 
     def can_handle(self, prompt: str) -> bool:
-        """Return whether the prompt is a supported Home Assistant command."""
-        if _normalise_command(prompt) in _RESYNC_COMMANDS:
-            return True
-        try:
-            return (
-                parse_light_control_command(prompt) is not None
-                or parse_light_state_query(prompt) is not None
-                or parse_control_command(prompt) is not None
-                or parse_area_inventory_command(prompt) is not None
-                or parse_area_list_command(prompt) is not None
-                or parse_sensor_query(prompt) is not None
-            )
-        except HomeAssistantControlError:
-            return True
+        """Return whether plugin-owned metadata claims the prompt.
+
+        Args:
+            prompt: User prompt to evaluate before LLM dispatch.
+
+        Returns:
+            ``True`` when a declarative interception rule matches.
+        """
+        return self._intercept_metadata.matches(prompt)
+
+    def _load_intercept_metadata(self) -> InterceptMetadata:
+        """Load plugin-owned interception metadata from the active manifest."""
+        manifest = getattr(self._runtime_context, "manifest", None)
+        if manifest is not None:
+            return InterceptMetadata.from_plugin_manifest(manifest)
+        return InterceptMetadata.from_plugin_module(__file__)
 
     def execute(
         self,
@@ -78,19 +70,26 @@ class HomeAssistantPlugin:
         meta: dict[str, Any] | None = None,
     ) -> PluginExecutionResult | None:
         """Execute a supported Home Assistant command."""
-        normalised = _normalise_command(prompt)
+        intercept_match = self._intercept_metadata.match(prompt)
+        if intercept_match is None:
+            return None
+
         try:
+            metadata_control_request = self._control_request_from_intercept(
+                intercept_match
+            )
             light_control_request = parse_light_control_command(prompt)
             light_state_request = parse_light_state_query(prompt)
-            control_request = parse_control_command(prompt)
+            control_request = metadata_control_request or parse_control_command(prompt)
             area_inventory_request = parse_area_inventory_command(prompt)
             area_list_request = parse_area_list_command(prompt)
             sensor_query_request = parse_sensor_query(prompt)
         except HomeAssistantControlError as exc:
             return self._control_failure_response(exc.code, str(exc))
 
+        is_resync = intercept_match.intent == "resynchronise_devices"
         if (
-            normalised not in _RESYNC_COMMANDS
+            not is_resync
             and light_control_request is None
             and light_state_request is None
             and control_request is None
@@ -138,6 +137,39 @@ class HomeAssistantPlugin:
             ),
             provenance={"command": "home_assistant.resync"},
         )
+
+    @staticmethod
+    def _control_request_from_intercept(
+        intercept_match: InterceptMatch,
+    ) -> ControlRequest | None:
+        """Build a control request from metadata captures and fixed parameters.
+
+        Args:
+            intercept_match: Structured interception result for the prompt.
+
+        Returns:
+            A validated control request when the rule supplies an action and
+            target, otherwise ``None`` so the existing parser can be used.
+        """
+        if intercept_match.intent != "device_control":
+            return None
+
+        target = str(
+            intercept_match.captures.get("target")
+            or intercept_match.parameters.get("target")
+            or ""
+        ).strip()
+        action = str(intercept_match.parameters.get("action") or "").strip()
+        state = str(
+            intercept_match.captures.get("state")
+            or intercept_match.parameters.get("state")
+            or ""
+        ).strip().lower()
+        if not action and state in {"on", "off"}:
+            action = "turn_on" if state == "on" else "turn_off"
+        if not action or not target:
+            return None
+        return build_control_request(action, target)
 
     def _execute_area_list(
         self,
@@ -302,11 +334,19 @@ class HomeAssistantPlugin:
         status = str(result.get("status") or "")
         entity_ids = tuple(result.get("entity_ids") or ())
         action_text = request.action.replace("_", " ")
-        content = (
-            f"Home Assistant confirmed {action_text} for {request.target}."
-            if status == "confirmed"
-            else f"Home Assistant accepted {action_text} for {request.target}."
-        )
+        if status == "confirmed":
+            content = f"Home Assistant confirmed {action_text} for {request.target}."
+        elif status == "accepted_unverified":
+            content = (
+                f"Home Assistant control was not confirmed: {action_text} for "
+                f"{request.target} was accepted, but the resulting state could not "
+                "be verified."
+            )
+        else:
+            return self._control_failure_response(
+                "unconfirmed_result",
+                "Home Assistant did not confirm the requested control change.",
+            )
         return PluginExecutionResult(
             plugin_id="home_assistant",
             content=content,
@@ -431,9 +471,3 @@ class HomeAssistantPlugin:
         """Write an error message when a logger is available."""
         if self._logger is not None and hasattr(self._logger, "log_error"):
             self._logger.log_error(message)
-
-
-def _normalise_command(prompt: str) -> str:
-    """Return a conservative command normalisation for exact phrase matching."""
-    text = re.sub(r"[^a-z0-9\s]", " ", str(prompt or "").lower())
-    return re.sub(r"\s+", " ", text).strip()

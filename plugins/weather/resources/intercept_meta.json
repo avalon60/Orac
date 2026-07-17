@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "description": "Deterministic prompt interception rules for the Weather plugin.",
+  "normalisation": "spoken_command",
+  "normalisation_replacements": {
+    "wether": "weather"
+  },
+  "exclusions": [
+    {
+      "id": "indoor_temperature_query",
+      "match_type": "regex_any",
+      "priority": 100,
+      "patterns": [
+        "^(?!(?:what is|what's) (?:the )?temperature$)(?=.*\\btemperature\\b)(?!.*\\bweather\\b)(?!.*\\boutside\\b)(?!.*\\btemperature in\\b)(?:what is|what's) (?:the )?.+ temperature$"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "temperature_for_location",
+      "intent": "weather_query",
+      "match_type": "regex_any",
+      "priority": 90,
+      "patterns": [
+        "^(?:what is|what's) (?:the )?temperature in (?P<location>.+?)(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$",
+        "^temperature in (?P<location>.+?)(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$"
+      ],
+      "parameters": {
+        "response_type": "temperature"
+      }
+    },
+    {
+      "id": "weather_for_location",
+      "intent": "weather_query",
+      "match_type": "regex_any",
+      "priority": 85,
+      "patterns": [
+        "^(?:what is|what's) (?:the )?weather in (?P<location>.+?)(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$",
+        "^weather in (?P<location>.+?)(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$"
+      ],
+      "parameters": {
+        "response_type": "general"
+      }
+    },
+    {
+      "id": "outlook_for_location",
+      "intent": "weather_query",
+      "match_type": "regex_any",
+      "priority": 80,
+      "patterns": [
+        "^(?:what is|what's) (?:the )?forecast for (?P<location>.+?)(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$",
+        "^forecast for (?P<location>.+?)(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$",
+        "^(?:give me )?(?:the )?outlook for (?P<location>.+?)(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$",
+        "^what will it be like in (?P<location>.+?)(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$"
+      ],
+      "parameters": {
+        "response_type": "general"
+      }
+    },
+    {
+      "id": "general_outlook",
+      "intent": "weather_query",
+      "match_type": "regex_any",
+      "priority": 70,
+      "patterns": [
+        "^(?:what is|what's) (?:the )?outlook(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$"
+      ],
+      "parameters": {
+        "response_type": "general"
+      }
+    },
+    {
+      "id": "weather_keywords",
+      "intent": "weather_query",
+      "match_type": "contains_any",
+      "priority": 50,
+      "values": [
+        "weather",
+        "temperature",
+        "rain",
+        "drizzle",
+        "wind",
+        "forecast",
+        "outlook",
+        "coat",
+        "jacket",
+        "umbrella",
+        "outside"
+      ]
+    }
+  ],
+  "tests": {
+    "should_match": [
+      "Will it rain today?",
+      "What's the weather where I am?",
+      "What's the weather in Manchester?",
+      "Do I need a coat this evening?",
+      "Will it be windy tomorrow morning?",
+      "What's the temperature outside?",
+      "What is the temperature?",
+      "Give me the outlook for Whitby.",
+      "What will it be like in York tomorrow?",
+      "What's the outlook tomorrow?",
+      "what is the wether forecast>"
+    ],
+    "should_not_match": [
+      "What is the lounge temperature?",
+      "What's the landing temperature?",
+      "Explain atmospheric pressure.",
+      "Tell me a joke."
+    ],
+    "match_cases": [
+      {
+        "prompt": "What's the temperature in Whitby?",
+        "rule_id": "temperature_for_location",
+        "intent": "weather_query",
+        "captures": {
+          "location": "whitby"
+        },
+        "parameters": {
+          "response_type": "temperature"
+        }
+      },
+      {
+        "prompt": "Give me the outlook for Whitby tomorrow.",
+        "rule_id": "outlook_for_location",
+        "intent": "weather_query",
+        "captures": {
+          "location": "whitby",
+          "time_phrase": "tomorrow"
+        },
+        "parameters": {
+          "response_type": "general"
+        }
+      }
+    ]
+  }
+}

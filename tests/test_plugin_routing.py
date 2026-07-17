@@ -1364,6 +1364,34 @@ class PluginRoutingTests(unittest.TestCase):
         self.assertTrue(all(candidate.capability_id for candidate in candidates))
         self.assertTrue(all(candidate.intent_name for candidate in candidates))
 
+    def test_deterministic_intercepts_boost_live_weather_and_ha_prompts(self) -> None:
+        manager = PluginManager(
+            embedding_provider=HashEmbeddingProvider(),
+            plugins_dir=Path("plugins"),
+            cache_dir=Path(tempfile.mkdtemp()),
+            database_deployer=_SuccessfulDatabaseDeployer(),
+        )
+
+        report = manager.refresh()
+        ha_candidates = manager.find_candidates("desk lamp off", top_n=3)
+        weather_candidates = manager.find_candidates(
+            "What is the weather forecast?",
+            top_n=3,
+        )
+        typo_candidates = manager.find_candidates("what is the wether forecast>", top_n=3)
+
+        self.assertGreaterEqual(report["intercept_plugin_count"], 2)
+        self.assertEqual(ha_candidates[0].plugin_id, "home_assistant")
+        self.assertEqual(ha_candidates[0].capability_id, "home_assistant.light_control")
+        self.assertGreaterEqual(ha_candidates[0].confidence, 0.99)
+        self.assertIn("deterministic_intercept", ha_candidates[0].match_reasons)
+        self.assertEqual(weather_candidates[0].plugin_id, "weather")
+        self.assertEqual(weather_candidates[0].capability_id, "weather.short_forecast")
+        self.assertGreaterEqual(weather_candidates[0].confidence, 0.99)
+        self.assertIn("deterministic_intercept", weather_candidates[0].match_reasons)
+        self.assertEqual(typo_candidates[0].plugin_id, "weather")
+        self.assertGreaterEqual(typo_candidates[0].confidence, 0.99)
+
     def test_service_only_plugin_is_not_indexed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins_dir, tempfile.TemporaryDirectory() as temp_cache_dir:
             plugins_dir = Path(temp_plugins_dir)

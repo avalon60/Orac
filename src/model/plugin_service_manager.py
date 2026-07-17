@@ -133,7 +133,10 @@ class PluginServiceManager:
         owner_id: str | None = None,
         max_restart_attempts: int = 1,
         lease_seconds: int = 30,
+        lease_acquire_retry_seconds: float = 0.0,
+        lease_acquire_retry_interval_seconds: float = 1.0,
         heartbeat_interval_seconds: float = 5.0,
+        sleep_func: Callable[[float], None] = time.sleep,
     ) -> None:
         self._logger = logger
         self._config_mgr = config_mgr
@@ -155,7 +158,13 @@ class PluginServiceManager:
         )
         self._max_restart_attempts = max_restart_attempts
         self._lease_seconds = lease_seconds
+        self._lease_acquire_retry_seconds = max(0.0, float(lease_acquire_retry_seconds))
+        self._lease_acquire_retry_interval_seconds = max(
+            0.01,
+            float(lease_acquire_retry_interval_seconds),
+        )
         self._heartbeat_interval_seconds = heartbeat_interval_seconds
+        self._sleep = sleep_func
         self._records: dict[tuple[str, str], _ServiceRecord] = {}
         self._dependency_invalid: dict[str, PluginManifest] = {}
 
@@ -277,12 +286,7 @@ class PluginServiceManager:
             self._log_debug(f"Plugin service '{record.service_id}' is already running.")
             return True
 
-        lease_token = self._lifecycle_store.try_acquire_lease(
-            plugin_id=record.manifest.plugin_id,
-            service_code=record.service_runtime.service_code,
-            owner_id=self.owner_id,
-            lease_seconds=self._lease_seconds,
-        )
+        lease_token = self._try_acquire_lease_with_retry(record)
         if not lease_token:
             self._log_warning(
                 f"Plugin service '{record.service_id}' could not acquire its lease."
@@ -308,6 +312,36 @@ class PluginServiceManager:
             self._release_lease(record)
             self._log_exception(f"Plugin service '{record.service_id}' failed to start", exc)
             return False
+
+    def _try_acquire_lease_with_retry(self, record: _ServiceRecord) -> str | None:
+        """Try to acquire a service lease, waiting briefly for restart handover."""
+        deadline = time.monotonic() + self._lease_acquire_retry_seconds
+        attempt = 0
+        while True:
+            token = self._lifecycle_store.try_acquire_lease(
+                plugin_id=record.manifest.plugin_id,
+                service_code=record.service_runtime.service_code,
+                owner_id=self.owner_id,
+                lease_seconds=self._lease_seconds,
+            )
+            if token:
+                if attempt:
+                    self._log_info(
+                        f"Plugin service '{record.service_id}' acquired its lease "
+                        f"after {attempt + 1} attempt(s)."
+                    )
+                return token
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            if attempt == 0:
+                self._log_info(
+                    f"Plugin service '{record.service_id}' lease is busy; retrying "
+                    f"for up to {self._lease_acquire_retry_seconds:.1f}s."
+                )
+            attempt += 1
+            self._sleep(min(self._lease_acquire_retry_interval_seconds, remaining))
 
     def stop(self, plugin_id: str, service_code: str | None = None) -> bool:
         """Request cancellation and wait up to the service shutdown timeout."""

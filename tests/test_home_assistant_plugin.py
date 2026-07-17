@@ -268,7 +268,7 @@ class HomeAssistantPluginTests(unittest.TestCase):
             },
         )
 
-    def test_terse_target_control_accepts_unconfirmed_service_response(self) -> None:
+    def test_terse_target_control_does_not_claim_unverified_success(self) -> None:
         class _UnconfirmedRuntimeContext(_FakeRuntimeContext):
             def run_service_command(
                 self,
@@ -278,7 +278,10 @@ class HomeAssistantPluginTests(unittest.TestCase):
             ) -> dict:
                 result = super().run_service_command(plugin_id, command, payload)
                 if command == "control":
-                    return {"status": "unconfirmed", "entity_ids": ["light.tv_light"]}
+                    return {
+                        "status": "accepted_unverified",
+                        "entity_ids": ["light.tv_light"],
+                    }
                 return result
 
         runtime_context = _UnconfirmedRuntimeContext()
@@ -287,8 +290,8 @@ class HomeAssistantPluginTests(unittest.TestCase):
         result = plugin.execute("TV light on.")
 
         self.assertEqual(runtime_context.commands[0]["command"], "control")
-        self.assertIn("accepted turn on for tv light", result.content.lower())
-        self.assertNotIn("not performed", result.content.lower())
+        self.assertIn("control was not confirmed", result.content.lower())
+        self.assertNotIn("confirmed turn on", result.content.lower())
 
     def test_area_listing_dispatches_read_only_service_command(self) -> None:
         runtime_context = _FakeRuntimeContext()

@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import threading
+import time
 from typing import Any, Callable
 
 from .client import HomeAssistantClient
@@ -37,6 +38,8 @@ CONTROL_TIMEOUT_SECONDS = 5.0
 SENSOR_QUERY_TIMEOUT_SECONDS = 5.0
 LIGHT_CONTROL_TIMEOUT_SECONDS = 5.0
 LIGHT_STATE_QUERY_TIMEOUT_SECONDS = 5.0
+CONTROL_VERIFICATION_TIMEOUT_SECONDS = 2.0
+CONTROL_VERIFICATION_INTERVAL_SECONDS = 0.25
 
 class HomeAssistantServiceError(RuntimeError):
     """Raised when the Home Assistant managed service cannot start safely."""
@@ -82,6 +85,9 @@ class HomeAssistantService:
         client_factory: Callable[[HomeAssistantClientConfig], Any] | None = None,
         repository_factory: Callable[[Any], Any] | None = None,
         sync_coordinator_factory: Callable[..., Any] | None = None,
+        sleep: Callable[[float], None] | None = None,
+        control_verification_timeout_seconds: float = CONTROL_VERIFICATION_TIMEOUT_SECONDS,
+        control_verification_interval_seconds: float = CONTROL_VERIFICATION_INTERVAL_SECONDS,
     ) -> None:
         """Initialise the service.
 
@@ -92,6 +98,9 @@ class HomeAssistantService:
             client_factory: Injectable client factory for tests.
             repository_factory: Injectable repository factory for tests.
             sync_coordinator_factory: Injectable sync coordinator factory.
+            sleep: Injectable sleep function for bounded polling tests.
+            control_verification_timeout_seconds: Maximum control verification wait.
+            control_verification_interval_seconds: Delay between verification reads.
         """
         self._logger = logger
         self._config_mgr = config_mgr
@@ -105,6 +114,15 @@ class HomeAssistantService:
         self._client: Any | None = None
         self._repository: Any | None = None
         self._sync_lock = threading.Lock()
+        self._sleep = sleep or time.sleep
+        self._control_verification_timeout_seconds = max(
+            0.0,
+            float(control_verification_timeout_seconds),
+        )
+        self._control_verification_interval_seconds = max(
+            0.0,
+            float(control_verification_interval_seconds),
+        )
 
     @property
     def state(self) -> HomeAssistantServiceState:
@@ -224,14 +242,11 @@ class HomeAssistantService:
                     service_call.service,
                     service_call.entity_ids,
                 )
-                confirmed_ids.update(
-                    str(item.get("entity_id") or "").strip().lower()
-                    for item in confirmation
-                )
-            status = (
-                "confirmed"
-                if set(resolved.entity_ids).issubset(confirmed_ids)
-                else "unconfirmed"
+                confirmed_ids.update(_service_response_entity_ids(confirmation))
+            status = self._control_status_after_service_call(
+                client,
+                resolved,
+                confirmed_ids,
             )
             return {
                 "status": status,
@@ -255,6 +270,95 @@ class HomeAssistantService:
                         close()
                     except Exception:
                         pass
+
+    def _control_status_after_service_call(
+        self,
+        client: Any,
+        resolved: Any,
+        confirmed_ids: set[str],
+    ) -> str:
+        """Return confirmed, accepted_unverified, or fail for a control call."""
+        if resolved.action == "activate":
+            if set(resolved.entity_ids).issubset(confirmed_ids):
+                return "accepted_unverified"
+            return "accepted_unverified"
+        if resolved.action == "toggle":
+            return (
+                "accepted_unverified"
+                if set(resolved.entity_ids).issubset(confirmed_ids)
+                else "accepted_unverified"
+            )
+        if resolved.action not in {"turn_on", "turn_off"}:
+            return "accepted_unverified"
+
+        expected_state = "on" if resolved.action == "turn_on" else "off"
+        verification = self._poll_control_state(
+            client,
+            resolved.entity_ids,
+            expected_state,
+        )
+        if verification == "confirmed":
+            return "confirmed"
+        if verification == "state_mismatch":
+            raise HomeAssistantControlError(
+                "state_mismatch",
+                "Home Assistant accepted the request, but the observed target "
+                f"state did not become {expected_state}.",
+            )
+        return "accepted_unverified"
+
+    def _poll_control_state(
+        self,
+        client: Any,
+        entity_ids: tuple[str, ...],
+        expected_state: str,
+    ) -> str:
+        """Poll Home Assistant briefly until controlled entities match state."""
+        attempts = self._control_verification_attempts()
+        last_observed: dict[str, str] = {}
+        saw_readable_state = False
+        for attempt in range(attempts):
+            observed = self._read_entity_states(client, entity_ids)
+            if observed:
+                last_observed = observed
+                readable_states = {
+                    state for state in observed.values() if state in {"on", "off"}
+                }
+                saw_readable_state = saw_readable_state or bool(readable_states)
+                if all(observed.get(entity_id) == expected_state for entity_id in entity_ids):
+                    return "confirmed"
+            if attempt < attempts - 1:
+                self._sleep(self._control_verification_interval_seconds)
+
+        if saw_readable_state and all(
+            last_observed.get(entity_id) in {"on", "off"}
+            and last_observed.get(entity_id) != expected_state
+            for entity_id in entity_ids
+        ):
+            return "state_mismatch"
+        return "accepted_unverified"
+
+    def _control_verification_attempts(self) -> int:
+        """Return a deterministic bounded polling count for control verification."""
+        interval = self._control_verification_interval_seconds
+        timeout = self._control_verification_timeout_seconds
+        if timeout <= 0 or interval <= 0:
+            return 1
+        return max(1, int(timeout / interval) + 1)
+
+    @staticmethod
+    def _read_entity_states(client: Any, entity_ids: tuple[str, ...]) -> dict[str, str]:
+        """Return currently readable entity states, ignoring transient read errors."""
+        observed: dict[str, str] = {}
+        for entity_id in entity_ids:
+            try:
+                state = client.fetch_state(entity_id)
+            except Exception:
+                continue
+            value = str(state.get("state") or "").strip().lower()
+            if value:
+                observed[entity_id] = value
+        return observed
 
     def _light_control(self, context: Any, payload: dict[str, Any]) -> dict[str, Any]:
         """Resolve and execute one isolated light-control request."""
@@ -800,3 +904,29 @@ class HomeAssistantService:
         """Write an error message when a logger is available."""
         if self._logger is not None and hasattr(self._logger, "log_error"):
             self._logger.log_error(message)
+
+
+def _service_response_entity_ids(response: Any) -> set[str]:
+    """Return entity IDs from a Home Assistant service response."""
+    if response is None:
+        return set()
+    if not isinstance(response, list):
+        raise HomeAssistantControlError(
+            "malformed_response",
+            "Home Assistant service response was not a JSON array.",
+        )
+    entity_ids: set[str] = set()
+    for item in response:
+        if not isinstance(item, dict):
+            raise HomeAssistantControlError(
+                "malformed_response",
+                "Home Assistant service response contained a malformed item.",
+            )
+        entity_id = str(item.get("entity_id") or "").strip().lower()
+        if not entity_id:
+            raise HomeAssistantControlError(
+                "malformed_response",
+                "Home Assistant service response did not include an entity_id.",
+            )
+        entity_ids.add(entity_id)
+    return entity_ids

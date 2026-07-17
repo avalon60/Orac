@@ -3,7 +3,7 @@
   "plugin_id": "weather",
   "name": "Weather",
   "description": "Answers current weather and short forecast questions for the user's configured or supported locations.",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "python_dependencies": [
     "requests>=2.32,<3"
   ],

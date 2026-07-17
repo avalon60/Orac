@@ -17,6 +17,7 @@ from types import ModuleType
 from typing import Any, Iterator
 
 from model.plugin_config import PluginConfigManager
+from model.plugin_resources import resolve_plugin_resource
 from model.plugin_routing.models import PluginManifest
 from model.plugin_secret_vault import PluginSecretVault
 
@@ -321,6 +322,10 @@ class PluginRuntimeContext:
     def plugin_id(self) -> str:
         """Return the current plugin identifier."""
         return self.manifest.plugin_id
+
+    def resolve_resource(self, relative_path: str | Path) -> Path:
+        """Resolve one immutable resource path for this plugin."""
+        return resolve_plugin_resource(self.manifest, relative_path)
 
     def plugin_db_session(self) -> Any:
         """Return a managed ORAC_PLUGIN database session for plugin runtime use."""

@@ -156,6 +156,27 @@ class _LifecycleStore:
         return True
 
 
+class _BusyOnceLifecycleStore(_LifecycleStore):
+    """Lifecycle store that reports one busy lease before acquiring."""
+
+    def __init__(self) -> None:
+        """Initialise an in-memory store with acquisition counters."""
+        super().__init__()
+        self.acquire_attempts: dict[tuple[str, str], int] = {}
+
+    def try_acquire_lease(self, *, plugin_id, service_code, owner_id, lease_seconds):
+        key = (plugin_id, service_code)
+        self.acquire_attempts[key] = self.acquire_attempts.get(key, 0) + 1
+        if self.acquire_attempts[key] == 1:
+            return None
+        return super().try_acquire_lease(
+            plugin_id=plugin_id,
+            service_code=service_code,
+            owner_id=owner_id,
+            lease_seconds=lease_seconds,
+        )
+
+
 def _service_manager(**kwargs) -> PluginServiceManager:
     return PluginServiceManager(
         logger=kwargs.pop("logger", _FakeLogger()),
@@ -677,6 +698,36 @@ class PluginServiceManagerTests(unittest.TestCase):
 
             self.assertFalse(service_manager.start(plugin_id))
             self.assertEqual(service_manager.get_state(plugin_id), "registered")
+
+    def test_busy_restart_lease_is_retried_before_start_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            plugin_id = "retry_lease"
+            lifecycle_store = _BusyOnceLifecycleStore()
+            _write_plugin(
+                plugins_dir,
+                plugin_id,
+                _base_manifest(plugin_id, _long_running_runtime()),
+                LONG_RUNNING_SERVICE_CODE,
+            )
+            service_manager = _service_manager(
+                lifecycle_store=lifecycle_store,
+                owner_id="unit-owner",
+                lease_acquire_retry_seconds=0.2,
+                lease_acquire_retry_interval_seconds=0.01,
+                sleep_func=lambda _seconds: None,
+            )
+            service_manager.register_manifests(_discover(plugins_dir))
+
+            self.assertTrue(service_manager.start(plugin_id))
+            self.assertEqual(
+                lifecycle_store.acquire_attempts[(plugin_id, "default")],
+                2,
+            )
+            self.assertTrue(
+                _wait_until(lambda: service_manager.get_state(plugin_id) == "running")
+            )
+            service_manager.stop(plugin_id)
 
     def test_stale_or_released_lease_can_be_acquired(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:

@@ -1,7 +1,7 @@
 """Weather plugin implementation using a modest Open-Meteo-backed provider."""
 # Author: Clive Bostock
-# Date: 2026-04-30
-# Description: Handles current weather and short forecast requests for supported locations.
+# Date: 2026-07-15
+# Description: Handles metadata-selected current weather and short forecast requests.
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import re
 from typing import Any
 
 from model.plugin_runtime import PluginExecutionResult
+from weather.intercept_metadata import InterceptMatch, InterceptMetadata
 from weather.provider import (
     DailyForecastPoint,
     HourlyForecastPoint,
@@ -52,49 +53,41 @@ class WeatherPlugin:
         config_mgr,
         data_access=None,
         provider: WeatherProvider | None = None,
+        runtime_context=None,
     ):
         self._logger = logger
         self._config_mgr = config_mgr
         self._data_access = data_access
         self._provider = provider or OpenMeteoWeatherProvider()
+        self._runtime_context = runtime_context
+        self._intercept_metadata = self._load_intercept_metadata()
 
     def can_handle(self, prompt: str) -> bool:
-        """Returns whether the prompt looks like a weather question."""
-        text = (prompt or "").strip().lower()
-        if not text:
-            return False
-        generic_temperature_question = re.fullmatch(
-            r"(?:what is|what's) (?:the )?temperature\??",
-            text,
-        )
-        if (
-            generic_temperature_question is None
-            and "temperature" in text
-            and "weather" not in text
-            and "outside" not in text
-            and not re.search(r"\btemperature in\b", text)
-            and re.search(r"\b(?:what is|what's) (?:the )?.+ temperature\b", text)
-        ):
-            return False
-        keywords = (
-            "weather",
-            "temperature",
-            "rain",
-            "wind",
-            "forecast",
-            "coat",
-            "umbrella",
-            "outside",
-        )
-        return any(keyword in text for keyword in keywords)
+        """Return whether plugin-owned metadata claims the prompt.
+
+        Args:
+            prompt: User prompt to evaluate before LLM dispatch.
+
+        Returns:
+            ``True`` when a declarative interception rule matches.
+        """
+        return self._intercept_metadata.matches(prompt)
+
+    def _load_intercept_metadata(self) -> InterceptMetadata:
+        """Load plugin-owned interception metadata from the active manifest."""
+        manifest = getattr(self._runtime_context, "manifest", None)
+        if manifest is not None:
+            return InterceptMetadata.from_plugin_manifest(manifest)
+        return InterceptMetadata.from_plugin_module(__file__)
 
     def execute(self, prompt: str, meta: dict[str, Any] | None = None) -> PluginExecutionResult | None:
         """Executes a weather query and returns a plugin result if handled."""
-        if not self.can_handle(prompt):
+        intercept_match = self._intercept_metadata.match(prompt)
+        if intercept_match is None:
             return None
 
         meta = meta or {}
-        resolved_location = self._resolve_location(prompt, meta)
+        resolved_location = self._resolve_location(prompt, meta, intercept_match)
         if resolved_location is None:
             return PluginExecutionResult(
                 plugin_id="weather",
@@ -122,12 +115,38 @@ class WeatherPlugin:
                 content="I couldn't retrieve weather data right now. Please try again shortly.",
             )
 
-        response = self._build_response(prompt, snapshot)
+        response = self._build_response(prompt, snapshot, intercept_match)
         self._logger.log_info(f"Weather plugin handled weather request for {location.name}.")
-        return PluginExecutionResult(plugin_id="weather", content=response)
+        return PluginExecutionResult(
+            plugin_id="weather",
+            content=response,
+            provenance={
+                "intercept_rule_id": intercept_match.rule_id,
+                "intercept_intent": intercept_match.intent,
+                "intercept_captures": dict(intercept_match.captures),
+            },
+        )
 
-    def _resolve_location(self, prompt: str, meta: dict[str, Any]) -> ResolvedLocation | str | None:
-        """Resolve a weather target from the prompt or saved session metadata."""
+    def _resolve_location(
+        self,
+        prompt: str,
+        meta: dict[str, Any],
+        intercept_match: InterceptMatch,
+    ) -> ResolvedLocation | str | None:
+        """Resolve a weather target from metadata captures, prompt text, or preferences.
+
+        Args:
+            prompt: Original user prompt.
+            meta: Runtime metadata supplied with the plugin invocation.
+            intercept_match: Structured declarative interception result.
+
+        Returns:
+            A resolved location, a location name to geocode, or ``None``.
+        """
+        captured_location = str(intercept_match.captures.get("location") or "").strip()
+        if captured_location:
+            return captured_location
+
         explicit_location = self._extract_explicit_location(prompt)
         if explicit_location:
             return explicit_location
@@ -323,15 +342,24 @@ class WeatherPlugin:
                     return location
         return None
 
-    def _build_response(self, prompt: str, snapshot: WeatherSnapshot) -> str:
+    def _build_response(
+        self,
+        prompt: str,
+        snapshot: WeatherSnapshot,
+        intercept_match: InterceptMatch,
+    ) -> str:
+        """Build a weather response using metadata parameters before keyword fallback."""
         lowered = prompt.lower()
-        if "coat" in lowered or "jacket" in lowered:
+        response_type = str(
+            intercept_match.parameters.get("response_type") or ""
+        ).strip().lower()
+        if response_type == "coat" or "coat" in lowered or "jacket" in lowered:
             return self._build_coat_response(snapshot, lowered)
-        if "rain" in lowered or "umbrella" in lowered:
+        if response_type == "rain" or "rain" in lowered or "umbrella" in lowered:
             return self._build_rain_response(snapshot, lowered)
-        if "wind" in lowered:
+        if response_type == "wind" or "wind" in lowered:
             return self._build_wind_response(snapshot, lowered)
-        if "temperature" in lowered:
+        if response_type == "temperature" or "temperature" in lowered:
             return self._build_temperature_response(snapshot)
         return self._build_general_response(snapshot, lowered)
 

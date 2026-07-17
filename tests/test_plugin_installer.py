@@ -35,6 +35,8 @@ from model.plugin_installer import _clamp_registry_text
 from model.plugin_package import PluginPackageBuilder
 from model.plugin_package import PluginPackageError
 from model.plugin_package import PluginPackageReader
+from model.plugin_resources import PluginResourceError
+from model.plugin_resources import resolve_plugin_resource
 from model.plugin_routing.discovery import PluginDiscovery
 
 
@@ -222,8 +224,10 @@ class PluginPackageTests(unittest.TestCase):
             self.assertIn("manifest.json", names)
             self.assertIn("plugin/plugin.py", names)
             self.assertIn("plugin/apex/f10010.sql", names)
+            self.assertIn("resources/intercept_meta.json", names)
             self.assertIn("plugin/plugin.ini.example", names)
             self.assertIn("requirements.txt", names)
+            self.assertNotIn("plugin/resources/intercept_meta.json", names)
             self.assertNotIn("plugin/plugin.ini", names)
 
     def test_package_output_is_deterministic(self) -> None:
@@ -337,6 +341,26 @@ class PluginPackageTests(unittest.TestCase):
             with self.assertRaises(PluginPackageError):
                 PluginPackageReader().extract(archive, Path(temp_dir) / "stage")
 
+    def test_resource_resolver_rejects_traversal(self) -> None:
+        manifest = PluginDiscovery(PROJECT_ROOT / "plugins").load_manifest(
+            PROJECT_ROOT / "plugins" / "weather.json"
+        )
+
+        with self.assertRaises(PluginResourceError):
+            resolve_plugin_resource(manifest, "../manifest.json")
+
+    def test_resource_resolver_supports_repository_layout(self) -> None:
+        manifest = PluginDiscovery(PROJECT_ROOT / "plugins").load_manifest(
+            PROJECT_ROOT / "plugins" / "weather.json"
+        )
+
+        resource = resolve_plugin_resource(manifest, "intercept_meta.json")
+
+        self.assertEqual(
+            resource,
+            PROJECT_ROOT / "plugins" / "weather" / "resources" / "intercept_meta.json",
+        )
+
 
 class PluginInstallerTests(unittest.TestCase):
     """Verify installer sequencing, config handling, and activation."""
@@ -345,6 +369,7 @@ class PluginInstallerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             source = _write_source_plugin(root, "alpha")
+            _write_resource(source, "intercept_meta.json", "{}\n")
             archive = PluginPackageBuilder().package(source, root / "dist")
             result = PluginInstaller(
                 project_root=root,
@@ -361,11 +386,48 @@ class PluginInstallerTests(unittest.TestCase):
                 root / "var" / "plugins" / "installed" / "alpha" / "1.0.0",
             )
             self.assertTrue((result.installed_path / "plugin" / "plugin.py").is_file())
+            self.assertTrue(
+                (result.installed_path / "resources" / "intercept_meta.json").is_file()
+            )
+            self.assertFalse(
+                (result.installed_path / "plugin" / "resources").exists()
+            )
+            self.assertTrue(
+                (root / "plugins" / "alpha" / "resources" / "intercept_meta.json").is_file()
+            )
+
+    def test_extracted_package_resource_resolves_from_managed_layout(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = _write_source_plugin(root, "alpha")
+            _write_resource(source, "intercept_meta.json", "{}\n")
+            archive = PluginPackageBuilder().package(source, root / "dist")
+            result = PluginInstaller(
+                project_root=root,
+                managed_root=root / "var" / "plugins",
+                config_root=root / "config",
+                dependency_installer=_DependencyInstaller(),
+                database_deployer=_DatabaseDeployer(),
+                registry=_Registry(),
+            ).install_archive(archive)
+            manifest = PluginDiscovery(result.installed_path).load_manifest(
+                result.installed_path / "manifest.json",
+                plugin_dir=result.installed_path / "plugin",
+                enforce_filename=False,
+            )
+
+            resource = resolve_plugin_resource(manifest, "intercept_meta.json")
+
+            self.assertEqual(
+                resource,
+                result.installed_path / "resources" / "intercept_meta.json",
+            )
 
     def test_source_install_activates_only_after_all_gates(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             source = _write_source_plugin(root, "alpha")
+            _write_resource(source, "intercept_meta.json", "{}\n")
             dependencies = _DependencyInstaller()
             database = _DatabaseDeployer()
             registry = _Registry()
@@ -383,6 +445,9 @@ class PluginInstallerTests(unittest.TestCase):
             self.assertTrue(result.enabled)
             self.assertTrue((result.installed_path / "manifest.json").is_file())
             self.assertTrue((result.installed_path / "plugin" / "plugin.py").is_file())
+            self.assertTrue(
+                (result.installed_path / "resources" / "intercept_meta.json").is_file()
+            )
             self.assertEqual(dependencies.calls, [()])
             self.assertEqual(database.calls, ["alpha"])
             self.assertTrue(registry.rows["alpha"]["enabled"])
@@ -983,6 +1048,14 @@ def _write_source_plugin(
         encoding="utf-8",
     )
     return plugin_dir
+
+
+def _write_resource(plugin_dir: Path, relative_path: str, text: str) -> Path:
+    """Create one source plugin resource fixture."""
+    path = plugin_dir / "resources" / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
 
 
 if __name__ == "__main__":

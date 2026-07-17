@@ -21,3 +21,11 @@ bin/plugin-pat-mgr.sh --plugin home_assistant --set access_token
 ```
 
 Do not store the token in `plugin.ini` or other repository files.
+
+## Declarative prompt interception
+
+Deterministic pre-LLM interception rules are supplied by the plugin in
+`resources/intercept_meta.json`. The plugin entry point loads and validates this
+file through `plugin/intercept_metadata.py`. The metadata determines whether a
+prompt is claimed; the existing Python parsers continue to extract and validate
+domain-specific command parameters before execution. Named regular-expression captures and fixed rule `parameters` are retained in `InterceptMatch`, allowing metadata-defined sentence forms to supply structured values to the plugin handler.

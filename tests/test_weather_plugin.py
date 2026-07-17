@@ -19,6 +19,7 @@ PLUGINS_ROOT = PROJECT_ROOT / "plugins"
 if str(PLUGINS_ROOT) not in sys.path:
     sys.path.insert(0, str(PLUGINS_ROOT))
 
+from model.plugin_routing.discovery import PluginDiscovery
 from weather.plugin import WeatherPlugin
 from weather.provider import (
     OpenMeteoWeatherProvider,
@@ -50,6 +51,13 @@ class _FakeConfigManager:
         if section == "weather" and key == "default_location":
             return self._default_location
         return default
+
+
+class _FakeRuntimeContext:
+    def __init__(self):
+        self.manifest = PluginDiscovery(PROJECT_ROOT / "plugins").load_manifest(
+            PROJECT_ROOT / "plugins" / "weather.json"
+        )
 
 
 def _build_snapshot() -> WeatherSnapshot:
@@ -183,6 +191,31 @@ class WeatherPluginTests(unittest.TestCase):
         result = plugin.execute("Will it rain today where I am?")
 
         self.assertIsNotNone(result)
+        self.assertIn("London", result.content)
+
+    def test_weather_plugin_uses_runtime_manifest_for_intercept_metadata(self) -> None:
+        snapshot = _build_snapshot()
+        plugin = WeatherPlugin(
+            logger=_FakeLogger(),
+            config_mgr=_FakeConfigManager(default_location="London"),
+            provider=StubWeatherProvider(location=snapshot.location, snapshot=snapshot),
+            runtime_context=_FakeRuntimeContext(),
+        )
+
+        self.assertTrue(plugin.can_handle("What's the weather in London?"))
+
+    def test_weather_typo_and_punctuation_are_normalised_by_metadata(self) -> None:
+        snapshot = _build_snapshot()
+        plugin = WeatherPlugin(
+            logger=_FakeLogger(),
+            config_mgr=_FakeConfigManager(default_location="London"),
+            provider=StubWeatherProvider(location=snapshot.location, snapshot=snapshot),
+        )
+
+        result = plugin.execute("what is the wether forecast>")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.plugin_id, "weather")
         self.assertIn("London", result.content)
 
     def test_weather_plugin_returns_graceful_failure_when_provider_errors(self) -> None:
