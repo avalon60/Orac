@@ -4,8 +4,8 @@
   "normalisation": "spoken_command",
   "rules": [
     {
-      "id": "resynchronise_devices",
-      "intent": "resynchronise_devices",
+      "rule_id": "resynchronise_devices",
+      "route_id": "resync_home_assistant",
       "match_type": "exact_any",
       "priority": 100,
       "values": [
@@ -24,59 +24,59 @@
       ]
     },
     {
-      "id": "rich_light_control",
-      "intent": "light_control",
-      "match_type": "regex_any",
+      "rule_id": "rich_light_control",
+      "route_id": "control_light",
+      "match_type": "regex",
       "priority": 90,
       "patterns": [
-        "^(?:please )?dim (?:the )?(.+)$",
-        "^(?:please )?brighten (?:the )?(.+)$",
-        "^(?:please )?make (?:the )?(.+?) a bit brighter$",
-        "^(?:please )?make (?:the )?(.+?) a bit dimmer$",
-        "^(?:please )?make (?:the )?(.+?) warmer$",
-        "^(?:please )?make (?:the )?(.+?) cooler$",
-        "^(?:please )?turn on (?:the )?(.+?) at (\\d{1,3}) percent$",
-        "^(?:please )?turn on (?:the )?(.+?) brightness to (\\d{1,3}) percent$",
-        "^(?:please )?set (?:the )?(.+?) brightness to (\\d{1,3}) percent$",
-        "^(?:please )?set (?:the )?(.+?) to (\\d{1,3}) percent$",
-        "^(?:please )?turn on (?:the )?(.+?) to (\\d{1,3}) percent$",
-        "^(?:please )?reset (?:the )?(.+?) to (normal white|neutral white|warm white|soft white|cool white|daylight|toasty)$",
-        "^(?:please )?(?:set|make|turn on) (?:the )?(.+?) to (\\d{3,4}) kelvin$",
-        "^(?:please )?(?:set|make|turn on) (?:the )?(.+?) to (normal white|neutral white|warm white|soft white|cool white|daylight|toasty)$",
-        "^(?:please )?(?:set|make|turn on) (?:the )?(.+?) (normal white|neutral white|warm white|soft white|cool white|daylight|toasty)$",
-        "^(?:please )?(?:set|make|turn on) (?:the )?(.+?) to (blue|cyan|green|magenta|orange|pink|purple|red|teal|yellow)$",
-        "^(?:please )?(?:make|set|turn on) (?:the )?(.+?) (blue|cyan|green|magenta|orange|pink|purple|red|teal|yellow)$"
+        "^(?:please )?dim (?:the )?.+$",
+        "^(?:please )?brighten (?:the )?.+$",
+        "^(?:please )?make (?:the )?.+? a bit brighter$",
+        "^(?:please )?make (?:the )?.+? a bit dimmer$",
+        "^(?:please )?make (?:the )?.+? warmer$",
+        "^(?:please )?make (?:the )?.+? cooler$",
+        "^(?:please )?turn on (?:the )?.+? at \\d{1,3} percent$",
+        "^(?:please )?turn on (?:the )?.+? brightness to \\d{1,3} percent$",
+        "^(?:please )?set (?:the )?.+? brightness to \\d{1,3} percent$",
+        "^(?:please )?set (?:the )?.+? to \\d{1,3} percent$",
+        "^(?:please )?turn on (?:the )?.+? to \\d{1,3} percent$",
+        "^(?:please )?reset (?:the )?.+? to (normal white|neutral white|warm white|soft white|cool white|daylight|toasty)$",
+        "^(?:please )?(?:set|make|turn on) (?:the )?.+? to \\d{3,4} kelvin$",
+        "^(?:please )?(?:set|make|turn on) (?:the )?.+? to (normal white|neutral white|warm white|soft white|cool white|daylight|toasty)$",
+        "^(?:please )?(?:set|make|turn on) (?:the )?.+? (normal white|neutral white|warm white|soft white|cool white|daylight|toasty)$",
+        "^(?:please )?(?:set|make|turn on) (?:the )?.+? to (blue|cyan|green|magenta|orange|pink|purple|red|teal|yellow)$",
+        "^(?:please )?(?:make|set|turn on) (?:the )?.+? (blue|cyan|green|magenta|orange|pink|purple|red|teal|yellow)$"
       ]
     },
     {
-      "id": "light_state_query",
-      "intent": "light_state_query",
-      "match_type": "regex_any",
+      "rule_id": "light_state_query",
+      "route_id": "query_light_state",
+      "match_type": "regex",
       "priority": 80,
       "patterns": [
-        "^(?:please )?are any (?:the )?(.+?) (?:lights?|lamps?) on$",
-        "^(?:please )?which (?:the )?(.+?) (?:lights?|lamps?) are on$",
-        "^(?:please )?are all (?:the )?(.+?) (?:lights?|lamps?) off$",
-        "^(?:please )?(?:is|are) (?:the )?(.+?) (on|off)$",
-        "^(?:please )?what state is (?:the )?(.+?) in$",
-        "^(?:please )?how bright is (?:the )?(.+?)$",
-        "^(?:please )?what brightness is (?:the )?(.+?) set to$",
-        "^(?:please )?what brightness is (?:the )?(.+?)$",
-        "^(?:please )?what brightness and colour is (?:the )?(.+?)$",
-        "^(?:please )?what brightness and color is (?:the )?(.+?)$",
-        "^(?:please )?what setting is (?:the )?(.+?) on$",
-        "^(?:please )?what setting is (?:the )?(.+?) in$",
-        "^(?:please )?what colour temperature is (?:the )?(.+?)$",
-        "^(?:please )?what color temperature is (?:the )?(.+?)$",
-        "^(?:please )?what colour is (?:the )?(.+?)$",
-        "^(?:please )?what color is (?:the )?(.+?)$",
-        "^(?:please )?is (?:the )?(.+?) (warm white|soft white|neutral white|cool white|daylight)$"
+        "^(?:please )?are any (?:the )?.+? (?:lights?|lamps?) on$",
+        "^(?:please )?which (?:the )?.+? (?:lights?|lamps?) are on$",
+        "^(?:please )?are all (?:the )?.+? (?:lights?|lamps?) off$",
+        "^(?:please )?(?:is|are) (?:the )?.+? (on|off)$",
+        "^(?:please )?what state is (?:the )?.+? in$",
+        "^(?:please )?how bright is (?:the )?.+$",
+        "^(?:please )?what brightness is (?:the )?.+? set to$",
+        "^(?:please )?what brightness is (?:the )?.+$",
+        "^(?:please )?what brightness and colour is (?:the )?.+$",
+        "^(?:please )?what brightness and color is (?:the )?.+$",
+        "^(?:please )?what setting is (?:the )?.+? on$",
+        "^(?:please )?what setting is (?:the )?.+? in$",
+        "^(?:please )?what colour temperature is (?:the )?.+$",
+        "^(?:please )?what color temperature is (?:the )?.+$",
+        "^(?:please )?what colour is (?:the )?.+$",
+        "^(?:please )?what color is (?:the )?.+$",
+        "^(?:please )?is (?:the )?.+? (warm white|soft white|neutral white|cool white|daylight)$"
       ]
     },
     {
-      "id": "device_control_state_prefix",
-      "intent": "device_control",
-      "match_type": "regex_any",
+      "rule_id": "device_control_state_prefix",
+      "route_id": "control_device",
+      "match_type": "regex",
       "priority": 70,
       "patterns": [
         "^(?:please )?(?:turn|switch) (?P<state>on|off) (?:the )?(?P<target>.+)$",
@@ -84,9 +84,9 @@
       ]
     },
     {
-      "id": "device_control_state_suffix",
-      "intent": "device_control",
-      "match_type": "regex_any",
+      "rule_id": "device_control_state_suffix",
+      "route_id": "control_device",
+      "match_type": "regex",
       "priority": 70,
       "patterns": [
         "^(?:please )?(?:turn|switch) (?:the )?(?P<target>.+?) (?P<state>on|off)$",
@@ -94,44 +94,41 @@
       ]
     },
     {
-      "id": "device_control_toggle",
-      "intent": "device_control",
-      "match_type": "regex_any",
+      "rule_id": "device_control_toggle",
+      "route_id": "control_device",
+      "match_type": "regex",
       "priority": 70,
       "patterns": [
         "^(?:please )?toggle (?:the )?(?P<target>.+)$"
       ],
-      "parameters": {
+      "arguments": {
         "action": "toggle"
       }
     },
     {
-      "id": "scene_activation",
-      "intent": "device_control",
-      "match_type": "regex_any",
+      "rule_id": "scene_activation",
+      "route_id": "activate_scene",
+      "match_type": "regex",
       "priority": 70,
       "patterns": [
         "^(?:please )?(?:activate|enable) (?:the )?(?P<target>.+)$"
-      ],
-      "parameters": {
-        "action": "activate"
-      }
-    },
-    {
-      "id": "area_listing",
-      "intent": "area_listing",
-      "match_type": "regex_any",
-      "priority": 60,
-      "patterns": [
-        "^(?:please )?list (devices|lights?|lamps?|switches|scenes) in (?:the )?(.+)$",
-        "^(?:what|which) (devices|lights?|lamps?|switches|scenes) are in (?:the )?(.+)$",
-        "^(?:please )?list (?:the )?(.+?) (devices|lights?|lamps?|switches|scenes)$"
       ]
     },
     {
-      "id": "area_inventory",
-      "intent": "area_inventory",
-      "match_type": "regex_any",
+      "rule_id": "area_listing",
+      "route_id": "list_area_inventory",
+      "match_type": "regex",
+      "priority": 60,
+      "patterns": [
+        "^(?:please )?list (devices|lights?|lamps?|switches|scenes) in (?:the )?.+$",
+        "^(?:what|which) (devices|lights?|lamps?|switches|scenes) are in (?:the )?.+$",
+        "^(?:please )?list (?:the )?.+? (devices|lights?|lamps?|switches|scenes)$"
+      ]
+    },
+    {
+      "rule_id": "area_inventory",
+      "route_id": "list_area_inventory",
+      "match_type": "regex",
       "priority": 60,
       "patterns": [
         "^(?:please )?list areas$",
@@ -141,76 +138,22 @@
       ]
     },
     {
-      "id": "sensor_query",
-      "intent": "sensor_query",
-      "match_type": "regex_any",
+      "rule_id": "sensor_query",
+      "route_id": "query_sensor_state",
+      "match_type": "regex",
       "priority": 50,
       "patterns": [
         "^are (?:any )?sensors unavailable$",
-        "^when was (?:the )?(.+?)(?: (temperature|humidity))? sensor last updated$",
-        "^which is warmer,? (?:the )?(.+?) or (?:the )?(.+)$",
-        "^(?:what is|what's) (?:the )?temperature (?:in|on) (?:the )?(.+)$",
-        "^(?:what is|what's) (?:the )?(.+?) temperature$",
-        "^(?:what is|what's) (?:the )?humidity (?:in|on) (?:the )?(.+)$",
-        "^(?:what is|what's) (?:the )?(.+?) humidity$",
-        "^how humid is (?:the )?(.+)$",
-        "^is (?:the )?(.+?) humid$",
-        "^(?:what is|what's) (?:the )?(?:temperature and humidity|climate) (?:in|on) (?:the )?(.+)$"
+        "^when was (?:the )?.+?(?: (temperature|humidity))? sensor last updated$",
+        "^which is warmer,? (?:the )?.+? or (?:the )?.+$",
+        "^(?:what is|what's) (?:the )?temperature (?:in|on) (?:the )?.+$",
+        "^(?:what is|what's) (?:the )?.+? temperature$",
+        "^(?:what is|what's) (?:the )?humidity (?:in|on) (?:the )?.+$",
+        "^(?:what is|what's) (?:the )?.+? humidity$",
+        "^how humid is (?:the )?.+$",
+        "^is (?:the )?.+? humid$",
+        "^(?:what is|what's) (?:the )?(?:temperature and humidity|climate) (?:in|on) (?:the )?.+$"
       ]
     }
-  ],
-  "tests": {
-    "should_match": [
-      "Resync Home Assistant devices.",
-      "Turn on the lounge lamp.",
-      "Make the TV light warmer.",
-      "Set the office lamp brightness to 40 percent.",
-      "Is the kitchen light on?",
-      "What brightness is the office lamp set to?",
-      "List devices in the office.",
-      "Which areas do we have?",
-      "What's the temperature in the lounge?",
-      "How humid is the landing?",
-      "Are any sensors unavailable?"
-    ],
-    "should_not_match": [
-      "What is the weather in York?",
-      "What's the temperature outside?",
-      "Explain how a smart light works.",
-      "Tell me a joke."
-    ],
-    "match_cases": [
-      {
-        "prompt": "Turn on the lounge lamp.",
-        "rule_id": "device_control_state_prefix",
-        "intent": "device_control",
-        "captures": {
-          "state": "on",
-          "target": "lounge lamp"
-        },
-        "parameters": {}
-      },
-      {
-        "prompt": "Lounge lamp off.",
-        "rule_id": "device_control_state_suffix",
-        "intent": "device_control",
-        "captures": {
-          "target": "lounge lamp",
-          "state": "off"
-        },
-        "parameters": {}
-      },
-      {
-        "prompt": "Toggle the desk lamp.",
-        "rule_id": "device_control_toggle",
-        "intent": "device_control",
-        "captures": {
-          "target": "desk lamp"
-        },
-        "parameters": {
-          "action": "toggle"
-        }
-      }
-    ]
-  }
+  ]
 }

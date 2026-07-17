@@ -9,7 +9,6 @@ from dataclasses import dataclass
 import gzip
 import hashlib
 import io
-import json
 from pathlib import Path, PurePosixPath
 import shutil
 import tarfile
@@ -418,6 +417,7 @@ def _sha256_file(path: Path) -> str:
 def validate_entry_point_files(manifest: PluginManifest) -> None:
     """Require modules declared by manifest entry points to exist in the package."""
     entry_points = [manifest.entry_point]
+    entry_points.append(manifest.interceptor_entry_point)
     entry_points.extend(
         service_runtime.entry_point for service_runtime in manifest.service_runtimes
     )

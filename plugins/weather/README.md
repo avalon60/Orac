@@ -22,7 +22,11 @@ The plugin does not use database connectivity in this pass.
 ## Declarative prompt interception
 
 Deterministic pre-LLM interception rules are supplied by the plugin in
-`resources/intercept_meta.json`. The plugin entry point loads and validates this
-file through `plugin/intercept_metadata.py`. The metadata determines whether a
-prompt is claimed; the existing Python parsers continue to extract and validate
-domain-specific command parameters before execution. Named regular-expression captures and fixed rule `parameters` are retained in `InterceptMatch`, allowing metadata-defined sentence forms to supply structured values to the plugin handler.
+`resources/intercept_meta.json` and activated by the manifest
+`routing.interceptor` entry. Orac core loads the resource through the bound
+resource reader, validates each rule's `route_id` against the manifest routes,
+and derives the selected capability and intent from the manifest.
+
+Weather execution consumes `meta["plugin_route"]` arguments for the selected
+route. The deprecated `can_handle()` method remains only as a temporary
+compatibility delegate and is bypassed during normal migrated routing.

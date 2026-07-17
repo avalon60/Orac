@@ -34,6 +34,7 @@
   ],
   "entry_point": "plugin:WeatherPlugin",
   "routing": {
+    "interceptor": "interceptor:WeatherDialogInterceptor",
     "capabilities": [
       {
         "id": "weather.current_conditions",

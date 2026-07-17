@@ -7,8 +7,9 @@ It is deliberately narrower than a full plugin SDK.
 
 1. `PluginDiscovery` reads and validates top-level plugin manifests.
    Discovery must not import plugin implementation code.
-2. `PluginManager` builds the route-intent shortlist from manifest metadata
-   only. Embeddings are a ranking signal, not an authority layer.
+2. `PluginManager` builds route-intent candidates from manifest metadata and
+   prepared core-owned dialogue interceptors. Embeddings are a ranking signal,
+   not an authority layer.
 3. `PluginArbiter` resolves contention between route candidates. It protects
    core-reserved commands, honours explicit plugin addressing, applies
    directive/action gating, and asks for clarification on ambiguous matches.
@@ -19,9 +20,12 @@ It is deliberately narrower than a full plugin SDK.
    allowed, denied, or requires confirmation. Plugin code is not imported before
    this decision.
 6. Only allowed plugins are imported and invoked.
-7. Orac-owned code creates provenance for plugin results. Plugin code may return
+7. For migrated interceptor plugins, `PluginRouter` passes the selected route
+   in `meta["plugin_route"]` and bypasses legacy `can_handle()` ownership
+   checks during normal routing.
+8. Orac-owned code creates provenance for plugin results. Plugin code may return
    content, but it does not author final provenance or policy status.
-8. `Orac` carries provenance into response metadata and assistant-turn
+9. `Orac` carries provenance into response metadata and assistant-turn
    persistence metadata.
 
 ## Ownership Rules
@@ -31,9 +35,14 @@ It is deliberately narrower than a full plugin SDK.
   optional scaffold metadata.
 - Plugin discovery owns manifest validation only.
 - Routing owns candidate discovery only. Route candidates are not plugin claims.
+- Interception metadata owns dialogue matching only. Manifest routes own the
+  executable capability and intent selected by a `route_id`.
 - Core arbitration owns the decision about whether any plugin owns a turn.
 - Orac core owns policy, confirmation, provenance, persistence, and final
   response metadata.
+- `InterceptMatch` and `PluginRouteCandidate` arguments must remain immutable
+  through matching and arbitration. Convert to a mutable dictionary only at the
+  final plugin invocation boundary.
 - Plugin implementation code must never make the final allow/deny decision for
   its own execution.
 - Plugin implementation code must not become the final arbiter through
@@ -58,9 +67,25 @@ still apply deterministic directive/action gating, quoted-example detection,
 plugin-name discussion detection, confirmation requirements, and ambiguity
 checks before execution.
 
-If a selected plugin later declines through its implementation-level
-`can_handle` check, that rejection is final for the turn. Orac must not try the
-next candidate as a fallback.
+For migrated plugins that declare `routing.interceptor`, normal routing must
+not call `can_handle()`. The selected manifest route is passed to execution as:
+
+```python
+meta["plugin_route"] = {
+    "plugin_id": candidate.plugin_id,
+    "capability_id": candidate.capability_id,
+    "intent_name": candidate.intent_name,
+    "arguments": dict(candidate.extracted_params or {}),
+    "match_reasons": list(candidate.match_reasons),
+}
+```
+
+Temporary compatibility `can_handle()` methods may remain while old callers are
+retired, but they must not create a second route candidate or run an independent
+parser during migrated routing. For legacy plugins without an interceptor, if a
+selected plugin later declines through its implementation-level `can_handle`
+check, that rejection is final for the turn. Orac must not try the next
+candidate as a fallback.
 
 ## Fail-Closed Cases
 

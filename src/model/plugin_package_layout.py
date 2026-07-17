@@ -53,6 +53,7 @@ PLUGIN_ROOT_FILE_BOM: tuple[str, ...] = (
 )
 
 IGNORED_SOURCE_PARTS = {"__pycache__", ".venv", "venv", ".git", "logs"}
+IGNORED_SOURCE_NAMES = {".bumpversion.cfg"}
 IGNORED_SOURCE_SUFFIXES = {".pyc", ".pyo", ".log"}
 
 
@@ -83,6 +84,7 @@ def is_ignored_source_file(relative: Path) -> bool:
     """Return whether a source file is mutable, generated, or transient."""
     return (
         any(part in IGNORED_SOURCE_PARTS for part in relative.parts)
+        or relative.name in IGNORED_SOURCE_NAMES
         or relative.suffix in IGNORED_SOURCE_SUFFIXES
         or relative.name == "plugin.ini"
     )

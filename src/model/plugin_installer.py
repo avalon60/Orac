@@ -39,7 +39,9 @@ from model.plugin_routing.models import PluginManifest
 from model.plugin_registry import PluginApexAppRegistryStore
 from model.plugin_registry import PluginRegistryStore
 from model.plugin_runtime import load_plugin_class
+from model.plugin_runtime import load_plugin_interceptor_class
 from model.plugin_runtime import load_plugin_service_class
+from model.plugin_runtime import instantiate_plugin_interceptor
 from model.plugin_secret_vault import PluginPatVaultStore
 from model.plugin_service_manager import PluginServiceManager
 
@@ -335,7 +337,6 @@ class PluginInstaller:
 
     def _install(self, package: PluginPackage, staging: Path) -> PluginInstallResult:
         """Run all required installation gates for one validated package."""
-        source_manifest = package.manifest
         candidate_root = staging / "candidate"
         candidate_plugin_dir = candidate_root / "plugin"
         self._stage_candidate_package(package, candidate_root)
@@ -592,6 +593,13 @@ class PluginInstaller:
                 raise PluginInstallationError(
                     f"Plugin '{manifest.plugin_id}' entry point does not expose execute()."
                 )
+        if manifest.interceptor_entry_point:
+            interceptor_class = load_plugin_interceptor_class(manifest)
+            interceptor = instantiate_plugin_interceptor(
+                interceptor_class,
+                manifest=manifest,
+            )
+            interceptor.prepare()
         for service_runtime in manifest.service_runtimes:
             service_class = load_plugin_service_class(manifest, service_runtime)
             required_method = (

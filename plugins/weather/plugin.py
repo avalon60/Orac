@@ -5,13 +5,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 import math
-import re
 from typing import Any
 
+from model.plugin_resources import resource_reader_for_manifest
+from model.plugin_routing.interception import mutable_mapping
 from model.plugin_runtime import PluginExecutionResult
-from weather.intercept_metadata import InterceptMatch, InterceptMetadata
+from weather.interceptor import WeatherDialogInterceptor
 from weather.provider import (
     DailyForecastPoint,
     HourlyForecastPoint,
@@ -60,10 +61,9 @@ class WeatherPlugin:
         self._data_access = data_access
         self._provider = provider or OpenMeteoWeatherProvider()
         self._runtime_context = runtime_context
-        self._intercept_metadata = self._load_intercept_metadata()
 
     def can_handle(self, prompt: str) -> bool:
-        """Return whether plugin-owned metadata claims the prompt.
+        """Deprecated compatibility check using the shared core interceptor.
 
         Args:
             prompt: User prompt to evaluate before LLM dispatch.
@@ -71,23 +71,17 @@ class WeatherPlugin:
         Returns:
             ``True`` when a declarative interception rule matches.
         """
-        return self._intercept_metadata.matches(prompt)
-
-    def _load_intercept_metadata(self) -> InterceptMetadata:
-        """Load plugin-owned interception metadata from the active manifest."""
-        manifest = getattr(self._runtime_context, "manifest", None)
-        if manifest is not None:
-            return InterceptMetadata.from_plugin_manifest(manifest)
-        return InterceptMetadata.from_plugin_module(__file__)
+        return self._legacy_plugin_route(prompt) is not None
 
     def execute(self, prompt: str, meta: dict[str, Any] | None = None) -> PluginExecutionResult | None:
         """Executes a weather query and returns a plugin result if handled."""
-        intercept_match = self._intercept_metadata.match(prompt)
-        if intercept_match is None:
+        route = self._route_from_meta(meta) or self._legacy_plugin_route(prompt)
+        if route is None:
             return None
 
         meta = meta or {}
-        resolved_location = self._resolve_location(prompt, meta, intercept_match)
+        arguments = route["arguments"]
+        resolved_location = self._resolve_location(meta, arguments)
         if resolved_location is None:
             return PluginExecutionResult(
                 plugin_id="weather",
@@ -115,41 +109,73 @@ class WeatherPlugin:
                 content="I couldn't retrieve weather data right now. Please try again shortly.",
             )
 
-        response = self._build_response(prompt, snapshot, intercept_match)
+        response = self._build_response(prompt, snapshot, arguments)
         self._logger.log_info(f"Weather plugin handled weather request for {location.name}.")
         return PluginExecutionResult(
             plugin_id="weather",
             content=response,
             provenance={
-                "intercept_rule_id": intercept_match.rule_id,
-                "intercept_intent": intercept_match.intent,
-                "intercept_captures": dict(intercept_match.captures),
+                "route_intent": route["intent_name"],
+                "route_arguments": dict(arguments),
             },
         )
 
+    def _route_from_meta(
+        self,
+        meta: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        """Return selected route metadata supplied by core routing."""
+        plugin_route = (meta or {}).get("plugin_route")
+        if not isinstance(plugin_route, dict):
+            return None
+        if plugin_route.get("plugin_id") not in {None, "weather"}:
+            return None
+        intent_name = str(plugin_route.get("intent_name") or "").strip()
+        if intent_name not in {"current_weather", "short_forecast"}:
+            return None
+        raw_arguments = plugin_route.get("arguments", {})
+        arguments = raw_arguments if isinstance(raw_arguments, dict) else {}
+        return {
+            "intent_name": intent_name,
+            "arguments": dict(arguments),
+        }
+
+    def _legacy_plugin_route(self, prompt: str) -> dict[str, Any] | None:
+        """Return a compatibility route for direct legacy callers only."""
+        manifest = getattr(self._runtime_context, "manifest", None)
+        if manifest is None:
+            return None
+        interceptor = WeatherDialogInterceptor(
+            manifest=manifest,
+            resources=resource_reader_for_manifest(manifest),
+            logger=self._logger,
+        )
+        interceptor.prepare()
+        match = interceptor.intercept(prompt)
+        if match is None:
+            return None
+        return {
+            "intent_name": match.route_id,
+            "arguments": mutable_mapping(match.arguments),
+        }
+
     def _resolve_location(
         self,
-        prompt: str,
         meta: dict[str, Any],
-        intercept_match: InterceptMatch,
+        arguments: dict[str, Any],
     ) -> ResolvedLocation | str | None:
-        """Resolve a weather target from metadata captures, prompt text, or preferences.
+        """Resolve a weather target from route arguments or preferences.
 
         Args:
-            prompt: Original user prompt.
             meta: Runtime metadata supplied with the plugin invocation.
-            intercept_match: Structured declarative interception result.
+            arguments: Core-selected route arguments.
 
         Returns:
             A resolved location, a location name to geocode, or ``None``.
         """
-        captured_location = str(intercept_match.captures.get("location") or "").strip()
+        captured_location = str(arguments.get("location") or "").strip()
         if captured_location:
             return captured_location
-
-        explicit_location = self._extract_explicit_location(prompt)
-        if explicit_location:
-            return explicit_location
 
         home_location = self._home_location()
         if home_location is not None:
@@ -326,33 +352,15 @@ class WeatherPlugin:
         lon_delta = origin.longitude - candidate.longitude
         return math.pow(lat_delta, 2) + math.pow(lon_delta, 2)
 
-    @staticmethod
-    def _extract_explicit_location(prompt: str) -> str | None:
-        patterns = [
-            r"\bweather in ([A-Za-z][A-Za-z ,.'\-]+)",
-            r"\btemperature in ([A-Za-z][A-Za-z ,.'\-]+)",
-            r"\bforecast for ([A-Za-z][A-Za-z ,.'\-]+)",
-            r"\bin ([A-Za-z][A-Za-z ,.'\-]+)\??$",
-        ]
-        for pattern in patterns:
-            match = re.search(pattern, prompt, flags=re.IGNORECASE)
-            if match:
-                location = match.group(1).strip(" ?.!,")
-                if location:
-                    return location
-        return None
-
     def _build_response(
         self,
         prompt: str,
         snapshot: WeatherSnapshot,
-        intercept_match: InterceptMatch,
+        arguments: dict[str, Any],
     ) -> str:
         """Build a weather response using metadata parameters before keyword fallback."""
         lowered = prompt.lower()
-        response_type = str(
-            intercept_match.parameters.get("response_type") or ""
-        ).strip().lower()
+        response_type = str(arguments.get("response_type") or "").strip().lower()
         if response_type == "coat" or "coat" in lowered or "jacket" in lowered:
             return self._build_coat_response(snapshot, lowered)
         if response_type == "rain" or "rain" in lowered or "umbrella" in lowered:

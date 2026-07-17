@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-import re
 from typing import Any
 
 from lib.fsutils import project_home
@@ -15,11 +14,10 @@ from model.plugin_config import PluginConfigManager
 from model.plugin_config import PluginConfigurationResult
 from model.plugin_database_deployment import PluginDatabaseDeployer
 from model.plugin_database_deployment import PluginDatabaseDeploymentResult
-from model.plugin_intercepts import PluginInterceptMatch
-from model.plugin_intercepts import PluginInterceptMetadata
-from model.plugin_intercepts import PluginInterceptMetadataError
-from model.plugin_resources import PluginResourceError
-from model.plugin_resources import resolve_plugin_resource
+from model.plugin_routing.interception import (
+    PluginInterceptionRegistry,
+    freeze_mapping,
+)
 from model.plugin_routing.cache import PluginEmbeddingCache
 from model.plugin_routing.discovery import PluginDiscovery
 from model.plugin_routing.embeddings import EmbeddingProvider
@@ -38,27 +36,10 @@ from model.plugin_routing.models import (
 )
 from model.plugin_registry import PluginRegistryError
 from model.plugin_registry import PluginRegistryStore
-
-
-DETERMINISTIC_INTERCEPT_CONFIDENCE = 0.99
-
-_INTERCEPT_ROUTE_ALIASES = {
-    "home_assistant": {
-        "area_inventory": (("home_assistant.area_listing", "list_area_inventory"),),
-        "area_listing": (("home_assistant.area_listing", "list_area_inventory"),),
-        "device_control": (("home_assistant.light_control", "control_light"),),
-        "light_control": (("home_assistant.light_control", "control_light"),),
-        "light_state_query": (("home_assistant.state_query", "query_sensor_state"),),
-        "resynchronise_devices": (("home_assistant.resync", "resync_home_assistant"),),
-        "sensor_query": (("home_assistant.state_query", "query_sensor_state"),),
-    },
-    "weather": {
-        "weather_query": (
-            ("weather.short_forecast", "short_forecast"),
-            ("weather.current_conditions", "current_weather"),
-        ),
-    },
-}
+from model.plugin_runtime import (
+    instantiate_plugin_interceptor,
+    load_plugin_interceptor_class,
+)
 
 
 class PluginManager:
@@ -105,7 +86,7 @@ class PluginManager:
         self._deployment_eligible_manifests: tuple[PluginManifest, ...] = ()
         self._configuration_results: dict[str, PluginConfigurationResult] = {}
         self._deployment_results: dict[str, PluginDatabaseDeploymentResult] = {}
-        self._intercept_metadata: dict[str, PluginInterceptMetadata] = {}
+        self._intercept_registry = PluginInterceptionRegistry({}, logger=logger)
         self._intercept_errors: dict[str, str] = {}
         self._last_refresh_report: dict[str, Any] = {}
         self._logger = logger
@@ -238,8 +219,8 @@ class PluginManager:
         self._index.build(vectors_for_index)
         self._manifests = {manifest.plugin_id: manifest for manifest in runtime_manifests}
         self._route_records = route_records
-        self._intercept_metadata, self._intercept_errors = (
-            self._load_intercept_metadata(runtime_manifests)
+        self._intercept_registry, self._intercept_errors = (
+            self._load_interceptor_registry(runtime_manifests)
         )
         self._last_refresh_report = {
             "plugin_root": str(self._plugins_dir),
@@ -263,7 +244,7 @@ class PluginManager:
             "cache_misses": cache_misses,
             "re_embedded": re_embedded,
             "validation_errors": errors,
-            "intercept_plugin_count": len(self._intercept_metadata),
+            "intercept_plugin_count": len(self._intercept_registry),
             "intercept_errors": dict(sorted(self._intercept_errors.items())),
             "embedding_model_id": self._embedding_provider.model_id,
             "intent_text_version": INTENT_TEXT_VERSION,
@@ -347,7 +328,7 @@ class PluginManager:
             intent,
             confidence=float(candidate.score),
             match_reasons=("route_intent_embedding",),
-            extracted_params={},
+            extracted_params=freeze_mapping({}),
             route_key=candidate.plugin_id,
         )
 
@@ -359,7 +340,7 @@ class PluginManager:
         *,
         confidence: float,
         match_reasons: tuple[str, ...],
-        extracted_params: dict[str, Any],
+        extracted_params: dict[str, Any] | None,
         route_key: str,
     ) -> PluginRouteCandidate:
         """Build a route candidate from an indexed manifest route record."""
@@ -379,7 +360,7 @@ class PluginManager:
             intent_name=intent.name,
             confidence=confidence,
             match_reasons=match_reasons,
-            extracted_params=extracted_params,
+            extracted_params=freeze_mapping(extracted_params),
             missing_params=(),
             requires_confirmation=requires_confirmation,
             safety_level=safety_level,
@@ -387,38 +368,32 @@ class PluginManager:
             route_key=route_key,
         )
 
-    def _load_intercept_metadata(
+    def _load_interceptor_registry(
         self,
         manifests: list[PluginManifest],
-    ) -> tuple[dict[str, PluginInterceptMetadata], dict[str, str]]:
-        """Load optional deterministic routing metadata without importing plugins."""
-        loaded: dict[str, PluginInterceptMetadata] = {}
+    ) -> tuple[PluginInterceptionRegistry, dict[str, str]]:
+        """Load declared dialogue interceptors and prepare immutable metadata."""
+        loaded = {}
         errors: dict[str, str] = {}
         for manifest in manifests:
-            try:
-                metadata_path = resolve_plugin_resource(
-                    manifest,
-                    "intercept_meta.json",
-                    required=False,
-                )
-            except PluginResourceError as exc:
-                errors[manifest.plugin_id] = str(exc)
-                self._log_warning(
-                    "Plugin routing skipped intercept metadata for "
-                    f"'{manifest.plugin_id}': {exc}"
-                )
-                continue
-            if not metadata_path.is_file():
+            if not manifest.interceptor_entry_point:
                 continue
             try:
-                loaded[manifest.plugin_id] = PluginInterceptMetadata(metadata_path)
-            except (PluginInterceptMetadataError, OSError) as exc:
+                interceptor_class = load_plugin_interceptor_class(manifest)
+                interceptor = instantiate_plugin_interceptor(
+                    interceptor_class,
+                    manifest=manifest,
+                    logger=self._logger,
+                )
+                interceptor.prepare()
+                loaded[manifest.plugin_id] = (manifest, interceptor)
+            except Exception as exc:
                 errors[manifest.plugin_id] = str(exc)
                 self._log_warning(
-                    "Plugin routing skipped invalid intercept metadata for "
+                    "Plugin routing skipped dialogue interceptor for "
                     f"'{manifest.plugin_id}': {exc}"
                 )
-        return loaded, errors
+        return PluginInterceptionRegistry(loaded, logger=self._logger), errors
 
     def _apply_intercept_matches(
         self,
@@ -426,186 +401,47 @@ class PluginManager:
         candidates: list[PluginRouteCandidate],
         top_n: int,
     ) -> list[PluginRouteCandidate]:
-        """Boost candidates that match declarative deterministic routing rules."""
-        if not self._intercept_metadata:
+        """Merge deterministic dialogue candidates with semantic candidates."""
+        if len(self._intercept_registry) == 0:
             return candidates
 
-        boosted_by_plugin: dict[str, PluginRouteCandidate] = {}
-        for plugin_id, metadata in self._intercept_metadata.items():
-            match = metadata.match(utterance)
-            if match is None:
+        intercept_candidates = list(self._intercept_registry.candidates_for(utterance))
+        if not intercept_candidates:
+            return candidates
+
+        merged_by_route: dict[str, PluginRouteCandidate] = {}
+        for candidate in candidates:
+            merged_by_route[candidate.route_key] = candidate
+        for candidate in intercept_candidates:
+            existing = merged_by_route.get(candidate.route_key)
+            if existing is None:
+                merged_by_route[candidate.route_key] = candidate
                 continue
-            candidate = self._candidate_from_intercept_match(
-                plugin_id,
-                match,
-                utterance,
-            )
-            if candidate is None:
-                candidate = self._best_existing_candidate(
-                    plugin_id,
-                    match,
-                    utterance,
-                    candidates,
-                )
-            if candidate is None:
-                continue
-            boosted_by_plugin[plugin_id] = self._boost_intercept_candidate(
+            merged_by_route[candidate.route_key] = self._merge_route_candidates(
+                existing,
                 candidate,
-                match,
             )
-
-        if not boosted_by_plugin:
-            return candidates
-
-        merged: list[PluginRouteCandidate] = list(boosted_by_plugin.values())
-        boosted_route_keys = {
-            candidate.route_key
-            for candidate in boosted_by_plugin.values()
-            if candidate.route_key
-        }
-        merged.extend(
-            candidate
-            for candidate in candidates
-            if candidate.route_key not in boosted_route_keys
-        )
+        merged = list(merged_by_route.values())
         return sorted(
             merged,
             key=lambda candidate: candidate.confidence,
             reverse=True,
         )[:top_n]
 
-    def _best_existing_candidate(
-        self,
-        plugin_id: str,
-        match: PluginInterceptMatch,
-        utterance: str,
-        candidates: list[PluginRouteCandidate],
-    ) -> PluginRouteCandidate | None:
-        """Return the best semantic candidate for a deterministic plugin match."""
-        plugin_candidates = [
-            candidate for candidate in candidates if candidate.plugin_id == plugin_id
-        ]
-        if not plugin_candidates:
-            return None
-        preferred = self._route_preferences(plugin_id, match, utterance)
-        for capability_id, intent_name in preferred:
-            for candidate in plugin_candidates:
-                if (
-                    candidate.capability_id == capability_id
-                    and candidate.intent_name == intent_name
-                ):
-                    return candidate
-        if preferred:
-            return None
-        return max(plugin_candidates, key=lambda candidate: candidate.confidence)
-
-    def _candidate_from_intercept_match(
-        self,
-        plugin_id: str,
-        match: PluginInterceptMatch,
-        utterance: str,
-    ) -> PluginRouteCandidate | None:
-        """Synthesize a route candidate when embeddings omitted a matched plugin."""
-        record = self._route_record_for_intercept(plugin_id, match, utterance)
-        if record is None:
-            return None
-        route_key, manifest, capability, intent = record
-        return self._route_candidate_from_record(
-            manifest,
-            capability,
-            intent,
-            confidence=DETERMINISTIC_INTERCEPT_CONFIDENCE,
-            match_reasons=("deterministic_intercept",),
-            extracted_params={},
-            route_key=route_key,
-        )
-
-    def _route_record_for_intercept(
-        self,
-        plugin_id: str,
-        match: PluginInterceptMatch,
-        utterance: str,
-    ) -> tuple[str, PluginManifest, PluginRouteCapability, PluginRouteIntent] | None:
-        """Select the declared route record associated with an intercept match."""
-        records = [
-            (route_key, *record)
-            for route_key, record in self._route_records.items()
-            if record[0].plugin_id == plugin_id
-        ]
-        if not records:
-            return None
-        for capability_id, intent_name in self._route_preferences(
-            plugin_id,
-            match,
-            utterance,
-        ):
-            for route_key, manifest, capability, intent in records:
-                if (
-                    capability.capability_id == capability_id
-                    and intent.name == intent_name
-                ):
-                    return route_key, manifest, capability, intent
-        intent_text = str(match.intent or "").casefold().strip()
-        if intent_text:
-            for route_key, manifest, capability, intent in records:
-                capability_suffix = capability.capability_id.rsplit(".", 1)[-1]
-                if intent.name == intent_text or capability_suffix == intent_text:
-                    return route_key, manifest, capability, intent
-        return records[0]
-
     @staticmethod
-    def _route_preferences(
-        plugin_id: str,
-        match: PluginInterceptMatch,
-        utterance: str,
-    ) -> tuple[tuple[str, str], ...]:
-        """Return route preferences for one intercept intent."""
-        intent = str(match.intent or "").casefold().strip()
-        preferences = _INTERCEPT_ROUTE_ALIASES.get(plugin_id, {}).get(intent, ())
-        if plugin_id == "weather" and intent == "weather_query":
-            forecast_terms = {
-                "coat",
-                "forecast",
-                "jacket",
-                "outlook",
-                "rain",
-                "today",
-                "tomorrow",
-                "umbrella",
-                "wind",
-            }
-            tokens = set(re.findall(r"[a-z0-9]+", utterance.casefold()))
-            if not tokens.intersection(forecast_terms):
-                return (
-                    ("weather.current_conditions", "current_weather"),
-                    ("weather.short_forecast", "short_forecast"),
-                )
-        return preferences
-
-    @staticmethod
-    def _boost_intercept_candidate(
-        candidate: PluginRouteCandidate,
-        match: PluginInterceptMatch,
+    def _merge_route_candidates(
+        semantic: PluginRouteCandidate,
+        deterministic: PluginRouteCandidate,
     ) -> PluginRouteCandidate:
-        """Return a candidate boosted by a deterministic metadata match."""
-        extracted_params = {
-            **(candidate.extracted_params or {}),
-            "intercept_rule_id": match.rule_id,
-            "intercept_intent": match.intent,
-            "intercept_captures": dict(match.captures),
-            "intercept_parameters": dict(match.parameters),
-        }
-        match_reasons = list(candidate.match_reasons)
-        if "deterministic_intercept" not in match_reasons:
-            match_reasons.append("deterministic_intercept")
-        rule_reason = f"intercept_rule:{match.rule_id}"
-        if rule_reason not in match_reasons:
-            match_reasons.append(rule_reason)
+        """Merge semantic and deterministic evidence for one manifest route."""
+        match_reasons = tuple(
+            dict.fromkeys((*semantic.match_reasons, *deterministic.match_reasons))
+        )
         return replace(
-            candidate,
-            confidence=max(candidate.confidence, DETERMINISTIC_INTERCEPT_CONFIDENCE),
-            match_reasons=tuple(match_reasons),
-            extracted_params=extracted_params,
+            semantic,
+            confidence=max(semantic.confidence, deterministic.confidence),
+            match_reasons=match_reasons,
+            extracted_params=freeze_mapping(deterministic.extracted_params),
         )
 
     def _runtime_eligible_manifests(

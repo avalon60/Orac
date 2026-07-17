@@ -79,7 +79,25 @@
   ],
   "entry_point": "plugin:HomeAssistantPlugin",
   "routing": {
+    "interceptor": "interceptor:HomeAssistantDialogInterceptor",
     "capabilities": [
+      {
+        "id": "home_assistant.device_control",
+        "description": "Control Home Assistant devices and switches through allowlisted services.",
+        "intents": [
+          {
+            "name": "control_device",
+            "description": "Turn on, turn off, or toggle a Home Assistant target.",
+            "examples": [
+              "Turn on the kitchen lights.",
+              "Turn off the office lamp.",
+              "Desk lamp off."
+            ],
+            "requires_confirmation": false,
+            "safety_level": "local_mutation"
+          }
+        ]
+      },
       {
         "id": "home_assistant.light_control",
         "description": "Control Home Assistant lights, lamps and lighting scenes.",
@@ -115,6 +133,22 @@
         ]
       },
       {
+        "id": "home_assistant.light_state_query",
+        "description": "Read back live Home Assistant light state, brightness, colour, and settings.",
+        "intents": [
+          {
+            "name": "query_light_state",
+            "examples": [
+              "Is the TV light on?",
+              "How bright is the TV light?",
+              "What colour is the TV light?"
+            ],
+            "requires_confirmation": false,
+            "safety_level": "informational_read_only"
+          }
+        ]
+      },
+      {
         "id": "home_assistant.state_query",
         "description": "Answer Home Assistant sensor state questions.",
         "intents": [
@@ -127,6 +161,21 @@
             ],
             "requires_confirmation": false,
             "safety_level": "informational_read_only"
+          }
+        ]
+      },
+      {
+        "id": "home_assistant.scene_activation",
+        "description": "Activate Home Assistant scenes through allowlisted scene services.",
+        "intents": [
+          {
+            "name": "activate_scene",
+            "examples": [
+              "Activate movie night.",
+              "Enable evening lights."
+            ],
+            "requires_confirmation": false,
+            "safety_level": "local_mutation"
           }
         ]
       },

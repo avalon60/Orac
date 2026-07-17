@@ -1356,7 +1356,7 @@ class PluginRoutingTests(unittest.TestCase):
         self.assertEqual(report["enabled"], 4)
         self.assertEqual(report["disabled"], 0)
         self.assertEqual(report["dependency_disabled"], 0)
-        self.assertEqual(report["indexed_plugin_count"], 8)
+        self.assertEqual(report["indexed_plugin_count"], 11)
         self.assertIsNotNone(manager.get_manifest("home_assistant"))
         self.assertEqual(len(candidates), 2)
         self.assertGreaterEqual(candidates[0].confidence, candidates[1].confidence)
@@ -1382,15 +1382,16 @@ class PluginRoutingTests(unittest.TestCase):
 
         self.assertGreaterEqual(report["intercept_plugin_count"], 2)
         self.assertEqual(ha_candidates[0].plugin_id, "home_assistant")
-        self.assertEqual(ha_candidates[0].capability_id, "home_assistant.light_control")
-        self.assertGreaterEqual(ha_candidates[0].confidence, 0.99)
-        self.assertIn("deterministic_intercept", ha_candidates[0].match_reasons)
+        self.assertEqual(ha_candidates[0].capability_id, "home_assistant.device_control")
+        self.assertEqual(ha_candidates[0].intent_name, "control_device")
+        self.assertEqual(ha_candidates[0].confidence, 1.0)
+        self.assertIn("dialog_intercept", ha_candidates[0].match_reasons)
         self.assertEqual(weather_candidates[0].plugin_id, "weather")
         self.assertEqual(weather_candidates[0].capability_id, "weather.short_forecast")
-        self.assertGreaterEqual(weather_candidates[0].confidence, 0.99)
-        self.assertIn("deterministic_intercept", weather_candidates[0].match_reasons)
+        self.assertEqual(weather_candidates[0].confidence, 1.0)
+        self.assertIn("dialog_intercept", weather_candidates[0].match_reasons)
         self.assertEqual(typo_candidates[0].plugin_id, "weather")
-        self.assertGreaterEqual(typo_candidates[0].confidence, 0.99)
+        self.assertEqual(typo_candidates[0].confidence, 1.0)
 
     def test_service_only_plugin_is_not_indexed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins_dir, tempfile.TemporaryDirectory() as temp_cache_dir:

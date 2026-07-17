@@ -1,31 +1,30 @@
 """Home Assistant plugin on-demand command entry point."""
 # Author: Clive Bostock
 # Date: 15-Jul-2026
-# Description: Dispatches Home Assistant commands selected by plugin-owned interception metadata.
+# Description: Dispatches Home Assistant commands selected by core routing metadata.
 
 from __future__ import annotations
 
 from typing import Any
 
+from model.plugin_resources import resource_reader_for_manifest
+from model.plugin_routing.interception import mutable_mapping
 from model.plugin_runtime import PluginExecutionResult
 
+from .control import AreaListRequest
 from .control import ControlRequest
 from .control import build_control_request
-from .control import parse_area_inventory_command
 from .control import HomeAssistantControlError
-from .control import parse_area_list_command
-from .control import parse_control_command
-from .light_control import parse_light_control_command
-from .light_state_query import parse_light_state_query
-from .intercept_metadata import InterceptMatch, InterceptMetadata
+from .interceptor import HomeAssistantDialogInterceptor
+from .light_control import LightControlRequest
+from .light_state_query import LightStateQueryRequest
 from .sensor_query import HomeAssistantSensorQueryError
-from .sensor_query import parse_sensor_query
+from .sensor_query import SensorQueryRequest
 
 __author__ = "Clive Bostock"
 __date__ = "15-Jul-2026"
 __description__ = (
-    "Dispatches Home Assistant commands selected by plugin-owned "
-    "interception metadata."
+    "Dispatches Home Assistant commands selected by core routing metadata."
 )
 
 
@@ -44,10 +43,9 @@ class HomeAssistantPlugin:
         self._config_mgr = config_mgr
         self._data_access = data_access
         self._runtime_context = runtime_context
-        self._intercept_metadata = self._load_intercept_metadata()
 
     def can_handle(self, prompt: str) -> bool:
-        """Return whether plugin-owned metadata claims the prompt.
+        """Deprecated compatibility check using the shared core interceptor.
 
         Args:
             prompt: User prompt to evaluate before LLM dispatch.
@@ -55,14 +53,7 @@ class HomeAssistantPlugin:
         Returns:
             ``True`` when a declarative interception rule matches.
         """
-        return self._intercept_metadata.matches(prompt)
-
-    def _load_intercept_metadata(self) -> InterceptMetadata:
-        """Load plugin-owned interception metadata from the active manifest."""
-        manifest = getattr(self._runtime_context, "manifest", None)
-        if manifest is not None:
-            return InterceptMetadata.from_plugin_manifest(manifest)
-        return InterceptMetadata.from_plugin_module(__file__)
+        return self._legacy_plugin_route(prompt) is not None
 
     def execute(
         self,
@@ -70,53 +61,41 @@ class HomeAssistantPlugin:
         meta: dict[str, Any] | None = None,
     ) -> PluginExecutionResult | None:
         """Execute a supported Home Assistant command."""
-        intercept_match = self._intercept_metadata.match(prompt)
-        if intercept_match is None:
+        route = self._route_from_meta(meta) or self._legacy_plugin_route(prompt)
+        if route is None:
             return None
 
         try:
-            metadata_control_request = self._control_request_from_intercept(
-                intercept_match
-            )
-            light_control_request = parse_light_control_command(prompt)
-            light_state_request = parse_light_state_query(prompt)
-            control_request = metadata_control_request or parse_control_command(prompt)
-            area_inventory_request = parse_area_inventory_command(prompt)
-            area_list_request = parse_area_list_command(prompt)
-            sensor_query_request = parse_sensor_query(prompt)
+            intent_name = route["intent_name"]
+            arguments = route["arguments"]
+            light_control_request = self._light_control_from_arguments(arguments)
+            light_state_request = self._light_state_from_arguments(arguments)
+            control_request = self._control_request_from_arguments(arguments)
+            area_list_request = self._area_list_from_arguments(arguments)
+            sensor_query_request = self._sensor_query_from_arguments(arguments)
         except HomeAssistantControlError as exc:
             return self._control_failure_response(exc.code, str(exc))
-
-        is_resync = intercept_match.intent == "resynchronise_devices"
-        if (
-            not is_resync
-            and light_control_request is None
-            and light_state_request is None
-            and control_request is None
-            and area_inventory_request is None
-            and area_list_request is None
-            and sensor_query_request is None
-        ):
-            return None
 
         if self._runtime_context is None:
             return self._failure_response("Home Assistant runtime context is unavailable.")
 
-        if light_control_request is not None:
+        if intent_name == "control_light" and light_control_request is not None:
             return self._execute_light_control(light_control_request)
-        if light_state_request is not None:
+        if intent_name == "query_light_state" and light_state_request is not None:
             return self._execute_light_state_query(light_state_request)
-        if control_request is not None:
+        if intent_name in {"control_device", "activate_scene"} and control_request is not None:
             return self._execute_control(control_request)
-        if area_inventory_request is not None:
+        if intent_name == "list_area_inventory" and area_list_request is None:
             return self._execute_area_inventory()
-        if area_list_request is not None:
+        if intent_name == "list_area_inventory" and area_list_request is not None:
             return self._execute_area_list(
                 area_list_request.area,
                 area_list_request.requested_domain,
             )
-        if sensor_query_request is not None:
+        if intent_name == "query_sensor_state" and sensor_query_request is not None:
             return self._execute_sensor_query(sensor_query_request)
+        if intent_name != "resync_home_assistant":
+            return None
 
         self._log_info("Home Assistant resync command accepted.")
         try:
@@ -138,38 +117,106 @@ class HomeAssistantPlugin:
             provenance={"command": "home_assistant.resync"},
         )
 
-    @staticmethod
-    def _control_request_from_intercept(
-        intercept_match: InterceptMatch,
-    ) -> ControlRequest | None:
-        """Build a control request from metadata captures and fixed parameters.
-
-        Args:
-            intercept_match: Structured interception result for the prompt.
-
-        Returns:
-            A validated control request when the rule supplies an action and
-            target, otherwise ``None`` so the existing parser can be used.
-        """
-        if intercept_match.intent != "device_control":
+    def _route_from_meta(
+        self,
+        meta: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        """Return selected route metadata supplied by core routing."""
+        plugin_route = (meta or {}).get("plugin_route")
+        if not isinstance(plugin_route, dict):
             return None
+        if plugin_route.get("plugin_id") not in {None, "home_assistant"}:
+            return None
+        intent_name = str(plugin_route.get("intent_name") or "").strip()
+        if not intent_name:
+            return None
+        raw_arguments = plugin_route.get("arguments", {})
+        arguments = raw_arguments if isinstance(raw_arguments, dict) else {}
+        return {
+            "intent_name": intent_name,
+            "arguments": dict(arguments),
+        }
 
-        target = str(
-            intercept_match.captures.get("target")
-            or intercept_match.parameters.get("target")
-            or ""
-        ).strip()
-        action = str(intercept_match.parameters.get("action") or "").strip()
-        state = str(
-            intercept_match.captures.get("state")
-            or intercept_match.parameters.get("state")
-            or ""
-        ).strip().lower()
-        if not action and state in {"on", "off"}:
-            action = "turn_on" if state == "on" else "turn_off"
+    def _legacy_plugin_route(self, prompt: str) -> dict[str, Any] | None:
+        """Return a compatibility route for direct legacy callers only."""
+        manifest = getattr(self._runtime_context, "manifest", None)
+        if manifest is None:
+            return None
+        interceptor = HomeAssistantDialogInterceptor(
+            manifest=manifest,
+            resources=resource_reader_for_manifest(manifest),
+            logger=self._logger,
+        )
+        interceptor.prepare()
+        match = interceptor.intercept(prompt)
+        if match is None:
+            return None
+        return {
+            "intent_name": match.route_id,
+            "arguments": mutable_mapping(match.arguments),
+        }
+
+    @staticmethod
+    def _control_request_from_arguments(
+        arguments: dict[str, Any],
+    ) -> ControlRequest | None:
+        """Build a validated control request from selected route arguments."""
+        target = str(arguments.get("target") or "").strip()
+        action = str(arguments.get("action") or "").strip()
         if not action or not target:
             return None
         return build_control_request(action, target)
+
+    @staticmethod
+    def _light_control_from_arguments(
+        arguments: dict[str, Any],
+    ) -> LightControlRequest | None:
+        """Build a light-control request from selected route arguments."""
+        payload = arguments.get("light_control")
+        return LightControlRequest.from_payload(payload) if isinstance(payload, dict) else None
+
+    @staticmethod
+    def _light_state_from_arguments(
+        arguments: dict[str, Any],
+    ) -> LightStateQueryRequest | None:
+        """Build a light-state request from selected route arguments."""
+        payload = arguments.get("light_state_query")
+        return LightStateQueryRequest.from_payload(payload) if isinstance(payload, dict) else None
+
+    @staticmethod
+    def _area_list_from_arguments(
+        arguments: dict[str, Any],
+    ) -> AreaListRequest | None:
+        """Build an area-list request from selected route arguments."""
+        payload = arguments.get("area_listing")
+        if not isinstance(payload, dict):
+            return None
+        if payload.get("mode") != "area":
+            return None
+        area = str(payload.get("area") or "").strip()
+        if not area:
+            return None
+        requested_domain = str(payload.get("requested_domain") or "").strip() or None
+        return AreaListRequest(area=area, requested_domain=requested_domain)
+
+    @staticmethod
+    def _sensor_query_from_arguments(
+        arguments: dict[str, Any],
+    ) -> SensorQueryRequest | None:
+        """Build a sensor-query request from selected route arguments."""
+        payload = arguments.get("sensor_query")
+        if not isinstance(payload, dict):
+            return None
+        intent = str(payload.get("intent") or "").strip()
+        if not intent:
+            return None
+        areas = tuple(str(area).strip() for area in payload.get("areas") or () if str(area).strip())
+        sensor_role = str(payload.get("sensor_role") or "").strip() or None
+        return SensorQueryRequest(
+            intent=intent,
+            areas=areas,
+            sensor_role=sensor_role,
+        )
 
     def _execute_area_list(
         self,

@@ -52,5 +52,6 @@ where = ["src"]
 [dependency-groups]
 dev = [
     "black (>=26.5.1,<27.0.0)",
+    "bump2version (>=1.0.1,<2.0.0)",
     "ruff (>=0.15.20,<0.16.0)"
 ]

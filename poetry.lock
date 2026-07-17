@@ -206,6 +206,18 @@ jupyter = ["ipython (>=7.8.0)", "tokenize-rt (>=3.2.0)"]
 uvloop = ["uvloop (>=0.15.2) ; sys_platform != \"win32\"", "winloop (>=0.5.0) ; sys_platform == \"win32\""]
 
 [[package]]
+name = "bump2version"
+version = "1.0.1"
+description = "Version-bump your software with a single command!"
+optional = false
+python-versions = ">=3.5"
+groups = ["dev"]
+files = [
+    {file = "bump2version-1.0.1-py2.py3-none-any.whl", hash = "sha256:37f927ea17cde7ae2d7baf832f8e80ce3777624554a653006c9144f8017fe410"},
+    {file = "bump2version-1.0.1.tar.gz", hash = "sha256:762cb2bfad61f4ec8e2bdf452c7c267416f8c70dd9ecb1653fd0bbb01fa936e6"},
+]
+
+[[package]]
 name = "certifi"
 version = "2026.4.22"
 description = "Python package for providing Mozilla's CA Bundle."
@@ -3260,4 +3272,4 @@ voice-wake-porcupine = ["pvporcupine", "pvrecorder"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<4.0"
-content-hash = "a11f5b9b29d3d6434d681471af23dbc6cbd5cbd5f133773c65e03e85e0587b49"
+content-hash = "45b312491687a72372dc687a115e9fb574b8ea1b1a8210823a34c73fdf43ae3f"

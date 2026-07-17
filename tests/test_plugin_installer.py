@@ -227,6 +227,7 @@ class PluginPackageTests(unittest.TestCase):
             self.assertIn("resources/intercept_meta.json", names)
             self.assertIn("plugin/plugin.ini.example", names)
             self.assertIn("requirements.txt", names)
+            self.assertNotIn("plugin/.bumpversion.cfg", names)
             self.assertNotIn("plugin/resources/intercept_meta.json", names)
             self.assertNotIn("plugin/plugin.ini", names)
 

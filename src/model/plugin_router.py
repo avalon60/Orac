@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import replace
 import queue
@@ -23,6 +24,7 @@ from model.plugin_config import PluginConfigManager
 from model.plugin_routing.models import PluginManifest
 from model.plugin_routing.models import PluginRouteCandidate
 from model.plugin_routing.handoff import PluginRoutingHandoff
+from model.plugin_routing.interception import mutable_mapping
 from model.plugin_runtime import (
     PluginDataAccess,
     PluginExecutionResult,
@@ -283,6 +285,7 @@ class PluginRouter:
                         manifest=manifest,
                         prompt=candidate_prompt,
                         meta=meta,
+                        candidate=candidate,
                         auth_user=auth_user,
                         policy_decision=policy_decision,
                         audit_session=audit_session,
@@ -387,6 +390,7 @@ class PluginRouter:
         manifest: PluginManifest,
         prompt: str,
         meta: dict[str, Any],
+        candidate: Any,
         auth_user: str,
         policy_decision=None,
         audit_session: PluginAuditSession | None = None,
@@ -431,7 +435,11 @@ class PluginRouter:
             raise _PluginInvocationError("instantiate", exc) from exc
 
         try:
-            if hasattr(plugin_instance, "can_handle") and not plugin_instance.can_handle(prompt):
+            if (
+                not manifest.interceptor_entry_point
+                and hasattr(plugin_instance, "can_handle")
+                and not plugin_instance.can_handle(prompt)
+            ):
                 self._record_execution_outcome(
                     audit_session=audit_session,
                     event_type="execution_failed",
@@ -454,7 +462,10 @@ class PluginRouter:
         )
 
         try:
-            result = plugin_instance.execute(prompt, meta)
+            result = plugin_instance.execute(
+                prompt,
+                _route_meta(meta, candidate),
+            )
         except BaseException as exc:
             self._record_execution_outcome(
                 audit_session=audit_session,
@@ -782,11 +793,29 @@ def _has_action_intent(text: str) -> bool:
 def _candidate_prompt(prompt: str, candidate: Any) -> str:
     """Return routed prompt text for an explicitly addressed selected candidate."""
     extracted = getattr(candidate, "extracted_params", None)
-    if isinstance(extracted, dict):
+    if isinstance(extracted, Mapping):
         routed_prompt = str(extracted.get("routed_prompt") or "").strip()
         if routed_prompt:
             return routed_prompt
     return prompt
+
+
+def _route_meta(meta: dict[str, Any], candidate: Any) -> dict[str, Any]:
+    """Return invocation metadata with a mutable copy of selected route evidence."""
+    if not isinstance(candidate, PluginRouteCandidate):
+        return dict(meta or {})
+
+    route_arguments = mutable_mapping(candidate.extracted_params)
+    return {
+        **dict(meta or {}),
+        "plugin_route": {
+            "plugin_id": candidate.plugin_id,
+            "capability_id": candidate.capability_id,
+            "intent_name": candidate.intent_name,
+            "arguments": route_arguments,
+            "match_reasons": list(candidate.match_reasons),
+        },
+    }
 
 
 def _with_arbitration_provenance(

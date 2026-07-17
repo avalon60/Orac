@@ -60,6 +60,26 @@ class _FakeRuntimeContext:
         )
 
 
+def _weather_route_meta(
+    intent_name: str,
+    arguments: dict | None = None,
+) -> dict:
+    """Return core-style route metadata for Weather execution tests."""
+    return {
+        "plugin_route": {
+            "plugin_id": "weather",
+            "capability_id": (
+                "weather.short_forecast"
+                if intent_name == "short_forecast"
+                else "weather.current_conditions"
+            ),
+            "intent_name": intent_name,
+            "arguments": arguments or {},
+            "match_reasons": ["dialog_intercept"],
+        }
+    }
+
+
 def _build_snapshot() -> WeatherSnapshot:
     location = ResolvedLocation(
         name="London",
@@ -132,7 +152,13 @@ class WeatherPluginTests(unittest.TestCase):
             provider=provider,
         )
 
-        result = plugin.execute("What's the weather in London?")
+        result = plugin.execute(
+            "What's the weather in London?",
+            _weather_route_meta(
+                "current_weather",
+                {"location": "London", "response_type": "general"},
+            ),
+        )
 
         self.assertIsNotNone(result)
         self.assertEqual(result.plugin_id, "weather")
@@ -147,7 +173,13 @@ class WeatherPluginTests(unittest.TestCase):
             provider=provider,
         )
 
-        result = plugin.execute("What is the temperature?")
+        result = plugin.execute(
+            "What is the temperature?",
+            _weather_route_meta(
+                "current_weather",
+                {"response_type": "temperature"},
+            ),
+        )
 
         self.assertIsNotNone(result)
         self.assertIn("need a location", result.content)
@@ -188,7 +220,10 @@ class WeatherPluginTests(unittest.TestCase):
             provider=provider,
         )
 
-        result = plugin.execute("Will it rain today where I am?")
+        result = plugin.execute(
+            "Will it rain today where I am?",
+            _weather_route_meta("short_forecast", {"response_type": "rain"}),
+        )
 
         self.assertIsNotNone(result)
         self.assertIn("London", result.content)
@@ -212,7 +247,10 @@ class WeatherPluginTests(unittest.TestCase):
             provider=StubWeatherProvider(location=snapshot.location, snapshot=snapshot),
         )
 
-        result = plugin.execute("what is the wether forecast>")
+        result = plugin.execute(
+            "what is the wether forecast>",
+            _weather_route_meta("short_forecast", {"response_type": "general"}),
+        )
 
         self.assertIsNotNone(result)
         self.assertEqual(result.plugin_id, "weather")
@@ -237,7 +275,13 @@ class WeatherPluginTests(unittest.TestCase):
             provider=provider,
         )
 
-        result = plugin.execute("What's the weather in London?")
+        result = plugin.execute(
+            "What's the weather in London?",
+            _weather_route_meta(
+                "current_weather",
+                {"location": "London", "response_type": "general"},
+            ),
+        )
 
         self.assertIsNotNone(result)
         self.assertIn("couldn't retrieve weather data", result.content)

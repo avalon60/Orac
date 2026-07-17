@@ -53,6 +53,7 @@ Declarative route metadata may describe capability-level intents:
 
 ```json
 "routing": {
+  "interceptor": "interceptor:HomeAssistantDialogInterceptor",
   "capabilities": [
     {
       "id": "home_assistant.light_control",
@@ -71,6 +72,9 @@ Declarative route metadata may describe capability-level intents:
 ```
 
 The route capability id must already appear in top-level `capabilities`.
+`routing.interceptor` is optional and applies only to on-demand or hybrid
+plugins. It points to a `PluginDialogInterceptor` subclass that reads immutable
+dialogue matching metadata from the plugin's packaged `resources/` directory.
 
 ## Manifest JSON Reference
 
@@ -110,6 +114,66 @@ to normal conversation.
 ```
 
 Service plugins declare their service entry point under `runtime.service`.
+
+## Dialogue Interception
+
+Plugins may supply deterministic dialogue interception for routes declared in
+the manifest. The manifest remains authoritative for executable routes; the
+interception metadata is authoritative only for dialogue matching.
+
+Package matching rules as an immutable resource:
+
+```text
+plugins/<plugin-id>/
+  interceptor.py
+  plugin.py
+  resources/
+    intercept_meta.json
+```
+
+A rule identifies one manifest route by `route_id`:
+
+```json
+{
+  "rule_id": "weather_forecast",
+  "route_id": "short_forecast",
+  "match_type": "regex",
+  "priority": 100,
+  "patterns": ["\\bforecast\\b"],
+  "arguments": {
+    "response_type": "forecast"
+  }
+}
+```
+
+`route_id` is the manifest intent name for the plugin and must be unique within
+that plugin. During preparation, Orac validates every rule against
+`routing.capabilities` and derives the selected `capability_id` and
+`intent_name` from the manifest. Rules must not duplicate those manifest fields.
+
+Interceptors subclass the core template and implement only
+`build_arguments()`. Bundled plugins must not override the concrete
+`intercept()` template method. Resource loading must use the Orac-bound
+resource reader supplied to the interceptor; do not locate
+`resources/intercept_meta.json` with `__file__` or module-path inference.
+
+Matching evidence remains immutable through arbitration. When the router invokes
+the selected plugin, it passes a mutable copy of the route arguments:
+
+```python
+meta["plugin_route"] = {
+    "plugin_id": candidate.plugin_id,
+    "capability_id": candidate.capability_id,
+    "intent_name": candidate.intent_name,
+    "arguments": dict(candidate.extracted_params or {}),
+    "match_reasons": list(candidate.match_reasons),
+}
+```
+
+Migrated plugins should dispatch from `meta["plugin_route"]` during normal
+routing. Temporary `can_handle()` compatibility methods may remain for old
+callers, but they must not create another candidate or run a separate ownership
+parser.
 
 ## Plugin APEX Apps
 
@@ -705,7 +769,9 @@ plugins/
 ```
 
 Add `resources/`, `db/schema/`, and plugin-local tests only when the plugin
-requires them. Use `plugins/_template/` as the implementation starting point.
+requires them. Use `resources/intercept_meta.json` for dialogue matching rules
+when the manifest declares `routing.interceptor`. Use `plugins/_template/` as
+the implementation starting point.
 
 ## Packaging And Installation
 
@@ -716,6 +782,8 @@ manifest.json
 plugin/
   plugin.py
   plugin.ini.example
+  resources/
+    intercept_meta.json
   apex/
     example_status.sql
   db/schema/

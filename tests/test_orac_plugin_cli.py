@@ -216,6 +216,29 @@ class OracPluginCliTests(unittest.TestCase):
         self.assertIn("beta", table)
         self.assertIn("not_installed", table)
 
+    def test_plugin_inventory_table_shows_installed_and_unpacked_versions(self) -> None:
+        table = self.cli._format_plugin_inventory(
+            [
+                {
+                    "plugin_id": "alpha",
+                    "name": "Alpha",
+                    "installed": True,
+                    "unpacked": True,
+                    "installed_version": "1.0.0",
+                    "unpacked_version": "1.1.0",
+                    "enabled": True,
+                    "install_status": "success",
+                    "readiness_status": "success",
+                    "error": None,
+                },
+            ]
+        )
+
+        self.assertIn("INSTALLED_VERSION", table)
+        self.assertIn("UNPACKED_VERSION", table)
+        self.assertIn("1.0.0", table)
+        self.assertIn("1.1.0", table)
+
     def test_service_status_surface_includes_lease_and_timestamps(self) -> None:
         output = io.StringIO()
 
