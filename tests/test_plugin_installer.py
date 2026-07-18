@@ -644,43 +644,49 @@ class PluginInstallerTests(unittest.TestCase):
     def test_list_plugins_combines_installed_and_unpacked_plugins(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            _write_source_plugin(root, "alpha")
+            alpha_source = _write_source_plugin(root, "alpha")
             _write_source_plugin(root, "beta")
             registry = _Registry()
-            registry.rows["alpha"] = {
-                "plugin_id": "alpha",
-                "plugin_name": "Alpha Installed",
-                "plugin_version": "1.0.0",
-                "install_status": "success",
-                "readiness_status": "success",
-                "enabled": "Y",
-                "installed_path": "var/plugins/installed/alpha/1.0.0",
-            }
             registry.rows["gamma"] = {
                 "plugin_id": "gamma",
                 "plugin_name": "Gamma",
                 "plugin_version": "2.0.0",
+                "manifest_hash": "c" * 64,
                 "install_status": "success",
                 "readiness_status": "success",
                 "enabled": "N",
                 "installed_path": "var/plugins/installed/gamma/2.0.0",
             }
-
-            entries = PluginInstaller(
+            installer = PluginInstaller(
                 project_root=root,
                 managed_root=root / "var" / "plugins",
                 config_root=root / "config",
                 dependency_installer=_DependencyInstaller(),
                 database_deployer=_DatabaseDeployer(),
                 registry=registry,
-            ).list_plugins()
+            )
+            installer.install_source(alpha_source)
+
+            entries = installer.list_plugins()
 
             by_id = {entry["plugin_id"]: entry for entry in entries}
             self.assertTrue(by_id["alpha"]["installed"])
+            self.assertEqual(
+                by_id["alpha"]["installed_artifact_status"],
+                "present",
+            )
             self.assertTrue(by_id["alpha"]["unpacked"])
             self.assertFalse(by_id["beta"]["installed"])
             self.assertTrue(by_id["beta"]["unpacked"])
-            self.assertTrue(by_id["gamma"]["installed"])
+            self.assertFalse(by_id["gamma"]["installed"])
+            self.assertEqual(
+                by_id["gamma"]["installed_artifact_status"],
+                "missing_installed_files",
+            )
+            self.assertIn(
+                "Registered plugin files are missing",
+                by_id["gamma"]["installed_artifact_error"],
+            )
             self.assertFalse(by_id["gamma"]["unpacked"])
 
     def test_install_required_apex_surface_requires_export_file(self) -> None:

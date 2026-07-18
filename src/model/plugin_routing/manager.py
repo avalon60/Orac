@@ -96,8 +96,17 @@ class PluginManager:
         self._log_info(f"Plugin routing refresh starting for root {self._plugins_dir}")
         if self._require_registry:
             try:
-                manifests = self._registry_store.enabled_manifests()
-                errors: list[str] = []
+                if hasattr(self._registry_store, "load_enabled_manifest_result"):
+                    load_result = self._registry_store.load_enabled_manifest_result(
+                        strict=False
+                    )
+                    manifests = list(load_result.manifests)
+                    errors = [
+                        issue.message or issue.code for issue in load_result.issues
+                    ]
+                else:
+                    manifests = self._registry_store.enabled_manifests()
+                    errors = []
             except PluginRegistryError as exc:
                 manifests = []
                 errors = [str(exc)]
@@ -105,7 +114,7 @@ class PluginManager:
                     "Plugin registry is unavailable; plugin routing is disabled "
                     f"while core Orac remains operational: {exc}"
                 )
-            discovered_count = len(manifests)
+            discovered_count = len(manifests) + len(errors)
         else:
             discovered_count = (
                 len(list(self._plugins_dir.glob("*.json")))

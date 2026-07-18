@@ -4,7 +4,7 @@ The canonical plugin contract, lifecycle, policy, configuration, secrets,
 database deployment, and audit documentation is in
 [`docs/plugins.md`](../docs/plugins.md).
 
-This directory contains implementation-adjacent plugin artefacts:
+This directory contains the bundled plugin source tree:
 
 ```text
 plugins/<plugin-id>.json
@@ -13,8 +13,15 @@ plugins/<plugin-id>/resources/
 ```
 
 The manifest filename stem, manifest `plugin_id`, and implementation directory
-must match. Discovery and routing use manifest metadata without importing plugin
-implementation code.
+must match. Package creation and source-tree discovery use this metadata without
+importing plugin implementation code.
+
+Normal Orac runtime loading is registry-backed. After installation, the active
+runtime snapshot lives under
+`$ORAC_HOME/var/plugins/installed/<plugin-id>/<version>/`, and the plugin
+registry records that path as `installed_path`. Changing files in this source
+tree does not update the active runtime snapshot until the plugin is installed
+again.
 
 Plugins that declare `routing.interceptor` place immutable dialogue matching
 metadata under `plugins/<plugin-id>/resources/intercept_meta.json`. Those rules

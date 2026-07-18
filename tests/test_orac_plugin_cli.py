@@ -38,6 +38,23 @@ class _Registry:
     def enabled_manifests(self):
         return list(self._manifests)
 
+    def enabled_manifest(self, plugin_id):
+        for manifest in self._manifests:
+            if manifest.plugin_id == plugin_id:
+                return manifest
+        return None
+
+
+class _TargetedRegistry:
+    def __init__(self, manifest):
+        self.manifest = manifest
+
+    def enabled_manifest(self, plugin_id):
+        return self.manifest if self.manifest.plugin_id == plugin_id else None
+
+    def enabled_manifests(self):
+        raise AssertionError("service run should not scan unrelated plugins")
+
 
 class _LifecycleStore:
     def __init__(self) -> None:
@@ -192,6 +209,7 @@ class OracPluginCliTests(unittest.TestCase):
                     "installed_version": "1.0.0",
                     "unpacked_version": "1.0.0",
                     "enabled": True,
+                    "installed_artifact_status": "present",
                     "install_status": "success",
                     "readiness_status": "success",
                     "error": None,
@@ -204,6 +222,7 @@ class OracPluginCliTests(unittest.TestCase):
                     "installed_version": None,
                     "unpacked_version": "1.0.0",
                     "enabled": True,
+                    "installed_artifact_status": None,
                     "install_status": "not_installed",
                     "readiness_status": None,
                     "error": None,
@@ -212,9 +231,35 @@ class OracPluginCliTests(unittest.TestCase):
         )
 
         self.assertIn("PLUGIN", table)
+        self.assertIn("ARTIFACT", table)
         self.assertIn("alpha", table)
         self.assertIn("beta", table)
         self.assertIn("not_installed", table)
+
+    def test_plugin_inventory_table_reports_installed_artifact_errors(self) -> None:
+        table = self.cli._format_plugin_inventory(
+            [
+                {
+                    "plugin_id": "drop_box",
+                    "name": "Drop Box",
+                    "installed": False,
+                    "unpacked": True,
+                    "installed_artifact_status": "missing_installed_files",
+                    "installed_artifact_error": (
+                        "Registered plugin files are missing for 'drop_box'."
+                    ),
+                    "installed_version": "1.0.0",
+                    "unpacked_version": "1.0.0",
+                    "enabled": True,
+                    "install_status": "success",
+                    "readiness_status": "success",
+                    "error": None,
+                },
+            ]
+        )
+
+        self.assertIn("missing_installed_files", table)
+        self.assertIn("Inventory error: drop_box", table)
 
     def test_plugin_inventory_table_shows_installed_and_unpacked_versions(self) -> None:
         table = self.cli._format_plugin_inventory(
@@ -308,6 +353,21 @@ class OracPluginCliTests(unittest.TestCase):
         self.assertEqual(service_manager.registered, [manifest])
         self.assertEqual(service_manager.started, [("drop_box", "default")])
         self.assertEqual(service_manager.stopped, [("drop_box", "default")])
+
+    def test_service_run_uses_targeted_registry_lookup(self) -> None:
+        manifest = SimpleNamespace(plugin_id="home_assistant", runtime_mode="service")
+        service_manager = _ServiceManager()
+
+        status = self.cli.run_plugin_service(
+            "home_assistant",
+            duration_seconds=0.01,
+            registry_store=_TargetedRegistry(manifest),
+            service_manager=service_manager,
+        )
+
+        self.assertEqual(status, 0)
+        self.assertEqual(service_manager.registered, [manifest])
+        self.assertEqual(service_manager.started, [("home_assistant", "default")])
 
     def test_service_run_maps_drop_box_alias_to_scanner_service(self) -> None:
         manifest = SimpleNamespace(plugin_id="drop_box", runtime_mode="service")

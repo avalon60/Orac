@@ -3,7 +3,40 @@
 Orac plugins add optional capabilities without taking ownership of core
 orchestration, routing, persistence, security, or context management.
 
-## Plugin Identity
+## Source vs Installed Runtime
+
+Orac uses two plugin filesystem locations with different jobs:
+
+```text
+plugins/<plugin-id>.json
+plugins/<plugin-id>/
+```
+
+This is the bundled source tree. Edit plugin code, manifests, resources, APEX
+exports, and database assets here. `bin/orac-plugin.sh package`,
+`bin/orac-plugin.sh install --source`, and `bin/orac-plugin.sh install
+--bundled` read from this tree.
+
+```text
+$ORAC_HOME/var/plugins/installed/<plugin-id>/<version>/
+  manifest.json
+  plugin/
+  resources/
+```
+
+This is the activated runtime snapshot. The plugin registry records the active
+snapshot in `installed_path`, and the normal Orac runtime loads enabled plugins
+from that registry path. Runtime routing and service startup do not fall back to
+the source tree when a registered installed snapshot is missing.
+
+Use `bin/orac-plugin.sh check <plugin-id>` to validate the activated snapshot.
+Treat `bin/orac-plugin.sh list` as inventory: it shows source-tree manifests,
+registry state, and installed-artifact health. If a registry row says `success`
+while `installed_path` is missing, `list` reports the artifact drift and
+`check` fails for that plugin. Reinstall or quarantine the plugin state before
+relying on that plugin's routing or services.
+
+## Source Plugin Identity
 
 A plugin is defined by matching filesystem artefacts:
 
@@ -13,8 +46,10 @@ plugins/<plugin-id>/
 ```
 
 The manifest filename stem, implementation directory, and manifest `plugin_id`
-must match exactly. The manifest is the source of truth for discovery and
-routing; implementation code is not imported during discovery.
+must match exactly. The source manifest is the source of truth for package and
+source-tree discovery metadata; implementation code is not imported during
+discovery. Normal Orac runtime loading uses the installed manifest recorded in
+the plugin registry.
 
 ## Manifest Contract
 
@@ -806,9 +841,9 @@ bin/orac-plugin.sh status home_assistant
 bin/orac-plugin.sh check home_assistant
 ```
 
-Installed versions live under `$ORAC_HOME/var/plugins/installed`. Mutable
-configuration lives under `~/.Orac/plugin_config/<plugin-id>/plugin.ini`, and
-encrypted secrets remain in `~/.Orac/pat_vault.ini`.
+Installed runtime snapshots live under `$ORAC_HOME/var/plugins/installed`.
+Mutable configuration lives under `~/.Orac/plugin_config/<plugin-id>/plugin.ini`,
+and encrypted secrets remain in `~/.Orac/pat_vault.ini`.
 
 ## Python Dependencies
 

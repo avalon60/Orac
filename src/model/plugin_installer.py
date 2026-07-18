@@ -38,6 +38,7 @@ from model.plugin_routing.models import PluginApexApp
 from model.plugin_routing.models import PluginManifest
 from model.plugin_registry import PluginApexAppRegistryStore
 from model.plugin_registry import PluginRegistryStore
+from model.plugin_registry import inspect_registered_plugin_artifact
 from model.plugin_runtime import load_plugin_class
 from model.plugin_runtime import load_plugin_interceptor_class
 from model.plugin_runtime import load_plugin_service_class
@@ -256,7 +257,11 @@ class PluginInstaller:
             else str((row or {}).get("plugin_id") or "")
         )
         install_status = str((row or {}).get("install_status") or "not_installed")
-        installed = row is not None and install_status == "success"
+        artifact_status, artifact_error, artifact_ok = self._inventory_artifact_status(
+            row=row,
+            install_status=install_status,
+        )
+        installed = row is not None and install_status == "success" and artifact_ok
         return {
             "plugin_id": plugin_id,
             "name": (
@@ -267,6 +272,8 @@ class PluginInstaller:
             "installed": installed,
             "unpacked": manifest is not None,
             "enabled": self._inventory_enabled(manifest=manifest, row=row),
+            "installed_artifact_status": artifact_status,
+            "installed_artifact_error": artifact_error,
             "installed_version": (
                 str(row.get("plugin_version"))
                 if row and row.get("plugin_version")
@@ -296,6 +303,20 @@ class PluginInstaller:
             ),
             "error": None,
         }
+
+    @staticmethod
+    def _inventory_artifact_status(
+        *,
+        row: dict[str, Any] | None,
+        install_status: str,
+    ) -> tuple[str | None, str | None, bool]:
+        """Return artifact inventory status without mutating registry state."""
+        if row is None:
+            return None, None, False
+        if install_status != "success":
+            return "not_active", None, False
+        status = inspect_registered_plugin_artifact(row)
+        return status.code, None if status.ok else status.message, status.ok
 
     def _plugin_discovery_error_entry(self, error: str) -> dict[str, Any]:
         """Build one inventory row for an unpacked manifest discovery error."""

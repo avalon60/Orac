@@ -5,8 +5,10 @@ User and operator documentation is in
 freshness contract is in
 [`docs/home-assistant-data-lifecycle.md`](docs/home-assistant-data-lifecycle.md).
 
-This directory contains the runtime implementation, plugin-local configuration,
-and plugin-owned database assets for `home_assistant`.
+This source directory contains the implementation, plugin-local configuration
+template, and plugin-owned database assets for `home_assistant`. The normal Orac
+runtime loads the activated installed snapshot recorded in the plugin registry,
+not this source directory directly.
 
 The user guide includes the complete command reference for device control,
 scene activation, area control, area listings, target resolution, aliases,

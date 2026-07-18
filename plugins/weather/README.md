@@ -1,6 +1,8 @@
 # Weather Plugin
 
-This directory contains the runtime implementation for the `weather` plugin.
+This source directory contains the implementation for the `weather` plugin. The
+normal Orac runtime loads the activated installed snapshot recorded in the
+plugin registry, not this source directory directly.
 
 Current scope:
 

@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 import oracledb
@@ -19,6 +21,7 @@ if str(SRC_ROOT) not in sys.path:
 from model.plugin_registry import PluginApexAppRegistryStore
 from model.plugin_registry import PluginRegistryError
 from model.plugin_registry import PluginRegistryStore
+from model.plugin_routing.discovery import PluginDiscovery
 
 
 class _FakeCursor:
@@ -182,6 +185,67 @@ class PluginRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(PluginRegistryError, "Unable to read"):
             store.list_all()
 
+    def test_load_enabled_manifest_result_collects_artifact_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            alpha_path = _write_installed_manifest(root, "alpha")
+            alpha_manifest = PluginDiscovery(alpha_path).load_manifest(
+                alpha_path / "manifest.json",
+                plugin_dir=alpha_path / "plugin",
+                enforce_filename=False,
+            )
+            rows = [
+                _registry_row(
+                    "alpha",
+                    installed_path=str(alpha_path),
+                    manifest_hash=alpha_manifest.manifest_hash,
+                ),
+                _registry_row(
+                    "drop_box",
+                    installed_path=str(
+                        root / "var" / "plugins" / "installed" / "drop_box" / "1.0.0"
+                    ),
+                    manifest_hash="b" * 64,
+                ),
+            ]
+            cursor = _FakeCursor()
+            cursor.description = [(column.upper(),) for column in rows[0]]
+            cursor.rows = [tuple(row[column] for column in rows[0]) for row in rows]
+            session = _FakeSession(cursor)
+            store = PluginRegistryStore(session_factory=lambda: session)
+
+            result = store.load_enabled_manifest_result(strict=False)
+
+            self.assertEqual(
+                [manifest.plugin_id for manifest in result.manifests],
+                ["alpha"],
+            )
+            self.assertEqual(len(result.issues), 1)
+            self.assertEqual(result.issues[0].plugin_id, "drop_box")
+            self.assertEqual(result.issues[0].code, "missing_installed_files")
+
+    def test_enabled_manifest_load_remains_strict_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            row = _registry_row(
+                "drop_box",
+                installed_path=str(
+                    root / "var" / "plugins" / "installed" / "drop_box" / "1.0.0"
+                ),
+                manifest_hash="b" * 64,
+            )
+            cursor = _FakeCursor()
+            cursor.description = [(column.upper(),) for column in row]
+            cursor.rows = [tuple(row[column] for column in row)]
+            session = _FakeSession(cursor)
+            store = PluginRegistryStore(session_factory=lambda: session)
+
+            with self.assertRaisesRegex(
+                PluginRegistryError,
+                "Registered plugin files are missing",
+            ):
+                store.enabled_manifests()
+
     def test_apex_app_listing_uses_menu_view(self) -> None:
         cursor = _FakeCursor()
         cursor.description = [("PLUGIN_ID",), ("APP_ALIAS",), ("LABEL",)]
@@ -202,6 +266,68 @@ class PluginRegistryTests(unittest.TestCase):
             ],
         )
         self.assertIn("orac_code.plugin_apex_app_menu_v", cursor.sql)
+
+
+def _write_installed_manifest(root: Path, plugin_id: str) -> Path:
+    """Create a minimal installed plugin artifact fixture."""
+    installed_path = root / "var" / "plugins" / "installed" / plugin_id / "1.0.0"
+    plugin_dir = installed_path / "plugin"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.py").write_text(
+        "class AlphaPlugin:\n    def execute(self):\n        return None\n",
+        encoding="utf-8",
+    )
+    (installed_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "plugin_id": plugin_id,
+                "name": "Alpha",
+                "description": "Test plugin",
+                "version": "1.0.0",
+                "enabled": True,
+                "capabilities": ["alpha.read"],
+                "entitlements": [],
+                "entry_point": "plugin:AlphaPlugin",
+                "runtime": {"mode": "on_demand"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return installed_path
+
+
+def _registry_row(
+    plugin_id: str,
+    *,
+    installed_path: str,
+    manifest_hash: str,
+) -> dict[str, str]:
+    """Return a runtime-eligible plugin registry row fixture."""
+    return {
+        "plugin_id": plugin_id,
+        "plugin_name": plugin_id.replace("_", " ").title(),
+        "plugin_version": "1.0.0",
+        "runtime_mode": "on_demand",
+        "manifest_hash": manifest_hash,
+        "package_hash": "c" * 64,
+        "install_source_type": "source",
+        "install_source_ref": f"plugins/{plugin_id}",
+        "installed_path": installed_path,
+        "config_path": "plugin.ini",
+        "dependency_fingerprint": "d" * 64,
+        "install_status": "success",
+        "configuration_status": "not_required",
+        "dependency_status": "not_required",
+        "database_status": "not_required",
+        "readiness_status": "success",
+        "enabled": "Y",
+        "ui_icon_class": "",
+        "ui_accent_class": "",
+        "last_error_code": "",
+        "last_error_message": "",
+        "row_version": "1",
+    }
 
 
 if __name__ == "__main__":
