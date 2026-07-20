@@ -174,7 +174,7 @@ A rule identifies one manifest route by `route_id`:
   "route_id": "short_forecast",
   "match_type": "regex",
   "priority": 100,
-  "patterns": ["\\bforecast\\b"],
+  "patterns": ["^what is the forecast$"],
   "arguments": {
     "response_type": "forecast"
   }
@@ -209,6 +209,20 @@ Migrated plugins should dispatch from `meta["plugin_route"]` during normal
 routing. Temporary `can_handle()` compatibility methods may remain for old
 callers, but they must not create another candidate or run a separate ownership
 parser.
+
+Interception metadata and input are bounded. Metadata is limited to 64 KiB,
+100 rules, bounded exact values and regex patterns, and bounded normalisation
+replacements. User text longer than 2048 characters is not evaluated by plugin
+regexes. Regexes must be anchored and cannot use backreferences, lookbehind, or
+nested quantified groups. These checks run during plugin preparation; invalid
+interception metadata disables that interceptor rather than bypassing plugin
+discovery or execution policy.
+
+Plugin knowledge scopes use canonical `PLUGIN:<plugin_id>` identities from the
+same active runtime registry. A knowledge match is only a routing decision; it
+does not invoke plugin code or grant plugin database access. Plugin execution
+still passes through arbitration, entitlements, confirmation, audit, timeout,
+redaction, and the managed invocation boundary.
 
 ## Plugin APEX Apps
 

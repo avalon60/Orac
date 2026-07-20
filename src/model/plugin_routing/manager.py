@@ -290,6 +290,19 @@ class PluginManager:
         ]
         return self._apply_intercept_matches(utterance, semantic_candidates, top_n)
 
+    def find_intercept_candidates(
+        self,
+        utterance: str,
+        *,
+        top_n: int = 5,
+    ) -> list[PluginRouteCandidate]:
+        """Return deterministic interceptor candidates without semantic matching."""
+        if not self._manifests:
+            self.refresh()
+        if len(self._intercept_registry) == 0:
+            return []
+        return list(self._intercept_registry.candidates_for(utterance))[:top_n]
+
     def get_manifest(self, plugin_id: str) -> PluginManifest | None:
         """Returns the manifest for an indexed plugin."""
         return self._manifests.get(plugin_id)

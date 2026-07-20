@@ -23,6 +23,21 @@ from model.plugin_routing.models import (
 
 InterceptMatchType = Literal["exact_any", "regex"]
 DETERMINISTIC_INTERCEPT_CONFIDENCE = 1.0
+MAX_INTERCEPT_METADATA_BYTES = 64 * 1024
+MAX_INTERCEPT_RULES = 100
+MAX_EXACT_VALUES_PER_RULE = 100
+MAX_REGEX_PATTERNS_PER_RULE = 32
+MAX_EXACT_VALUE_CHARS = 256
+MAX_REGEX_PATTERN_CHARS = 512
+MAX_NORMALISATION_REPLACEMENTS = 100
+MAX_NORMALISATION_REPLACEMENT_CHARS = 128
+MAX_INTERCEPT_INPUT_CHARS = 2048
+
+_REGEX_BACKREFERENCE = re.compile(r"\\(?:[1-9][0-9]*|g<[^>]+>)|\(\?P=[^)]+\)")
+_REGEX_LOOKBEHIND = re.compile(r"\(\?<(?:=|!)")
+_REGEX_NESTED_QUANTIFIER = re.compile(
+    r"\((?:\\.|[^()])*?(?:\*|\+|\{\d*,?\d*\})(?:\\.|[^()])*?\)\s*(?:\*|\+|\{)"
+)
 
 
 class PluginResourceReader(Protocol):
@@ -162,6 +177,13 @@ class PluginDialogInterceptor(ABC):
         original_text = str(user_text or "")
         if not original_text.strip():
             return None
+        if len(original_text) > MAX_INTERCEPT_INPUT_CHARS:
+            _log_warning(
+                self.logger,
+                "Plugin dialogue interception skipped input exceeding the "
+                f"{MAX_INTERCEPT_INPUT_CHARS}-character limit.",
+            )
+            return None
         if self._prepared_metadata is None:
             raise PluginInterceptionConfigurationError(
                 f"Plugin '{self.manifest.plugin_id}' interceptor was not prepared."
@@ -283,6 +305,10 @@ def parse_intercept_metadata(
     route_lookup: Mapping[str, ManifestRoute],
 ) -> InterceptMetadata:
     """Parse and validate one interception metadata document."""
+    if len(source.encode("utf-8")) > MAX_INTERCEPT_METADATA_BYTES:
+        raise PluginInterceptionMetadataError(
+            "Interception metadata exceeds the 64 KiB size limit."
+        )
     try:
         raw = json.loads(source)
     except json.JSONDecodeError as exc:
@@ -326,6 +352,7 @@ def compile_intercept_metadata(
         )
         patterns = []
         for pattern in rule.patterns:
+            _validate_safe_regex(pattern, rule_id=rule.rule_id)
             try:
                 patterns.append(re.compile(pattern, flags=re.IGNORECASE))
             except re.error as exc:
@@ -443,6 +470,10 @@ def _parse_normalisation(raw: Mapping[str, Any]) -> InterceptNormalisation:
         raise PluginInterceptionMetadataError(
             "normalisation_replacements must be a JSON object."
         )
+    if len(raw_replacements) > MAX_NORMALISATION_REPLACEMENTS:
+        raise PluginInterceptionMetadataError(
+            "normalisation_replacements exceeds the 100-entry limit."
+        )
     replacements: dict[str, str] = {}
     for source, replacement in raw_replacements.items():
         source_text = str(source or "").casefold().strip()
@@ -450,6 +481,13 @@ def _parse_normalisation(raw: Mapping[str, Any]) -> InterceptNormalisation:
         if not source_text or not replacement_text:
             raise PluginInterceptionMetadataError(
                 "normalisation_replacements values must be non-empty strings."
+            )
+        if (
+            len(source_text) > MAX_NORMALISATION_REPLACEMENT_CHARS
+            or len(replacement_text) > MAX_NORMALISATION_REPLACEMENT_CHARS
+        ):
+            raise PluginInterceptionMetadataError(
+                "normalisation_replacements entries exceed the 128-character limit."
             )
         replacements[source_text] = replacement_text
     return InterceptNormalisation(
@@ -466,6 +504,8 @@ def _parse_rules(
     """Parse and validate metadata rule objects."""
     if not isinstance(raw_rules, list):
         raise PluginInterceptionMetadataError("rules must be a JSON array.")
+    if len(raw_rules) > MAX_INTERCEPT_RULES:
+        raise PluginInterceptionMetadataError("rules exceeds the 100-entry limit.")
     rules: list[InterceptRule] = []
     seen_ids: set[str] = set()
     for index, raw_rule in enumerate(raw_rules):
@@ -492,8 +532,18 @@ def _parse_rules(
             raise PluginInterceptionMetadataError(
                 f"Rule '{rule_id}' uses unsupported match_type '{match_type}'."
             )
-        values = _string_tuple(raw_rule.get("values", []), f"{rule_id}.values")
-        patterns = _string_tuple(raw_rule.get("patterns", []), f"{rule_id}.patterns")
+        values = _string_tuple(
+            raw_rule.get("values", []),
+            f"{rule_id}.values",
+            max_items=MAX_EXACT_VALUES_PER_RULE,
+            max_chars=MAX_EXACT_VALUE_CHARS,
+        )
+        patterns = _string_tuple(
+            raw_rule.get("patterns", []),
+            f"{rule_id}.patterns",
+            max_items=MAX_REGEX_PATTERNS_PER_RULE,
+            max_chars=MAX_REGEX_PATTERN_CHARS,
+        )
         if match_type == "exact_any" and not values:
             raise PluginInterceptionMetadataError(
                 f"Rule '{rule_id}' must define values for exact_any."
@@ -601,7 +651,13 @@ def _required_string(value: Any, field_name: str) -> str:
     return text
 
 
-def _string_tuple(value: Any, field_name: str) -> tuple[str, ...]:
+def _string_tuple(
+    value: Any,
+    field_name: str,
+    *,
+    max_items: int,
+    max_chars: int,
+) -> tuple[str, ...]:
     """Return a tuple of non-empty strings from a JSON array."""
     if value in (None, ()):
         return ()
@@ -609,7 +665,36 @@ def _string_tuple(value: Any, field_name: str) -> tuple[str, ...]:
         raise PluginInterceptionMetadataError(
             f"{field_name} must be an array of strings."
         )
-    return tuple(item.strip() for item in value if item.strip())
+    if len(value) > max_items:
+        raise PluginInterceptionMetadataError(
+            f"{field_name} exceeds the {max_items}-entry limit."
+        )
+    stripped = tuple(item.strip() for item in value if item.strip())
+    if any(len(item) > max_chars for item in stripped):
+        raise PluginInterceptionMetadataError(
+            f"{field_name} contains a value exceeding {max_chars} characters."
+        )
+    return stripped
+
+
+def _validate_safe_regex(pattern: str, *, rule_id: str) -> None:
+    """Reject regex constructs outside the bounded interception subset."""
+    if not pattern.startswith("^") or not pattern.endswith("$"):
+        raise PluginInterceptionMetadataError(
+            f"Regex for rule '{rule_id}' must be anchored with ^ and $."
+        )
+    if _REGEX_BACKREFERENCE.search(pattern):
+        raise PluginInterceptionMetadataError(
+            f"Regex for rule '{rule_id}' must not use backreferences."
+        )
+    if _REGEX_LOOKBEHIND.search(pattern):
+        raise PluginInterceptionMetadataError(
+            f"Regex for rule '{rule_id}' must not use lookbehind."
+        )
+    if _REGEX_NESTED_QUANTIFIER.search(pattern):
+        raise PluginInterceptionMetadataError(
+            f"Regex for rule '{rule_id}' contains a nested quantifier."
+        )
 
 
 def _freeze_value(value: Any) -> Any:

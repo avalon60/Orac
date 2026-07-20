@@ -38,6 +38,7 @@ from .titled_work import parse_titled_work_question
 from .providers import SearXNGSearchProvider
 from .providers import SearchProvider
 from .service import ExplicitRetrievalService
+from .triggers import detect_explicit_search_directive
 from .triggers import detect_explicit_search_request
 
 __all__ = [
@@ -71,6 +72,7 @@ __all__ = [
     "detect_factual_risk",
     "enforce_high_risk_factual_grounding",
     "detect_explicit_search_request",
+    "detect_explicit_search_directive",
     "normalize_retrieval_response_style",
     "parse_person_age_or_status_query",
     "parse_titled_work_question",

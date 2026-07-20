@@ -97,6 +97,7 @@ deployment script currently supports only `TOPOLOGY=db-local`.
 - [Plugins](docs/plugins.md)
 - [Home Assistant](plugins/home_assistant/docs/home-assistant.md)
 - [Internet retrieval](docs/retrieval.md)
+- [Dialogue routing and local knowledge](docs/dialogue-routing.md)
 - [Voice pipeline](docs/voice-pipeline.md)
 - [APEX administration](docs/apex-administration.md)
 - [Backup and restore](docs/backup-restore.md)

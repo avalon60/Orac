@@ -5,11 +5,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
 import sys
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -100,14 +102,17 @@ class _FakePluginManager:
     def __init__(
         self,
         candidates: list[PluginCandidate] | None = None,
+        intercept_candidates: list[PluginRouteCandidate] | None = None,
         manifests: list[PluginManifest] | None = None,
         **kwargs,
     ):
         self.kwargs = kwargs
         self._candidates = candidates or []
+        self._intercept_candidates = intercept_candidates or []
         self._manifests = manifests or []
         self.refresh_calls = 0
         self.find_calls = 0
+        self.intercept_find_calls = 0
         self._status = {"enabled": len(self._candidates), "cache_hits": 0, "re_embedded": 0}
 
     def refresh(self) -> dict:
@@ -131,6 +136,10 @@ class _FakePluginManager:
             for candidate in candidates
             if _candidate_confidence(candidate) >= min_score
         ]
+
+    def find_intercept_candidates(self, prompt: str, *, top_n: int) -> list:
+        self.intercept_find_calls += 1
+        return list(self._intercept_candidates)[:top_n]
 
 
 def _candidate_confidence(candidate) -> float:
@@ -230,6 +239,31 @@ class _FakeConfigManager:
 
     def bool_config_value(self, section: str, key: str, default=None):
         return default
+
+
+class _EnabledKnowledgeConfigManager(_FakeConfigManager):
+    def bool_config_value(self, section: str, key: str, default=None):
+        if (section, key) == ("knowledge.dialogue", "enabled"):
+            return True
+        return default
+
+
+class _UnavailableKnowledgeAuthorizer:
+    aliases: dict = {}
+    max_scopes_per_request = 3
+
+    def validate_startup(self):
+        return types.SimpleNamespace(
+            status="unavailable",
+            reason_code="scope_registry_unavailable",
+        )
+
+    def resolve_for_user(self, username: str, requested_names: tuple[str, ...]):
+        return types.SimpleNamespace(
+            status="unavailable",
+            reason_code="scope_registry_unavailable",
+            scopes=(),
+        )
 
 
 class _RetrievalConfigManager:
@@ -398,6 +432,74 @@ class OracPluginIntegrationTests(unittest.TestCase):
         self.assertEqual(fetcher._max_bytes, 1234)
         self.assertEqual(fetcher._max_redirects, 2)
 
+    def test_registry_startup_failure_keeps_terminal_knowledge_routing(self) -> None:
+        orchestrator = self._make_orac_stub()
+        orchestrator.config_mgr = _EnabledKnowledgeConfigManager()
+        authorizer = _UnavailableKnowledgeAuthorizer()
+
+        with patch.object(
+            orac_module.KnowledgeScopeAuthorizer,
+            "from_config",
+            return_value=authorizer,
+        ):
+            orchestrator._init_knowledge_dialogue()
+
+        self.assertIsNotNone(orchestrator.dialogue_routing_service)
+        self.assertIsNone(orchestrator.knowledge_retrieval_service)
+        decision = orchestrator.dialogue_routing_service.explicit_knowledge_route(
+            "Use the missing knowledge base to answer this.",
+            authenticated_username="clive",
+        )
+        self.assertEqual(decision.route_type, "knowledge_unavailable")
+
+    def test_terminal_dialogue_helper_persists_safe_provenance_without_llm(self) -> None:
+        orchestrator = self._make_orac_stub()
+        orchestrator.ctx = _FakeContextManager()
+        orchestrator._maybe_prune = lambda *_args, **_kwargs: None
+        orchestrator._emit_complete_text_as_stream = AsyncMock()
+        provenance = {
+            "source": "knowledge_retrieval",
+            "route_type": "knowledge_denied",
+            "outcome": "knowledge_denied",
+            "reason_codes": ("knowledge_scope_not_authorised",),
+        }
+        req_env = {
+            "v": 1,
+            "type": "request",
+            "id": "req-terminal",
+            "route": "orac.prompt",
+            "meta": {},
+            "payload": {"messages": []},
+        }
+
+        wire = asyncio.run(
+            orchestrator._return_terminal_dialogue_response(
+                req_env=req_env,
+                content="I can’t use that knowledge source for this user.",
+                session_id="session-a",
+                auth_user="clive",
+                client="unit",
+                show_reasoning=False,
+                effective_llm_id=1,
+                effective_model_name="test-model",
+                effective_llm_source="unit",
+                request_flags={"anonymous_user": False},
+                event_sink=None,
+                stream_requested=True,
+                provenance=provenance,
+            )
+        )
+
+        response = json.loads(wire)
+        self.assertEqual(response["meta"]["provenance"], json.loads(json.dumps(provenance)))
+        self.assertEqual(
+            orchestrator.ctx.assistant_turns[0]["meta"]["provenance"],
+            provenance,
+        )
+        self.assertNotIn("scopes", provenance)
+        self.assertNotIn("sources", provenance)
+        orchestrator._emit_complete_text_as_stream.assert_awaited_once()
+
     def test_collect_plugin_routing_handoff_refreshes_when_requested(self) -> None:
         orchestrator = self._make_orac_stub()
         orchestrator.plugin_manager = _FakePluginManager(
@@ -413,6 +515,28 @@ class OracPluginIntegrationTests(unittest.TestCase):
         self.assertTrue(handoff.refreshed)
         self.assertEqual(orchestrator.plugin_manager.refresh_calls, 1)
         self.assertEqual(orchestrator.plugin_manager.find_calls, 1)
+
+    def test_collect_plugin_intercept_handoff_avoids_semantic_search(self) -> None:
+        orchestrator = self._make_orac_stub()
+        candidate = PluginRouteCandidate(
+            plugin_id="home_assistant",
+            capability_id="home_assistant.light_control",
+            intent_name="control_light",
+            confidence=1.0,
+            match_reasons=("dialog_intercept",),
+            safety_level="local_mutation",
+            route_key="home_assistant::light::control",
+        )
+        orchestrator.plugin_manager = _FakePluginManager(
+            intercept_candidates=[candidate]
+        )
+        handoff = orchestrator._collect_plugin_intercept_handoff(
+            "Turn off the desk lamp.",
+            {},
+        )
+        self.assertEqual(handoff.candidates, (candidate,))
+        self.assertEqual(orchestrator.plugin_manager.intercept_find_calls, 1)
+        self.assertEqual(orchestrator.plugin_manager.find_calls, 0)
 
     def test_collect_plugin_routing_handoff_formats_route_candidate_confidence(self) -> None:
         orchestrator = self._make_orac_stub()

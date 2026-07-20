@@ -71,22 +71,29 @@ class KnowledgeManagedFileCaptureService:
             if not existed_before_install:
                 temp_path = None
             source_key = self._source_key(request, source_path)
-            ingestion_request_id = self._repository.submit_managed_file(
-                source_type="DROP_BOX",
-                source_reference=self._source_reference(source_key),
-                parent_source_reference=source_key,
-                content_sha256=copied_sha,
-                content_uri=content_uri,
-                mime_type=mime_type,
-                original_filename=request.source_filename,
-                byte_size=request.source_size_bytes,
-                target_scope_type=request.target_scope_type,
-                target_scope_key=request.target_scope_key,
-                processing_profile_code=request.processing_profile,
-                processing_instruction=request.processing_instruction,
-                source_modified_on=request.source_mtime,
-                legacy_parent_source_reference=request.legacy_source_key,
-            )
+            try:
+                ingestion_request_id = self._repository.submit_managed_file(
+                    source_type="DROP_BOX",
+                    source_reference=self._source_reference(source_key),
+                    parent_source_reference=source_key,
+                    content_sha256=copied_sha,
+                    content_uri=content_uri,
+                    mime_type=mime_type,
+                    original_filename=request.source_filename,
+                    byte_size=request.source_size_bytes,
+                    target_scope_type=request.target_scope_type,
+                    target_scope_key=request.target_scope_key,
+                    processing_profile_code=request.processing_profile,
+                    processing_instruction=request.processing_instruction,
+                    source_modified_on=request.source_mtime,
+                    legacy_parent_source_reference=request.legacy_source_key,
+                )
+            except Exception as exc:
+                if "ORA-20409" in str(exc).upper():
+                    raise KnowledgeCaptureError(
+                        "The requested knowledge scope is not available for capture."
+                    ) from exc
+                raise
             status_code = "QUEUED"
             status_loader = getattr(self._repository, "request_status", None)
             if callable(status_loader):

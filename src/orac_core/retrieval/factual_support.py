@@ -58,7 +58,11 @@ def enforce_high_risk_factual_grounding(
         return text
 
     reason_code = str(getattr(retrieval_decision, "reason_code", "") or "")
-    if reason_code != "factual_risk_cause_of_death":
+    cause_of_death_route = reason_code == "factual_risk_cause_of_death" or (
+        reason_code == "person_age_or_status"
+        and bool(_subject_from_cause_query(user_query))
+    )
+    if not cause_of_death_route:
         if reason_code != "factual_risk_music_claim":
             return text
         return _constrain_music_membership_answer(

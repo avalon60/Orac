@@ -195,6 +195,31 @@ class KnowledgeSchemaTests(unittest.TestCase):
         ):
             self.assertIn(token, package_sql)
 
+    def test_ingestion_validates_canonical_active_scope_before_writes(self) -> None:
+        package_sql = (
+            (CORE_CODE_SCHEMA / "package_body" / "knowledge_ingestion_api.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        validation_call = package_sql.index(
+            "assert_canonical_scope(l_scope_type, l_scope_key);"
+        )
+        first_source_write = package_sql.index(
+            "update orac_api.knowledge_source_objects_v"
+        )
+        self.assertLess(validation_call, first_source_write)
+        for token in (
+            "from orac_code.project_registry_v project",
+            "project.active_yn = 'y'",
+            "from orac_code.plugin_registry_v plugin",
+            "plugin.install_status = 'success'",
+            "plugin.configuration_status in ('success', 'not_required')",
+            "plugin.dependency_status in ('success', 'not_required')",
+            "plugin.readiness_status = 'success'",
+            "unknown, inactive, or not runtime eligible",
+        ):
+            self.assertIn(token, package_sql)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1610,12 +1610,12 @@ class RetrievalDecisionServiceTests(unittest.TestCase):
             "What is the current Python release?"
         )
 
-        self.assertTrue(decision.should_retrieve)
-        self.assertFalse(decision.requires_user_confirmation)
+        self.assertFalse(decision.should_retrieve)
+        self.assertTrue(decision.requires_user_confirmation)
         self.assertEqual(decision.retrieval_type, "internet")
         self.assertEqual(
             decision.user_visible_reason,
-            "I'll verify that from current sources.",
+            "That may have changed recently. Shall I check online?",
         )
 
     def test_auto_safe_retrieves_high_confidence_freshness_query(self) -> None:

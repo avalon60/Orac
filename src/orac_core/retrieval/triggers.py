@@ -185,6 +185,42 @@ def detect_explicit_search_request(
     return None
 
 
+def detect_explicit_search_directive(
+    prompt: str,
+    *,
+    max_results: int = 5,
+    provider_name: str | None = None,
+) -> SearchRequest | None:
+    """Return only an explicit user command selecting internet retrieval."""
+    normalized = " ".join(str(prompt or "").split())
+    if not normalized or _looks_local(normalized):
+        return None
+    for trigger_phrase, pattern in _DIRECT_TRIGGER_PATTERNS:
+        match = pattern.match(normalized)
+        if match is None:
+            continue
+        query = _clean_query(match.group("query"))
+        if query:
+            return SearchRequest(
+                query=query,
+                max_results=max_results,
+                provider_name=provider_name,
+                trigger_phrase=trigger_phrase,
+            )
+    trailing_match = _TRAILING_TRIGGER_PATTERN.search(normalized)
+    if trailing_match is None:
+        return None
+    query = _clean_query(normalized[: trailing_match.start()])
+    if not query:
+        return None
+    return SearchRequest(
+        query=query,
+        max_results=max_results,
+        provider_name=provider_name,
+        trigger_phrase=trailing_match.group("trigger").lower(),
+    )
+
+
 def _clean_query(query: str) -> str:
     """Normalise a trigger-derived search query."""
     cleaned = re.sub(r"^(?:question|q)\s*:\s*", "", str(query or "").strip(), flags=re.I)

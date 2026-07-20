@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 import oracledb
+from orac_core.plugin_registry_policy import plugin_registry_row_runtime_eligible
 
 if TYPE_CHECKING:
     from model.plugin_routing.models import PluginManifest
@@ -138,18 +139,23 @@ class PluginRegistryStore:
 
     def list_enabled(self) -> list[dict[str, Any]]:
         """Return registry rows that passed every runtime eligibility gate."""
-        return self._query(
-            f"select {self._SELECT_COLUMNS} "
-            "from orac_code.plugin_registry_v "
-            "where enabled = 'Y' "
-            "and install_status = 'success' "
-            "and configuration_status in ('success', 'not_required') "
-            "and dependency_status in ('success', 'not_required') "
-            "and database_status in "
-            "('deployed', 'already_deployed', 'not_required', 'optional_missing') "
-            "and readiness_status = 'success' order by plugin_id",
-            {},
-        )
+        return [
+            row
+            for row in self._query(
+                f"select {self._SELECT_COLUMNS} "
+                "from orac_code.plugin_registry_v "
+                "where enabled = 'Y' "
+                "and install_status = 'success' "
+                "and configuration_status in ('success', 'not_required') "
+                "and dependency_status in ('success', 'not_required') "
+                "and database_status in "
+                "('deployed', 'already_deployed', 'not_required', "
+                "'optional_missing') "
+                "and readiness_status = 'success' order by plugin_id",
+                {},
+            )
+            if plugin_registry_row_runtime_eligible(row)
+        ]
 
     def enabled_manifests(self) -> list[PluginManifest]:
         """Load validated manifests for active installed plugin versions."""
@@ -159,7 +165,7 @@ class PluginRegistryStore:
     def enabled_manifest(self, plugin_id: str) -> PluginManifest | None:
         """Load one enabled plugin manifest without scanning unrelated plugins."""
         row = self.get(plugin_id)
-        if row is None or not _row_runtime_eligible(row):
+        if row is None or not plugin_registry_row_runtime_eligible(row):
             return None
         status = inspect_registered_plugin_artifact(row)
         if not status.ok:
@@ -284,19 +290,6 @@ def inspect_registered_plugin_artifact(
                 Path(str(row["config_path"])) if row.get("config_path") else None
             ),
         ),
-    )
-
-
-def _row_runtime_eligible(row: dict[str, Any]) -> bool:
-    """Return whether a registry row matches the enabled runtime gates."""
-    return (
-        str(row.get("enabled") or "").upper() == "Y"
-        and str(row.get("install_status") or "") == "success"
-        and str(row.get("configuration_status") or "") in {"success", "not_required"}
-        and str(row.get("dependency_status") or "") in {"success", "not_required"}
-        and str(row.get("database_status") or "")
-        in {"deployed", "already_deployed", "not_required", "optional_missing"}
-        and str(row.get("readiness_status") or "") == "success"
     )
 
 

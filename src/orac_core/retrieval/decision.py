@@ -534,7 +534,7 @@ class RetrievalDecisionService:
             self._log_decision(mode, decision)
             return decision
 
-        if effective_person_status_match is not None and factual_risk_match is None:
+        if effective_person_status_match is not None:
             should_retrieve = mode in {"explicit_only", "auto_safe"}
             decision = RetrievalDecision(
                 should_retrieve=should_retrieve,

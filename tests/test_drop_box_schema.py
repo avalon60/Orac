@@ -200,7 +200,7 @@ class DropBoxSchemaTests(unittest.TestCase):
             "stable_on",
             "source_size_bytes",
             "source_hash",
-            "error_message",
+            "error_summary_redacted",
             "document_id",
             "knowledge_ingestion_request_id",
             "effective_processing_profile",
@@ -208,9 +208,11 @@ class DropBoxSchemaTests(unittest.TestCase):
             "effective_instruction",
         ):
             self.assertIn(token, job_view)
+        self.assertNotRegex(job_view, r"job\.error_message\s*,")
 
         self.assertIn("event_type", event_view)
-        self.assertIn("event_message", event_view)
+        self.assertIn("event_message_redacted", event_view)
+        self.assertNotRegex(event_view, r"evt\.event_message\s*,")
         for token in (
             "event_ts",
             "drop_job_id",
@@ -226,12 +228,12 @@ class DropBoxSchemaTests(unittest.TestCase):
             "total_job_count",
             "example_type",
             "recent_job_count",
-            "latest_job_status",
             "last_processed_on",
             "toggle_label",
             "example_label",
         ):
             self.assertIn(token, summary_view)
+        self.assertNotIn("latest_job_status", summary_view)
 
     def test_processing_profile_reference_table_constraints_and_views(self) -> None:
         table_sql = (

@@ -1,4 +1,5 @@
 """Tests for the Orac weather plugin implementation."""
+
 # Author: Clive Bostock
 # Date: 2026-04-23
 # Description: Verifies the weather plugin execution seam and provider behaviour without live network calls.
@@ -137,7 +138,9 @@ def _build_snapshot() -> WeatherSnapshot:
             weather_code=3,
         ),
     )
-    return WeatherSnapshot(location=location, current=current, hourly=hourly, daily=daily)
+    return WeatherSnapshot(
+        location=location, current=current, hourly=hourly, daily=daily
+    )
 
 
 class WeatherPluginTests(unittest.TestCase):
@@ -184,7 +187,9 @@ class WeatherPluginTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIn("need a location", result.content)
 
-    def test_weather_plugin_does_not_claim_area_before_temperature_wording(self) -> None:
+    def test_weather_plugin_does_not_claim_area_before_temperature_wording(
+        self,
+    ) -> None:
         snapshot = _build_snapshot()
         plugin = WeatherPlugin(
             logger=_FakeLogger(),
@@ -238,6 +243,17 @@ class WeatherPluginTests(unittest.TestCase):
         )
 
         self.assertTrue(plugin.can_handle("What's the weather in London?"))
+
+    def test_weather_plugin_intercepts_time_first_forecast_for_location(self) -> None:
+        snapshot = _build_snapshot()
+        plugin = WeatherPlugin(
+            logger=_FakeLogger(),
+            config_mgr=_FakeConfigManager(default_location="London"),
+            provider=StubWeatherProvider(location=snapshot.location, snapshot=snapshot),
+            runtime_context=_FakeRuntimeContext(),
+        )
+
+        self.assertTrue(plugin.can_handle("What is tomorrow's weather in Leeds?"))
 
     def test_weather_typo_and_punctuation_are_normalised_by_metadata(self) -> None:
         snapshot = _build_snapshot()

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -23,6 +24,7 @@ from model.plugin_router import PluginRouter
 import model.plugin_router as plugin_router_module
 from model.plugin_routing.interception import (
     InterceptRule,
+    MAX_INTERCEPT_INPUT_CHARS,
     PluginDialogInterceptor,
     PluginInterceptionMetadataError,
     freeze_mapping,
@@ -161,6 +163,24 @@ def _metadata(route_id: str = "do_it") -> str:
     )
 
 
+def _regex_metadata(pattern: str) -> str:
+    """Return interception metadata containing one regex rule."""
+    return json.dumps(
+        {
+            "schema_version": 1,
+            "rules": [
+                {
+                    "rule_id": "alpha_regex",
+                    "route_id": "do_it",
+                    "match_type": "regex",
+                    "priority": 10,
+                    "patterns": [pattern],
+                }
+            ],
+        }
+    )
+
+
 class PluginDialogInterceptionTests(unittest.TestCase):
     """Verify shared dialogue interception behaviour."""
 
@@ -172,6 +192,40 @@ class PluginDialogInterceptionTests(unittest.TestCase):
 
         with self.assertRaises(PluginInterceptionMetadataError):
             interceptor.prepare()
+
+    def test_oversized_metadata_is_rejected(self) -> None:
+        interceptor = _ExampleInterceptor(
+            manifest=_manifest(),
+            resources=_MemoryResourceReader(" " * (64 * 1024 + 1)),
+        )
+        with self.assertRaisesRegex(PluginInterceptionMetadataError, "size limit"):
+            interceptor.prepare()
+
+    def test_unsafe_regex_constructs_are_rejected(self) -> None:
+        patterns = {
+            "unanchored": "do .+",
+            "backreference": r"^(?P<word>.+) (?P=word)$",
+            "lookbehind": r"^(?<=do )it$",
+            "nested quantifier": r"^(a+)+$",
+        }
+        for label, pattern in patterns.items():
+            with self.subTest(label=label):
+                interceptor = _ExampleInterceptor(
+                    manifest=_manifest(),
+                    resources=_MemoryResourceReader(_regex_metadata(pattern)),
+                )
+                with self.assertRaises(PluginInterceptionMetadataError):
+                    interceptor.prepare()
+
+    def test_oversized_input_is_not_evaluated(self) -> None:
+        interceptor = _ExampleInterceptor(
+            manifest=_manifest(),
+            resources=_MemoryResourceReader(_regex_metadata(r"^.+$")),
+        )
+        interceptor.prepare()
+        self.assertIsNone(
+            interceptor.intercept("a" * (MAX_INTERCEPT_INPUT_CHARS + 1))
+        )
 
     def test_capability_and_intent_are_derived_from_manifest(self) -> None:
         manifest = _manifest(capability_id="alpha.changed_capability")

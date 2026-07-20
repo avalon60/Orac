@@ -239,7 +239,7 @@ wwv_flow_imp_shared.create_list_item(
  p_id=>wwv_flow_imp.id(34545837054386649)
 ,p_list_item_display_sequence=>20
 ,p_list_item_link_text=>'Activity'
-,p_list_item_link_target=>'f?p=&APP_ID.:5:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_link_target=>'f?p=&APP_ID.:5:&APP_SESSION.::&DEBUG.:RP,5:P5_DROP_LOCATION_ID:'
 ,p_list_item_icon=>'fa-history'
 ,p_list_item_current_type=>'TARGET_PAGE'
 );
@@ -1229,26 +1229,77 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_display_sequence=>20
 ,p_query_type=>'SQL'
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select drop_location_id,',
-'       row_version,',
-'       location_code,',
-'       display_name,',
-'       target_scope_type,',
-'       target_scope_key,',
-'       profile_code,',
-'       enabled_label,',
-'       path source_path,',
-'       stable_seconds,',
-'       total_job_count,',
-'       recent_job_count,',
-'       latest_job_status,',
-'       last_processed_on,',
-'       example_label,',
-'       drop_location_id view_jobs_location_id,',
-'       next_enabled_yn,',
-'       toggle_label',
-'  from orac_dropbox.drop_location_summary_admin_v',
-' order by location_code'))
+'with job_lifecycle as (',
+'  select job.drop_location_id,',
+'         job.drop_job_id,',
+'         job.detected_on,',
+'         greatest(',
+'           job.updated_on,',
+'           coalesce(core.latest_event_on, job.updated_on),',
+'           coalesce(core.updated_on, job.updated_on),',
+'           coalesce(core.completed_on, job.updated_on)',
+'         ) latest_activity_on,',
+'         case',
+'           when job.status_code in (''skipped_duplicate'', ''skipped_disallowed_type'', ''skipped_too_large'')',
+'           then ''SKIPPED''',
+'           when job.status_code in (''failed'', ''quarantined'')',
+'           then ''FAILED_ATTENTION''',
+'           when job.status_code in (''queued'', ''processing'')',
+'           then ''AWAITING_HANDOFF''',
+'           when job.knowledge_ingestion_request_id is null',
+'             or core.ingestion_request_id is null',
+'           then ''FAILED_ATTENTION''',
+'           when core.searchable_yn = ''Y''',
+'           then ''SEARCHABLE''',
+'           when core.status_code in (''QUEUED'', ''PROCESSING'', ''RETRY_WAIT'')',
+'           then ''CORE_IN_PROGRESS''',
+'           else ''FAILED_ATTENTION''',
+'         end lifecycle_bucket',
+'    from orac_dropbox.drop_job_admin_v job',
+'    left join orac_code.knowledge_ingestion_requests_v core',
+'      on core.ingestion_request_id = job.knowledge_ingestion_request_id',
+'),',
+'job_rollup as (',
+'  select drop_location_id,',
+'         count(distinct drop_job_id) total_job_count,',
+'         count(distinct case',
+'           when detected_on >= systimestamp - interval ''7'' day then drop_job_id',
+'         end) recent_job_count,',
+'         count(distinct case when lifecycle_bucket = ''AWAITING_HANDOFF'' then drop_job_id end) awaiting_handoff_count,',
+'         count(distinct case when lifecycle_bucket = ''CORE_IN_PROGRESS'' then drop_job_id end) core_in_progress_count,',
+'         count(distinct case when lifecycle_bucket = ''SEARCHABLE'' then drop_job_id end) searchable_count,',
+'         count(distinct case when lifecycle_bucket = ''FAILED_ATTENTION'' then drop_job_id end) failed_attention_count,',
+'         count(distinct case when lifecycle_bucket = ''SKIPPED'' then drop_job_id end) skipped_count,',
+'         max(latest_activity_on) latest_activity_on',
+'    from job_lifecycle',
+'   group by drop_location_id',
+')',
+'select loc.drop_location_id,',
+'       loc.row_version,',
+'       loc.location_code,',
+'       loc.display_name,',
+'       loc.target_scope_type,',
+'       loc.target_scope_key,',
+'       loc.profile_code,',
+'       loc.enabled_label,',
+'       loc.path source_path,',
+'       loc.stable_seconds,',
+'       coalesce(roll.total_job_count, 0) total_job_count,',
+'       coalesce(roll.recent_job_count, 0) recent_job_count,',
+'       coalesce(roll.awaiting_handoff_count, 0) awaiting_handoff_count,',
+'       coalesce(roll.core_in_progress_count, 0) core_in_progress_count,',
+'       coalesce(roll.searchable_count, 0) searchable_count,',
+'       coalesce(roll.failed_attention_count, 0) failed_attention_count,',
+'       coalesce(roll.skipped_count, 0) skipped_count,',
+'       roll.latest_activity_on,',
+'       loc.example_label,',
+'       loc.drop_location_id view_activity_location_id,',
+'       loc.next_enabled_yn,',
+'       loc.toggle_label',
+'  from orac_dropbox.drop_location_summary_admin_v loc',
+'  left join job_rollup roll',
+'    on roll.drop_location_id = loc.drop_location_id',
+' order by loc.location_code'))
 ,p_plug_source_type=>'NATIVE_IR'
 ,p_prn_page_header=>'Drop Locations'
 );
@@ -1387,29 +1438,76 @@ wwv_flow_imp_page.create_worksheet_column(
 );
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600100000000212)
-,p_db_column_name=>'LATEST_JOB_STATUS'
+,p_db_column_name=>'AWAITING_HANDOFF_COUNT'
 ,p_display_order=>12
 ,p_column_identifier=>'L'
-,p_column_label=>'Latest Job Status'
-,p_column_type=>'STRING'
-,p_heading_alignment=>'LEFT'
+,p_column_label=>'Awaiting Handoff'
+,p_column_type=>'NUMBER'
+,p_heading_alignment=>'RIGHT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600100000000231)
+,p_db_column_name=>'CORE_IN_PROGRESS_COUNT'
+,p_display_order=>13
+,p_column_identifier=>'S'
+,p_column_label=>'Core In Progress'
+,p_column_type=>'NUMBER'
+,p_heading_alignment=>'RIGHT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600100000000232)
+,p_db_column_name=>'SEARCHABLE_COUNT'
+,p_display_order=>14
+,p_column_identifier=>'T'
+,p_column_label=>'Searchable'
+,p_column_type=>'NUMBER'
+,p_heading_alignment=>'RIGHT'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600100000000233)
+,p_db_column_name=>'FAILED_ATTENTION_COUNT'
+,p_display_order=>15
+,p_column_identifier=>'U'
+,p_column_label=>'Failed / Attention'
+,p_column_type=>'NUMBER'
+,p_heading_alignment=>'RIGHT'
+,p_tz_dependent=>'N'
+,p_help_text=>'Includes historical Drop Box failures, broken Core correlation, Core failures, and completed requests that are not searchable. A count does not necessarily indicate an unresolved current incident.'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600100000000234)
+,p_db_column_name=>'SKIPPED_COUNT'
+,p_display_order=>16
+,p_column_identifier=>'V'
+,p_column_label=>'Skipped'
+,p_column_type=>'NUMBER'
+,p_heading_alignment=>'RIGHT'
+,p_tz_dependent=>'N'
 ,p_use_as_row_header=>'N'
 );
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600100000000213)
-,p_db_column_name=>'LAST_PROCESSED_ON'
-,p_display_order=>13
+,p_db_column_name=>'LATEST_ACTIVITY_ON'
+,p_display_order=>17
 ,p_column_identifier=>'M'
-,p_column_label=>'Last Processed'
+,p_column_label=>'Latest Activity'
 ,p_column_type=>'DATE'
 ,p_heading_alignment=>'LEFT'
+,p_format_mask=>'DD-Mon-YYYY HH24:MI:SS'
 ,p_tz_dependent=>'N'
 ,p_use_as_row_header=>'N'
 );
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600100000000214)
 ,p_db_column_name=>'EXAMPLE_LABEL'
-,p_display_order=>14
+,p_display_order=>18
 ,p_column_identifier=>'N'
 ,p_column_label=>'Example'
 ,p_column_type=>'STRING'
@@ -1419,7 +1517,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600100000000215)
 ,p_db_column_name=>'ROW_VERSION'
-,p_display_order=>15
+,p_display_order=>19
 ,p_column_identifier=>'O'
 ,p_column_label=>'Row Version'
 ,p_column_type=>'NUMBER'
@@ -1431,7 +1529,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600100000000216)
 ,p_db_column_name=>'NEXT_ENABLED_YN'
-,p_display_order=>16
+,p_display_order=>20
 ,p_column_identifier=>'P'
 ,p_column_label=>'Next Enabled'
 ,p_column_type=>'STRING'
@@ -1442,7 +1540,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600100000000217)
 ,p_db_column_name=>'TOGGLE_LABEL'
-,p_display_order=>17
+,p_display_order=>21
 ,p_column_identifier=>'Q'
 ,p_column_label=>'Enable/Disable'
 ,p_column_link=>'f?p=&APP_ID.:1:&APP_SESSION.:TOGGLE_LOCATION:&DEBUG.:RP:P1_TOGGLE_LOCATION_ID,P1_TOGGLE_ROW_VERSION,P1_TOGGLE_ENABLED_YN:#DROP_LOCATION_ID#,#ROW_VERSION#,#NEXT_ENABLED_YN#'
@@ -1453,12 +1551,12 @@ wwv_flow_imp_page.create_worksheet_column(
 );
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600100000000218)
-,p_db_column_name=>'VIEW_JOBS_LOCATION_ID'
-,p_display_order=>18
+,p_db_column_name=>'VIEW_ACTIVITY_LOCATION_ID'
+,p_display_order=>22
 ,p_column_identifier=>'R'
-,p_column_label=>'View Jobs'
-,p_column_link=>'f?p=&APP_ID.:3:&APP_SESSION.::&DEBUG.:RP:P3_DROP_LOCATION_ID:#VIEW_JOBS_LOCATION_ID#'
-,p_column_linktext=>'View Jobs'
+,p_column_label=>'View Activity'
+,p_column_link=>'f?p=&APP_ID.:5:&APP_SESSION.::&DEBUG.:RP,5:P5_DROP_LOCATION_ID:#VIEW_ACTIVITY_LOCATION_ID#'
+,p_column_linktext=>'View Activity'
 ,p_column_type=>'STRING'
 ,p_heading_alignment=>'LEFT'
 ,p_use_as_row_header=>'N'
@@ -1470,7 +1568,7 @@ wwv_flow_imp_page.create_worksheet_rpt(
 ,p_report_alias=>'346011'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'DROP_LOCATION_ID:LOCATION_CODE:DISPLAY_NAME:TARGET_SCOPE_TYPE:TARGET_SCOPE_KEY:PROFILE_CODE:ENABLED_LABEL:SOURCE_PATH:STABLE_SECONDS:TOTAL_JOB_COUNT:RECENT_JOB_COUNT:LATEST_JOB_STATUS:LAST_PROCESSED_ON:EXAMPLE_LABEL:TOGGLE_LABEL:VIEW_JOBS_LOCATION_ID'
+,p_report_columns=>'DROP_LOCATION_ID:LOCATION_CODE:DISPLAY_NAME:TARGET_SCOPE_TYPE:TARGET_SCOPE_KEY:PROFILE_CODE:ENABLED_LABEL:SOURCE_PATH:STABLE_SECONDS:TOTAL_JOB_COUNT:RECENT_JOB_COUNT:AWAITING_HANDOFF_COUNT:CORE_IN_PROGRESS_COUNT:SEARCHABLE_COUNT:FAILED_ATTENTION_COUNT:SKIPPED_COUNT:LATEST_ACTIVITY_ON:EXAMPLE_LABEL:TOGGLE_LABEL:VIEW_ACTIVITY_LOCATION_ID'
 ||':'
 ,p_sort_column_1=>'LOCATION_CODE'
 ,p_sort_direction_1=>'ASC'
@@ -2380,7 +2478,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_display_sequence=>20
 ,p_query_type=>'SQL'
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select drop_job_id, source_filename, status_code, detected_on, stable_on, source_size_bytes, source_hash, document_id, error_message',
+'select drop_job_id, source_filename, status_code, detected_on, stable_on, source_size_bytes, source_hash, document_id, error_summary_redacted',
 '  from orac_dropbox.drop_job_admin_v',
 ' where drop_location_id = to_number(:P3_DROP_LOCATION_ID)',
 ' order by detected_on desc'))
@@ -2490,10 +2588,10 @@ wwv_flow_imp_page.create_worksheet_column(
 );
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600300000000210)
-,p_db_column_name=>'ERROR_MESSAGE'
+,p_db_column_name=>'ERROR_SUMMARY_REDACTED'
 ,p_display_order=>9
 ,p_column_identifier=>'I'
-,p_column_label=>'Error Message'
+,p_column_label=>'Redacted Error'
 ,p_column_type=>'STRING'
 ,p_heading_alignment=>'LEFT'
 ,p_use_as_row_header=>'N'
@@ -2505,7 +2603,7 @@ wwv_flow_imp_page.create_worksheet_rpt(
 ,p_report_alias=>'346031'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'DROP_JOB_ID:SOURCE_FILENAME:STATUS_CODE:DETECTED_ON:STABLE_ON:SOURCE_SIZE_BYTES:SOURCE_HASH:DOCUMENT_ID:ERROR_MESSAGE:'
+,p_report_columns=>'DROP_JOB_ID:SOURCE_FILENAME:STATUS_CODE:DETECTED_ON:STABLE_ON:SOURCE_SIZE_BYTES:SOURCE_HASH:DOCUMENT_ID:ERROR_SUMMARY_REDACTED:'
 ,p_sort_column_1=>'DETECTED_ON'
 ,p_sort_direction_1=>'DESC'
 );
@@ -2556,7 +2654,7 @@ wwv_flow_imp_page.create_page_plug(
 '              ''<dt>File Size</dt><dd>'' || apex_escape.html(to_char(job.source_size_bytes)) || ''</dd>'' ||',
 '              ''<dt>Hash</dt><dd>'' || apex_escape.html(job.source_hash) || ''</dd>'' ||',
 '              ''<dt>Downstream Document ID</dt><dd>'' || apex_escape.html(to_char(job.document_id)) || ''</dd>'' ||',
-'              ''<dt>Error</dt><dd>'' || apex_escape.html(substr(job.error_message, 1, 2000)) || ''</dd>'' ||',
+'              ''<dt>Redacted Error</dt><dd>'' || apex_escape.html(job.error_summary_redacted) || ''</dd>'' ||',
 '              ''</dl>'';',
 '  end loop;',
 '  return coalesce(l_html, ''<p>No job selected.</p>'');',
@@ -2572,7 +2670,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_display_sequence=>20
 ,p_query_type=>'SQL'
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select drop_job_event_id, event_ts, event_type, event_message, created_by',
+'select drop_job_event_id, event_ts, event_type, event_message_redacted, created_by',
 '  from orac_dropbox.drop_job_event_admin_v',
 ' where drop_job_id = to_number(:P4_DROP_JOB_ID)',
 ' order by event_ts desc'))
@@ -2629,10 +2727,10 @@ wwv_flow_imp_page.create_worksheet_column(
 );
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600400000000205)
-,p_db_column_name=>'EVENT_MESSAGE'
+,p_db_column_name=>'EVENT_MESSAGE_REDACTED'
 ,p_display_order=>4
 ,p_column_identifier=>'D'
-,p_column_label=>'Message'
+,p_column_label=>'Redacted Message'
 ,p_column_type=>'STRING'
 ,p_heading_alignment=>'LEFT'
 ,p_use_as_row_header=>'N'
@@ -2654,7 +2752,7 @@ wwv_flow_imp_page.create_worksheet_rpt(
 ,p_report_alias=>'346041'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'EVENT_TS:EVENT_TYPE:EVENT_MESSAGE:CREATED_BY:'
+,p_report_columns=>'EVENT_TS:EVENT_TYPE:EVENT_MESSAGE_REDACTED:CREATED_BY:'
 ,p_sort_column_1=>'EVENT_TS'
 ,p_sort_direction_1=>'DESC'
 );
@@ -2692,50 +2790,49 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_display_sequence=>10
 ,p_query_type=>'SQL'
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select job.drop_job_id as drop_job_event_id,',
-'       job.updated_on as event_ts,',
+'select job.drop_job_id as drop_job_row_id,',
 '       job.location_code,',
 '       job.location_display_name,',
 '       job.drop_location_id,',
 '       job.drop_job_id,',
 '       job.source_filename,',
 '       job.source_path,',
+'       job.detected_on as drop_box_detected_on,',
+'       job.stable_on as drop_box_stable_on,',
+'       job.started_on as drop_box_started_on,',
+'       job.updated_on as drop_box_updated_on,',
+'       job.completed_on as drop_box_completed_on,',
 '       job.status_code as drop_box_state,',
+'       job.error_summary_redacted as drop_box_error_summary_redacted,',
 '       job.knowledge_ingestion_request_id as core_request_id,',
 '       core.status_code as core_state,',
 '       core.status_label as core_state_label,',
 '       core.accepted_on as core_accepted_on,',
 '       core.claimed_on as core_claimed_on,',
+'       core.latest_event_on as core_latest_event_on,',
 '       core.completed_on as core_completed_on,',
 '       core.document_id,',
 '       core.document_version_id,',
 '       core.chunk_count,',
 '       core.embedded_chunk_count,',
 '       core.searchable_yn,',
-'       dbms_lob.substr(core.last_error_message, 1000, 1) as latest_core_error,',
-'       case job.status_code',
-'         when ''queued'' then ''Queued - awaiting Core worker claim''',
-'         when ''handed_off'' then ''Handed off - Core processing''',
-'         when ''completed'' then ''Completed''',
-'         when ''failed'' then ''Failed''',
-'         else job.status_code',
-'       end as event_type,',
-'       ''Drop Box status='' || job.status_code ||',
-'         case when job.knowledge_ingestion_request_id is not null',
-'              then ''; Core request='' || to_char(job.knowledge_ingestion_request_id)',
-'              else '''' end ||',
-'         case when core.status_code is not null',
-'              then ''; Core state='' || core.status_label',
-'              else '''' end ||',
-'         case when core.last_error_message is not null',
-'              then ''; Latest error='' || dbms_lob.substr(core.last_error_message, 1000, 1)',
-'              when job.error_message is not null',
-'              then ''; Latest error='' || dbms_lob.substr(job.error_message, 1000, 1)',
-'              else '''' end',
-'       as event_message',
+'       case core.last_error_code',
+'         when ''MISSING_MANAGED_PAYLOAD''',
+'         then ''Managed payload is unavailable.''',
+'         when ''EMPTY_MANAGED_PAYLOAD''',
+'         then ''Managed payload is empty.''',
+'         when ''KNOWLEDGE_WORKER_ERROR''',
+'         then ''Core ingestion worker failed; review restricted logs.''',
+'         else case',
+'           when core.last_error_code is not null or core.status_code = ''FAILED''',
+'           then ''Core ingestion failed; review restricted logs.''',
+'         end',
+'       end as core_error_summary_redacted',
 '  from orac_dropbox.drop_job_admin_v job',
 '  left join orac_code.knowledge_ingestion_requests_v core',
 '    on core.ingestion_request_id = job.knowledge_ingestion_request_id',
+' where :P5_DROP_LOCATION_ID is null',
+'    or job.drop_location_id = to_number(:P5_DROP_LOCATION_ID)',
 ' order by job.updated_on desc, job.drop_job_id desc'))
 ,p_plug_source_type=>'NATIVE_IR'
 ,p_prn_page_header=>'Drop Box Activity'
@@ -2744,7 +2841,7 @@ wwv_flow_imp_page.create_worksheet(
  p_id=>wwv_flow_imp.id(34600500000000201)
 ,p_name=>'Activity'
 ,p_no_data_found_message=>'No drop-box jobs are recorded.'
-,p_base_pk1=>'DROP_JOB_EVENT_ID'
+,p_base_pk1=>'DROP_JOB_ROW_ID'
 ,p_pagination_type=>'ROWS_X_TO_Y'
 ,p_pagination_display_pos=>'BOTTOM_RIGHT'
 ,p_report_list_mode=>'TABS'
@@ -2756,11 +2853,11 @@ wwv_flow_imp_page.create_worksheet(
 );
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000202)
-,p_db_column_name=>'DROP_JOB_EVENT_ID'
+,p_db_column_name=>'DROP_JOB_ROW_ID'
 ,p_display_order=>1
 ,p_is_primary_key=>'Y'
 ,p_column_identifier=>'A'
-,p_column_label=>'Job ID'
+,p_column_label=>'Job Row ID'
 ,p_column_type=>'NUMBER'
 ,p_display_text_as=>'HIDDEN_ESCAPE_SC'
 ,p_heading_alignment=>'RIGHT'
@@ -2769,20 +2866,20 @@ wwv_flow_imp_page.create_worksheet_column(
 );
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000203)
-,p_db_column_name=>'EVENT_TS'
-,p_display_order=>2
+,p_db_column_name=>'DROP_BOX_UPDATED_ON'
+,p_display_order=>10
 ,p_column_identifier=>'B'
-,p_column_label=>'Event Time'
+,p_column_label=>'Drop Box Updated'
 ,p_column_type=>'DATE'
 ,p_heading_alignment=>'LEFT'
-,p_format_mask=>'DD-Mon-YYYY'
+,p_format_mask=>'DD-Mon-YYYY HH24:MI:SS'
 ,p_tz_dependent=>'N'
 ,p_use_as_row_header=>'N'
 );
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000204)
 ,p_db_column_name=>'LOCATION_CODE'
-,p_display_order=>3
+,p_display_order=>2
 ,p_column_identifier=>'C'
 ,p_column_label=>'Location Code'
 ,p_column_link=>'f?p=&APP_ID.:3:&APP_SESSION.::&DEBUG.:RP:P3_DROP_LOCATION_ID:#DROP_LOCATION_ID#'
@@ -2794,7 +2891,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000205)
 ,p_db_column_name=>'LOCATION_DISPLAY_NAME'
-,p_display_order=>4
+,p_display_order=>3
 ,p_column_identifier=>'D'
 ,p_column_label=>'Location Name'
 ,p_column_type=>'STRING'
@@ -2816,7 +2913,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000207)
 ,p_db_column_name=>'DROP_JOB_ID'
-,p_display_order=>6
+,p_display_order=>4
 ,p_column_identifier=>'F'
 ,p_column_label=>'Job ID'
 ,p_column_link=>'f?p=&APP_ID.:4:&APP_SESSION.::&DEBUG.:RP:P4_DROP_JOB_ID:#DROP_JOB_ID#'
@@ -2829,7 +2926,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000208)
 ,p_db_column_name=>'SOURCE_FILENAME'
-,p_display_order=>7
+,p_display_order=>5
 ,p_column_identifier=>'G'
 ,p_column_label=>'Source Filename'
 ,p_column_type=>'STRING'
@@ -2839,7 +2936,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000209)
 ,p_db_column_name=>'SOURCE_PATH'
-,p_display_order=>8
+,p_display_order=>6
 ,p_column_identifier=>'H'
 ,p_column_label=>'Source Path'
 ,p_column_type=>'STRING'
@@ -2849,7 +2946,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000212)
 ,p_db_column_name=>'DROP_BOX_STATE'
-,p_display_order=>9
+,p_display_order=>12
 ,p_column_identifier=>'K'
 ,p_column_label=>'Drop Box State'
 ,p_column_type=>'STRING'
@@ -2859,7 +2956,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000213)
 ,p_db_column_name=>'CORE_REQUEST_ID'
-,p_display_order=>10
+,p_display_order=>14
 ,p_column_identifier=>'L'
 ,p_column_label=>'Core Request ID'
 ,p_column_type=>'NUMBER'
@@ -2870,7 +2967,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000214)
 ,p_db_column_name=>'CORE_STATE'
-,p_display_order=>11
+,p_display_order=>15
 ,p_column_identifier=>'M'
 ,p_column_label=>'Core State'
 ,p_column_type=>'STRING'
@@ -2880,7 +2977,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000215)
 ,p_db_column_name=>'CORE_STATE_LABEL'
-,p_display_order=>12
+,p_display_order=>16
 ,p_column_identifier=>'N'
 ,p_column_label=>'Core State Label'
 ,p_column_type=>'STRING'
@@ -2890,7 +2987,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000216)
 ,p_db_column_name=>'CORE_ACCEPTED_ON'
-,p_display_order=>13
+,p_display_order=>17
 ,p_column_identifier=>'O'
 ,p_column_label=>'Core Accepted'
 ,p_column_type=>'DATE'
@@ -2902,7 +2999,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000217)
 ,p_db_column_name=>'CORE_CLAIMED_ON'
-,p_display_order=>14
+,p_display_order=>18
 ,p_column_identifier=>'P'
 ,p_column_label=>'Core Claimed'
 ,p_column_type=>'DATE'
@@ -2914,7 +3011,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000218)
 ,p_db_column_name=>'CORE_COMPLETED_ON'
-,p_display_order=>15
+,p_display_order=>20
 ,p_column_identifier=>'Q'
 ,p_column_label=>'Core Completed'
 ,p_column_type=>'DATE'
@@ -2926,7 +3023,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000219)
 ,p_db_column_name=>'DOCUMENT_ID'
-,p_display_order=>16
+,p_display_order=>24
 ,p_column_identifier=>'R'
 ,p_column_label=>'Document ID'
 ,p_column_type=>'NUMBER'
@@ -2937,7 +3034,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000221)
 ,p_db_column_name=>'DOCUMENT_VERSION_ID'
-,p_display_order=>17
+,p_display_order=>25
 ,p_column_identifier=>'S'
 ,p_column_label=>'Revision ID'
 ,p_column_type=>'NUMBER'
@@ -2948,7 +3045,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000222)
 ,p_db_column_name=>'CHUNK_COUNT'
-,p_display_order=>18
+,p_display_order=>22
 ,p_column_identifier=>'T'
 ,p_column_label=>'Chunks'
 ,p_column_type=>'NUMBER'
@@ -2959,7 +3056,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000223)
 ,p_db_column_name=>'EMBEDDED_CHUNK_COUNT'
-,p_display_order=>19
+,p_display_order=>23
 ,p_column_identifier=>'U'
 ,p_column_label=>'Embedded Chunks'
 ,p_column_type=>'NUMBER'
@@ -2970,7 +3067,7 @@ wwv_flow_imp_page.create_worksheet_column(
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000224)
 ,p_db_column_name=>'SEARCHABLE_YN'
-,p_display_order=>20
+,p_display_order=>21
 ,p_column_identifier=>'V'
 ,p_column_label=>'Searchable'
 ,p_column_type=>'STRING'
@@ -2979,32 +3076,82 @@ wwv_flow_imp_page.create_worksheet_column(
 );
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000225)
-,p_db_column_name=>'LATEST_CORE_ERROR'
-,p_display_order=>21
+,p_db_column_name=>'CORE_ERROR_SUMMARY_REDACTED'
+,p_display_order=>26
 ,p_column_identifier=>'W'
-,p_column_label=>'Latest Core Error'
+,p_column_label=>'Redacted Core Error'
 ,p_column_type=>'STRING'
 ,p_heading_alignment=>'LEFT'
 ,p_use_as_row_header=>'N'
 );
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600500000000210)
-,p_db_column_name=>'EVENT_TYPE'
-,p_display_order=>22
+,p_db_column_name=>'DROP_BOX_DETECTED_ON'
+,p_display_order=>7
 ,p_column_identifier=>'I'
-,p_column_label=>'Event Type'
+,p_column_label=>'Drop Box Detected'
+,p_column_type=>'DATE'
+,p_heading_alignment=>'LEFT'
+,p_format_mask=>'DD-Mon-YYYY HH24:MI:SS'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000211)
+,p_db_column_name=>'DROP_BOX_ERROR_SUMMARY_REDACTED'
+,p_display_order=>13
+,p_column_identifier=>'J'
+,p_column_label=>'Redacted Drop Box Error'
 ,p_column_type=>'STRING'
 ,p_heading_alignment=>'LEFT'
 ,p_use_as_row_header=>'N'
 );
 wwv_flow_imp_page.create_worksheet_column(
- p_id=>wwv_flow_imp.id(34600500000000211)
-,p_db_column_name=>'EVENT_MESSAGE'
-,p_display_order=>23
-,p_column_identifier=>'J'
-,p_column_label=>'Message'
-,p_column_type=>'STRING'
+ p_id=>wwv_flow_imp.id(34600500000000226)
+,p_db_column_name=>'DROP_BOX_STABLE_ON'
+,p_display_order=>8
+,p_column_identifier=>'X'
+,p_column_label=>'Drop Box Stable'
+,p_column_type=>'DATE'
 ,p_heading_alignment=>'LEFT'
+,p_format_mask=>'DD-Mon-YYYY HH24:MI:SS'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000227)
+,p_db_column_name=>'DROP_BOX_STARTED_ON'
+,p_display_order=>9
+,p_column_identifier=>'Y'
+,p_column_label=>'Drop Box Started'
+,p_column_type=>'DATE'
+,p_heading_alignment=>'LEFT'
+,p_format_mask=>'DD-Mon-YYYY HH24:MI:SS'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000228)
+,p_db_column_name=>'DROP_BOX_COMPLETED_ON'
+,p_display_order=>11
+,p_column_identifier=>'Z'
+,p_column_label=>'Drop Box Completed'
+,p_column_type=>'DATE'
+,p_heading_alignment=>'LEFT'
+,p_format_mask=>'DD-Mon-YYYY HH24:MI:SS'
+,p_tz_dependent=>'N'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000229)
+,p_db_column_name=>'CORE_LATEST_EVENT_ON'
+,p_display_order=>19
+,p_column_identifier=>'AA'
+,p_column_label=>'Core Latest Event'
+,p_column_type=>'DATE'
+,p_heading_alignment=>'LEFT'
+,p_format_mask=>'DD-Mon-YYYY HH24:MI:SS'
+,p_tz_dependent=>'N'
 ,p_use_as_row_header=>'N'
 );
 wwv_flow_imp_page.create_worksheet_rpt(
@@ -3014,9 +3161,33 @@ wwv_flow_imp_page.create_worksheet_rpt(
 ,p_report_alias=>'346051'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'EVENT_TS:LOCATION_CODE:LOCATION_DISPLAY_NAME:DROP_JOB_ID:SOURCE_FILENAME:DROP_BOX_STATE:CORE_REQUEST_ID:CORE_STATE_LABEL:CORE_ACCEPTED_ON:CORE_CLAIMED_ON:CORE_COMPLETED_ON:DOCUMENT_ID:DOCUMENT_VERSION_ID:CHUNK_COUNT:EMBEDDED_CHUNK_COUNT:SEARCHABLE_YN:LATEST_CORE_ERROR:SOURCE_PATH:EVENT_MESSAGE:'
-,p_sort_column_1=>'EVENT_TS'
+,p_report_columns=>'LOCATION_CODE:LOCATION_DISPLAY_NAME:DROP_JOB_ID:SOURCE_FILENAME:SOURCE_PATH:DROP_BOX_DETECTED_ON:DROP_BOX_STABLE_ON:DROP_BOX_STARTED_ON:DROP_BOX_UPDATED_ON:DROP_BOX_COMPLETED_ON:DROP_BOX_STATE:DROP_BOX_ERROR_SUMMARY_REDACTED:CORE_REQUEST_ID:CORE_STATE_LABEL:CORE_ACCEPTED_ON:CORE_CLAIMED_ON:CORE_LATEST_EVENT_ON:CORE_COMPLETED_ON:SEARCHABLE_YN:CHUNK_COUNT:EMBEDDED_CHUNK_COUNT:DOCUMENT_ID:DOCUMENT_VERSION_ID:CORE_ERROR_SUMMARY_REDACTED:'
+,p_sort_column_1=>'DROP_BOX_UPDATED_ON'
 ,p_sort_direction_1=>'DESC'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(34600500000000302)
+,p_button_sequence=>10
+,p_button_plug_id=>wwv_flow_imp.id(34600500000000101)
+,p_button_name=>'BACK_TO_LOCATIONS'
+,p_button_action=>'REDIRECT_PAGE'
+,p_button_template_options=>'t-Button--iconLeft'
+,p_button_template_id=>2082829544945815391
+,p_button_image_alt=>'Back to Locations'
+,p_button_position=>'RIGHT_OF_IR_SEARCH_BAR'
+,p_button_redirect_url=>'f?p=&APP_ID.:1:&APP_SESSION.::&DEBUG.:::'
+,p_icon_css_classes=>'fa-arrow-left'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(34600500000000301)
+,p_name=>'P5_DROP_LOCATION_ID'
+,p_item_sequence=>10
+,p_item_plug_id=>wwv_flow_imp.id(34600500000000101)
+,p_display_as=>'NATIVE_HIDDEN'
+,p_is_persistent=>'N'
+,p_protection_level=>'S'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'N')).to_clob
 );
 end;
 /

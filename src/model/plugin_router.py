@@ -333,6 +333,7 @@ class PluginRouter:
                         audit_session=audit_session,
                         event_type="execution_failed",
                         execution_status="failed",
+                        timeout_seconds=self._execution_timeout_seconds,
                         failure_type=type(exc.original).__name__,
                         failure_message=f"Plugin execution failed during {exc.stage}.",
                         provenance_json=policy_decision.provenance,
@@ -444,6 +445,7 @@ class PluginRouter:
                     audit_session=audit_session,
                     event_type="execution_failed",
                     execution_status="denied",
+                    timeout_seconds=self._execution_timeout_seconds,
                     failure_type="can_handle_declined",
                     failure_message="Plugin declined prompt during can_handle.",
                     provenance_json=(
@@ -458,6 +460,7 @@ class PluginRouter:
             audit_session=audit_session,
             event_type="execution_started",
             execution_status="execution_started",
+            timeout_seconds=self._execution_timeout_seconds,
             provenance_json=policy_decision.provenance if policy_decision is not None else None,
         )
 
@@ -471,6 +474,7 @@ class PluginRouter:
                 audit_session=audit_session,
                 event_type="execution_failed",
                 execution_status="failed",
+                timeout_seconds=self._execution_timeout_seconds,
                 failure_type=type(exc).__name__,
                 failure_message="Plugin execution failed during execute.",
                 provenance_json=policy_decision.provenance if policy_decision is not None else None,
@@ -482,6 +486,7 @@ class PluginRouter:
                 audit_session=audit_session,
                 event_type="execution_completed",
                 execution_status="completed",
+                timeout_seconds=self._execution_timeout_seconds,
                 provenance_json=policy_decision.provenance if policy_decision is not None else None,
             )
         return result
@@ -583,6 +588,7 @@ class PluginRouter:
                 auth_user=auth_user,
             ),
             policy_decision=policy_decision.status,
+            timeout_seconds=self._execution_timeout_seconds,
         )
 
     def _record_policy_outcome(

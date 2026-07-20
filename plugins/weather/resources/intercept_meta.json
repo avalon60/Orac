@@ -70,6 +70,7 @@
       "match_type": "regex",
       "priority": 100,
       "patterns": [
+        "^(?:what is|what's) (?P<time_phrase>tomorrow morning|tomorrow|today|tonight|this evening)'s weather in (?P<location>.+?)$",
         "^(?:what is|what's) (?:the )?forecast for (?P<location>.+?)(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$",
         "^forecast for (?P<location>.+?)(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$",
         "^(?:give me )?(?:the )?outlook for (?P<location>.+?)(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$",

@@ -14,7 +14,11 @@ The `[retrieval]` section controls when online evidence may be requested:
 | `suggest_search` | Ask before searching when freshness is detected. |
 | `auto_safe` | Search automatically for high-confidence current-information requests. |
 
-The shipped mode is `explicit_only`.
+The shipped mode is `explicit_only`. In that mode, merely asking about a topic
+that may be current does not promise an automatic web search. Direct commands
+such as `Search the web for ...` select the internet route before plugin
+interception, but still pass through this policy and can be refused when
+retrieval is disabled.
 
 ## SearXNG
 
@@ -109,6 +113,11 @@ Orac validates search and fetch targets before use. The current retrieval path:
 
 When the provider is unavailable or evidence cannot be fetched safely, Orac
 fails closed instead of fabricating retrieved evidence.
+
+Local ingested knowledge is a separate evidence source with separate
+provenance. It reuses the normal dialogue pipeline rather than replacing this
+SearXNG stack. Combined local and internet evidence is not part of the first
+release. See [Dialogue Routing](dialogue-routing.md).
 
 Person-fact corroboration and recent-death handling are configured under
 `[retrieval.person_facts]`. See [Configuration Parameters](configuration.md).
