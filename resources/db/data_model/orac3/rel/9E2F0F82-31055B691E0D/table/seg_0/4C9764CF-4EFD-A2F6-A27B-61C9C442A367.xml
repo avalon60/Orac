@@ -1,0 +1,332 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<Table class="oracle.dbtools.crest.model.design.relational.Table" directorySegmentName="seg_0" id="4C9764CF-4EFD-A2F6-A27B-61C9C442A367" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="PLUGIN_AUDIT_EVENTS">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Append-only plugin audit lifecycle event stream linked to plugin invocation summaries.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>9B125788-5876-906A-BF22-0146792816D6</importedID>
+<allowColumnReorder>false</allowColumnReorder>
+<existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
+<parsed>true</parsed>
+<columns itemClass="oracle.dbtools.crest.model.design.relational.Column">
+<Column name="PLUGIN_AUDIT_EVENT_ID" id="5278A486-FA29-D558-7A7E-9A7AF4FE7712">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Primary key for plugin audit lifecycle events.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>92B4C6F8-AD48-0B46-0765-E3DF5779BBB6</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementColumn>true</autoIncrementColumn>
+<identityColumn>true</identityColumn>
+<defaultOntNull>true</defaultOntNull>
+<autoIncrementCycle>false</autoIncrementCycle>
+<autoIncrementDisableCache>false</autoIncrementDisableCache>
+<autoIncrementCache>20</autoIncrementCache>
+<autoIncrementOrder>false</autoIncrementOrder>
+</Column>
+<Column name="PLUGIN_INVOCATION_ID" id="09C1124A-A356-BB8E-B3CC-CC8A06A4CF3E">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Plugin invocation summary row associated with this event.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>C1E904F1-57B4-E8C8-C86A-964738624DEF</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+<associations>
+<colAssociation fkAssociation="FE856FCA-9399-40BB-1F34-5E508ACB03D6" referredColumn="EA1CA518-8BAA-1FA6-CE5D-982B2B8FCF45"/>
+</associations>
+</Column>
+<Column name="EVENT_TYPE" id="5E9F96FD-049E-8DCC-C1BB-35FCBC5D1A66">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Lifecycle event type recorded by Orac core.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>2FA1B8D3-8263-EDDC-7639-BB062A1DFD1F</importedID>
+<constraintName>PLG_AUDEVT_CK1</constraintName>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>64 CHAR</dataTypeSize>
+<listOfValues>
+<valueDef value="&apos;candidate_selected&apos;" description=""/>
+<valueDef value="&apos;confirmation_accepted&apos;" description=""/>
+<valueDef value="&apos;confirmation_expired&apos;" description=""/>
+<valueDef value="&apos;confirmation_issued&apos;" description=""/>
+<valueDef value="&apos;confirmation_mismatched&apos;" description=""/>
+<valueDef value="&apos;confirmation_rejected&apos;" description=""/>
+<valueDef value="&apos;confirmation_replay_rejected&apos;" description=""/>
+<valueDef value="&apos;confirmation_required&apos;" description=""/>
+<valueDef value="&apos;execution_completed&apos;" description=""/>
+<valueDef value="&apos;execution_failed&apos;" description=""/>
+<valueDef value="&apos;execution_started&apos;" description=""/>
+<valueDef value="&apos;execution_timed_out&apos;" description=""/>
+<valueDef value="&apos;policy_evaluated&apos;" description=""/>
+</listOfValues>
+<ownDataTypeParameters>64 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="EVENT_STATUS" id="156B55E2-8B8F-5FDB-FBA7-CD1F22100ED6">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Event-local status when distinct from execution status.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>3D29AB89-D1BB-E03E-A16D-CD1993BCE9FF</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>64 CHAR</dataTypeSize>
+<ownDataTypeParameters>64 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="EVENT_MESSAGE" id="FDE880AF-A980-CDAA-0613-4E7732CF654E">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Safe event message, not a raw exception or stack trace.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>3EDB3058-EFAD-DEF6-257B-C5DC248E2BAE</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>1000 CHAR</dataTypeSize>
+<ownDataTypeParameters>1000 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="POLICY_DECISION" id="2B730D01-E504-7D27-30BA-B92C08F6C757">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Policy decision associated with this event when applicable.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>F7BAD2B0-3F18-6A76-1887-C74B21D7A85D</importedID>
+<constraintName>PLG_AUDEVT_CK2</constraintName>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>64 CHAR</dataTypeSize>
+<checkConstraint>
+<implementationDef dbType="Generic Constraint" definition="policy_decision is null"/>
+<implementationDef dbType="Oracle Database 21c" definition="policy_decision is null"/>
+</checkConstraint>
+<listOfValues>
+<valueDef value="&apos;allowed&apos;" description=""/>
+<valueDef value="&apos;denied&apos;" description=""/>
+<valueDef value="&apos;requires_confirmation&apos;" description=""/>
+</listOfValues>
+<ownDataTypeParameters>64 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CONFIRMATION_ID" id="4EF66CB1-15B7-599B-9C93-3759A8EAFFB5">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Trusted confirmation broker identifier associated with this event.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>5EA84CC3-D53E-86B9-AFFF-68D4715E001E</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 CHAR</dataTypeSize>
+<ownDataTypeParameters>128 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="EXECUTION_STATUS" id="5DBA2004-2245-7C11-CA20-CE41CC988318">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Invocation execution status associated with this event when applicable.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>78D30B5C-41B4-7B3F-DE1D-23C68FC36CC6</importedID>
+<constraintName>PLG_AUDEVT_CK3</constraintName>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>64 CHAR</dataTypeSize>
+<checkConstraint>
+<implementationDef dbType="Generic Constraint" definition="execution_status is null"/>
+<implementationDef dbType="Oracle Database 21c" definition="execution_status is null"/>
+</checkConstraint>
+<listOfValues>
+<valueDef value="&apos;candidate_selected&apos;" description=""/>
+<valueDef value="&apos;completed&apos;" description=""/>
+<valueDef value="&apos;confirmation_accepted&apos;" description=""/>
+<valueDef value="&apos;confirmation_expired&apos;" description=""/>
+<valueDef value="&apos;confirmation_issued&apos;" description=""/>
+<valueDef value="&apos;confirmation_mismatched&apos;" description=""/>
+<valueDef value="&apos;confirmation_rejected&apos;" description=""/>
+<valueDef value="&apos;confirmation_replay_rejected&apos;" description=""/>
+<valueDef value="&apos;confirmation_required&apos;" description=""/>
+<valueDef value="&apos;denied&apos;" description=""/>
+<valueDef value="&apos;execution_started&apos;" description=""/>
+<valueDef value="&apos;failed&apos;" description=""/>
+<valueDef value="&apos;policy_evaluated&apos;" description=""/>
+<valueDef value="&apos;timed_out&apos;" description=""/>
+</listOfValues>
+<ownDataTypeParameters>64 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="FAILURE_TYPE" id="816BB30C-B4BA-D07A-ACB0-8C7FD9B3CD19">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Safe failure category associated with this event.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>67E07026-C6A6-C6D5-8293-3F74D781BE01</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 CHAR</dataTypeSize>
+<ownDataTypeParameters>128 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="FAILURE_MESSAGE" id="1439E8A4-7F4E-24BF-01A4-3494AC253A74">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Safe failure summary associated with this event.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>9FDFFDE1-2875-B965-D43B-5FC4A06CBBF5</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>1000 CHAR</dataTypeSize>
+<ownDataTypeParameters>1000 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="EVENT_PAYLOAD_JSON" id="264A0BE9-D111-4892-746E-8113994A8B9B">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Structured event payload or provenance snapshot for forward compatibility.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>69CE24B5-B3EA-C95B-B5A9-CF3EC656CD5C</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>47823B89-BECE-2D4A-B641-EE3BE6149078</logicalDatatype>
+<dataTypeSize>8200</dataTypeSize>
+<ownDataTypeParameters>8200,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_ON" id="36A7ECDF-7B94-8A64-013B-015B183958EB">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>83C31287-C26A-E1BE-5EA6-AB3666B6F58E</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<defaultValue>systimestamp</defaultValue>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_BY" id="F7BEAFC5-8318-83AF-3E5D-874F5583ABBF">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>8088716B-BEB1-C6F4-DA9C-209E29EED8E1</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 CHAR</dataTypeSize>
+<defaultValue>coalesce(
+                          sys_context(&apos;apex$session&apos;, &apos;app_user&apos;),
+                          sys_context(&apos;userenv&apos;, &apos;proxy_user&apos;),
+                          sys_context(&apos;userenv&apos;, &apos;session_user&apos;),
+                          user
+                        )</defaultValue>
+<ownDataTypeParameters>128 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_ON" id="AFCA4044-0FF9-C668-B80B-D5FA1C5CE305">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>72D0CA3C-3A19-76AA-E108-FACF13FE6AA3</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_BY" id="CFD932AE-016D-1F87-B994-0356F82D9E7C">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>D728CF37-2C16-1B4D-BEC6-CD9BE066DE7B</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 CHAR</dataTypeSize>
+<ownDataTypeParameters>128 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="ROW_VERSION" id="CB8D1834-7DC3-F291-287E-0E32E97A5CFF">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>AA869B90-25E5-753E-BD38-AD6E5F2C8702</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<defaultValue>1</defaultValue>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+</columns>
+<indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
+<ind_PK_UK id="DC7E9513-751F-9A28-DEF5-3531FE04784F" name="PLG_AUDEVT_PK">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>4E546A36-FFDC-1BC2-5CBF-F3E7A7BE98A5</importedID>
+<pk>true</pk>
+<indexState>Primary Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="5278A486-FA29-D558-7A7E-9A7AF4FE7712"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="3B25148D-58B2-933C-BACB-B40D27A35148" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="PLG_AUDEVT_PK">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>15DA5467-7AFD-10A5-8E2D-1998DF75512B</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="5278A486-FA29-D558-7A7E-9A7AF4FE7712"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="199B3DB0-4838-4439-081E-141D4BB7C159" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="PLG_AUDEVT_PLG_INV_FK1_IDX">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>B2680C57-63DD-DD11-D8B4-C1414D523258</importedID>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="09C1124A-A356-BB8E-B3CC-CC8A06A4CF3E"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="2EAEE31B-CE69-4EFE-C2C2-62B4E8C01507" name="PLG_AUDEVT_PLG_INV_FK1">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<indexState>Foreign Key</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="09C1124A-A356-BB8E-B3CC-CC8A06A4CF3E"/>
+</indexColumnUsage>
+</ind_PK_UK>
+</indexes>
+</Table>

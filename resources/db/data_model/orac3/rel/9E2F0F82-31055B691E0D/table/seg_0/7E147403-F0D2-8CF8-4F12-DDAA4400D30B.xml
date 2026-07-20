@@ -127,6 +127,7 @@
 <valueDef value="&apos;radio_group&apos;" description=""/>
 <valueDef value="&apos;select_list&apos;" description=""/>
 <valueDef value="&apos;select_one&apos;" description=""/>
+<valueDef value="&apos;slider&apos;" description=""/>
 <valueDef value="&apos;switch&apos;" description=""/>
 <valueDef value="&apos;text&apos;" description=""/>
 <valueDef value="&apos;textarea&apos;" description=""/>
@@ -499,6 +500,75 @@
 <ownDataTypeParameters>,,</ownDataTypeParameters>
 <autoIncrementCycle>false</autoIncrementCycle>
 </Column>
+<Column name="STEP_NUMBER" id="6E658590-B424-5D23-CB64-3DF3A13E6895">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Optional numeric increment used by slider rendering and server-side step validation.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>09B41D4E-8B91-472A-83F3-29C3486F4436</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UNIT_LABEL" id="B5077F1B-03C0-C70F-3673-CD8BEED080EA">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Optional display suffix for numeric controls, such as tokens or percent.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>A0F13F90-3DE7-AE7C-AA98-017BE4BD2319</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>50 BYTE</dataTypeSize>
+<ownDataTypeParameters>50 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="DISPLAY_MIN_LABEL" id="F382B5EE-5871-A8CB-9C5E-E1872647B798">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Optional label shown beside the minimum value for slider controls.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>CF0134CD-D1CA-5093-D883-7B510698DF4D</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>100 BYTE</dataTypeSize>
+<ownDataTypeParameters>100 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="DISPLAY_MAX_LABEL" id="4D7BB681-CF3C-10FF-D9D0-2B88F9DC7EB0">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Optional label shown beside the maximum value for slider controls.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>4117BAC5-408E-7422-EBA3-FFA68F47CA2F</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>100 BYTE</dataTypeSize>
+<ownDataTypeParameters>100 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="DISPLAY_VALUE_FORMAT" id="FB40D391-A0AB-CB5E-1F22-696F9021FE29">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Optional UI formatting hint for displaying numeric preference values.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>317E28D6-4202-C658-1A10-54A181157E6E</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>100 BYTE</dataTypeSize>
+<ownDataTypeParameters>100 BYTE,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
 </columns>
 <indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
 <ind_PK_UK id="DF9C2373-2D5B-2AF6-0B95-504594CF72DA" name="PRFDFN_PK">
@@ -559,4 +629,24 @@
 </indexColumnUsage>
 </ind_PK_UK>
 </indexes>
+<tableCheckConstraints itemClass="oracle.dbtools.crest.model.design.constraint.TableLevelConstraint">
+<tableCheckConstraint name="PRFDFN_CK7" directorySegmentName="seg_0" id="55B36508-B545-C097-6DF0-1F40E6776EA9">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>A79AB6A2-0B7C-4155-2304-3AF6B716D4A6</importedID>
+<rule><![CDATA[
+    control_type <> 'slider'
+    or
+    (
+      value_type = 'number'
+      and min_number is not null
+      and max_number is not null
+      and step_number is not null
+      and step_number > 0
+      and min_number <= max_number
+    )
+  ]]></rule>
+</tableCheckConstraint>
+</tableCheckConstraints>
 </Table>

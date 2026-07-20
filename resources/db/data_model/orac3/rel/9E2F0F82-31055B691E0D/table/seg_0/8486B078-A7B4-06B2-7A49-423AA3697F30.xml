@@ -1,0 +1,260 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<Table class="oracle.dbtools.crest.model.design.relational.Table" directorySegmentName="seg_0" id="8486B078-A7B4-06B2-7A49-423AA3697F30" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="KNOWLEDGE_CHUNKS">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Text chunks produced for retrieval and embedding.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>BF867B56-590D-0244-E7A6-7361086B35F8</importedID>
+<allowColumnReorder>false</allowColumnReorder>
+<existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
+<parsed>true</parsed>
+<columns itemClass="oracle.dbtools.crest.model.design.relational.Column">
+<Column name="CHUNK_ID" id="074FC0CB-9474-6A41-F3A1-D44A46952C67">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>BD98D15A-93FC-B407-F2AF-1DC4784ECC88</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementColumn>true</autoIncrementColumn>
+<identityColumn>true</identityColumn>
+<defaultOntNull>true</defaultOntNull>
+<autoIncrementCycle>false</autoIncrementCycle>
+<autoIncrementDisableCache>false</autoIncrementDisableCache>
+<autoIncrementCache>20</autoIncrementCache>
+<autoIncrementOrder>false</autoIncrementOrder>
+</Column>
+<Column name="CHUNK_SET_ID" id="D9B4B6F3-D8D8-4EB1-4B5E-6B2E05D8CBC0">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>CE44368C-1D2B-ED31-A7EA-19175941EF33</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+<associations>
+<colAssociation fkAssociation="4F4D8219-A4D0-CBE9-E7DF-BECA4F7B4FD5" referredColumn="A0E9E00F-4782-0D58-3E00-0EDFD9273E3A"/>
+</associations>
+</Column>
+<Column name="CHUNK_NO" id="6640C19D-B391-DAF1-9FBC-021E360A1FD4">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>1F87CBFD-6D17-D4B5-D621-1E97299A6EC7</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="SPAN_START" id="1AAA786F-9145-84F5-E187-2FD5A9D719A0">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>F06144E2-EA0F-2829-7361-533BF6C9B2C8</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="SPAN_END" id="7F84C576-34EB-5CE9-F19F-55E9C5713888">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>77260C9D-1A58-032C-B439-0C5FAE8927DC</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="TOKEN_COUNT" id="43EF9052-E9CA-0545-368F-DC42E820D6B5">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>D266C329-7E65-680E-6838-BD1432AB5B00</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<defaultValue>0</defaultValue>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CONTENT_SHA256" id="5EDAA78D-A338-A23C-7FAD-6B57DC05358F">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>5AB9971F-269E-7000-7EB8-8004461DA547</importedID>
+<constraintName>KN_CHNK_HASH_CK</constraintName>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>64 CHAR</dataTypeSize>
+<checkConstraint>
+<implementationDef dbType="Generic Constraint" definition="regexp_like(content_sha256, &apos;^[0-9a-f]{64}$&apos;)"/>
+<implementationDef dbType="Oracle Database 21c" definition="regexp_like(content_sha256, &apos;^[0-9a-f]{64}$&apos;)"/>
+</checkConstraint>
+<ownDataTypeParameters>64 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CHUNK_TEXT" id="970B9B20-9470-F365-505A-1EB6F0C5C275">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>E0F5119F-1DEE-7A35-2FBE-055D27E059FE</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT028</logicalDatatype>
+<dataTypeSize>4000</dataTypeSize>
+<ownDataTypeParameters>4000,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_BY" id="C501AAF8-A546-DDDE-077C-9849F0E17F69">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>094E664B-D4A3-609C-FB91-2A4DA46D7802</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 CHAR</dataTypeSize>
+<defaultValue>coalesce(
+                   sys_context(&apos;apex$session&apos;, &apos;app_user&apos;),
+                   sys_context(&apos;userenv&apos;, &apos;proxy_user&apos;),
+                   sys_context(&apos;userenv&apos;, &apos;session_user&apos;),
+                   user
+                 )</defaultValue>
+<ownDataTypeParameters>128 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_ON" id="2E50AC34-431C-7751-CCA7-3F0153C74D46">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>CF21DCE2-19CB-411C-792F-1AFEB8D50946</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT046</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<defaultValue>systimestamp</defaultValue>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_BY" id="F706A94B-B18C-412B-FEFA-3E686E433221">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>32827A3F-2367-24FB-8D8A-D7D3CAEACCF0</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 CHAR</dataTypeSize>
+<defaultValue>coalesce(
+                   sys_context(&apos;apex$session&apos;, &apos;app_user&apos;),
+                   sys_context(&apos;userenv&apos;, &apos;proxy_user&apos;),
+                   sys_context(&apos;userenv&apos;, &apos;session_user&apos;),
+                   user
+                 )</defaultValue>
+<ownDataTypeParameters>128 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="UPDATED_ON" id="232FDAA0-8850-2210-6821-64DAACE0EFDF">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>69FD7622-BD3D-7744-4B7D-C6DEEC827516</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT046</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<defaultValue>systimestamp</defaultValue>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="ROW_VERSION" id="2BC9585C-E5AF-2D21-43B7-D744137ED9DB">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>D59D15FB-E208-D5E7-FA42-FC076EE12E6D</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<defaultValue>1</defaultValue>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+</columns>
+<indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
+<ind_PK_UK id="57F353AB-71EB-FD41-4CAB-89E7B95EF595" name="KN_CHNK_PK">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>C830EDDC-88D5-8BA3-8002-CB5F01EC9006</importedID>
+<pk>true</pk>
+<indexState>Primary Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="074FC0CB-9474-6A41-F3A1-D44A46952C67"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="87399255-4E04-0E77-6834-7527C6F6AF2E" name="KN_CHNK_UK1">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>1F7B89AE-20E7-2475-7146-978BE15A3FB8</importedID>
+<indexState>Unique Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="D9B4B6F3-D8D8-4EB1-4B5E-6B2E05D8CBC0"/>
+<colUsage columnID="6640C19D-B391-DAF1-9FBC-021E360A1FD4"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="8AC86955-0864-0773-1495-CDC345BF27B0" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="KN_CHNK_PK">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>6F30E3EF-A4EE-B25B-5728-A2D544690306</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="074FC0CB-9474-6A41-F3A1-D44A46952C67"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="CFDE3A32-DB88-6B10-119E-DF18632A0393" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="KN_CHNK_UK1_IDX">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>6A906EC6-198A-A038-1B1B-8CB9674AB01B</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="D9B4B6F3-D8D8-4EB1-4B5E-6B2E05D8CBC0"/>
+<colUsage columnID="6640C19D-B391-DAF1-9FBC-021E360A1FD4"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="AFA34B12-4BAD-B411-A1AF-512EEF202FC1" name="KN_CHNK_KN_CHSET_FK1">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<indexState>Foreign Key</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="D9B4B6F3-D8D8-4EB1-4B5E-6B2E05D8CBC0"/>
+</indexColumnUsage>
+</ind_PK_UK>
+</indexes>
+<tableCheckConstraints itemClass="oracle.dbtools.crest.model.design.constraint.TableLevelConstraint">
+<tableCheckConstraint name="KN_CHNK_SPAN_CK" directorySegmentName="seg_0" id="05E555D3-2D80-073D-A67C-982EE392D1A4">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>EA0F5664-9358-1F25-3B4B-5709F6F4BF3A</importedID>
+<rule><![CDATA[chunk_no > 0 and span_start >= 0 and span_end >= span_start and token_count >= 0]]></rule>
+</tableCheckConstraint>
+</tableCheckConstraints>
+</Table>

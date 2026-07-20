@@ -1,0 +1,17 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<FKIndexAssociation class="oracle.dbtools.crest.model.design.relational.FKIndexAssociation" directorySegmentName="seg_0" id="FE856FCA-9399-40BB-1F34-5E508ACB03D6" containerWithKeyObject="4C9764CF-4EFD-A2F6-A27B-61C9C442A367" localFKIndex="2EAEE31B-CE69-4EFE-C2C2-62B4E8C01507" name="PLG_AUDEVT_PLG_INV_FK1">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>2F516E01-4A3E-ED54-CDC7-D91A85945821</importedID>
+<referredTableLongName>orac_core.PLUGIN_INVOCATIONS</referredTableLongName>
+<deleteRule>NO ACTION</deleteRule>
+<referredTableID>6D287955-60CF-35A7-5F55-12DC2257D7D8</referredTableID>
+<keyObject>9C84E5BE-A07E-8C7E-18A7-1B1D2EA3B468</keyObject>
+<referredKeyID>9C84E5BE-A07E-8C7E-18A7-1B1D2EA3B468</referredKeyID>
+<mandatory>true</mandatory>
+<refColNames>PLUGIN_INVOCATION_ID</refColNames>
+<transferable>true</transferable>
+<rely>false</rely>
+<columnDependencyConstraintGenerateInDDL>true</columnDependencyConstraintGenerateInDDL>
+</FKIndexAssociation>

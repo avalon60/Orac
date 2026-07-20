@@ -294,17 +294,17 @@ Key uses: Allows per-user customisation of behaviour, UI, and defaults without a
 <rule><![CDATA[
     (
       value_type = 'string'
-      and json_value(pref_value, '$' returning varchar2(4000) null on error) is not null
+      and json_exists(pref_value, '$?(@.type() == "string")')
     )
     or
     (
       value_type = 'number'
-      and json_value(pref_value, '$' returning number null on error) is not null
+      and json_exists(pref_value, '$?(@.type() == "number")')
     )
     or
     (
       value_type = 'boolean'
-      and lower(json_value(pref_value, '$' returning varchar2(5) null on error)) in ('true', 'false')
+      and json_exists(pref_value, '$?(@.type() == "boolean")')
     )
     or
     (

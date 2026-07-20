@@ -1,0 +1,17 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<FKIndexAssociation class="oracle.dbtools.crest.model.design.relational.FKIndexAssociation" directorySegmentName="seg_0" id="C0FE2068-32B2-89E0-3050-4E8B67569363" containerWithKeyObject="ACE82E16-487E-F807-7BD1-EC7842FBE210" localFKIndex="40BE979E-AA13-F7A7-F84A-CCBC4E1E9CE9" name="KN_CHSET_KN_EXT_FK1">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>D35E101B-1FE2-E478-8B0E-12288FF9EA09</importedID>
+<referredTableLongName>orac_core.KNOWLEDGE_EXTRACTIONS</referredTableLongName>
+<deleteRule>NO ACTION</deleteRule>
+<referredTableID>8A7C7379-6310-DA3C-AF62-3F8EB1BE8DD4</referredTableID>
+<keyObject>C27F80D3-356F-73A8-D87C-D91F6C07A878</keyObject>
+<referredKeyID>C27F80D3-356F-73A8-D87C-D91F6C07A878</referredKeyID>
+<mandatory>true</mandatory>
+<refColNames>EXTRACTION_ID</refColNames>
+<transferable>true</transferable>
+<rely>false</rely>
+<columnDependencyConstraintGenerateInDDL>true</columnDependencyConstraintGenerateInDDL>
+</FKIndexAssociation>

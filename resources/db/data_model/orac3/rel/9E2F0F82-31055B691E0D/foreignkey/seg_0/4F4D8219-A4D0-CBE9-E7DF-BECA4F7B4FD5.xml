@@ -1,0 +1,17 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<FKIndexAssociation class="oracle.dbtools.crest.model.design.relational.FKIndexAssociation" directorySegmentName="seg_0" id="4F4D8219-A4D0-CBE9-E7DF-BECA4F7B4FD5" containerWithKeyObject="8486B078-A7B4-06B2-7A49-423AA3697F30" localFKIndex="AFA34B12-4BAD-B411-A1AF-512EEF202FC1" name="KN_CHNK_KN_CHSET_FK1">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>2F253639-0CB3-6B63-95B6-4B3A7880E23C</importedID>
+<referredTableLongName>orac_core.KNOWLEDGE_CHUNK_SETS</referredTableLongName>
+<deleteRule>NO ACTION</deleteRule>
+<referredTableID>ACE82E16-487E-F807-7BD1-EC7842FBE210</referredTableID>
+<keyObject>63D99D9A-10FA-05AE-6377-E8614913E97E</keyObject>
+<referredKeyID>63D99D9A-10FA-05AE-6377-E8614913E97E</referredKeyID>
+<mandatory>true</mandatory>
+<refColNames>CHUNK_SET_ID</refColNames>
+<transferable>true</transferable>
+<rely>false</rely>
+<columnDependencyConstraintGenerateInDDL>true</columnDependencyConstraintGenerateInDDL>
+</FKIndexAssociation>

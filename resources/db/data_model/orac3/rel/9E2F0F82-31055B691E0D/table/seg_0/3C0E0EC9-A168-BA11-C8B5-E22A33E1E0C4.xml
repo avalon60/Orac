@@ -1,0 +1,268 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<Table class="oracle.dbtools.crest.model.design.relational.Table" directorySegmentName="seg_0" id="3C0E0EC9-A168-BA11-C8B5-E22A33E1E0C4" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="TTS_VOICES">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Startup-refreshed runtime catalogue of available selectable text-to-speech voices.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>218D3E80-93F6-9864-4E46-63A6F26FDEFA</importedID>
+<allowColumnReorder>false</allowColumnReorder>
+<existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
+<parsed>true</parsed>
+<columns itemClass="oracle.dbtools.crest.model.design.relational.Column">
+<Column name="TTS_VOICE_KEY" id="3F8E5E11-4CA6-AACD-600A-AE50B73BE743">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Stable soft-reference key, normally provider_code || ':' || provider_voice_id.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>96DFE7BC-4E45-071E-4A1E-ECE8F9A5CF81</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>300 CHAR</dataTypeSize>
+<ownDataTypeParameters>300 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="PROVIDER_CODE" id="9B6BADD9-20F8-3E97-E45E-F70245D1BBA4">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[TTS provider code such as piper, kokoro, or indextts.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>1E6C5D37-1E81-628F-354D-105943C1CFA5</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>30 CHAR</dataTypeSize>
+<ownDataTypeParameters>30 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="PROVIDER_VOICE_ID" id="00CB18AB-5EAF-04AE-79B5-3D0F120C62AA">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Provider-native voice identifier.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>D2BB9E7F-8E24-0A3C-016D-14183F44CECD</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>240 CHAR</dataTypeSize>
+<ownDataTypeParameters>240 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="DISPLAY_NAME" id="6B56F03D-7775-3B00-5066-894557B4D2CF">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Human-friendly display name for preference LOVs.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>34FA2EBD-A02B-61D7-6FA7-42E000ED2E83</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>240 CHAR</dataTypeSize>
+<ownDataTypeParameters>240 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="LANGUAGE_CODE" id="A6845C18-EED0-7B30-3425-37B7FE03D74D">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Optional language code derived from provider metadata.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>43C6A534-CBC5-2B57-DFA5-2DB1385B33E8</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>20 CHAR</dataTypeSize>
+<ownDataTypeParameters>20 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="LOCALE_CODE" id="3EDF3F0F-64C1-4B4C-5F7D-748B040EEA18">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Optional locale code derived from provider metadata.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>97C6E2B1-89C5-2D34-D800-E93E9A9CFC23</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>20 CHAR</dataTypeSize>
+<ownDataTypeParameters>20 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="VOICE_QUALITY" id="46212211-A9DE-8DFB-D9DD-60ED24DC3693">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Optional voice quality or tier reported by the provider.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>A0DEC021-0272-33B5-4694-E02202072065</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>40 CHAR</dataTypeSize>
+<ownDataTypeParameters>40 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="MODEL_PATH" id="0DAE280D-65FE-E887-64D4-A71A9D51F966">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Optional local model path for filesystem-backed TTS providers.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>BD042EBE-74A7-BFFF-AD6B-85B147E839DB</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>1000 CHAR</dataTypeSize>
+<ownDataTypeParameters>1000 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CONFIG_PATH" id="53EE5621-5D6D-8D4B-C5D0-22C390E79872">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Optional local model configuration path for filesystem-backed TTS providers.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>4471AF39-41FB-B3B9-575C-956331B4EEF0</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>1000 CHAR</dataTypeSize>
+<ownDataTypeParameters>1000 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="METADATA_JSON" id="6BBEFDAF-B750-5BD3-BB53-79EAF842504C">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Provider-specific metadata stored as JSON text.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>5BA0228B-B930-8E07-1D81-9A86CB3C0293</importedID>
+<constraintName>TTS_VOICE_CK3</constraintName>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT028</logicalDatatype>
+<dataTypeSize>4000</dataTypeSize>
+<checkConstraint>
+<implementationDef dbType="Generic Constraint" definition="metadata_json is json"/>
+<implementationDef dbType="Oracle Database 21c" definition="metadata_json is json"/>
+</checkConstraint>
+<ownDataTypeParameters>4000,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="DEFAULT_YN" id="7E0C1F10-74C0-B89A-BAB0-B52710AD3754">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Y when this row matches the configured runtime default voice.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>F0331839-901C-E4B5-1D09-5C40492ADD8F</importedID>
+<constraintName>TTS_VOICE_CK1</constraintName>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>1 CHAR</dataTypeSize>
+<listOfValues>
+<valueDef value="&apos;N&apos;" description=""/>
+<valueDef value="&apos;Y&apos;" description=""/>
+</listOfValues>
+<defaultValue>&apos;N&apos;</defaultValue>
+<ownDataTypeParameters>1 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="ENABLED_YN" id="5CBBE62B-D1E2-2FFF-F96B-70BB96A1EAD6">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Y when the discovered voice is usable for runtime selection.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>043C6AF8-B01B-C2C2-3FBB-8D353C5FD5C8</importedID>
+<constraintName>TTS_VOICE_CK2</constraintName>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>1 CHAR</dataTypeSize>
+<listOfValues>
+<valueDef value="&apos;N&apos;" description=""/>
+<valueDef value="&apos;Y&apos;" description=""/>
+</listOfValues>
+<defaultValue>&apos;Y&apos;</defaultValue>
+<ownDataTypeParameters>1 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="SORT_ORDER" id="66BBF9F0-C9D0-03D2-C0DB-930CE27DAD4F">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Optional display ordering within a provider.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>FA1350FE-2D47-BCF8-452A-84728717BE1D</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="LOADED_ON" id="647B24C9-9853-9205-04D0-E4D5658F29AE">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Timestamp when the row was loaded into the runtime catalogue.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>D961033C-9AB5-141A-48BA-77656109450B</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT015</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<defaultValue>systimestamp</defaultValue>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+</columns>
+<indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
+<ind_PK_UK id="D84D3D70-CC8D-4F67-CC51-5C2F6CA39CC5" name="TTS_VOICE_PK">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>FC513E92-4874-1A81-C831-42FE31CAA2AA</importedID>
+<pk>true</pk>
+<indexState>Primary Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="3F8E5E11-4CA6-AACD-600A-AE50B73BE743"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="029DCE4E-2AE5-20B4-D2FF-F76283F25ACE" name="TTS_VOICE_UK1">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>84534010-9A77-F66D-EF75-1FB3E681160E</importedID>
+<indexState>Unique Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="9B6BADD9-20F8-3E97-E45E-F70245D1BBA4"/>
+<colUsage columnID="00CB18AB-5EAF-04AE-79B5-3D0F120C62AA"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="952F6AF0-677F-D292-7CA7-4FD4C8DDD93A" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="TTS_VOICE_PK">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>26A15DE3-E7B5-A178-7C6F-8B695D1F9036</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="3F8E5E11-4CA6-AACD-600A-AE50B73BE743"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="0091EF78-717C-3EAE-7A4C-F5B1815F8B7B" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="TTS_VOICE_UK1_IDX">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>96F89F0E-0286-B91D-C4CA-FAAD11DBE7C3</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="9B6BADD9-20F8-3E97-E45E-F70245D1BBA4"/>
+<colUsage columnID="00CB18AB-5EAF-04AE-79B5-3D0F120C62AA"/>
+</indexColumnUsage>
+</ind_PK_UK>
+</indexes>
+</Table>

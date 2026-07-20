@@ -1,0 +1,17 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<FKIndexAssociation class="oracle.dbtools.crest.model.design.relational.FKIndexAssociation" directorySegmentName="seg_0" id="D8490987-32B3-E653-F560-10CCA3952212" containerWithKeyObject="6D287955-60CF-35A7-5F55-12DC2257D7D8" localFKIndex="D7104EB4-368E-D67E-F70B-2D7D18E1355A" name="PLG_INV_MESGS_FK1">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>0D83C85C-157C-D85F-B0DD-75E9E1CE8BEF</importedID>
+<referredTableLongName>orac_core.MESSAGES</referredTableLongName>
+<deleteRule>SET NULL</deleteRule>
+<referredTableID>67788434-12A4-32C0-35D0-5C86BADAC908</referredTableID>
+<keyObject>AA9AB783-444D-D69A-3DF3-2F7F00AAE716</keyObject>
+<referredKeyID>AA9AB783-444D-D69A-3DF3-2F7F00AAE716</referredKeyID>
+<mandatory>false</mandatory>
+<refColNames>MESSAGE_ID</refColNames>
+<transferable>true</transferable>
+<rely>false</rely>
+<columnDependencyConstraintGenerateInDDL>true</columnDependencyConstraintGenerateInDDL>
+</FKIndexAssociation>
