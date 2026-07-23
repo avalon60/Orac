@@ -45,6 +45,13 @@ resources/db/liquibase/liquibase-core.properties
 resources/db/schema/productController.xml
 ```
 
+The RAG usage privilege migration creates canonical scopes, halts on ambiguous
+or unknown legacy scope strings, backfills the authoritative scope FK on source
+objects, and removes duplicated source/document scope strings. Review
+`--update-sql` before `--update`, and deploy Core before reinstalling Drop Box.
+No user-specific privilege is seeded; use
+`orac_code.rag_usage_privilege_api.grant_scope_usage` after deployment.
+
 Plugin-owned database deltas may opt in to Liquibase with manifest metadata:
 
 ```json

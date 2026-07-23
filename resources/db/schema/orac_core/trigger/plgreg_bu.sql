@@ -9,6 +9,11 @@ create or replace trigger orac_core.plgreg_bu
 before update on orac_core.plugin_registry
 for each row
 begin
+  if nvl(:new.plugin_id, chr(0)) <> nvl(:old.plugin_id, chr(0))
+  then
+    raise_application_error(-20047, 'Plugin identifier cannot be changed.');
+  end if;
+
   :new.updated_on := systimestamp;
   :new.updated_by := coalesce(
                        sys_context('apex$session', 'app_user'),

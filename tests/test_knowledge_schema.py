@@ -49,23 +49,26 @@ class KnowledgeSchemaTests(unittest.TestCase):
 
     def test_scope_xor_checks_are_present(self) -> None:
         text = (
-            (CORE_SCHEMA / "constraint_other" / "kn_knowledge_checks.sql")
+            (
+                CORE_SCHEMA
+                / "constraint_other"
+                / "knowledge_scope_privilege_checks.sql"
+            )
             .read_text(encoding="utf-8")
             .lower()
         )
-        self.assertIn("constraint kn_srcobj_scope_ck", text)
-        self.assertIn("constraint kn_doc_scope_ck", text)
-        self.assertIn("target_scope_type in ('project', 'plugin')", text)
+        self.assertIn("constraint kn_scope_ck1", text)
+        self.assertIn("scope_type = 'project' and project_id is not null", text)
+        self.assertIn("scope_type = 'plugin' and project_id is null", text)
 
     def test_new_relational_id_columns_have_fks_or_documented_exception(self) -> None:
         table_text = "\n".join(
             path.read_text(encoding="utf-8").lower()
             for path in (CORE_SCHEMA / "table").glob("knowledge_*.sql")
         )
-        fk_text = (
-            (CORE_SCHEMA / "constraint_fk" / "kn_knowledge_fks.sql")
-            .read_text(encoding="utf-8")
-            .lower()
+        fk_text = "\n".join(
+            path.read_text(encoding="utf-8").lower()
+            for path in (CORE_SCHEMA / "constraint_fk").glob("*.sql")
         )
         id_columns = set(re.findall(r"\b([a-z][a-z0-9_]*_id)\s+number\b", table_text))
         deliberate_non_fk = {"ingestion_event_id"}
@@ -79,6 +82,7 @@ class KnowledgeSchemaTests(unittest.TestCase):
             "chunk_id",
             "embedding_model_id",
             "chunk_embedding_id",
+            "knowledge_scope_id",
         }
         for column_name in id_columns - parent_or_identity - deliberate_non_fk:
             self.assertRegex(
@@ -189,8 +193,7 @@ class KnowledgeSchemaTests(unittest.TestCase):
             "source_rekeyed",
             "ambiguous legacy drop box source",
             "drop_box:drop_job:%",
-            "target_scope_type = l_scope_type",
-            "target_scope_key = l_scope_key",
+            "knowledge_scope_id = l_knowledge_scope_id",
             "add_event_for_source",
         ):
             self.assertIn(token, package_sql)
@@ -209,13 +212,9 @@ class KnowledgeSchemaTests(unittest.TestCase):
         )
         self.assertLess(validation_call, first_source_write)
         for token in (
-            "from orac_code.project_registry_v project",
-            "project.active_yn = 'y'",
-            "from orac_code.plugin_registry_v plugin",
-            "plugin.install_status = 'success'",
-            "plugin.configuration_status in ('success', 'not_required')",
-            "plugin.dependency_status in ('success', 'not_required')",
-            "plugin.readiness_status = 'success'",
+            "orac_code.knowledge_scope_api.scope_status",
+            "orac_code.knowledge_scope_api.resolve_scope_id",
+            "l_knowledge_scope_id",
             "unknown, inactive, or not runtime eligible",
         ):
             self.assertIn(token, package_sql)

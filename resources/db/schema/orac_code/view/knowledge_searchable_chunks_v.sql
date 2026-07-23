@@ -8,8 +8,8 @@ select req.ingestion_request_id,
        src.source_reference,
        src.parent_source_reference,
        doc.document_id,
-       doc.target_scope_type,
-       doc.target_scope_key,
+       scope.scope_type target_scope_type,
+       coalesce(project.project_code, plugin.plugin_id) target_scope_key,
        doc.title,
        ver.document_version_id,
        ver.content_sha256 as revision_content_sha256,
@@ -42,6 +42,12 @@ select req.ingestion_request_id,
     on src.source_object_id = req.source_object_id
   join orac_api.knowledge_documents_v doc
     on doc.document_id = req.document_id
+  join orac_api.knowledge_scopes_v scope
+    on scope.knowledge_scope_id = src.knowledge_scope_id
+  left join orac_api.project_registry_v project
+    on project.project_id = scope.project_id
+  left join orac_api.plugin_registry_v plugin
+    on plugin.plugin_registry_id = scope.plugin_registry_id
   join orac_api.knowledge_document_versions_v ver
     on ver.document_version_id = req.document_version_id
    and ver.document_version_id = doc.current_document_version_id

@@ -666,8 +666,18 @@ wwv_flow_imp_shared.create_list_item(
 ,p_list_item_current_type=>'COLON_DELIMITED_PAGE_LIST'
 );
 wwv_flow_imp_shared.create_list_item(
- p_id=>wwv_flow_imp.id(14400100000000006)
+ p_id=>wwv_flow_imp.id(14400100000000007)
 ,p_list_item_display_sequence=>50
+,p_list_item_link_text=>'RAG Usage Privileges'
+,p_list_item_link_target=>'f?p=&APP_ID.:39:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-shield'
+,p_list_text_01=>'Grant, revoke, and audit database-maintained access to canonical knowledge scopes.'
+,p_list_item_current_for_pages=>'39,40'
+,p_list_item_current_type=>'COLON_DELIMITED_PAGE_LIST'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(14400100000000006)
+,p_list_item_display_sequence=>60
 ,p_list_item_link_text=>'Plugin Control'
 ,p_list_item_link_target=>'&ORAC_LAUNCH_PLUGIN_CONTROL_URL!RAW.'
 ,p_list_item_icon=>'fa fa-plug'
@@ -2117,6 +2127,20 @@ wwv_flow_imp_shared.create_menu_option(
 ,p_short_name=>'Project'
 ,p_link=>'f?p=&APP_ID.:38:&APP_SESSION.::&DEBUG.:::'
 ,p_page_id=>38
+);
+wwv_flow_imp_shared.create_menu_option(
+ p_id=>wwv_flow_imp.id(15100100000000011)
+,p_parent_id=>wwv_flow_imp.id(14400100000000011)
+,p_short_name=>'RAG Usage Privileges'
+,p_link=>'f?p=&APP_ID.:39:&APP_SESSION.::&DEBUG.:::'
+,p_page_id=>39
+);
+wwv_flow_imp_shared.create_menu_option(
+ p_id=>wwv_flow_imp.id(15200100000000011)
+,p_parent_id=>wwv_flow_imp.id(15100100000000011)
+,p_short_name=>'Grant or Revoke RAG Usage'
+,p_link=>'f?p=&APP_ID.:40:&APP_SESSION.::&DEBUG.:::'
+,p_page_id=>40
 );
 end;
 /
@@ -15921,6 +15945,538 @@ wwv_flow_imp_page.create_page_process(
 'else',
 '  :P38_ACTIVE_YN := coalesce(:P38_ACTIVE_YN, ''Y'');',
 'end if;'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+);
+end;
+/
+prompt --application/pages/page_00039
+begin
+wwv_flow_imp_page.create_page(
+ p_id=>39
+,p_name=>'RAG Usage Privileges'
+,p_alias=>'RAG-USAGE-PRIVILEGES'
+,p_step_title=>'RAG Usage Privileges'
+,p_warn_on_unsaved_changes=>'N'
+,p_autocomplete_on_off=>'OFF'
+,p_step_template=>2526643373347724467
+,p_page_template_options=>'#DEFAULT#'
+,p_protection_level=>'C'
+,p_page_component_map=>'18'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(15100100000000201)
+,p_plug_name=>'Breadcrumb'
+,p_region_template_options=>'#DEFAULT#:t-BreadcrumbRegion--useBreadcrumbTitle'
+,p_component_template_options=>'#DEFAULT#'
+,p_plug_template=>2531463326621247859
+,p_plug_display_sequence=>10
+,p_plug_display_point=>'REGION_POSITION_01'
+,p_menu_id=>wwv_flow_imp.id(11444266688769030)
+,p_plug_source_type=>'NATIVE_BREADCRUMB'
+,p_menu_template_id=>4072363345357175094
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(15100100000000202)
+,p_plug_name=>'RAG Usage Privileges'
+,p_region_template_options=>'#DEFAULT#:t-IRR-region--noBorders'
+,p_plug_template=>2100526641005906379
+,p_plug_display_sequence=>20
+,p_query_type=>'SQL'
+,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select privilege.rag_usage_privilege_id,',
+'       privilege.username,',
+'       privilege.display_name,',
+'       privilege.principal_active_yn,',
+'       privilege.scope_type,',
+'       privilege.scope_key,',
+'       privilege.canonical_scope,',
+'       privilege.project_id,',
+'       privilege.plugin_registry_id,',
+'       privilege.privilege_state,',
+'       privilege.effective_on,',
+'       privilege.expires_on,',
+'       privilege.granted_on,',
+'       privilege.granted_by,',
+'       privilege.grant_reason_code,',
+'       privilege.revoked_on,',
+'       privilege.revoked_by,',
+'       privilege.revoke_reason_code,',
+'       dependency.privilege_count,',
+'       dependency.source_object_count,',
+'       dependency.delete_explanation,',
+'       dependency.deactivation_explanation',
+'  from orac_code.rag_usage_privileges_v privilege',
+'  join orac_code.knowledge_scope_dependencies_v dependency',
+'    on dependency.knowledge_scope_id = privilege.knowledge_scope_id',
+' where (:P39_USERNAME is null or privilege.username = :P39_USERNAME)',
+'   and (:P39_SCOPE_TYPE is null or privilege.scope_type = :P39_SCOPE_TYPE)',
+'   and (:P39_SCOPE_KEY is null or privilege.scope_key = :P39_SCOPE_KEY)',
+'   and (:P39_PROJECT_ID is null or privilege.project_id = :P39_PROJECT_ID)',
+'   and (:P39_PLUGIN_REGISTRY_ID is null or privilege.plugin_registry_id = :P39_PLUGIN_REGISTRY_ID)',
+'   and (:P39_STATE is null or privilege.privilege_state = :P39_STATE)',
+' order by privilege.username, privilege.canonical_scope, privilege.granted_on desc'))
+,p_plug_source_type=>'NATIVE_IR'
+,p_ajax_items_to_submit=>'P39_USERNAME,P39_SCOPE_TYPE,P39_SCOPE_KEY,P39_PROJECT_ID,P39_PLUGIN_REGISTRY_ID,P39_STATE'
+,p_prn_page_header=>'RAG Usage Privileges'
+);
+wwv_flow_imp_page.create_worksheet(
+ p_id=>wwv_flow_imp.id(15100100000000501)
+,p_name=>'RAG Usage Privileges'
+,p_no_data_found_message=>'No RAG usage privilege history found.'
+,p_base_pk1=>'RAG_USAGE_PRIVILEGE_ID'
+,p_pagination_type=>'ROWS_X_TO_Y'
+,p_pagination_display_pos=>'BOTTOM_RIGHT'
+,p_report_list_mode=>'TABS'
+,p_lazy_loading=>false
+,p_show_detail_link=>'N'
+,p_show_notify=>'Y'
+,p_download_formats=>'CSV:HTML:XLSX:PDF'
+,p_enable_mail_download=>'Y'
+,p_owner=>'ORAC_ADMIN'
+,p_internal_uid=>15100100000000501
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(15100100000000502)
+,p_db_column_name=>'RAG_USAGE_PRIVILEGE_ID'
+,p_display_order=>1
+,p_is_primary_key=>'Y'
+,p_column_identifier=>'A'
+,p_column_label=>'<span class="u-VisuallyHidden">Administer</span>'
+,p_column_link=>'f?p=&APP_ID.:40:&APP_SESSION.::&DEBUG.:RP:P40_USERNAME,P40_CANONICAL_SCOPE:#USERNAME#,#CANONICAL_SCOPE#'
+,p_column_linktext=>'<span role="img" aria-label="Manage privilege" class="fa fa-edit" title="Manage privilege"></span>'
+,p_column_type=>'NUMBER'
+,p_heading_alignment=>'CENTER'
+,p_column_alignment=>'CENTER'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(15100100000000503)
+,p_db_column_name=>'USERNAME'
+,p_display_order=>2
+,p_column_identifier=>'B'
+,p_column_label=>'Principal'
+,p_column_type=>'STRING'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(15100100000000504)
+,p_db_column_name=>'CANONICAL_SCOPE'
+,p_display_order=>3
+,p_column_identifier=>'C'
+,p_column_label=>'Canonical Scope'
+,p_column_type=>'STRING'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(15100100000000505)
+,p_db_column_name=>'PRIVILEGE_STATE'
+,p_display_order=>4
+,p_column_identifier=>'D'
+,p_column_label=>'State'
+,p_column_type=>'STRING'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(15100100000000506)
+,p_db_column_name=>'EFFECTIVE_ON'
+,p_display_order=>5
+,p_column_identifier=>'E'
+,p_column_label=>'Effective On'
+,p_column_type=>'DATE'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(15100100000000507)
+,p_db_column_name=>'EXPIRES_ON'
+,p_display_order=>6
+,p_column_identifier=>'F'
+,p_column_label=>'Expires On'
+,p_column_type=>'DATE'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(15100100000000508)
+,p_db_column_name=>'GRANTED_BY'
+,p_display_order=>7
+,p_column_identifier=>'G'
+,p_column_label=>'Granted By'
+,p_column_type=>'STRING'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(15100100000000509)
+,p_db_column_name=>'GRANTED_ON'
+,p_display_order=>8
+,p_column_identifier=>'H'
+,p_column_label=>'Granted On'
+,p_column_type=>'DATE'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(15100100000000510)
+,p_db_column_name=>'REVOKED_BY'
+,p_display_order=>9
+,p_column_identifier=>'I'
+,p_column_label=>'Revoked By'
+,p_column_type=>'STRING'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(15100100000000511)
+,p_db_column_name=>'REVOKED_ON'
+,p_display_order=>10
+,p_column_identifier=>'J'
+,p_column_label=>'Revoked On'
+,p_column_type=>'DATE'
+);
+wwv_flow_imp_page.create_worksheet_rpt(
+ p_id=>wwv_flow_imp.id(15100100000000520)
+,p_application_user=>'APXWS_DEFAULT'
+,p_report_seq=>10
+,p_report_alias=>'151011'
+,p_status=>'PUBLIC'
+,p_is_default=>'Y'
+,p_report_columns=>'RAG_USAGE_PRIVILEGE_ID:USERNAME:CANONICAL_SCOPE:PRIVILEGE_STATE:EFFECTIVE_ON:EXPIRES_ON:GRANTED_BY:GRANTED_ON:REVOKED_BY:REVOKED_ON:'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15100100000000601)
+,p_name=>'P39_USERNAME'
+,p_item_sequence=>10
+,p_item_plug_id=>wwv_flow_imp.id(15100100000000202)
+,p_prompt=>'Principal'
+,p_display_as=>'NATIVE_POPUP_LOV'
+,p_lov=>'select username d, username r from orac_api.users_v order by username'
+,p_lov_display_null=>'YES'
+,p_lov_null_text=>'- All principals -'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15100100000000602)
+,p_name=>'P39_SCOPE_TYPE'
+,p_item_sequence=>20
+,p_item_plug_id=>wwv_flow_imp.id(15100100000000202)
+,p_prompt=>'Scope Type'
+,p_display_as=>'NATIVE_SELECT_LIST'
+,p_lov=>'STATIC2:Project;PROJECT,Plugin;PLUGIN'
+,p_lov_display_null=>'YES'
+,p_lov_null_text=>'- All types -'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15100100000000603)
+,p_name=>'P39_SCOPE_KEY'
+,p_item_sequence=>30
+,p_item_plug_id=>wwv_flow_imp.id(15100100000000202)
+,p_prompt=>'Project or Plugin'
+,p_display_as=>'NATIVE_TEXT_FIELD'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15100100000000604)
+,p_name=>'P39_STATE'
+,p_item_sequence=>60
+,p_item_plug_id=>wwv_flow_imp.id(15100100000000202)
+,p_prompt=>'State'
+,p_display_as=>'NATIVE_SELECT_LIST'
+,p_lov=>'STATIC2:Active;ACTIVE,Expired;EXPIRED,Revoked;REVOKED,Scheduled;SCHEDULED'
+,p_lov_display_null=>'YES'
+,p_lov_null_text=>'- All states -'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15100100000000605)
+,p_name=>'P39_PROJECT_ID'
+,p_item_sequence=>40
+,p_item_plug_id=>wwv_flow_imp.id(15100100000000202)
+,p_prompt=>'Project'
+,p_display_as=>'NATIVE_POPUP_LOV'
+,p_lov=>'select scope_key d, project_id r from orac_code.rag_usage_scope_lov_v where scope_type = ''PROJECT'' order by scope_key'
+,p_lov_display_null=>'YES'
+,p_lov_null_text=>'- All projects -'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15100100000000606)
+,p_name=>'P39_PLUGIN_REGISTRY_ID'
+,p_item_sequence=>50
+,p_item_plug_id=>wwv_flow_imp.id(15100100000000202)
+,p_prompt=>'Plugin'
+,p_display_as=>'NATIVE_POPUP_LOV'
+,p_lov=>'select scope_key d, plugin_registry_id r from orac_code.rag_usage_scope_lov_v where scope_type = ''PLUGIN'' order by scope_key'
+,p_lov_display_null=>'YES'
+,p_lov_null_text=>'- All plugins -'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(15100100000000206)
+,p_button_sequence=>10
+,p_button_plug_id=>wwv_flow_imp.id(15100100000000202)
+,p_button_name=>'APPLY_FILTERS'
+,p_button_action=>'SUBMIT'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>4072362960822175091
+,p_button_is_hot=>'Y'
+,p_button_image_alt=>'Apply Filters'
+,p_button_position=>'RIGHT_OF_IR_SEARCH_BAR'
+,p_icon_css_classes=>'fa-filter'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(15100100000000203)
+,p_button_sequence=>20
+,p_button_plug_id=>wwv_flow_imp.id(15100100000000202)
+,p_button_name=>'ADMINISTER'
+,p_button_action=>'REDIRECT_PAGE'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>2349107722467437027
+,p_button_is_hot=>'Y'
+,p_button_image_alt=>'Grant or Revoke'
+,p_button_position=>'RIGHT_OF_IR_SEARCH_BAR'
+,p_button_redirect_url=>'f?p=&APP_ID.:40:&APP_SESSION.::&DEBUG.:RP,40::'
+,p_icon_css_classes=>'fa-shield'
+);
+wwv_flow_imp_page.create_page_da_event(
+ p_id=>wwv_flow_imp.id(15100100000000204)
+,p_name=>'Dialog Closed'
+,p_event_sequence=>10
+,p_triggering_element_type=>'REGION'
+,p_triggering_region_id=>wwv_flow_imp.id(15100100000000202)
+,p_bind_type=>'bind'
+,p_execution_type=>'IMMEDIATE'
+,p_bind_event_type=>'apexafterclosedialog'
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(15100100000000205)
+,p_event_id=>wwv_flow_imp.id(15100100000000204)
+,p_event_result=>'TRUE'
+,p_action_sequence=>10
+,p_execute_on_page_init=>'N'
+,p_action=>'NATIVE_REFRESH'
+,p_affected_elements_type=>'REGION'
+,p_affected_region_id=>wwv_flow_imp.id(15100100000000202)
+);
+end;
+/
+prompt --application/pages/page_00040
+begin
+wwv_flow_imp_page.create_page(
+ p_id=>40
+,p_name=>'Grant or Revoke RAG Usage'
+,p_alias=>'GRANT-OR-REVOKE-RAG-USAGE'
+,p_page_mode=>'MODAL'
+,p_step_title=>'Grant or Revoke RAG Usage'
+,p_autocomplete_on_off=>'OFF'
+,p_step_template=>1661186590416509825
+,p_page_template_options=>'#DEFAULT#:js-dialog-class-t-Drawer--pullOutEnd'
+,p_dialog_chained=>'N'
+,p_dialog_resizable=>'Y'
+,p_protection_level=>'C'
+,p_page_component_map=>'16'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(15200100000000301)
+,p_plug_name=>'RAG Usage Privilege'
+,p_region_template_options=>'#DEFAULT#'
+,p_plug_template=>4501440665235496320
+,p_plug_display_sequence=>10
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(15200100000000302)
+,p_plug_name=>'Buttons'
+,p_region_template_options=>'#DEFAULT#'
+,p_plug_template=>2126429139436695430
+,p_plug_display_sequence=>20
+,p_plug_display_point=>'REGION_POSITION_03'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(15200100000000303)
+,p_button_sequence=>10
+,p_button_plug_id=>wwv_flow_imp.id(15200100000000302)
+,p_button_name=>'CANCEL'
+,p_button_action=>'DEFINED_BY_DA'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>4072362960822175091
+,p_button_image_alt=>'Cancel'
+,p_button_position=>'CLOSE'
+,p_button_execute_validations=>'N'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(15200100000000304)
+,p_button_sequence=>20
+,p_button_plug_id=>wwv_flow_imp.id(15200100000000302)
+,p_button_name=>'REVOKE'
+,p_button_action=>'SUBMIT'
+,p_button_template_options=>'#DEFAULT#:t-Button--danger:t-Button--simple'
+,p_button_template_id=>4072362960822175091
+,p_button_image_alt=>'Revoke'
+,p_button_position=>'DELETE'
+,p_confirm_message=>'Revoke this RAG usage privilege? History will be preserved.'
+,p_confirm_style=>'danger'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(15200100000000305)
+,p_button_sequence=>30
+,p_button_plug_id=>wwv_flow_imp.id(15200100000000302)
+,p_button_name=>'GRANT'
+,p_button_action=>'SUBMIT'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>4072362960822175091
+,p_button_is_hot=>'Y'
+,p_button_image_alt=>'Grant'
+,p_button_position=>'NEXT'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15200100000000306)
+,p_name=>'P40_USERNAME'
+,p_is_required=>true
+,p_item_sequence=>10
+,p_item_plug_id=>wwv_flow_imp.id(15200100000000301)
+,p_prompt=>'Active Principal'
+,p_display_as=>'NATIVE_POPUP_LOV'
+,p_lov=>'select username d, username r from orac_api.users_v where is_active = ''Y'' order by username'
+,p_lov_display_null=>'YES'
+,p_lov_null_text=>'- Select principal -'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15200100000000307)
+,p_name=>'P40_CANONICAL_SCOPE'
+,p_is_required=>true
+,p_item_sequence=>20
+,p_item_plug_id=>wwv_flow_imp.id(15200100000000301)
+,p_prompt=>'Eligible Canonical Scope'
+,p_display_as=>'NATIVE_POPUP_LOV'
+,p_lov=>'select display_value d, scope_type || '':'' || scope_key r from orac_code.rag_usage_scope_lov_v order by display_value'
+,p_lov_display_null=>'YES'
+,p_lov_null_text=>'- Select scope -'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15200100000000308)
+,p_name=>'P40_EFFECTIVE_ON'
+,p_item_sequence=>30
+,p_item_plug_id=>wwv_flow_imp.id(15200100000000301)
+,p_prompt=>'Effective On'
+,p_display_as=>'NATIVE_DATE_PICKER_APEX'
+,p_format_mask=>'DD-MON-YYYY HH24:MI'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15200100000000309)
+,p_name=>'P40_EXPIRES_ON'
+,p_item_sequence=>40
+,p_item_plug_id=>wwv_flow_imp.id(15200100000000301)
+,p_prompt=>'Expires On'
+,p_display_as=>'NATIVE_DATE_PICKER_APEX'
+,p_format_mask=>'DD-MON-YYYY HH24:MI'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15200100000000310)
+,p_name=>'P40_REASON_CODE'
+,p_is_required=>true
+,p_item_sequence=>50
+,p_item_plug_id=>wwv_flow_imp.id(15200100000000301)
+,p_prompt=>'Reason Code'
+,p_display_as=>'NATIVE_TEXT_FIELD'
+,p_cMaxlength=>100
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(15200100000000311)
+,p_name=>'P40_RESULT_CODE'
+,p_item_sequence=>60
+,p_item_plug_id=>wwv_flow_imp.id(15200100000000301)
+,p_prompt=>'Result'
+,p_display_as=>'NATIVE_DISPLAY_ONLY'
+,p_is_persistent=>'N'
+);
+wwv_flow_imp_page.create_page_da_event(
+ p_id=>wwv_flow_imp.id(15200100000000312)
+,p_name=>'Cancel Dialog'
+,p_event_sequence=>10
+,p_triggering_element_type=>'BUTTON'
+,p_triggering_button_id=>wwv_flow_imp.id(15200100000000303)
+,p_bind_type=>'bind'
+,p_execution_type=>'IMMEDIATE'
+,p_bind_event_type=>'click'
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(15200100000000313)
+,p_event_id=>wwv_flow_imp.id(15200100000000312)
+,p_event_result=>'TRUE'
+,p_action_sequence=>10
+,p_execute_on_page_init=>'N'
+,p_action=>'NATIVE_DIALOG_CANCEL'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(15200100000000314)
+,p_process_sequence=>10
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Grant RAG Usage'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'declare',
+'  l_separator number := instr(:P40_CANONICAL_SCOPE, '':'');',
+'begin',
+'  :P40_RESULT_CODE := orac_code.rag_usage_privilege_api.grant_scope_usage(',
+'    p_username          => :P40_USERNAME,',
+'    p_scope_type        => substr(:P40_CANONICAL_SCOPE, 1, l_separator - 1),',
+'    p_scope_key         => substr(:P40_CANONICAL_SCOPE, l_separator + 1),',
+'    p_effective_on      => coalesce(from_tz(to_timestamp(:P40_EFFECTIVE_ON, ''DD-MON-YYYY HH24:MI''), sessiontimezone), systimestamp),',
+'    p_expires_on        => case when :P40_EXPIRES_ON is null then null else from_tz(to_timestamp(:P40_EXPIRES_ON, ''DD-MON-YYYY HH24:MI''), sessiontimezone) end,',
+'    p_granted_by        => :APP_USER,',
+'    p_grant_reason_code => :P40_REASON_CODE',
+'  );',
+'  if :P40_RESULT_CODE not in (''RAG_USAGE_GRANTED'', ''RAG_USAGE_ALREADY_GRANTED'') then',
+'    raise_application_error(-20059, :P40_RESULT_CODE);',
+'  end if;',
+'end;'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_process_when=>'GRANT'
+,p_process_when_type=>'REQUEST_EQUALS_CONDITION'
+,p_process_success_message=>'RAG usage privilege grant processed.'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(15200100000000315)
+,p_process_sequence=>20
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Revoke RAG Usage'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'declare',
+'  l_separator number := instr(:P40_CANONICAL_SCOPE, '':'');',
+'begin',
+'  :P40_RESULT_CODE := orac_code.rag_usage_privilege_api.revoke_scope_usage(',
+'    p_username           => :P40_USERNAME,',
+'    p_scope_type         => substr(:P40_CANONICAL_SCOPE, 1, l_separator - 1),',
+'    p_scope_key          => substr(:P40_CANONICAL_SCOPE, l_separator + 1),',
+'    p_revoked_by         => :APP_USER,',
+'    p_revoke_reason_code => :P40_REASON_CODE',
+'  );',
+'  if :P40_RESULT_CODE not in (''RAG_USAGE_REVOKED'', ''RAG_USAGE_NOT_GRANTED'') then',
+'    raise_application_error(-20059, :P40_RESULT_CODE);',
+'  end if;',
+'end;'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_process_when=>'REVOKE'
+,p_process_when_type=>'REQUEST_EQUALS_CONDITION'
+,p_process_success_message=>'RAG usage privilege revoke processed.'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(15200100000000316)
+,p_process_sequence=>50
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_CLOSE_WINDOW'
+,p_process_name=>'Close Dialog'
+,p_attribute_01=>'P40_USERNAME,P40_CANONICAL_SCOPE,P40_RESULT_CODE,REQUEST'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_process_when=>'GRANT,REVOKE'
+,p_process_when_type=>'REQUEST_IN_CONDITION'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(15200100000000317)
+,p_process_sequence=>10
+,p_process_point=>'BEFORE_HEADER'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Initialize RAG Usage Privilege'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+':P40_EFFECTIVE_ON := coalesce(:P40_EFFECTIVE_ON, to_char(current_timestamp, ''DD-MON-YYYY HH24:MI''));',
+':P40_REASON_CODE := coalesce(:P40_REASON_CODE, ''ADMIN_GRANT'');'))
 ,p_process_clob_language=>'PLSQL'
 ,p_error_display_location=>'INLINE_IN_NOTIFICATION'
 );

@@ -78,6 +78,16 @@ from orac_core.knowledge.scope import KnowledgeScopeAuthorizer
 from orac_core.dialogue_routing import DialogueRoutingService
 
 
+class _KnowledgeAuthorization:
+    """Return a deterministic database RAG usage decision for routing tests."""
+
+    def __init__(self, result: str = "RAG_USAGE_GRANTED") -> None:
+        self.result = result
+
+    def authorization_result(self, username, scope):
+        return self.result
+
+
 class _FakeLogger:
     """Captures logger calls for assertions."""
 
@@ -1746,11 +1756,9 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
 
         orchestrator.dialogue_routing_service = DialogueRoutingService(
             scope_authorizer=KnowledgeScopeAuthorizer(
-                user_allowlist={
-                    "clive": (KnowledgeScope("PLUGIN", "drop_box"),)
-                },
                 aliases={"drop box": KnowledgeScope("PLUGIN", "drop_box")},
                 registry=_Registry(),
+                authorization_repository=_KnowledgeAuthorization(),
             )
         )
         orchestrator.knowledge_retrieval_service = None
@@ -1792,11 +1800,11 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         retrieval = _UnexpectedRetrieval()
         orchestrator.dialogue_routing_service = DialogueRoutingService(
             scope_authorizer=KnowledgeScopeAuthorizer(
-                user_allowlist={
-                    "clive": (KnowledgeScope("PROJECT", "ORAC_CORE"),)
-                },
                 aliases={"drop box": KnowledgeScope("PLUGIN", "drop_box")},
                 registry=_Registry(),
+                authorization_repository=_KnowledgeAuthorization(
+                    "RAG_USAGE_NOT_GRANTED"
+                ),
             )
         )
         orchestrator.knowledge_retrieval_service = retrieval
@@ -1820,7 +1828,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(provenance["route_type"], "knowledge_denied")
         self.assertEqual(
             provenance["reason_codes"],
-            ["knowledge_scope_not_authorised"],
+            ["RAG_USAGE_NOT_GRANTED"],
         )
         self.assertNotIn("scopes", provenance)
         self.assertNotIn("sources", provenance)
@@ -1849,9 +1857,12 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         retrieval = _NoEvidenceRetrieval()
         orchestrator.dialogue_routing_service = DialogueRoutingService(
             scope_authorizer=KnowledgeScopeAuthorizer(
-                user_allowlist={"clive": (scope,)},
                 aliases={"drop box": scope},
                 registry=_Registry(),
+                authorization_repository=_KnowledgeAuthorization(
+                    "RAG_USAGE_NOT_GRANTED"
+                ),
+                allow_all_scopes=True,
             )
         )
         orchestrator.knowledge_retrieval_service = retrieval
@@ -1879,6 +1890,11 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         provenance = response["meta"]["provenance"]
         self.assertEqual(provenance["outcome"], "no_evidence")
         self.assertEqual(provenance["sources"], [])
+        self.assertTrue(provenance["rag_usage_bypass"])
+        self.assertEqual(
+            provenance["authorization_reason_codes"],
+            ["rag_usage_allow_all_scopes"],
+        )
 
     def test_contextual_prompt_suppresses_identity_for_date_questions(self) -> None:
         """Date questions should not invite the standard Orac identity answer."""

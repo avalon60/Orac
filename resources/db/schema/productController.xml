@@ -12,6 +12,7 @@
   <include file="orac_core/schemaController.xml" relativeToChangelogFile="true"/>
   <include file="orac_api/schemaController.xml" relativeToChangelogFile="true"/>
   <include file="orac_code/schemaController.xml" relativeToChangelogFile="true"/>
+  <include file="orac_plugin/schemaController.xml" relativeToChangelogFile="true"/>
   <include file="orac_apx_pub/schemaController.xml" relativeToChangelogFile="true"/>
   <include file="orac/schemaController.xml" relativeToChangelogFile="true"/>
 </databaseChangeLog>

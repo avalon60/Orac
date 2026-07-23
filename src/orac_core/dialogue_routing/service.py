@@ -124,13 +124,18 @@ class DialogueRoutingService:
     def _terminal_mapping(self, reason_code: str) -> tuple[str, str]:
         """Map scope failures to safe terminal routes and user-facing text."""
         if reason_code in {
-            "user_scope_allowlist_missing",
-            "knowledge_scope_not_authorised",
+            "RAG_USAGE_NOT_GRANTED",
+            "RAG_USAGE_EXPIRED",
+            "RAG_USAGE_PRINCIPAL_UNKNOWN",
+            "RAG_USAGE_PRINCIPAL_INACTIVE",
         }:
             return "knowledge_denied", _KNOWLEDGE_DENIED_MESSAGE
         if reason_code in {
             "knowledge_scope_inactive",
             "scope_registry_unavailable",
+            "RAG_USAGE_SCOPE_INACTIVE",
+            "RAG_USAGE_SCOPE_INELIGIBLE",
+            "RAG_USAGE_AUTHORIZATION_UNAVAILABLE",
         }:
             return "knowledge_unavailable", _KNOWLEDGE_UNAVAILABLE_MESSAGE
         if reason_code == "knowledge_scope_limit_exceeded":

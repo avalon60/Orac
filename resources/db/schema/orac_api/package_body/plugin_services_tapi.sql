@@ -12,6 +12,8 @@ as
     insert into orac_api.plugin_services_v
       (
         plugin_id,
+        service_owner_type,
+        plugin_registry_id,
         service_code,
         service_name,
         entry_point,
@@ -23,6 +25,8 @@ as
     values
       (
         p_row.plugin_id,
+        p_row.service_owner_type,
+        p_row.plugin_registry_id,
         p_row.service_code,
         p_row.service_name,
         p_row.entry_point,
@@ -69,6 +73,8 @@ as
   begin
     update orac_api.plugin_services_v
        set plugin_id           = p_row.plugin_id,
+           service_owner_type  = p_row.service_owner_type,
+           plugin_registry_id  = p_row.plugin_registry_id,
            service_code        = p_row.service_code,
            service_name        = p_row.service_name,
            entry_point         = p_row.entry_point,

@@ -852,6 +852,51 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
 
             self.assertIn("undeclared plugin-like schema 'orac_beta'", str(exc.exception))
 
+    def test_plugin_security_allows_shared_runtime_api_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest("alpha", database=_database()),
+                with_schema=True,
+                ddl=(
+                    "create or replace package body orac_ha.example_api as\n"
+                    "  function status return varchar2 is begin\n"
+                    "    return orac_plugin.knowledge_scope_validation_api.scope_status(\n"
+                    "      'PLUGIN', 'alpha'\n"
+                    "    );\n"
+                    "  end;\n"
+                    "end;\n"
+                ),
+            )
+            manifest = _discover_one(plugins_dir)
+
+            validate_schema_payload(
+                manifest.plugin_dir / "db" / "schema",
+                manifest=manifest,
+            )
+
+    def test_plugin_security_rejects_ddl_against_shared_runtime_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest("alpha", database=_database()),
+                with_schema=True,
+                ddl="create table orac_plugin.bad_table (id number);\n",
+            )
+            manifest = _discover_one(plugins_dir)
+
+            with self.assertRaises(PluginDatabaseDeploymentError) as exc:
+                validate_schema_payload(
+                    manifest.plugin_dir / "db" / "schema",
+                    manifest=manifest,
+                )
+
+            self.assertIn("DDL targets undeclared schema 'orac_plugin'", str(exc.exception))
+
     def test_plugin_security_rejects_public_synonym(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:
             plugins_dir = Path(temp_plugins)

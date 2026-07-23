@@ -78,6 +78,9 @@ create or replace package body orac_code.plugin_registry_api as
     else
       orac_api.plugin_registry_tapi.upd(l_row.plugin_registry_id, l_row);
     end if;
+    orac_code.knowledge_scope_api.synchronise_plugin_scope(
+      l_row.plugin_registry_id
+    );
   end upsert_plugin;
 end plugin_registry_api;
 /

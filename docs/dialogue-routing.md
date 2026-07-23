@@ -118,8 +118,9 @@ request.
 ### Triggering Versus Grounding
 
 Matching either trigger selects a local knowledge route; it does not guarantee
-that evidence will be returned. Orac then verifies the authenticated user's
-scope grant, validates that the canonical project or plugin scope is active,
+that evidence will be returned. Orac then asks Oracle for the authenticated
+user's RAG usage privilege and independently validates that the canonical
+project or plugin scope is active,
 and applies the lexical relevance threshold. A valid route with no qualifying
 chunks terminates as `no_evidence` rather than falling through to general model
 knowledge.
@@ -127,8 +128,8 @@ knowledge.
 ## Knowledge Scope
 
 Dialogue retrieval is disabled by default under `[knowledge.dialogue]`.
-Configured grants bind the exact authenticated username to canonical registry
-identities:
+Database-maintained RAG usage privileges bind the exact authenticated username
+to canonical relational scope identities displayed as:
 
 ```text
 PROJECT:<project_code>
@@ -165,10 +166,16 @@ end;
 Run this as an administrative identity already entitled to execute that API;
 do not insert directly into `orac_core.project_registry`.
 
-Aliases are configuration conveniences only. They resolve to canonical
-registry identities before retrieval. Unknown users, unknown aliases,
-unauthorised scopes, inactive scopes, registry failures, and expired-cache
-refresh failures deny retrieval. No failure broadens a query to every scope.
+Privileges reference `orac_core.users.user_id` and the canonical scope id;
+`TYPE:key` is derived from immutable project/plugin identifiers. Usernames are
+trimmed at authentication boundaries but preserve case.
+
+Aliases are configuration conveniences only. Unknown or inactive principals
+and missing, expired, or revoked privileges map to `knowledge_denied`.
+Inactive/ineligible scopes and authorization service failures map to
+`knowledge_unavailable`. Unknown or missing scopes remain clarification routes.
+These routes are terminal: no corpus query, grounding prompt, response LLM,
+web retrieval, plugin fallback, or ordinary generation occurs.
 
 Configured scope data is checked at startup and revalidated per request through
 a short-expiry cache. An expired cache is never served after a failed refresh.
