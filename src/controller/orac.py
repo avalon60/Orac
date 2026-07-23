@@ -2701,6 +2701,7 @@ class Orac:
         self.dialogue_routing_service = None
         self.knowledge_retrieval_service = None
         self.knowledge_grounding_builder = None
+        KnowledgeScopeAuthorizer.validate_config(self.config_mgr)
         if not self.config_mgr.bool_config_value(
             "knowledge.dialogue", "enabled", default=False
         ):
@@ -5219,6 +5220,7 @@ class Orac:
             knowledge_route_decision = None
             knowledge_pack: KnowledgeGroundingPack | None = None
             knowledge_provenance: dict[str, Any] | None = None
+            knowledge_authorization_provenance: dict[str, Any] = {}
             deterministic_plugin_handoff: PluginRoutingHandoff | None = None
             dialogue_router = getattr(self, "dialogue_routing_service", None)
             explicit_knowledge_route = None
@@ -5252,12 +5254,23 @@ class Orac:
                     )
                 )
                 if knowledge_route_decision is not None:
+                    if (
+                        "rag_usage_allow_all_scopes"
+                        in knowledge_route_decision.reason_codes
+                    ):
+                        knowledge_authorization_provenance = {
+                            "rag_usage_bypass": True,
+                            "authorization_reason_codes": (
+                                "rag_usage_allow_all_scopes",
+                            ),
+                        }
                     knowledge_provenance = {
                         "source": "knowledge_retrieval",
                         "route_type": knowledge_route_decision.route_type,
                         "outcome": "not_attempted",
                         "reason_codes": knowledge_route_decision.reason_codes,
                     }
+                    knowledge_provenance.update(knowledge_authorization_provenance)
                     if knowledge_route_decision.route_type == "knowledge":
                         knowledge_provenance.update(
                             {
@@ -5322,6 +5335,9 @@ class Orac:
                             max_context_chars=self._knowledge_max_context_chars,
                         )
                         knowledge_provenance = dict(knowledge_pack.provenance)
+                        knowledge_provenance.update(
+                            knowledge_authorization_provenance
+                        )
                         logger.log_info(
                             "Knowledge dialogue retrieval route: "
                             f"scope={knowledge_scope.canonical_name} "
@@ -5331,6 +5347,8 @@ class Orac:
                             f"threshold={knowledge_outcome.threshold_count} "
                             f"selected={len(knowledge_outcome.results)} "
                             f"malformed={knowledge_outcome.malformed_count} "
+                            "rag_usage_bypass="
+                            f"{bool(knowledge_authorization_provenance)} "
                             f"reasons={','.join(knowledge_outcome.reason_codes)}"
                         )
                         if knowledge_outcome.status != "grounded":
@@ -5347,6 +5365,9 @@ class Orac:
                                     "outcome": "retrieval_failed",
                                     "reason_codes": knowledge_outcome.reason_codes,
                                 }
+                                knowledge_provenance.update(
+                                    knowledge_authorization_provenance
+                                )
                             return await self._return_terminal_dialogue_response(
                                 req_env=req_env,
                                 content=terminal_content,
@@ -5374,6 +5395,9 @@ class Orac:
                             "outcome": "retrieval_failed",
                             "reason_codes": ("knowledge_retrieval_failed",),
                         }
+                        knowledge_provenance.update(
+                            knowledge_authorization_provenance
+                        )
                         return await self._return_terminal_dialogue_response(
                             req_env=req_env,
                             content="That knowledge source is unavailable right now.",
@@ -5400,6 +5424,7 @@ class Orac:
                         "outcome": "retrieval_unavailable",
                         "reason_codes": ("knowledge_retrieval_unavailable",),
                     }
+                    knowledge_provenance.update(knowledge_authorization_provenance)
                     return await self._return_terminal_dialogue_response(
                         req_env=req_env,
                         content="That knowledge source is unavailable right now.",

@@ -1090,7 +1090,7 @@ registry scopes contain accepted, searchable documents.
 | Key | Shipped value | Contract |
 |---|---|---|
 | `enabled` | `false` | Enables dialogue retrieval; ingestion remains controlled by `[knowledge].enabled`. |
-| `user_scope_allowlist_json` | `{}` | JSON object mapping exact authenticated usernames to canonical scope arrays. The shipped empty object grants no access. Wildcards are invalid; duplicate object keys reject the configuration and duplicate array values are deduplicated. |
+| `allow_all_scopes` | `false` | Security-sensitive administrative bypass that skips only the matching privilege-row requirement. Authentication, active principal registration, canonical scope resolution, active registry state, plugin eligibility, and retrieval boundaries remain mandatory. |
 | `scope_aliases_json` | `{"orac":"PROJECT:ORAC_CORE","orac core":"PROJECT:ORAC_CORE","drop box":"PLUGIN:drop_box"}` | JSON object mapping case-insensitive dialogue aliases to canonical scopes. Unknown or ambiguous aliases do not retrieve. |
 | `registry_cache_ttl_seconds` | `30` | Positive lifetime for active-scope registry snapshots. An expired refresh failure denies retrieval rather than serving stale eligibility. |
 | `max_scopes_per_request` | `3` | Maximum requested canonical scopes. The first vertical slice routes one explicit scope. |
@@ -1105,20 +1105,18 @@ registry scopes contain accepted, searchable documents.
 Boolean master switch for local-knowledge dialogue retrieval. Shipped value and
 runtime fallback: `false`.
 
-### `user_scope_allowlist_json`
+### `allow_all_scopes`
 
-JSON object binding exact authenticated usernames to arrays of canonical
-`PROJECT:<project_code>` and `PLUGIN:<plugin_id>` scopes.
+Boolean administrative bypass. The shipped value and runtime fallback are
+`false`. It still requires a known active principal and a known active eligible
+scope; only a missing or expired matching `USE` privilege is bypassed. Database
+failures remain terminal. Startup emits the `rag_usage_allow_all_scopes`
+security warning and bypassed decisions carry that safe marker. Use only for
+controlled development, acceptance, or emergency operation.
 
-Deployment-only example (this is not a shipped grant):
-
-```bash
-export ORAC__KNOWLEDGE.DIALOGUE__ENABLED=true
-export ORAC__KNOWLEDGE.DIALOGUE__USER_SCOPE_ALLOWLIST_JSON='{"clive":["PROJECT:ORAC_CORE","PLUGIN:drop_box"]}'
-```
-
-An enabled feature with an empty allowlist still denies every user. Aliases do
-not grant authority.
+`user_scope_allowlist_json` has been removed. Its presence is a startup error
+even when dialogue retrieval is disabled. Manage access through Oracle or APEX
+application 1042.
 
 ### `scope_aliases_json`
 

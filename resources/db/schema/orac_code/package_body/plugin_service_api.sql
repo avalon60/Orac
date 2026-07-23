@@ -74,6 +74,22 @@ create or replace package body orac_code.plugin_service_api as
     exception
       when no_data_found then
         l_row.plugin_id := p_plugin_id;
+        if p_plugin_id = 'orac_core'
+        then
+          l_row.service_owner_type := 'CORE';
+          l_row.plugin_registry_id := null;
+        else
+          l_row.service_owner_type := 'PLUGIN';
+          begin
+            select plugin_registry_id
+              into l_row.plugin_registry_id
+              from orac_api.plugin_registry_v
+             where plugin_id = p_plugin_id;
+          exception
+            when no_data_found then
+              raise_application_error(-20204, 'Plugin service owner is not registered.');
+          end;
+        end if;
         l_row.service_code := p_service_code;
         l_row.service_name := p_service_name;
         l_row.entry_point := p_entry_point;

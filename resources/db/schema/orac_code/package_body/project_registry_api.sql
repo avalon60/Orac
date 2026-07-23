@@ -127,6 +127,7 @@ create or replace package body orac_code.project_registry_api as
     l_row.active_yn := normalised_active_yn(p_active_yn);
 
     orac_api.project_registry_tapi.ins(l_row);
+    orac_code.knowledge_scope_api.synchronise_project_scope(l_row.project_id);
   exception
     when dup_val_on_index then
       raise_application_error(-20035, 'Project code already exists.');
@@ -236,6 +237,7 @@ create or replace package body orac_code.project_registry_api as
       p_active_yn    => p_active_yn,
       p_row_checksum => l_row_checksum
     );
+    orac_code.knowledge_scope_api.synchronise_project_scope(l_project_id);
   end upsert_project;
 end project_registry_api;
 /

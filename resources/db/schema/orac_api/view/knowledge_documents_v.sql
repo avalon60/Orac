@@ -4,8 +4,6 @@
 create or replace force view orac_api.knowledge_documents_v as
 select document_id,
        source_object_id,
-       target_scope_type,
-       target_scope_key,
        title,
        current_document_version_id,
        created_by,

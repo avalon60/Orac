@@ -136,21 +136,56 @@ class KnowledgeScopeRegistryRepository:
         return frozenset(scopes)
 
 
-class KnowledgeScopeAuthorizer:
-    """Resolve aliases against configured grants and live canonical registries."""
+class RagUsageAuthorizationRepository:
+    """Call the least-privilege database RAG usage decision API."""
+
+    _PACKAGE = "orac_code.rag_usage_authorization_api"
 
     def __init__(
         self,
         *,
-        user_allowlist: Mapping[str, tuple[KnowledgeScope, ...]],
+        session_factory: Callable[[], Any] | None = None,
+    ) -> None:
+        """Initialise authorization access with an injectable runtime session."""
+        self._session_factory = session_factory or default_orac_session
+
+    def authorization_result(self, username: str, scope: KnowledgeScope) -> str:
+        """Return the database decision code for one principal and scope."""
+        session = self._session_factory()
+        try:
+            with session.cursor() as cursor:
+                result = cursor.callfunc(
+                    f"{self._PACKAGE}.authorization_result",
+                    str,
+                    [username, scope.scope_type, scope.scope_key],
+                )
+            return str(result or "RAG_USAGE_AUTHORIZATION_UNAVAILABLE")
+        except Exception as exc:
+            raise KnowledgeScopeRegistryError(
+                "RAG usage authorization service is unavailable."
+            ) from exc
+        finally:
+            close = getattr(session, "close", None)
+            if callable(close):
+                close()
+
+
+class KnowledgeScopeAuthorizer:
+    """Resolve aliases against database privileges and live scope registries."""
+
+    def __init__(
+        self,
+        *,
         aliases: Mapping[str, KnowledgeScope],
         registry: KnowledgeScopeRegistryRepository,
+        authorization_repository: RagUsageAuthorizationRepository,
+        allow_all_scopes: bool = False,
         cache_ttl_seconds: int = 30,
         max_scopes_per_request: int = 3,
         logger: Any | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        """Initialise immutable grants and bounded live-registry validation."""
+        """Initialise database authorization and bounded registry validation."""
         if cache_ttl_seconds <= 0:
             raise KnowledgeScopeConfigurationError(
                 "registry_cache_ttl_seconds must be positive."
@@ -159,11 +194,12 @@ class KnowledgeScopeAuthorizer:
             raise KnowledgeScopeConfigurationError(
                 "max_scopes_per_request must be positive."
             )
-        self._user_allowlist = MappingProxyType(dict(user_allowlist))
         self._aliases = MappingProxyType(
             {str(name).casefold().strip(): scope for name, scope in aliases.items()}
         )
         self._registry = registry
+        self._authorization_repository = authorization_repository
+        self._allow_all_scopes = bool(allow_all_scopes)
         self._cache_ttl_seconds = cache_ttl_seconds
         self._max_scopes_per_request = max_scopes_per_request
         self._logger = logger
@@ -176,23 +212,25 @@ class KnowledgeScopeAuthorizer:
         config_mgr: Any,
         *,
         registry: KnowledgeScopeRegistryRepository | None = None,
+        authorization_repository: RagUsageAuthorizationRepository | None = None,
         logger: Any | None = None,
     ) -> KnowledgeScopeAuthorizer:
         """Build an authorizer from the exact ``knowledge.dialogue`` settings."""
-        allowlist = _parse_user_allowlist(
-            config_mgr.config_value(
-                "knowledge.dialogue", "user_scope_allowlist_json", default="{}"
-            )
-        )
+        cls.validate_config(config_mgr)
         aliases = _parse_aliases(
             config_mgr.config_value(
                 "knowledge.dialogue", "scope_aliases_json", default="{}"
             )
         )
         return cls(
-            user_allowlist=allowlist,
             aliases=aliases,
             registry=registry or KnowledgeScopeRegistryRepository(),
+            authorization_repository=(
+                authorization_repository or RagUsageAuthorizationRepository()
+            ),
+            allow_all_scopes=config_mgr.bool_config_value(
+                "knowledge.dialogue", "allow_all_scopes", default=False
+            ),
             cache_ttl_seconds=config_mgr.int_config_value(
                 "knowledge.dialogue", "registry_cache_ttl_seconds", default=30
             ),
@@ -202,15 +240,37 @@ class KnowledgeScopeAuthorizer:
             logger=logger,
         )
 
+    @staticmethod
+    def validate_config(config_mgr: Any) -> None:
+        """Reject obsolete security settings even when dialogue RAG is disabled."""
+        section_reader = getattr(config_mgr, "section_dict", None)
+        if callable(section_reader):
+            obsolete_present = "user_scope_allowlist_json" in section_reader(
+                "knowledge.dialogue"
+            )
+        else:
+            missing = object()
+            obsolete_present = (
+                config_mgr.config_value(
+                    "knowledge.dialogue",
+                    "user_scope_allowlist_json",
+                    default=missing,
+                )
+                is not missing
+            )
+        if obsolete_present:
+            raise KnowledgeScopeConfigurationError(
+                "knowledge.dialogue.user_scope_allowlist_json is obsolete; "
+                "administer RAG usage privileges in Oracle."
+            )
+
     def validate_startup(self) -> KnowledgeScopeResolution:
         """Validate all configured grants and aliases against current registries."""
         try:
             active = self._active_scopes(force_refresh=True)
         except KnowledgeScopeRegistryError:
             return KnowledgeScopeResolution("unavailable", "scope_registry_unavailable")
-        configured = {
-            scope for scopes in self._user_allowlist.values() for scope in scopes
-        } | set(self._aliases.values())
+        configured = set(self._aliases.values())
         invalid = configured - active
         if invalid:
             self._log_warning(
@@ -219,6 +279,11 @@ class KnowledgeScopeAuthorizer:
                 + ", ".join(sorted(scope.canonical_name for scope in invalid))
             )
             return KnowledgeScopeResolution("degraded", "configured_scope_inactive")
+        if self._allow_all_scopes:
+            self._log_warning(
+                "SECURITY WARNING: rag_usage_allow_all_scopes is enabled; "
+                "database privilege rows are bypassed for authenticated active users only."
+            )
         return KnowledgeScopeResolution("ready", "scope_configuration_valid")
 
     def resolve_for_user(
@@ -228,8 +293,8 @@ class KnowledgeScopeAuthorizer:
     ) -> KnowledgeScopeResolution:
         """Resolve requested aliases/canonical names and enforce current user grants."""
         canonical_user = str(username or "").strip()
-        if not canonical_user or canonical_user not in self._user_allowlist:
-            return KnowledgeScopeResolution("denied", "user_scope_allowlist_missing")
+        if not canonical_user:
+            return KnowledgeScopeResolution("denied", "RAG_USAGE_PRINCIPAL_UNKNOWN")
         if not requested_names:
             return KnowledgeScopeResolution("ambiguous", "knowledge_scope_required")
         if len(requested_names) > self._max_scopes_per_request:
@@ -249,9 +314,33 @@ class KnowledgeScopeAuthorizer:
             if scope not in resolved:
                 resolved.append(scope)
 
-        grants = set(self._user_allowlist[canonical_user])
-        if any(scope not in grants for scope in resolved):
-            return KnowledgeScopeResolution("denied", "knowledge_scope_not_authorised")
+        bypassed = False
+        for scope in resolved:
+            try:
+                result = self._authorization_repository.authorization_result(
+                    canonical_user, scope
+                )
+            except KnowledgeScopeRegistryError:
+                return KnowledgeScopeResolution(
+                    "unavailable", "RAG_USAGE_AUTHORIZATION_UNAVAILABLE"
+                )
+            if result == "RAG_USAGE_GRANTED":
+                continue
+            if self._allow_all_scopes and result in {
+                "RAG_USAGE_NOT_GRANTED",
+                "RAG_USAGE_EXPIRED",
+            }:
+                bypassed = True
+                continue
+            if result in {
+                "RAG_USAGE_SCOPE_INACTIVE",
+                "RAG_USAGE_SCOPE_INELIGIBLE",
+                "RAG_USAGE_AUTHORIZATION_UNAVAILABLE",
+            }:
+                return KnowledgeScopeResolution("inactive", result)
+            if result == "RAG_USAGE_SCOPE_UNKNOWN":
+                return KnowledgeScopeResolution("unknown", result)
+            return KnowledgeScopeResolution("denied", result)
         try:
             active = self._active_scopes()
         except KnowledgeScopeRegistryError:
@@ -259,7 +348,9 @@ class KnowledgeScopeAuthorizer:
         if any(scope not in active for scope in resolved):
             return KnowledgeScopeResolution("inactive", "knowledge_scope_inactive")
         return KnowledgeScopeResolution(
-            "authorised", "knowledge_scope_authorised", tuple(resolved)
+            "authorised",
+            "rag_usage_allow_all_scopes" if bypassed else "RAG_USAGE_GRANTED",
+            tuple(resolved),
         )
 
     @property
@@ -319,28 +410,6 @@ def _load_json_object(source: str, *, setting_name: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise KnowledgeScopeConfigurationError(f"{setting_name} must be a JSON object.")
     return value
-
-
-def _parse_user_allowlist(source: str) -> Mapping[str, tuple[KnowledgeScope, ...]]:
-    """Parse exact authenticated usernames to deduplicated canonical scopes."""
-    raw = _load_json_object(source, setting_name="user_scope_allowlist_json")
-    parsed: dict[str, tuple[KnowledgeScope, ...]] = {}
-    for username, values in raw.items():
-        if not username.strip() or not isinstance(values, list):
-            raise KnowledgeScopeConfigurationError(
-                "user_scope_allowlist_json values must be arrays keyed by username."
-            )
-        scopes: list[KnowledgeScope] = []
-        for value in values:
-            if not isinstance(value, str) or value == "*":
-                raise KnowledgeScopeConfigurationError(
-                    "Knowledge allowlists accept canonical TYPE:key strings only."
-                )
-            scope = KnowledgeScope.parse(value)
-            if scope not in scopes:
-                scopes.append(scope)
-        parsed[username] = tuple(scopes)
-    return MappingProxyType(parsed)
 
 
 def _parse_aliases(source: str) -> Mapping[str, KnowledgeScope]:

@@ -26,6 +26,14 @@ application:
 http://localhost:8042/ords/r/apex/workspace-sign-in/oracle-apex-sign-in
 ```
 
+## RAG Usage Privileges
+
+Application 1042 Page 39 reports active, scheduled, expired, and revoked RAG
+usage privilege history. Page 40 selects active principals and eligible
+canonical scopes and calls `orac_code.rag_usage_privilege_api`; it performs no
+direct table DML. APEX is an administration surface, not an independent
+authorization authority.
+
 ## User Preference Sliders
 
 The administration preference editor renders slider-capable numeric

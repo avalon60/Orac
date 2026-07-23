@@ -95,6 +95,7 @@ _DDL_OWNER_STATEMENT = re.compile(
 )
 _APEX_PATH_PARTS = {"apex", "orac_apps", "orac_ws"}
 _ALLOWED_PLUGIN_GRANTEES = {"orac_plugin", "orac_apx_pub"}
+_ALLOWED_SHARED_PLUGIN_REFERENCE_SCHEMAS = {"orac_plugin"}
 _DEPLOYED_OBJECT_FOLDERS = {
     "function": "FUNCTION",
     "materialized_view": "MATERIALIZED VIEW",
@@ -1261,7 +1262,10 @@ def _validate_plugin_sql_file(
             )
     for match in _SCHEMA_QUALIFIED_REFERENCE.finditer(text):
         schema_name = match.group(1).lower()
-        if schema_name in PROTECTED_ORAC_SCHEMAS:
+        if (
+            schema_name in PROTECTED_ORAC_SCHEMAS
+            or schema_name in _ALLOWED_SHARED_PLUGIN_REFERENCE_SCHEMAS
+        ):
             continue
         if schema_name.startswith("orac_") and schema_name not in declared_schemas:
             violations.append(

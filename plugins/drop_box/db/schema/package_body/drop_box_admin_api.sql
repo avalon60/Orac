@@ -36,6 +36,7 @@ create or replace package body orac_dropbox.drop_box_admin_api as
   is
     l_duplicate_count number;
     l_profile_count   number;
+    l_scope_status    varchar2(100 char);
   begin
     if not regexp_like(coalesce(p_location_code, ' '), '^[A-Z][A-Z0-9_]{1,99}$')
     then
@@ -73,6 +74,18 @@ create or replace package body orac_dropbox.drop_box_admin_api as
     if trim(p_target_scope_key) is null
     then
       raise_application_error(-20007, 'Target scope key is required.');
+    end if;
+
+    l_scope_status := orac_plugin.knowledge_scope_validation_api.scope_status(
+                        upper(trim(p_target_scope_type)),
+                        trim(p_target_scope_key)
+                      );
+    if l_scope_status <> 'RAG_USAGE_SCOPE_ELIGIBLE'
+    then
+      raise_application_error(
+        -20014,
+        'Target scope is unknown, inactive, or not runtime eligible.'
+      );
     end if;
 
     if not regexp_like(coalesce(p_processing_profile, ' '), '^[a-z][a-z0-9_]{1,99}$')

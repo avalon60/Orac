@@ -6,6 +6,8 @@ create or replace force view orac_api.plugin_services_v as
    select
         plugin_service_id
       , plugin_id
+      , service_owner_type
+      , plugin_registry_id
       , service_code
       , service_name
       , entry_point

@@ -102,34 +102,12 @@ as
     p_scope_key  in varchar2
   )
   is
-    l_count number;
+    l_status varchar2(100 char);
   begin
-    if p_scope_type = 'PROJECT'
-    then
-      select count(*)
-        into l_count
-        from orac_code.project_registry_v project
-       where project.project_code = p_scope_key
-         and project.active_yn = 'Y';
-    else
-      select count(*)
-        into l_count
-        from orac_code.plugin_registry_v plugin
-       where plugin.plugin_id = p_scope_key
-         and plugin.enabled = 'Y'
-         and plugin.install_status = 'success'
-         and plugin.configuration_status in ('success', 'not_required')
-         and plugin.dependency_status in ('success', 'not_required')
-         and plugin.database_status in (
-               'deployed',
-               'already_deployed',
-               'not_required',
-               'optional_missing'
-             )
-         and plugin.readiness_status = 'success';
-    end if;
-
-    if l_count <> 1
+    l_status := orac_code.knowledge_scope_api.scope_status(
+                  p_scope_type, p_scope_key
+                );
+    if l_status <> 'RAG_USAGE_SCOPE_ELIGIBLE'
     then
       raise_application_error(
         -20409,
@@ -200,6 +178,7 @@ as
     l_mime_type            varchar2(255);
     l_scope_type           varchar2(50);
     l_scope_key            varchar2(200);
+    l_knowledge_scope_id   number;
     l_source_object_id     number;
     l_document_id          number;
     l_document_version_id  number;
@@ -215,6 +194,9 @@ as
     l_scope_type := normalised_scope(p_target_scope_type);
     l_scope_key := normalised_required(p_target_scope_key, 'Target scope key');
     assert_canonical_scope(l_scope_type, l_scope_key);
+    l_knowledge_scope_id := orac_code.knowledge_scope_api.resolve_scope_id(
+                              l_scope_type, l_scope_key
+                            );
 
     if p_byte_size is null or p_byte_size < 0
     then
@@ -231,8 +213,7 @@ as
 
       update orac_api.knowledge_source_objects_v
          set parent_source_reference = p_parent_source_reference,
-             target_scope_type       = l_scope_type,
-             target_scope_key        = l_scope_key
+             knowledge_scope_id      = l_knowledge_scope_id
        where source_object_id = l_source_object_id;
     exception
       when no_data_found then
@@ -257,8 +238,7 @@ as
             from orac_api.knowledge_source_objects_v
            where source_type = l_source_type
              and source_reference like 'drop_box:drop_job:%'
-             and target_scope_type = l_scope_type
-             and target_scope_key = l_scope_key
+             and knowledge_scope_id = l_knowledge_scope_id
              and parent_source_reference in (
                    p_parent_source_reference,
                    p_legacy_parent_source_reference
@@ -269,8 +249,7 @@ as
             update orac_api.knowledge_source_objects_v
                set source_reference        = l_source_reference,
                    parent_source_reference = p_parent_source_reference,
-                   target_scope_type       = l_scope_type,
-                   target_scope_key        = l_scope_key
+                   knowledge_scope_id      = l_knowledge_scope_id
              where source_object_id = l_source_object_id;
 
             add_event_for_source(
@@ -292,15 +271,13 @@ as
             source_type,
             source_reference,
             parent_source_reference,
-            target_scope_type,
-            target_scope_key
+            knowledge_scope_id
           )
           values (
             l_source_type,
             l_source_reference,
             p_parent_source_reference,
-            l_scope_type,
-            l_scope_key
+            l_knowledge_scope_id
           )
           returning source_object_id into l_source_object_id;
         end if;
@@ -314,22 +291,16 @@ as
          for update;
 
       update orac_api.knowledge_documents_v
-         set target_scope_type = l_scope_type,
-             target_scope_key  = l_scope_key,
-             title             = coalesce(p_original_filename, title)
+         set title = coalesce(p_original_filename, title)
        where document_id = l_document_id;
     exception
       when no_data_found then
         insert into orac_api.knowledge_documents_v (
           source_object_id,
-          target_scope_type,
-          target_scope_key,
           title
         )
         values (
           l_source_object_id,
-          l_scope_type,
-          l_scope_key,
           p_original_filename
         )
         returning document_id into l_document_id;

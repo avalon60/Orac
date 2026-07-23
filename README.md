@@ -67,7 +67,27 @@ some advertised capabilities remain intentionally constrained:
   experimental modes and require explicit configuration.
 - Media control remains a policy-blocked scaffold, and the OpenAI-compatible
   gateway settings are reserved for a future service.
-- Future work is kept separate from the current-capability documentation.
+- Detailed future work remains in the project backlog and is not presented as
+  current runtime capability.
+
+## Planned Integrations
+
+The following optional integrations are planned but are not currently
+implemented runtime capabilities:
+
+- [IndexTTS2 voice design](docs/pending_work/TODO.md#9-indextts2-voice-cloning--voice-design)
+  behind the existing TTS provider abstraction. Piper and Kokoro remain the
+  supported baseline, and cloning or designing a real person's voice would
+  require explicit consent.
+- [Open WebUI integration](docs/pending_work/TODO.md#17-open-webui-integration)
+  as an optional user interface into Orac, potentially through the planned
+  OpenAI-compatible gateway. Orac would continue to own routing, plugin policy,
+  persistence, and local knowledge.
+- [A Raspberry Pi smart-speaker satellite](docs/pending_work/TODO.md#13-small-pi-display-and-physical-satellite-unit)
+  with a thin audio/display software stack for microphone capture, playback,
+  Orac status, and optional kiosk display. Processing and authority would remain
+  with the central Orac runtime; LiveKit is a candidate transport rather than a
+  committed dependency.
 
 ## Main Components
 

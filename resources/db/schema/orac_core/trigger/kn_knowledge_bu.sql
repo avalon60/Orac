@@ -5,6 +5,7 @@ create or replace trigger orac_core.kn_srcobj_bu
 before update on orac_core.knowledge_source_objects
 for each row
 begin
+  -- Recompile after canonical scope normalization changes the source table shape.
   :new.updated_on := systimestamp;
   :new.updated_by := coalesce(
                        sys_context('apex$session', 'app_user'),
@@ -22,6 +23,7 @@ create or replace trigger orac_core.kn_doc_bu
 before update on orac_core.knowledge_documents
 for each row
 begin
+  -- Recompile after canonical scope normalization changes the document table shape.
   :new.updated_on := systimestamp;
   :new.updated_by := coalesce(
                        sys_context('apex$session', 'app_user'),

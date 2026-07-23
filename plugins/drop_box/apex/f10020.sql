@@ -1960,10 +1960,11 @@ wwv_flow_imp_page.create_page_item(
 ,p_prompt=>'Plugin Target'
 ,p_display_as=>'NATIVE_SELECT_LIST'
 ,p_lov=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select display_label || '' ('' || plugin_id || '')'' d,',
-'       plugin_id r',
-'  from orac_code.plugin_lov_v',
-' order by display_label'))
+'select display_value d,',
+'       scope_key r',
+'  from orac_code.rag_usage_scope_lov_v',
+' where scope_type = ''PLUGIN''',
+' order by display_value'))
 ,p_lov_display_null=>'YES'
 ,p_cHeight=>1
 ,p_begin_on_new_line=>'N'
@@ -1983,11 +1984,11 @@ wwv_flow_imp_page.create_page_item(
 ,p_prompt=>'Project Code'
 ,p_display_as=>'NATIVE_SELECT_LIST'
 ,p_lov=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select display_label d,',
-'       target_scope_key r',
-'  from orac_code.ingestion_target_lov_v',
-' where target_scope_type = ''project''',
-' order by sort_order, display_label'))
+'select display_value d,',
+'       scope_key r',
+'  from orac_code.rag_usage_scope_lov_v',
+' where scope_type = ''PROJECT''',
+' order by display_value'))
 ,p_lov_display_null=>'YES'
 ,p_cHeight=>1
 ,p_field_template=>1609121967514267634
@@ -2189,9 +2190,9 @@ wwv_flow_imp_page.create_page_validation(
 '',
 'for target in (',
 '  select 1',
-'    from orac_code.ingestion_target_lov_v',
-'   where target_scope_type = ''project''',
-'     and target_scope_key = :P2_TARGET_PROJECT_KEY',
+'    from orac_code.rag_usage_scope_lov_v',
+'   where scope_type = ''PROJECT''',
+'     and scope_key = :P2_TARGET_PROJECT_KEY',
 ') loop',
 '  return true;',
 'end loop;',

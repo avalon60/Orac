@@ -188,7 +188,16 @@ Admin access:
 - `drop_job_event_admin_v`: job audit history with bounded, event-type-based
   administrator messages.
 - `drop_box_admin_api`: create, update, enable, and disable locations with
-  optimistic row-version checks.
+  optimistic row-version checks. Supported writes validate canonical scopes
+  through `orac_plugin.knowledge_scope_validation_api` and reject unknown,
+  inactive, or ineligible scopes.
+
+Drop Box deliberately retains plugin-owned scope type/key strings. The schema
+boundary forbids an `ORAC_DROPBOX -> ORAC_CORE` foreign key, so API validation
+is not declarative referential integrity. Canonical keys are immutable, Core
+hard deletion is blocked, and supported writes validate through the bridge.
+Privileged direct SQL can still create an invalid logical reference; that is an
+explicit residual risk and an unsupported write path.
 
 ## Job Creation
 
