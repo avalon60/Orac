@@ -179,6 +179,45 @@
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 <lobStorageType>SECUREFILE</lobStorageType>
 </LobStorage>
+<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000077722C00006$$" id="753377ED-B8D8-4533-E208-96B96DBCE587">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<cache>NOCACHE</cache>
+<chunk>8192</chunk>
+<column>LOSSLESS_TEXT</column>
+<compression>NO</compression>
+<duplication>KEEP_DUPLICATES</duplication>
+<logging>YES</logging>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<lobStorageType>SECUREFILE</lobStorageType>
+</LobStorage>
+<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000077722C00007$$" id="14779E06-6123-FA82-E6FB-508FD3B511BA">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<cache>NOCACHE</cache>
+<chunk>8192</chunk>
+<column>CONTENT_SNAPSHOT</column>
+<compression>NO</compression>
+<duplication>KEEP_DUPLICATES</duplication>
+<logging>YES</logging>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<lobStorageType>SECUREFILE</lobStorageType>
+</LobStorage>
+<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000077722C00008$$" id="F19DF244-7795-BB06-1B5B-A1612C020465">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<cache>NOCACHE</cache>
+<chunk>8192</chunk>
+<column>EMBEDDING</column>
+<compression>NO</compression>
+<duplication>KEEP_DUPLICATES</duplication>
+<logging>YES</logging>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<lobStorageType>SECUREFILE</lobStorageType>
+</LobStorage>
 </lobStorages>
 <primaryKeys>
 <PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="MESG_EMB_PK" id="F6617E1E-26C8-148C-B4BE-8213520C85B6">

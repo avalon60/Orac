@@ -32,6 +32,14 @@ class _Repository:
         return 456
 
 
+class _FailingRepository:
+    def __init__(self, message: str) -> None:
+        self.message = message
+
+    def submit_managed_file(self, **kwargs) -> int:
+        raise RuntimeError(self.message)
+
+
 class KnowledgeCaptureTests(unittest.TestCase):
     """Tests Core-managed file capture safety."""
 
@@ -132,6 +140,41 @@ class KnowledgeCaptureTests(unittest.TestCase):
             self.assertTrue(second.duplicate_payload)
             temp_dir = managed / ".tmp"
             self.assertEqual(list(temp_dir.glob("*")) if temp_dir.exists() else [], [])
+
+    def test_scope_rejection_is_redacted_as_capture_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "drop"
+            root.mkdir()
+            source = root / "note.md"
+            source.write_text("hello", encoding="utf-8")
+            service = KnowledgeManagedFileCaptureService(
+                managed_root=Path(temp) / "managed",
+                repository=_FailingRepository(
+                    "ORA-20409: scope SECRET_PROJECT is not registered"
+                ),
+            )
+
+            with self.assertRaisesRegex(
+                KnowledgeCaptureError,
+                "requested knowledge scope is not available",
+            ) as raised:
+                service.capture_drop_box_file(_request(root, source))
+
+            self.assertNotIn("SECRET_PROJECT", str(raised.exception))
+
+    def test_unrelated_database_failure_remains_retryable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "drop"
+            root.mkdir()
+            source = root / "note.md"
+            source.write_text("hello", encoding="utf-8")
+            service = KnowledgeManagedFileCaptureService(
+                managed_root=Path(temp) / "managed",
+                repository=_FailingRepository("ORA-03113: connection lost"),
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "ORA-03113"):
+                service.capture_drop_box_file(_request(root, source))
 
 
 def _request(

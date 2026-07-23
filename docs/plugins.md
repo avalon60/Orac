@@ -3,7 +3,40 @@
 Orac plugins add optional capabilities without taking ownership of core
 orchestration, routing, persistence, security, or context management.
 
-## Plugin Identity
+## Source vs Installed Runtime
+
+Orac uses two plugin filesystem locations with different jobs:
+
+```text
+plugins/<plugin-id>.json
+plugins/<plugin-id>/
+```
+
+This is the bundled source tree. Edit plugin code, manifests, resources, APEX
+exports, and database assets here. `bin/orac-plugin.sh package`,
+`bin/orac-plugin.sh install --source`, and `bin/orac-plugin.sh install
+--bundled` read from this tree.
+
+```text
+$ORAC_HOME/var/plugins/installed/<plugin-id>/<version>/
+  manifest.json
+  plugin/
+  resources/
+```
+
+This is the activated runtime snapshot. The plugin registry records the active
+snapshot in `installed_path`, and the normal Orac runtime loads enabled plugins
+from that registry path. Runtime routing and service startup do not fall back to
+the source tree when a registered installed snapshot is missing.
+
+Use `bin/orac-plugin.sh check <plugin-id>` to validate the activated snapshot.
+Treat `bin/orac-plugin.sh list` as inventory: it shows source-tree manifests,
+registry state, and installed-artifact health. If a registry row says `success`
+while `installed_path` is missing, `list` reports the artifact drift and
+`check` fails for that plugin. Reinstall or quarantine the plugin state before
+relying on that plugin's routing or services.
+
+## Source Plugin Identity
 
 A plugin is defined by matching filesystem artefacts:
 
@@ -13,8 +46,10 @@ plugins/<plugin-id>/
 ```
 
 The manifest filename stem, implementation directory, and manifest `plugin_id`
-must match exactly. The manifest is the source of truth for discovery and
-routing; implementation code is not imported during discovery.
+must match exactly. The source manifest is the source of truth for package and
+source-tree discovery metadata; implementation code is not imported during
+discovery. Normal Orac runtime loading uses the installed manifest recorded in
+the plugin registry.
 
 ## Manifest Contract
 
@@ -53,6 +88,7 @@ Declarative route metadata may describe capability-level intents:
 
 ```json
 "routing": {
+  "interceptor": "interceptor:HomeAssistantDialogInterceptor",
   "capabilities": [
     {
       "id": "home_assistant.light_control",
@@ -71,6 +107,9 @@ Declarative route metadata may describe capability-level intents:
 ```
 
 The route capability id must already appear in top-level `capabilities`.
+`routing.interceptor` is optional and applies only to on-demand or hybrid
+plugins. It points to a `PluginDialogInterceptor` subclass that reads immutable
+dialogue matching metadata from the plugin's packaged `resources/` directory.
 
 ## Manifest JSON Reference
 
@@ -110,6 +149,80 @@ to normal conversation.
 ```
 
 Service plugins declare their service entry point under `runtime.service`.
+
+## Dialogue Interception
+
+Plugins may supply deterministic dialogue interception for routes declared in
+the manifest. The manifest remains authoritative for executable routes; the
+interception metadata is authoritative only for dialogue matching.
+
+Package matching rules as an immutable resource:
+
+```text
+plugins/<plugin-id>/
+  interceptor.py
+  plugin.py
+  resources/
+    intercept_meta.json
+```
+
+A rule identifies one manifest route by `route_id`:
+
+```json
+{
+  "rule_id": "weather_forecast",
+  "route_id": "short_forecast",
+  "match_type": "regex",
+  "priority": 100,
+  "patterns": ["^what is the forecast$"],
+  "arguments": {
+    "response_type": "forecast"
+  }
+}
+```
+
+`route_id` is the manifest intent name for the plugin and must be unique within
+that plugin. During preparation, Orac validates every rule against
+`routing.capabilities` and derives the selected `capability_id` and
+`intent_name` from the manifest. Rules must not duplicate those manifest fields.
+
+Interceptors subclass the core template and implement only
+`build_arguments()`. Bundled plugins must not override the concrete
+`intercept()` template method. Resource loading must use the Orac-bound
+resource reader supplied to the interceptor; do not locate
+`resources/intercept_meta.json` with `__file__` or module-path inference.
+
+Matching evidence remains immutable through arbitration. When the router invokes
+the selected plugin, it passes a mutable copy of the route arguments:
+
+```python
+meta["plugin_route"] = {
+    "plugin_id": candidate.plugin_id,
+    "capability_id": candidate.capability_id,
+    "intent_name": candidate.intent_name,
+    "arguments": dict(candidate.extracted_params or {}),
+    "match_reasons": list(candidate.match_reasons),
+}
+```
+
+Migrated plugins should dispatch from `meta["plugin_route"]` during normal
+routing. Temporary `can_handle()` compatibility methods may remain for old
+callers, but they must not create another candidate or run a separate ownership
+parser.
+
+Interception metadata and input are bounded. Metadata is limited to 64 KiB,
+100 rules, bounded exact values and regex patterns, and bounded normalisation
+replacements. User text longer than 2048 characters is not evaluated by plugin
+regexes. Regexes must be anchored and cannot use backreferences, lookbehind, or
+nested quantified groups. These checks run during plugin preparation; invalid
+interception metadata disables that interceptor rather than bypassing plugin
+discovery or execution policy.
+
+Plugin knowledge scopes use canonical `PLUGIN:<plugin_id>` identities from the
+same active runtime registry. A knowledge match is only a routing decision; it
+does not invoke plugin code or grant plugin database access. Plugin execution
+still passes through arbitration, entitlements, confirmation, audit, timeout,
+redaction, and the managed invocation boundary.
 
 ## Plugin APEX Apps
 
@@ -705,7 +818,9 @@ plugins/
 ```
 
 Add `resources/`, `db/schema/`, and plugin-local tests only when the plugin
-requires them. Use `plugins/_template/` as the implementation starting point.
+requires them. Use `resources/intercept_meta.json` for dialogue matching rules
+when the manifest declares `routing.interceptor`. Use `plugins/_template/` as
+the implementation starting point.
 
 ## Packaging And Installation
 
@@ -716,6 +831,8 @@ manifest.json
 plugin/
   plugin.py
   plugin.ini.example
+  resources/
+    intercept_meta.json
   apex/
     example_status.sql
   db/schema/
@@ -738,9 +855,9 @@ bin/orac-plugin.sh status home_assistant
 bin/orac-plugin.sh check home_assistant
 ```
 
-Installed versions live under `$ORAC_HOME/var/plugins/installed`. Mutable
-configuration lives under `~/.Orac/plugin_config/<plugin-id>/plugin.ini`, and
-encrypted secrets remain in `~/.Orac/pat_vault.ini`.
+Installed runtime snapshots live under `$ORAC_HOME/var/plugins/installed`.
+Mutable configuration lives under `~/.Orac/plugin_config/<plugin-id>/plugin.ini`,
+and encrypted secrets remain in `~/.Orac/pat_vault.ini`.
 
 ## Python Dependencies
 

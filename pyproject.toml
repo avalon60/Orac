@@ -52,5 +52,30 @@ where = ["src"]
 [dependency-groups]
 dev = [
     "black (>=26.5.1,<27.0.0)",
+    "bump2version (>=1.0.1,<2.0.0)",
+    "mypy (>=1.17.1,<2.0.0)",
     "ruff (>=0.15.20,<0.16.0)"
 ]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+explicit_package_bases = true
+files = [
+    "src/orac_core/dialogue_routing/__init__.py",
+    "src/orac_core/dialogue_routing/models.py",
+    "src/orac_core/dialogue_routing/service.py",
+    "src/orac_core/knowledge/__init__.py",
+    "src/orac_core/knowledge/grounding.py",
+    "src/orac_core/knowledge/models.py",
+    "src/orac_core/knowledge/repository.py",
+    "src/orac_core/knowledge/retrieval.py",
+    "src/orac_core/knowledge/scope.py",
+]
+follow_imports = "skip"
+check_untyped_defs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+show_error_codes = true
+warn_redundant_casts = true
+warn_unused_ignores = true

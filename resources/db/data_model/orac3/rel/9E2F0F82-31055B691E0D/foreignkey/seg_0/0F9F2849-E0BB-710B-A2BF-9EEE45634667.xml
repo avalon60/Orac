@@ -1,0 +1,17 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<FKIndexAssociation class="oracle.dbtools.crest.model.design.relational.FKIndexAssociation" directorySegmentName="seg_0" id="0F9F2849-E0BB-710B-A2BF-9EEE45634667" containerWithKeyObject="373E12DB-F4E3-0D76-21A3-9DD15748257C" localFKIndex="5E33B470-FD01-C811-E1AA-06DAF22516C8" name="KN_CHNKEMB_KN_EMBMOD_FK1">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>CBF117CC-CFD1-5CA6-5EBB-49A6B3E49D9B</importedID>
+<referredTableLongName>orac_core.KNOWLEDGE_EMBEDDING_MODELS</referredTableLongName>
+<deleteRule>NO ACTION</deleteRule>
+<referredTableID>173F9861-3463-8FC9-C7A3-F409CCB29177</referredTableID>
+<keyObject>294F21CE-CDD7-3ED6-0C89-81E437E82147</keyObject>
+<referredKeyID>294F21CE-CDD7-3ED6-0C89-81E437E82147</referredKeyID>
+<mandatory>true</mandatory>
+<refColNames>EMBEDDING_MODEL_ID</refColNames>
+<transferable>true</transferable>
+<rely>false</rely>
+<columnDependencyConstraintGenerateInDDL>true</columnDependencyConstraintGenerateInDDL>
+</FKIndexAssociation>

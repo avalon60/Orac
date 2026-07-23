@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "description": "Deterministic prompt interception rules for the Weather plugin.",
+  "normalisation": "spoken_command",
+  "normalisation_replacements": {
+    "wether": "weather"
+  },
+  "rules": [
+    {
+      "rule_id": "temperature_for_location",
+      "route_id": "current_weather",
+      "match_type": "regex",
+      "priority": 100,
+      "patterns": [
+        "^(?:what is|what's) (?:the )?temperature in (?P<location>.+?)(?: (?P<time_phrase>this evening|tonight|today))?$",
+        "^temperature in (?P<location>.+?)(?: (?P<time_phrase>this evening|tonight|today))?$"
+      ],
+      "arguments": {
+        "response_type": "temperature"
+      }
+    },
+    {
+      "rule_id": "weather_for_location",
+      "route_id": "current_weather",
+      "match_type": "regex",
+      "priority": 95,
+      "patterns": [
+        "^(?:what is|what's) (?:the )?weather in (?P<location>.+?)(?: (?P<time_phrase>this evening|tonight|today))?$",
+        "^weather in (?P<location>.+?)(?: (?P<time_phrase>this evening|tonight|today))?$"
+      ],
+      "arguments": {
+        "response_type": "general"
+      }
+    },
+    {
+      "rule_id": "current_temperature_aliases",
+      "route_id": "current_weather",
+      "match_type": "exact_any",
+      "priority": 90,
+      "values": [
+        "what is the temperature",
+        "what's the temperature",
+        "what is the temperature outside",
+        "what's the temperature outside"
+      ],
+      "arguments": {
+        "response_type": "temperature"
+      }
+    },
+    {
+      "rule_id": "current_weather_aliases",
+      "route_id": "current_weather",
+      "match_type": "exact_any",
+      "priority": 85,
+      "values": [
+        "what is the weather",
+        "what's the weather",
+        "what is the weather where i am",
+        "what's the weather where i am",
+        "what is the weather outside",
+        "what's the weather outside"
+      ],
+      "arguments": {
+        "response_type": "general"
+      }
+    },
+    {
+      "rule_id": "forecast_for_location",
+      "route_id": "short_forecast",
+      "match_type": "regex",
+      "priority": 100,
+      "patterns": [
+        "^(?:what is|what's) (?P<time_phrase>tomorrow morning|tomorrow|today|tonight|this evening)'s weather in (?P<location>.+?)$",
+        "^(?:what is|what's) (?:the )?forecast for (?P<location>.+?)(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$",
+        "^forecast for (?P<location>.+?)(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$",
+        "^(?:give me )?(?:the )?outlook for (?P<location>.+?)(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$",
+        "^what will it be like in (?P<location>.+?)(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$"
+      ],
+      "arguments": {
+        "response_type": "general"
+      }
+    },
+    {
+      "rule_id": "rain_forecast",
+      "route_id": "short_forecast",
+      "match_type": "regex",
+      "priority": 90,
+      "patterns": [
+        "^(?:will it|is it going to) rain(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?(?: where i am)?$",
+        "^(?:do i need|will i need) (?:an )?umbrella(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$"
+      ],
+      "arguments": {
+        "response_type": "rain"
+      }
+    },
+    {
+      "rule_id": "wind_forecast",
+      "route_id": "short_forecast",
+      "match_type": "regex",
+      "priority": 90,
+      "patterns": [
+        "^(?:will it be|is it going to be) windy(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?(?: where i am)?$"
+      ],
+      "arguments": {
+        "response_type": "wind"
+      }
+    },
+    {
+      "rule_id": "coat_forecast",
+      "route_id": "short_forecast",
+      "match_type": "regex",
+      "priority": 90,
+      "patterns": [
+        "^(?:do i need|will i need) (?:a )?(?:coat|jacket)(?: (?P<time_phrase>tomorrow morning|this evening|tonight|tomorrow|today))?$"
+      ],
+      "arguments": {
+        "response_type": "coat"
+      }
+    },
+    {
+      "rule_id": "forecast_aliases",
+      "route_id": "short_forecast",
+      "match_type": "exact_any",
+      "priority": 80,
+      "values": [
+        "weather forecast",
+        "what is the weather forecast",
+        "what's the weather forecast",
+        "what is the forecast",
+        "what's the forecast",
+        "what is the outlook",
+        "what's the outlook",
+        "what is the outlook tomorrow",
+        "what's the outlook tomorrow"
+      ],
+      "arguments": {
+        "response_type": "general"
+      }
+    }
+  ]
+}

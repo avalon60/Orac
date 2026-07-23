@@ -155,6 +155,8 @@ plugins/
 `-- home_assistant/            <- source directory
     |-- README.md
     |-- Python files
+    |-- resources/
+    |   `-- intercept_meta.json
     |-- db/
     |   `-- schema/
     |       |-- comment/
@@ -189,6 +191,12 @@ plugins/
 ```
 
 The `db` directory is optional. It must only be provided for plugins that need plugin-owned database artefacts to be created, installed, upgraded, or maintained as part of the plugin lifecycle.
+
+The `resources` directory is optional. When present, immutable packaged
+resources such as `intercept_meta.json` must be read through the Orac-bound
+plugin resource reader. Plugin code must not discover packaged resources by
+walking from `__file__`, inferring module paths, or bypassing the package
+layout resolver.
 
 Where plugin database deployment files are required, they must be located under:
 
@@ -350,6 +358,25 @@ The manifest describes what the plugin offers.
 
 The manifest does not grant authority.
 
+Manifest `routing.capabilities` is authoritative for executable route
+identity. If a plugin supplies dialogue interception metadata, that metadata
+must identify exactly one manifest route by `route_id`; it must not duplicate
+`capability_id` and `intent_name` strings in every matching rule. Orac core
+derives the selected capability and intent from the manifest route definition
+during preparation.
+
+Plugins that expose deterministic dialogue interception declare the
+interceptor entry point with `routing.interceptor`. The declared class must
+subclass the core `PluginDialogInterceptor` template. The concrete
+`intercept()` template method remains core-owned by documented contract;
+bundled plugins must not override it. Plugin-specific code belongs in
+`build_arguments()`, where it may accept or reject a metadata match and build
+route arguments.
+
+Interception metadata is authoritative only for dialogue matching. It is not a
+parallel capability catalogue, not an execution policy, and not a plugin-owned
+claim that a turn must be executed.
+
 Optional plugin UI metadata may declare operational or admin surfaces, such as
 status providers, APEX admin pages, or React diagnostic panels. These
 declarations are discovery metadata only.
@@ -407,6 +434,13 @@ Plugins may provide declarative route metadata for their capabilities and
 intents, but that metadata only produces route candidates. A plugin must not
 directly claim ownership of a user turn because it recognises a keyword,
 phrase, entity name, or example.
+
+Dialogue interception rules in `resources/intercept_meta.json` may improve
+deterministic matching for manifest routes. Rules must use stable `rule_id`
+values, a manifest-backed `route_id`, supported match types, explicit
+priority, and immutable default arguments. Matching and arbitration evidence
+must remain immutable until the final plugin invocation boundary, where Orac
+passes a mutable copy in `meta["plugin_route"]["arguments"]`.
 
 Orac core must arbitrate between route candidates. Core-reserved commands win
 before plugin routing. Explicit plugin addressing restricts the candidate set

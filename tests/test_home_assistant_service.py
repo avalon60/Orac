@@ -151,6 +151,14 @@ class _FakeClient:
             raise RuntimeError("state fetch unavailable")
         if entity_id in self.states:
             return self.states[entity_id]
+        if entity_id.startswith(("light.", "switch.")):
+            return {
+                "entity_id": entity_id,
+                "state": "on",
+                "attributes": {"friendly_name": entity_id.split(".", 1)[1].replace("_", " ").title()},
+                "last_changed": "2026-06-12T11:48:00+00:00",
+                "last_updated": "2026-06-12T11:48:00+00:00",
+            }
         return {
             "entity_id": entity_id,
             "state": "21.4",
@@ -593,9 +601,9 @@ class HomeAssistantServiceTests(unittest.TestCase):
         self.assertTrue(repository_holder["repository"].closed)
         self.assertFalse(service.state.started)
 
-    def test_control_reports_unconfirmed_without_changing_shadow_state(self) -> None:
+    def test_control_reports_accepted_unverified_when_state_read_fails(self) -> None:
         service = HomeAssistantService(
-            client_factory=lambda config: _FakeClient(config, confirmation=[]),
+            client_factory=lambda config: _FakeClient(config, fail_fetch_states=True),
             repository_factory=lambda context: _FakeRepository(context),
         )
 
@@ -605,8 +613,143 @@ class HomeAssistantServiceTests(unittest.TestCase):
             {"action": "turn_off", "target": "kitchen light"},
         )
 
-        self.assertEqual(result["status"], "unconfirmed")
+        self.assertEqual(result["status"], "accepted_unverified")
         self.assertFalse(service.state.started)
+
+    def test_control_polls_front_lamp_until_state_is_on(self) -> None:
+        class _FrontLampRepository(_FakeRepository):
+            def resolve_control(self, request) -> ResolvedControl:
+                self.control_requests.append(request)
+                return ResolvedControl(
+                    action=request.action,
+                    service_calls=(
+                        ControlServiceCall(
+                            domain="light",
+                            service="turn_on",
+                            entity_ids=("light.front_lamp",),
+                        ),
+                    ),
+                    target=request.target,
+                    resolution="entity",
+                )
+
+        class _FrontLampClient(_FakeClient):
+            def fetch_state(self, entity_id: str) -> dict:
+                self.fetch_state_calls.append(entity_id)
+                state = "off" if len(self.fetch_state_calls) == 1 else "on"
+                return {
+                    "entity_id": entity_id,
+                    "state": state,
+                    "attributes": {"friendly_name": "Front Lamp"},
+                }
+
+        client_holder: dict[str, _FrontLampClient] = {}
+
+        def client_factory(config: HomeAssistantClientConfig) -> _FrontLampClient:
+            client = _FrontLampClient(config)
+            client_holder["client"] = client
+            return client
+
+        service = HomeAssistantService(
+            client_factory=client_factory,
+            repository_factory=lambda context: _FrontLampRepository(context),
+            sleep=lambda _seconds: None,
+            control_verification_timeout_seconds=1.0,
+            control_verification_interval_seconds=0.1,
+        )
+
+        result = service.handle_command(
+            _FakeContext(),
+            "control",
+            {
+                "action": "turn_on",
+                "target": "front lamp",
+                "requested_domain": "light",
+            },
+        )
+
+        self.assertEqual(result["status"], "confirmed")
+        self.assertEqual(result["entity_ids"], ["light.front_lamp"])
+        self.assertEqual(
+            client_holder["client"].service_calls,
+            [("light", "turn_on", ("light.front_lamp",))],
+        )
+        self.assertEqual(
+            client_holder["client"].fetch_state_calls,
+            ["light.front_lamp", "light.front_lamp"],
+        )
+
+    def test_control_refuses_fake_target_before_client_call(self) -> None:
+        class _UnknownTargetRepository(_FakeRepository):
+            def resolve_control(self, request) -> ResolvedControl:
+                self.control_requests.append(request)
+                raise HomeAssistantControlError(
+                    "unknown_target",
+                    "Home Assistant target 'nonexistent purple lamp' was not found.",
+                )
+
+        client_called = False
+
+        def client_factory(config: HomeAssistantClientConfig) -> _FakeClient:
+            nonlocal client_called
+            client_called = True
+            return _FakeClient(config)
+
+        service = HomeAssistantService(
+            client_factory=client_factory,
+            repository_factory=lambda context: _UnknownTargetRepository(context),
+        )
+
+        with self.assertRaisesRegex(HomeAssistantControlError, "was not found"):
+            service.handle_command(
+                _FakeContext(),
+                "control",
+                {
+                    "action": "turn_on",
+                    "target": "nonexistent purple lamp",
+                    "requested_domain": "light",
+                },
+            )
+
+        self.assertFalse(client_called)
+
+    def test_control_rejects_malformed_service_response(self) -> None:
+        service = HomeAssistantService(
+            client_factory=lambda config: _FakeClient(config, confirmation=[{}]),
+            repository_factory=lambda context: _FakeRepository(context),
+        )
+
+        with self.assertRaisesRegex(HomeAssistantControlError, "entity_id"):
+            service.handle_command(
+                _FakeContext(),
+                "control",
+                {"action": "turn_on", "target": "kitchen light"},
+            )
+
+    def test_control_fails_when_observed_state_contradicts_request(self) -> None:
+        service = HomeAssistantService(
+            client_factory=lambda config: _FakeClient(
+                config,
+                states={
+                    "light.kitchen": {
+                        "entity_id": "light.kitchen",
+                        "state": "off",
+                        "attributes": {"friendly_name": "Kitchen Light"},
+                    }
+                },
+            ),
+            repository_factory=lambda context: _FakeRepository(context),
+            sleep=lambda _seconds: None,
+            control_verification_timeout_seconds=0.1,
+            control_verification_interval_seconds=0.1,
+        )
+
+        with self.assertRaisesRegex(HomeAssistantControlError, "did not become on"):
+            service.handle_command(
+                _FakeContext(),
+                "control",
+                {"action": "turn_on", "target": "kitchen light"},
+            )
 
     def test_control_validates_required_payload(self) -> None:
         service = HomeAssistantService()

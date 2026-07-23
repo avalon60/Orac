@@ -7,6 +7,31 @@ This backlog captures ideas and integration threads that should not be lost as O
 
 ## Near-Term Core Priorities
 
+### 0. Processing Profile Execution
+
+Priority: High
+
+Status: Required follow-on after scoped dialogue retrieval
+
+Purpose:
+
+* Make persisted `processing_profile` and `processing_instruction` values alter
+  extraction and chunking through versioned, Core-owned profile behaviour.
+* Preserve raw-source provenance and deterministic replay.
+* Treat profile and operator instructions as untrusted data, not executable
+  prompts or plugin-owned code.
+
+Explicit exclusions from the scoped dialogue first slice:
+
+* No profile-driven extraction or chunking change.
+* No model-generated transformation pipeline.
+* No plugin access to protected `orac_core` objects.
+
+Validation must cover profile version changes, retries, unchanged documents,
+failed transformations, and current-version selection.
+
+---
+
 ### 1. Home Assistant runtime sync
 
 Priority: High

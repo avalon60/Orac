@@ -6,11 +6,12 @@
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 import oracledb
+from orac_core.plugin_registry_policy import plugin_registry_row_runtime_eligible
 
 if TYPE_CHECKING:
     from model.plugin_routing.models import PluginManifest
@@ -18,6 +19,26 @@ if TYPE_CHECKING:
 
 class PluginRegistryError(RuntimeError):
     """Raised when plugin registry access cannot complete safely."""
+
+
+@dataclass(frozen=True)
+class PluginRegistryArtifactStatus:
+    """Describes whether a registry row points at a usable installed artifact."""
+
+    plugin_id: str
+    installed_path: str | None
+    code: str
+    ok: bool
+    message: str | None = None
+    manifest: PluginManifest | None = None
+
+
+@dataclass(frozen=True)
+class PluginRegistryManifestLoadResult:
+    """Contains loadable enabled manifests and per-plugin registry issues."""
+
+    manifests: tuple[PluginManifest, ...]
+    issues: tuple[PluginRegistryArtifactStatus, ...]
 
 
 class PluginRegistryStore:
@@ -118,52 +139,60 @@ class PluginRegistryStore:
 
     def list_enabled(self) -> list[dict[str, Any]]:
         """Return registry rows that passed every runtime eligibility gate."""
-        return self._query(
-            f"select {self._SELECT_COLUMNS} "
-            "from orac_code.plugin_registry_v "
-            "where enabled = 'Y' "
-            "and install_status = 'success' "
-            "and configuration_status in ('success', 'not_required') "
-            "and dependency_status in ('success', 'not_required') "
-            "and database_status in "
-            "('deployed', 'already_deployed', 'not_required', 'optional_missing') "
-            "and readiness_status = 'success' order by plugin_id",
-            {},
-        )
+        return [
+            row
+            for row in self._query(
+                f"select {self._SELECT_COLUMNS} "
+                "from orac_code.plugin_registry_v "
+                "where enabled = 'Y' "
+                "and install_status = 'success' "
+                "and configuration_status in ('success', 'not_required') "
+                "and dependency_status in ('success', 'not_required') "
+                "and database_status in "
+                "('deployed', 'already_deployed', 'not_required', "
+                "'optional_missing') "
+                "and readiness_status = 'success' order by plugin_id",
+                {},
+            )
+            if plugin_registry_row_runtime_eligible(row)
+        ]
 
     def enabled_manifests(self) -> list[PluginManifest]:
         """Load validated manifests for active installed plugin versions."""
-        from model.plugin_routing.discovery import PluginDiscovery
+        result = self.load_enabled_manifest_result(strict=True)
+        return list(result.manifests)
 
+    def enabled_manifest(self, plugin_id: str) -> PluginManifest | None:
+        """Load one enabled plugin manifest without scanning unrelated plugins."""
+        row = self.get(plugin_id)
+        if row is None or not plugin_registry_row_runtime_eligible(row):
+            return None
+        status = inspect_registered_plugin_artifact(row)
+        if not status.ok:
+            raise PluginRegistryError(status.message or status.code)
+        return status.manifest
+
+    def load_enabled_manifest_result(
+        self,
+        *,
+        strict: bool = True,
+    ) -> PluginRegistryManifestLoadResult:
+        """Load enabled manifests, optionally collecting per-plugin artifact drift."""
         manifests: list[PluginManifest] = []
+        issues: list[PluginRegistryArtifactStatus] = []
         for row in self.list_enabled():
-            installed_path = Path(str(row["installed_path"] or ""))
-            manifest_path = installed_path / "manifest.json"
-            plugin_dir = installed_path / "plugin"
-            if not manifest_path.is_file() or not plugin_dir.is_dir():
-                raise PluginRegistryError(
-                    f"Registered plugin files are missing for '{row['plugin_id']}'."
-                )
-            manifest = PluginDiscovery(installed_path).load_manifest(
-                manifest_path,
-                plugin_dir=plugin_dir,
-                enforce_filename=False,
-            )
-            if manifest.manifest_hash != row["manifest_hash"]:
-                raise PluginRegistryError(
-                    f"Registered manifest hash mismatch for '{manifest.plugin_id}'."
-                )
-            manifests.append(
-                replace(
-                    manifest,
-                    config_path=(
-                        Path(str(row["config_path"]))
-                        if row.get("config_path")
-                        else None
-                    ),
-                )
-            )
-        return manifests
+            status = inspect_registered_plugin_artifact(row)
+            if not status.ok:
+                if strict:
+                    raise PluginRegistryError(status.message or status.code)
+                issues.append(status)
+                continue
+            if status.manifest is not None:
+                manifests.append(status.manifest)
+        return PluginRegistryManifestLoadResult(
+            manifests=tuple(manifests),
+            issues=tuple(issues),
+        )
 
     def _query(self, sql: str, binds: dict[str, Any]) -> list[dict[str, Any]]:
         """Execute a read against the approved ORAC_CODE registry view."""
@@ -185,6 +214,83 @@ class PluginRegistryStore:
     def _connect(self) -> Any:
         """Return an ORAC runtime database session."""
         return self._session_factory()
+
+
+def inspect_registered_plugin_artifact(
+    row: dict[str, Any],
+) -> PluginRegistryArtifactStatus:
+    """Inspect the installed plugin artifact referenced by one registry row.
+
+    Args:
+        row: Registry row from ``orac_code.plugin_registry_v``.
+
+    Returns:
+        A status object. When ``ok`` is true, ``manifest`` contains the loaded
+        manifest bound to its installed runtime paths.
+    """
+    from model.plugin_routing.discovery import PluginDiscovery
+    from model.plugin_routing.discovery import PluginManifestError
+
+    plugin_id = str(row.get("plugin_id") or "").strip()
+    installed_path_text = str(row.get("installed_path") or "").strip()
+    if not installed_path_text:
+        return PluginRegistryArtifactStatus(
+            plugin_id=plugin_id,
+            installed_path=None,
+            code="missing_installed_path",
+            ok=False,
+            message=f"Registered plugin installed_path is missing for '{plugin_id}'.",
+        )
+
+    installed_path = Path(installed_path_text)
+    manifest_path = installed_path / "manifest.json"
+    plugin_dir = installed_path / "plugin"
+    if not manifest_path.is_file() or not plugin_dir.is_dir():
+        return PluginRegistryArtifactStatus(
+            plugin_id=plugin_id,
+            installed_path=installed_path_text,
+            code="missing_installed_files",
+            ok=False,
+            message=f"Registered plugin files are missing for '{plugin_id}'.",
+        )
+
+    try:
+        manifest = PluginDiscovery(installed_path).load_manifest(
+            manifest_path,
+            plugin_dir=plugin_dir,
+            enforce_filename=False,
+        )
+    except PluginManifestError as exc:
+        return PluginRegistryArtifactStatus(
+            plugin_id=plugin_id,
+            installed_path=installed_path_text,
+            code="invalid_manifest",
+            ok=False,
+            message=f"Registered plugin manifest is invalid for '{plugin_id}': {exc}",
+        )
+
+    expected_hash = str(row.get("manifest_hash") or "").strip()
+    if expected_hash and manifest.manifest_hash != expected_hash:
+        return PluginRegistryArtifactStatus(
+            plugin_id=plugin_id,
+            installed_path=installed_path_text,
+            code="manifest_hash_mismatch",
+            ok=False,
+            message=f"Registered manifest hash mismatch for '{manifest.plugin_id}'.",
+        )
+
+    return PluginRegistryArtifactStatus(
+        plugin_id=plugin_id,
+        installed_path=installed_path_text,
+        code="present",
+        ok=True,
+        manifest=replace(
+            manifest,
+            config_path=(
+                Path(str(row["config_path"])) if row.get("config_path") else None
+            ),
+        ),
+    )
 
 
 class PluginApexAppRegistryStore:

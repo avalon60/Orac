@@ -1,0 +1,134 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<TableProxyOraclev20c class="oracle.dbtools.crest.model.design.storage.oracle.v20c.TableProxyOraclev20c" name="ORAC_SEARCH_RESULTS" directorySegmentName="seg_0" id="A2ED0FC7-1FE4-5D13-E6A2-30700DAAE095">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<schemaObject>2A626480-F271-57C8-2021-8628AF99E0CB</schemaObject>
+<logging>YES</logging>
+<partitionedRowMovement>DISABLE</partitionedRowMovement>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<temporaryChanged>false</temporaryChanged>
+<accessDriverType>oracle_loader</accessDriverType>
+<rejectLimit></rejectLimit>
+<inMemory>NO</inMemory>
+<columnProxies itemClass="oracle.dbtools.crest.model.design.storage.oracle.v12c.ColumnProxyOraclev12c">
+<ColumnProxy name="ROW_VERSION" id="09D60D54-3215-23D1-9941-0F18A41A0526">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<defaultValue>1</defaultValue>
+</ColumnProxy>
+<ColumnProxy name="RESULT_RANK" id="0BA8C882-3B20-7EC0-6B3F-18F13C2E2F11">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="SEARCH_RESULT_ID" id="12B40265-5F00-392A-8325-01EC8CB5BC89">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<autoIncrementDDL>IDENTITY_CLAUSE</autoIncrementDDL>
+</ColumnProxy>
+<ColumnProxy name="SOURCE_NAME" id="1FD5C318-3022-68FA-6302-F1A92E6B6AC3">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="URL" id="4C49D5B2-68C7-44C7-69D1-11B293ABA0E4">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="TITLE" id="66692848-DB0B-0903-E345-FE1552AC8510">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="CREATED_ON" id="786A3A8C-FD23-015D-81BF-FA67CA9029B6">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<defaultValue>systimestamp</defaultValue>
+</ColumnProxy>
+<ColumnProxy name="UPDATED_ON" id="89FE4D3D-63F7-F457-FB06-F0668ED31621">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="UPDATED_BY" id="8C9A0531-1427-2DAC-03EE-17E2239EDF48">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="SEARCH_QUERY_ID" id="940A0FA7-F0F5-92A5-312A-BEC43CD8B751">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="SNIPPET" id="A57D5342-74E8-2FBB-A291-4B44DDAD40B6">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="CONTENT" id="B2FB49A6-0649-5E10-4FFA-736209B86097">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="ENGINE" id="CC91BE46-EB81-216D-02E9-19E034034AA3">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="CREATED_BY" id="D786697B-6B68-A0ED-8EC7-D026BA8E1B33">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<defaultValue>coalesce(
+                       sys_context(&apos;apex$session&apos;, &apos;app_user&apos;),
+                       sys_context(&apos;userenv&apos;, &apos;proxy_user&apos;),
+                       sys_context(&apos;userenv&apos;, &apos;session_user&apos;),
+                       user
+                     )</defaultValue>
+</ColumnProxy>
+</columnProxies>
+<indexProxies>
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="ORAC_SRCH_RES_SRCH_Q_FK1_IDX" id="49FEAA82-07C3-1C96-5C1E-6A9FD48A12EF">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<schemaObject>2A626480-F271-57C8-2021-8628AF99E0CB</schemaObject>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+</IndexProxy>
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="ORAC_SRCH_RES_PK" id="E2706EF0-076F-96FE-ED87-44DDE5B16016">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<schemaObject>2A626480-F271-57C8-2021-8628AF99E0CB</schemaObject>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+</IndexProxy>
+</indexProxies>
+<foreignKeys>
+<ForeignKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.FKProxyOraclev10g" name="ORAC_SRCH_RES_ORAC_SRCH_Q_FK1" id="1D710D0B-A8F2-0D70-59D0-21F57E84E334">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ForeignKey>
+</foreignKeys>
+<primaryKeys>
+<PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="ORAC_SRCH_RES_PK" id="4281DB3C-1FE3-D2AE-5DDA-57EA08FFDCBB">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<existingIndex>E2706EF0-076F-96FE-ED87-44DDE5B16016</existingIndex>
+<indexSegment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</indexSegment>
+<indexSort>SORTED</indexSort>
+<usingIndex>BY INDEX NAME</usingIndex>
+</PrimaryKey>
+</primaryKeys>
+</TableProxyOraclev20c>

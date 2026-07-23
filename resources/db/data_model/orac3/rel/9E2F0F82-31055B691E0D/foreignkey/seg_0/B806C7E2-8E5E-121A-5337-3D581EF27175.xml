@@ -1,0 +1,17 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<FKIndexAssociation class="oracle.dbtools.crest.model.design.relational.FKIndexAssociation" directorySegmentName="seg_0" id="B806C7E2-8E5E-121A-5337-3D581EF27175" containerWithKeyObject="CAC1008A-E4D5-8038-9608-19771440B8EF" localFKIndex="8AF1BAE9-A83A-CE29-91A3-3DA23C70060F" name="KN_INGE_KN_INGREQ_FK1">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>56DAD5F3-C4D0-4ADA-2007-4D82CD1A069E</importedID>
+<referredTableLongName>orac_core.KNOWLEDGE_INGESTION_REQUESTS</referredTableLongName>
+<deleteRule>NO ACTION</deleteRule>
+<referredTableID>A0ACD508-1DBA-5C80-D6CA-66948E959794</referredTableID>
+<keyObject>D36447A7-02D0-ABF9-E6CE-9972C91A1BDE</keyObject>
+<referredKeyID>D36447A7-02D0-ABF9-E6CE-9972C91A1BDE</referredKeyID>
+<mandatory>true</mandatory>
+<refColNames>INGESTION_REQUEST_ID</refColNames>
+<transferable>true</transferable>
+<rely>false</rely>
+<columnDependencyConstraintGenerateInDDL>true</columnDependencyConstraintGenerateInDDL>
+</FKIndexAssociation>

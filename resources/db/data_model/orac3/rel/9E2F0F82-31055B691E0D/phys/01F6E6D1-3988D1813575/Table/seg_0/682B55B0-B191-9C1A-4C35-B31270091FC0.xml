@@ -1,0 +1,146 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<TableProxyOraclev20c class="oracle.dbtools.crest.model.design.storage.oracle.v20c.TableProxyOraclev20c" name="KNOWLEDGE_DOCUMENTS" directorySegmentName="seg_0" id="682B55B0-B191-9C1A-4C35-B31270091FC0">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<schemaObject>2A626480-F271-57C8-2021-8628AF99E0CB</schemaObject>
+<logging>YES</logging>
+<partitionedRowMovement>DISABLE</partitionedRowMovement>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<temporaryChanged>false</temporaryChanged>
+<accessDriverType>oracle_loader</accessDriverType>
+<rejectLimit></rejectLimit>
+<inMemory>NO</inMemory>
+<columnProxies itemClass="oracle.dbtools.crest.model.design.storage.oracle.v12c.ColumnProxyOraclev12c">
+<ColumnProxy name="CREATED_ON" id="2405F5AE-EC7A-79BD-0E29-280A1247A2C6">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<defaultValue>systimestamp</defaultValue>
+</ColumnProxy>
+<ColumnProxy name="TITLE" id="30C806D1-196F-0014-5335-BAEC3DDC22C3">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="UPDATED_BY" id="31ED767D-B1A7-D573-A97F-9311C53C49D6">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<defaultValue>coalesce(
+                            sys_context(&apos;apex$session&apos;, &apos;app_user&apos;),
+                            sys_context(&apos;userenv&apos;, &apos;proxy_user&apos;),
+                            sys_context(&apos;userenv&apos;, &apos;session_user&apos;),
+                            user
+                          )</defaultValue>
+</ColumnProxy>
+<ColumnProxy name="CURRENT_DOCUMENT_VERSION_ID" id="3E7F7D82-EC70-4CE3-B188-735FB036BFA1">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="TARGET_SCOPE_KEY" id="43636D90-CB5A-8F8F-9AC8-2662887AD1CC">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="TARGET_SCOPE_TYPE" id="5898D346-A85F-F7B1-9BB8-22F00ED4C8C8">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="ROW_VERSION" id="5DFC0EAA-F70A-7EF4-2B19-9DA7F3242C04">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<defaultValue>1</defaultValue>
+</ColumnProxy>
+<ColumnProxy name="CREATED_BY" id="6855E86E-7824-EEB4-F9F3-ED6DA4ED2F0C">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<defaultValue>coalesce(
+                            sys_context(&apos;apex$session&apos;, &apos;app_user&apos;),
+                            sys_context(&apos;userenv&apos;, &apos;proxy_user&apos;),
+                            sys_context(&apos;userenv&apos;, &apos;session_user&apos;),
+                            user
+                          )</defaultValue>
+</ColumnProxy>
+<ColumnProxy name="UPDATED_ON" id="756C751F-57EA-A670-6D6C-02E658A16D8F">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<defaultValue>systimestamp</defaultValue>
+</ColumnProxy>
+<ColumnProxy name="DOCUMENT_ID" id="90652BA9-44E6-F8AD-2F76-A2E575BDAEAD">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<autoIncrementDDL>IDENTITY_CLAUSE</autoIncrementDDL>
+</ColumnProxy>
+<ColumnProxy name="SOURCE_OBJECT_ID" id="AA39189F-F53B-12A6-458E-D71DD6101816">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+</columnProxies>
+<indexProxies>
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="KN_DOC_UK1_IDX" id="73B20DE8-9BC6-9083-24F0-82534D67A14F">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<schemaObject>2A626480-F271-57C8-2021-8628AF99E0CB</schemaObject>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+</IndexProxy>
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="KN_DOC_PK" id="7C868BC2-AD25-16B7-67D8-B2D946986CB2">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<schemaObject>2A626480-F271-57C8-2021-8628AF99E0CB</schemaObject>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+</IndexProxy>
+</indexProxies>
+<foreignKeys>
+<ForeignKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.FKProxyOraclev10g" name="KN_DOC_KN_DOCVER_FK1" id="58C730D6-9472-7A4A-4055-3CEA3B15C587">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<deferrable>YES</deferrable>
+<initially>DEFERRED</initially>
+</ForeignKey>
+<ForeignKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.FKProxyOraclev10g" name="KN_DOC_KN_SRCOBJ_FK1" id="A7624502-5350-8C44-8153-5CCDE18C8E9E">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ForeignKey>
+</foreignKeys>
+<primaryKeys>
+<PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="KN_DOC_PK" id="EFAC4374-8DB6-9523-BDD2-9497365EBD1F">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<existingIndex>7C868BC2-AD25-16B7-67D8-B2D946986CB2</existingIndex>
+<indexSegment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</indexSegment>
+<indexSort>SORTED</indexSort>
+<usingIndex>BY INDEX NAME</usingIndex>
+</PrimaryKey>
+</primaryKeys>
+<uniqueKeys>
+<UniqueKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.UniqueOraclev10g" name="KN_DOC_UK1" id="7CA95E69-8D33-0D1D-5FE8-AA953E550C11">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<existingIndex>73B20DE8-9BC6-9083-24F0-82534D67A14F</existingIndex>
+<indexSegment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</indexSegment>
+<indexSort>SORTED</indexSort>
+<usingIndex>BY INDEX NAME</usingIndex>
+</UniqueKey>
+</uniqueKeys>
+</TableProxyOraclev20c>

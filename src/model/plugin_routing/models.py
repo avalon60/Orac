@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
 PluginRuntimeMode = Literal["on_demand", "service", "hybrid"]
 PluginConfigValueType = Literal["string", "bool", "int", "float", "path", "list"]
@@ -282,6 +282,7 @@ class PluginManifest:
     service_runtimes: tuple[PluginServiceRuntime, ...] = ()
     execution_policy: PluginExecutionPolicy | None = None
     route_capabilities: tuple[PluginRouteCapability, ...] = ()
+    interceptor_entry_point: str | None = None
     configuration_required: tuple[PluginConfigKey, ...] = ()
     configuration_optional: tuple[PluginConfigKey, ...] = ()
     database_required: bool = False
@@ -315,7 +316,7 @@ class PluginRouteCandidate:
     intent_name: str
     confidence: float
     match_reasons: tuple[str, ...] = ()
-    extracted_params: dict[str, Any] | None = None
+    extracted_params: Mapping[str, Any] | None = None
     missing_params: tuple[str, ...] = ()
     requires_confirmation: bool = False
     safety_level: str = "informational_read_only"

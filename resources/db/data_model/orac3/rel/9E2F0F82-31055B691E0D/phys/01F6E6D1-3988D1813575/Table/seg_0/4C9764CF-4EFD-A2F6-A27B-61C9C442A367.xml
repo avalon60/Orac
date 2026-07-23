@@ -1,0 +1,144 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<TableProxyOraclev20c class="oracle.dbtools.crest.model.design.storage.oracle.v20c.TableProxyOraclev20c" name="PLUGIN_AUDIT_EVENTS" directorySegmentName="seg_0" id="4C9764CF-4EFD-A2F6-A27B-61C9C442A367">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<schemaObject>2A626480-F271-57C8-2021-8628AF99E0CB</schemaObject>
+<logging>YES</logging>
+<partitionedRowMovement>DISABLE</partitionedRowMovement>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<temporaryChanged>false</temporaryChanged>
+<accessDriverType>oracle_loader</accessDriverType>
+<rejectLimit></rejectLimit>
+<inMemory>NO</inMemory>
+<columnProxies itemClass="oracle.dbtools.crest.model.design.storage.oracle.v12c.ColumnProxyOraclev12c">
+<ColumnProxy name="PLUGIN_INVOCATION_ID" id="09C1124A-A356-BB8E-B3CC-CC8A06A4CF3E">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="FAILURE_MESSAGE" id="1439E8A4-7F4E-24BF-01A4-3494AC253A74">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="EVENT_STATUS" id="156B55E2-8B8F-5FDB-FBA7-CD1F22100ED6">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="EVENT_PAYLOAD_JSON" id="264A0BE9-D111-4892-746E-8113994A8B9B">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="POLICY_DECISION" id="2B730D01-E504-7D27-30BA-B92C08F6C757">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="CREATED_ON" id="36A7ECDF-7B94-8A64-013B-015B183958EB">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<defaultValue>systimestamp</defaultValue>
+</ColumnProxy>
+<ColumnProxy name="CONFIRMATION_ID" id="4EF66CB1-15B7-599B-9C93-3759A8EAFFB5">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="PLUGIN_AUDIT_EVENT_ID" id="5278A486-FA29-D558-7A7E-9A7AF4FE7712">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<autoIncrementDDL>IDENTITY_CLAUSE</autoIncrementDDL>
+</ColumnProxy>
+<ColumnProxy name="EXECUTION_STATUS" id="5DBA2004-2245-7C11-CA20-CE41CC988318">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="EVENT_TYPE" id="5E9F96FD-049E-8DCC-C1BB-35FCBC5D1A66">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="FAILURE_TYPE" id="816BB30C-B4BA-D07A-ACB0-8C7FD9B3CD19">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="UPDATED_ON" id="AFCA4044-0FF9-C668-B80B-D5FA1C5CE305">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="ROW_VERSION" id="CB8D1834-7DC3-F291-287E-0E32E97A5CFF">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<defaultValue>1</defaultValue>
+</ColumnProxy>
+<ColumnProxy name="UPDATED_BY" id="CFD932AE-016D-1F87-B994-0356F82D9E7C">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="CREATED_BY" id="F7BEAFC5-8318-83AF-3E5D-874F5583ABBF">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<defaultValue>coalesce(
+                          sys_context(&apos;apex$session&apos;, &apos;app_user&apos;),
+                          sys_context(&apos;userenv&apos;, &apos;proxy_user&apos;),
+                          sys_context(&apos;userenv&apos;, &apos;session_user&apos;),
+                          user
+                        )</defaultValue>
+</ColumnProxy>
+<ColumnProxy name="EVENT_MESSAGE" id="FDE880AF-A980-CDAA-0613-4E7732CF654E">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+</columnProxies>
+<indexProxies>
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="PLG_AUDEVT_PLG_INV_FK1_IDX" id="199B3DB0-4838-4439-081E-141D4BB7C159">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<schemaObject>2A626480-F271-57C8-2021-8628AF99E0CB</schemaObject>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+</IndexProxy>
+<IndexProxy class="oracle.dbtools.crest.model.design.storage.oracle.v10g.IndexProxyOraclev10g" name="PLG_AUDEVT_PK" id="3B25148D-58B2-933C-BACB-B40D27A35148">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<schemaObject>2A626480-F271-57C8-2021-8628AF99E0CB</schemaObject>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+</IndexProxy>
+</indexProxies>
+<foreignKeys>
+<ForeignKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.FKProxyOraclev10g" name="PLG_AUDEVT_PLG_INV_FK1" id="2EAEE31B-CE69-4EFE-C2C2-62B4E8C01507">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ForeignKey>
+</foreignKeys>
+<primaryKeys>
+<PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="PLG_AUDEVT_PK" id="DC7E9513-751F-9A28-DEF5-3531FE04784F">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<segment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</segment>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<existingIndex>3B25148D-58B2-933C-BACB-B40D27A35148</existingIndex>
+<indexSegment>154E4D6E-CC8C-D2EA-A153-2CF43C65A6D8</indexSegment>
+<indexSort>SORTED</indexSort>
+<usingIndex>BY INDEX NAME</usingIndex>
+</PrimaryKey>
+</primaryKeys>
+</TableProxyOraclev20c>

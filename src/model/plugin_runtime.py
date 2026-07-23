@@ -17,6 +17,9 @@ from types import ModuleType
 from typing import Any, Iterator
 
 from model.plugin_config import PluginConfigManager
+from model.plugin_resources import resource_reader_for_manifest
+from model.plugin_resources import resolve_plugin_resource
+from model.plugin_routing.interception import PluginDialogInterceptor
 from model.plugin_routing.models import PluginManifest
 from model.plugin_secret_vault import PluginSecretVault
 
@@ -142,6 +145,25 @@ def load_plugin_service_class(
     )
 
 
+def load_plugin_interceptor_class(manifest: PluginManifest) -> type[PluginDialogInterceptor]:
+    """Load the dialogue interceptor class declared by a manifest."""
+    if not manifest.interceptor_entry_point:
+        raise PluginRuntimeError(
+            f"Plugin '{manifest.plugin_id}' has no routing.interceptor metadata."
+        )
+    interceptor_class = load_plugin_entry_point(
+        manifest=manifest,
+        entry_point=manifest.interceptor_entry_point,
+        field_name="routing.interceptor",
+    )
+    if not issubclass(interceptor_class, PluginDialogInterceptor):
+        raise PluginRuntimeError(
+            f"Plugin '{manifest.plugin_id}' routing.interceptor must subclass "
+            "PluginDialogInterceptor."
+        )
+    return interceptor_class
+
+
 def load_plugin_entry_point(
     *,
     manifest: PluginManifest,
@@ -214,6 +236,20 @@ def instantiate_plugin(
         }
 
     return plugin_class(**kwargs)
+
+
+def instantiate_plugin_interceptor(
+    interceptor_class: type[PluginDialogInterceptor],
+    *,
+    manifest: PluginManifest,
+    logger: Any | None = None,
+) -> PluginDialogInterceptor:
+    """Instantiate one plugin dialogue interceptor with narrow dependencies."""
+    return interceptor_class(
+        manifest=manifest,
+        resources=resource_reader_for_manifest(manifest),
+        logger=logger,
+    )
 
 
 @contextmanager
@@ -321,6 +357,10 @@ class PluginRuntimeContext:
     def plugin_id(self) -> str:
         """Return the current plugin identifier."""
         return self.manifest.plugin_id
+
+    def resolve_resource(self, relative_path: str | Path) -> Path:
+        """Resolve one immutable resource path for this plugin."""
+        return resolve_plugin_resource(self.manifest, relative_path)
 
     def plugin_db_session(self) -> Any:
         """Return a managed ORAC_PLUGIN database session for plugin runtime use."""

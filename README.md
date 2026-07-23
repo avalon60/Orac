@@ -28,24 +28,45 @@ credentials, retrieval, plugins, and home-automation integrations.
 - Speech synthesis through Kokoro with Piper fallback.
 - Explicit or policy-controlled internet retrieval through a local SearXNG
   service.
+- Deterministic, core-owned dialogue routing across plugins, authorised local
+  knowledge, internet retrieval, and ordinary LLM conversation.
 - Manifest-driven plugins with scoped configuration, secrets, execution policy,
-  service lifecycle, database deployment, and audit boundaries.
-- Home Assistant device/entity synchronisation and the narrow supported resync
-  voice command.
+  service lifecycle, database deployment, packaged APEX application
+  installation, shared navigation, and audit boundaries.
+- Home Assistant inventory synchronisation, area/device listings, temperature
+  and humidity queries, live light-state read-back, and allowlisted interaction
+  with lights, switches, and scenes.
+- Rich light interaction for supported Home Assistant entities, including
+  brightness, colour, and colour-temperature changes validated against live
+  device capabilities.
+- The bundled Weather plugin answers current-condition and short-forecast
+  questions for explicit or configured locations through Open-Meteo.
+- The bundled Drop Box plugin scans configured folders, creates durable jobs,
+  and hands verified local text and Markdown documents to Core-managed
+  ingestion, chunking, embedding, and provenance services. Ingested content can
+  support opt-in, scope-authorised grounded dialogue retrieval.
 - Browser and desktop display surfaces for runtime state and transcripts.
-- Oracle APEX administration, backup, and restore tooling for the local deployment.
+- Oracle APEX administration, including framework-managed plugin applications
+  such as Home Assistant Status and Drop Box Admin, plus backup and restore
+  tooling for the local deployment.
 
 ## Development Status
 
 Orac is under active development. Several foundations are operational, while
 some advertised capabilities remain intentionally constrained:
 
-- Home Assistant device control is not yet enabled; synchronisation and resync
-  are the current supported paths.
+- Home Assistant mutations are deliberately limited to exact, allowlisted
+  light, switch, and scene operations. Arbitrary services, whole-home commands,
+  and control of locks, alarms, climate, covers, fans, scripts, and automations
+  are not enabled.
+- Local-knowledge dialogue retrieval is disabled by default and currently
+  supports UTF-8 text and Markdown ingestion. The shipped hash embedding is
+  development/test infrastructure, lexical relevance is the current evidence
+  gate, and native Oracle vector search is not yet part of the runtime.
 - Barge-in, native playback, and acoustic echo cancellation include
   experimental modes and require explicit configuration.
-- Vector storage and the OpenAI-compatible gateway contain reserved settings
-  but are not complete production services.
+- Media control remains a policy-blocked scaffold, and the OpenAI-compatible
+  gateway settings are reserved for a future service.
 - Future work is kept separate from the current-capability documentation.
 
 ## Main Components
@@ -53,12 +74,14 @@ some advertised capabilities remain intentionally constrained:
 | Component | Role | Required |
 |---|---|---|
 | Orac AI engine | Conversation orchestration, plugins, context, retrieval | Yes |
-| Oracle Database + ORDS/APEX | Persistence and administration | Yes for the supported local stack |
+| Oracle Database + ORDS/APEX | Persistence, core administration, and framework-managed plugin APEX applications | Yes for the supported local stack |
 | Local LLM service | Model inference, normally Ollama | Yes |
 | SearXNG | Local/private search provider | When internet retrieval is enabled |
 | Faster Whisper | Local speech-to-text | For voice operation |
 | Kokoro or Piper | Local text-to-speech | For spoken responses |
-| Home Assistant | Smart-home inventory and future control | Optional |
+| Home Assistant plugin | Inventory, live state and sensor queries, and allowlisted light/switch/scene interaction | Optional |
+| Drop Box plugin + Core knowledge | Scheduled local document discovery, durable ingestion, and scope-authorised grounded retrieval | Optional |
+| Weather plugin | Open-Meteo current conditions and short forecasts | Optional |
 
 Orac uses SearXNG as its local/private search provider. See
 [Internet Retrieval](docs/retrieval.md) for installation, configuration, and
@@ -96,7 +119,10 @@ deployment script currently supports only `TOPOLOGY=db-local`.
 - [Runtime user preferences](docs/user_preferences.md)
 - [Plugins](docs/plugins.md)
 - [Home Assistant](plugins/home_assistant/docs/home-assistant.md)
+- [Drop Box and local document ingestion](plugins/drop_box/README.md)
+- [Weather](plugins/weather/README.md)
 - [Internet retrieval](docs/retrieval.md)
+- [Dialogue routing and local knowledge](docs/dialogue-routing.md)
 - [Voice pipeline](docs/voice-pipeline.md)
 - [APEX administration](docs/apex-administration.md)
 - [Backup and restore](docs/backup-restore.md)

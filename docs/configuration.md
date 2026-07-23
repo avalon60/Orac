@@ -1076,6 +1076,96 @@ Vector dimension count for the default local embedding provider.
 
 **Example:** `embedding_dimensions = 32`
 
+## `[knowledge.dialogue]`
+
+Before setting `enabled = true`, administrators must register the canonical
+`ORAC_CORE` project through `orac_code.project_registry_api.upsert_project` as
+documented in [Dialogue Routing](dialogue-routing.md). The application does not
+seed or infer project records from Drop Box configuration.
+
+Authenticated, scope-isolated local-knowledge retrieval during normal dialogue.
+The shipped feature switch is `false`; enable it only after the configured
+registry scopes contain accepted, searchable documents.
+
+| Key | Shipped value | Contract |
+|---|---|---|
+| `enabled` | `false` | Enables dialogue retrieval; ingestion remains controlled by `[knowledge].enabled`. |
+| `user_scope_allowlist_json` | `{}` | JSON object mapping exact authenticated usernames to canonical scope arrays. The shipped empty object grants no access. Wildcards are invalid; duplicate object keys reject the configuration and duplicate array values are deduplicated. |
+| `scope_aliases_json` | `{"orac":"PROJECT:ORAC_CORE","orac core":"PROJECT:ORAC_CORE","drop box":"PLUGIN:drop_box"}` | JSON object mapping case-insensitive dialogue aliases to canonical scopes. Unknown or ambiguous aliases do not retrieve. |
+| `registry_cache_ttl_seconds` | `30` | Positive lifetime for active-scope registry snapshots. An expired refresh failure denies retrieval rather than serving stale eligibility. |
+| `max_scopes_per_request` | `3` | Maximum requested canonical scopes. The first vertical slice routes one explicit scope. |
+| `max_candidate_chunks_per_scope` | `1000` | Hard candidate cap. More rows fail the retrieval rather than returning a partial ranking. |
+| `max_selected_chunks` | `6` | Maximum chunks injected into one prompt. |
+| `max_context_chars` | `12000` | Total local evidence character budget. |
+| `max_chunk_chars` | `2200` | Per-chunk evidence character budget. |
+| `min_lexical_score` | `0.25` | Inclusive relevance threshold from `0.0` to `1.0`. |
+
+### `enabled`
+
+Boolean master switch for local-knowledge dialogue retrieval. Shipped value and
+runtime fallback: `false`.
+
+### `user_scope_allowlist_json`
+
+JSON object binding exact authenticated usernames to arrays of canonical
+`PROJECT:<project_code>` and `PLUGIN:<plugin_id>` scopes.
+
+Deployment-only example (this is not a shipped grant):
+
+```bash
+export ORAC__KNOWLEDGE.DIALOGUE__ENABLED=true
+export ORAC__KNOWLEDGE.DIALOGUE__USER_SCOPE_ALLOWLIST_JSON='{"clive":["PROJECT:ORAC_CORE","PLUGIN:drop_box"]}'
+```
+
+An enabled feature with an empty allowlist still denies every user. Aliases do
+not grant authority.
+
+### `scope_aliases_json`
+
+JSON object mapping case-insensitive dialogue aliases to canonical scopes.
+Aliases participate in deterministic explicit and implicit turn matching; they
+do not grant access. See
+[Local Knowledge Turn Triggers](dialogue-routing.md#local-knowledge-turn-triggers)
+for the exact grammar, recognised expressions, and examples.
+
+### `registry_cache_ttl_seconds`
+
+Positive active-scope registry cache lifetime in seconds. Shipped value: `30`.
+
+### `max_scopes_per_request`
+
+Positive cap on canonical scopes requested in one turn. Shipped value: `3`.
+
+### `max_candidate_chunks_per_scope`
+
+Hard candidate-row cap per scope. Shipped value: `1000`.
+
+### `max_selected_chunks`
+
+Maximum selected evidence chunks. Shipped value: `6`.
+
+### `max_context_chars`
+
+Total local evidence character budget. Shipped value: `12000`.
+
+### `max_chunk_chars`
+
+Per-chunk evidence character budget. Shipped value: `2200`.
+
+### `min_lexical_score`
+
+Inclusive lexical relevance threshold from `0.0` to `1.0`. Shipped value:
+`0.25`. Generic route-selection words and canonical scope-name words are not
+counted as topical matches, so an explicit knowledge directive cannot satisfy
+the threshold without substantive query evidence.
+
+Environment overrides use the existing form, for example
+`ORAC__KNOWLEDGE.DIALOGUE__ENABLED=true`. Malformed JSON, duplicate object keys,
+registry unavailability, inactive scopes, and unauthorised users fail closed.
+Denied and unavailable explicit knowledge requests terminate with safe,
+non-disclosing responses; they do not fall through to plugins or an LLM.
+See [Dialogue Routing](dialogue-routing.md).
+
 ## `[display]`
 
 Optional local display event transport.

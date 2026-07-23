@@ -37,6 +37,42 @@ LIST_ITEM_BLOCK_RE = re.compile(
 PAGE_ITEM_NAME_RE = re.compile(r"p_name=>'([^']+)'", re.IGNORECASE)
 PAGE_ITEM_REF_RE = re.compile(r"(?<![A-Z0-9_])P([0-9]+)_[A-Z0-9_]+", re.IGNORECASE)
 
+DROP_BOX_STATUSES = (
+    "queued",
+    "processing",
+    "handed_off",
+    "completed",
+    "failed",
+    "quarantined",
+    "skipped_duplicate",
+    "skipped_disallowed_type",
+    "skipped_too_large",
+)
+
+
+def _expected_lifecycle_bucket(
+    drop_box_status: str,
+    *,
+    request_id_present: bool,
+    core_row_present: bool,
+    core_status: str | None,
+    searchable: str | None,
+) -> str:
+    """Return the approved exhaustive lifecycle bucket for a test row."""
+    if drop_box_status.startswith("skipped_"):
+        return "SKIPPED"
+    if drop_box_status in {"failed", "quarantined"}:
+        return "FAILED_ATTENTION"
+    if drop_box_status in {"queued", "processing"}:
+        return "AWAITING_HANDOFF"
+    if not request_id_present or not core_row_present:
+        return "FAILED_ATTENTION"
+    if searchable == "Y":
+        return "SEARCHABLE"
+    if core_status in {"QUEUED", "PROCESSING", "RETRY_WAIT"}:
+        return "CORE_IN_PROGRESS"
+    return "FAILED_ATTENTION"
+
 
 def _apex_page_sections(export_sql: str) -> dict[int, str]:
     """Return APEX export page bodies keyed by page id."""
@@ -1400,8 +1436,9 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn(
             'p_column_linktext=>\'<span role="img" aria-label="edit"', export_sql
         )
-        self.assertIn("p_column_linktext=>'view jobs'", export_sql)
-        self.assertIn("view_jobs_location_id", export_sql)
+        self.assertIn("p_column_linktext=>'view activity'", export_sql)
+        self.assertIn("view_activity_location_id", export_sql)
+        self.assertIn("p5_drop_location_id", export_sql)
         self.assertIn("toggle_location", export_sql)
         self.assertIn("p2_target_plugin_key", export_sql)
         self.assertIn("p2_target_project_key", export_sql)
@@ -1674,6 +1711,178 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("apex.item(''p2_processed_path'').disable()", page_two)
         self.assertNotIn("apex.item(''p2_failed_path'').disable()", page_two)
 
+    def test_drop_box_lifecycle_buckets_are_exhaustive_and_mutually_exclusive(
+        self,
+    ) -> None:
+        """Every valid status/linkage combination must map to exactly one bucket."""
+        constraint_sql = (
+            PROJECT_ROOT
+            / "plugins/drop_box/db/schema/constraint_other/drp_job_status_ck.sql"
+        ).read_text(encoding="utf-8")
+        constrained_statuses = set(
+            re.findall(
+                r"'([a-z_]+)'", constraint_sql[constraint_sql.index("check (") :]
+            )
+        )
+        self.assertEqual(constrained_statuses, set(DROP_BOX_STATUSES))
+        core_cases = (
+            ("null_link", False, False, None, None),
+            ("broken_link", True, False, None, None),
+            ("core_queued", True, True, "QUEUED", "N"),
+            ("core_processing", True, True, "PROCESSING", "N"),
+            ("core_retry_wait", True, True, "RETRY_WAIT", "N"),
+            ("core_completed_searchable", True, True, "COMPLETED", "Y"),
+            ("core_completed_not_searchable", True, True, "COMPLETED", "N"),
+            ("core_failed", True, True, "FAILED", "N"),
+            ("core_null_state", True, True, None, None),
+        )
+        counts = {
+            "AWAITING_HANDOFF": 0,
+            "CORE_IN_PROGRESS": 0,
+            "SEARCHABLE": 0,
+            "FAILED_ATTENTION": 0,
+            "SKIPPED": 0,
+        }
+
+        for drop_box_status in DROP_BOX_STATUSES:
+            for (
+                case_name,
+                request_id_present,
+                core_row_present,
+                core_status,
+                searchable,
+            ) in core_cases:
+                with self.subTest(
+                    drop_box_status=drop_box_status,
+                    core_case=case_name,
+                ):
+                    bucket = _expected_lifecycle_bucket(
+                        drop_box_status,
+                        request_id_present=request_id_present,
+                        core_row_present=core_row_present,
+                        core_status=core_status,
+                        searchable=searchable,
+                    )
+                    if drop_box_status.startswith("skipped_"):
+                        expected = "SKIPPED"
+                    elif drop_box_status in {"failed", "quarantined"}:
+                        expected = "FAILED_ATTENTION"
+                    elif drop_box_status in {"queued", "processing"}:
+                        expected = "AWAITING_HANDOFF"
+                    else:
+                        expected = {
+                            "null_link": "FAILED_ATTENTION",
+                            "broken_link": "FAILED_ATTENTION",
+                            "core_queued": "CORE_IN_PROGRESS",
+                            "core_processing": "CORE_IN_PROGRESS",
+                            "core_retry_wait": "CORE_IN_PROGRESS",
+                            "core_completed_searchable": "SEARCHABLE",
+                            "core_completed_not_searchable": "FAILED_ATTENTION",
+                            "core_failed": "FAILED_ATTENTION",
+                            "core_null_state": "FAILED_ATTENTION",
+                        }[case_name]
+                    self.assertEqual(bucket, expected)
+                    counts[bucket] += 1
+
+        self.assertEqual(sum(counts.values()), len(DROP_BOX_STATUSES) * len(core_cases))
+        self.assertTrue(all(count > 0 for count in counts.values()))
+
+    def test_drop_box_page_one_implements_approved_lifecycle_precedence(
+        self,
+    ) -> None:
+        export_sql = (
+            (PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        page_one = _apex_page_sections(export_sql)[1]
+        precedence_tokens = (
+            "job.status_code in (''skipped_duplicate'', ''skipped_disallowed_type'', ''skipped_too_large'')",
+            "job.status_code in (''failed'', ''quarantined'')",
+            "job.status_code in (''queued'', ''processing'')",
+            "job.knowledge_ingestion_request_id is null",
+            "or core.ingestion_request_id is null",
+            "core.searchable_yn = ''y''",
+            "core.status_code in (''queued'', ''processing'', ''retry_wait'')",
+            "else ''failed_attention''",
+        )
+
+        positions = [page_one.index(token) for token in precedence_tokens]
+        self.assertEqual(positions, sorted(positions))
+        for count_column in (
+            "total_job_count",
+            "awaiting_handoff_count",
+            "core_in_progress_count",
+            "searchable_count",
+            "failed_attention_count",
+            "skipped_count",
+        ):
+            self.assertRegex(
+                page_one,
+                rf"count\(distinct .*?\) {count_column}",
+            )
+        self.assertIn("p_column_label=>'failed / attention'", page_one)
+        self.assertIn(
+            "includes historical drop box failures, broken core correlation, core failures, and completed requests that are not searchable. a count does not necessarily indicate an unresolved current incident.",
+            page_one,
+        )
+        self.assertNotIn("latest_job_status", export_sql)
+        self.assertNotIn("latest job status", export_sql)
+        acceptance_sql = (
+            (
+                PROJECT_ROOT
+                / "plugins/drop_box/db/acceptance/drop_box_lifecycle_rollup.sql"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        for count_column in (
+            "total_job_count",
+            "awaiting_handoff_count",
+            "core_in_progress_count",
+            "searchable_count",
+            "failed_attention_count",
+            "skipped_count",
+        ):
+            self.assertRegex(
+                acceptance_sql,
+                rf"(?s)count\(distinct .*?\) {count_column}",
+            )
+        self.assertIn("drop_box_lifecycle_rollup_ok", acceptance_sql)
+
+    def test_drop_box_admin_app_never_renders_raw_operational_errors(self) -> None:
+        export_sql = (
+            (PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        relevant_pages = "\n".join(
+            _apex_page_sections(export_sql)[page_id] for page_id in (1, 3, 4, 5)
+        )
+
+        for forbidden in (
+            "job.error_message",
+            "core.last_error_message",
+            "substr(job.error_message",
+            "dbms_lob.substr(core.last_error_message",
+            "effective_instruction",
+            "effective_profile_instruction",
+        ):
+            self.assertNotIn(forbidden, relevant_pages)
+        for required in (
+            "error_summary_redacted",
+            "event_message_redacted",
+            "drop_box_error_summary_redacted",
+            "core_error_summary_redacted",
+            "review restricted logs",
+        ):
+            self.assertIn(required, relevant_pages)
+        self.assertNotIn("p_escape_on_http_output=>'n'", relevant_pages)
+        self.assertNotRegex(
+            relevant_pages,
+            r"p_db_column_name=>'(?:source_filename|source_path|[a-z_]*error[a-z_]*)'.*?p_column_html_expression=>",
+        )
+
     def test_drop_box_activity_page_uses_current_job_and_core_status_views(
         self,
     ) -> None:
@@ -1698,31 +1907,43 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             "on core.ingestion_request_id = job.knowledge_ingestion_request_id",
             activity_page,
         )
+        self.assertIn(
+            "job.drop_location_id = to_number(:p5_drop_location_id)", activity_page
+        )
+        self.assertIn("p_button_name=>'back_to_locations'", activity_page)
+        self.assertIn("p_button_image_alt=>'back to locations'", activity_page)
+        self.assertIn("p_button_action=>'redirect_page'", activity_page)
+        self.assertIn(
+            "p_button_redirect_url=>'f?p=&app_id.:1:&app_session.::&debug.:::'",
+            activity_page,
+        )
+        self.assertIn("p_icon_css_classes=>'fa-arrow-left'", activity_page)
         self.assertNotIn("drop_job_event_admin_v evt", activity_page)
         for token in (
-            "event_ts",
             "location_code",
             "location_display_name",
             "drop_job_id",
             "source_filename",
             "source_path",
-            "event_type",
-            "event_message",
             "core_request_id",
             "drop_box_state",
             "core_state",
+            "drop_box_detected_on",
+            "drop_box_stable_on",
+            "drop_box_started_on",
+            "drop_box_updated_on",
+            "drop_box_completed_on",
             "core_accepted_on",
             "core_claimed_on",
+            "core_latest_event_on",
             "core_completed_on",
             "document_id",
             "document_version_id",
             "chunk_count",
             "embedded_chunk_count",
             "searchable_yn",
-            "latest_core_error",
-            "core request",
-            "core state",
-            "latest error",
+            "drop_box_error_summary_redacted",
+            "core_error_summary_redacted",
         ):
             self.assertIn(token, activity_page)
         self.assertIn(
@@ -1730,6 +1951,11 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         )
         self.assertNotIn("knowledge_chunks_v", activity_page)
         self.assertNotIn("knowledge_chunk_embeddings_v", activity_page)
+        self.assertNotIn("core.last_error_message", activity_page)
+        self.assertNotIn("job.error_message", activity_page)
+        self.assertNotIn("event_type", activity_page)
+        self.assertNotIn("event_message", activity_page)
+        self.assertNotIn("handed off - core processing", activity_page)
         self.assertNotRegex(
             activity_page,
             r"\b(insert|update|delete|merge)\s+(into\s+)?orac_dropbox\.",

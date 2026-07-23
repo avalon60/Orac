@@ -1,0 +1,17 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<FKIndexAssociation class="oracle.dbtools.crest.model.design.relational.FKIndexAssociation" directorySegmentName="seg_0" id="20EAC746-C865-242F-3A42-396CD5D263C4" containerWithKeyObject="8A7C7379-6310-DA3C-AF62-3F8EB1BE8DD4" localFKIndex="AD63E297-1B7E-841E-8188-95DB0E67C358" name="KN_EXT_KN_DOCVER_FK1">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>B5530F2D-1F24-8F73-3DB4-4101B2D1FBD5</importedID>
+<referredTableLongName>orac_core.KNOWLEDGE_DOCUMENT_VERSIONS</referredTableLongName>
+<deleteRule>NO ACTION</deleteRule>
+<referredTableID>E9FA8B63-9A59-8DBE-F200-BA4E5C8F0AA3</referredTableID>
+<keyObject>200965D6-A4B6-6B96-95F1-6A5FDD4F3940</keyObject>
+<referredKeyID>200965D6-A4B6-6B96-95F1-6A5FDD4F3940</referredKeyID>
+<mandatory>true</mandatory>
+<refColNames>DOCUMENT_VERSION_ID</refColNames>
+<transferable>true</transferable>
+<rely>false</rely>
+<columnDependencyConstraintGenerateInDDL>true</columnDependencyConstraintGenerateInDDL>
+</FKIndexAssociation>

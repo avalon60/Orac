@@ -74,8 +74,9 @@ as `*.tmp`, `*.part`, `*.partial`, `*.crdownload`, `.~*`, `~$*`, and `.DS_Store`
 
 ## Processing Profiles
 
-A processing profile is a named ingestion recipe. It gives future ingestion
-workers a stable, shared instruction for how to interpret a queued source file.
+A processing profile is a named ingestion recipe. The current final-ingestion
+slice persists profile and instruction provenance but does not yet transform
+extraction or chunking behaviour from that recipe.
 The Drop Box admin app lists active profiles from
 `orac_dropbox.drop_processing_profile_lov_v`; operators choose the friendly
 profile name and the app stores the returned `profile_code`.
@@ -95,7 +96,8 @@ Seeded system profiles:
 - `automation_rule_note`: capture automation triggers, conditions, actions,
   safety constraints, failure handling, and expected outcomes.
 
-Phase 1 does not run the recipe. It stores deterministic job snapshots:
+The current implementation does not run the recipe. It stores deterministic
+job snapshots:
 
 - `effective_processing_profile`: selected recipe code at enqueue time.
 - `effective_profile_instruction`: selected recipe text at enqueue time.
@@ -105,6 +107,14 @@ Phase 1 does not run the recipe. It stores deterministic job snapshots:
 Because the profile instruction is copied onto `drop_job`, changing a profile
 definition later does not change the recipe text attached to already queued
 jobs.
+
+Execution of profile-specific extraction and chunking belongs to the named
+`Processing Profile Execution` follow-on package in
+`docs/pending_work/TODO.md`. That package must keep profile definitions
+versioned and Core-owned, treat operator instructions as untrusted data, and
+preserve deterministic replay. It is explicitly deferred because the first
+dialogue slice proves authorised retrieval and grounding without changing
+ingestion semantics.
 
 ## Admin App
 
@@ -118,17 +128,34 @@ The plugin supplies the `ORAC_DROPBOX_ADMIN` APEX app:
 
 The app provides:
 
-- A locations report with create, edit, view jobs, enable, and disable actions.
+- A locations report with create, edit, view activity, enable, and disable
+  actions. The report shows mutually exclusive Awaiting Handoff, Core In
+  Progress, Searchable, Failed / Attention, and Skipped counts instead of a
+  latest-status claim.
 - A create/edit form for drop location settings.
 - A plugin target LOV backed by `ORAC_CODE.PLUGIN_LOV_V`, which only lists
   enabled runtime-ready plugins.
-- Free-text project target entry because there is no project metadata catalogue
-  yet.
+- Project targets resolve through the canonical project registry.
 - A processing profile LOV backed by
   `ORAC_DROPBOX.DROP_PROCESSING_PROFILE_LOV_V`.
 - A location detail page with current configuration and recent jobs.
 - A read-only job detail page with source metadata, status, downstream document
-  id, error message, and job event history.
+  id, redacted error summary, and job event history.
+
+The lifecycle report classifies each distinct job exactly once. Skips take
+precedence, followed by Drop Box failures/quarantine, queued or processing jobs,
+broken or missing Core correlation, Core searchability, active Core processing,
+and finally the Failed / Attention fallback. The five lifecycle counts sum to
+the total job count. Failed / Attention includes historical Drop Box failures,
+broken Core correlation, Core failures, and completed requests that are not
+searchable; it does not necessarily indicate an unresolved current incident.
+
+`View Activity` filters the Activity page to the selected location. Each row
+keeps the Drop Box state separate from the state and searchability of the Core
+request identified by that job's `knowledge_ingestion_request_id`. The app
+shows only bounded administrator-safe error summaries. Raw exception text,
+stack traces, credentials, processing instructions, and unrestricted event
+payloads are not rendered.
 
 All admin writes go through `ORAC_DROPBOX.DROP_BOX_ADMIN_API`. The APEX app reads
 approved admin views and does not perform direct DML against `ORAC_DROPBOX`
@@ -154,11 +181,12 @@ Admin access:
 - `drop_processing_profile_lov_v`: active profiles for APEX select lists.
 - `drop_processing_profile_admin_v`: all profile definitions for admin
   inspection.
-- `drop_location_summary_admin_v`: Page 1 report summary including total and
-  recent job counts, latest status, last processed timestamp, and example
-  labels.
-- `drop_job_admin_v`: recent job inspection.
-- `drop_job_event_admin_v`: job audit history.
+- `drop_location_summary_admin_v`: Page 1 location projection including total
+  and recent job counts, last processed timestamp, and example labels.
+- `drop_job_admin_v`: recent job inspection with a bounded redacted error
+  summary.
+- `drop_job_event_admin_v`: job audit history with bounded, event-type-based
+  administrator messages.
 - `drop_box_admin_api`: create, update, enable, and disable locations with
   optimistic row-version checks.
 
@@ -281,6 +309,24 @@ processing_profile: implementation_decision_record
 9. Use the location and job detail pages to inspect queued jobs and audit
    events.
 
+Core submission validates every project or plugin target against the published
+`orac_code` registry views before source, document, version, or request rows are
+created. Unknown, inactive, or runtime-ineligible targets fail the handoff and
+remain retryable at the Drop Box boundary.
+
+Database `ORA-20409` scope rejection is redacted by Core and recorded as the
+existing failed-capture category. Unrelated database failures remain queued and
+retryable. Dialogue denial is terminal and non-disclosing; it does not reveal
+the requested scope or corpus metadata.
+
+For repeatable live acceptance, create or update an enabled
+`DROP_BOX_ACCEPTANCE` location through `drop_box_admin_api`, point it at a
+controlled inbox, and leave it enabled after the Core worker completes. Retain
+the location row and resulting corpus, and verify the current hash, canonical
+`PLUGIN:drop_box` scope, document/version/chunk identifiers, embedding shape,
+processing profile, and provenance through published views. The current hash
+embedding is a lifecycle fixture; lexical relevance controls selection.
+
 ## Service Lifecycle
 
 Orac core owns plugin service lifecycle. During Orac startup and plugin routing
@@ -382,7 +428,7 @@ the same path configured in the Drop Box admin app.
 
    - Open `ORAC_DROPBOX_ADMIN`.
    - Confirm `LOCAL_TEST` shows an increased job count.
-   - Click `View Jobs`.
+   - Click `View Activity`.
    - Confirm `scanner-test.md` appears as a queued job.
    - Open the job detail page.
    - Confirm hash, size, status, and timestamps are populated.

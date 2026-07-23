@@ -9,6 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Mapping
+
+from .scope import KnowledgeScope
 
 
 @dataclass(frozen=True)
@@ -45,7 +48,7 @@ class ManagedCaptureResult:
 
 @dataclass(frozen=True)
 class KnowledgeSearchResult:
-    """One scope-bound searchable knowledge chunk match."""
+    """One scope-bound searchable knowledge chunk with safe provenance."""
 
     ingestion_request_id: int
     document_id: int
@@ -55,12 +58,56 @@ class KnowledgeSearchResult:
     parent_source_reference: str | None
     chunk_id: int
     chunk_no: int
-    score: float
+    lexical_score: float
+    semantic_score: float | None
     target_scope_type: str
     target_scope_key: str
     embedding_model_identifier: str
     embedding_dimensions: int
     chunk_text: str
+    source_type: str = ""
+    document_title: str | None = None
+    original_filename: str | None = None
+    content_uri: str | None = None
+    span_start: int | None = None
+    span_end: int | None = None
+    chunk_content_sha256: str | None = None
+    embedding_provider_code: str | None = None
+    embedding_model_revision: str | None = None
+    processing_profile_code: str | None = None
+
+    @property
+    def score(self) -> float:
+        """Return the meaningful first-slice ranking score."""
+        return self.lexical_score
+
+    @property
+    def scope(self) -> KnowledgeScope:
+        """Return this result's canonical scope."""
+        return KnowledgeScope(self.target_scope_type, self.target_scope_key)
+
+
+@dataclass(frozen=True)
+class KnowledgeRetrievalOutcome:
+    """Structured result of one authorised scoped retrieval attempt."""
+
+    status: str
+    reason_codes: tuple[str, ...]
+    scope: KnowledgeScope
+    considered_count: int = 0
+    threshold_count: int = 0
+    malformed_count: int = 0
+    embedding_model_identifier: str | None = None
+    results: tuple[KnowledgeSearchResult, ...] = ()
+
+
+@dataclass(frozen=True)
+class KnowledgeGroundingPack:
+    """Bounded untrusted local evidence ready for prompt assembly."""
+
+    evidence_block: str
+    outcome: KnowledgeRetrievalOutcome
+    provenance: Mapping[str, Any]
 
 
 @dataclass(frozen=True)

@@ -6,8 +6,8 @@
 <shouldBeOpen>true</shouldBeOpen>
 <selectedRDBMSSite>01F6E6D1-21D0-CFBD-ABDD-3988D1813575</selectedRDBMSSite>
 <redirectConnectionStamp class="oracle.dbtools.crest.imports.DBConnectionStamp">
-<connName>OracSchema</connName>
-<connUser>orac</connUser>
+<connName>orac_core</connName>
+<connUser>orac_core</connUser>
 <connType>1</connType>
 <syncSelected>-1</syncSelected>
 </redirectConnectionStamp>
@@ -17,12 +17,12 @@
 <connName>OracSchema</connName>
 <connUser>orac</connUser>
 <connType>1</connType>
-<syncSelected>1</syncSelected>
 </importConnectionStamp>
 <importConnectionStamp class="oracle.dbtools.crest.imports.DBConnectionStamp">
 <connName>Orac</connName>
 <connUser>system</connUser>
 <connType>1</connType>
+<syncSelected>1</syncSelected>
 </importConnectionStamp>
 </importConnectionStamps>
 <importDDLFileStamps>

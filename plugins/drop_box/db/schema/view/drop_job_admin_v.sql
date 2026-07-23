@@ -23,7 +23,14 @@ select job.drop_job_id,
        job.effective_processing_profile,
        job.effective_profile_instruction,
        job.effective_instruction,
-       job.error_message,
+       case
+         when job.error_message is null then null
+         when job.status_code = 'quarantined'
+         then 'Drop Box job was quarantined; review restricted logs.'
+         when job.status_code = 'failed'
+         then 'Drop Box processing failed; review restricted logs.'
+         else 'Drop Box reported an error; review restricted logs.'
+       end error_summary_redacted,
        job.document_id,
        job.knowledge_ingestion_request_id,
        job.started_on,

@@ -61,6 +61,11 @@
 <createdTime>2026-05-25 17:55:33 UTC</createdTime>
 <ownerDesignName>orac3</ownerDesignName>
 </ColumnProxy>
+<ColumnProxy name="DISPLAY_MAX_LABEL" id="4D7BB681-CF3C-10FF-D9D0-2B88F9DC7EB0">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
 <ColumnProxy name="LOV_TYPE" id="4EFB6740-9B3D-89A9-F5B4-B4C2F18EA5BE">
 <createdBy>clive</createdBy>
 <createdTime>2026-05-25 17:55:33 UTC</createdTime>
@@ -69,6 +74,11 @@
 <ColumnProxy name="CATEGORY" id="5F5B4E8C-881D-61FA-874C-55748C1327BD">
 <createdBy>clive</createdBy>
 <createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="STEP_NUMBER" id="6E658590-B424-5D23-CB64-3DF3A13E6895">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
 <ownerDesignName>orac3</ownerDesignName>
 </ColumnProxy>
 <ColumnProxy name="MIN_LENGTH" id="7B0626D8-B608-4456-4D9E-185AAC8044B6">
@@ -113,6 +123,11 @@
 <createdTime>2026-05-25 17:55:33 UTC</createdTime>
 <ownerDesignName>orac3</ownerDesignName>
 </ColumnProxy>
+<ColumnProxy name="UNIT_LABEL" id="B5077F1B-03C0-C70F-3673-CD8BEED080EA">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
 <ColumnProxy name="MAX_LENGTH" id="B77E8755-AE48-A1FC-393F-19BCCEF4F09F">
 <createdBy>clive</createdBy>
 <createdTime>2026-05-25 17:55:33 UTC</createdTime>
@@ -154,6 +169,16 @@
 <ColumnProxy name="LOV_QUERY" id="F284DA61-BF2F-E6C9-3A8B-B040F58163E2">
 <createdBy>clive</createdBy>
 <createdTime>2026-05-25 17:55:33 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="DISPLAY_MIN_LABEL" id="F382B5EE-5871-A8CB-9C5E-E1872647B798">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+</ColumnProxy>
+<ColumnProxy name="DISPLAY_VALUE_FORMAT" id="FB40D391-A0AB-CB5E-1F22-696F9021FE29">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
 <ownerDesignName>orac3</ownerDesignName>
 </ColumnProxy>
 </columnProxies>
@@ -202,6 +227,32 @@
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 <lobStorageType>SECUREFILE</lobStorageType>
 </LobStorage>
+<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000077804C00008$$" id="6DFEBE3F-1243-E6F0-2959-664A7EB20D45">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<cache>NOCACHE</cache>
+<chunk>8192</chunk>
+<column>LOV_QUERY</column>
+<compression>NO</compression>
+<duplication>KEEP_DUPLICATES</duplication>
+<logging>YES</logging>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<lobStorageType>SECUREFILE</lobStorageType>
+</LobStorage>
+<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000077804C00010$$" id="B5BAAA36-3528-1EC4-C32D-2B76339D39CD">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<cache>NOCACHE</cache>
+<chunk>8192</chunk>
+<column>DEFAULT_VALUE</column>
+<compression>NO</compression>
+<duplication>KEEP_DUPLICATES</duplication>
+<logging>YES</logging>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<lobStorageType>SECUREFILE</lobStorageType>
+</LobStorage>
 </lobStorages>
 <primaryKeys>
 <PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="PRFDFN_PK" id="DF9C2373-2D5B-2AF6-0B95-504594CF72DA">
@@ -216,6 +267,14 @@
 <usingIndex>BY INDEX NAME</usingIndex>
 </PrimaryKey>
 </primaryKeys>
+<tableCheckConstraints itemClass="oracle.dbtools.crest.model.design.storage.oracle.TableCheckConstraintOracle">
+<TableCheckConstraint name="PRFDFN_CK7" id="55B36508-B545-C097-6DF0-1F40E6776EA9">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<nameChanged>true</nameChanged>
+</TableCheckConstraint>
+</tableCheckConstraints>
 <uniqueKeys>
 <UniqueKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.UniqueOraclev10g" name="PRFDFN_UK1" id="C68D9264-2FB8-691A-0EC8-C63BA8C77CD3">
 <createdBy>clive</createdBy>

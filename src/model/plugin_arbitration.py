@@ -15,6 +15,7 @@ from model.plugin_routing.models import (
     PluginManifest,
     PluginRouteCandidate,
 )
+from model.plugin_routing.interception import freeze_mapping
 
 
 HIGH_CONFIDENCE_THRESHOLD = 0.85
@@ -207,10 +208,10 @@ class PluginArbiter:
                 route_candidates = tuple(
                     replace(
                         candidate,
-                        extracted_params={
+                        extracted_params=freeze_mapping({
                             **(candidate.extracted_params or {}),
                             "routed_prompt": addressed_text,
-                        },
+                        }),
                         match_reasons=(
                             *candidate.match_reasons,
                             "explicit_plugin_addressing",
@@ -365,7 +366,7 @@ class PluginArbiter:
             intent_name=intent_name or "pending_context",
             confidence=1.0,
             match_reasons=("pending_plugin_context",),
-            extracted_params={"routed_prompt": utterance},
+            extracted_params=freeze_mapping({"routed_prompt": utterance}),
             requires_confirmation=bool(
                 manifest.execution_policy.requires_confirmation
                 if manifest.execution_policy is not None
@@ -512,7 +513,7 @@ class PluginArbiter:
             intent_name=getattr(candidate, "intent_name", "") or "default",
             confidence=float(candidate.score),
             match_reasons=("legacy_plugin_candidate",),
-            extracted_params={},
+            extracted_params=freeze_mapping({}),
             route_key=getattr(candidate, "route_key", "") or "",
         )
 

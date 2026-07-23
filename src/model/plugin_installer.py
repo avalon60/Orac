@@ -26,14 +26,23 @@ from model.plugin_dependencies import validate_declared_imports
 from model.plugin_package import PluginPackage
 from model.plugin_package import PluginPackageBuilder
 from model.plugin_package import PluginPackageReader
+from model.plugin_package import materialise_repository_plugin
 from model.plugin_package import source_package
+from model.plugin_package_layout import PLUGIN_DIRECTORY_BOM
+from model.plugin_package_layout import PLUGIN_ROOT_FILE_BOM
+from model.plugin_package_layout import claimed_source_directories
+from model.plugin_package_layout import is_ignored_source_file
+from model.plugin_package_layout import source_root_for_spec
 from model.plugin_routing.discovery import PluginDiscovery
 from model.plugin_routing.models import PluginApexApp
 from model.plugin_routing.models import PluginManifest
 from model.plugin_registry import PluginApexAppRegistryStore
 from model.plugin_registry import PluginRegistryStore
+from model.plugin_registry import inspect_registered_plugin_artifact
 from model.plugin_runtime import load_plugin_class
+from model.plugin_runtime import load_plugin_interceptor_class
 from model.plugin_runtime import load_plugin_service_class
+from model.plugin_runtime import instantiate_plugin_interceptor
 from model.plugin_secret_vault import PluginPatVaultStore
 from model.plugin_service_manager import PluginServiceManager
 
@@ -248,7 +257,11 @@ class PluginInstaller:
             else str((row or {}).get("plugin_id") or "")
         )
         install_status = str((row or {}).get("install_status") or "not_installed")
-        installed = row is not None and install_status == "success"
+        artifact_status, artifact_error, artifact_ok = self._inventory_artifact_status(
+            row=row,
+            install_status=install_status,
+        )
+        installed = row is not None and install_status == "success" and artifact_ok
         return {
             "plugin_id": plugin_id,
             "name": (
@@ -259,6 +272,8 @@ class PluginInstaller:
             "installed": installed,
             "unpacked": manifest is not None,
             "enabled": self._inventory_enabled(manifest=manifest, row=row),
+            "installed_artifact_status": artifact_status,
+            "installed_artifact_error": artifact_error,
             "installed_version": (
                 str(row.get("plugin_version"))
                 if row and row.get("plugin_version")
@@ -288,6 +303,20 @@ class PluginInstaller:
             ),
             "error": None,
         }
+
+    @staticmethod
+    def _inventory_artifact_status(
+        *,
+        row: dict[str, Any] | None,
+        install_status: str,
+    ) -> tuple[str | None, str | None, bool]:
+        """Return artifact inventory status without mutating registry state."""
+        if row is None:
+            return None, None, False
+        if install_status != "success":
+            return "not_active", None, False
+        status = inspect_registered_plugin_artifact(row)
+        return status.code, None if status.ok else status.message, status.ok
 
     def _plugin_discovery_error_entry(self, error: str) -> dict[str, Any]:
         """Build one inventory row for an unpacked manifest discovery error."""
@@ -329,23 +358,9 @@ class PluginInstaller:
 
     def _install(self, package: PluginPackage, staging: Path) -> PluginInstallResult:
         """Run all required installation gates for one validated package."""
-        source_manifest = package.manifest
         candidate_root = staging / "candidate"
         candidate_plugin_dir = candidate_root / "plugin"
-        candidate_root.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_manifest.manifest_path, candidate_root / "manifest.json")
-        shutil.copytree(
-            package.plugin_dir,
-            candidate_plugin_dir,
-            ignore=shutil.ignore_patterns(
-                "plugin.ini",
-                "__pycache__",
-                "*.pyc",
-                ".venv",
-                "venv",
-                ".git",
-            ),
-        )
+        self._stage_candidate_package(package, candidate_root)
         manifest = PluginDiscovery(candidate_root).load_manifest(
             candidate_root / "manifest.json",
             plugin_dir=candidate_plugin_dir,
@@ -466,6 +481,26 @@ class PluginInstaller:
                 dependency_status=dependency_result.status,
                 database_status=database_result.status,
             )
+        # Materialise the validated archive using the package-directory BOM.
+        # Archive plugin/ contents become plugins/<plugin_id>/ and archive
+        # resources/ remains plugins/<plugin_id>/resources/.
+        try:
+            materialise_repository_plugin(
+                package,
+                self.project_root / "plugins",
+            )
+        except Exception as exc:
+            self._rollback_activation(installed_path, previous_path)
+            return self._failure(
+                manifest,
+                package,
+                "repository_install_failed",
+                str(exc),
+                configuration_status="success",
+                dependency_status=dependency_result.status,
+                database_status=database_result.status,
+            )
+
         values = self._registry_values(
             active_manifest,
             package,
@@ -516,6 +551,48 @@ class PluginInstaller:
         return config_path
 
     @staticmethod
+    def _stage_candidate_package(package: PluginPackage, candidate_root: Path) -> None:
+        """Stage one validated package in canonical managed-install layout."""
+        candidate_root.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(package.manifest.manifest_path, candidate_root / "manifest.json")
+        claimed_directories = claimed_source_directories()
+
+        for spec in PLUGIN_DIRECTORY_BOM:
+            source_root = _candidate_package_directory_source(package, spec)
+            if not source_root.exists():
+                continue
+            destination_root = candidate_root / spec.package_name
+            destination_root.mkdir(parents=True, exist_ok=True)
+            for source in sorted(source_root.rglob("*")):
+                if not source.is_file():
+                    continue
+                relative = source.relative_to(source_root)
+                if package.source_type != "tarball":
+                    source_relative = source.relative_to(package.plugin_dir)
+                    if is_ignored_source_file(source_relative):
+                        continue
+                    if spec.catch_all:
+                        if (
+                            source_relative.parts
+                            and source_relative.parts[0] in claimed_directories
+                        ):
+                            continue
+                        if source_relative.as_posix() in PLUGIN_ROOT_FILE_BOM:
+                            continue
+                target = destination_root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+
+        for file_name in PLUGIN_ROOT_FILE_BOM:
+            source_file = (
+                package.package_root / file_name
+                if package.source_type == "tarball"
+                else package.plugin_dir / file_name
+            )
+            if source_file.is_file():
+                shutil.copy2(source_file, candidate_root / file_name)
+
+    @staticmethod
     def _missing_required_secrets(manifest: PluginManifest) -> tuple[str, ...]:
         """Return required secret keys absent from the encrypted PAT vault."""
         if manifest.secrets is None:
@@ -537,6 +614,13 @@ class PluginInstaller:
                 raise PluginInstallationError(
                     f"Plugin '{manifest.plugin_id}' entry point does not expose execute()."
                 )
+        if manifest.interceptor_entry_point:
+            interceptor_class = load_plugin_interceptor_class(manifest)
+            interceptor = instantiate_plugin_interceptor(
+                interceptor_class,
+                manifest=manifest,
+            )
+            interceptor.prepare()
         for service_runtime in manifest.service_runtimes:
             service_class = load_plugin_service_class(manifest, service_runtime)
             required_method = (
@@ -858,6 +942,13 @@ def _effective_apex_app_icon(
     if manifest.ui is not None:
         return manifest.ui.icon_class
     return None
+
+
+def _candidate_package_directory_source(package: PluginPackage, spec) -> Path:
+    """Resolve one BOM source directory for managed candidate staging."""
+    if package.source_type == "tarball":
+        return package.package_root / spec.package_name
+    return source_root_for_spec(package.plugin_dir, spec)
 
 
 class _RetainedDirectory:

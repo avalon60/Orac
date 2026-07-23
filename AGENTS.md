@@ -112,9 +112,9 @@ workspace assets as database-delivered assets under `resources/db/apex`.
 
 Read:
 
-- docs/agent-guardrails/45-ai-generated-code-reviewability.md
+- [AI-Generated Code Reviewability](docs/agent-guardrails/45-ai-generated-code-reviewability.md)
 
-when creating new code or making significant changes to existing code,
+before creating new code, enhancements, or significant changes to existing code,
 including application code, scripts, database code, frontend components, tests,
 generated/scaffolded source files, root-level utility scripts, SQL*Plus/SQLcl
 helpers, and operational provisioning scripts.

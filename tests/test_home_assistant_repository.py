@@ -289,6 +289,51 @@ class HomeAssistantRepositoryTests(unittest.TestCase):
         self.assertEqual(resolved.entity_ids, ("light.office",))
         self.assertIn("orac_ha.ha_control_resolution_v", session.fetch_queries[0])
 
+    def test_front_lamp_resolves_to_exact_entity(self) -> None:
+        session = _FakePluginDatabaseSession()
+        session.fetch_rows = [
+            {
+                "ENTITY_ID": "light.front_lamp",
+                "DOMAIN": "light",
+                "OBJECT_ID": "front_lamp",
+                "FRIENDLY_NAME": "Front Lamp",
+                "DEVICE_NAME": "Entrance Lighting",
+            },
+            {
+                "ENTITY_ID": "light.front_lamp_2",
+                "DOMAIN": "light",
+                "OBJECT_ID": "front_lamp_2",
+                "FRIENDLY_NAME": "Front Lamp",
+                "DEVICE_NAME": "Office Front Lamp",
+            }
+        ]
+        repository = HomeAssistantRepository(_FakeContext(session))
+
+        resolved = repository.resolve_control(
+            ControlRequest("turn_on", "front lamp", "light")
+        )
+
+        self.assertEqual(resolved.entity_ids, ("light.front_lamp",))
+        self.assertEqual(resolved.service_calls[0].domain, "light")
+        self.assertEqual(resolved.service_calls[0].service, "turn_on")
+
+    def test_fake_lamp_target_is_unknown_without_fallback(self) -> None:
+        session = _FakePluginDatabaseSession()
+        session.fetch_rows = [
+            {
+                "ENTITY_ID": "light.front_lamp",
+                "DOMAIN": "light",
+                "OBJECT_ID": "front_lamp",
+                "FRIENDLY_NAME": "Front Lamp",
+            }
+        ]
+        repository = HomeAssistantRepository(_FakeContext(session))
+
+        with self.assertRaisesRegex(ValueError, "was not found"):
+            repository.resolve_control(
+                ControlRequest("turn_on", "nonexistent purple lamp", "light")
+            )
+
     def test_area_listing_reads_only_the_granted_view(self) -> None:
         session = _FakePluginDatabaseSession()
         session.fetch_rows = [

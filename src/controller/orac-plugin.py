@@ -242,11 +242,15 @@ def run_plugin_service(
 
     logger = logger or _ConsoleLogger()
     registry_store = registry_store or PluginRegistryStore(logger=logger)
-    manifests = [
-        manifest
-        for manifest in registry_store.enabled_manifests()
-        if manifest.plugin_id == plugin_id
-    ]
+    if hasattr(registry_store, "enabled_manifest"):
+        manifest = registry_store.enabled_manifest(plugin_id)
+        manifests = [manifest] if manifest is not None else []
+    else:
+        manifests = [
+            manifest
+            for manifest in registry_store.enabled_manifests()
+            if manifest.plugin_id == plugin_id
+        ]
     if not manifests:
         raise PluginRuntimeError(
             f"Plugin '{plugin_id}' is not registered, enabled, and ready to run."
@@ -372,6 +376,7 @@ def _format_plugin_inventory(entries: list[dict[str, Any]]) -> str:
         ("plugin_id", "PLUGIN"),
         ("name", "NAME"),
         ("installed", "INSTALLED"),
+        ("installed_artifact_status", "ARTIFACT"),
         ("unpacked", "UNPACKED"),
         ("installed_version", "INSTALLED_VERSION"),
         ("unpacked_version", "UNPACKED_VERSION"),
@@ -399,9 +404,14 @@ def _format_plugin_inventory(entries: list[dict[str, Any]]) -> str:
     )
 
     errors = [str(entry["error"]) for entry in entries if entry.get("error")]
+    errors.extend(
+        f"{entry.get('plugin_id')}: {entry['installed_artifact_error']}"
+        for entry in entries
+        if entry.get("installed_artifact_error")
+    )
     if errors:
         lines.append("")
-        lines.extend(f"Discovery error: {error}" for error in errors)
+        lines.extend(f"Inventory error: {error}" for error in errors)
     return "\n".join(lines)
 
 

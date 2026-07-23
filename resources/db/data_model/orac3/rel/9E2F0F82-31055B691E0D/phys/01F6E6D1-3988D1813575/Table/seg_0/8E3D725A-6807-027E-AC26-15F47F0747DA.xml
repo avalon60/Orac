@@ -114,6 +114,19 @@
 <tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
 <lobStorageType>SECUREFILE</lobStorageType>
 </LobStorage>
+<LobStorage class="oracle.dbtools.crest.model.design.storage.oracle.v11g.LobStorageOraclev11g" name="SYS_LOB0000077821C00004$$" id="4DDFB0C8-1552-3D56-3381-FE0F950D019E">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<cache>NOCACHE</cache>
+<chunk>8192</chunk>
+<column>PROMPT_ELEMENT</column>
+<compression>NO</compression>
+<duplication>KEEP_DUPLICATES</duplication>
+<logging>YES</logging>
+<tableSpace>9FC10C2E-FA65-B5F3-5360-05B251DF14F3</tableSpace>
+<lobStorageType>SECUREFILE</lobStorageType>
+</LobStorage>
 </lobStorages>
 <primaryKeys>
 <PrimaryKey class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PKProxyOraclev10g" name="USER_PE_PK" id="63FC6E9D-18E8-5615-6E02-2D4338E9C712">

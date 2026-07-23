@@ -23,7 +23,9 @@ from model.plugin_routing.embeddings import HashEmbeddingProvider
 from model.plugin_routing.index import PluginIntentIndex
 from model.plugin_routing.intent_text import INTENT_TEXT_VERSION, build_canonical_intent_text
 from model.plugin_routing.manager import PluginManager
+from model.plugin_registry import PluginRegistryArtifactStatus
 from model.plugin_registry import PluginRegistryError
+from model.plugin_registry import PluginRegistryManifestLoadResult
 
 
 class _SuccessfulDatabaseDeployer:
@@ -53,10 +55,33 @@ class _ManifestRegistry:
     def enabled_manifests(self):
         return list(self.manifests)
 
+    def load_enabled_manifest_result(self, *, strict=True):
+        return PluginRegistryManifestLoadResult(
+            manifests=tuple(self.manifests),
+            issues=(),
+        )
+
 
 class _FailingRegistry:
     def enabled_manifests(self):
         raise PluginRegistryError("registry unavailable")
+
+    def load_enabled_manifest_result(self, *, strict=True):
+        raise PluginRegistryError("registry unavailable")
+
+
+class _PartialRegistry:
+    def __init__(self, manifests, issues):
+        self.manifests = list(manifests)
+        self.issues = list(issues)
+
+    def load_enabled_manifest_result(self, *, strict=True):
+        if strict and self.issues:
+            raise PluginRegistryError(self.issues[0].message)
+        return PluginRegistryManifestLoadResult(
+            manifests=tuple(self.manifests),
+            issues=tuple(self.issues),
+        )
 
 
 class PluginRoutingTests(unittest.TestCase):
@@ -136,6 +161,61 @@ class PluginRoutingTests(unittest.TestCase):
             self.assertEqual(report["invalid"], 1)
             self.assertTrue(
                 any("plugin routing is disabled" in message for _, message in logger.messages)
+            )
+
+    def test_registry_artifact_drift_skips_only_broken_plugin(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins_dir,
+            tempfile.TemporaryDirectory() as temp_cache_dir,
+        ):
+            plugins_dir = Path(temp_plugins_dir)
+            (plugins_dir / "alpha").mkdir()
+            (plugins_dir / "alpha.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "plugin_id": "alpha",
+                        "name": "Alpha",
+                        "description": "Test plugin",
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "capabilities": ["alpha.control"],
+                        "entitlements": [],
+                        "runtime": {"mode": "on_demand"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+            self.assertEqual(errors, [])
+            logger = self._FakeLogger()
+            issue = PluginRegistryArtifactStatus(
+                plugin_id="drop_box",
+                installed_path="/tmp/missing/drop_box/1.0.0",
+                code="missing_installed_files",
+                ok=False,
+                message="Registered plugin files are missing for 'drop_box'.",
+            )
+            manager = PluginManager(
+                embedding_provider=HashEmbeddingProvider(),
+                plugins_dir=plugins_dir,
+                cache_dir=Path(temp_cache_dir),
+                registry_store=_PartialRegistry(manifests, [issue]),
+                require_registry=True,
+                logger=logger,
+            )
+
+            report = manager.refresh()
+
+            self.assertEqual(report["indexed_plugin_count"], 1)
+            self.assertEqual(report["invalid"], 1)
+            self.assertEqual(report["discovered"], 2)
+            self.assertIn(issue.message, report["validation_errors"])
+            self.assertFalse(
+                any(
+                    "plugin routing is disabled" in message
+                    for _, message in logger.messages
+                )
             )
 
     def test_discovery_rejects_mismatched_plugin_id(self) -> None:
@@ -1356,13 +1436,42 @@ class PluginRoutingTests(unittest.TestCase):
         self.assertEqual(report["enabled"], 4)
         self.assertEqual(report["disabled"], 0)
         self.assertEqual(report["dependency_disabled"], 0)
-        self.assertEqual(report["indexed_plugin_count"], 8)
+        self.assertEqual(report["indexed_plugin_count"], 11)
         self.assertIsNotNone(manager.get_manifest("home_assistant"))
         self.assertEqual(len(candidates), 2)
         self.assertGreaterEqual(candidates[0].confidence, candidates[1].confidence)
         self.assertTrue(all(candidate.confidence <= 1.0 for candidate in candidates))
         self.assertTrue(all(candidate.capability_id for candidate in candidates))
         self.assertTrue(all(candidate.intent_name for candidate in candidates))
+
+    def test_deterministic_intercepts_boost_live_weather_and_ha_prompts(self) -> None:
+        manager = PluginManager(
+            embedding_provider=HashEmbeddingProvider(),
+            plugins_dir=Path("plugins"),
+            cache_dir=Path(tempfile.mkdtemp()),
+            database_deployer=_SuccessfulDatabaseDeployer(),
+        )
+
+        report = manager.refresh()
+        ha_candidates = manager.find_candidates("desk lamp off", top_n=3)
+        weather_candidates = manager.find_candidates(
+            "What is the weather forecast?",
+            top_n=3,
+        )
+        typo_candidates = manager.find_candidates("what is the wether forecast>", top_n=3)
+
+        self.assertGreaterEqual(report["intercept_plugin_count"], 2)
+        self.assertEqual(ha_candidates[0].plugin_id, "home_assistant")
+        self.assertEqual(ha_candidates[0].capability_id, "home_assistant.device_control")
+        self.assertEqual(ha_candidates[0].intent_name, "control_device")
+        self.assertEqual(ha_candidates[0].confidence, 1.0)
+        self.assertIn("dialog_intercept", ha_candidates[0].match_reasons)
+        self.assertEqual(weather_candidates[0].plugin_id, "weather")
+        self.assertEqual(weather_candidates[0].capability_id, "weather.short_forecast")
+        self.assertEqual(weather_candidates[0].confidence, 1.0)
+        self.assertIn("dialog_intercept", weather_candidates[0].match_reasons)
+        self.assertEqual(typo_candidates[0].plugin_id, "weather")
+        self.assertEqual(typo_candidates[0].confidence, 1.0)
 
     def test_service_only_plugin_is_not_indexed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins_dir, tempfile.TemporaryDirectory() as temp_cache_dir:

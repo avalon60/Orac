@@ -25,7 +25,7 @@ class OracListener:
                 if not data:
                     break
                 incoming = data.decode("utf-8", errors="replace").rstrip("\r\n")
-                print(f"📥 Received: {incoming}")
+                print(f"📥 Received frame: {_frame_log_summary(incoming)}")
                 self._remember_voice_turn(incoming, voice_turns)
 
                 streamer = getattr(self.orchestrator, "handle_request_events", None)
@@ -110,11 +110,27 @@ class OracListener:
         frame: str,
     ) -> None:
         """Write one NDJSON protocol frame to the client."""
-        preview = frame if len(frame) <= 300 else frame[:300] + "…"
-        print(f"📤 Sending: {preview}")
+        print(f"📤 Sending frame: {_frame_log_summary(frame)}")
         writer.write((frame + "\n").encode("utf-8"))
         await writer.drain()
 
+
+def _frame_log_summary(frame: str) -> str:
+    """Return non-content protocol metadata suitable for operational logs."""
+    frame_bytes = len(frame.encode("utf-8"))
+    try:
+        envelope = json.loads(frame)
+    except (TypeError, ValueError):
+        return f"invalid_json bytes={frame_bytes}"
+    if not isinstance(envelope, dict):
+        return f"non_object bytes={frame_bytes}"
+    return (
+        f"type={envelope.get('type') or 'unknown'} "
+        f"route={envelope.get('route') or 'unknown'} "
+        f"id={envelope.get('id') or 'unknown'} "
+        f"reply_to={envelope.get('reply_to') or '-'} "
+        f"bytes={frame_bytes}"
+    )
 
 
 # Optional standalone test (remove in production)

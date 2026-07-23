@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,10 @@ from model.plugin_config import PluginConfigManager
 from model.plugin_config import PluginConfigurationResult
 from model.plugin_database_deployment import PluginDatabaseDeployer
 from model.plugin_database_deployment import PluginDatabaseDeploymentResult
+from model.plugin_routing.interception import (
+    PluginInterceptionRegistry,
+    freeze_mapping,
+)
 from model.plugin_routing.cache import PluginEmbeddingCache
 from model.plugin_routing.discovery import PluginDiscovery
 from model.plugin_routing.embeddings import EmbeddingProvider
@@ -31,6 +36,10 @@ from model.plugin_routing.models import (
 )
 from model.plugin_registry import PluginRegistryError
 from model.plugin_registry import PluginRegistryStore
+from model.plugin_runtime import (
+    instantiate_plugin_interceptor,
+    load_plugin_interceptor_class,
+)
 
 
 class PluginManager:
@@ -77,6 +86,8 @@ class PluginManager:
         self._deployment_eligible_manifests: tuple[PluginManifest, ...] = ()
         self._configuration_results: dict[str, PluginConfigurationResult] = {}
         self._deployment_results: dict[str, PluginDatabaseDeploymentResult] = {}
+        self._intercept_registry = PluginInterceptionRegistry({}, logger=logger)
+        self._intercept_errors: dict[str, str] = {}
         self._last_refresh_report: dict[str, Any] = {}
         self._logger = logger
 
@@ -85,8 +96,17 @@ class PluginManager:
         self._log_info(f"Plugin routing refresh starting for root {self._plugins_dir}")
         if self._require_registry:
             try:
-                manifests = self._registry_store.enabled_manifests()
-                errors: list[str] = []
+                if hasattr(self._registry_store, "load_enabled_manifest_result"):
+                    load_result = self._registry_store.load_enabled_manifest_result(
+                        strict=False
+                    )
+                    manifests = list(load_result.manifests)
+                    errors = [
+                        issue.message or issue.code for issue in load_result.issues
+                    ]
+                else:
+                    manifests = self._registry_store.enabled_manifests()
+                    errors = []
             except PluginRegistryError as exc:
                 manifests = []
                 errors = [str(exc)]
@@ -94,7 +114,7 @@ class PluginManager:
                     "Plugin registry is unavailable; plugin routing is disabled "
                     f"while core Orac remains operational: {exc}"
                 )
-            discovered_count = len(manifests)
+            discovered_count = len(manifests) + len(errors)
         else:
             discovered_count = (
                 len(list(self._plugins_dir.glob("*.json")))
@@ -208,6 +228,9 @@ class PluginManager:
         self._index.build(vectors_for_index)
         self._manifests = {manifest.plugin_id: manifest for manifest in runtime_manifests}
         self._route_records = route_records
+        self._intercept_registry, self._intercept_errors = (
+            self._load_interceptor_registry(runtime_manifests)
+        )
         self._last_refresh_report = {
             "plugin_root": str(self._plugins_dir),
             "cache_dir": str(self._cache.cache_dir),
@@ -230,6 +253,8 @@ class PluginManager:
             "cache_misses": cache_misses,
             "re_embedded": re_embedded,
             "validation_errors": errors,
+            "intercept_plugin_count": len(self._intercept_registry),
+            "intercept_errors": dict(sorted(self._intercept_errors.items())),
             "embedding_model_id": self._embedding_provider.model_id,
             "intent_text_version": INTENT_TEXT_VERSION,
         }
@@ -258,11 +283,25 @@ class PluginManager:
             top_n=top_n,
             min_score=min_score,
         )
-        return [
+        semantic_candidates = [
             self._route_candidate_from_index_candidate(candidate)
             for candidate in raw_candidates
             if candidate.plugin_id in self._route_records
         ]
+        return self._apply_intercept_matches(utterance, semantic_candidates, top_n)
+
+    def find_intercept_candidates(
+        self,
+        utterance: str,
+        *,
+        top_n: int = 5,
+    ) -> list[PluginRouteCandidate]:
+        """Return deterministic interceptor candidates without semantic matching."""
+        if not self._manifests:
+            self.refresh()
+        if len(self._intercept_registry) == 0:
+            return []
+        return list(self._intercept_registry.candidates_for(utterance))[:top_n]
 
     def get_manifest(self, plugin_id: str) -> PluginManifest | None:
         """Returns the manifest for an indexed plugin."""
@@ -305,6 +344,28 @@ class PluginManager:
     ) -> PluginRouteCandidate:
         """Convert a route-key index hit into an arbitration candidate."""
         manifest, capability, intent = self._route_records[candidate.plugin_id]
+        return self._route_candidate_from_record(
+            manifest,
+            capability,
+            intent,
+            confidence=float(candidate.score),
+            match_reasons=("route_intent_embedding",),
+            extracted_params=freeze_mapping({}),
+            route_key=candidate.plugin_id,
+        )
+
+    def _route_candidate_from_record(
+        self,
+        manifest: PluginManifest,
+        capability: PluginRouteCapability,
+        intent: PluginRouteIntent,
+        *,
+        confidence: float,
+        match_reasons: tuple[str, ...],
+        extracted_params: dict[str, Any] | None,
+        route_key: str,
+    ) -> PluginRouteCandidate:
+        """Build a route candidate from an indexed manifest route record."""
         policy = manifest.execution_policy
         safety_level = str(
             intent.safety_level
@@ -319,14 +380,90 @@ class PluginManager:
             plugin_id=manifest.plugin_id,
             capability_id=capability.capability_id,
             intent_name=intent.name,
-            confidence=float(candidate.score),
-            match_reasons=("route_intent_embedding",),
-            extracted_params={},
+            confidence=confidence,
+            match_reasons=match_reasons,
+            extracted_params=freeze_mapping(extracted_params),
             missing_params=(),
             requires_confirmation=requires_confirmation,
             safety_level=safety_level,
             priority_class=intent.priority_class,
-            route_key=candidate.plugin_id,
+            route_key=route_key,
+        )
+
+    def _load_interceptor_registry(
+        self,
+        manifests: list[PluginManifest],
+    ) -> tuple[PluginInterceptionRegistry, dict[str, str]]:
+        """Load declared dialogue interceptors and prepare immutable metadata."""
+        loaded = {}
+        errors: dict[str, str] = {}
+        for manifest in manifests:
+            if not manifest.interceptor_entry_point:
+                continue
+            try:
+                interceptor_class = load_plugin_interceptor_class(manifest)
+                interceptor = instantiate_plugin_interceptor(
+                    interceptor_class,
+                    manifest=manifest,
+                    logger=self._logger,
+                )
+                interceptor.prepare()
+                loaded[manifest.plugin_id] = (manifest, interceptor)
+            except Exception as exc:
+                errors[manifest.plugin_id] = str(exc)
+                self._log_warning(
+                    "Plugin routing skipped dialogue interceptor for "
+                    f"'{manifest.plugin_id}': {exc}"
+                )
+        return PluginInterceptionRegistry(loaded, logger=self._logger), errors
+
+    def _apply_intercept_matches(
+        self,
+        utterance: str,
+        candidates: list[PluginRouteCandidate],
+        top_n: int,
+    ) -> list[PluginRouteCandidate]:
+        """Merge deterministic dialogue candidates with semantic candidates."""
+        if len(self._intercept_registry) == 0:
+            return candidates
+
+        intercept_candidates = list(self._intercept_registry.candidates_for(utterance))
+        if not intercept_candidates:
+            return candidates
+
+        merged_by_route: dict[str, PluginRouteCandidate] = {}
+        for candidate in candidates:
+            merged_by_route[candidate.route_key] = candidate
+        for candidate in intercept_candidates:
+            existing = merged_by_route.get(candidate.route_key)
+            if existing is None:
+                merged_by_route[candidate.route_key] = candidate
+                continue
+            merged_by_route[candidate.route_key] = self._merge_route_candidates(
+                existing,
+                candidate,
+            )
+        merged = list(merged_by_route.values())
+        return sorted(
+            merged,
+            key=lambda candidate: candidate.confidence,
+            reverse=True,
+        )[:top_n]
+
+    @staticmethod
+    def _merge_route_candidates(
+        semantic: PluginRouteCandidate,
+        deterministic: PluginRouteCandidate,
+    ) -> PluginRouteCandidate:
+        """Merge semantic and deterministic evidence for one manifest route."""
+        match_reasons = tuple(
+            dict.fromkeys((*semantic.match_reasons, *deterministic.match_reasons))
+        )
+        return replace(
+            semantic,
+            confidence=max(semantic.confidence, deterministic.confidence),
+            match_reasons=match_reasons,
+            extracted_params=freeze_mapping(deterministic.extracted_params),
         )
 
     def _runtime_eligible_manifests(

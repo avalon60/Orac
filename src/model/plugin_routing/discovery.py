@@ -239,11 +239,12 @@ class PluginDiscovery:
             capabilities=capabilities,
             entitlements=entitlements,
         )
-        route_capabilities = self._load_routing(
+        route_capabilities, interceptor_entry_point = self._load_routing(
             data.get("routing"),
             capabilities=capabilities,
             examples=examples,
             execution_policy=execution_policy,
+            runtime_mode=runtime_mode,
         )
         configuration_required, configuration_optional = self._load_configuration(
             data.get("configuration", {})
@@ -286,6 +287,7 @@ class PluginDiscovery:
             service_runtimes=service_runtimes,
             execution_policy=execution_policy,
             route_capabilities=tuple(route_capabilities),
+            interceptor_entry_point=interceptor_entry_point,
             configuration_required=tuple(configuration_required),
             configuration_optional=tuple(configuration_optional),
             database_required=database_required,
@@ -305,28 +307,40 @@ class PluginDiscovery:
         capabilities: list[str],
         examples: list[str],
         execution_policy: PluginExecutionPolicy,
-    ) -> list[PluginRouteCapability]:
+        runtime_mode: str,
+    ) -> tuple[list[PluginRouteCapability], str | None]:
         """Load declarative route metadata without importing plugin code."""
         if value is None:
-            return [
-                PluginRouteCapability(
-                    capability_id=capability,
-                    description=capability.replace("_", " ").replace(".", " "),
-                    intents=(
-                        PluginRouteIntent(
-                            name=capability.rsplit(".", 1)[-1],
-                            examples=tuple(examples),
-                            requires_confirmation=execution_policy.requires_confirmation,
-                            safety_level=execution_policy.action_type,
+            return (
+                [
+                    PluginRouteCapability(
+                        capability_id=capability,
+                        description=capability.replace("_", " ").replace(".", " "),
+                        intents=(
+                            PluginRouteIntent(
+                                name=capability.rsplit(".", 1)[-1],
+                                examples=tuple(examples),
+                                requires_confirmation=execution_policy.requires_confirmation,
+                                safety_level=execution_policy.action_type,
+                            ),
                         ),
-                    ),
-                )
-                for capability in capabilities
-            ]
+                    )
+                    for capability in capabilities
+                ],
+                None,
+            )
         if not isinstance(value, dict):
             raise PluginManifestError("routing must be an object")
 
-        self._reject_unknown_fields(value, {"capabilities"}, "routing")
+        self._reject_unknown_fields(value, {"capabilities", "interceptor"}, "routing")
+        interceptor_entry_point = self._require_optional_string(
+            value.get("interceptor"),
+            "routing.interceptor",
+        )
+        if interceptor_entry_point and runtime_mode == "service":
+            raise PluginManifestError(
+                "routing.interceptor is only valid for on_demand or hybrid plugins"
+            )
         route_values = value.get("capabilities", [])
         if not isinstance(route_values, list):
             raise PluginManifestError("routing.capabilities must be a list")
@@ -421,7 +435,7 @@ class PluginDiscovery:
                     intents=tuple(intents),
                 )
             )
-        return route_capabilities
+        return route_capabilities, interceptor_entry_point
 
     def _load_runtime(self, value: Any) -> tuple[str, tuple[PluginServiceRuntime, ...]]:
         if not isinstance(value, dict):

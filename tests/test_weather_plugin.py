@@ -1,4 +1,5 @@
 """Tests for the Orac weather plugin implementation."""
+
 # Author: Clive Bostock
 # Date: 2026-04-23
 # Description: Verifies the weather plugin execution seam and provider behaviour without live network calls.
@@ -19,6 +20,7 @@ PLUGINS_ROOT = PROJECT_ROOT / "plugins"
 if str(PLUGINS_ROOT) not in sys.path:
     sys.path.insert(0, str(PLUGINS_ROOT))
 
+from model.plugin_routing.discovery import PluginDiscovery
 from weather.plugin import WeatherPlugin
 from weather.provider import (
     OpenMeteoWeatherProvider,
@@ -50,6 +52,33 @@ class _FakeConfigManager:
         if section == "weather" and key == "default_location":
             return self._default_location
         return default
+
+
+class _FakeRuntimeContext:
+    def __init__(self):
+        self.manifest = PluginDiscovery(PROJECT_ROOT / "plugins").load_manifest(
+            PROJECT_ROOT / "plugins" / "weather.json"
+        )
+
+
+def _weather_route_meta(
+    intent_name: str,
+    arguments: dict | None = None,
+) -> dict:
+    """Return core-style route metadata for Weather execution tests."""
+    return {
+        "plugin_route": {
+            "plugin_id": "weather",
+            "capability_id": (
+                "weather.short_forecast"
+                if intent_name == "short_forecast"
+                else "weather.current_conditions"
+            ),
+            "intent_name": intent_name,
+            "arguments": arguments or {},
+            "match_reasons": ["dialog_intercept"],
+        }
+    }
 
 
 def _build_snapshot() -> WeatherSnapshot:
@@ -109,7 +138,9 @@ def _build_snapshot() -> WeatherSnapshot:
             weather_code=3,
         ),
     )
-    return WeatherSnapshot(location=location, current=current, hourly=hourly, daily=daily)
+    return WeatherSnapshot(
+        location=location, current=current, hourly=hourly, daily=daily
+    )
 
 
 class WeatherPluginTests(unittest.TestCase):
@@ -124,7 +155,13 @@ class WeatherPluginTests(unittest.TestCase):
             provider=provider,
         )
 
-        result = plugin.execute("What's the weather in London?")
+        result = plugin.execute(
+            "What's the weather in London?",
+            _weather_route_meta(
+                "current_weather",
+                {"location": "London", "response_type": "general"},
+            ),
+        )
 
         self.assertIsNotNone(result)
         self.assertEqual(result.plugin_id, "weather")
@@ -139,12 +176,20 @@ class WeatherPluginTests(unittest.TestCase):
             provider=provider,
         )
 
-        result = plugin.execute("What is the temperature?")
+        result = plugin.execute(
+            "What is the temperature?",
+            _weather_route_meta(
+                "current_weather",
+                {"response_type": "temperature"},
+            ),
+        )
 
         self.assertIsNotNone(result)
         self.assertIn("need a location", result.content)
 
-    def test_weather_plugin_does_not_claim_area_before_temperature_wording(self) -> None:
+    def test_weather_plugin_does_not_claim_area_before_temperature_wording(
+        self,
+    ) -> None:
         snapshot = _build_snapshot()
         plugin = WeatherPlugin(
             logger=_FakeLogger(),
@@ -180,9 +225,51 @@ class WeatherPluginTests(unittest.TestCase):
             provider=provider,
         )
 
-        result = plugin.execute("Will it rain today where I am?")
+        result = plugin.execute(
+            "Will it rain today where I am?",
+            _weather_route_meta("short_forecast", {"response_type": "rain"}),
+        )
 
         self.assertIsNotNone(result)
+        self.assertIn("London", result.content)
+
+    def test_weather_plugin_uses_runtime_manifest_for_intercept_metadata(self) -> None:
+        snapshot = _build_snapshot()
+        plugin = WeatherPlugin(
+            logger=_FakeLogger(),
+            config_mgr=_FakeConfigManager(default_location="London"),
+            provider=StubWeatherProvider(location=snapshot.location, snapshot=snapshot),
+            runtime_context=_FakeRuntimeContext(),
+        )
+
+        self.assertTrue(plugin.can_handle("What's the weather in London?"))
+
+    def test_weather_plugin_intercepts_time_first_forecast_for_location(self) -> None:
+        snapshot = _build_snapshot()
+        plugin = WeatherPlugin(
+            logger=_FakeLogger(),
+            config_mgr=_FakeConfigManager(default_location="London"),
+            provider=StubWeatherProvider(location=snapshot.location, snapshot=snapshot),
+            runtime_context=_FakeRuntimeContext(),
+        )
+
+        self.assertTrue(plugin.can_handle("What is tomorrow's weather in Leeds?"))
+
+    def test_weather_typo_and_punctuation_are_normalised_by_metadata(self) -> None:
+        snapshot = _build_snapshot()
+        plugin = WeatherPlugin(
+            logger=_FakeLogger(),
+            config_mgr=_FakeConfigManager(default_location="London"),
+            provider=StubWeatherProvider(location=snapshot.location, snapshot=snapshot),
+        )
+
+        result = plugin.execute(
+            "what is the wether forecast>",
+            _weather_route_meta("short_forecast", {"response_type": "general"}),
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.plugin_id, "weather")
         self.assertIn("London", result.content)
 
     def test_weather_plugin_returns_graceful_failure_when_provider_errors(self) -> None:
@@ -204,7 +291,13 @@ class WeatherPluginTests(unittest.TestCase):
             provider=provider,
         )
 
-        result = plugin.execute("What's the weather in London?")
+        result = plugin.execute(
+            "What's the weather in London?",
+            _weather_route_meta(
+                "current_weather",
+                {"location": "London", "response_type": "general"},
+            ),
+        )
 
         self.assertIsNotNone(result)
         self.assertIn("couldn't retrieve weather data", result.content)

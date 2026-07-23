@@ -1,0 +1,156 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<Table class="oracle.dbtools.crest.model.design.relational.Table" directorySegmentName="seg_0" id="CAC1008A-E4D5-8038-9608-19771440B8EF" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="KNOWLEDGE_INGESTION_EVENTS">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<commentInRDBMS><![CDATA[Append-only Core ingestion lifecycle events.]]></commentInRDBMS>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>DE779613-685D-4691-73EF-7F6908BEABA8</importedID>
+<allowColumnReorder>false</allowColumnReorder>
+<existDependencyGenerateInDDl>true</existDependencyGenerateInDDl>
+<parsed>true</parsed>
+<columns itemClass="oracle.dbtools.crest.model.design.relational.Column">
+<Column name="INGESTION_EVENT_ID" id="E634FC62-F4E7-8AFF-B33B-F8C4F297E861">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>A3EA4094-B24B-7698-12B2-A0967091AC62</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementColumn>true</autoIncrementColumn>
+<identityColumn>true</identityColumn>
+<defaultOntNull>true</defaultOntNull>
+<autoIncrementCycle>false</autoIncrementCycle>
+<autoIncrementDisableCache>false</autoIncrementDisableCache>
+<autoIncrementCache>20</autoIncrementCache>
+<autoIncrementOrder>false</autoIncrementOrder>
+</Column>
+<Column name="INGESTION_REQUEST_ID" id="BBB8FF06-4F10-916C-5C32-B776C9D40D84">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>E714B480-6D75-7F96-0A07-DF38D826CA23</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT019</logicalDatatype>
+<ownDataTypeParameters>,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+<associations>
+<colAssociation fkAssociation="B806C7E2-8E5E-121A-5337-3D581EF27175" referredColumn="5525A91D-9549-5C50-2CF7-3094643B7E9E"/>
+</associations>
+</Column>
+<Column name="EVENT_TYPE" id="DFFFF618-9295-CFEF-1A4F-5464B573606D">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>F1E370BF-BB74-2053-BE65-E26ECCE1B5F3</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>100 CHAR</dataTypeSize>
+<ownDataTypeParameters>100 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="EVENT_MESSAGE" id="56F0F265-0BD6-C6E8-A934-73BAEF06EB4D">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>9AD760A8-332E-8F25-AD22-8831DC6A4488</importedID>
+<nullsAllowed>true</nullsAllowed>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT028</logicalDatatype>
+<dataTypeSize>4000</dataTypeSize>
+<ownDataTypeParameters>4000,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="EVENT_TS" id="16112096-FF15-4300-5F58-87A79D2D32E4">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>89EEE3D5-A97E-1384-9775-5C52D4E4D6CC</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT046</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<defaultValue>systimestamp</defaultValue>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_BY" id="AC413D4A-4005-494B-C84F-608B41D8345E">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>AA7AFC7B-C30B-F2B1-794F-8398E3479DC0</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT024</logicalDatatype>
+<dataTypeSize>128 CHAR</dataTypeSize>
+<defaultValue>coalesce(
+                         sys_context(&apos;apex$session&apos;, &apos;app_user&apos;),
+                         sys_context(&apos;userenv&apos;, &apos;proxy_user&apos;),
+                         sys_context(&apos;userenv&apos;, &apos;session_user&apos;),
+                         user
+                       )</defaultValue>
+<ownDataTypeParameters>128 CHAR,,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+<Column name="CREATED_ON" id="37B578C9-8EE8-0C62-9984-1681890EBB04">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>88E50E44-9CCF-191C-F85E-1075AEF8EDE8</importedID>
+<useDomainConstraints>false</useDomainConstraints>
+<use>1</use>
+<logicalDatatype>LOGDT046</logicalDatatype>
+<dataTypePrecision>6</dataTypePrecision>
+<defaultValue>systimestamp</defaultValue>
+<ownDataTypeParameters>,6,</ownDataTypeParameters>
+<autoIncrementCycle>false</autoIncrementCycle>
+</Column>
+</columns>
+<indexes itemClass="oracle.dbtools.crest.model.design.relational.Index">
+<ind_PK_UK id="D0CE6649-B9B3-7947-7AC3-E08938AC77DC" name="KN_INGE_PK">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>12430574-E592-0E07-DF19-9E8210B7A045</importedID>
+<pk>true</pk>
+<indexState>Primary Constraint</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="E634FC62-F4E7-8AFF-B33B-F8C4F297E861"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="C67D2465-0D90-4A05-4E75-7A4AC55B6090" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="KN_INGE_PK">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>FCDA3985-655F-F9D0-22EC-8C93F13CC922</importedID>
+<indexState>Unique Plain Index</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="E634FC62-F4E7-8AFF-B33B-F8C4F297E861"/>
+</indexColumnUsage>
+</ind_PK_UK>
+<ind_PK_UK id="41368D1A-12A5-B60C-1E7B-930B3F355920" schemaObject="2A626480-F271-57C8-2021-8628AF99E0CB" name="KN_INGE_REQ_IDX">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<importedID>D34F4B2D-BEF8-6D0D-435E-F6825DBB1D76</importedID>
+<indexExpression>INGESTION_REQUEST_ID, SYS_EXTRACT_UTC(&quot;EVENT_TS&quot;)</indexExpression>
+<isSurrogateKey>false</isSurrogateKey>
+</ind_PK_UK>
+<ind_PK_UK id="8AF1BAE9-A83A-CE29-91A3-3DA23C70060F" name="KN_INGE_KN_INGREQ_FK1">
+<createdBy>clive</createdBy>
+<createdTime>2026-07-20 08:05:59 UTC</createdTime>
+<ownerDesignName>orac3</ownerDesignName>
+<indexState>Foreign Key</indexState>
+<isSurrogateKey>false</isSurrogateKey>
+<indexColumnUsage>
+<colUsage columnID="BBB8FF06-4F10-916C-5C32-B776C9D40D84"/>
+</indexColumnUsage>
+</ind_PK_UK>
+</indexes>
+</Table>

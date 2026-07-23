@@ -15,7 +15,23 @@ select evt.drop_job_event_id,
        job.source_filename,
        evt.event_ts,
        evt.event_type,
-       evt.event_message,
+       case evt.event_type
+         when 'queued'
+         then 'Drop-box source file queued for ingestion handoff.'
+         when 'processing'
+         then 'Drop Box processing started.'
+         when 'handed_off'
+         then 'Core accepted a managed-file ingestion request.'
+         when 'completed'
+         then 'Drop Box processing completed.'
+         when 'failed'
+         then 'Drop Box processing failed; review restricted logs.'
+         when 'quarantined'
+         then 'Drop Box job was quarantined; review restricted logs.'
+         when 'repair_requeued_core_handoff'
+         then 'Drop Box job was requeued after Core handoff became available.'
+         else 'Drop Box job event recorded; review restricted logs for details.'
+       end event_message_redacted,
        evt.created_on,
        evt.created_by
   from orac_dropbox.drop_job_event evt

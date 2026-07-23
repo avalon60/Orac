@@ -809,6 +809,10 @@ class PluginRouterTests(unittest.TestCase):
         self.assertEqual(result.plugin_id, "weather")
         self.assertEqual(len(audit_adapter.sessions), 1)
         self.assertEqual(audit_adapter.create_calls[0]["request_context"]["request_id"], "req-1")
+        self.assertEqual(
+            audit_adapter.create_calls[0]["timeout_seconds"],
+            plugin_router_module.DEFAULT_PLUGIN_EXECUTION_TIMEOUT_SECONDS,
+        )
         self.assertTrue(
             any(
                 event[0] == "policy" and event[1]["policy_decision"] == "allowed"
@@ -823,6 +827,19 @@ class PluginRouterTests(unittest.TestCase):
         )
         self.assertTrue(
             any(event[1]["event_type"] == "execution_completed" for event in audit_adapter.sessions[0].events if event[0] == "execution")
+        )
+        execution_events = [
+            event
+            for event_type, event in audit_adapter.sessions[0].events
+            if event_type == "execution"
+        ]
+        self.assertTrue(execution_events)
+        self.assertTrue(
+            all(
+                event["timeout_seconds"]
+                == plugin_router_module.DEFAULT_PLUGIN_EXECUTION_TIMEOUT_SECONDS
+                for event in execution_events
+            )
         )
 
     def test_router_records_audit_event_for_declined_can_handle(self) -> None:

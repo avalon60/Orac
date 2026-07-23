@@ -581,6 +581,9 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
         view_text = (
             schema_dir / "view" / "ha_control_resolution_v.sql"
         ).read_text(encoding="utf-8")
+        package_body = (
+            schema_dir / "package_body" / "ha_sync_api.sql"
+        ).read_text(encoding="utf-8")
         grant_text = (
             schema_dir / "grant" / "ha_control_resolution_v_to_orac_plugin.sql"
         ).read_text(encoding="utf-8")
@@ -602,6 +605,9 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
         self.assertIn("ent.disabled_by", view_text)
         self.assertIn("dal.enabled_flag = 'Y'", view_text)
         self.assertIn("coalesce(ent.area_id, dev.area_id)", view_text)
+        self.assertIn("left join orac_ha.ha_devices dev", view_text)
+        self.assertIn("when not matched then insert", package_body)
+        self.assertIn("json_value(p_payload, '$.attributes.friendly_name')", package_body)
         self.assertIn(
             "grant select on orac_ha.ha_control_resolution_v to orac_plugin",
             grant_text,

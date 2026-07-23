@@ -17,12 +17,14 @@ for path in (SRC_ROOT, PLUGINS_ROOT):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
+from home_assistant.interceptor import HomeAssistantDialogInterceptor
 from home_assistant.plugin import HomeAssistantPlugin
+from model.plugin_resources import resource_reader_for_manifest
 from model.plugin_router import PluginRouter
 import model.plugin_router as plugin_router_module
 from model.plugin_routing.discovery import PluginDiscovery
 from model.plugin_routing.handoff import PluginRoutingHandoff
-from model.plugin_routing.models import PluginCandidate
+from model.plugin_routing.interception import route_candidate_from_intercept
 
 
 class _FakeLogger:
@@ -54,6 +56,9 @@ class _FakeRuntimeContext:
     def __init__(self, *, fail: bool = False) -> None:
         self.fail = fail
         self.commands: list[dict] = []
+        self.manifest = PluginDiscovery(PROJECT_ROOT / "plugins").load_manifest(
+            PROJECT_ROOT / "plugins" / "home_assistant.json"
+        )
 
     def run_service_command(
         self,
@@ -171,6 +176,19 @@ def _home_assistant_manifest():
     )
 
 
+def _home_assistant_route_candidate(prompt: str):
+    """Return the core route candidate produced by the Home Assistant interceptor."""
+    manifest = _home_assistant_manifest()
+    interceptor = HomeAssistantDialogInterceptor(
+        manifest=manifest,
+        resources=resource_reader_for_manifest(manifest),
+    )
+    interceptor.prepare()
+    match = interceptor.intercept(prompt)
+    assert match is not None
+    return route_candidate_from_intercept(match, manifest)
+
+
 class HomeAssistantPluginTests(unittest.TestCase):
     """Tests Home Assistant command plugin behaviour."""
 
@@ -268,7 +286,7 @@ class HomeAssistantPluginTests(unittest.TestCase):
             },
         )
 
-    def test_terse_target_control_accepts_unconfirmed_service_response(self) -> None:
+    def test_terse_target_control_does_not_claim_unverified_success(self) -> None:
         class _UnconfirmedRuntimeContext(_FakeRuntimeContext):
             def run_service_command(
                 self,
@@ -278,7 +296,10 @@ class HomeAssistantPluginTests(unittest.TestCase):
             ) -> dict:
                 result = super().run_service_command(plugin_id, command, payload)
                 if command == "control":
-                    return {"status": "unconfirmed", "entity_ids": ["light.tv_light"]}
+                    return {
+                        "status": "accepted_unverified",
+                        "entity_ids": ["light.tv_light"],
+                    }
                 return result
 
         runtime_context = _UnconfirmedRuntimeContext()
@@ -287,8 +308,8 @@ class HomeAssistantPluginTests(unittest.TestCase):
         result = plugin.execute("TV light on.")
 
         self.assertEqual(runtime_context.commands[0]["command"], "control")
-        self.assertIn("accepted turn on for tv light", result.content.lower())
-        self.assertNotIn("not performed", result.content.lower())
+        self.assertIn("control was not confirmed", result.content.lower())
+        self.assertNotIn("confirmed turn on", result.content.lower())
 
     def test_area_listing_dispatches_read_only_service_command(self) -> None:
         runtime_context = _FakeRuntimeContext()
@@ -499,7 +520,7 @@ class HomeAssistantPluginTests(unittest.TestCase):
                     plugin_db_session_factory=lambda: object(),
                 )
                 handoff = PluginRoutingHandoff(
-                    candidates=(PluginCandidate(plugin_id="home_assistant", score=0.99),),
+                    candidates=(_home_assistant_route_candidate(phrase),),
                     refreshed=False,
                 )
 

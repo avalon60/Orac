@@ -109,6 +109,15 @@ Run plugin install again after restore so quarantined plugin registry and plugin
 APEX app rows are verified against the local package and moved back to normal
 installed/enabled state.
 
+Plugin source files under `plugins/` are not enough for runtime readiness. The
+plugin registry points Orac at activated snapshots under
+`$ORAC_HOME/var/plugins/installed/<plugin-id>/<version>/`. If a restored or
+stale registry row says a plugin is enabled but its `installed_path` is missing,
+plugin routing and service startup can fail even though the bundled source
+plugin still exists. Use `bin/orac-plugin.sh list` to review installed-artifact
+health, and verify active plugins with `bin/orac-plugin.sh check <plugin-id>`
+after restore or recovery work.
+
 The default mode restores data into an already deployed schema set:
 
 ```bash

@@ -3,7 +3,7 @@
 --changeset clive:create_view_orac_dropbox_view_drop_location_summary_admin_v context:plugin,prod labels:plugin,drop_box stripComments:false runOnChange:true
 -- __author__: clive
 -- __date__: 2026-06-27
--- __description__: admin summary projection of drop-box locations with recent job state
+-- __description__: admin summary projection of drop-box locations with job activity counts
 -- orac-expected-columns: total_job_count, example_type
 
 create or replace view orac_dropbox.drop_location_summary_admin_v as
@@ -52,10 +52,7 @@ select loc.drop_location_id,
            else 0
          end
        ) recent_job_count,
-       max(coalesce(job.completed_on, job.stable_on, job.detected_on)) last_processed_on,
-       max(job.status_code) keep (
-         dense_rank last order by coalesce(job.detected_on, job.created_on)
-       ) latest_job_status
+       max(coalesce(job.completed_on, job.stable_on, job.detected_on)) last_processed_on
   from orac_dropbox.drop_location loc
   left join orac_dropbox.drop_job job
     on job.drop_location_id = loc.drop_location_id

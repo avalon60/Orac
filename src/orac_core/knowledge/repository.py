@@ -162,58 +162,76 @@ class KnowledgeIngestionRepository:
     def load_searchable_chunks(
         self,
         *,
-        target_scope_type: str | None,
-        target_scope_key: str | None,
+        target_scope_type: str,
+        target_scope_key: str,
         embedding_model_identifier: str,
         embedding_dimensions: int,
-        allow_cross_scope: bool = False,
+        candidate_limit: int,
     ) -> list[dict[str, Any]]:
         """Load searchable chunks visible to a retrieval scope."""
+        if candidate_limit <= 0:
+            raise ValueError("candidate_limit must be positive")
         session = self._session_factory()
         try:
-            scope_clause = ""
             parameters: dict[str, Any] = {
                 "embedding_model_identifier": embedding_model_identifier,
                 "embedding_dimensions": int(embedding_dimensions),
+                "target_scope_type": target_scope_type,
+                "target_scope_key": target_scope_key,
+                "candidate_fetch_limit": int(candidate_limit) + 1,
             }
-            if not allow_cross_scope:
-                scope_clause = """
-                   and target_scope_type = :target_scope_type
-                   and target_scope_key = :target_scope_key
-                """
-                parameters["target_scope_type"] = target_scope_type
-                parameters["target_scope_key"] = target_scope_key
 
             with session.cursor() as cursor:
                 cursor.execute(
-                    f"""
-                    select ingestion_request_id,
-                           source_object_id,
-                           source_reference,
-                           parent_source_reference,
-                           document_id,
-                           document_version_id,
-                           target_scope_type,
-                           target_scope_key,
-                           chunk_id,
-                           chunk_no,
-                           chunk_text,
-                           embedding_vector,
-                           embedding_model_identifier,
-                           embedding_dimensions
-                      from orac_code.knowledge_searchable_chunks_v
-                     where embedding_model_identifier = :embedding_model_identifier
-                       and embedding_dimensions = :embedding_dimensions
-                       {scope_clause}
-                     order by document_id,
-                              document_version_id,
-                              chunk_no
+                    """
+                    select *
+                      from (
+                        select chunk.ingestion_request_id,
+                               chunk.source_object_id,
+                               chunk.source_type,
+                               chunk.source_reference,
+                               chunk.parent_source_reference,
+                               chunk.document_id,
+                               chunk.title document_title,
+                               chunk.document_version_id,
+                               chunk.original_filename,
+                               chunk.content_uri,
+                               chunk.target_scope_type,
+                               chunk.target_scope_key,
+                               chunk.chunk_id,
+                               chunk.chunk_no,
+                               chunk.span_start,
+                               chunk.span_end,
+                               chunk.chunk_content_sha256,
+                               chunk.chunk_text,
+                               chunk.embedding_vector,
+                               chunk.provider_code embedding_provider_code,
+                               chunk.embedding_model_identifier,
+                               chunk.model_revision embedding_model_revision,
+                               chunk.embedding_dimensions,
+                               request.processing_profile_code
+                          from orac_code.knowledge_searchable_chunks_v chunk
+                          join orac_code.knowledge_ingestion_requests_v request
+                            on request.ingestion_request_id = chunk.ingestion_request_id
+                         where chunk.embedding_model_identifier = :embedding_model_identifier
+                           and chunk.embedding_dimensions = :embedding_dimensions
+                           and chunk.target_scope_type = :target_scope_type
+                           and chunk.target_scope_key = :target_scope_key
+                         order by chunk.document_id,
+                                  chunk.document_version_id,
+                                  chunk.chunk_no
+                      )
+                     where rownum <= :candidate_fetch_limit
                     """,
                     parameters,
                 )
                 columns = [description[0].lower() for description in cursor.description]
                 return [
-                    dict(zip(columns, row, strict=True)) for row in cursor.fetchall()
+                    {
+                        column: _materialize_query_value(value)
+                        for column, value in zip(columns, row, strict=True)
+                    }
+                    for row in cursor.fetchall()
                 ]
         finally:
             _close_quietly(session)
@@ -431,6 +449,12 @@ class KnowledgeIngestionRepository:
                 "Y" if retryable else "N",
             ],
         )
+
+
+def _materialize_query_value(value: Any) -> Any:
+    """Read connection-bound Oracle values before their session is closed."""
+    read_value = getattr(value, "read", None)
+    return read_value() if callable(read_value) else value
 
 
 def _close_quietly(session: Any) -> None:

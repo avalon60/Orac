@@ -97,6 +97,47 @@ as
     return l_value;
   end normalised_required;
 
+  procedure assert_canonical_scope(
+    p_scope_type in varchar2,
+    p_scope_key  in varchar2
+  )
+  is
+    l_count number;
+  begin
+    if p_scope_type = 'PROJECT'
+    then
+      select count(*)
+        into l_count
+        from orac_code.project_registry_v project
+       where project.project_code = p_scope_key
+         and project.active_yn = 'Y';
+    else
+      select count(*)
+        into l_count
+        from orac_code.plugin_registry_v plugin
+       where plugin.plugin_id = p_scope_key
+         and plugin.enabled = 'Y'
+         and plugin.install_status = 'success'
+         and plugin.configuration_status in ('success', 'not_required')
+         and plugin.dependency_status in ('success', 'not_required')
+         and plugin.database_status in (
+               'deployed',
+               'already_deployed',
+               'not_required',
+               'optional_missing'
+             )
+         and plugin.readiness_status = 'success';
+    end if;
+
+    if l_count <> 1
+    then
+      raise_application_error(
+        -20409,
+        'Target knowledge scope is unknown, inactive, or not runtime eligible.'
+      );
+    end if;
+  end assert_canonical_scope;
+
   function normalised_sha256(
     p_value in varchar2,
     p_name  in varchar2
@@ -173,6 +214,7 @@ as
     l_mime_type := normalised_required(p_mime_type, 'MIME type');
     l_scope_type := normalised_scope(p_target_scope_type);
     l_scope_key := normalised_required(p_target_scope_key, 'Target scope key');
+    assert_canonical_scope(l_scope_type, l_scope_key);
 
     if p_byte_size is null or p_byte_size < 0
     then
