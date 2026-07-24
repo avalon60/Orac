@@ -1,4 +1,0 @@
-Saved Connection,Role,Description
-orac,app,Connect as the ORAC database user for internal Orac object checks
-orac-db,admin,Connect as SYSTEM for elevated cross-schema grants invalid objects container metadata and installation checks
-orac_apx_pub,apex,Connect as ORAC_APX_PUB for objects visible to the APEX application
