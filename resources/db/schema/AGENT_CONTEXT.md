@@ -3,6 +3,25 @@
 This file contains Orac-specific database mappings for the generic guidance in
 `resources/db/schema/AGENTS.md`.
 
+## Table of Contents
+
+- [Vocabulary](#vocabulary)
+- [Core Orac Schema Domain](#core-orac-schema-domain)
+- [Schema Responsibilities](#schema-responsibilities)
+  - [`orac_core`](#orac_core)
+  - [`orac_api`](#orac_api)
+  - [`orac_code`](#orac_code)
+  - [`orac`](#orac)
+  - [`orac_apx_pub`](#orac_apx_pub)
+  - [`orac_plugin`](#orac_plugin)
+- [Object Namespaces And Folder Mappings](#object-namespaces-and-folder-mappings)
+- [Application Context Ownership](#application-context-ownership)
+- [Grant Direction](#grant-direction)
+- [Core Liquibase Controller Topology](#core-liquibase-controller-topology)
+- [Plugin Database Domains And Controllers](#plugin-database-domains-and-controllers)
+- [Explicitly Out Of Normal Scope](#explicitly-out-of-normal-scope)
+- [Project-Specific Invariants](#project-specific-invariants)
+
 ## Vocabulary
 
 - Schema domain: the deployed database ownership family. For the core Orac
@@ -114,40 +133,13 @@ Current Orac schema bundle mappings:
 The folder prefix does not by itself justify new privileges. Resolve ownership
 and grant direction from this context and the relevant guardrails.
 
-## Application Surface Split
+## Application Context Ownership
 
-Orac has two distinct application surfaces:
-
-- APEX applications and APEX workspace exports are database-delivered
-  application assets under `resources/db/apex`.
-- Web-based applications are browser/runtime applications under `web`.
-
-Do not treat these surfaces as interchangeable.
-
-### APEX Workspace And Application Assets
-
-Current APEX database asset locations:
-
-| Path | Runtime surface | Purpose |
-|---|---|---|
-| `resources/db/apex/orac_ws/` | Oracle APEX workspace | APEX workspace export assets, including workspace provisioning metadata and workspace-level configuration. |
-| `resources/db/apex/orac_apps/` | Oracle APEX applications | APEX application export assets, including application `1042`. |
-
-APEX workspace assets and APEX application assets are SQL*Plus-installed after
-Liquibase has applied schema objects, grants, synonyms, and parsing-schema
-dependencies. They must follow database, PL/SQL, security, grants, and
-install-order guardrails. The APEX runtime access schema is `orac_apx_pub`.
-
-Do not move APEX exports into `web`, and do not apply web application build or
-frontend packaging assumptions to APEX export files.
-
-### Web Application Assets
-
-Web application assets live under `web` and are governed by `web/AGENTS.md` and
-`web/AGENT_CONTEXT.md`.
-
-Do not place APEX application exports, workspace exports, or database install
-assets under `web`.
+Core APEX workspace, application-ID, export, import, navigation, and theme
+facts belong in `resources/db/apex/AGENT_CONTEXT.md`. Web application facts
+belong in `web/AGENT_CONTEXT.md`. This database context retains ownership of
+the `orac_apx_pub` schema, its least-privilege grant direction, synonyms, and
+controller ordering.
 
 ## Grant Direction
 
@@ -188,15 +180,56 @@ Physical placement follows the receiving-schema convention in this repository:
 - Runtime and APEX private synonyms live under the receiving schema's
   `synonym` directory.
 
+## Core Liquibase Controller Topology
+
+The supported core SQLcl entrypoints are:
+
+- `resources/db/schema/install.sql`
+- `resources/db/schema/install_orac.sql`
+
+Both invoke `resources/db/schema/productController.xml`. The production
+controller includes schema controllers in this order:
+
+1. `orac_core/schemaController.xml`
+2. `orac_api/schemaController.xml`
+3. `orac_code/schemaController.xml`
+4. `orac_plugin/schemaController.xml`
+5. `orac_apx_pub/schemaController.xml`
+6. `orac/schemaController.xml`
+
+The order is architectural. Core objects precede API access, business code,
+the plugin bridge, APEX access, and the internal runtime access surface.
+
+Core deployment uses SQLcl Liquibase with
+`resources/db/liquibase/liquibase-core.properties`. Do not record database
+passwords or wallet contents in this context.
+
+## Plugin Database Domains And Controllers
+
+Active plugin-owned database domains are:
+
+| Plugin domain | Owning schema | Manifest | Liquibase controller | Purpose |
+|---|---|---|---|---|
+| `home_assistant` | `orac_ha` | `plugins/home_assistant.json` | `plugins/home_assistant/db/liquibase/pluginController.xml` | Home Assistant plugin-private integration state and APIs. |
+| `drop_box` | `orac_dropbox` | `plugins/drop_box.json` | `plugins/drop_box/db/liquibase/pluginController.xml` | Drop Box plugin-private configuration, ingestion jobs, and audit data. |
+
+The Core-owned plugin deployment runner reads the declared schema and
+controller from the plugin package. Plugin deployment uses contexts
+`plugin,prod` and label `plugin`. Each plugin schema owns its own Liquibase
+history and lock tables.
+
+Plugin controllers own their ordered object-type includes. Plugin-private
+schemas expose only approved entrypoints to `orac_plugin` and approved APEX
+surfaces to `orac_apx_pub`; they do not receive direct access to `orac_core`.
+
 ## Explicitly Out Of Normal Scope
 
-`orac_ha` is destined to be implemented through a plugin boundary. Do not
-include `orac_ha` in normal Orac database work, schema-context reasoning, grant
-changes, or topology changes unless the user explicitly requests Home Assistant
-or plugin-bound Home Assistant database assets.
+`orac_ha` and `orac_dropbox` are active plugin-owned schemas. Do not include
+them in core Orac database work, grant changes, or topology changes unless the
+task explicitly covers the owning plugin or its approved bridge.
 
-When `orac_ha` is explicitly requested, treat it as plugin-bound database work
-and apply the plugin and security guardrails before changing it.
+When either plugin domain is in scope, apply the plugin, database, Liquibase,
+and security guardrails before changing it.
 
 ## Project-Specific Invariants
 

@@ -1,0 +1,7 @@
+schema_version=1
+template_id=app-engineering/orac
+template_version=1.1.0
+template_payload_hash=20ec70dd3bc68613307859e51b83926d75affab839d9ee04c22a056c4e1ea593
+sdk_source=ai-plugins
+sdk_source_ref=origin/master
+sdk_source_commit=bd0a9aec84278eb74031f5509f5e6a7d6df8b931

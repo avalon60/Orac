@@ -39,4 +39,6 @@ orac_core,knowledge_embedding_models,kn_embmod
 orac_core,knowledge_chunk_embeddings,kn_chnkemb
 orac_core,knowledge_ingestion_events,kn_inge
 orac_core,knowledge_scopes,kn_scope
+orac_core,knowledge_tags,kn_tag
+orac_core,knowledge_document_version_tags,kn_docvtag
 orac_core,rag_usage_privileges,rag_useprv
