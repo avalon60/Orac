@@ -1,4 +1,5 @@
 """Scheduled service for the generic drop-box ingestion plugin."""
+
 # Author: Clive Bostock
 # Date: 27-Jun-2026
 # Description: Runs non-overlapping scans and creates durable drop-box jobs.
@@ -10,8 +11,12 @@ from typing import Any, Callable
 
 from orac_core.knowledge import KnowledgeManagedFileCaptureService
 from orac_core.knowledge.capture import KnowledgeCaptureError
+from orac_core.knowledge.managed_store import ManagedStoreConfigurationError
 
 from .models import TickStats
+from .conversion import DropBoxConversionError
+from .conversion import DropBoxDocumentConverter
+from .conversion import FORMAT_RECIPES
 from .repository import DropBoxRepository
 from .scanner import DropBoxScanner
 
@@ -31,9 +36,10 @@ class DropBoxService:
         *,
         scanner: DropBoxScanner | None = None,
         repository_factory: Callable[[Any], DropBoxRepository] | None = None,
-        capture_service_factory: Callable[
-            [Any], KnowledgeManagedFileCaptureService
-        ] | None = None,
+        capture_service_factory: (
+            Callable[[Any], KnowledgeManagedFileCaptureService] | None
+        ) = None,
+        converter: DropBoxDocumentConverter | None = None,
     ) -> None:
         """Initialise the service with injectable scanner and repository."""
         self._logger = logger
@@ -41,10 +47,13 @@ class DropBoxService:
         self._manifest = manifest
         self._scanner = scanner or DropBoxScanner()
         self._repository_factory = repository_factory or DropBoxRepository
-        self._capture_service_factory = (
-            capture_service_factory
-            or (lambda _context: KnowledgeManagedFileCaptureService(logger=logger))
+        self._capture_service_factory = capture_service_factory or (
+            lambda _context: KnowledgeManagedFileCaptureService(
+                config_mgr=config_mgr,
+                logger=logger,
+            )
         )
+        self._converter = converter or DropBoxDocumentConverter()
         self._tick_lock = threading.Lock()
         self.last_stats = TickStats()
         self.last_error: str | None = None
@@ -53,7 +62,9 @@ class DropBoxService:
         """Run one scheduled scan tick without overlapping in this process."""
         if not self._tick_lock.acquire(blocking=False):
             self.last_stats = TickStats(overlapping_tick_skipped=True)
-            self._log_warning("Drop-box scan tick skipped because a previous tick is still running.")
+            self._log_warning(
+                "Drop-box scan tick skipped because a previous tick is still running."
+            )
             return
         repository = None
         stats = TickStats()
@@ -131,12 +142,60 @@ class DropBoxService:
         capture_service = self._capture_service_factory(context)
         for job in repository.load_handoff_jobs():
             try:
-                result = capture_service.capture_drop_box_file(job.to_capture_request())
+                repository.update_status(
+                    drop_job_id=job.drop_job_id,
+                    status_code="processing",
+                )
+                recipe = FORMAT_RECIPES.get(job.source_path.suffix.lower())
+                command_probe = None
+                if recipe is not None and recipe.reader is not None:
+                    command_probe = context.resolve_command_dependency("pandoc")
+                normalised = self._converter.normalise(
+                    job.source_path,
+                    expected_sha256=job.source_hash,
+                    expected_size=job.source_size_bytes,
+                    command_probe=command_probe,
+                    drop_location_id=job.drop_location_id,
+                    drop_job_id=job.drop_job_id,
+                )
+                result = capture_service.capture_drop_box_file(
+                    job.to_capture_request(normalised)
+                )
                 repository.record_core_acceptance(
                     drop_job_id=job.drop_job_id,
                     knowledge_ingestion_request_id=result.ingestion_request_id,
                 )
                 stats.handed_off += 1
+            except DropBoxConversionError as exc:
+                if exc.reason_code == "UNSUPPORTED_FORMAT":
+                    status = "skipped_disallowed_type"
+                elif exc.reason_code in {
+                    "PANDOC_MISSING",
+                    "PANDOC_INCOMPATIBLE",
+                    "PANDOC_PROBE_FAILED",
+                    "PANDOC_PROBE_TIMED_OUT",
+                }:
+                    status = "deferred_prerequisite"
+                elif exc.retryable:
+                    status = (
+                        "failed"
+                        if job.conversion_attempts >= 2
+                        else "conversion_retry_wait"
+                    )
+                else:
+                    status = "quarantined"
+                repository.update_status(
+                    drop_job_id=job.drop_job_id,
+                    status_code=status,
+                    error_message=f"{exc.reason_code}: {exc}",
+                    reason_code=exc.reason_code,
+                )
+                stats.handoff_failed += 1
+                self._log_warning(
+                    f"Drop-box job {job.drop_job_id} conversion deferred or failed: {exc}"
+                )
+            except ManagedStoreConfigurationError:
+                raise
             except KnowledgeCaptureError as exc:
                 repository.update_status(
                     drop_job_id=job.drop_job_id,
@@ -148,6 +207,12 @@ class DropBoxService:
                     f"Drop-box job {job.drop_job_id} failed managed-file capture: {exc}"
                 )
             except Exception as exc:
+                repository.update_status(
+                    drop_job_id=job.drop_job_id,
+                    status_code="queued",
+                    error_message=None,
+                    reason_code=None,
+                )
                 self._log_warning(
                     "Drop-box job "
                     f"{job.drop_job_id} remains queued because Core handoff "

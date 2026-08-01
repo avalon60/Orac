@@ -43,6 +43,7 @@ create or replace package body orac_dropbox.drop_box_api as
     l_processing_profile orac_dropbox.drop_location.processing_profile%type;
     l_profile_instruction clob;
     l_instruction        orac_dropbox.drop_location.processing_instruction%type;
+    l_classification_tags clob;
   begin
     if observation_exists(
          p_drop_location_id,
@@ -58,12 +59,14 @@ create or replace package body orac_dropbox.drop_box_api as
            loc.target_scope_key,
            loc.processing_profile,
            prf.default_instruction,
-           loc.processing_instruction
+           loc.processing_instruction,
+           loc.classification_tags_json
       into l_scope_type,
            l_scope_key,
            l_processing_profile,
            l_profile_instruction,
-           l_instruction
+           l_instruction,
+           l_classification_tags
       from orac_dropbox.drop_location loc
       join orac_dropbox.drop_processing_profile prf
         on prf.profile_code = loc.processing_profile
@@ -83,7 +86,8 @@ create or replace package body orac_dropbox.drop_box_api as
       effective_scope_key,
       effective_processing_profile,
       effective_profile_instruction,
-      effective_instruction
+      effective_instruction,
+      effective_classification_tags_json
     )
     values (
       p_drop_location_id,
@@ -98,7 +102,11 @@ create or replace package body orac_dropbox.drop_box_api as
       l_scope_key,
       l_processing_profile,
       l_profile_instruction,
-      l_instruction
+      l_instruction,
+      coalesce(
+        l_classification_tags,
+        json_array(l_processing_profile returning clob)
+      )
     )
     returning drop_job_id into l_job_id;
 
@@ -126,31 +134,95 @@ create or replace package body orac_dropbox.drop_box_api as
     p_drop_job_id   in orac_dropbox.drop_job.drop_job_id%type,
     p_status_code   in orac_dropbox.drop_job.status_code%type,
     p_error_message in orac_dropbox.drop_job.error_message%type default null,
-    p_document_id   in orac_dropbox.drop_job.document_id%type default null
+    p_document_id   in orac_dropbox.drop_job.document_id%type default null,
+    p_reason_code   in orac_dropbox.drop_job.failure_reason_code%type default null
   )
   is
+    l_previous_status orac_dropbox.drop_job.status_code%type;
+    l_previous_reason orac_dropbox.drop_job.failure_reason_code%type;
+    l_previous_error  orac_dropbox.drop_job.error_message%type;
+    l_last_warning_on orac_dropbox.drop_job.last_warning_on%type;
+    l_emit_event_yn varchar2(1 char) := 'Y';
   begin
+    select status_code, failure_reason_code, error_message, last_warning_on
+      into l_previous_status, l_previous_reason, l_previous_error,
+           l_last_warning_on
+      from orac_dropbox.drop_job
+     where drop_job_id = p_drop_job_id
+       for update;
+
+    if p_status_code = 'deferred_prerequisite'
+       and l_previous_status = 'deferred_prerequisite'
+       and coalesce(l_previous_reason, '-') = coalesce(p_reason_code, '-')
+       and dbms_lob.compare(
+             coalesce(l_previous_error, to_clob('-')),
+             coalesce(p_error_message, to_clob('-'))
+           ) = 0
+       and l_last_warning_on >
+             systimestamp - numtodsinterval(6, 'hour')
+    then
+      l_emit_event_yn := 'N';
+    end if;
+
     update orac_dropbox.drop_job
        set status_code   = p_status_code,
            error_message = p_error_message,
+           failure_reason_code = p_reason_code,
            document_id   = coalesce(p_document_id, document_id),
+           conversion_attempts = case
+             when p_status_code = 'conversion_retry_wait'
+               or (
+                 p_status_code = 'failed'
+                 and p_reason_code in ('PANDOC_FAILED', 'PANDOC_TIMEOUT')
+               )
+             then conversion_attempts + 1
+             else conversion_attempts
+           end,
+           next_attempt_on = case
+             when p_status_code = 'deferred_prerequisite'
+             then systimestamp + numtodsinterval(15, 'minute')
+             when p_status_code = 'conversion_retry_wait'
+             then systimestamp + numtodsinterval(
+               case conversion_attempts
+                 when 0 then 1
+                 when 1 then 5
+                 else 30
+               end,
+               'minute'
+             )
+             else null
+           end,
+           last_warning_on = case
+             when p_status_code = 'conversion_retry_wait'
+               or (p_status_code = 'deferred_prerequisite' and l_emit_event_yn = 'Y')
+             then systimestamp
+             else last_warning_on
+           end,
            started_on    = case when p_status_code = 'processing' then systimestamp else started_on end,
            completed_on  = case
-                             when p_status_code in ('completed', 'failed', 'quarantined') then systimestamp
+                             when p_status_code in (
+                               'completed',
+                               'failed',
+                               'quarantined',
+                               'skipped_disallowed_type'
+                             ) then systimestamp
                              else completed_on
                            end
      where drop_job_id = p_drop_job_id;
 
-    insert into orac_dropbox.drop_job_event (
-      drop_job_id,
-      event_type,
-      event_message
-    )
-    values (
-      p_drop_job_id,
-      p_status_code,
-      p_error_message
-    );
+    if l_emit_event_yn = 'Y'
+    then
+      insert into orac_dropbox.drop_job_event (
+        drop_job_id,
+        event_type,
+        event_message
+      )
+      values (
+        p_drop_job_id,
+        p_status_code,
+        p_error_message
+      );
+    end if;
   end update_status;
 
   procedure record_core_acceptance(
@@ -184,6 +256,8 @@ create or replace package body orac_dropbox.drop_box_api as
        set status_code = 'handed_off',
            knowledge_ingestion_request_id = p_knowledge_ingestion_request_id,
            error_message = null,
+           failure_reason_code = null,
+           next_attempt_on = null,
            started_on = coalesce(started_on, systimestamp),
            completed_on = null
      where drop_job_id = p_drop_job_id;

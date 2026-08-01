@@ -34,6 +34,38 @@ canonical scopes and calls `orac_code.rag_usage_privilege_api`; it performs no
 direct table DML. APEX is an administration surface, not an independent
 authorization authority.
 
+## Document Ingestion Administration
+
+Document ingestion configuration spans three APEX applications with distinct
+owners:
+
+| Application | Relevant pages | Responsibility |
+| --- | --- | --- |
+| Orac Administration, App 1042 | 37/38 | Register, edit, activate, or deactivate project targets. |
+| Orac Administration, App 1042 | 39/40 | Grant or revoke authenticated-user retrieval access to canonical project/plugin scopes. |
+| Plugin Control, App 1043 | 1 | Inspect managed service state and set the Drop Box scanner policy to `auto`, `manual`, or `disabled`. |
+| Plugin Control, App 1043 | 2 | Launch enabled installed plugin applications. |
+| Plugin Control, App 1043 | 3/4 | Inspect and change plugin APEX-app enablement. |
+| Drop Box Admin, App 10020 | 1-5 | Configure watched locations and inspect Drop Box/Core ingestion activity. |
+
+Register and activate a project on Pages 37/38 before selecting it as a Drop
+Box project target. Plugin targets come from the installed, enabled, eligible
+plugin registry.
+
+Pages 39/40 control dialogue retrieval permission. A RAG usage grant does not
+create a scope, enable ingestion, or authorise a Drop Box submission.
+Classification tags are Core-owned, but there is currently no tag-maintenance
+page in App 1042; App 10020 selects active tags through the approved Core LOV.
+
+The Core `orac_core` / `knowledge_ingestion` worker appears in managed service
+status only when `[knowledge].enabled` permits registration. App 1043 does not
+edit Core chunking, embedding, managed-storage, or dialogue-retrieval settings.
+
+See [Document Ingestion](document-ingestion.md) for the complete Core
+configuration and ownership model and the
+[Drop Box operator guide](../plugins/drop_box/docs/drop-box.md) for every
+App 10020 field and lifecycle report.
+
 ## User Preference Sliders
 
 The administration preference editor renders slider-capable numeric

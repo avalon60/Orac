@@ -122,7 +122,7 @@ The command:
 - validates or creates the `orac` installer credential
 - builds the Oracle image
 - starts the database container
-- installs Oracle Database objects, ORDS/APEX, and plugin database payloads
+- installs the core Oracle Database objects and ORDS/APEX assets
 - waits for the `ORAC deployment complete` marker
 
 Useful options:
@@ -135,6 +135,18 @@ bin/orac-db-deploy.sh --force --no-cache
 
 `--force` is destructive to deployment marker directories and replaces the
 existing configured container. Review its output before confirming use.
+
+Optional plugin-owned schemas are deliberately not part of core database
+deployment. Install each plugin through the plugin lifecycle after the core
+deployment succeeds, for example:
+
+```bash
+bin/orac-plugin.sh install --bundled drop_box
+bin/orac-plugin.sh check drop_box
+```
+
+The plugin installer provisions its declared schema, applies only approved
+bridge API grants, and then runs the plugin-owned database payload.
 
 ## Start the Complete Stack
 

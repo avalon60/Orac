@@ -15,6 +15,7 @@ CORE_ROOT = SCHEMA_ROOT / "orac_core"
 CODE_ROOT = SCHEMA_ROOT / "orac_code"
 DROP_BOX_ROOT = PROJECT_ROOT / "plugins" / "drop_box" / "db"
 APEX_EXPORT = PROJECT_ROOT / "resources" / "db" / "apex" / "orac_apps" / "f1042.sql"
+DROP_BOX_MANIFEST = PROJECT_ROOT / "plugins" / "drop_box.json"
 
 
 def _read(path: Path) -> str:
@@ -154,15 +155,18 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
         )
         self.assertIn("rag_usage_scope_eligible", admin_body)
         self.assertIn("orac_code.knowledge_scope_validation_api", bridge)
-        bridge_grant = _read(
-            SCHEMA_ROOT
-            / "orac_plugin"
-            / "grant"
-            / "knowledge_scope_validation_to_dropbox.sql"
-        )
+        manifest = _read(DROP_BOX_MANIFEST)
         self.assertIn(
-            "grant execute on orac_plugin.knowledge_scope_validation_api to orac_dropbox",
-            bridge_grant,
+            '"knowledge_scope_validation"',
+            manifest,
+        )
+        self.assertFalse(
+            (
+                SCHEMA_ROOT
+                / "orac_plugin"
+                / "grant"
+                / "knowledge_scope_validation_to_dropbox.sql"
+            ).exists()
         )
 
     def test_apex_1042_has_package_only_privilege_administration(self) -> None:

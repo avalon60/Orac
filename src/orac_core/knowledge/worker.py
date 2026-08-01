@@ -6,34 +6,40 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import os
 from pathlib import Path
-import re
 import socket
 from typing import Any
 
-from lib.fsutils import project_home
 from model.plugin_routing.embeddings import EmbeddingProvider, HashEmbeddingProvider
 
+from .managed_store import KnowledgeManagedStore
+from .managed_store import ManagedObjectIdentity
+from .managed_store import ManagedStoreConfigurationError
+from .managed_store import ManagedStoreError
 from .repository import KnowledgeIngestionRepository
+from .markdown_chunking import MarkdownChunk as TextChunk
+from .markdown_chunking import chunk_markdown
 
-EXTRACTOR_CODE = "core_text_v1"
-EXTRACTOR_VERSION = "1"
-CHUNKER_CODE = "core_word_window"
+CHUNKER_CODE = "core_markdown_blocks"
 CHUNKER_VERSION = "1"
-
-
-@dataclass(frozen=True)
-class TextChunk:
-    """One extracted text chunk with source character offsets."""
-
-    chunk_no: int
-    span_start: int
-    span_end: int
-    text: str
-    token_count: int
+MANAGED_STORE_FAILURES: dict[str, tuple[str, bool]] = {
+    "INVALID_STORAGE_KEY": ("INVALID_MANAGED_STORAGE_KEY", False),
+    "STORAGE_KEY_IDENTITY_MISMATCH": ("INVALID_MANAGED_STORAGE_KEY", False),
+    "MANAGED_OBJECT_SYMLINK": ("UNSAFE_MANAGED_PAYLOAD", False),
+    "MANAGED_OBJECT_NOT_REGULAR": ("UNSAFE_MANAGED_PAYLOAD", False),
+    "UNSAFE_STORE_LAYOUT": ("UNSAFE_MANAGED_PAYLOAD", False),
+    "MANAGED_OBJECT_HASH_MISMATCH": ("CORRUPT_MANAGED_PAYLOAD", False),
+    "MANAGED_OBJECT_SIZE_MISMATCH": ("CORRUPT_MANAGED_PAYLOAD", False),
+    "MANAGED_OBJECT_MISSING": ("MISSING_MANAGED_PAYLOAD", False),
+    "MANAGED_OBJECT_PERMISSION_INVALID": (
+        "MANAGED_PAYLOAD_PERMISSION_ERROR",
+        False,
+    ),
+    "MANAGED_STORE_TRANSIENT_IO": ("MANAGED_STORE_UNAVAILABLE", True),
+    "MANAGED_STORE_IO_ERROR": ("MANAGED_STORE_UNAVAILABLE", False),
+}
 
 
 class KnowledgeIngestionService:
@@ -48,19 +54,18 @@ class KnowledgeIngestionService:
         repository: KnowledgeIngestionRepository | None = None,
         embedding_provider: EmbeddingProvider | None = None,
         managed_root: Path | None = None,
+        managed_store: KnowledgeManagedStore | None = None,
     ) -> None:
         """Initialise the worker with injectable dependencies."""
+        if managed_store is not None and managed_root is not None:
+            raise ValueError("Provide managed_store or managed_root, not both.")
         self._logger = logger
         self._config_mgr = config_mgr
         self._manifest = manifest
         self._repository = repository or KnowledgeIngestionRepository()
-        self._managed_root = (
-            Path(managed_root)
-            if managed_root
-            else self._config_path(
-                "managed_root",
-                project_home() / "var" / "knowledge" / "content",
-            )
+        self._managed_store = managed_store or KnowledgeManagedStore.from_config(
+            config_mgr,
+            root_override=managed_root,
         )
         chunk_size = self._config_int("chunk_size_tokens", 384)
         overlap = self._config_int("chunk_overlap_tokens", 48)
@@ -81,6 +86,12 @@ class KnowledgeIngestionService:
     def tick(self, context: Any) -> None:
         """Process a bounded batch of available ingestion requests."""
         del context
+        try:
+            self._managed_store.assert_ready()
+        except ManagedStoreConfigurationError as exc:
+            self.last_error = f"{exc.reason_code}: {exc}"
+            self._log_warning(self.last_error)
+            raise
         first_error: str | None = None
         processed = 0
         for _index in range(self._batch_size):
@@ -99,6 +110,19 @@ class KnowledgeIngestionService:
                 self._process_request(
                     detail, owner_id=owner_id, lease_token=lease_token
                 )
+            except ManagedStoreConfigurationError as exc:
+                error_code, retryable = managed_store_failure(exc)
+                self._fail_request(
+                    request_id=request_id,
+                    owner_id=owner_id,
+                    lease_token=lease_token,
+                    error_code=error_code,
+                    error_message=str(exc),
+                    retryable=retryable,
+                )
+                self.last_error = f"{exc.reason_code}: {exc}"
+                self._log_warning(self.last_error)
+                raise
             except Exception as exc:
                 if first_error is None:
                     first_error = str(exc)
@@ -129,30 +153,68 @@ class KnowledgeIngestionService:
     ) -> None:
         request_id = int(detail["ingestion_request_id"])
         content_uri = str(detail["content_uri"])
-        payload_path = self._managed_root / content_uri
-        if not payload_path.is_file():
+        try:
+            identity = ManagedObjectIdentity(
+                str(detail["content_sha256"]).lower(),
+                int(detail["byte_size"]),
+            )
+            with self._managed_store.open_verified(
+                content_uri,
+                identity,
+            ) as payload_stream:
+                payload = (
+                    payload_stream.read()
+                    if detail.get("extracted_text") is None
+                    or detail.get("extraction_id") is None
+                    else None
+                )
+        except ManagedStoreConfigurationError:
+            raise
+        except (ManagedStoreError, ValueError) as exc:
+            if isinstance(exc, ManagedStoreError):
+                error_code, retryable = managed_store_failure(exc)
+                error_message = str(exc)
+            else:
+                error_code, retryable = ("INVALID_MANAGED_STORAGE_KEY", False)
+                error_message = "Registered managed object identity is invalid."
             self._fail_request(
                 request_id=request_id,
                 owner_id=owner_id,
                 lease_token=lease_token,
-                error_code="MISSING_MANAGED_PAYLOAD",
-                error_message=f"Managed payload is missing: {content_uri}",
-                retryable=True,
+                error_code=error_code,
+                error_message=error_message,
+                retryable=retryable,
             )
             return
-        if _sha256_file(payload_path) != str(detail["content_sha256"]).lower():
-            raise RuntimeError(
-                "Managed payload hash no longer matches the registered source object."
-            )
 
-        self._repository.mark_stage(
-            ingestion_request_id=request_id,
-            owner_id=owner_id,
-            lease_token=lease_token,
-            status="PROCESSING",
-            stage="EXTRACT",
-        )
-        text = payload_path.read_text(encoding="utf-8")
+        text = detail.get("extracted_text")
+        extraction_id = detail.get("extraction_id")
+        if text is None or extraction_id is None:
+            try:
+                text = bytes(payload or b"").decode("utf-8")
+            except UnicodeDecodeError:
+                self._fail_request(
+                    request_id=request_id,
+                    owner_id=owner_id,
+                    lease_token=lease_token,
+                    error_code="INVALID_MANAGED_PAYLOAD_ENCODING",
+                    error_message="Managed Markdown/text payload is not valid UTF-8.",
+                    retryable=False,
+                )
+                return
+            text_sha = _sha256_text(text)
+            document_version_id = self._repository.ensure_document_version(
+                ingestion_request_id=request_id,
+                title=str(detail.get("original_filename") or ""),
+                source_modified_on=detail.get("source_modified_on"),
+            )
+            extraction_id = self._repository.create_extraction(
+                document_version_id=document_version_id,
+                extractor_code="legacy_core_text_v1",
+                extractor_version="1",
+                extracted_text=text,
+                text_sha256=text_sha,
+            )
         if not text.strip():
             self._fail_request(
                 request_id=request_id,
@@ -163,20 +225,6 @@ class KnowledgeIngestionService:
                 retryable=False,
             )
             return
-        text_sha = _sha256_text(text)
-        document_version_id = self._repository.ensure_document_version(
-            ingestion_request_id=request_id,
-            title=str(detail.get("original_filename") or ""),
-            source_modified_on=detail.get("source_modified_on"),
-        )
-        extraction_id = self._repository.create_extraction(
-            document_version_id=document_version_id,
-            extractor_code=EXTRACTOR_CODE,
-            extractor_version=EXTRACTOR_VERSION,
-            extracted_text=text,
-            text_sha256=text_sha,
-        )
-
         self._repository.mark_stage(
             ingestion_request_id=request_id,
             owner_id=owner_id,
@@ -184,7 +232,7 @@ class KnowledgeIngestionService:
             status="PROCESSING",
             stage="CHUNK",
         )
-        chunks = chunk_text(
+        chunks = chunk_markdown(
             text,
             chunk_size_tokens=self._chunk_size_tokens,
             overlap_tokens=self._overlap_tokens,
@@ -206,6 +254,7 @@ class KnowledgeIngestionService:
                 chunk_text=chunk.text,
                 token_count=chunk.token_count,
                 content_sha256=_sha256_text(chunk.text),
+                metadata_json=chunk.metadata_json,
             )
             chunk_ids.append((chunk_id, chunk))
 
@@ -276,12 +325,6 @@ class KnowledgeIngestionService:
             return default
         return int(self._config_mgr.int_config_value("knowledge", key, default=default))
 
-    def _config_path(self, key: str, default: Path) -> Path:
-        if self._config_mgr is None:
-            return default
-        raw = self._config_mgr.config_value("knowledge", key, default=str(default))
-        return Path(raw)
-
     def _log_warning(self, message: str) -> None:
         if self._logger is not None and hasattr(self._logger, "log_warning"):
             self._logger.log_warning(message)
@@ -293,30 +336,12 @@ def chunk_text(
     chunk_size_tokens: int,
     overlap_tokens: int,
 ) -> list[TextChunk]:
-    """Split text into word-window chunks with stable character spans."""
-    matches = list(re.finditer(r"\S+", text))
-    if not matches:
-        return []
-    chunks: list[TextChunk] = []
-    step = max(1, chunk_size_tokens - overlap_tokens)
-    chunk_no = 1
-    for start_index in range(0, len(matches), step):
-        end_index = min(len(matches), start_index + chunk_size_tokens)
-        span_start = matches[start_index].start()
-        span_end = matches[end_index - 1].end()
-        chunks.append(
-            TextChunk(
-                chunk_no=chunk_no,
-                span_start=span_start,
-                span_end=span_end,
-                text=text[span_start:span_end],
-                token_count=end_index - start_index,
-            )
-        )
-        chunk_no += 1
-        if end_index == len(matches):
-            break
-    return chunks
+    """Compatibility wrapper for the structure-aware Markdown chunker."""
+    return chunk_markdown(
+        text,
+        chunk_size_tokens=chunk_size_tokens,
+        overlap_tokens=overlap_tokens,
+    )
 
 
 def _sha256_text(text: str) -> str:
@@ -324,10 +349,13 @@ def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _sha256_file(path: Path) -> str:
-    """Return the SHA-256 of a local file."""
-    hasher = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            hasher.update(chunk)
-    return hasher.hexdigest()
+def managed_store_failure(error: ManagedStoreError) -> tuple[str, bool]:
+    """Map one stable store reason to ingestion failure and retryability."""
+    if isinstance(error, ManagedStoreConfigurationError):
+        if error.transient:
+            return ("MANAGED_STORE_UNAVAILABLE", True)
+        return ("MANAGED_STORE_CONFIGURATION_INVALID", False)
+    mapped = MANAGED_STORE_FAILURES.get(error.reason_code)
+    if mapped is not None:
+        return mapped
+    return ("MANAGED_STORE_UNAVAILABLE", bool(error.transient))

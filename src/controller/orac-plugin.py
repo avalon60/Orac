@@ -169,6 +169,8 @@ def main(argv: list[str] | None = None) -> int:
                     f"{result.plugin_id} {result.version}: {result.status} - "
                     f"{result.message}"
                 )
+                for warning in result.warnings:
+                    print(f"Warning: {warning}", file=sys.stderr)
             return 0 if all(result.enabled for result in results) else 1
         if args.command == "status":
             status = installer.status(args.plugin_id)
@@ -180,6 +182,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "check":
             result = installer.check(args.plugin_id)
             print(f"{result.plugin_id} {result.version}: {result.message}")
+            for warning in result.warnings:
+                print(f"Warning: {warning}", file=sys.stderr)
             return 0
     except (
         PluginInstallationError,

@@ -25,6 +25,8 @@ def plugin_registry_row_runtime_eligible(row: Mapping[str, Any]) -> bool:
         and str(row.get("install_status") or "") == "success"
         and str(row.get("configuration_status") or "") in {"success", "not_required"}
         and str(row.get("dependency_status") or "") in {"success", "not_required"}
+        and str(row.get("command_prerequisite_status") or "not_applicable")
+        in {"not_applicable", "success", "degraded"}
         and str(row.get("database_status") or "")
         in {"deployed", "already_deployed", "not_required", "optional_missing"}
         and str(row.get("readiness_status") or "") == "success"

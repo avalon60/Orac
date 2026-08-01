@@ -42,9 +42,10 @@ credentials, retrieval, plugins, and home-automation integrations.
 - The bundled Weather plugin answers current-condition and short-forecast
   questions for explicit or configured locations through Open-Meteo.
 - The bundled Drop Box plugin scans configured folders, creates durable jobs,
-  and hands verified local text and Markdown documents to Core-managed
-  ingestion, chunking, embedding, and provenance services. Ingested content can
-  support opt-in, scope-authorised grounded dialogue retrieval.
+  normalises Markdown and plain text, and converts supported DOCX, HTML, ODT,
+  RTF, and EPUB documents to canonical Markdown. Core then owns managed source
+  storage, chunking, embedding, relational tags, and provenance. Ingested
+  content can support opt-in, scope-authorised grounded dialogue retrieval.
 - Browser and desktop display surfaces for runtime state and transcripts.
 - Oracle APEX administration, including framework-managed plugin applications
   such as Home Assistant Status and Drop Box Admin, plus backup and restore
@@ -59,8 +60,10 @@ some advertised capabilities remain intentionally constrained:
   light, switch, and scene operations. Arbitrary services, whole-home commands,
   and control of locks, alarms, climate, covers, fans, scripts, and automations
   are not enabled.
-- Local-knowledge dialogue retrieval is disabled by default and currently
-  supports UTF-8 text and Markdown ingestion. The shipped hash embedding is
+- Local-knowledge dialogue retrieval is disabled by default. Document
+  ingestion supports native UTF-8 text/Markdown and optional Pandoc-backed
+  DOCX, HTML, ODT, RTF, and EPUB conversion. PDF/OCR, spreadsheets, and
+  presentations are not supported. The shipped hash embedding is
   development/test infrastructure, lexical relevance is the current evidence
   gate, and native Oracle vector search is not yet part of the runtime.
 - Barge-in, native playback, and acoustic echo cancellation include
@@ -139,7 +142,9 @@ deployment script currently supports only `TOPOLOGY=db-local`.
 - [Runtime user preferences](docs/user_preferences.md)
 - [Plugins](docs/plugins.md)
 - [Home Assistant](plugins/home_assistant/docs/home-assistant.md)
-- [Drop Box and local document ingestion](plugins/drop_box/README.md)
+- [Core document ingestion](docs/document-ingestion.md)
+- [Drop Box operator guide](plugins/drop_box/docs/drop-box.md)
+- [Drop Box data lifecycle](plugins/drop_box/docs/drop-box-data-lifecycle.md)
 - [Weather](plugins/weather/README.md)
 - [Internet retrieval](docs/retrieval.md)
 - [Dialogue routing and local knowledge](docs/dialogue-routing.md)

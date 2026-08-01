@@ -106,6 +106,27 @@ class UserPreferencesValidationTests(unittest.TestCase):
         self.assertNotIn("wwv_flow_imp_page.create_page_validation", page6_sql)
         self.assertNotIn("validate_preference_value(", page6_sql)
 
+    def test_f1042_page6_lov_ajax_submits_control_type(self) -> None:
+        """Generic LOV AJAX calls should submit their per-request guard item."""
+        export_sql = APP_1042_EXPORT.read_text(encoding="utf-8").lower()
+
+        for item_name in (
+            "p6_pref_value_select_list",
+            "p6_pref_value_popup_lov",
+        ):
+            with self.subTest(item_name=item_name):
+                item_match = re.search(
+                    rf"p_name=>'{item_name}'.*?"
+                    r"p_ajax_items_to_submit=>'(?P<items>[^']+)'",
+                    export_sql,
+                    re.DOTALL,
+                )
+
+                self.assertIsNotNone(item_match)
+                submitted_items = item_match.group("items").split(",")
+                self.assertIn("p6_pref_key", submitted_items)
+                self.assertIn("p6_control_type", submitted_items)
+
     def test_f1042_page6_slider_is_metadata_driven(self) -> None:
         """Page 6 should render a generic slider from preference metadata."""
         export_sql = APP_1042_EXPORT.read_text(encoding="utf-8").lower()

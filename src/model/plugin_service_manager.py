@@ -19,6 +19,9 @@ from typing import Any, Callable, Protocol
 
 from lib.fsutils import project_home
 from model.plugin_config import PluginConfigManager
+from model.plugin_command_dependencies import PluginCommandDependencyChecker
+from model.plugin_command_dependencies import PluginCommandDependencyResult
+from model.plugin_command_dependencies import PluginCommandProbe
 from model.plugin_database_deployment import plugin_schema_payload_path
 from model.plugin_database_session import OracPluginDatabaseSession
 from model.plugin_database_session import OracPluginDatabaseSessionFactory
@@ -62,14 +65,18 @@ class PluginServiceContext:
     """Small context object exposed to service plugin implementations."""
 
     plugin_id: str
-    service_code: str
     logger: Any
     stop_event: threading.Event
     manifest: PluginManifest
+    service_code: str = "default"
     config_mgr: Any | None = None
     plugin_config_manager: PluginConfigManager | None = None
     _plugin_db_session_factory: Callable[[], OracPluginDatabaseSession] | None = None
     _secret_vault: PluginSecretVault | None = None
+    _command_dependency_checker: PluginCommandDependencyChecker | None = None
+    _command_status_recorder: (
+        Callable[[str, PluginCommandDependencyResult], None] | None
+    ) = None
 
     def plugin_db_session(self) -> OracPluginDatabaseSession:
         """Return a managed ORAC_PLUGIN database session for plugin runtime use."""
@@ -88,6 +95,22 @@ class PluginServiceContext:
                 "plugin configuration manager is configured."
             )
         return self.plugin_config_manager
+
+    def resolve_command_dependency(self, command: str) -> PluginCommandProbe:
+        """Re-probe and resolve one command declared by this plugin."""
+        declarations = tuple(
+            item for item in self.manifest.command_dependencies
+            if item.command == command
+        )
+        if len(declarations) != 1:
+            raise PluginRuntimeError(
+                f"Plugin '{self.plugin_id}' did not declare command '{command}'."
+            )
+        checker = self._command_dependency_checker or PluginCommandDependencyChecker()
+        result = checker.check(declarations, context="runtime_conversion")
+        if self._command_status_recorder is not None:
+            self._command_status_recorder(self.plugin_id, result)
+        return result.probes[0]
 
     @property
     def secret_vault(self) -> PluginSecretVault:
@@ -137,6 +160,10 @@ class PluginServiceManager:
         lease_acquire_retry_interval_seconds: float = 1.0,
         heartbeat_interval_seconds: float = 5.0,
         sleep_func: Callable[[float], None] = time.sleep,
+        command_dependency_checker: PluginCommandDependencyChecker | None = None,
+        command_status_recorder: (
+            Callable[[str, PluginCommandDependencyResult], None] | None
+        ) = None,
     ) -> None:
         self._logger = logger
         self._config_mgr = config_mgr
@@ -165,13 +192,39 @@ class PluginServiceManager:
         )
         self._heartbeat_interval_seconds = heartbeat_interval_seconds
         self._sleep = sleep_func
+        self._command_dependency_checker = (
+            command_dependency_checker or PluginCommandDependencyChecker()
+        )
+        self._command_status_recorder = (
+            command_status_recorder or self._record_command_status
+        )
         self._records: dict[tuple[str, str], _ServiceRecord] = {}
         self._dependency_invalid: dict[str, PluginManifest] = {}
 
-    def register_manifests(self, manifests: list[PluginManifest]) -> dict[str, Any]:
-        """Register enabled, dependency-valid service or hybrid manifests."""
+    def register_manifests(
+        self,
+        manifests: list[PluginManifest],
+        *,
+        command_status_recorder: (
+            Callable[[str, PluginCommandDependencyResult], None] | None
+        ) = None,
+    ) -> dict[str, Any]:
+        """Register enabled, dependency-valid service or hybrid manifests.
+
+        Args:
+            manifests: Plugin manifests to register.
+            command_status_recorder: Optional call-scoped recorder used when
+                the caller must defer persistence until its registry
+                transaction is ready.
+
+        Returns:
+            Current service-manager status report.
+        """
         self._dependency_invalid.clear()
         seen_keys: set[tuple[str, str]] = set()
+        effective_command_status_recorder = (
+            command_status_recorder or self._command_status_recorder
+        )
 
         for manifest in manifests:
             if manifest.runtime_mode not in {"service", "hybrid"}:
@@ -187,6 +240,23 @@ class PluginServiceManager:
             if not service_runtimes:
                 self._log_error(
                     f"Plugin service '{manifest.plugin_id}' skipped because runtime.service is missing."
+                )
+                continue
+            command_result = self._command_dependency_checker.check(
+                manifest.command_dependencies,
+                context="service_registration",
+            )
+            if manifest.command_dependencies:
+                effective_command_status_recorder(
+                    manifest.plugin_id,
+                    command_result,
+                )
+            if command_result.status == "failed":
+                self._dependency_invalid[manifest.plugin_id] = manifest
+                self._log_warning(
+                    "Plugin service skipped enabled plugin "
+                    f"'{manifest.plugin_id}' because a required command "
+                    "prerequisite is unavailable."
                 )
                 continue
             config_result = PluginConfigManager(
@@ -503,14 +573,29 @@ class PluginServiceManager:
                 plugin_id=record.manifest.plugin_id,
                 manifest=record.manifest,
             ),
+            _command_dependency_checker=self._command_dependency_checker,
+            _command_status_recorder=self._command_status_recorder,
         )
         self._validate_service_contract(instance, record.manifest, record.service_runtime)
         record.instance = instance
         record.context = context
         record.last_error = None
 
+    @staticmethod
+    def _record_command_status(
+        plugin_id: str,
+        result: PluginCommandDependencyResult,
+    ) -> None:
+        """Persist runtime probe status through the Orac-owned registry API."""
+        from model.plugin_registry import PluginRegistryStore
+
+        PluginRegistryStore().record_command_status(
+            plugin_id,
+            result.status,
+            result.report_json(),
+        )
+
     def _run_service(self, record: _ServiceRecord) -> None:
-        manifest = record.manifest
         service_runtime = record.service_runtime
         if service_runtime is None or record.context is None or record.instance is None:
             self._transition(record, "failed")

@@ -6,9 +6,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import os
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -17,8 +19,13 @@ for path in (SRC_ROOT, PLUGINS_ROOT):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from drop_box.models import CandidateFile, DropLocation, FileObservation, HashedCandidate
-from drop_box.repository import DropBoxRepository
+from drop_box.models import (  # noqa: E402
+    CandidateFile,
+    DropLocation,
+    FileObservation,
+    HashedCandidate,
+)
+from drop_box.repository import DropBoxRepository  # noqa: E402
 
 
 class _FakeSession:
@@ -87,6 +94,45 @@ class DropBoxRepositoryTests(unittest.TestCase):
         self.assertTrue(locations[0].recursive)
         self.assertEqual(locations[0].max_file_size_bytes, 2 * 1024 * 1024)
         self.assertIn("orac_dropbox.drop_location_runtime_v", session.fetch_queries[0])
+
+    def test_load_enabled_locations_expands_orac_home_token(self) -> None:
+        session = _FakeSession()
+        session.rows[0]["PATH"] = "${ORAC_HOME}/docs"
+        repository = DropBoxRepository(_FakeContext(session))
+
+        with patch.dict(os.environ, {"ORAC_HOME": "/srv/orac"}, clear=False):
+            locations = repository.load_enabled_locations()
+
+        self.assertEqual(locations[0].path, Path("/srv/orac/docs"))
+
+    def test_load_enabled_locations_uses_project_home_fallback(self) -> None:
+        session = _FakeSession()
+        session.rows[0]["PATH"] = "${ORAC_HOME}/docs"
+        repository = DropBoxRepository(_FakeContext(session))
+
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("drop_box.models.project_home", return_value=Path("/opt/orac")),
+        ):
+            locations = repository.load_enabled_locations()
+
+        self.assertEqual(locations[0].path, Path("/opt/orac/docs"))
+
+    def test_load_enabled_locations_rejects_unsafe_paths(self) -> None:
+        for unsafe_path in (
+            "relative/docs",
+            "${OTHER_HOME}/docs",
+            "${ORAC_HOME}/../secrets",
+            "/tmp/docs/../secrets",
+            "/tmp/docs\nsecrets",
+        ):
+            session = _FakeSession()
+            session.rows[0]["PATH"] = unsafe_path
+            repository = DropBoxRepository(_FakeContext(session))
+
+            with self.subTest(path=unsafe_path):
+                with self.assertRaisesRegex(ValueError, "Drop Box"):
+                    repository.load_enabled_locations()
 
     def test_observation_exists_uses_package_function(self) -> None:
         session = _FakeSession()
@@ -168,7 +214,7 @@ class DropBoxRepositoryTests(unittest.TestCase):
 
         procedure_name, parameters = session.procedure_calls[0]
         self.assertEqual(procedure_name, "orac_dropbox.drop_box_api.update_status")
-        self.assertEqual(parameters, [10, "handed_off", None, None])
+        self.assertEqual(parameters, [10, "handed_off", None, None, None])
 
 
 def _candidate() -> CandidateFile:

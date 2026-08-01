@@ -22,6 +22,10 @@ begin
              then 'SKIPPED'
              when job.status_code in ('failed', 'quarantined')
              then 'FAILED_ATTENTION'
+             when job.status_code = 'deferred_prerequisite'
+             then 'PREREQUISITE_DEFERRED'
+             when job.status_code = 'conversion_retry_wait'
+             then 'CONVERSION_RETRY'
              when job.status_code in ('queued', 'processing')
              then 'AWAITING_HANDOFF'
              when job.knowledge_ingestion_request_id is null
@@ -44,6 +48,12 @@ begin
              when job.lifecycle_bucket = 'AWAITING_HANDOFF' then job.drop_job_id
            end) awaiting_handoff_count,
            count(distinct case
+             when job.lifecycle_bucket = 'PREREQUISITE_DEFERRED' then job.drop_job_id
+           end) prerequisite_deferred_count,
+           count(distinct case
+             when job.lifecycle_bucket = 'CONVERSION_RETRY' then job.drop_job_id
+           end) conversion_retry_count,
+           count(distinct case
              when job.lifecycle_bucket = 'CORE_IN_PROGRESS' then job.drop_job_id
            end) core_in_progress_count,
            count(distinct case
@@ -64,6 +74,8 @@ begin
          count(case
            when total_job_count <>
                 awaiting_handoff_count
+                + prerequisite_deferred_count
+                + conversion_retry_count
                 + core_in_progress_count
                 + searchable_count
                 + failed_attention_count

@@ -22,6 +22,14 @@ to complete.
 
 - [Plugins](plugins.md): plugin manifests, lifecycle, policy, configuration,
   secrets, services, database payloads, and audit boundaries.
+- [Document Ingestion](document-ingestion.md): Core-managed source storage,
+  document lineage, worker configuration, APEX scope administration, chunking,
+  embeddings, tags, and retrieval boundaries.
+- [Drop Box](../plugins/drop_box/docs/drop-box.md): install the local-file
+  adapter, configure App 10020 locations, verify conversion, and troubleshoot
+  ingestion.
+- [Drop Box Data Lifecycle](../plugins/drop_box/docs/drop-box-data-lifecycle.md):
+  scanner, conversion, retry, handoff, source identity, and Core ownership.
 - [Home Assistant](../plugins/home_assistant/docs/home-assistant.md): configure
   credentials, synchronise inventory, control approved devices and scenes, and
   list devices by area.
@@ -37,6 +45,8 @@ to complete.
 ## Architecture and Protocols
 
 - [Architecture Overview](../detailed-architecture.md)
+- [Core Document Ingestion](document-ingestion.md)
+- [Drop Box Data Lifecycle](../plugins/drop_box/docs/drop-box-data-lifecycle.md)
 - [Voice Turn Lifecycle](voice-turn-lifecycle.md)
 - [Home Assistant Data Lifecycle](../plugins/home_assistant/docs/home-assistant-data-lifecycle.md)
 - [Plugin Execution Boundaries](agent-guardrails/55-plugin-execution-boundaries.md)
@@ -53,7 +63,8 @@ repository tooling and referenced by `AGENTS.md`.
 
 - [Project Principles](agent-guardrails/00-project-principles.md)
 - [Architecture Boundaries](agent-guardrails/10-architecture-boundaries.md)
-- [Python Standards](agent-guardrails/30-python-standards.md)
+- [Python Engineering Foundations](agent-guardrails/30-python-engineering-foundations.md)
+- [Python Standards](agent-guardrails/31-python-standards.md)
 - [Frontend Vite React Standards](agent-guardrails/35-frontend-vite-react-standards.md)
 - [Plugin Standards](agent-guardrails/50-plugin-standards.md)
 - [Plugin Execution Boundaries](agent-guardrails/55-plugin-execution-boundaries.md)

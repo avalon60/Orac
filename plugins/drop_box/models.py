@@ -8,9 +8,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+import json
+import os
 from pathlib import Path
 
+from lib.fsutils import project_home
 from orac_core.knowledge import DropBoxCaptureRequest
+
+from .conversion import NormalisedDocument
 
 __author__ = "Clive Bostock"
 __date__ = "27-Jun-2026"
@@ -26,6 +31,57 @@ DEFAULT_IGNORE_PATTERNS: tuple[str, ...] = (
     "~$*",
     ".DS_Store",
 )
+
+_ORAC_HOME_TOKEN = "${ORAC_HOME}"
+
+
+def _resolved_location_path(raw_value: object) -> Path:
+    """Resolve one validated database-defined Drop Box source path.
+
+    Args:
+        raw_value (object): Database path value.
+
+    Returns:
+        Path: Absolute lexical source path for the scanner.
+
+    Raises:
+        ValueError: If the value is empty, relative, contains traversal, or
+            uses an unsupported environment token.
+    """
+    raw_path = str(raw_value or "").strip()
+    if not raw_path:
+        raise ValueError("Drop Box source path is required.")
+    if any(ord(character) < 32 or ord(character) == 127 for character in raw_path):
+        raise ValueError("Drop Box source path contains control characters.")
+
+    token_prefix = f"{_ORAC_HOME_TOKEN}/"
+    if raw_path.startswith(token_prefix):
+        relative_path = Path(raw_path[len(token_prefix) :])
+        if (
+            not relative_path.parts
+            or relative_path.is_absolute()
+            or ".." in relative_path.parts
+        ):
+            raise ValueError("Drop Box ORAC_HOME path is unsafe.")
+        configured_home = os.environ.get("ORAC_HOME")
+        orac_home = (
+            Path(configured_home).expanduser()
+            if configured_home is not None
+            else project_home()
+        )
+        if not orac_home.is_absolute():
+            raise ValueError("ORAC_HOME must resolve to an absolute path.")
+        return orac_home / relative_path
+
+    if "${" in raw_path:
+        raise ValueError("Drop Box source path uses an unsupported environment token.")
+
+    location_path = Path(raw_path).expanduser()
+    if not location_path.is_absolute():
+        raise ValueError("Drop Box source path must be absolute.")
+    if ".." in location_path.parts:
+        raise ValueError("Drop Box source path must not contain traversal.")
+    return location_path
 
 
 @dataclass(frozen=True)
@@ -50,7 +106,7 @@ class DropLocation:
             drop_location_id=int(row["DROP_LOCATION_ID"]),
             location_code=str(row["LOCATION_CODE"]),
             display_name=str(row["DISPLAY_NAME"]),
-            path=Path(str(row["PATH"])),
+            path=_resolved_location_path(row["PATH"]),
             allowed_extensions=_split_csv(str(row.get("ALLOWED_EXTENSIONS") or "")),
             recursive=_yn(row.get("RECURSIVE_YN")),
             max_file_size_bytes=(
@@ -119,6 +175,8 @@ class DropBoxHandoffJob:
     effective_processing_profile: str | None = None
     effective_profile_instruction: str | None = None
     effective_instruction: str | None = None
+    effective_classification_tags_json: str | None = None
+    conversion_attempts: int = 0
 
     @classmethod
     def from_row(cls, row: dict) -> "DropBoxHandoffJob":
@@ -138,12 +196,22 @@ class DropBoxHandoffJob:
             effective_processing_profile=row.get("EFFECTIVE_PROCESSING_PROFILE"),
             effective_profile_instruction=row.get("EFFECTIVE_PROFILE_INSTRUCTION"),
             effective_instruction=row.get("EFFECTIVE_INSTRUCTION"),
+            effective_classification_tags_json=row.get(
+                "EFFECTIVE_CLASSIFICATION_TAGS_JSON"
+            ),
+            conversion_attempts=int(row.get("CONVERSION_ATTEMPTS") or 0),
         )
 
-    def to_capture_request(self) -> DropBoxCaptureRequest:
+    def to_capture_request(
+        self,
+        normalised: NormalisedDocument | None = None,
+    ) -> DropBoxCaptureRequest:
         """Return the Core capture request for this Drop Box job."""
         instruction = self.effective_instruction or self.effective_profile_instruction
         source_key = self._source_key()
+        tags_json = self.effective_classification_tags_json
+        if tags_json is None and self.effective_processing_profile:
+            tags_json = json.dumps([self.effective_processing_profile])
         return DropBoxCaptureRequest(
             drop_job_id=self.drop_job_id,
             drop_location_id=self.drop_location_id,
@@ -160,6 +228,34 @@ class DropBoxHandoffJob:
             source_key=source_key,
             location_code=self.location_code,
             legacy_source_key=f"{self.location_code}:{self.source_path}",
+            source_format_code=(
+                normalised.source_format_code if normalised is not None else None
+            ),
+            source_mime_type=(
+                normalised.source_mime_type if normalised is not None else None
+            ),
+            normalised_markdown=(
+                normalised.markdown if normalised is not None else None
+            ),
+            normalised_text_sha256=(
+                normalised.text_sha256 if normalised is not None else None
+            ),
+            normalised_byte_size=(
+                normalised.byte_size if normalised is not None else None
+            ),
+            output_mime_type=(
+                normalised.output_mime_type if normalised is not None else None
+            ),
+            extractor_code=(
+                normalised.extractor_code if normalised is not None else None
+            ),
+            extractor_version=(
+                normalised.extractor_version if normalised is not None else None
+            ),
+            extraction_metadata_json=(
+                normalised.metadata_json if normalised is not None else None
+            ),
+            classification_tags_json=tags_json,
         )
 
     def _source_key(self) -> str:

@@ -18,6 +18,7 @@ select canonical_scope display_value,
         and install_status = 'success'
         and configuration_status in ('success', 'not_required')
         and dependency_status in ('success', 'not_required')
+        and command_prerequisite_status in ('not_applicable', 'success', 'degraded')
         and database_status in (
               'deployed', 'already_deployed', 'not_required', 'optional_missing'
             )

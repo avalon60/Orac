@@ -22,6 +22,10 @@ create or replace package orac_code.plugin_registry_api as
     p_database_schemas_summary in orac_api.plugin_registry_v.database_schemas_summary%type,
     p_dependency_declarations  in orac_api.plugin_registry_v.dependency_declarations%type,
     p_dependency_fingerprint   in orac_api.plugin_registry_v.dependency_fingerprint%type,
+    p_command_dependency_declarations in orac_api.plugin_registry_v.command_dependency_declarations%type,
+    p_command_dependency_fingerprint in orac_api.plugin_registry_v.command_dependency_fingerprint%type,
+    p_command_prerequisite_status in orac_api.plugin_registry_v.command_prerequisite_status%type,
+    p_command_dependency_report in orac_api.plugin_registry_v.command_dependency_report%type,
     p_install_status           in orac_api.plugin_registry_v.install_status%type,
     p_configuration_status     in orac_api.plugin_registry_v.configuration_status%type,
     p_dependency_status        in orac_api.plugin_registry_v.dependency_status%type,
@@ -32,6 +36,12 @@ create or replace package orac_code.plugin_registry_api as
     p_ui_accent_class          in orac_api.plugin_registry_v.ui_accent_class%type default null,
     p_last_error_code          in orac_api.plugin_registry_v.last_error_code%type default null,
     p_last_error_message       in orac_api.plugin_registry_v.last_error_message%type default null
+  );
+
+  procedure update_command_prerequisite_status(
+    p_plugin_id in orac_api.plugin_registry_v.plugin_id%type,
+    p_command_prerequisite_status in orac_api.plugin_registry_v.command_prerequisite_status%type,
+    p_command_dependency_report in orac_api.plugin_registry_v.command_dependency_report%type
   );
 end plugin_registry_api;
 /

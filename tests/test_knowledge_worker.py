@@ -17,7 +17,12 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from orac_core.knowledge.worker import KnowledgeIngestionService
+from orac_core.knowledge.worker import KnowledgeIngestionService  # noqa: E402
+from orac_core.knowledge.managed_store import (  # noqa: E402
+    ManagedStoreConfigurationError,
+)
+from orac_core.knowledge.managed_store import ManagedStoreError  # noqa: E402
+from orac_core.knowledge.worker import managed_store_failure  # noqa: E402
 
 
 class _Config:
@@ -48,8 +53,16 @@ class _Repository:
         fail_request_ids: set[int] | None = None,
     ) -> None:
         self._managed_root = managed_root
+        self._managed_root.chmod(0o750)
+        for directory, mode in (
+            (self._managed_root / ".tmp", 0o700),
+            (self._managed_root / "sha256", 0o750),
+        ):
+            directory.mkdir(exist_ok=True)
+            directory.chmod(mode)
         self._request_ids = request_ids
         self._fail_request_ids = fail_request_ids or set()
+        self._payloads: dict[int, tuple[str, str, int]] = {}
         self.claims = 0
         self.completed: list[int] = []
         self.failed: list[dict] = []
@@ -57,8 +70,21 @@ class _Repository:
         self.embeddings: list[int] = []
 
     def add_payload(self, request_id: int, text: str) -> None:
-        payload_path = self._managed_root / f"payload-{request_id}.md"
-        payload_path.write_text(text, encoding="utf-8")
+        payload = text.encode("utf-8")
+        digest = hashlib.sha256(payload).hexdigest()
+        payload_path = self._managed_root / "sha256" / digest[:2] / digest[2:4] / digest
+        payload_path.parent.mkdir(parents=True, exist_ok=True)
+        current = payload_path.parent
+        while current != self._managed_root:
+            current.chmod(0o750)
+            current = current.parent
+        payload_path.write_bytes(payload)
+        payload_path.chmod(0o600)
+        self._payloads[request_id] = (
+            f"sha256:{digest}",
+            digest,
+            len(payload),
+        )
 
     def try_claim_next_request(
         self, *, owner_id: str, lease_seconds: int
@@ -70,15 +96,15 @@ class _Repository:
         return self._request_ids.pop(0)
 
     def request_detail(self, request_id: int) -> dict:
-        payload_path = self._managed_root / f"payload-{request_id}.md"
-        content = payload_path.read_bytes()
+        content_uri, content_sha256, byte_size = self._payloads[request_id]
         return {
             "ingestion_request_id": request_id,
             "lease_owner": "worker",
             "lease_token": f"token-{request_id}",
-            "content_uri": payload_path.name,
-            "content_sha256": hashlib.sha256(content).hexdigest(),
-            "original_filename": payload_path.name,
+            "content_uri": content_uri,
+            "content_sha256": content_sha256,
+            "byte_size": byte_size,
+            "original_filename": f"payload-{request_id}.md",
             "source_modified_on": None,
         }
 
@@ -140,8 +166,17 @@ class _Repository:
         chunk_text: str,
         token_count: int,
         content_sha256: str,
+        metadata_json: str | None = None,
     ) -> int:
-        del chunk_set_id, span_start, span_end, chunk_text, token_count, content_sha256
+        del (
+            chunk_set_id,
+            span_start,
+            span_end,
+            chunk_text,
+            token_count,
+            content_sha256,
+            metadata_json,
+        )
         return chunk_no
 
     def upsert_embedding_model(
@@ -201,13 +236,17 @@ class KnowledgeIngestionWorkerTests(unittest.TestCase):
     """Tests scheduled worker state transitions."""
 
     def test_idle_tick_clears_previous_error(self) -> None:
-        service = KnowledgeIngestionService(repository=_IdleRepository())
-        service.last_error = "previous package error"
+        with tempfile.TemporaryDirectory() as temp:
+            service = KnowledgeIngestionService(
+                repository=_IdleRepository(),
+                managed_root=Path(temp),
+            )
+            service.last_error = "previous package error"
 
-        service.tick(object())
+            service.tick(object())
 
-        self.assertIsNone(service.last_error)
-        self.assertTrue(service.health(object()))
+            self.assertIsNone(service.last_error)
+            self.assertTrue(service.health(object()))
 
     def test_tick_processes_configured_batch_with_independent_error_boundaries(
         self,
@@ -276,6 +315,70 @@ class KnowledgeIngestionWorkerTests(unittest.TestCase):
                 repository.failed[0]["error_code"], "EMPTY_MANAGED_PAYLOAD"
             )
             self.assertFalse(repository.failed[0]["retryable"])
+
+    def test_managed_store_reason_mapping_is_stable(self) -> None:
+        expected = {
+            "INVALID_STORAGE_KEY": ("INVALID_MANAGED_STORAGE_KEY", False),
+            "STORAGE_KEY_IDENTITY_MISMATCH": (
+                "INVALID_MANAGED_STORAGE_KEY",
+                False,
+            ),
+            "MANAGED_OBJECT_SYMLINK": ("UNSAFE_MANAGED_PAYLOAD", False),
+            "MANAGED_OBJECT_NOT_REGULAR": ("UNSAFE_MANAGED_PAYLOAD", False),
+            "UNSAFE_STORE_LAYOUT": ("UNSAFE_MANAGED_PAYLOAD", False),
+            "MANAGED_OBJECT_HASH_MISMATCH": (
+                "CORRUPT_MANAGED_PAYLOAD",
+                False,
+            ),
+            "MANAGED_OBJECT_SIZE_MISMATCH": (
+                "CORRUPT_MANAGED_PAYLOAD",
+                False,
+            ),
+            "MANAGED_OBJECT_MISSING": ("MISSING_MANAGED_PAYLOAD", False),
+            "MANAGED_OBJECT_PERMISSION_INVALID": (
+                "MANAGED_PAYLOAD_PERMISSION_ERROR",
+                False,
+            ),
+            "MANAGED_STORE_TRANSIENT_IO": (
+                "MANAGED_STORE_UNAVAILABLE",
+                True,
+            ),
+            "MANAGED_STORE_IO_ERROR": (
+                "MANAGED_STORE_UNAVAILABLE",
+                False,
+            ),
+        }
+        for reason_code, mapping in expected.items():
+            with self.subTest(reason_code=reason_code):
+                self.assertEqual(
+                    managed_store_failure(
+                        ManagedStoreError(
+                            reason_code,
+                            "test",
+                            transient=reason_code == "MANAGED_STORE_TRANSIENT_IO",
+                        )
+                    ),
+                    mapping,
+                )
+        self.assertEqual(
+            managed_store_failure(
+                ManagedStoreConfigurationError(
+                    "STORE_HARDLINK_UNSUPPORTED",
+                    "test",
+                )
+            ),
+            ("MANAGED_STORE_CONFIGURATION_INVALID", False),
+        )
+        self.assertEqual(
+            managed_store_failure(
+                ManagedStoreConfigurationError(
+                    "STORE_ROOT_IDENTITY_CHANGED",
+                    "test",
+                    transient=True,
+                )
+            ),
+            ("MANAGED_STORE_UNAVAILABLE", True),
+        )
 
 
 if __name__ == "__main__":

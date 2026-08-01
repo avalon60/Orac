@@ -375,7 +375,7 @@ class OracDbDeployComposeTests(unittest.TestCase):
                     f"""
                     docker() {{
                       if [[ "$1" == "logs" ]]; then
-                        printf 'ORAC_ORDS_SETUP_FAILED: test failure\\n'
+                        printf 'ORAC_SCHEMA_SETUP_FAILED: test failure\\n'
                         return 0
                       fi
                       printf 'unexpected docker call: %s\\n' "$*" >&2
@@ -398,7 +398,7 @@ class OracDbDeployComposeTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-        self.assertIn("Matched marker: ORAC_ORDS_SETUP_FAILED", result.stdout)
+        self.assertIn("Matched marker: ORAC_SCHEMA_SETUP_FAILED", result.stdout)
         self.assertIn("wait-failed", result.stdout)
 
 
@@ -501,6 +501,7 @@ class OracleSetupScriptContractTests(unittest.TestCase):
         self.assertIsNotNone(bundle_order)
 
         self.assertNotIn("orac_ha", bundle_order.group("body"))
+        self.assertIn("orac_plugin", bundle_order.group("body"))
         self.assertIn("EXCLUDED_BUNDLES=(", script)
         self.assertIn("orac_ha", script)
         self.assertIn('if is_excluded_bundle "$bundle_name"; then', script)
@@ -513,9 +514,135 @@ class OracleSetupScriptContractTests(unittest.TestCase):
 
         self.assertIn('RUN_CORE_OBJECTS_WITH_SQLPLUS="${RUN_CORE_OBJECTS_WITH_SQLPLUS:-0}"', script)
         self.assertIn("CORE_LIQUIBASE_BUNDLES=(", script)
+        core_bundles = re.search(
+            r"CORE_LIQUIBASE_BUNDLES=\(\n(?P<body>.*?)\n\)", script, re.S
+        )
+        self.assertIsNotNone(core_bundles)
+        self.assertIn("orac_plugin", core_bundles.group("body"))
         self.assertIn('echo "-- $(timestamp) :: Skipping Liquibase-owned directory:', script)
         self.assertNotIn("orac_ws", script)
         self.assertNotIn("orac_apps", script)
+
+    def test_core_schema_setup_propagates_sqlplus_failure(self) -> None:
+        """A failed SQL file must prevent the setup success marker."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            schema_dir = temp_path / "schema/custom_bundle/table"
+            schema_dir.mkdir(parents=True)
+            (schema_dir / "fail.sql").write_text(
+                "select missing_column from missing_table;\n",
+                encoding="utf-8",
+            )
+            fake_bin = temp_path / "bin"
+            fake_bin.mkdir()
+            fake_sqlplus = fake_bin / "sqlplus"
+            fake_sqlplus.write_text(
+                "#!/usr/bin/env bash\nexit 7\n",
+                encoding="utf-8",
+            )
+            fake_sqlplus.chmod(0o755)
+
+            result = subprocess.run(
+                ["bash", str(ORACLE_SETUP_DIR / "035-orac-schema_and_apps.sh")],
+                cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "BASE_DIR": str(temp_path / "schema"),
+                    "LOG_ROOT": str(temp_path / "logs"),
+                    "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                    "STOP_ON_ERROR": "1",
+                },
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        output = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0, output)
+        self.assertIn("ORAC_SCHEMA_SETUP_FAILED", output)
+        self.assertNotIn("ORAC_SCHEMA_SETUP_COMPLETE", output)
+        self.assertNotIn("DDL runner finished", output)
+        self.assertNotIn("Orac: 035-orac-schema_and_apps.sh Done", output)
+
+    def test_core_schema_setup_continues_then_returns_failure(self) -> None:
+        """Continue mode must run later files but retain the first failure."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            schema_dir = temp_path / "schema/custom_bundle/table"
+            schema_dir.mkdir(parents=True)
+            (schema_dir / "01-fail.sql").write_text("select 1 from dual;\n")
+            (schema_dir / "02-pass.sql").write_text("select 1 from dual;\n")
+            fake_bin = temp_path / "bin"
+            fake_bin.mkdir()
+            fake_sqlplus = fake_bin / "sqlplus"
+            fake_sqlplus.write_text(
+                "#!/usr/bin/env bash\n"
+                "input=$(cat)\n"
+                "if grep -q '01-fail.sql' <<<\"$input\"; then exit 9; fi\n"
+                "exit 0\n",
+                encoding="utf-8",
+            )
+            fake_sqlplus.chmod(0o755)
+
+            result = subprocess.run(
+                ["bash", str(ORACLE_SETUP_DIR / "035-orac-schema_and_apps.sh")],
+                cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "BASE_DIR": str(temp_path / "schema"),
+                    "LOG_ROOT": str(temp_path / "logs"),
+                    "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                    "STOP_ON_ERROR": "0",
+                },
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 9, output)
+        self.assertIn("02-pass.sql", output)
+        self.assertIn("ORAC_SCHEMA_SETUP_FAILED", output)
+        self.assertNotIn("ORAC_SCHEMA_SETUP_COMPLETE", output)
+
+    def test_core_schema_setup_source_returns_failure_status(self) -> None:
+        """A sourced setup phase must return the SQL*Plus failure status."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            schema_dir = temp_path / "schema/custom_bundle/table"
+            schema_dir.mkdir(parents=True)
+            (schema_dir / "fail.sql").write_text("select 1 from dual;\n")
+            fake_bin = temp_path / "bin"
+            fake_bin.mkdir()
+            fake_sqlplus = fake_bin / "sqlplus"
+            fake_sqlplus.write_text("#!/usr/bin/env bash\nexit 6\n")
+            fake_sqlplus.chmod(0o755)
+            command = (
+                f"source {ORACLE_SETUP_DIR / '035-orac-schema_and_apps.sh'}; "
+                "status=$?; printf 'source-status=%s\\n' \"$status\"; "
+                "exit 0"
+            )
+
+            result = subprocess.run(
+                ["bash", "-c", command],
+                cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "BASE_DIR": str(temp_path / "schema"),
+                    "LOG_ROOT": str(temp_path / "logs"),
+                    "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                    "STOP_ON_ERROR": "1",
+                },
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, output)
+        self.assertIn("source-status=6", output)
+        self.assertIn("ORAC_SCHEMA_SETUP_FAILED", output)
+        self.assertNotIn("ORAC_SCHEMA_SETUP_COMPLETE", output)
 
     def test_apex_import_uses_dedicated_resource_root(self) -> None:
         """APEX export import should read from ${ORAC_HOME}/apex."""

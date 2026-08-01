@@ -113,6 +113,8 @@ class DropBoxRepository:
                    effective_processing_profile,
                    effective_profile_instruction,
                    effective_instruction,
+                   effective_classification_tags_json,
+                   conversion_attempts,
                    knowledge_ingestion_request_id
               from orac_dropbox.drop_job_handoff_v
              order by stable_on nulls last, drop_job_id
@@ -143,6 +145,7 @@ class DropBoxRepository:
         status_code: str,
         error_message: str | None = None,
         document_id: int | None = None,
+        reason_code: str | None = None,
     ) -> None:
         """Persist a Drop Box job status transition through the package API."""
         self._db_session.call_procedure(
@@ -152,6 +155,7 @@ class DropBoxRepository:
                 status_code,
                 error_message,
                 document_id,
+                reason_code,
             ],
         )
 

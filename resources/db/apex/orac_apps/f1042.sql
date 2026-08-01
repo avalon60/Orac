@@ -11462,7 +11462,7 @@ wwv_flow_imp_page.create_page_item(
 '         )',
 '       ) jt'))
 ,p_lov_display_null=>'YES'
-,p_ajax_items_to_submit=>'P6_PREF_KEY,P6_PREF_VALUE_SEARCH_TERM,P6_PREF_VALUE_SELECT_LIST'
+,p_ajax_items_to_submit=>'P6_PREF_KEY,P6_CONTROL_TYPE,P6_PREF_VALUE_SEARCH_TERM,P6_PREF_VALUE_SELECT_LIST'
 ,p_cHeight=>1
 ,p_field_template=>1609121967514267634
 ,p_item_template_options=>'#DEFAULT#'
@@ -11501,7 +11501,7 @@ wwv_flow_imp_page.create_page_item(
 '       ) jt'))
 ,p_lov_display_null=>'YES'
 ,p_lov_cascade_parent_items=>'P6_PREF_KEY'
-,p_ajax_items_to_submit=>'P6_PREF_KEY,P6_PREF_VALUE_TEXT,P6_PREF_VALUE_NUMBER,P6_PREF_VALUE_SELECT_LIST,P6_PREF_VALUE_POPUP_LOV'
+,p_ajax_items_to_submit=>'P6_PREF_KEY,P6_CONTROL_TYPE,P6_PREF_VALUE_TEXT,P6_PREF_VALUE_NUMBER,P6_PREF_VALUE_SELECT_LIST,P6_PREF_VALUE_POPUP_LOV'
 ,p_field_template=>1609121967514267634
 ,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'

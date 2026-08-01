@@ -155,6 +155,7 @@ Expected plugin database grant direction:
 
 ```text
 <plugin_schema> -> orac_plugin -> approved Orac runtime path
+orac_plugin -> <plugin_schema> (catalogued validation APIs only)
 ```
 
 Rules:
@@ -164,6 +165,13 @@ Rules:
 - `orac_code` grants only approved runtime APIs and business views to `orac`,
   `orac_apx_pub`, and `orac_plugin`.
 - Plugin-owned schemas grant only approved entrypoints to `orac_plugin`.
+- When a plugin payload calls a host-owned `orac_plugin` validation API, the
+  plugin manifest must declare the catalogued bridge dependency. The
+  host-owned plugin provisioner applies that incoming grant only after the
+  plugin schema exists and before the plugin payload runs.
+- Core Liquibase changelogs must not grant to optional plugin-owned schemas.
+  Optional consumers must never be a prerequisite for a successful core
+  install, and missing consumers must not be hidden with `MARK_RAN`.
 - Do not grant direct `orac_core` table access to `orac`, `orac_apx_pub`,
   `orac_plugin`, or plugin-owned schemas.
 - Do not grant broad plugin schema privileges to `orac_plugin`.
@@ -177,6 +185,8 @@ Physical placement follows the receiving-schema convention in this repository:
   created.
 - Outgoing API grants live under `resources/db/schema/orac_api/grant`.
 - Outgoing CODE grants live under `resources/db/schema/orac_code/grant`.
+- Approved host-to-plugin bridge grants are lifecycle operations owned by the
+  plugin provisioner, not SQL files under `resources/db/schema/orac_plugin/grant`.
 - Runtime and APEX private synonyms live under the receiving schema's
   `synonym` directory.
 

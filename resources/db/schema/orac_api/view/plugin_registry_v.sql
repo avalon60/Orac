@@ -21,6 +21,10 @@ select plugin_registry_id
      , ui_accent_class
      , dependency_declarations
      , dependency_fingerprint
+     , command_dependency_declarations
+     , command_dependency_fingerprint
+     , command_prerequisite_status
+     , command_dependency_report
      , install_status
      , configuration_status
      , dependency_status

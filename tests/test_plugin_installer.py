@@ -29,6 +29,7 @@ from model.plugin_dependencies import validate_requirements_mirror
 from model.plugin_apex_installation import PluginApexAppInstallError
 from model.plugin_apex_installation import PluginApexAppInstallResult
 from model.plugin_apex_installation import DockerPluginApexAppInstaller
+from model.plugin_command_dependencies import PluginCommandDependencyResult
 from model.plugin_installer import PluginInstallationError
 from model.plugin_installer import PluginInstaller
 from model.plugin_installer import _clamp_registry_text
@@ -70,12 +71,24 @@ class _DependencyInstaller:
         )()
 
 
+class _CommandDependencyChecker:
+    def check(self, _declarations, *, context):
+        return PluginCommandDependencyResult(
+            status="success",
+            probes=(),
+            context=context,
+        )
+
+
 class _Registry:
     def __init__(self) -> None:
         self.rows: dict[str, dict] = {}
+        self.history: list[dict] = []
 
     def record(self, values):
-        self.rows[values["plugin_id"]] = dict(values)
+        recorded = dict(values)
+        self.history.append(recorded)
+        self.rows[values["plugin_id"]] = recorded
 
     def get(self, plugin_id):
         return self.rows.get(plugin_id)
@@ -121,14 +134,31 @@ class _ApexAppInstaller:
 
 
 class _ServiceManager:
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail: bool = False,
+        registry: _Registry | None = None,
+        command_result: PluginCommandDependencyResult | None = None,
+    ) -> None:
         self.fail = fail
+        self.registry = registry
+        self.command_result = command_result
         self.registered: list[str] = []
+        self.registry_statuses: list[str | None] = []
         self.start_auto_called = False
 
-    def register_manifests(self, manifests):
+    def register_manifests(self, manifests, *, command_status_recorder=None):
         if self.fail:
             raise RuntimeError("mock service registration failure")
+        if self.registry is not None:
+            self.registry_statuses.extend(
+                (self.registry.get(manifest.plugin_id) or {}).get("install_status")
+                for manifest in manifests
+            )
+        if self.command_result is not None and command_status_recorder is not None:
+            for manifest in manifests:
+                command_status_recorder(manifest.plugin_id, self.command_result)
         self.registered.extend(manifest.plugin_id for manifest in manifests)
         return {"registered": len(self.registered)}
 
@@ -495,6 +525,75 @@ class PluginInstallerTests(unittest.TestCase):
             self.assertTrue(result.enabled)
             self.assertEqual(service_manager.registered, ["alpha"])
             self.assertFalse(service_manager.start_auto_called)
+
+    def test_fresh_service_install_registers_owner_before_lifecycle(self) -> None:
+        """A first install must create its disabled owner row before services."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = _write_source_plugin(
+                root,
+                "alpha",
+                extra_manifest={
+                    "runtime": {
+                        "mode": "service",
+                        "service": {
+                            "entry_point": "service:AlphaService",
+                            "execution_model": "scheduled",
+                            "start_policy": "auto",
+                            "restart_policy": "on_failure",
+                            "shutdown_timeout_seconds": 10,
+                            "schedule": {
+                                "interval_seconds": 30,
+                                "run_on_start": True,
+                            },
+                        },
+                    },
+                    "command_dependencies": [
+                        {
+                            "command": "pandoc",
+                            "version_specifier": ">=3.1,<4",
+                            "required": False,
+                            "purpose": "Convert documents.",
+                            "install_hint": "Install Pandoc.",
+                        }
+                    ],
+                },
+            )
+            (source / "service.py").write_text(
+                "class AlphaService:\n    def tick(self, context):\n"
+                "        return None\n",
+                encoding="utf-8",
+            )
+            registry = _Registry()
+            service_result = PluginCommandDependencyResult(
+                status="success",
+                probes=(),
+                context="service_registration",
+            )
+            service_manager = _ServiceManager(
+                registry=registry,
+                command_result=service_result,
+            )
+
+            result = PluginInstaller(
+                project_root=root,
+                managed_root=root / "var" / "plugins",
+                config_root=root / "config",
+                dependency_installer=_DependencyInstaller(),
+                command_dependency_checker=_CommandDependencyChecker(),
+                database_deployer=_DatabaseDeployer(),
+                registry=registry,
+                service_manager=service_manager,
+            ).install_source(source)
+
+            self.assertTrue(result.enabled)
+            self.assertEqual(service_manager.registry_statuses, ["installing"])
+            self.assertEqual(
+                [row["install_status"] for row in registry.history],
+                ["installing", "success"],
+            )
+            report = json.loads(registry.rows["alpha"]["command_dependency_report"])
+            self.assertEqual(report["probe_context"], "service_registration")
 
     def test_service_registration_failure_keeps_plugin_disabled(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

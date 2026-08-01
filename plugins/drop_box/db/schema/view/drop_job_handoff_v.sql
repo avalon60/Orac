@@ -19,11 +19,19 @@ select job.drop_job_id,
        job.effective_processing_profile,
        job.effective_profile_instruction,
        job.effective_instruction,
+       job.effective_classification_tags_json,
+       job.conversion_attempts,
+       job.next_attempt_on,
+       job.failure_reason_code,
        job.document_id,
        job.knowledge_ingestion_request_id,
        job.created_on
   from orac_dropbox.drop_job job
   join orac_dropbox.drop_location loc
     on loc.drop_location_id = job.drop_location_id
- where job.status_code = 'queued';
+ where job.status_code = 'queued'
+    or (
+      job.status_code in ('deferred_prerequisite', 'conversion_retry_wait')
+      and job.next_attempt_on <= systimestamp
+    );
 /

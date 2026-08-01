@@ -68,6 +68,13 @@ to ${user_name};
 EOF
   done
 
+  echo "[$(timestamp)] ${PROG} Granting the bounded hashing dependency to ORAC_CODE"
+  sqlplus / as sysdba <<EOF
+alter session set container=${ORACLE_PDB};
+
+grant execute on sys.dbms_crypto to orac_code;
+EOF
+
   popd >/dev/null
   echo "[$(timestamp)] ${PROG}: Done."
 }

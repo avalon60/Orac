@@ -1,0 +1,777 @@
+"""Own safe content-addressed storage for Core knowledge payloads."""
+
+# Author: Clive Bostock
+# Date: 26-Jul-2026
+# Description: Streams, promotes, resolves, and verifies managed knowledge bytes.
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from enum import StrEnum
+import errno
+import hashlib
+import io
+import os
+from pathlib import Path, PurePosixPath
+import stat
+from typing import BinaryIO
+import uuid
+
+from lib.fsutils import project_home
+
+BUFFER_SIZE = 1024 * 1024
+DEFAULT_MANAGED_ROOT = project_home() / "var" / "knowledge" / "content"
+DIRECTORY_MODE = 0o750
+TEMP_DIRECTORY_MODE = 0o700
+FILE_MODE = 0o600
+LOGICAL_KEY_PREFIX = "sha256:"
+TRANSIENT_ERRNOS = {
+    errno.EINTR,
+    errno.EIO,
+    errno.ESTALE,
+    errno.EBUSY,
+    errno.EMFILE,
+    errno.ENFILE,
+    errno.ETIMEDOUT,
+}
+
+
+class ManagedStoreWriteOutcome(StrEnum):
+    """Describe whether a managed object was installed or reused."""
+
+    INSTALLED = "installed"
+    REUSED = "reused"
+
+
+@dataclass(frozen=True)
+class ManagedObjectIdentity:
+    """Content identity for one immutable managed object."""
+
+    sha256: str
+    byte_size: int
+
+    def __post_init__(self) -> None:
+        """Validate and canonicalise the immutable identity."""
+        digest = str(self.sha256)
+        if (
+            len(digest) != 64
+            or digest != digest.lower()
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise ValueError(
+                "SHA-256 must contain 64 lower-case hexadecimal characters."
+            )
+        if int(self.byte_size) < 0:
+            raise ValueError("Managed object byte size must be zero or greater.")
+
+
+@dataclass(frozen=True)
+class ManagedStoreWriteResult:
+    """Result of one managed-store write or immutable reuse."""
+
+    identity: ManagedObjectIdentity
+    storage_key: str
+    outcome: ManagedStoreWriteOutcome
+
+
+@dataclass(frozen=True)
+class ManagedStoreFacts:
+    """Bounded configuration and filesystem facts for operator inspection."""
+
+    configured_root: Path
+    resolved_root: Path
+    configuration_source: str
+    root_device: int
+    root_inode: int
+    temporary_device: int
+    object_device: int
+    promotion_method: str = "hard_link_no_replace"
+    logical_key_format: str = "sha256:<64-lowercase-hex>"
+    legacy_key_reads: bool = True
+
+
+@dataclass(frozen=True)
+class ManagedStoreInspection:
+    """Non-sensitive result of inspecting one managed reference."""
+
+    ok: bool
+    reason_code: str
+    identity: ManagedObjectIdentity | None = None
+
+
+class ManagedStoreError(RuntimeError):
+    """Raised when a managed-store operation fails safely."""
+
+    def __init__(
+        self,
+        reason_code: str,
+        message: str,
+        *,
+        transient: bool = False,
+    ) -> None:
+        """Initialise a stable reason-coded managed-store error."""
+        super().__init__(message)
+        self.reason_code = reason_code
+        self.transient = transient
+
+
+class ManagedStoreConfigurationError(ManagedStoreError):
+    """Raised when managed-store configuration cannot operate safely."""
+
+
+class KnowledgeManagedStore:
+    """Stream immutable objects into one Core-owned content-addressed store."""
+
+    def __init__(
+        self,
+        managed_root: Path,
+        *,
+        configuration_source: str = "injected",
+    ) -> None:
+        """Initialise and validate one fixed managed-store root."""
+        self._configured_root = Path(managed_root).expanduser()
+        self._configuration_source = configuration_source
+        self._root = self._initialise_root(self._configured_root)
+        root_stat = self._stat_root()
+        self._root_device = int(root_stat.st_dev)
+        self._root_inode = int(root_stat.st_ino)
+        self._ensure_directory((".tmp",), mode=TEMP_DIRECTORY_MODE)
+        self._ensure_directory(("sha256",), mode=DIRECTORY_MODE)
+        temporary_stat = self._stat_directory((".tmp",))
+        object_stat = self._stat_directory(("sha256",))
+        if temporary_stat.st_dev != object_stat.st_dev:
+            raise ManagedStoreConfigurationError(
+                "STORE_FILESYSTEM_MISMATCH",
+                "Managed temporary and object directories must share a filesystem.",
+            )
+        self._temporary_device = int(temporary_stat.st_dev)
+        self._object_device = int(object_stat.st_dev)
+        self._probe_hard_links()
+
+    @classmethod
+    def from_config(
+        cls,
+        config_mgr: object | None,
+        *,
+        root_override: Path | None = None,
+    ) -> "KnowledgeManagedStore":
+        """Build a store from the authoritative knowledge configuration."""
+        if root_override is not None:
+            return cls(root_override, configuration_source="explicit override")
+        if config_mgr is None:
+            return cls(DEFAULT_MANAGED_ROOT, configuration_source="runtime fallback")
+        path_loader = getattr(config_mgr, "path_config_value", None)
+        if callable(path_loader):
+            root = path_loader(
+                "knowledge",
+                "managed_root",
+                default=str(DEFAULT_MANAGED_ROOT),
+                suppress_warnings=True,
+            )
+        else:
+            value_loader = getattr(config_mgr, "config_value")
+            raw_root = value_loader(
+                "knowledge",
+                "managed_root",
+                default=str(DEFAULT_MANAGED_ROOT),
+            )
+            root = Path(os.path.expandvars(os.path.expanduser(str(raw_root))))
+        return cls(Path(root), configuration_source="[knowledge].managed_root")
+
+    @property
+    def managed_root(self) -> Path:
+        """Return the fixed resolved root for Core diagnostics."""
+        return self._root
+
+    def facts(self) -> ManagedStoreFacts:
+        """Return bounded configuration and filesystem facts."""
+        return ManagedStoreFacts(
+            configured_root=self._configured_root,
+            resolved_root=self._root,
+            configuration_source=self._configuration_source,
+            root_device=self._root_device,
+            root_inode=self._root_inode,
+            temporary_device=self._temporary_device,
+            object_device=self._object_device,
+        )
+
+    def assert_ready(self) -> None:
+        """Fail if the fixed store root has changed or become unsafe."""
+        root_fd = self._open_root()
+        os.close(root_fd)
+        for parts, mode in (
+            ((".tmp",), TEMP_DIRECTORY_MODE),
+            (("sha256",), DIRECTORY_MODE),
+        ):
+            directory_fd = self._open_directory(parts, create=False, mode=mode)
+            os.close(directory_fd)
+
+    def put_stream(
+        self,
+        stream: BinaryIO,
+        expected_identity: ManagedObjectIdentity | None = None,
+    ) -> ManagedStoreWriteResult:
+        """Stream bytes into the store and atomically install or reuse them."""
+        self.assert_ready()
+        temporary_fd = self._open_directory(
+            (".tmp",),
+            create=False,
+            mode=TEMP_DIRECTORY_MODE,
+        )
+        temporary_name = f"capture-{uuid.uuid4().hex}.tmp"
+        file_fd: int | None = None
+        try:
+            file_fd = os.open(
+                temporary_name,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                FILE_MODE,
+                dir_fd=temporary_fd,
+            )
+            os.fchmod(file_fd, FILE_MODE)
+            digest = hashlib.sha256()
+            byte_size = 0
+            with os.fdopen(file_fd, "wb", closefd=True) as temporary_stream:
+                file_fd = None
+                while True:
+                    chunk = stream.read(BUFFER_SIZE)
+                    if chunk in (b"", None):
+                        break
+                    if not isinstance(chunk, bytes):
+                        raise ManagedStoreError(
+                            "STORE_STREAM_INVALID",
+                            "Managed-store streams must return binary bytes.",
+                        )
+                    digest.update(chunk)
+                    byte_size += len(chunk)
+                    temporary_stream.write(chunk)
+                temporary_stream.flush()
+                os.fsync(temporary_stream.fileno())
+            identity = ManagedObjectIdentity(digest.hexdigest(), byte_size)
+            if expected_identity is not None and identity != expected_identity:
+                reason = (
+                    "MANAGED_OBJECT_SIZE_MISMATCH"
+                    if identity.byte_size != expected_identity.byte_size
+                    else "MANAGED_OBJECT_HASH_MISMATCH"
+                )
+                raise ManagedStoreError(
+                    reason,
+                    "Streamed bytes do not match the expected managed identity.",
+                )
+            result = self._promote(
+                temporary_fd=temporary_fd,
+                temporary_name=temporary_name,
+                identity=identity,
+            )
+        except Exception as exc:
+            cleanup_error = self._remove_temporary(temporary_fd, temporary_name)
+            if file_fd is not None:
+                os.close(file_fd)
+            os.close(temporary_fd)
+            if cleanup_error is not None:
+                raise cleanup_error from exc
+            if isinstance(exc, OSError):
+                raise self._object_os_error(exc, operation="write") from exc
+            raise
+        cleanup_error = self._remove_temporary(temporary_fd, temporary_name)
+        os.close(temporary_fd)
+        if cleanup_error is not None:
+            raise cleanup_error
+        return result
+
+    def put_file(
+        self,
+        source_path: Path,
+        expected_identity: ManagedObjectIdentity | None = None,
+    ) -> ManagedStoreWriteResult:
+        """Securely open a regular source file and delegate to ``put_stream``."""
+        try:
+            source_fd = os.open(
+                Path(source_path),
+                os.O_RDONLY | os.O_NOFOLLOW,
+            )
+        except OSError as exc:
+            raise self._object_os_error(exc, operation="open source") from exc
+        try:
+            source_stat = os.fstat(source_fd)
+            if not stat.S_ISREG(source_stat.st_mode):
+                raise ManagedStoreError(
+                    "SOURCE_NOT_REGULAR",
+                    "Managed-store file input must be a regular file.",
+                )
+            with os.fdopen(source_fd, "rb", closefd=True) as source:
+                source_fd = -1
+                return self.put_stream(source, expected_identity)
+        finally:
+            if source_fd >= 0:
+                os.close(source_fd)
+
+    def put_bytes(
+        self,
+        payload: bytes,
+        expected_identity: ManagedObjectIdentity | None = None,
+    ) -> ManagedStoreWriteResult:
+        """Delegate an in-memory binary payload to ``put_stream``."""
+        return self.put_stream(io.BytesIO(payload), expected_identity)
+
+    @contextmanager
+    def open_verified(
+        self,
+        storage_key: str,
+        expected_identity: ManagedObjectIdentity,
+    ) -> Iterator[BinaryIO]:
+        """Yield the same managed-object descriptor used for verification."""
+        digest = self._parse_storage_key(storage_key)
+        if digest != expected_identity.sha256:
+            raise ManagedStoreError(
+                "STORAGE_KEY_IDENTITY_MISMATCH",
+                "Managed storage key does not match the registered hash.",
+            )
+        object_fd = self._open_object_descriptor(digest)
+        stream: BinaryIO | None = None
+        try:
+            object_stat = os.fstat(object_fd)
+            if not stat.S_ISREG(object_stat.st_mode):
+                raise ManagedStoreError(
+                    "MANAGED_OBJECT_NOT_REGULAR",
+                    "Managed object is not a regular file.",
+                )
+            self._validate_file_permissions(object_stat)
+            if object_stat.st_size != expected_identity.byte_size:
+                raise ManagedStoreError(
+                    "MANAGED_OBJECT_SIZE_MISMATCH",
+                    "Managed object size does not match its registered identity.",
+                )
+            stream = os.fdopen(object_fd, "rb", buffering=0, closefd=True)
+            object_fd = -1
+            digest_calculator = hashlib.sha256()
+            while True:
+                chunk = stream.read(BUFFER_SIZE)
+                if not chunk:
+                    break
+                digest_calculator.update(chunk)
+            if digest_calculator.hexdigest() != expected_identity.sha256:
+                raise ManagedStoreError(
+                    "MANAGED_OBJECT_HASH_MISMATCH",
+                    "Managed object hash does not match its registered identity.",
+                )
+            stream.seek(0)
+            yield stream
+        finally:
+            if stream is not None:
+                stream.close()
+            elif object_fd >= 0:
+                os.close(object_fd)
+
+    def inspect_reference(
+        self,
+        storage_key: str,
+        expected_identity: ManagedObjectIdentity,
+    ) -> ManagedStoreInspection:
+        """Inspect one reference without exposing content or host paths."""
+        try:
+            with self.open_verified(storage_key, expected_identity):
+                pass
+        except ManagedStoreError as exc:
+            return ManagedStoreInspection(ok=False, reason_code=exc.reason_code)
+        return ManagedStoreInspection(
+            ok=True,
+            reason_code="OK",
+            identity=expected_identity,
+        )
+
+    def _promote(
+        self,
+        *,
+        temporary_fd: int,
+        temporary_name: str,
+        identity: ManagedObjectIdentity,
+    ) -> ManagedStoreWriteResult:
+        destination_fd = self._open_digest_directory(identity.sha256, create=True)
+        try:
+            try:
+                os.link(
+                    temporary_name,
+                    identity.sha256,
+                    src_dir_fd=temporary_fd,
+                    dst_dir_fd=destination_fd,
+                    follow_symlinks=False,
+                )
+            except FileExistsError:
+                with self.open_verified(
+                    self.storage_key(identity.sha256),
+                    identity,
+                ):
+                    pass
+                outcome = ManagedStoreWriteOutcome.REUSED
+            except OSError as exc:
+                if exc.errno in {errno.EPERM, errno.EOPNOTSUPP, errno.EXDEV}:
+                    raise ManagedStoreConfigurationError(
+                        "STORE_HARDLINK_UNSUPPORTED",
+                        "Managed-store no-clobber promotion is unavailable.",
+                    ) from exc
+                raise self._object_os_error(exc, operation="promote") from exc
+            else:
+                os.fsync(destination_fd)
+                outcome = ManagedStoreWriteOutcome.INSTALLED
+        finally:
+            os.close(destination_fd)
+        return ManagedStoreWriteResult(
+            identity=identity,
+            storage_key=self.storage_key(identity.sha256),
+            outcome=outcome,
+        )
+
+    def _open_object_descriptor(self, digest: str) -> int:
+        directory_fd = self._open_digest_directory(digest, create=False)
+        try:
+            try:
+                return os.open(
+                    digest,
+                    os.O_RDONLY | os.O_NOFOLLOW,
+                    dir_fd=directory_fd,
+                )
+            except FileNotFoundError as exc:
+                raise ManagedStoreError(
+                    "MANAGED_OBJECT_MISSING",
+                    "Managed object is missing.",
+                ) from exc
+            except OSError as exc:
+                if exc.errno == errno.ELOOP:
+                    raise ManagedStoreError(
+                        "MANAGED_OBJECT_SYMLINK",
+                        "Managed object must not be a symbolic link.",
+                    ) from exc
+                raise self._object_os_error(exc, operation="open object") from exc
+        finally:
+            os.close(directory_fd)
+
+    def _open_digest_directory(self, digest: str, *, create: bool) -> int:
+        return self._open_directory(
+            ("sha256", digest[:2], digest[2:4]),
+            create=create,
+            mode=DIRECTORY_MODE,
+        )
+
+    def _ensure_directory(self, parts: tuple[str, ...], *, mode: int) -> None:
+        directory_fd = self._open_directory(parts, create=True, mode=mode)
+        os.close(directory_fd)
+
+    def _open_directory(
+        self,
+        parts: tuple[str, ...],
+        *,
+        create: bool,
+        mode: int,
+    ) -> int:
+        current_fd = self._open_root()
+        try:
+            for index, part in enumerate(parts):
+                part_mode = mode if index == len(parts) - 1 else DIRECTORY_MODE
+                try:
+                    next_fd = os.open(
+                        part,
+                        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                        dir_fd=current_fd,
+                    )
+                except FileNotFoundError:
+                    if not create:
+                        raise ManagedStoreError(
+                            "MANAGED_OBJECT_MISSING",
+                            "Managed object directory is missing.",
+                        )
+                    created = False
+                    try:
+                        os.mkdir(part, part_mode, dir_fd=current_fd)
+                        created = True
+                    except FileExistsError:
+                        pass
+                    next_fd = os.open(
+                        part,
+                        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                        dir_fd=current_fd,
+                    )
+                    if created:
+                        os.fchmod(next_fd, part_mode)
+                        os.fsync(current_fd)
+                except OSError as exc:
+                    if exc.errno in {errno.ELOOP, errno.ENOTDIR}:
+                        raise ManagedStoreError(
+                            "UNSAFE_STORE_LAYOUT",
+                            "Managed-store directory layout is unsafe.",
+                        ) from exc
+                    raise self._object_os_error(
+                        exc,
+                        operation="open directory",
+                    ) from exc
+                directory_stat = os.fstat(next_fd)
+                self._validate_directory_permissions(
+                    directory_stat,
+                    temporary=parts[: index + 1] == (".tmp",),
+                )
+                os.close(current_fd)
+                current_fd = next_fd
+            return current_fd
+        except Exception:
+            os.close(current_fd)
+            raise
+
+    def _open_root(self) -> int:
+        try:
+            root_fd = os.open(
+                self._root,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            )
+        except OSError as exc:
+            raise ManagedStoreConfigurationError(
+                "STORE_ROOT_IDENTITY_CHANGED",
+                "Managed-store root is no longer available as configured.",
+                transient=exc.errno in TRANSIENT_ERRNOS,
+            ) from exc
+        root_stat = os.fstat(root_fd)
+        if (
+            int(root_stat.st_dev) != self._root_device
+            or int(root_stat.st_ino) != self._root_inode
+        ):
+            os.close(root_fd)
+            raise ManagedStoreConfigurationError(
+                "STORE_ROOT_IDENTITY_CHANGED",
+                "Managed-store root identity changed during service lifetime.",
+            )
+        self._validate_directory_permissions(root_stat, temporary=False)
+        return root_fd
+
+    def _stat_root(self) -> os.stat_result:
+        try:
+            root_stat = os.stat(self._root, follow_symlinks=False)
+        except OSError as exc:
+            raise ManagedStoreConfigurationError(
+                "STORE_ROOT_NOT_DIRECTORY",
+                "Managed-store root is unavailable.",
+            ) from exc
+        self._validate_directory_permissions(root_stat, temporary=False)
+        return root_stat
+
+    def _stat_directory(self, parts: tuple[str, ...]) -> os.stat_result:
+        directory_fd = self._open_directory(
+            parts,
+            create=False,
+            mode=TEMP_DIRECTORY_MODE if parts == (".tmp",) else DIRECTORY_MODE,
+        )
+        try:
+            return os.fstat(directory_fd)
+        finally:
+            os.close(directory_fd)
+
+    def _probe_hard_links(self) -> None:
+        temporary_fd = self._open_directory(
+            (".tmp",),
+            create=False,
+            mode=TEMP_DIRECTORY_MODE,
+        )
+        try:
+            object_fd = self._open_directory(
+                ("sha256",),
+                create=False,
+                mode=DIRECTORY_MODE,
+            )
+        except Exception:
+            os.close(temporary_fd)
+            raise
+        source_name = f".capability-{uuid.uuid4().hex}"
+        target_name = f"{source_name}.link"
+        source_fd: int | None = None
+        try:
+            source_fd = os.open(
+                source_name,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                FILE_MODE,
+                dir_fd=temporary_fd,
+            )
+            os.fchmod(source_fd, FILE_MODE)
+            os.fsync(source_fd)
+            os.close(source_fd)
+            source_fd = None
+            try:
+                os.link(
+                    source_name,
+                    target_name,
+                    src_dir_fd=temporary_fd,
+                    dst_dir_fd=object_fd,
+                    follow_symlinks=False,
+                )
+            except OSError as exc:
+                raise ManagedStoreConfigurationError(
+                    "STORE_HARDLINK_UNSUPPORTED",
+                    "Managed-store filesystem does not support hard-link promotion.",
+                ) from exc
+        finally:
+            if source_fd is not None:
+                os.close(source_fd)
+            cleanup_failed = False
+            for directory_fd, name in (
+                (object_fd, target_name),
+                (temporary_fd, source_name),
+            ):
+                try:
+                    os.unlink(name, dir_fd=directory_fd)
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    cleanup_failed = True
+            for directory_fd in (object_fd, temporary_fd):
+                try:
+                    os.fsync(directory_fd)
+                except OSError:
+                    cleanup_failed = True
+            os.close(object_fd)
+            os.close(temporary_fd)
+            if cleanup_failed:
+                raise ManagedStoreConfigurationError(
+                    "STORE_CAPABILITY_CLEANUP_FAILED",
+                    "Managed-store capability probe cleanup failed.",
+                )
+
+    def _remove_temporary(
+        self,
+        temporary_fd: int,
+        temporary_name: str,
+    ) -> ManagedStoreError | None:
+        try:
+            os.unlink(temporary_name, dir_fd=temporary_fd)
+            os.fsync(temporary_fd)
+        except FileNotFoundError:
+            return None
+        except OSError:
+            return ManagedStoreError(
+                "STORE_TEMP_CLEANUP_FAILED",
+                "Managed-store temporary cleanup failed.",
+            )
+        return None
+
+    def _initialise_root(self, configured_root: Path) -> Path:
+        if configured_root.is_symlink():
+            raise ManagedStoreConfigurationError(
+                "STORE_ROOT_SYMLINK",
+                "Configured managed-store root must not be a symbolic link.",
+            )
+        if not configured_root.exists():
+            missing: list[Path] = []
+            candidate = configured_root
+            while not candidate.exists():
+                missing.append(candidate)
+                candidate = candidate.parent
+            for directory in reversed(missing):
+                try:
+                    directory.mkdir(mode=DIRECTORY_MODE)
+                    os.chmod(directory, DIRECTORY_MODE, follow_symlinks=False)
+                except OSError as exc:
+                    raise ManagedStoreConfigurationError(
+                        "STORE_ROOT_CREATE_FAILED",
+                        "Configured managed-store root could not be created.",
+                    ) from exc
+        if configured_root.is_symlink():
+            raise ManagedStoreConfigurationError(
+                "STORE_ROOT_SYMLINK",
+                "Configured managed-store root must not be a symbolic link.",
+            )
+        if not configured_root.is_dir():
+            raise ManagedStoreConfigurationError(
+                "STORE_ROOT_NOT_DIRECTORY",
+                "Configured managed-store root must be a directory.",
+            )
+        return configured_root.resolve(strict=True)
+
+    @staticmethod
+    def storage_key(digest: str) -> str:
+        """Return the canonical logical key for one validated digest."""
+        ManagedObjectIdentity(digest, 0)
+        return f"{LOGICAL_KEY_PREFIX}{digest}"
+
+    @staticmethod
+    def _parse_storage_key(storage_key: str) -> str:
+        value = str(storage_key)
+        if value.startswith(LOGICAL_KEY_PREFIX):
+            digest = value.removeprefix(LOGICAL_KEY_PREFIX)
+            try:
+                ManagedObjectIdentity(digest, 0)
+            except ValueError as exc:
+                raise ManagedStoreError(
+                    "INVALID_STORAGE_KEY",
+                    "Managed storage key is malformed.",
+                ) from exc
+            return digest
+        parts = PurePosixPath(value).parts
+        if (
+            len(parts) == 4
+            and parts[0] == "sha256"
+            and len(parts[1]) == 2
+            and len(parts[2]) == 2
+        ):
+            digest = parts[3]
+            try:
+                ManagedObjectIdentity(digest, 0)
+            except ValueError as exc:
+                raise ManagedStoreError(
+                    "INVALID_STORAGE_KEY",
+                    "Legacy managed storage key is malformed.",
+                ) from exc
+            if parts[1] == digest[:2] and parts[2] == digest[2:4]:
+                return digest
+        raise ManagedStoreError(
+            "INVALID_STORAGE_KEY",
+            "Managed storage key is malformed.",
+        )
+
+    @staticmethod
+    def _validate_directory_permissions(
+        directory_stat: os.stat_result,
+        *,
+        temporary: bool,
+    ) -> None:
+        if not stat.S_ISDIR(directory_stat.st_mode):
+            raise ManagedStoreConfigurationError(
+                "STORE_ROOT_NOT_DIRECTORY",
+                "Managed-store directory is not a directory.",
+            )
+        if directory_stat.st_uid != os.geteuid():
+            raise ManagedStoreConfigurationError(
+                "STORE_ROOT_OWNER_INVALID",
+                "Managed-store directories must be owned by the runtime user.",
+            )
+        mode = stat.S_IMODE(directory_stat.st_mode)
+        allowed = TEMP_DIRECTORY_MODE if temporary else 0o755
+        if mode & ~allowed or mode & 0o022 or mode & 0o700 != 0o700:
+            raise ManagedStoreConfigurationError(
+                "STORE_ROOT_MODE_INVALID",
+                "Managed-store directory permissions are unsafe.",
+            )
+
+    @staticmethod
+    def _validate_file_permissions(file_stat: os.stat_result) -> None:
+        if (
+            file_stat.st_uid != os.geteuid()
+            or stat.S_IMODE(file_stat.st_mode) & ~FILE_MODE
+        ):
+            raise ManagedStoreError(
+                "MANAGED_OBJECT_PERMISSION_INVALID",
+                "Managed object permissions are unsafe.",
+            )
+
+    @staticmethod
+    def _object_os_error(exc: OSError, *, operation: str) -> ManagedStoreError:
+        if exc.errno in {errno.EACCES, errno.EPERM}:
+            return ManagedStoreError(
+                "MANAGED_OBJECT_PERMISSION_INVALID",
+                f"Managed-store {operation} was denied.",
+            )
+        return ManagedStoreError(
+            (
+                "MANAGED_STORE_TRANSIENT_IO"
+                if exc.errno in TRANSIENT_ERRNOS
+                else "MANAGED_STORE_IO_ERROR"
+            ),
+            f"Managed-store {operation} failed.",
+            transient=exc.errno in TRANSIENT_ERRNOS,
+        )

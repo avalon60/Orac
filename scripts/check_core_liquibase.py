@@ -9,13 +9,21 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import json
 import re
 from pathlib import Path
 import sys
 import xml.etree.ElementTree as ET
 
 
-CORE_SCHEMAS = ("orac_core", "orac_api", "orac_code", "orac_apx_pub", "orac")
+CORE_SCHEMAS = (
+    "orac_core",
+    "orac_api",
+    "orac_code",
+    "orac_plugin",
+    "orac_apx_pub",
+    "orac",
+)
 APEX_SCHEMA_DIRS = {"orac_ws", "orac_apps"}
 HARD_OBJECT_DIRS = {
     "table",
@@ -73,6 +81,12 @@ FORCE_VIEW_PATTERN = re.compile(
 )
 GRANT_ON_CORE_PATTERN = re.compile(
     r"\bgrant\s+[^;]+?\s+on\s+orac_core\.([a-z][a-z0-9_]*)\s+to\s+([a-z][a-z0-9_]*)\b",
+    re.IGNORECASE,
+)
+GRANT_GRANTEE_PATTERN = re.compile(
+    r"\bgrant\s+[^;]+?\s+on\s+"
+    r"[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\s+to\s+"
+    r"([a-z][a-z0-9_]*)\b",
     re.IGNORECASE,
 )
 PROHIBITED_CORE_GRANT_GRANTEES = {
@@ -379,6 +393,48 @@ def validate_prohibited_core_grants(root: Path, reachable: set[Path]) -> list[st
     return issues
 
 
+def declared_plugin_schemas(root: Path) -> set[str]:
+    """Return plugin-owned schema names declared by repository manifests."""
+    schemas: set[str] = set()
+    for manifest_path in sorted((root / "plugins").glob("*.json")):
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        database = manifest.get("database") or {}
+        for declaration in database.get("schemas") or []:
+            if not isinstance(declaration, dict):
+                continue
+            schema_name = str(declaration.get("schema_name") or "").lower()
+            if re.fullmatch(r"[a-z][a-z0-9_]*", schema_name):
+                schemas.add(schema_name)
+    return schemas
+
+
+def validate_core_grants_to_plugin_schemas(
+    root: Path,
+    reachable: set[Path],
+) -> list[str]:
+    """Reject core changelog grants to optional plugin-owned schemas."""
+    plugin_schemas = declared_plugin_schemas(root)
+    issues: list[str] = []
+    for path in sorted(reachable):
+        if not path.exists():
+            continue
+        text = sql_without_line_comments(
+            path.read_text(encoding="utf-8", errors="replace")
+        )
+        for match in GRANT_GRANTEE_PATTERN.finditer(text):
+            grantee = match.group(1).lower()
+            if grantee in plugin_schemas:
+                issues.append(
+                    f"{path.relative_to(root)}: core changelog grants to optional "
+                    f"plugin schema {grantee}; apply approved incoming grants "
+                    "through host-mediated plugin provisioning"
+                )
+    return issues
+
+
 def validate_core_table_dependency_closure(root: Path, reachable: set[Path]) -> list[str]:
     """Validate API-layer dependency closure for active ORAC_CORE tables."""
     issues: list[str] = []
@@ -497,6 +553,7 @@ def run_checks(root: Path) -> list[str]:
         issues.extend(validate_sql_file(path, resolved_root))
 
     issues.extend(validate_core_table_dependency_closure(resolved_root, reachable))
+    issues.extend(validate_core_grants_to_plugin_schemas(resolved_root, reachable))
 
     for path in sorted(expected - reachable):
         issues.append(

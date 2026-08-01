@@ -15,8 +15,14 @@ select req.ingestion_request_id,
        ver.content_sha256 as revision_content_sha256,
        ver.content_uri,
        ver.mime_type,
+       ver.source_format_code,
        ver.original_filename,
        ext.extraction_id,
+       ext.text_sha256 as normalised_text_sha256,
+       ext.output_mime_type,
+       ext.extractor_code,
+       ext.extractor_version,
+       ext.extractor_metadata_json,
        chs.chunk_set_id,
        chn.chunk_id,
        chn.chunk_no,
@@ -25,6 +31,18 @@ select req.ingestion_request_id,
        chn.token_count,
        chn.content_sha256 as chunk_content_sha256,
        chn.chunk_text,
+       chn.chunk_metadata_json,
+       (
+         select json_arrayagg(
+                  tag.tag_code
+                  order by link.tag_order
+                  returning clob
+                )
+           from orac_api.knowledge_document_version_tags_v link
+           join orac_api.knowledge_tags_v tag
+             on tag.knowledge_tag_id = link.knowledge_tag_id
+          where link.document_version_id = ver.document_version_id
+       ) classification_tags_json,
        emb.chunk_embedding_id,
        emb.embedding_vector,
        emb.embedding_text_sha256,

@@ -131,6 +131,95 @@ as
     return l_value;
   end normalised_sha256;
 
+  function equivalent_storage_key(
+    p_storage_key   in varchar2,
+    p_content_sha256 in varchar2
+  ) return boolean
+  is
+  begin
+    return p_storage_key = 'sha256:' || p_content_sha256
+        or p_storage_key = 'sha256/'
+                           || substr(p_content_sha256, 1, 2)
+                           || '/'
+                           || substr(p_content_sha256, 3, 2)
+                           || '/'
+                           || p_content_sha256;
+  end equivalent_storage_key;
+
+  function text_differs(
+    p_left  in varchar2,
+    p_right in varchar2
+  ) return boolean
+  is
+  begin
+    return (p_left <> p_right)
+        or (p_left is null and p_right is not null)
+        or (p_left is not null and p_right is null);
+  end text_differs;
+
+  function number_differs(
+    p_left  in number,
+    p_right in number
+  ) return boolean
+  is
+  begin
+    return (p_left <> p_right)
+        or (p_left is null and p_right is not null)
+        or (p_left is not null and p_right is null);
+  end number_differs;
+
+  function timestamp_differs(
+    p_left  in timestamp with time zone,
+    p_right in timestamp with time zone
+  ) return boolean
+  is
+  begin
+    return (p_left <> p_right)
+        or (p_left is null and p_right is not null)
+        or (p_left is not null and p_right is null);
+  end timestamp_differs;
+
+  procedure calculate_utf8_identity(
+    p_text      in clob,
+    p_sha256    out varchar2,
+    p_byte_size out number
+  )
+  is
+    l_blob         blob;
+    l_destination_offset integer := 1;
+    l_source_offset integer := 1;
+    l_language_context integer := dbms_lob.default_lang_ctx;
+    l_warning      integer;
+  begin
+    dbms_lob.createtemporary(l_blob, true);
+    dbms_lob.converttoblob(
+      dest_lob     => l_blob,
+      src_clob     => p_text,
+      amount       => dbms_lob.lobmaxsize,
+      dest_offset  => l_destination_offset,
+      src_offset   => l_source_offset,
+      blob_csid    => nls_charset_id('AL32UTF8'),
+      lang_context => l_language_context,
+      warning      => l_warning
+    );
+    if l_warning <> dbms_lob.no_warning
+    then
+      raise_application_error(-20427, 'Normalised Markdown UTF-8 conversion failed.');
+    end if;
+    p_byte_size := dbms_lob.getlength(l_blob);
+    p_sha256 := lower(
+      rawtohex(dbms_crypto.hash(l_blob, dbms_crypto.hash_sh256))
+    );
+    dbms_lob.freetemporary(l_blob);
+  exception
+    when others then
+      if dbms_lob.istemporary(l_blob) = 1
+      then
+        dbms_lob.freetemporary(l_blob);
+      end if;
+      raise;
+  end calculate_utf8_identity;
+
   procedure assert_lease(
     p_ingestion_request_id in number,
     p_owner_id             in varchar2,
@@ -168,7 +257,16 @@ as
     p_processing_profile_code  in varchar2 default null,
     p_processing_instruction   in clob default null,
     p_source_modified_on       in timestamp with time zone default null,
-    p_legacy_parent_source_reference in varchar2 default null
+    p_legacy_parent_source_reference in varchar2 default null,
+    p_source_format_code        in varchar2 default null,
+    p_normalised_markdown       in clob default null,
+    p_normalised_text_sha256    in varchar2 default null,
+    p_normalised_byte_size      in number default null,
+    p_output_mime_type          in varchar2 default null,
+    p_extractor_code            in varchar2 default null,
+    p_extractor_version         in varchar2 default null,
+    p_extraction_metadata_json  in clob default null,
+    p_classification_tags_json  in clob default null
   ) return number
   is
     l_source_type          varchar2(50);
@@ -182,14 +280,48 @@ as
     l_source_object_id     number;
     l_document_id          number;
     l_document_version_id  number;
+    l_existing_source_object_id number;
+    l_existing_content_uri varchar2(1000);
+    l_existing_mime_type varchar2(255);
+    l_existing_original_filename varchar2(500);
+    l_existing_byte_size number;
+    l_existing_source_modified_on timestamp with time zone;
+    l_existing_source_format_code varchar2(50);
     l_ingestion_request_id number;
     l_legacy_count         number;
     l_existing_count       number;
+    l_extraction_id        number;
+    l_tag_array            json_array_t;
+    l_tag_count            number;
+    l_tag_code             varchar2(100);
+    l_tag_id               number;
+    l_duplicate_count      number;
+    l_existing_tag_count   number;
+    l_tag_order            number;
+    l_existing_extraction_count number;
+    l_existing_text_sha256 varchar2(64);
+    l_existing_extractor_code varchar2(100);
+    l_existing_extractor_version varchar2(100);
+    l_calculated_text_sha256 varchar2(64);
+    l_calculated_byte_size number;
+    l_metadata_object        json_object_t;
+    l_metadata_keys          json_key_list;
+    type tag_seen_type is table of boolean index by varchar2(100);
+    l_seen_tags tag_seen_type;
+    l_tag_element json_element_t;
+    l_tag_link_row orac_api.knowledge_document_version_tags_v%rowtype;
   begin
     l_source_type := upper(normalised_required(p_source_type, 'Source type'));
     l_source_reference := normalised_required(p_source_reference, 'Source reference');
     l_content_sha256 := normalised_sha256(p_content_sha256, 'Content SHA-256');
     l_content_uri := normalised_required(p_content_uri, 'Content URI');
+    if l_content_uri <> 'sha256:' || l_content_sha256
+    then
+      raise_application_error(
+        -20428,
+        'New managed content must use its canonical logical storage key.'
+      );
+    end if;
     l_mime_type := normalised_required(p_mime_type, 'MIME type');
     l_scope_type := normalised_scope(p_target_scope_type);
     l_scope_key := normalised_required(p_target_scope_key, 'Target scope key');
@@ -201,6 +333,74 @@ as
     if p_byte_size is null or p_byte_size < 0
     then
       raise_application_error(-20404, 'Byte size must be zero or greater.');
+    end if;
+    if p_normalised_markdown is not null
+    then
+      if p_normalised_byte_size is null
+         or p_normalised_byte_size > 52428800
+         or dbms_lob.getlength(p_normalised_markdown) = 0
+      then
+        raise_application_error(-20410, 'Normalised Markdown is empty or oversized.');
+      end if;
+      if p_output_mime_type <> 'text/markdown; charset=utf-8'
+      then
+        raise_application_error(-20411, 'Normalised output MIME type is invalid.');
+      end if;
+      if p_extractor_code not in (
+           'dropbox_markdown_passthrough',
+           'dropbox_text_to_markdown',
+           'dropbox_pandoc_gfm'
+         ) or p_extractor_version <> '1'
+      then
+        raise_application_error(-20412, 'Extractor identity is invalid.');
+      end if;
+      if dbms_lob.getlength(p_extraction_metadata_json) > 16384
+      then
+        raise_application_error(-20413, 'Extraction metadata is oversized.');
+      end if;
+      calculate_utf8_identity(
+        p_normalised_markdown,
+        l_calculated_text_sha256,
+        l_calculated_byte_size
+      );
+      if l_calculated_text_sha256 <> p_normalised_text_sha256
+         or l_calculated_byte_size <> p_normalised_byte_size
+      then
+        raise_application_error(-20423, 'Normalised Markdown identity is inconsistent.');
+      end if;
+      begin
+        l_metadata_object := json_object_t.parse(p_extraction_metadata_json);
+        if l_metadata_object.get_number('schema_version') <> 1
+           or l_metadata_object.get_string('producer_plugin_id') <> 'drop_box'
+           or l_metadata_object.get_string('source_format') <> p_source_format_code
+        then
+          raise_application_error(-20424, 'Extraction metadata does not match the handoff.');
+        end if;
+        l_metadata_keys := l_metadata_object.get_keys;
+        for l_index in 1 .. l_metadata_keys.count
+        loop
+          if l_metadata_keys(l_index) not in (
+               'schema_version',
+               'producer_plugin_id',
+               'drop_location_id',
+               'drop_job_id',
+               'source_format',
+               'converter_name',
+               'converter_version',
+               'fixed_option_identifiers'
+             )
+          then
+            raise_application_error(-20425, 'Extraction metadata contains unsupported fields.');
+          end if;
+        end loop;
+      exception
+        when others then
+          if sqlcode between -20425 and -20424
+          then
+            raise;
+          end if;
+          raise_application_error(-20426, 'Extraction metadata must be a valid object.');
+      end;
     end if;
 
     begin
@@ -307,20 +507,49 @@ as
     end;
 
     begin
-      select document_version_id
-        into l_document_version_id
+      select document_version_id,
+             source_object_id,
+             content_uri,
+             mime_type,
+             original_filename,
+             byte_size,
+             source_modified_on,
+             source_format_code
+        into l_document_version_id,
+             l_existing_source_object_id,
+             l_existing_content_uri,
+             l_existing_mime_type,
+             l_existing_original_filename,
+             l_existing_byte_size,
+             l_existing_source_modified_on,
+             l_existing_source_format_code
         from orac_api.knowledge_document_versions_v
        where document_id = l_document_id
          and content_sha256 = l_content_sha256
          for update;
 
-      update orac_api.knowledge_document_versions_v
-         set content_uri        = l_content_uri,
-             mime_type          = l_mime_type,
-             original_filename  = p_original_filename,
-             byte_size          = p_byte_size,
-             source_modified_on = coalesce(p_source_modified_on, source_modified_on)
-       where document_version_id = l_document_version_id;
+      if l_existing_source_object_id <> l_source_object_id
+         or not equivalent_storage_key(
+                  l_existing_content_uri,
+                  l_content_sha256
+                )
+         or text_differs(l_existing_mime_type, l_mime_type)
+         or text_differs(l_existing_original_filename, p_original_filename)
+         or number_differs(l_existing_byte_size, p_byte_size)
+         or timestamp_differs(
+              l_existing_source_modified_on,
+              p_source_modified_on
+            )
+         or text_differs(
+              l_existing_source_format_code,
+              p_source_format_code
+            )
+      then
+        raise_application_error(
+          -20429,
+          'Immutable raw document-version metadata conflicts with the existing version.'
+        );
+      end if;
     exception
       when no_data_found then
         insert into orac_api.knowledge_document_versions_v (
@@ -332,6 +561,7 @@ as
           original_filename,
           byte_size,
           source_modified_on
+          , source_format_code
         )
         values (
           l_document_id,
@@ -342,6 +572,7 @@ as
           p_original_filename,
           p_byte_size,
           p_source_modified_on
+          , p_source_format_code
         )
         returning document_version_id into l_document_version_id;
     end;
@@ -349,6 +580,153 @@ as
     update orac_api.knowledge_documents_v
        set current_document_version_id = l_document_version_id
      where document_id = l_document_id;
+
+    if p_normalised_markdown is not null
+    then
+      select count(*),
+             min(text_sha256),
+             min(extractor_code),
+             min(extractor_version)
+        into l_existing_extraction_count,
+             l_existing_text_sha256,
+             l_existing_extractor_code,
+             l_existing_extractor_version
+        from orac_api.knowledge_extractions_v
+       where document_version_id = l_document_version_id;
+      if l_existing_extraction_count > 0
+         and (
+           l_existing_text_sha256 <> p_normalised_text_sha256
+           or l_existing_extractor_code <> p_extractor_code
+           or l_existing_extractor_version <> p_extractor_version
+         )
+      then
+        raise_application_error(
+          -20420,
+          'Idempotency conflict: canonical extraction does not match.'
+        );
+      end if;
+      l_extraction_id := create_extraction(
+        l_document_version_id,
+        p_extractor_code,
+        p_extractor_version,
+        p_normalised_markdown,
+        p_normalised_text_sha256,
+        p_output_mime_type,
+        p_extraction_metadata_json
+      );
+    end if;
+
+    if p_classification_tags_json is not null
+    then
+      if dbms_lob.getlength(p_classification_tags_json) > 4096
+      then
+        raise_application_error(-20414, 'Classification tag JSON is oversized.');
+      end if;
+      begin
+        l_tag_array := json_array_t.parse(p_classification_tags_json);
+      exception when others then
+        raise_application_error(-20415, 'Classification tags must be a JSON array.');
+      end;
+      l_tag_count := l_tag_array.get_size;
+      if l_source_type = 'DROP_BOX' and l_tag_count = 0
+      then
+        raise_application_error(-20416, 'Drop Box requires at least one classification tag.');
+      end if;
+      if l_tag_count > 10
+      then
+        raise_application_error(-20417, 'No more than ten classification tags are allowed.');
+      end if;
+      if l_tag_count > 0
+      then
+        for l_index in 0 .. l_tag_count - 1
+        loop
+          l_tag_element := l_tag_array.get(l_index);
+          if l_tag_element is null or not l_tag_element.is_string
+          then
+            raise_application_error(-20418, 'Classification tag entries must be strings.');
+          end if;
+          l_tag_code := l_tag_array.get_string(l_index);
+          if l_seen_tags.exists(l_tag_code)
+          then
+            raise_application_error(-20421, 'Duplicate classification tags are not allowed.');
+          end if;
+          l_seen_tags(l_tag_code) := true;
+          select count(*)
+            into l_duplicate_count
+            from orac_api.knowledge_tags_v
+           where tag_code = l_tag_code
+             and active_yn = 'Y';
+          if l_duplicate_count <> 1
+          then
+            raise_application_error(-20419, 'Classification tag is unknown or inactive.');
+          end if;
+        end loop;
+      end if;
+
+      select count(*)
+        into l_existing_tag_count
+        from orac_api.knowledge_document_version_tags_v
+       where document_version_id = l_document_version_id;
+      if l_existing_tag_count not in (0, l_tag_count)
+      then
+        raise_application_error(
+          -20422,
+          'Idempotency conflict: classification tags do not match.'
+        );
+      end if;
+
+      l_tag_order := 0;
+      for tag_rec in (
+        select tag.knowledge_tag_id
+          from orac_api.knowledge_tags_v tag
+          join json_table(
+                 p_classification_tags_json,
+                 '$[*]' columns (
+                   tag_code varchar2(100) path '$'
+                 )
+               ) selected
+            on selected.tag_code = tag.tag_code
+         order by tag.sort_order, tag.tag_code
+      )
+      loop
+        l_tag_order := l_tag_order + 1;
+        if l_existing_tag_count = 0
+        then
+          l_tag_link_row.document_version_id := l_document_version_id;
+          l_tag_link_row.knowledge_tag_id := tag_rec.knowledge_tag_id;
+          l_tag_link_row.tag_order := l_tag_order;
+          orac_api.knowledge_document_version_tags_tapi.ins(l_tag_link_row);
+        else
+          select count(*)
+            into l_duplicate_count
+            from orac_api.knowledge_document_version_tags_v
+           where document_version_id = l_document_version_id
+             and knowledge_tag_id = tag_rec.knowledge_tag_id
+             and tag_order = l_tag_order;
+          if l_duplicate_count <> 1
+          then
+            raise_application_error(
+              -20422,
+              'Idempotency conflict: classification tags do not match.'
+            );
+          end if;
+        end if;
+      end loop;
+    elsif p_processing_profile_code is not null
+    then
+      begin
+        select knowledge_tag_id into l_tag_id
+          from orac_api.knowledge_tags_v
+         where tag_code = p_processing_profile_code and active_yn = 'Y';
+        l_tag_link_row.document_version_id := l_document_version_id;
+        l_tag_link_row.knowledge_tag_id := l_tag_id;
+        l_tag_link_row.tag_order := 1;
+        orac_api.knowledge_document_version_tags_tapi.ins(l_tag_link_row);
+      exception when dup_val_on_index then null;
+               when no_data_found then
+                 raise_application_error(-20419, 'Legacy profile tag is unknown or inactive.');
+      end;
+    end if;
 
     begin
       select ingestion_request_id
@@ -459,22 +837,31 @@ as
   is
     l_document_id         number;
     l_document_version_id number;
+    l_source_modified_on  timestamp with time zone;
   begin
-    select document_id,
-           document_version_id
+    select req.document_id,
+           req.document_version_id,
+           docver.source_modified_on
       into l_document_id,
-           l_document_version_id
-      from orac_api.knowledge_ingestion_requests_v
-     where ingestion_request_id = p_ingestion_request_id;
+           l_document_version_id,
+           l_source_modified_on
+      from orac_api.knowledge_ingestion_requests_v req
+      join orac_api.knowledge_document_versions_v docver
+        on docver.document_version_id = req.document_version_id
+     where req.ingestion_request_id = p_ingestion_request_id;
+
+    if timestamp_differs(l_source_modified_on, p_source_modified_on)
+    then
+      raise_application_error(
+        -20429,
+        'Immutable raw document-version metadata conflicts with the request.'
+      );
+    end if;
 
     update orac_api.knowledge_documents_v
        set title = coalesce(p_title, title),
            current_document_version_id = l_document_version_id
      where document_id = l_document_id;
-
-    update orac_api.knowledge_document_versions_v
-       set source_modified_on = coalesce(p_source_modified_on, source_modified_on)
-     where document_version_id = l_document_version_id;
 
     return l_document_version_id;
   end ensure_document_version;
@@ -484,7 +871,9 @@ as
     p_extractor_code      in varchar2,
     p_extractor_version   in varchar2,
     p_extracted_text      in clob,
-    p_text_sha256         in varchar2
+    p_text_sha256         in varchar2,
+    p_output_mime_type    in varchar2 default null,
+    p_extractor_metadata_json in clob default null
   ) return number
   is
     l_extraction_id number;
@@ -502,6 +891,8 @@ as
         extractor_version,
         text_sha256,
         extracted_text
+        , output_mime_type
+        , extractor_metadata_json
       )
       values (
         p_document_version_id,
@@ -509,6 +900,8 @@ as
         l_extractor_version,
         l_text_sha256,
         p_extracted_text
+        , p_output_mime_type
+        , p_extractor_metadata_json
       )
       returning extraction_id into l_extraction_id;
     exception
@@ -575,7 +968,8 @@ as
     p_span_end        in number,
     p_chunk_text      in clob,
     p_token_count     in number,
-    p_content_sha256  in varchar2
+    p_content_sha256  in varchar2,
+    p_chunk_metadata_json in clob default null
   ) return number
   is
     l_chunk_id number;
@@ -591,6 +985,7 @@ as
         chunk_text,
         token_count,
         content_sha256
+        , chunk_metadata_json
       )
       values (
         p_chunk_set_id,
@@ -600,6 +995,7 @@ as
         p_chunk_text,
         p_token_count,
         l_content_sha256
+        , p_chunk_metadata_json
       )
       returning chunk_id into l_chunk_id;
     exception

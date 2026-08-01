@@ -139,6 +139,9 @@ as
                when plugin.install_status = 'success'
                 and plugin.configuration_status in ('success', 'not_required')
                 and plugin.dependency_status in ('success', 'not_required')
+                and plugin.command_prerequisite_status in (
+                      'not_applicable', 'success', 'degraded'
+                    )
                 and plugin.database_status in (
                       'deployed', 'already_deployed', 'not_required', 'optional_missing'
                     )

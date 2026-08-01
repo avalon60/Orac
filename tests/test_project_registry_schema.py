@@ -71,22 +71,17 @@ class ProjectRegistrySchemaTests(unittest.TestCase):
         self.assertIn("unique (project_code)", unique_sql)
         self.assertIn("^[A-Z][A-Z0-9_]{1,99}$", code_check_sql)
 
-    def test_project_registry_is_not_seeded_from_dropbox_target_keys(self) -> None:
-        """Drop Box routing keys are historical values, not project evidence."""
-        self.assertFalse(
-            (
-                PROJECT_ROOT
-                / "resources/db/schema/orac_core/seed_data/project_registry.sql"
-            ).exists()
-        )
+    def test_project_registry_seed_is_canonical_not_adapter_inferred(self) -> None:
+        """The system project is explicit and independent of Drop Box data."""
+        seed_text = self._read(
+            "resources/db/schema/orac_core/seed_data/project_registry.sql"
+        ).lower()
 
-        seed_text = "\n".join(
-            path.read_text(encoding="utf-8", errors="ignore").lower()
-            for path in (
-                PROJECT_ROOT / "resources/db/schema/orac_core/seed_data"
-            ).glob("*.sql")
-        )
-        self.assertNotIn("project_registry", seed_text)
+        self.assertIn("merge into orac_core.project_registry", seed_text)
+        self.assertIn("'orac_core' project_code", seed_text)
+        self.assertIn("'orac core' display_name", seed_text)
+        self.assertIn("insert into orac_core.knowledge_scopes", seed_text)
+        self.assertIn("'project'", seed_text)
         self.assertNotIn("orac_dropbox.drop_location", seed_text)
         self.assertNotIn("target_scope_key", seed_text)
 
@@ -100,10 +95,18 @@ class ProjectRegistrySchemaTests(unittest.TestCase):
         self.assertNotIn("select distinct target_scope_key", registry_text)
         self.assertNotIn("insert into orac_api.project_registry_v select", registry_text)
         self.assertNotIn("insert into orac_core.project_registry select", registry_text)
-        self.assertNotIn("merge into orac_core.project_registry", registry_text)
         self.assertNotIn("merge into orac_api.project_registry_v", registry_text)
-        self.assertNotIn("'orac_core' project_code", registry_text)
-        self.assertNotIn("select 'orac_core'", registry_text)
+
+    def test_orac_docs_scope_migration_uses_the_api_layer(self) -> None:
+        migration = self._read(
+            "resources/db/schema/orac_code/post_install/orac_docs_scope.sql"
+        ).lower()
+
+        self.assertIn("update orac_api.knowledge_source_objects_v", migration)
+        self.assertIn("parent_source_reference like 'orac_docs:%'", migration)
+        self.assertIn("project.project_code = 'orac_core'", migration)
+        self.assertIn("plugin.plugin_id = 'drop_box'", migration)
+        self.assertNotIn("update orac_core.knowledge_source_objects", migration)
 
     def test_project_registry_api_and_code_views_use_supported_layers(self) -> None:
         api_view = self._read(

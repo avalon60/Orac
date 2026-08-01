@@ -8,6 +8,7 @@ select loc.drop_location_id,
        loc.path,
        loc.allowed_extensions,
        loc.ignore_patterns,
+       loc.classification_tags_json,
        loc.recursive_yn,
        loc.max_file_size_mb,
        loc.stability_seconds

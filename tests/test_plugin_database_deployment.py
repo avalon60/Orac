@@ -33,6 +33,7 @@ from model.plugin_database_deployment import _payload_objects_deployed_sql
 from model.plugin_database_deployment import expected_deployment_objects
 from model.plugin_database_deployment import scan_protected_schema_references
 from model.plugin_database_deployment import validate_declared_database_schemas
+from model.plugin_database_deployment import validate_plugin_bridge_api_catalog
 from model.plugin_database_deployment import validate_plugin_liquibase_changelog
 from model.plugin_database_deployment import validate_schema_payload
 from model.plugin_routing.discovery import PluginDiscovery
@@ -111,8 +112,14 @@ class _FakeLogger:
 
 
 class _FakeCursor:
-    def __init__(self, *, user_exists: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        user_exists: bool = False,
+        bridge_object_exists: bool = True,
+    ) -> None:
         self.user_exists = user_exists
+        self.bridge_object_exists = bridge_object_exists
         self.statements: list[tuple[str, dict | None]] = []
 
     def __enter__(self):
@@ -125,6 +132,8 @@ class _FakeCursor:
         self.statements.append((sql, binds))
 
     def fetchone(self) -> tuple[int]:
+        if self.statements and "from dba_objects" in self.statements[-1][0]:
+            return (1 if self.bridge_object_exists else 0,)
         return (1 if self.user_exists else 0,)
 
 
@@ -153,6 +162,7 @@ def _database(
     *,
     required: bool = True,
     deployment: dict | None = None,
+    bridge_api_dependencies: list[str] | None = None,
 ) -> dict:
     result = {
         "required": required,
@@ -165,6 +175,7 @@ def _database(
                 "minimum_version": "1.0.0",
                 "version_check": {"enabled": False},
                 "backup": {"include": True, "export_mode": "schema"},
+                "bridge_api_dependencies": bridge_api_dependencies or [],
             }
         ],
     }
@@ -342,6 +353,114 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
                 manifest.database_deployment.controller,
                 "db/liquibase/pluginController.xml",
             )
+
+    def test_database_bridge_api_dependencies_are_loaded(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest(
+                    "alpha",
+                    database=_database(
+                        bridge_api_dependencies=["knowledge_scope_validation"]
+                    ),
+                ),
+            )
+
+            manifest = _discover_one(plugins_dir)
+
+            self.assertEqual(
+                manifest.database_schemas[0].bridge_api_dependencies,
+                ("knowledge_scope_validation",),
+            )
+
+    def test_database_bridge_api_dependencies_reject_unknown_and_duplicate_ids(
+        self,
+    ) -> None:
+        for dependencies, expected in (
+            (["unknown_api"], "unknown value"),
+            (
+                ["knowledge_scope_validation", "knowledge_scope_validation"],
+                "duplicate value",
+            ),
+        ):
+            with self.subTest(dependencies=dependencies):
+                with tempfile.TemporaryDirectory() as temp_plugins:
+                    plugins_dir = Path(temp_plugins)
+                    _write_plugin(
+                        plugins_dir,
+                        "alpha",
+                        _manifest(
+                            "alpha",
+                            database=_database(
+                                bridge_api_dependencies=dependencies
+                            ),
+                        ),
+                    )
+
+                    manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+                    self.assertEqual(manifests, [])
+                    self.assertEqual(len(errors), 1)
+                    self.assertIn(expected, errors[0])
+
+    def test_database_bridge_api_dependencies_reject_cross_schema_duplicates(
+        self,
+    ) -> None:
+        database = _database(
+            bridge_api_dependencies=["knowledge_scope_validation"]
+        )
+        duplicate_schema = dict(database["schemas"][0])
+        duplicate_schema["schema_name"] = "orac_hb"
+        database["schemas"].append(duplicate_schema)
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest("alpha", database=database),
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(manifests, [])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("duplicate value across schemas", errors[0])
+
+    def test_database_schema_declaration_rejects_orac_plugin_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest(
+                    "alpha",
+                    database=_database(schema_name="orac_plugin"),
+                ),
+            )
+
+            manifests, errors = PluginDiscovery(plugins_dir).discover()
+
+            self.assertEqual(manifests, [])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("protected Orac schema", errors[0])
+
+    def test_bridge_api_catalog_rejects_non_grantable_privilege(self) -> None:
+        catalog = {
+            "unsafe_bridge": {
+                "owner": "ORAC_PLUGIN",
+                "object_name": "UNSAFE_API",
+                "object_type": "PACKAGE",
+                "privilege": "SELECT",
+            }
+        }
+
+        with self.assertRaisesRegex(
+            PluginDatabaseDeploymentError,
+            "not grantable",
+        ):
+            validate_plugin_bridge_api_catalog(catalog)
 
     def test_plugin_without_database_section_behaves_as_before(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache:
@@ -858,7 +977,12 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             _write_plugin(
                 plugins_dir,
                 "alpha",
-                _manifest("alpha", database=_database()),
+                _manifest(
+                    "alpha",
+                    database=_database(
+                        bridge_api_dependencies=["knowledge_scope_validation"]
+                    ),
+                ),
                 with_schema=True,
                 ddl=(
                     "create or replace package body orac_ha.example_api as\n"
@@ -876,6 +1000,83 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
                 manifest.plugin_dir / "db" / "schema",
                 manifest=manifest,
             )
+
+    def test_plugin_security_rejects_undeclared_shared_runtime_api_reference(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest("alpha", database=_database()),
+                with_schema=True,
+                ddl=(
+                    "create or replace package body orac_ha.example_api as\n"
+                    "  function status return varchar2 is begin\n"
+                    "    return orac_plugin.knowledge_scope_validation_api.scope_status(\n"
+                    "      'PLUGIN', 'alpha'\n"
+                    "    );\n"
+                    "  end;\n"
+                    "end;\n"
+                ),
+            )
+            manifest = _discover_one(plugins_dir)
+
+            with self.assertRaises(PluginDatabaseDeploymentError) as exc:
+                validate_schema_payload(
+                    manifest.plugin_dir / "db" / "schema",
+                    manifest=manifest,
+                )
+
+            self.assertIn("is not declared", str(exc.exception))
+
+    def test_plugin_security_rejects_unapproved_shared_runtime_object(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest("alpha", database=_database()),
+                with_schema=True,
+                ddl=(
+                    "create or replace view orac_ha.example_v as\n"
+                    "select * from orac_plugin.internal_table;\n"
+                ),
+            )
+            manifest = _discover_one(plugins_dir)
+
+            with self.assertRaises(PluginDatabaseDeploymentError) as exc:
+                validate_schema_payload(
+                    manifest.plugin_dir / "db" / "schema",
+                    manifest=manifest,
+                )
+
+            self.assertIn("not in the host bridge API catalogue", str(exc.exception))
+
+    def test_plugin_security_rejects_unused_bridge_api_dependency(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest(
+                    "alpha",
+                    database=_database(
+                        bridge_api_dependencies=["knowledge_scope_validation"]
+                    ),
+                ),
+                with_schema=True,
+            )
+            manifest = _discover_one(plugins_dir)
+
+            with self.assertRaises(PluginDatabaseDeploymentError) as exc:
+                validate_schema_payload(
+                    manifest.plugin_dir / "db" / "schema",
+                    manifest=manifest,
+                )
+
+            self.assertIn("requests unused", str(exc.exception))
 
     def test_plugin_security_rejects_ddl_against_shared_runtime_schema(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:
@@ -1152,9 +1353,10 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
                 with_schema=True,
             )
             runner = _FakeRunner(already_deployed=True)
+            provisioner = _FakeProvisioner()
             deployer = PluginDatabaseDeployer(
                 runner=runner,
-                schema_provisioner=_FakeProvisioner(),
+                schema_provisioner=provisioner,
                 archive_root=Path(temp_archive),
                 clock=lambda: datetime(2026, 6, 3, 12, 0, tzinfo=UTC),
             )
@@ -1171,7 +1373,58 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertEqual(report["deployment_status"]["alpha"], "already_deployed")
             self.assertIsNotNone(manager.get_manifest("alpha"))
             self.assertEqual(len(runner.already_deployed_calls), 1)
+            self.assertEqual(len(provisioner.calls), 1)
             self.assertEqual(len(runner.calls), 0)
+
+    def test_bridge_grants_are_reconciled_before_plugin_payload_execution(
+        self,
+    ) -> None:
+        events: list[str] = []
+
+        class OrderedProvisioner(_FakeProvisioner):
+            def ensure_schemas(self, manifest) -> None:
+                events.append("bridge-grants")
+                super().ensure_schemas(manifest)
+
+        class OrderedRunner(_FakeRunner):
+            def deploy(self, *, manifest, archive) -> None:
+                events.append("plugin-payload")
+                super().deploy(manifest=manifest, archive=archive)
+
+        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_archive:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest(
+                    "alpha",
+                    database=_database(
+                        bridge_api_dependencies=["knowledge_scope_validation"]
+                    ),
+                ),
+                with_schema=True,
+                ddl=(
+                    "create or replace package body orac_ha.example_api as\n"
+                    "  function status return varchar2 is begin\n"
+                    "    return orac_plugin.knowledge_scope_validation_api.scope_status(\n"
+                    "      'PLUGIN', 'alpha'\n"
+                    "    );\n"
+                    "  end;\n"
+                    "end;\n"
+                ),
+            )
+            manifest = _discover_one(plugins_dir)
+            deployer = PluginDatabaseDeployer(
+                runner=OrderedRunner(),
+                schema_provisioner=OrderedProvisioner(),
+                archive_root=Path(temp_archive),
+                clock=lambda: datetime(2026, 6, 3, 12, 0, tzinfo=UTC),
+            )
+
+            result = deployer.deploy_if_needed(manifest)
+
+            self.assertEqual(result.status, "deployed")
+            self.assertEqual(events, ["bridge-grants", "plugin-payload"])
 
     def test_existing_valid_payload_objects_skip_stale_checksum_redeployment(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache, tempfile.TemporaryDirectory() as temp_archive:
@@ -1208,7 +1461,7 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertEqual(len(runner.already_deployed_calls), 1)
             self.assertEqual(len(runner.payload_objects_deployed_calls), 1)
             self.assertEqual(len(runner.mark_payload_deployed_calls), 1)
-            self.assertEqual(len(provisioner.calls), 0)
+            self.assertEqual(len(provisioner.calls), 1)
             self.assertEqual(len(runner.calls), 0)
 
     def test_liquibase_stale_checksum_runs_update_even_when_objects_exist(self) -> None:
@@ -1288,6 +1541,137 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertIn("grant create table to ORAC_HA", statements)
             self.assertTrue(session.committed)
             self.assertTrue(session.closed)
+
+    def test_schema_provisioner_applies_catalogued_bridge_api_grant(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest(
+                    "alpha",
+                    database=_database(
+                        bridge_api_dependencies=["knowledge_scope_validation"]
+                    ),
+                ),
+                with_schema=True,
+                ddl=(
+                    "create or replace package body orac_ha.example_api as\n"
+                    "  function status return varchar2 is begin\n"
+                    "    return orac_plugin.knowledge_scope_validation_api.scope_status(\n"
+                    "      'PLUGIN', 'alpha'\n"
+                    "    );\n"
+                    "  end;\n"
+                    "end;\n"
+                ),
+            )
+            manifest = _discover_one(plugins_dir)
+            cursor = _FakeCursor(user_exists=False, bridge_object_exists=True)
+            session = _FakeSession(cursor)
+            provisioner = PluginDatabaseSchemaProvisioner(
+                session_factory=lambda: session,
+                password_factory=lambda: "generated-password",
+            )
+
+            provisioner.ensure_schemas(manifest)
+
+            statements = [statement for statement, _binds in cursor.statements]
+            create_index = next(
+                index
+                for index, statement in enumerate(statements)
+                if statement.startswith("create user ORAC_HA")
+            )
+            grant_index = statements.index(
+                "grant EXECUTE on "
+                "ORAC_PLUGIN.KNOWLEDGE_SCOPE_VALIDATION_API to ORAC_HA"
+            )
+            self.assertLess(create_index, grant_index)
+            self.assertNotIn("grant option", statements[grant_index].lower())
+
+            expected = expected_deployment_objects(
+                manifest=manifest,
+                schema_payload_path=manifest.plugin_dir / "db" / "schema",
+            )
+            self.assertIn(
+                {
+                    "owner": "ORAC_PLUGIN",
+                    "object_name": "KNOWLEDGE_SCOPE_VALIDATION_API",
+                    "privilege": "EXECUTE",
+                    "grantee": "ORAC_HA",
+                },
+                expected["grants"],
+            )
+
+    def test_schema_provisioner_reconciles_catalogued_grant_idempotently(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest(
+                    "alpha",
+                    database=_database(
+                        bridge_api_dependencies=["knowledge_scope_validation"]
+                    ),
+                ),
+                with_schema=True,
+                ddl=(
+                    "create or replace package body orac_ha.example_api as\n"
+                    "  function status return varchar2 is begin\n"
+                    "    return orac_plugin.knowledge_scope_validation_api.scope_status(\n"
+                    "      'PLUGIN', 'alpha'\n"
+                    "    );\n"
+                    "  end;\n"
+                    "end;\n"
+                ),
+            )
+            manifest = _discover_one(plugins_dir)
+            cursor = _FakeCursor(user_exists=True, bridge_object_exists=True)
+            provisioner = PluginDatabaseSchemaProvisioner(
+                session_factory=lambda: _FakeSession(cursor),
+            )
+
+            provisioner.ensure_schemas(manifest)
+            provisioner.ensure_schemas(manifest)
+
+            grants = [
+                statement
+                for statement, _binds in cursor.statements
+                if statement
+                == "grant EXECUTE on "
+                "ORAC_PLUGIN.KNOWLEDGE_SCOPE_VALIDATION_API to ORAC_HA"
+            ]
+            self.assertEqual(len(grants), 2)
+
+    def test_schema_provisioner_rejects_missing_or_invalid_bridge_api_object(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest(
+                    "alpha",
+                    database=_database(
+                        bridge_api_dependencies=["knowledge_scope_validation"]
+                    ),
+                ),
+                with_schema=True,
+            )
+            manifest = _discover_one(plugins_dir)
+            cursor = _FakeCursor(user_exists=True, bridge_object_exists=False)
+            provisioner = PluginDatabaseSchemaProvisioner(
+                session_factory=lambda: _FakeSession(cursor),
+            )
+
+            with self.assertRaisesRegex(
+                PluginDatabaseDeploymentError,
+                "missing or invalid",
+            ):
+                provisioner.ensure_schemas(manifest)
 
 
 if __name__ == "__main__":

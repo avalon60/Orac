@@ -6,4 +6,5 @@
   <include file="../../schema/constraint_other/drp_loc_checks.sql" relativeToChangelogFile="true"/>
   <include file="../../schema/constraint_other/drp_prf_checks.sql" relativeToChangelogFile="true"/>
   <include file="../../schema/constraint_other/drp_job_status_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/drp_job_retry_status_ck.sql" relativeToChangelogFile="true"/>
 </databaseChangeLog>

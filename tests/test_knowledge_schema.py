@@ -7,14 +7,18 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import re
 import unittest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CORE_SCHEMA = PROJECT_ROOT / "resources" / "db" / "schema" / "orac_core"
 CORE_CODE_SCHEMA = PROJECT_ROOT / "resources" / "db" / "schema" / "orac_code"
+CORE_API_SCHEMA = PROJECT_ROOT / "resources" / "db" / "schema" / "orac_api"
+PLUGIN_BRIDGE_SCHEMA = PROJECT_ROOT / "resources" / "db" / "schema" / "orac_plugin"
 ORAC_SCHEMA = PROJECT_ROOT / "resources" / "db" / "schema" / "orac"
 DROP_BOX_SCHEMA = PROJECT_ROOT / "plugins" / "drop_box" / "db" / "schema"
+DROP_BOX_MANIFEST = PROJECT_ROOT / "plugins" / "drop_box.json"
 
 
 class KnowledgeSchemaTests(unittest.TestCase):
@@ -49,11 +53,7 @@ class KnowledgeSchemaTests(unittest.TestCase):
 
     def test_scope_xor_checks_are_present(self) -> None:
         text = (
-            (
-                CORE_SCHEMA
-                / "constraint_other"
-                / "knowledge_scope_privilege_checks.sql"
-            )
+            (CORE_SCHEMA / "constraint_other" / "knowledge_scope_privilege_checks.sql")
             .read_text(encoding="utf-8")
             .lower()
         )
@@ -83,7 +83,11 @@ class KnowledgeSchemaTests(unittest.TestCase):
             "embedding_model_id",
             "chunk_embedding_id",
             "knowledge_scope_id",
+            "knowledge_tag_id",
+            "knowledge_document_version_tag_id",
         }
+        for constraint_name in ("kn_docvtag_docver_fk", "kn_docvtag_tag_fk"):
+            self.assertIn(f"constraint {constraint_name} foreign key", fk_text)
         for column_name in id_columns - parent_or_identity - deliberate_non_fk:
             self.assertRegex(
                 fk_text,
@@ -218,6 +222,100 @@ class KnowledgeSchemaTests(unittest.TestCase):
             "unknown, inactive, or not runtime eligible",
         ):
             self.assertIn(token, package_sql)
+
+    def test_raw_document_version_metadata_is_immutable_on_reuse(self) -> None:
+        package_sql = (
+            (CORE_CODE_SCHEMA / "package_body" / "knowledge_ingestion_api.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        trigger_sql = (
+            (CORE_SCHEMA / "trigger" / "kn_knowledge_bu.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+
+        self.assertIn(
+            "l_content_uri <> 'sha256:' || l_content_sha256",
+            package_sql,
+        )
+        self.assertIn("equivalent_storage_key(", package_sql)
+        self.assertIn("immutable raw document-version metadata", package_sql)
+        self.assertNotIn(
+            "update orac_api.knowledge_document_versions_v",
+            package_sql,
+        )
+        self.assertIn(
+            "before update or delete on orac_core.knowledge_document_versions",
+            trigger_sql,
+        )
+        for column_name in (
+            "document_version_id",
+            "document_id",
+            "source_object_id",
+            "content_sha256",
+            "content_uri",
+            "mime_type",
+            "original_filename",
+            "byte_size",
+            "source_modified_on",
+            "source_format_code",
+            "created_by",
+            "created_on",
+        ):
+            self.assertIn(
+                f"updating('{column_name}')",
+                trigger_sql,
+            )
+        self.assertIn("if deleting", trigger_sql)
+
+    def test_tag_writes_use_tapi_and_plugin_validation_bridge(self) -> None:
+        ingestion_sql = (
+            (CORE_CODE_SCHEMA / "package_body" / "knowledge_ingestion_api.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        api_grants = (
+            (CORE_API_SCHEMA / "grant" / "knowledge_tag_api_access.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        bridge_body = (
+            (PLUGIN_BRIDGE_SCHEMA / "package_body" / "knowledge_tag_validation_api.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        drop_box_admin = (
+            (DROP_BOX_SCHEMA / "package_body" / "drop_box_admin_api.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+
+        self.assertIn(
+            "orac_api.knowledge_document_version_tags_tapi.ins",
+            ingestion_sql,
+        )
+        self.assertNotIn(
+            "grant select, insert, update, delete on orac_api.knowledge_tags_v",
+            api_grants,
+        )
+        self.assertIn("orac_code.knowledge_tag_lov_v", bridge_body)
+        self.assertIn(
+            "orac_plugin.knowledge_tag_validation_api.canonical_active_tags",
+            drop_box_admin,
+        )
+        manifest = json.loads(DROP_BOX_MANIFEST.read_text(encoding="utf-8"))
+        dependencies = manifest["database"]["schemas"][0][
+            "bridge_api_dependencies"
+        ]
+        self.assertIn("knowledge_tag_validation", dependencies)
+        self.assertFalse(
+            (
+                PLUGIN_BRIDGE_SCHEMA
+                / "grant"
+                / "knowledge_tag_validation_to_dropbox.sql"
+            ).exists()
+        )
 
 
 if __name__ == "__main__":

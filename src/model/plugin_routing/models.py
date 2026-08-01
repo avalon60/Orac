@@ -32,6 +32,17 @@ PluginActionType = Literal[
 
 
 @dataclass(frozen=True)
+class PluginCommandDependency:
+    """Represents one safe, declarative external-command prerequisite."""
+
+    command: str
+    version_specifier: str
+    required: bool
+    purpose: str
+    install_hint: str
+
+
+@dataclass(frozen=True)
 class PluginConfigKey:
     """Represents a plugin configuration key declared by a manifest."""
 
@@ -143,6 +154,7 @@ class PluginDatabaseSchema:
     minimum_version: str
     version_check: PluginDatabaseVersionCheck
     backup: PluginDatabaseBackup | None = None
+    bridge_api_dependencies: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -293,6 +305,7 @@ class PluginManifest:
     ui: PluginUi | None = None
     apex_apps: tuple[PluginApexApp, ...] = ()
     python_dependencies: tuple[str, ...] = ()
+    command_dependencies: tuple[PluginCommandDependency, ...] = ()
     config_path: Path | None = None
 
 

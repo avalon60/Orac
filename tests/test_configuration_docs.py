@@ -1,4 +1,5 @@
 """Tests for canonical configuration and documentation coverage."""
+
 # Author: Clive Bostock
 # Date: 06-Jun-2026
 # Description: Verifies orac.ini coverage and local links in canonical docs.
@@ -11,7 +12,6 @@ from pathlib import Path
 import re
 from urllib.parse import unquote
 
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = PROJECT_ROOT / "resources/config/orac.ini"
 CONFIG_DOC_PATH = PROJECT_ROOT / "docs/configuration.md"
@@ -21,8 +21,12 @@ CANONICAL_DOC_PATHS = (
     PROJECT_ROOT / "docs/installation.md",
     CONFIG_DOC_PATH,
     PROJECT_ROOT / "docs/plugins.md",
+    PROJECT_ROOT / "docs/document-ingestion.md",
     PROJECT_ROOT / "plugins/home_assistant/docs/home-assistant.md",
     PROJECT_ROOT / "plugins/home_assistant/docs/home-assistant-data-lifecycle.md",
+    PROJECT_ROOT / "plugins/drop_box/README.md",
+    PROJECT_ROOT / "plugins/drop_box/docs/drop-box.md",
+    PROJECT_ROOT / "plugins/drop_box/docs/drop-box-data-lifecycle.md",
     PROJECT_ROOT / "docs/retrieval.md",
     PROJECT_ROOT / "docs/voice-pipeline.md",
     PROJECT_ROOT / "docs/apex-administration.md",
@@ -44,11 +48,7 @@ def _configured_parameters() -> set[tuple[str, str]]:
     )
     parser.optionxform = str
     parser.read(CONFIG_PATH, encoding="utf-8")
-    return {
-        (section, key)
-        for section in parser.sections()
-        for key in parser[section]
-    }
+    return {(section, key) for section in parser.sections() for key in parser[section]}
 
 
 def _documented_parameters() -> list[tuple[str, str]]:
@@ -96,9 +96,8 @@ def test_canonical_documentation_links_resolve() -> None:
     missing: list[str] = []
     for source in CANONICAL_DOC_PATHS:
         text = source.read_text(encoding="utf-8")
-        raw_targets = (
-            MARKDOWN_LINK_PATTERN.findall(text)
-            + HTML_LINK_PATTERN.findall(text)
+        raw_targets = MARKDOWN_LINK_PATTERN.findall(text) + HTML_LINK_PATTERN.findall(
+            text
         )
         for raw_target in raw_targets:
             target = _local_link_target(source, raw_target)

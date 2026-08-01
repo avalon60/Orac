@@ -19,6 +19,49 @@ create or replace package body orac_dropbox.drop_box_admin_api as
     end if;
   end assert_yn;
 
+  function canonical_classification_tags(
+    p_classification_tags_json in clob,
+    p_legacy_profile           in varchar2
+  ) return clob
+  is
+    l_json          clob;
+    l_canonical     clob;
+    l_count         number;
+    l_active_count  number;
+  begin
+    l_json := coalesce(
+      p_classification_tags_json,
+      to_clob('["' || lower(trim(p_legacy_profile)) || '"]')
+    );
+    if dbms_lob.getlength(l_json) > 4096
+    then
+      raise_application_error(-20015, 'Classification tags exceed 4 KiB.');
+    end if;
+    l_canonical := orac_plugin.knowledge_tag_validation_api.canonical_active_tags(
+      l_json,
+      'Y'
+    );
+    select count(*), count(prf.profile_code)
+      into l_count, l_active_count
+      from json_table(
+             l_canonical,
+             '$[*]' columns (
+               tag_code varchar2(100 char) path '$'
+             )
+           ) selected
+      left join orac_dropbox.drop_processing_profile prf
+        on prf.profile_code = selected.tag_code
+       and prf.active_yn = 'Y';
+    if l_active_count <> l_count
+    then
+      raise_application_error(
+        -20017,
+        'Choose one to ten distinct active classification tags.'
+      );
+    end if;
+    return l_canonical;
+  end canonical_classification_tags;
+
   procedure validate_location(
     p_drop_location_id   in orac_dropbox.drop_location.drop_location_id%type,
     p_location_code      in orac_dropbox.drop_location.location_code%type,
@@ -34,9 +77,13 @@ create or replace package body orac_dropbox.drop_box_admin_api as
     p_stability_seconds  in orac_dropbox.drop_location.stability_seconds%type
   )
   is
-    l_duplicate_count number;
-    l_profile_count   number;
-    l_scope_status    varchar2(100 char);
+    c_orac_home_prefix constant varchar2(20 char) := '$' || '{ORAC_HOME}/';
+    l_duplicate_count  number;
+    l_path             orac_dropbox.drop_location.path%type;
+    l_path_is_absolute boolean;
+    l_path_uses_home   boolean;
+    l_profile_count    number;
+    l_scope_status     varchar2(100 char);
   begin
     if not regexp_like(coalesce(p_location_code, ' '), '^[A-Z][A-Z0-9_]{1,99}$')
     then
@@ -60,10 +107,27 @@ create or replace package body orac_dropbox.drop_box_admin_api as
       raise_application_error(-20004, 'Enabled drop locations require a source path.');
     end if;
 
-    if trim(p_path) is not null
-       and not regexp_like(trim(p_path), '^/[^[:cntrl:]]+$')
+    l_path := trim(p_path);
+    if l_path is not null
     then
-      raise_application_error(-20005, 'Source path must be an absolute filesystem path.');
+      l_path_is_absolute := regexp_like(l_path, '^/[^[:cntrl:]]+$');
+      l_path_uses_home :=
+        substr(l_path, 1, length(c_orac_home_prefix)) = c_orac_home_prefix
+        and length(l_path) > length(c_orac_home_prefix)
+        and not regexp_like(l_path, '[[:cntrl:]]');
+
+      if (not l_path_is_absolute and not l_path_uses_home)
+         or (
+           instr(l_path, '$' || '{') > 0
+           and not l_path_uses_home
+         )
+         or regexp_like(l_path, '(^|/)\.\.(/|$)')
+      then
+        raise_application_error(
+          -20005,
+          'Source path must be absolute or start with the ORAC_HOME token and must not contain traversal.'
+        );
+      end if;
     end if;
 
     if lower(coalesce(p_target_scope_type, ' ')) not in ('plugin', 'project')
@@ -152,9 +216,18 @@ create or replace package body orac_dropbox.drop_box_admin_api as
     p_max_file_size_mb       in orac_dropbox.drop_location.max_file_size_mb%type,
     p_stability_seconds      in orac_dropbox.drop_location.stability_seconds%type,
     p_drop_location_id       out orac_dropbox.drop_location.drop_location_id%type
+    ,
+    p_classification_tags_json in orac_dropbox.drop_location.classification_tags_json%type default null
   )
   is
+    l_classification_tags clob;
+    l_primary_profile orac_dropbox.drop_location.processing_profile%type;
   begin
+    l_classification_tags := canonical_classification_tags(
+      p_classification_tags_json,
+      p_processing_profile
+    );
+    l_primary_profile := json_value(l_classification_tags, '$[0]');
     validate_location(
       p_drop_location_id   => null,
       p_location_code      => p_location_code,
@@ -163,7 +236,7 @@ create or replace package body orac_dropbox.drop_box_admin_api as
       p_enabled_yn         => p_enabled_yn,
       p_target_scope_type  => p_target_scope_type,
       p_target_scope_key   => p_target_scope_key,
-      p_processing_profile => p_processing_profile,
+      p_processing_profile => l_primary_profile,
       p_recursive_yn       => p_recursive_yn,
       p_move_processed_yn  => p_move_processed_yn,
       p_max_file_size_mb   => p_max_file_size_mb,
@@ -186,7 +259,8 @@ create or replace package body orac_dropbox.drop_box_admin_api as
       processed_path,
       failed_path,
       max_file_size_mb,
-      stability_seconds
+      stability_seconds,
+      classification_tags_json
     ) values (
       upper(trim(p_location_code)),
       trim(p_display_name),
@@ -194,7 +268,7 @@ create or replace package body orac_dropbox.drop_box_admin_api as
       upper(p_enabled_yn),
       lower(trim(p_target_scope_type)),
       trim(p_target_scope_key),
-      lower(trim(p_processing_profile)),
+      l_primary_profile,
       p_processing_instruction,
       trim(p_allowed_extensions),
       trim(p_ignore_patterns),
@@ -203,7 +277,8 @@ create or replace package body orac_dropbox.drop_box_admin_api as
       trim(p_processed_path),
       trim(p_failed_path),
       p_max_file_size_mb,
-      p_stability_seconds
+      p_stability_seconds,
+      l_classification_tags
     )
     returning drop_location_id into p_drop_location_id;
   end create_location;
@@ -226,10 +301,18 @@ create or replace package body orac_dropbox.drop_box_admin_api as
     p_failed_path            in orac_dropbox.drop_location.failed_path%type,
     p_max_file_size_mb       in orac_dropbox.drop_location.max_file_size_mb%type,
     p_stability_seconds      in orac_dropbox.drop_location.stability_seconds%type,
-    p_row_version            in orac_dropbox.drop_location.row_version%type
+    p_row_version            in orac_dropbox.drop_location.row_version%type,
+    p_classification_tags_json in orac_dropbox.drop_location.classification_tags_json%type default null
   )
   is
+    l_classification_tags clob;
+    l_primary_profile orac_dropbox.drop_location.processing_profile%type;
   begin
+    l_classification_tags := canonical_classification_tags(
+      p_classification_tags_json,
+      p_processing_profile
+    );
+    l_primary_profile := json_value(l_classification_tags, '$[0]');
     validate_location(
       p_drop_location_id   => p_drop_location_id,
       p_location_code      => p_location_code,
@@ -238,7 +321,7 @@ create or replace package body orac_dropbox.drop_box_admin_api as
       p_enabled_yn         => p_enabled_yn,
       p_target_scope_type  => p_target_scope_type,
       p_target_scope_key   => p_target_scope_key,
-      p_processing_profile => p_processing_profile,
+      p_processing_profile => l_primary_profile,
       p_recursive_yn       => p_recursive_yn,
       p_move_processed_yn  => p_move_processed_yn,
       p_max_file_size_mb   => p_max_file_size_mb,
@@ -252,8 +335,9 @@ create or replace package body orac_dropbox.drop_box_admin_api as
            enabled_yn             = upper(p_enabled_yn),
            target_scope_type      = lower(trim(p_target_scope_type)),
            target_scope_key       = trim(p_target_scope_key),
-           processing_profile     = lower(trim(p_processing_profile)),
+           processing_profile     = l_primary_profile,
            processing_instruction = p_processing_instruction,
+           classification_tags_json = l_classification_tags,
            allowed_extensions     = trim(p_allowed_extensions),
            ignore_patterns        = trim(p_ignore_patterns),
            recursive_yn           = upper(p_recursive_yn),

@@ -69,6 +69,15 @@ class KnowledgeIngestionRepository:
         processing_instruction: str | None,
         source_modified_on: Any | None = None,
         legacy_parent_source_reference: str | None = None,
+        source_format_code: str | None = None,
+        normalised_markdown: str | None = None,
+        normalised_text_sha256: str | None = None,
+        normalised_byte_size: int | None = None,
+        output_mime_type: str | None = None,
+        extractor_code: str | None = None,
+        extractor_version: str | None = None,
+        extraction_metadata_json: str | None = None,
+        classification_tags_json: str | None = None,
     ) -> int:
         """Register a captured managed file and return its ingestion request id."""
         session = self._session_factory()
@@ -92,6 +101,15 @@ class KnowledgeIngestionRepository:
                         processing_instruction,
                         source_modified_on,
                         legacy_parent_source_reference,
+                        source_format_code,
+                        normalised_markdown,
+                        normalised_text_sha256,
+                        normalised_byte_size,
+                        output_mime_type,
+                        extractor_code,
+                        extractor_version,
+                        extraction_metadata_json,
+                        classification_tags_json,
                     ],
                 )
             session.commit()
@@ -144,7 +162,11 @@ class KnowledgeIngestionRepository:
                            req.original_filename,
                            req.byte_size,
                            req.source_modified_on
+                           , ext.extraction_id
+                           , ext.extracted_text
                       from orac_code.knowledge_ingestion_requests_v req
+                      left join orac_api.knowledge_extractions_v ext
+                        on ext.document_version_id = req.document_version_id
                      where req.ingestion_request_id = :request_id
                     """,
                     {"request_id": ingestion_request_id},
@@ -204,6 +226,14 @@ class KnowledgeIngestionRepository:
                                chunk.span_end,
                                chunk.chunk_content_sha256,
                                chunk.chunk_text,
+                               chunk.chunk_metadata_json,
+                               chunk.source_format_code,
+                               chunk.normalised_text_sha256,
+                               chunk.output_mime_type,
+                               chunk.extractor_code,
+                               chunk.extractor_version,
+                               chunk.extractor_metadata_json,
+                               chunk.classification_tags_json,
                                chunk.embedding_vector,
                                chunk.provider_code embedding_provider_code,
                                chunk.embedding_model_identifier,
@@ -325,6 +355,7 @@ class KnowledgeIngestionRepository:
         chunk_text: str,
         token_count: int,
         content_sha256: str,
+        metadata_json: str | None = None,
     ) -> int:
         """Insert or reuse one chunk row."""
         return int(
@@ -339,6 +370,7 @@ class KnowledgeIngestionRepository:
                     chunk_text,
                     token_count,
                     content_sha256,
+                    metadata_json,
                 ],
             )
         )

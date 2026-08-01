@@ -46,6 +46,11 @@ class KnowledgeGroundingPackBuilder:
                 "source_name": result.original_filename
                 or result.parent_source_reference
                 or result.source_reference,
+                "classification_tags": result.classification_tags,
+                "source_format_code": result.source_format_code,
+                "normalised_text_sha256": result.normalised_text_sha256,
+                "extractor_code": result.extractor_code,
+                "extractor_version": result.extractor_version,
             }
             chunks_by_source[source_key].append(result.chunk_id)
             evidence.append(

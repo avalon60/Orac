@@ -5,6 +5,12 @@
 # Description: Exposes managed capture and worker helpers for knowledge ingestion.
 
 from .capture import KnowledgeManagedFileCaptureService
+from .managed_store import KnowledgeManagedStore
+from .managed_store import ManagedObjectIdentity
+from .managed_store import ManagedStoreConfigurationError
+from .managed_store import ManagedStoreError
+from .managed_store import ManagedStoreWriteOutcome
+from .managed_store import ManagedStoreWriteResult
 from .models import DropBoxCaptureRequest
 from .models import KnowledgeGroundingPack
 from .models import KnowledgeRetrievalOutcome
@@ -32,6 +38,12 @@ __all__ = [
     "KnowledgeScopeResolution",
     "KnowledgeSearchResult",
     "KnowledgeIngestionService",
+    "KnowledgeManagedStore",
     "KnowledgeManagedFileCaptureService",
+    "ManagedObjectIdentity",
     "ManagedCaptureResult",
+    "ManagedStoreConfigurationError",
+    "ManagedStoreError",
+    "ManagedStoreWriteOutcome",
+    "ManagedStoreWriteResult",
 ]

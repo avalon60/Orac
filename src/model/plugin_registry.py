@@ -47,8 +47,11 @@ class PluginRegistryStore:
     _SELECT_COLUMNS = (
         "plugin_id, plugin_name, plugin_version, runtime_mode, manifest_hash, "
         "package_hash, install_source_type, install_source_ref, installed_path, "
-        "config_path, dependency_fingerprint, install_status, configuration_status, "
-        "dependency_status, database_status, readiness_status, enabled, "
+        "config_path, dependency_fingerprint, command_dependency_declarations, "
+        "install_status, configuration_status, "
+        "dependency_status, command_dependency_fingerprint, "
+        "command_prerequisite_status, command_dependency_report, "
+        "database_status, readiness_status, enabled, "
         "ui_icon_class, ui_accent_class, last_error_code, last_error_message, "
         "row_version"
     )
@@ -73,6 +76,8 @@ class PluginRegistryStore:
                     entitlements_summary=oracledb.DB_TYPE_JSON,
                     database_schemas_summary=oracledb.DB_TYPE_JSON,
                     dependency_declarations=oracledb.DB_TYPE_JSON,
+                    command_dependency_declarations=oracledb.DB_TYPE_JSON,
+                    command_dependency_report=oracledb.DB_TYPE_JSON,
                 )
                 cursor.execute(
                     _UPSERT_BLOCK,
@@ -102,6 +107,18 @@ class PluginRegistryStore:
                             values.get("dependency_declarations")
                         ),
                         "dependency_fingerprint": values["dependency_fingerprint"],
+                        "command_dependency_declarations": _json_bind_value(
+                            values.get("command_dependency_declarations")
+                        ),
+                        "command_dependency_fingerprint": values.get(
+                            "command_dependency_fingerprint", "0" * 64
+                        ),
+                        "command_prerequisite_status": values.get(
+                            "command_prerequisite_status", "not_applicable"
+                        ),
+                        "command_dependency_report": _json_bind_value(
+                            values.get("command_dependency_report")
+                        ),
                         "install_status": values["install_status"],
                         "configuration_status": values["configuration_status"],
                         "dependency_status": values["dependency_status"],
@@ -129,6 +146,44 @@ class PluginRegistryStore:
         )
         return rows[0] if rows else None
 
+    def record_command_status(
+        self,
+        plugin_id: str,
+        status: str,
+        report_json: str,
+    ) -> None:
+        """Persist a fresh install, check, service, or conversion probe result."""
+        session = self._connect()
+        try:
+            with session.cursor() as cursor:
+                cursor.setinputsizes(
+                    command_dependency_report=oracledb.DB_TYPE_JSON,
+                )
+                cursor.execute(
+                    """
+                    begin
+                      orac_code.plugin_registry_api
+                        .update_command_prerequisite_status(
+                          :plugin_id,
+                          :command_prerequisite_status,
+                          :command_dependency_report
+                        );
+                    end;
+                    """,
+                    {
+                        "plugin_id": plugin_id,
+                        "command_prerequisite_status": status,
+                        "command_dependency_report": _json_bind_value(report_json),
+                    },
+                )
+            session.commit()
+        except Exception as exc:
+            raise PluginRegistryError(
+                f"Unable to record command prerequisite status: {exc}"
+            ) from exc
+        finally:
+            _close_quietly(session)
+
     def list_all(self) -> list[dict[str, Any]]:
         """Return all current plugin registry records."""
         return self._query(
@@ -148,6 +203,8 @@ class PluginRegistryStore:
                 "and install_status = 'success' "
                 "and configuration_status in ('success', 'not_required') "
                 "and dependency_status in ('success', 'not_required') "
+                "and command_prerequisite_status in "
+                "('not_applicable', 'success', 'degraded') "
                 "and database_status in "
                 "('deployed', 'already_deployed', 'not_required', "
                 "'optional_missing') "
@@ -452,6 +509,10 @@ begin
     p_ui_accent_class          => :ui_accent_class,
     p_dependency_declarations  => :dependency_declarations,
     p_dependency_fingerprint   => :dependency_fingerprint,
+    p_command_dependency_declarations => :command_dependency_declarations,
+    p_command_dependency_fingerprint  => :command_dependency_fingerprint,
+    p_command_prerequisite_status     => :command_prerequisite_status,
+    p_command_dependency_report       => :command_dependency_report,
     p_install_status           => :install_status,
     p_configuration_status     => :configuration_status,
     p_dependency_status        => :dependency_status,

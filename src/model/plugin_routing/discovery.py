@@ -33,6 +33,9 @@ from model.plugin_routing.models import (
     PluginUiStatusProvider,
     PluginUiSurface,
 )
+from model.plugin_command_dependencies import PluginCommandDependencyError
+from model.plugin_command_dependencies import normalise_command_dependencies
+from model.plugin_database_deployment import PLUGIN_BRIDGE_API_CATALOG
 from model.plugin_database_deployment import PROTECTED_ORAC_SCHEMAS
 from model.plugin_dependencies import PluginDependencyError
 from model.plugin_dependencies import normalise_requirements
@@ -107,6 +110,7 @@ OPTIONAL_FIELDS = {
     "ui",
     "apex_apps",
     "python_dependencies",
+    "command_dependencies",
 }
 ALLOWED_FIELDS = REQUIRED_FIELDS | OPTIONAL_FIELDS
 
@@ -264,6 +268,12 @@ class PluginDiscovery:
             )
         except PluginDependencyError as exc:
             raise PluginManifestError(f"python_dependencies: {exc}") from exc
+        try:
+            command_dependencies = normalise_command_dependencies(
+                data.get("command_dependencies", [])
+            )
+        except PluginCommandDependencyError as exc:
+            raise PluginManifestError(f"command_dependencies: {exc}") from exc
 
         manifest_hash = hashlib.sha256(manifest_text.encode("utf-8")).hexdigest()
 
@@ -298,6 +308,7 @@ class PluginDiscovery:
             ui=ui,
             apex_apps=tuple(apex_apps),
             python_dependencies=python_dependencies,
+            command_dependencies=command_dependencies,
         )
 
     def _load_routing(
@@ -911,6 +922,7 @@ class PluginDiscovery:
             raise PluginManifestError("database.schemas must be a list")
 
         result: list[PluginDatabaseSchema] = []
+        bridge_dependency_schemas: dict[str, str] = {}
         for index, item in enumerate(value):
             item_name = f"database.schemas[{index}]"
             if not isinstance(item, dict):
@@ -921,7 +933,11 @@ class PluginDiscovery:
                 "managed_by",
                 "minimum_version",
             }
-            optional_fields = {"version_check", "backup"}
+            optional_fields = {
+                "version_check",
+                "backup",
+                "bridge_api_dependencies",
+            }
             self._reject_unknown_fields(item, required_fields | optional_fields, item_name)
             self._require_fields(item, required_fields, item_name)
 
@@ -935,6 +951,38 @@ class PluginDiscovery:
                 raise PluginManifestError(
                     f"{item_name}.schema_name must match ^[a-z][a-z0-9_]*$"
                 )
+
+            bridge_api_dependencies = self._require_string_list(
+                item.get("bridge_api_dependencies", []),
+                f"{item_name}.bridge_api_dependencies",
+            )
+            duplicate_dependencies = sorted(
+                dependency
+                for dependency in set(bridge_api_dependencies)
+                if bridge_api_dependencies.count(dependency) > 1
+            )
+            if duplicate_dependencies:
+                raise PluginManifestError(
+                    f"{item_name}.bridge_api_dependencies contains duplicate "
+                    f"value(s): {', '.join(duplicate_dependencies)}"
+                )
+            unknown_dependencies = sorted(
+                set(bridge_api_dependencies) - set(PLUGIN_BRIDGE_API_CATALOG)
+            )
+            if unknown_dependencies:
+                raise PluginManifestError(
+                    f"{item_name}.bridge_api_dependencies contains unknown "
+                    f"value(s): {', '.join(unknown_dependencies)}"
+                )
+            for dependency in bridge_api_dependencies:
+                previous_schema = bridge_dependency_schemas.get(dependency)
+                if previous_schema is not None:
+                    raise PluginManifestError(
+                        "database.schemas bridge_api_dependencies contains "
+                        "duplicate value across schemas: "
+                        f"{dependency} ({previous_schema}, {schema_name})"
+                    )
+                bridge_dependency_schemas[dependency] = schema_name
 
             result.append(
                 PluginDatabaseSchema(
@@ -954,6 +1002,7 @@ class PluginDiscovery:
                         f"{item_name}.version_check",
                     ),
                     backup=self._load_database_backup(item.get("backup"), f"{item_name}.backup"),
+                    bridge_api_dependencies=tuple(bridge_api_dependencies),
                 )
             )
         return result

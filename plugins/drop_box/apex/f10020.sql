@@ -1215,11 +1215,30 @@ wwv_flow_imp_page.create_page_plug(
 ,p_region_template_options=>'#DEFAULT#:t-ContentBlock--padded'
 ,p_plug_template=>2322115667525957943
 ,p_plug_display_sequence=>10
-,p_plug_source=>'Drop Box locations are folders watched by Orac. Each location routes dropped files to a plugin or project target and applies a processing profile before later ingestion steps pick up the queued jobs.'
+,p_plug_source=>'Drop Box locations are folders watched by Orac. Each location routes dropped files to a plugin or project target, converts supported documents to canonical Markdown, and records descriptive classification tags.'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'expand_shortcuts', 'N',
   'output_as', 'HTML',
   'show_line_breaks', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(34600100000000109)
+,p_plug_name=>'Document Conversion Capability'
+,p_region_template_options=>'#DEFAULT#:t-Alert--defaultIcons:t-Alert--warning'
+,p_plug_template=>2040683448887306517
+,p_plug_display_sequence=>15
+,p_function_body_language=>'PLSQL'
+,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'begin',
+'  for capability in (',
+'    select capability_message',
+'      from orac_code.plugin_prerequisite_status_v',
+'     where plugin_id = ''drop_box''',
+'  ) loop',
+'    htp.p(apex_escape.html(capability.capability_message));',
+'  end loop;',
+'end;'))
+,p_plug_source_type=>'NATIVE_DYNAMIC_CONTENT'
 );
 wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(34600100000000102)
@@ -1244,6 +1263,10 @@ wwv_flow_imp_page.create_page_plug(
 '           then ''SKIPPED''',
 '           when job.status_code in (''failed'', ''quarantined'')',
 '           then ''FAILED_ATTENTION''',
+'           when job.status_code = ''deferred_prerequisite''',
+'           then ''PREREQUISITE_DEFERRED''',
+'           when job.status_code = ''conversion_retry_wait''',
+'           then ''CONVERSION_RETRY''',
 '           when job.status_code in (''queued'', ''processing'')',
 '           then ''AWAITING_HANDOFF''',
 '           when job.knowledge_ingestion_request_id is null',
@@ -1266,6 +1289,8 @@ wwv_flow_imp_page.create_page_plug(
 '           when detected_on >= systimestamp - interval ''7'' day then drop_job_id',
 '         end) recent_job_count,',
 '         count(distinct case when lifecycle_bucket = ''AWAITING_HANDOFF'' then drop_job_id end) awaiting_handoff_count,',
+'         count(distinct case when lifecycle_bucket = ''PREREQUISITE_DEFERRED'' then drop_job_id end) prerequisite_deferred_count,',
+'         count(distinct case when lifecycle_bucket = ''CONVERSION_RETRY'' then drop_job_id end) conversion_retry_count,',
 '         count(distinct case when lifecycle_bucket = ''CORE_IN_PROGRESS'' then drop_job_id end) core_in_progress_count,',
 '         count(distinct case when lifecycle_bucket = ''SEARCHABLE'' then drop_job_id end) searchable_count,',
 '         count(distinct case when lifecycle_bucket = ''FAILED_ATTENTION'' then drop_job_id end) failed_attention_count,',
@@ -1287,6 +1312,8 @@ wwv_flow_imp_page.create_page_plug(
 '       coalesce(roll.total_job_count, 0) total_job_count,',
 '       coalesce(roll.recent_job_count, 0) recent_job_count,',
 '       coalesce(roll.awaiting_handoff_count, 0) awaiting_handoff_count,',
+'       coalesce(roll.prerequisite_deferred_count, 0) prerequisite_deferred_count,',
+'       coalesce(roll.conversion_retry_count, 0) conversion_retry_count,',
 '       coalesce(roll.core_in_progress_count, 0) core_in_progress_count,',
 '       coalesce(roll.searchable_count, 0) searchable_count,',
 '       coalesce(roll.failed_attention_count, 0) failed_attention_count,',
@@ -1493,6 +1520,30 @@ wwv_flow_imp_page.create_worksheet_column(
 ,p_use_as_row_header=>'N'
 );
 wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600100000000235)
+,p_db_column_name=>'PREREQUISITE_DEFERRED_COUNT'
+,p_display_order=>23
+,p_column_identifier=>'W'
+,p_column_label=>'Prerequisite Deferred'
+,p_column_type=>'NUMBER'
+,p_heading_alignment=>'RIGHT'
+,p_tz_dependent=>'N'
+,p_help_text=>'Jobs waiting for a declared converter prerequisite. These are re-probed without consuming a conversion attempt.'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600100000000236)
+,p_db_column_name=>'CONVERSION_RETRY_COUNT'
+,p_display_order=>24
+,p_column_identifier=>'X'
+,p_column_label=>'Conversion Retry'
+,p_column_type=>'NUMBER'
+,p_heading_alignment=>'RIGHT'
+,p_tz_dependent=>'N'
+,p_help_text=>'Jobs waiting for a bounded retry after a converter failure or timeout.'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600100000000213)
 ,p_db_column_name=>'LATEST_ACTIVITY_ON'
 ,p_display_order=>17
@@ -1568,7 +1619,7 @@ wwv_flow_imp_page.create_worksheet_rpt(
 ,p_report_alias=>'346011'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'DROP_LOCATION_ID:LOCATION_CODE:DISPLAY_NAME:TARGET_SCOPE_TYPE:TARGET_SCOPE_KEY:PROFILE_CODE:ENABLED_LABEL:SOURCE_PATH:STABLE_SECONDS:TOTAL_JOB_COUNT:RECENT_JOB_COUNT:AWAITING_HANDOFF_COUNT:CORE_IN_PROGRESS_COUNT:SEARCHABLE_COUNT:FAILED_ATTENTION_COUNT:SKIPPED_COUNT:LATEST_ACTIVITY_ON:EXAMPLE_LABEL:TOGGLE_LABEL:VIEW_ACTIVITY_LOCATION_ID'
+,p_report_columns=>'DROP_LOCATION_ID:LOCATION_CODE:DISPLAY_NAME:TARGET_SCOPE_TYPE:TARGET_SCOPE_KEY:PROFILE_CODE:ENABLED_LABEL:SOURCE_PATH:STABLE_SECONDS:TOTAL_JOB_COUNT:RECENT_JOB_COUNT:AWAITING_HANDOFF_COUNT:PREREQUISITE_DEFERRED_COUNT:CONVERSION_RETRY_COUNT:CORE_IN_PROGRESS_COUNT:SEARCHABLE_COUNT:FAILED_ATTENTION_COUNT:SKIPPED_COUNT:LATEST_ACTIVITY_ON:EXAMPLE_LABEL:TOGGLE_LABEL:VIEW_ACTIVITY_LOCATION_ID'
 ||':'
 ,p_sort_column_1=>'LOCATION_CODE'
 ,p_sort_direction_1=>'ASC'
@@ -1774,7 +1825,7 @@ wwv_flow_imp_page.create_page_plug(
 );
 wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(34600200000000105)
-,p_plug_name=>'Processing Instructions'
+,p_plug_name=>'Ingestion Notes'
 ,p_region_template_options=>'#DEFAULT#'
 ,p_plug_template=>4501440665235496320
 ,p_plug_display_sequence=>40
@@ -1911,7 +1962,7 @@ wwv_flow_imp_page.create_page_item(
 ,p_field_template=>1609122147107268652
 ,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
-,p_inline_help_text=>'Absolute folder path watched by the scanner. The scanner validates existence and permissions at runtime.'
+,p_inline_help_text=>'Absolute folder path watched by the scanner, or ${ORAC_HOME}/ followed by a project-relative path. The scanner validates existence and permissions at runtime.'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'disabled', 'N',
   'submit_when_enter_pressed', 'N',
@@ -2001,40 +2052,37 @@ wwv_flow_imp_page.create_page_item(
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(34600200000000210)
-,p_name=>'P2_PROCESSING_PROFILE'
+,p_name=>'P2_CLASSIFICATION_TAGS'
 ,p_is_required=>true
 ,p_item_sequence=>40
 ,p_item_plug_id=>wwv_flow_imp.id(34600200000000103)
-,p_prompt=>'Processing Profile'
-,p_display_as=>'NATIVE_SELECT_LIST'
+,p_prompt=>'Classification Tags'
+,p_display_as=>'NATIVE_SHUTTLE'
 ,p_lov=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select display_label d,',
-'       profile_code r',
-'  from orac_dropbox.drop_processing_profile_lov_v',
-' order by sort_order, display_name'))
-,p_lov_display_null=>'YES'
+'select display_value d,',
+'       return_value r',
+'  from orac_code.knowledge_tag_lov_v',
+' order by sort_order, return_value'))
 ,p_begin_on_new_line=>'N'
 ,p_field_template=>1609122147107268652
 ,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
-,p_lov_display_extra=>'YES'
-,p_inline_help_text=>'Processing Profile is the named ingestion recipe. Processing Instruction is extra location-specific guidance copied onto queued jobs.'
-,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'page_action_on_selection', 'NONE')).to_clob
+,p_lov_display_extra=>'NO'
+,p_inline_help_text=>'Choose one to ten descriptive tags. Tags are provenance metadata and do not alter conversion, chunking, ranking, prompts, or routing.'
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(34600200000000211)
-,p_name=>'P2_PROCESSING_INSTRUCTION'
+,p_name=>'P2_INGESTION_NOTES'
 ,p_item_sequence=>10
 ,p_item_plug_id=>wwv_flow_imp.id(34600200000000105)
-,p_prompt=>'Processing Instruction'
+,p_prompt=>'Ingestion Notes'
 ,p_display_as=>'NATIVE_TEXTAREA'
 ,p_cSize=>120
 ,p_cHeight=>12
 ,p_field_template=>1609121967514267634
 ,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
-,p_inline_help_text=>'Optional instruction copied onto queued jobs.'
+,p_inline_help_text=>'Optional provenance notes copied onto queued jobs. Notes are untrusted data and are never executed.'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'auto_height', 'N',
   'character_counter', 'N',
@@ -2297,11 +2345,20 @@ wwv_flow_imp_page.create_page_process(
 ,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
 'declare',
 '  l_target_key varchar2(200 char);',
+'  l_classification_tags clob;',
+'  l_primary_profile varchar2(100 char);',
 'begin',
 '  l_target_key := case :P2_TARGET_SCOPE_TYPE',
 '                    when ''plugin'' then :P2_TARGET_PLUGIN_KEY',
 '                    else :P2_TARGET_PROJECT_KEY',
 '                  end;',
+'  select json_arrayagg(return_value order by sort_order, return_value returning clob),',
+'         min(return_value) keep (dense_rank first order by sort_order, return_value)',
+'    into l_classification_tags, l_primary_profile',
+'    from orac_code.knowledge_tag_lov_v',
+'   where return_value in (',
+'     select column_value from table(apex_string.split(:P2_CLASSIFICATION_TAGS, '':''))',
+'   );',
 '',
 '  if :P2_DROP_LOCATION_ID is null then',
 '    orac_dropbox.drop_box_admin_api.create_location(',
@@ -2311,8 +2368,8 @@ wwv_flow_imp_page.create_page_process(
 '      p_enabled_yn             => :P2_ENABLED_YN,',
 '      p_target_scope_type      => :P2_TARGET_SCOPE_TYPE,',
 '      p_target_scope_key       => l_target_key,',
-'      p_processing_profile     => :P2_PROCESSING_PROFILE,',
-'      p_processing_instruction => :P2_PROCESSING_INSTRUCTION,',
+'      p_processing_profile     => l_primary_profile,',
+'      p_processing_instruction => :P2_INGESTION_NOTES,',
 '      p_allowed_extensions     => :P2_ALLOWED_EXTENSIONS,',
 '      p_ignore_patterns        => :P2_IGNORE_PATTERNS,',
 '      p_recursive_yn           => :P2_RECURSIVE_YN,',
@@ -2321,7 +2378,8 @@ wwv_flow_imp_page.create_page_process(
 '      p_failed_path            => :P2_FAILED_PATH,',
 '      p_max_file_size_mb       => :P2_MAX_FILE_SIZE_MB,',
 '      p_stability_seconds      => :P2_STABILITY_SECONDS,',
-'      p_drop_location_id       => :P2_DROP_LOCATION_ID',
+'      p_drop_location_id       => :P2_DROP_LOCATION_ID,',
+'      p_classification_tags_json => l_classification_tags',
 '    );',
 '  else',
 '    orac_dropbox.drop_box_admin_api.update_location(',
@@ -2332,8 +2390,8 @@ wwv_flow_imp_page.create_page_process(
 '      p_enabled_yn             => :P2_ENABLED_YN,',
 '      p_target_scope_type      => :P2_TARGET_SCOPE_TYPE,',
 '      p_target_scope_key       => l_target_key,',
-'      p_processing_profile     => :P2_PROCESSING_PROFILE,',
-'      p_processing_instruction => :P2_PROCESSING_INSTRUCTION,',
+'      p_processing_profile     => l_primary_profile,',
+'      p_processing_instruction => :P2_INGESTION_NOTES,',
 '      p_allowed_extensions     => :P2_ALLOWED_EXTENSIONS,',
 '      p_ignore_patterns        => :P2_IGNORE_PATTERNS,',
 '      p_recursive_yn           => :P2_RECURSIVE_YN,',
@@ -2342,7 +2400,8 @@ wwv_flow_imp_page.create_page_process(
 '      p_failed_path            => :P2_FAILED_PATH,',
 '      p_max_file_size_mb       => :P2_MAX_FILE_SIZE_MB,',
 '      p_stability_seconds      => :P2_STABILITY_SECONDS,',
-'      p_row_version            => :P2_ROW_VERSION',
+'      p_row_version            => :P2_ROW_VERSION,',
+'      p_classification_tags_json => l_classification_tags',
 '    );',
 '  end if;',
 'end;'))
@@ -2407,12 +2466,16 @@ wwv_flow_imp_page.create_page_process(
 '    select location_code, display_name, path, enabled_yn, target_scope_type,',
 '           case when target_scope_type = ''plugin'' then target_scope_key end,',
 '           case when target_scope_type = ''project'' then target_scope_key end,',
-'           processing_profile, processing_instruction, allowed_extensions, ignore_patterns,',
+'           (select listagg(tag_code, '':'' ) within group (order by ordinal)',
+'              from json_table(classification_tags_json, ''$[*]'' columns (',
+'                ordinal for ordinality, tag_code varchar2(100) path ''$''',
+'              ))),',
+'           processing_instruction, allowed_extensions, ignore_patterns,',
 '           recursive_yn, move_processed_yn, processed_path, failed_path,',
 '           max_file_size_mb, stability_seconds,',
 '           row_version',
 '      into :P2_LOCATION_CODE, :P2_DISPLAY_NAME, :P2_PATH, :P2_ENABLED_YN, :P2_TARGET_SCOPE_TYPE,',
-'           :P2_TARGET_PLUGIN_KEY, :P2_TARGET_PROJECT_KEY, :P2_PROCESSING_PROFILE, :P2_PROCESSING_INSTRUCTION,',
+'           :P2_TARGET_PLUGIN_KEY, :P2_TARGET_PROJECT_KEY, :P2_CLASSIFICATION_TAGS, :P2_INGESTION_NOTES,',
 '           :P2_ALLOWED_EXTENSIONS, :P2_IGNORE_PATTERNS, :P2_RECURSIVE_YN, :P2_MOVE_PROCESSED_YN,',
 '           :P2_PROCESSED_PATH, :P2_FAILED_PATH, :P2_MAX_FILE_SIZE_MB, :P2_STABILITY_SECONDS,',
 '           :P2_ROW_VERSION',
@@ -2650,6 +2713,7 @@ wwv_flow_imp_page.create_page_plug(
 '              ''<dt>Source Filename</dt><dd>'' || apex_escape.html(job.source_filename) || ''</dd>'' ||',
 '              ''<dt>Source Path</dt><dd>'' || apex_escape.html(job.source_path) || ''</dd>'' ||',
 '              ''<dt>Status</dt><dd>'' || apex_escape.html(job.status_code) || ''</dd>'' ||',
+'              ''<dt>Reason Code</dt><dd>'' || apex_escape.html(coalesce(job.failure_reason_code, ''-'')) || ''</dd>'' ||',
 '              ''<dt>Detected</dt><dd>'' || apex_escape.html(to_char(job.detected_on, ''YYYY-MM-DD HH24:MI:SS TZH:TZM'')) || ''</dd>'' ||',
 '              ''<dt>Stable</dt><dd>'' || apex_escape.html(to_char(job.stable_on, ''YYYY-MM-DD HH24:MI:SS TZH:TZM'')) || ''</dd>'' ||',
 '              ''<dt>File Size</dt><dd>'' || apex_escape.html(to_char(job.source_size_bytes)) || ''</dd>'' ||',
@@ -2804,6 +2868,7 @@ wwv_flow_imp_page.create_page_plug(
 '       job.updated_on as drop_box_updated_on,',
 '       job.completed_on as drop_box_completed_on,',
 '       job.status_code as drop_box_state,',
+'       job.failure_reason_code as drop_box_reason_code,',
 '       job.error_summary_redacted as drop_box_error_summary_redacted,',
 '       job.knowledge_ingestion_request_id as core_request_id,',
 '       core.status_code as core_state,',
@@ -2952,6 +3017,17 @@ wwv_flow_imp_page.create_worksheet_column(
 ,p_column_label=>'Drop Box State'
 ,p_column_type=>'STRING'
 ,p_heading_alignment=>'LEFT'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(34600500000000230)
+,p_db_column_name=>'DROP_BOX_REASON_CODE'
+,p_display_order=>13
+,p_column_identifier=>'AB'
+,p_column_label=>'Drop Box Reason'
+,p_column_type=>'STRING'
+,p_heading_alignment=>'LEFT'
+,p_help_text=>'Stable redacted reason code; raw converter diagnostics are not displayed.'
 ,p_use_as_row_header=>'N'
 );
 wwv_flow_imp_page.create_worksheet_column(
@@ -3162,7 +3238,7 @@ wwv_flow_imp_page.create_worksheet_rpt(
 ,p_report_alias=>'346051'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'LOCATION_CODE:LOCATION_DISPLAY_NAME:DROP_JOB_ID:SOURCE_FILENAME:SOURCE_PATH:DROP_BOX_DETECTED_ON:DROP_BOX_STABLE_ON:DROP_BOX_STARTED_ON:DROP_BOX_UPDATED_ON:DROP_BOX_COMPLETED_ON:DROP_BOX_STATE:DROP_BOX_ERROR_SUMMARY_REDACTED:CORE_REQUEST_ID:CORE_STATE_LABEL:CORE_ACCEPTED_ON:CORE_CLAIMED_ON:CORE_LATEST_EVENT_ON:CORE_COMPLETED_ON:SEARCHABLE_YN:CHUNK_COUNT:EMBEDDED_CHUNK_COUNT:DOCUMENT_ID:DOCUMENT_VERSION_ID:CORE_ERROR_SUMMARY_REDACTED:'
+,p_report_columns=>'LOCATION_CODE:LOCATION_DISPLAY_NAME:DROP_JOB_ID:SOURCE_FILENAME:SOURCE_PATH:DROP_BOX_DETECTED_ON:DROP_BOX_STABLE_ON:DROP_BOX_STARTED_ON:DROP_BOX_UPDATED_ON:DROP_BOX_COMPLETED_ON:DROP_BOX_STATE:DROP_BOX_REASON_CODE:DROP_BOX_ERROR_SUMMARY_REDACTED:CORE_REQUEST_ID:CORE_STATE_LABEL:CORE_ACCEPTED_ON:CORE_CLAIMED_ON:CORE_LATEST_EVENT_ON:CORE_COMPLETED_ON:SEARCHABLE_YN:CHUNK_COUNT:EMBEDDED_CHUNK_COUNT:DOCUMENT_ID:DOCUMENT_VERSION_ID:CORE_ERROR_SUMMARY_REDACTED:'
 ,p_sort_column_1=>'DROP_BOX_UPDATED_ON'
 ,p_sort_direction_1=>'DESC'
 );

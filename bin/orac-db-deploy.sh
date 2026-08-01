@@ -259,6 +259,7 @@ wait_for_orac_deploy() {
     "!! Halting due to STOP_ON_ERROR=1."
     "Database configuration failed. Check logs under '/opt/oracle/cfgtoollogs/dbca'."
     "DATABASE SETUP WAS NOT SUCCESSFUL!"
+    "ORAC_SCHEMA_SETUP_FAILED"
     "ORAC_APEX_SETUP_FAILED"
     "ORAC_APEX_ADMIN_SETUP_FAILED"
     "ORAC_LIQUIBASE_DELTA_SETUP_FAILED"

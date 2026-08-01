@@ -44,6 +44,8 @@ DROP_BOX_STATUSES = (
     "completed",
     "failed",
     "quarantined",
+    "deferred_prerequisite",
+    "conversion_retry_wait",
     "skipped_duplicate",
     "skipped_disallowed_type",
     "skipped_too_large",
@@ -63,6 +65,10 @@ def _expected_lifecycle_bucket(
         return "SKIPPED"
     if drop_box_status in {"failed", "quarantined"}:
         return "FAILED_ATTENTION"
+    if drop_box_status == "deferred_prerequisite":
+        return "PREREQUISITE_DEFERRED"
+    if drop_box_status == "conversion_retry_wait":
+        return "CONVERSION_RETRY"
     if drop_box_status in {"queued", "processing"}:
         return "AWAITING_HANDOFF"
     if not request_id_present or not core_row_present:
@@ -1420,7 +1426,18 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("orac_dropbox.drop_location_summary_admin_v", export_sql)
         self.assertIn("orac_dropbox.drop_job_admin_v", export_sql)
         self.assertIn("orac_dropbox.drop_job_event_admin_v", export_sql)
-        self.assertIn("orac_dropbox.drop_processing_profile_lov_v", export_sql)
+        self.assertIn("orac_code.knowledge_tag_lov_v", export_sql)
+        self.assertIn("orac_code.plugin_prerequisite_status_v", export_sql)
+        capability_region_start = export_sql.index(
+            "p_plug_name=>'document conversion capability'"
+        )
+        capability_region_end = export_sql.index(
+            "wwv_flow_imp_page.create_page_plug(", capability_region_start
+        )
+        capability_region = export_sql[
+            capability_region_start:capability_region_end
+        ]
+        self.assertIn("p_function_body_language=>'plsql'", capability_region)
         self.assertIn("orac_dropbox.drop_box_admin_api.create_location", export_sql)
         self.assertIn("orac_dropbox.drop_box_admin_api.update_location", export_sql)
         self.assertIn("orac_dropbox.drop_box_admin_api.set_enabled", export_sql)
@@ -1476,7 +1493,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             "basic details",
             "target / routing",
             "scanner rules",
-            "processing instructions",
+            "ingestion notes",
             "post-processing / future use",
         ):
             self.assertIn(f"p_plug_name=>'{region}'", page_two)
@@ -1489,8 +1506,8 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             "p_name=>'p2_target_scope_type'",
             "p_name=>'p2_target_plugin_key'",
             "p_name=>'p2_target_project_key'",
-            "p_name=>'p2_processing_profile'",
-            "p_name=>'p2_processing_instruction'",
+            "p_name=>'p2_classification_tags'",
+            "p_name=>'p2_ingestion_notes'",
             "p_name=>'p2_allowed_extensions'",
             "p_name=>'p2_ignore_patterns'",
             "p_name=>'p2_recursive_yn'",
@@ -1502,6 +1519,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         )
         positions = [page_two.index(token) for token in ordered_tokens]
         self.assertEqual(positions, sorted(positions))
+        self.assertIn("${orac_home}/", page_two)
 
         for item in ("p2_enabled_yn", "p2_recursive_yn", "p2_move_processed_yn"):
             item_start = page_two.index(f"p_name=>'{item}'")
@@ -1515,19 +1533,20 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             self.assertIn("'use_defaults', 'y'", item_text)
 
         self.assertIn("p_cHeight=>12".lower(), page_two)
-        profile_start = page_two.index("p_name=>'p2_processing_profile'")
+        profile_start = page_two.index("p_name=>'p2_classification_tags'")
         profile_end = page_two.find(
             "wwv_flow_imp_page.create_page_item", profile_start + 1
         )
         profile_text = page_two[
             profile_start : profile_end if profile_end != -1 else len(page_two)
         ]
-        self.assertIn("p_display_as=>'native_select_list'", profile_text)
-        self.assertIn("drop_processing_profile_lov_v", profile_text)
-        self.assertIn("display_label d", profile_text)
-        self.assertIn("profile_code r", profile_text)
+        self.assertIn("p_display_as=>'native_shuttle'", profile_text)
+        self.assertIn("orac_code.knowledge_tag_lov_v", profile_text)
+        self.assertIn("display_value d", profile_text)
+        self.assertIn("return_value r", profile_text)
+        self.assertIn("order by sort_order, return_value", profile_text)
         self.assertNotIn("p_display_as=>'native_text_field'", profile_text)
-        self.assertIn("named ingestion recipe", profile_text)
+        self.assertIn("descriptive tags", profile_text)
         self.assertNotIn("p_name=>'p2_profile_description'", page_two)
         self.assertNotIn("p_name=>'p2_profile_default_instruction'", page_two)
         self.assertNotIn("p_plug_name=>'audit / metadata'", page_two)
@@ -1662,7 +1681,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertNotIn("p2_target_project_key').setvalue", page_two)
         self.assertNotIn("p2_target_plugin_key').setvalue", page_two)
 
-    def test_drop_box_page_two_profile_lov_and_field_behaviour(self) -> None:
+    def test_drop_box_page_two_tag_lov_and_field_behaviour(self) -> None:
         export_sql = (
             (PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql")
             .read_text(encoding="utf-8")
@@ -1680,7 +1699,13 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertNotIn(
             "p_affected_elements=>'p2_profile_default_instruction'", page_two
         )
-        self.assertIn("from orac_dropbox.drop_processing_profile_lov_v", page_two)
+        self.assertIn("from orac_code.knowledge_tag_lov_v", page_two)
+        self.assertIn(
+            "json_arrayagg(return_value order by sort_order, return_value",
+            page_two,
+        )
+        self.assertIn("where return_value in (", page_two)
+        self.assertNotIn("tag_code r", page_two)
 
         self.assertIn("p_name=>'normalize case fields'", page_two)
         self.assertIn(
@@ -1716,7 +1741,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         """Every valid status/linkage combination must map to exactly one bucket."""
         constraint_sql = (
             PROJECT_ROOT
-            / "plugins/drop_box/db/schema/constraint_other/drp_job_status_ck.sql"
+            / "plugins/drop_box/db/schema/constraint_other/drp_job_retry_status_ck.sql"
         ).read_text(encoding="utf-8")
         constrained_statuses = set(
             re.findall(
@@ -1737,6 +1762,8 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         )
         counts = {
             "AWAITING_HANDOFF": 0,
+            "PREREQUISITE_DEFERRED": 0,
+            "CONVERSION_RETRY": 0,
             "CORE_IN_PROGRESS": 0,
             "SEARCHABLE": 0,
             "FAILED_ATTENTION": 0,
@@ -1766,6 +1793,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
                         expected = "SKIPPED"
                     elif drop_box_status in {"failed", "quarantined"}:
                         expected = "FAILED_ATTENTION"
+                    elif drop_box_status == "deferred_prerequisite":
+                        expected = "PREREQUISITE_DEFERRED"
+                    elif drop_box_status == "conversion_retry_wait":
+                        expected = "CONVERSION_RETRY"
                     elif drop_box_status in {"queued", "processing"}:
                         expected = "AWAITING_HANDOFF"
                     else:
@@ -1798,6 +1829,8 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         precedence_tokens = (
             "job.status_code in (''skipped_duplicate'', ''skipped_disallowed_type'', ''skipped_too_large'')",
             "job.status_code in (''failed'', ''quarantined'')",
+            "job.status_code = ''deferred_prerequisite''",
+            "job.status_code = ''conversion_retry_wait''",
             "job.status_code in (''queued'', ''processing'')",
             "job.knowledge_ingestion_request_id is null",
             "or core.ingestion_request_id is null",
@@ -1811,6 +1844,8 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         for count_column in (
             "total_job_count",
             "awaiting_handoff_count",
+            "prerequisite_deferred_count",
+            "conversion_retry_count",
             "core_in_progress_count",
             "searchable_count",
             "failed_attention_count",
@@ -1838,6 +1873,8 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         for count_column in (
             "total_job_count",
             "awaiting_handoff_count",
+            "prerequisite_deferred_count",
+            "conversion_retry_count",
             "core_in_progress_count",
             "searchable_count",
             "failed_attention_count",

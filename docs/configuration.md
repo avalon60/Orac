@@ -969,7 +969,9 @@ Configures recent death days for the `[retrieval.person_facts]` subsystem.
 
 ## `[knowledge]`
 
-Core knowledge ingestion, managed content storage, chunking, and embedding settings.
+Core knowledge ingestion, managed content storage, chunking, and embedding
+settings. See [Document Ingestion](document-ingestion.md) for the end-to-end
+ownership, APEX administration, lifecycle, and security model.
 
 ### `enabled`
 
@@ -990,10 +992,24 @@ Enables the Core-owned knowledge ingestion worker service.
 - **Shipped value:** `${ORAC_HOME}/var/knowledge/content`
 - **Runtime fallback:** `${ORAC_HOME}/var/knowledge/content`
 - **Required:** No; supplied by the shipped configuration
-- **Allowed values:** Any valid local path owned by the Core runtime
+- **Allowed values:** A local, non-symlink directory owned by the Core runtime
 - **Status:** active
 
-Root directory for Core-managed content-addressed knowledge payloads.
+Root directory for the Core-managed content-addressed pool shared by raw and
+normalised payloads. The store creates a missing root as `0750`, uses `0700`
+for `.tmp`, creates shard directories as `0750`, and writes immutable objects
+as `0600`. It applies those modes explicitly after creation so the process
+umask cannot widen them. Existing directories must be runtime-owned and must
+not be group- or other-writable; existing objects must be runtime-owned,
+regular, non-symlink files with no group, other, or execute permissions.
+
+The configured root itself may be created but may not be a symlink. Store
+initialisation verifies that `.tmp` and `sha256` are on the same filesystem and
+that no-replace hard-link promotion is supported. It fails closed with stable
+configuration reason codes when root identity, ownership, permissions,
+filesystem compatibility, or promotion capability is unsafe. Capture and
+worker instances fix the resolved root and its device/inode identity for their
+lifetime, so changing this setting requires service/store reinitialisation.
 
 **Example:** `managed_root = ${ORAC_HOME}/var/knowledge/content`
 
@@ -1078,10 +1094,14 @@ Vector dimension count for the default local embedding provider.
 
 ## `[knowledge.dialogue]`
 
-Before setting `enabled = true`, administrators must register the canonical
-`ORAC_CORE` project through `orac_code.project_registry_api.upsert_project` as
-documented in [Dialogue Routing](dialogue-routing.md). The application does not
-seed or infer project records from Drop Box configuration.
+The Core database install seeds the canonical `ORAC_CORE` project and its
+relational knowledge scope. Additional projects remain administrator-managed
+through `orac_code.project_registry_api`, and no project is inferred from Drop
+Box configuration. See [Dialogue Routing](dialogue-routing.md).
+
+This section controls dialogue retrieval from completed searchable content. It
+does not enable document ingestion; that worker is controlled by
+`[knowledge].enabled`.
 
 Authenticated, scope-isolated local-knowledge retrieval during normal dialogue.
 The shipped feature switch is `false`; enable it only after the configured

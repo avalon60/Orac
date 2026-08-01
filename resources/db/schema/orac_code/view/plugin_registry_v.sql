@@ -18,6 +18,10 @@ select plugin_registry_id
      , installed_path
      , config_path
      , dependency_fingerprint
+     , command_dependency_declarations
+     , command_dependency_fingerprint
+     , command_prerequisite_status
+     , command_dependency_report
      , ui_icon_class
      , ui_accent_class
      , install_status

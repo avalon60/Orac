@@ -5,30 +5,173 @@
 
 This backlog captures ideas and integration threads that should not be lost as Orac moves from core platform work into Home Assistant sync, speech, display, and satellite Raspberry Pi work.
 
+## Completed Items
+
+Partially implemented items appear in both summaries: this section records the
+completed portion, while the pending summary records the remaining work.
+
+* [0. Document Extraction, Markdown Normalization, and Classification Tags](#0-document-extraction-markdown-normalization-and-classification-tags)
+  — Implemented for new Drop Box document versions; reindex/operator workflow
+  remains pending.
+* [1. Home Assistant runtime sync](#1-home-assistant-runtime-sync) — Startup
+  synchronization is implemented through the managed Home Assistant service.
+* [2. Home Assistant intent resolution](#2-home-assistant-intent-resolution) —
+  Partially implemented.
+* [3. Plugin service lifecycle hardening](#3-plugin-service-lifecycle-hardening)
+  — Service lifecycle foundations are implemented.
+* [4. LiveKit integration](#4-livekit-integration) — POC groundwork is in
+  place.
+* [5. Barge-in support](#5-barge-in-support) — An experimental implementation
+  is in place.
+* [6. Follow-up listening window](#6-follow-up-listening-window) — Partially
+  implemented.
+* [10. TTS provider selection and fallback](#10-tts-provider-selection-and-fallback)
+  — Provider and fallback foundations are implemented.
+* [12. React display UI](#12-react-display-ui) — Partially implemented.
+* [14. Conversation capture and embeddings](#14-conversation-capture-and-embeddings)
+  — Schema groundwork is in place.
+* [16. Local vector/RAG layer](#16-local-vectorrag-layer) — Schema groundwork
+  is in place.
+* [21. Ollama / llama.cpp control plane](#21-ollama--llamacpp-control-plane) —
+  Partially implemented.
+* [22. Model fallback visibility](#22-model-fallback-visibility) — Partially
+  implemented.
+* [23. Docker Compose / service estate rationalisation](#23-docker-compose--service-estate-rationalisation)
+  — Partially implemented.
+* [24. Backup, restore and migration hardening](#24-backup-restore-and-migration-hardening)
+  — Partially implemented.
+* [25. Internet/search integration](#25-internetsearch-integration) — Partially
+  implemented.
+* [26. SearXNG/local search service](#26-searxnglocal-search-service) —
+  Partially implemented.
+* [27. Plugin permissions and entitlements](#27-plugin-permissions-and-entitlements)
+  — Partially implemented.
+* [33. Local mute/privacy controls](#33-local-muteprivacy-controls) —
+  Display-only groundwork is in place.
+
+## Pending Items
+
+The linked backlog entries contain the detailed remaining work and next
+actions. Parked items remain pending until they are resumed or removed.
+
+* [0. Document Extraction, Markdown Normalization, and Classification Tags](#0-document-extraction-markdown-normalization-and-classification-tags)
+  — Implemented for new Drop Box submissions; separately reviewed
+  reindex/operator workflow remains pending.
+* [1. Home Assistant runtime sync](#1-home-assistant-runtime-sync) —
+  Implemented for startup sync; periodic refresh/websocket follow-up pending.
+* [2. Home Assistant intent resolution](#2-home-assistant-intent-resolution) —
+  Partially implemented.
+* [3. Plugin service lifecycle hardening](#3-plugin-service-lifecycle-hardening)
+  — Implemented foundations; hardening ongoing.
+* [4. LiveKit integration](#4-livekit-integration) — POC groundwork in place.
+* [5. Barge-in support](#5-barge-in-support) — Experimental implementation in
+  place.
+* [6. Follow-up listening window](#6-follow-up-listening-window) — Partially
+  implemented.
+* [7. WakeLab / wake-word testing](#7-wakelab--wake-word-testing) — Needs
+  retest.
+* [8. Speaker recognition / voice recognition](#8-speaker-recognition--voice-recognition)
+  — Not started.
+* [9. IndexTTS2 voice cloning / voice design](#9-indextts2-voice-cloning--voice-design)
+  — Research / not started.
+* [10. TTS provider selection and fallback](#10-tts-provider-selection-and-fallback)
+  — Implemented foundations; UI warning follow-up pending.
+* [11. APEX administration UI](#11-apex-administration-ui) — Planned.
+* [12. React display UI](#12-react-display-ui) — Partially implemented.
+* [13. Small Pi display and physical satellite unit](#13-small-pi-display-and-physical-satellite-unit)
+  — Planned.
+* [14. Conversation capture and embeddings](#14-conversation-capture-and-embeddings)
+  — Schema groundwork in place.
+* [15. Document uploads and embeddings](#15-document-uploads-and-embeddings) —
+  Not started.
+* [16. Local vector/RAG layer](#16-local-vectorrag-layer) — Schema groundwork
+  in place.
+* [17. Open WebUI integration](#17-open-webui-integration) — Not started.
+* [18. Hermes Agent integration](#18-hermes-agent-integration) — Parked.
+* [19. MCP/tool server integration](#19-mcptool-server-integration) — Not
+  started.
+* [20. n8n/webhook integration](#20-n8nwebhook-integration) — Parked.
+* [21. Ollama / llama.cpp control plane](#21-ollama--llamacpp-control-plane) —
+  Partially implemented.
+* [22. Model fallback visibility](#22-model-fallback-visibility) — Partially
+  implemented.
+* [23. Docker Compose / service estate rationalisation](#23-docker-compose--service-estate-rationalisation)
+  — Partially implemented.
+* [24. Backup, restore and migration hardening](#24-backup-restore-and-migration-hardening)
+  — Partially implemented.
+* [25. Internet/search integration](#25-internetsearch-integration) — Partially
+  implemented.
+* [26. SearXNG/local search service](#26-searxnglocal-search-service) —
+  Partially implemented.
+* [27. Plugin permissions and entitlements](#27-plugin-permissions-and-entitlements)
+  — Partially implemented.
+* [28. Personal data controls](#28-personal-data-controls) — Not started.
+* [29. Email ingestion](#29-email-ingestion) — Parked.
+* [30. Watched folder ingestion](#30-watched-folder-ingestion) — Parked.
+* [31. APEX file upload ingestion](#31-apex-file-upload-ingestion) — Not
+  started.
+* [32. Satellite Pi room identity](#32-satellite-pi-room-identity) — Not
+  started.
+* [33. Local mute/privacy controls](#33-local-muteprivacy-controls) —
+  Display-only groundwork in place.
+
 ## Near-Term Core Priorities
 
-### 0. Processing Profile Execution
+### 0. Document Extraction, Markdown Normalization, and Classification Tags
 
 Priority: High
 
-Status: Required follow-on after scoped dialogue retrieval
+Status: Implemented for new Drop Box document versions; reindex/operator
+workflow pending
 
 Purpose:
 
-* Make persisted `processing_profile` and `processing_instruction` values alter
-  extraction and chunking through versioned, Core-owned profile behaviour.
-* Preserve raw-source provenance and deterministic replay.
-* Treat profile and operator instructions as untrusted data, not executable
-  prompts or plugin-owned code.
+* Preserve each original file in Core's content-addressed store.
+* Let Drop Box validate native and supported Office/web formats and produce
+  canonical GitHub-flavoured Markdown.
+* Create deterministic Core-owned structure-aware chunks, embeddings,
+  controlled classification tags and retrieval/grounding provenance.
+* Verify declarative command prerequisites without allowing plugins to supply
+  shell fragments or install operating-system packages.
 
-Explicit exclusions from the scoped dialogue first slice:
+Completed:
 
-* No profile-driven extraction or chunking change.
-* No model-generated transformation pipeline.
-* No plugin access to protected `orac_core` objects.
+* Manifest schema v2 accepts strict registered command dependencies and retains
+  compatibility with manifests that omit them.
+* Drop Box declares optional Pandoc `>=3.1,<4`, re-probes it before conversion,
+  and remains available for Markdown/plain text while degraded.
+* Drop Box owns fixed native canonicalisation, format/signature validation,
+  archive preflight, Pandoc execution and bounded conversion diagnostics.
+* Core accepts the original identity plus canonical Markdown and extraction
+  provenance transactionally; Core does not probe or invoke Pandoc.
+* New ingestion requests use `core_markdown_blocks` version 1 and retain
+  zero-based half-open source spans plus bounded metadata for synthetic
+  structure.
+* Six controlled tags are seeded and projected through retrieval and grounding
+  provenance. Tags and ingestion notes have no behavioural authority.
+* The Drop Box admin surface uses classification tags and provenance-only
+  ingestion notes while retaining legacy profile columns for compatibility.
+* Existing completed documents and embeddings are not automatically
+  regenerated.
 
-Validation must cover profile version changes, retries, unchanged documents,
-failed transformations, and current-version selection.
+Notes:
+
+* The inspected host has Pandoc 3.1.3, which satisfies the declared range but
+  does not guarantee availability in another runtime or container.
+* PDF, OCR, spreadsheets, presentations, remote acquisition, embedded-media
+  extraction and model-generated transformations remain excluded.
+* Pandoc version and canonical output hash are durable provenance because
+  recipe version 1 alone does not guarantee byte-identical output across
+  Pandoc releases.
+
+Next actions:
+
+* Design a separately reviewed operator workflow for reindexing existing
+  document versions.
+* Require the operator to choose whether to reproduce with the original
+  converter version or create a new current extraction/chunk generation.
+* Add any future manual terminal-job requeue action only through a separately
+  reviewed, audited administrator workflow.
 
 ---
 

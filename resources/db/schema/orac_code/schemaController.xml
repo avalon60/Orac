@@ -9,6 +9,7 @@
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
 
+  <includeAll path="privilege" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>
   <includeAll path="package_spec" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>
   <includeAll path="package_body" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>
   <includeAll path="view" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>

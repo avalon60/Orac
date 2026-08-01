@@ -196,6 +196,26 @@ class KnowledgeRetrievalService:
                     processing_profile_code=_optional_string(
                         row.get("processing_profile_code")
                     ),
+                    classification_tags=_classification_tags(
+                        row.get("classification_tags_json")
+                    ),
+                    source_format_code=_optional_string(
+                        row.get("source_format_code")
+                    ),
+                    normalised_text_sha256=_optional_string(
+                        row.get("normalised_text_sha256")
+                    ),
+                    output_mime_type=_optional_string(row.get("output_mime_type")),
+                    extractor_code=_optional_string(row.get("extractor_code")),
+                    extractor_version=_optional_string(
+                        row.get("extractor_version")
+                    ),
+                    extractor_metadata_json=_optional_string(
+                        row.get("extractor_metadata_json")
+                    ),
+                    chunk_metadata_json=_optional_string(
+                        row.get("chunk_metadata_json")
+                    ),
                 )
             )
 
@@ -374,6 +394,18 @@ def _optional_string(value: Any) -> str | None:
 def _optional_int(value: Any) -> int | None:
     """Return an optional integer value."""
     return int(value) if value is not None else None
+
+
+def _classification_tags(value: Any) -> tuple[str, ...]:
+    """Return a validated tuple from a relational-tag JSON projection."""
+    if value is None or str(value).strip() == "":
+        return ()
+    parsed = value if isinstance(value, list) else json.loads(str(value))
+    if not isinstance(parsed, list) or any(
+        not isinstance(item, str) for item in parsed
+    ):
+        raise KnowledgeRetrievalError("Classification tag projection is malformed.")
+    return tuple(parsed)
 
 
 def _retrieval_failure_code(exc: Exception) -> str:

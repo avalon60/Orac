@@ -33,6 +33,16 @@ class DropBoxCaptureRequest:
     source_key: str | None = None
     location_code: str | None = None
     legacy_source_key: str | None = None
+    source_format_code: str | None = None
+    source_mime_type: str | None = None
+    normalised_markdown: str | None = None
+    normalised_text_sha256: str | None = None
+    normalised_byte_size: int | None = None
+    output_mime_type: str | None = None
+    extractor_code: str | None = None
+    extractor_version: str | None = None
+    extraction_metadata_json: str | None = None
+    classification_tags_json: str | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +85,14 @@ class KnowledgeSearchResult:
     embedding_provider_code: str | None = None
     embedding_model_revision: str | None = None
     processing_profile_code: str | None = None
+    classification_tags: tuple[str, ...] = ()
+    source_format_code: str | None = None
+    normalised_text_sha256: str | None = None
+    output_mime_type: str | None = None
+    extractor_code: str | None = None
+    extractor_version: str | None = None
+    extractor_metadata_json: str | None = None
+    chunk_metadata_json: str | None = None
 
     @property
     def score(self) -> float:

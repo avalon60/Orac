@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from dataclasses import replace
 import hashlib
 from pathlib import Path
 import sys
@@ -18,9 +19,9 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from orac_core.knowledge import DropBoxCaptureRequest
-from orac_core.knowledge import KnowledgeManagedFileCaptureService
-from orac_core.knowledge.capture import KnowledgeCaptureError
+from orac_core.knowledge import DropBoxCaptureRequest  # noqa: E402
+from orac_core.knowledge import KnowledgeManagedFileCaptureService  # noqa: E402
+from orac_core.knowledge.capture import KnowledgeCaptureError  # noqa: E402
 
 
 class _Repository:
@@ -58,7 +59,11 @@ class KnowledgeCaptureTests(unittest.TestCase):
             ).capture_drop_box_file(_request(root, source))
 
             self.assertEqual(result.ingestion_request_id, 456)
-            self.assertTrue((managed / result.content_uri).is_file())
+            digest = result.content_sha256
+            self.assertTrue(
+                (managed / "sha256" / digest[:2] / digest[2:4] / digest).is_file()
+            )
+            self.assertEqual(result.content_uri, f"sha256:{digest}")
             source_key = "TEST:note.md"
             expected_reference = (
                 "drop_box:source:"
@@ -90,6 +95,55 @@ class KnowledgeCaptureTests(unittest.TestCase):
                     repository=_Repository(),
                 ).capture_drop_box_file(_request(root, source))
 
+    def test_rejects_source_symlink_even_when_target_is_inside_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "drop"
+            root.mkdir()
+            target = root / "target.md"
+            target.write_text("hello", encoding="utf-8")
+            source = root / "link.md"
+            source.symlink_to(target)
+
+            with self.assertRaisesRegex(KnowledgeCaptureError, "opened safely"):
+                KnowledgeManagedFileCaptureService(
+                    managed_root=Path(temp) / "managed",
+                    repository=_Repository(),
+                ).capture_drop_box_file(_request(root, source))
+
+    def test_rejects_symlinked_source_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            target_root = base / "target"
+            target_root.mkdir()
+            source = target_root / "note.md"
+            source.write_text("hello", encoding="utf-8")
+            linked_root = base / "linked"
+            linked_root.symlink_to(target_root, target_is_directory=True)
+            linked_source = linked_root / source.name
+
+            with self.assertRaisesRegex(KnowledgeCaptureError, "opened safely"):
+                KnowledgeManagedFileCaptureService(
+                    managed_root=base / "managed",
+                    repository=_Repository(),
+                ).capture_drop_box_file(_request(linked_root, linked_source))
+
+    def test_rejects_non_regular_source_descriptor(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "drop"
+            root.mkdir()
+            source = root / "note.md"
+            source.write_text("hello", encoding="utf-8")
+            request = _request(root, source)
+            source.unlink()
+            source.mkdir()
+            request = replace(request, source_size_bytes=source.stat().st_size)
+
+            with self.assertRaisesRegex(KnowledgeCaptureError, "regular file"):
+                KnowledgeManagedFileCaptureService(
+                    managed_root=Path(temp) / "managed",
+                    repository=_Repository(),
+                ).capture_drop_box_file(request)
+
     def test_rejects_hash_mismatch_and_cleans_temp(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "drop"
@@ -99,7 +153,7 @@ class KnowledgeCaptureTests(unittest.TestCase):
             source.write_text("hello", encoding="utf-8")
             request = _request(root, source, sha256="0" * 64)
 
-            with self.assertRaisesRegex(KnowledgeCaptureError, "hash"):
+            with self.assertRaisesRegex(KnowledgeCaptureError, "identity"):
                 KnowledgeManagedFileCaptureService(
                     managed_root=managed,
                     repository=_Repository(),

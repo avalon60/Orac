@@ -27,6 +27,7 @@ BUNDLE_ORDER=(
   orac_core
   orac_api
   orac_code
+  orac_plugin
   orac_apx_pub
   orac
 )
@@ -69,6 +70,7 @@ CORE_LIQUIBASE_BUNDLES=(
   orac_core
   orac_api
   orac_code
+  orac_plugin
   orac_apx_pub
   orac
 )
@@ -93,7 +95,8 @@ ran_any=0
 # --- Validation --------------------------------------------------------------
 if [[ ! -d "$BASE_DIR" ]]; then
   echo "!! $(timestamp) :: BASE_DIR does not exist or is not a directory: $BASE_DIR"
-  return 1 2>/dev/null || false
+  echo "ORAC_SCHEMA_SETUP_FAILED: ${PROG} failed with status 1."
+  return 1 2>/dev/null || exit 1
 fi
 
 # --- Runner ------------------------------------------------------------------
@@ -183,6 +186,7 @@ process_bundle_dir() {
   local files
   local dir
   local file
+  local rc
 
   echo "== $(timestamp) :: Processing schema bundle: $bundle_name"
 
@@ -226,35 +230,51 @@ process_bundle_dir() {
 
 # --- Main loop ---------------------------------------------------------------
 declare -A seen_bundles=()
+halt_requested=0
 
 for bundle_name in "${BUNDLE_ORDER[@]}"; do
   bundle_dir="$BASE_DIR/$bundle_name"
   if [[ -d "$bundle_dir" ]]; then
-    process_bundle_dir "$bundle_dir" "$bundle_name"
+    if ! process_bundle_dir "$bundle_dir" "$bundle_name"; then
+      halt_requested=1
+      break
+    fi
     seen_bundles["$bundle_name"]=1
   else
     echo "-- $(timestamp) :: Skipping missing schema bundle: $bundle_name"
   fi
 done
 
-for bundle_dir in "$BASE_DIR"/*; do
-  [[ -d "$bundle_dir" ]] || continue
+if [[ "$halt_requested" == "0" ]]; then
+  for bundle_dir in "$BASE_DIR"/*; do
+    [[ -d "$bundle_dir" ]] || continue
 
-  bundle_name="$(basename "$bundle_dir")"
-  if [[ "$bundle_name" == "_logs" || -n "${seen_bundles[$bundle_name]:-}" ]]; then
-    continue
-  fi
-  if is_excluded_bundle "$bundle_name"; then
-    echo "-- $(timestamp) :: Skipping excluded schema bundle: $bundle_name"
-    continue
-  fi
+    bundle_name="$(basename "$bundle_dir")"
+    if [[ "$bundle_name" == "_logs" || -n "${seen_bundles[$bundle_name]:-}" ]]; then
+      continue
+    fi
+    if is_excluded_bundle "$bundle_name"; then
+      echo "-- $(timestamp) :: Skipping excluded schema bundle: $bundle_name"
+      continue
+    fi
 
-  process_bundle_dir "$bundle_dir" "$bundle_name"
-done
+    if ! process_bundle_dir "$bundle_dir" "$bundle_name"; then
+      halt_requested=1
+      break
+    fi
+  done
+fi
 
 if [[ "$ran_any" == "0" ]]; then
   echo "!! No SQL files executed. Check BASE_DIR: $BASE_DIR"
 fi
 
-echo "== $(timestamp) :: DDL runner finished. Logs: $LOG_DIR"
-echo "[$(timestamp)] ${PROG} Done"
+if (( overall_rc != 0 )); then
+  echo "ORAC_SCHEMA_SETUP_FAILED: ${PROG} failed with status ${overall_rc}."
+  echo "== $(timestamp) :: DDL runner failed. Logs: $LOG_DIR"
+  return "$overall_rc" 2>/dev/null || exit "$overall_rc"
+else
+  echo "== $(timestamp) :: DDL runner finished. Logs: $LOG_DIR"
+  echo "ORAC_SCHEMA_SETUP_COMPLETE: ${PROG} completed successfully."
+  echo "[$(timestamp)] ${PROG} Done"
+fi

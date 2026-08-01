@@ -19,6 +19,9 @@ from model.plugin_apex_installation import PluginApexAppInstallError
 from model.plugin_apex_installation import PluginApexAppInstallResult
 from model.plugin_apex_installation import PluginApexAppInstaller
 from model.plugin_config import PluginConfigManager
+from model.plugin_command_dependencies import PluginCommandDependencyChecker
+from model.plugin_command_dependencies import PluginCommandDependencyResult
+from model.plugin_command_dependencies import command_dependency_fingerprint
 from model.plugin_database_deployment import PluginDatabaseDeployer
 from model.plugin_dependencies import PluginDependencyInstaller
 from model.plugin_dependencies import dependency_fingerprint
@@ -61,6 +64,7 @@ class PluginInstallResult:
     enabled: bool
     installed_path: Path | None
     message: str
+    warnings: tuple[str, ...] = ()
 
 
 class PluginRegistryWriter(Protocol):
@@ -93,6 +97,7 @@ class PluginInstaller:
         managed_root: Path | None = None,
         config_root: Path | None = None,
         dependency_installer: PluginDependencyInstaller | None = None,
+        command_dependency_checker: PluginCommandDependencyChecker | None = None,
         database_deployer: PluginDatabaseDeployer | None = None,
         package_reader: PluginPackageReader | None = None,
         registry: PluginRegistryWriter | None = None,
@@ -111,6 +116,9 @@ class PluginInstaller:
             config_root or Path("~/.Orac/plugin_config").expanduser()
         ).resolve()
         self._dependency_installer = dependency_installer or PluginDependencyInstaller()
+        self._command_dependency_checker = (
+            command_dependency_checker or PluginCommandDependencyChecker()
+        )
         self._database_deployer = database_deployer or PluginDatabaseDeployer(
             logger=logger
         )
@@ -229,6 +237,20 @@ class PluginInstaller:
             raise PluginInstallationError(
                 "Required plugin secrets are missing: " + ", ".join(missing_secrets)
             )
+        command_result = self._command_dependency_checker.check(
+            manifest.command_dependencies,
+            context="check",
+        )
+        if hasattr(self._registry, "record_command_status"):
+            self._registry.record_command_status(
+                plugin_id,
+                command_result.status,
+                command_result.report_json(),
+            )
+        if command_result.status == "failed":
+            raise PluginInstallationError(
+                _command_dependency_failure_message(command_result)
+            )
         validate_declared_imports(
             manifest.plugin_dir,
             manifest.python_dependencies,
@@ -242,6 +264,7 @@ class PluginInstaller:
             enabled=bool(str(row.get("enabled", "N")).upper() == "Y"),
             installed_path=installed_path,
             message="Plugin installation passed non-starting readiness checks.",
+            warnings=command_result.warnings,
         )
 
     def _plugin_inventory_entry(
@@ -371,6 +394,19 @@ class PluginInstaller:
             manifest.python_dependencies,
             plugin_id=manifest.plugin_id,
         )
+        command_result = self._command_dependency_checker.check(
+            manifest.command_dependencies,
+            context="install",
+        )
+        if command_result.status == "failed":
+            return self._failure(
+                manifest,
+                package,
+                "command_prerequisite_failed",
+                _command_dependency_failure_message(command_result),
+                command_prerequisite_status=command_result.status,
+                command_dependency_report=command_result.report_json(),
+            )
         config_path = self._initialise_config(package, manifest)
         config_result = PluginConfigManager(
             manifest,
@@ -468,8 +504,35 @@ class PluginInstaller:
                 dependency_status=dependency_result.status,
                 database_status=database_result.status,
             )
+        if previous is None and active_manifest.runtime_mode in {"service", "hybrid"}:
+            try:
+                self._record(
+                    self._registry_values(
+                        active_manifest,
+                        package,
+                        installed_path,
+                        config_path,
+                        install_status="installing",
+                        configuration_status=(
+                            "success"
+                            if manifest.configuration_required
+                            else "not_required"
+                        ),
+                        dependency_status=dependency_result.status,
+                        database_status=database_result.status,
+                        readiness_status="success",
+                        enabled=False,
+                        command_prerequisite_status=command_result.status,
+                        command_dependency_report=command_result.report_json(),
+                    )
+                )
+            except PluginInstallationError:
+                self._rollback_activation(installed_path, previous_path)
+                raise
+
+        service_command_result: PluginCommandDependencyResult | None = None
         try:
-            self._register_service_lifecycle(active_manifest)
+            service_command_result = self._register_service_lifecycle(active_manifest)
         except PluginInstallationError as exc:
             self._rollback_activation(installed_path, previous_path)
             return self._failure(
@@ -501,6 +564,7 @@ class PluginInstaller:
                 database_status=database_result.status,
             )
 
+        final_command_result = service_command_result or command_result
         values = self._registry_values(
             active_manifest,
             package,
@@ -514,6 +578,8 @@ class PluginInstaller:
             database_status=database_result.status,
             readiness_status="success",
             enabled=True,
+            command_prerequisite_status=final_command_result.status,
+            command_dependency_report=final_command_result.report_json(),
         )
         try:
             self._record(values)
@@ -531,6 +597,7 @@ class PluginInstaller:
             enabled=True,
             installed_path=installed_path,
             message="Plugin installed and passed readiness checks.",
+            warnings=final_command_result.warnings,
         )
 
     def _initialise_config(
@@ -717,20 +784,42 @@ class PluginInstaller:
                     )
                 )
 
-    def _register_service_lifecycle(self, manifest: PluginManifest) -> None:
-        """Register installed service descriptors without starting services."""
+    def _register_service_lifecycle(
+        self,
+        manifest: PluginManifest,
+    ) -> PluginCommandDependencyResult | None:
+        """Register service descriptors and capture their fresh command probe."""
         if manifest.runtime_mode not in {"service", "hybrid"}:
-            return
+            return None
 
         service_manager = self._service_manager or PluginServiceManager(
             logger=self._logger
         )
+        command_result: PluginCommandDependencyResult | None = None
+
+        def capture_command_status(
+            plugin_id: str,
+            result: PluginCommandDependencyResult,
+        ) -> None:
+            """Defer the service probe write until final registry persistence."""
+            nonlocal command_result
+            if plugin_id != manifest.plugin_id:
+                raise PluginInstallationError(
+                    "Service registration returned command status for "
+                    f"unexpected plugin '{plugin_id}'."
+                )
+            command_result = result
+
         try:
-            service_manager.register_manifests([manifest])
+            service_manager.register_manifests(
+                [manifest],
+                command_status_recorder=capture_command_status,
+            )
         except Exception as exc:
             raise PluginInstallationError(
                 f"Unable to register plugin service lifecycle rows: {exc}"
             ) from exc
+        return command_result
 
     def _activate_candidate(
         self,
@@ -775,32 +864,49 @@ class PluginInstaller:
         configuration_status: str = "failed",
         dependency_status: str = "not_run",
         database_status: str = "not_run",
+        command_prerequisite_status: str = "not_run",
+        command_dependency_report: str | None = None,
     ) -> PluginInstallResult:
         """Record a failed installation without activating the candidate."""
-        self._record(
-            self._registry_values(
-                manifest,
-                package,
-                None,
-                self.config_root / manifest.plugin_id / "plugin.ini",
-                install_status=status,
-                configuration_status=configuration_status,
-                dependency_status=dependency_status,
-                database_status=database_status,
-                readiness_status=(
-                    "failed" if status == "readiness_failed" else "not_run"
-                ),
-                enabled=False,
-                last_error_message=message,
-            )
+        previous = self._registry.get(manifest.plugin_id) if self._registry else None
+        active_prior = bool(
+            previous
+            and str(previous.get("enabled") or "").upper() == "Y"
+            and previous.get("install_status") == "success"
+            and previous.get("installed_path")
         )
+        prior_installed_path = (
+            Path(str(previous.get("installed_path")))
+            if active_prior and previous is not None
+            else None
+        )
+        if not active_prior:
+            self._record(
+                self._registry_values(
+                    manifest,
+                    package,
+                    None,
+                    self.config_root / manifest.plugin_id / "plugin.ini",
+                    install_status=status,
+                    configuration_status=configuration_status,
+                    dependency_status=dependency_status,
+                    database_status=database_status,
+                    command_prerequisite_status=command_prerequisite_status,
+                    command_dependency_report=command_dependency_report,
+                    readiness_status=(
+                        "failed" if status == "readiness_failed" else "not_run"
+                    ),
+                    enabled=False,
+                    last_error_message=message,
+                )
+            )
         self._log_error(f"Plugin '{manifest.plugin_id}' installation failed: {message}")
         return PluginInstallResult(
             plugin_id=manifest.plugin_id,
             version=manifest.version,
             status=status,
             enabled=False,
-            installed_path=None,
+            installed_path=prior_installed_path,
             message=message,
         )
 
@@ -817,6 +923,8 @@ class PluginInstaller:
         database_status: str,
         readiness_status: str,
         enabled: bool,
+        command_prerequisite_status: str = "not_applicable",
+        command_dependency_report: str | None = None,
         last_error_message: str | None = None,
     ) -> dict[str, Any]:
         """Build registry values without secret material."""
@@ -846,6 +954,23 @@ class PluginInstaller:
             "dependency_fingerprint": dependency_fingerprint(
                 manifest.python_dependencies
             ),
+            "command_dependency_declarations": json.dumps(
+                [
+                    {
+                        "command": dependency.command,
+                        "version_specifier": dependency.version_specifier,
+                        "required": dependency.required,
+                        "purpose": dependency.purpose,
+                        "install_hint": dependency.install_hint,
+                    }
+                    for dependency in manifest.command_dependencies
+                ]
+            ),
+            "command_dependency_fingerprint": command_dependency_fingerprint(
+                manifest.command_dependencies
+            ),
+            "command_prerequisite_status": command_prerequisite_status,
+            "command_dependency_report": command_dependency_report,
             "install_status": install_status,
             "configuration_status": configuration_status,
             "dependency_status": dependency_status,
@@ -983,3 +1108,18 @@ def _clamp_registry_text(value: str | None, limit: int) -> str | None:
         return value
     suffix = "... [truncated]"
     return value[: max(0, limit - len(suffix))] + suffix
+
+
+def _command_dependency_failure_message(
+    result: PluginCommandDependencyResult,
+) -> str:
+    """Return a bounded summary for failed required command prerequisites."""
+    failures = [
+        probe.reason
+        for probe in result.probes
+        if probe.required and not probe.available
+    ]
+    return _clamp_registry_text(
+        "Required command prerequisite failed: " + "; ".join(failures),
+        2000,
+    ) or "Required command prerequisite failed."

@@ -38,13 +38,23 @@ def _write_schema_controller(root: Path, body: str, schema: str = "orac_core") -
     )
 
 
-def _write_product_controller(root: Path, include_api: bool = False) -> None:
+def _write_product_controller(
+    root: Path,
+    include_api: bool = False,
+    include_plugin: bool = False,
+) -> None:
     controller = root / "resources/db/schema/productController.xml"
     controller.parent.mkdir(parents=True, exist_ok=True)
     api_include = (
         '  <include file="orac_api/schemaController.xml"\n'
         '           relativeToChangelogFile="true"/>\n'
         if include_api
+        else ""
+    )
+    plugin_include = (
+        '  <include file="orac_plugin/schemaController.xml"\n'
+        '           relativeToChangelogFile="true"/>\n'
+        if include_plugin
         else ""
     )
     controller.write_text(
@@ -56,6 +66,7 @@ def _write_product_controller(root: Path, include_api: bool = False) -> None:
               <include file="orac_core/schemaController.xml"
                        relativeToChangelogFile="true"/>
             {api_include.rstrip()}
+            {plugin_include.rstrip()}
             </databaseChangeLog>
             """
         ).lstrip(),
@@ -241,6 +252,47 @@ def test_reports_prohibited_direct_core_grant(tmp_path: Path) -> None:
     issues = check_core_liquibase.run_checks(tmp_path)
 
     assert any("prohibited direct grant on orac_core.users to orac_code" in issue for issue in issues)
+
+
+def test_reports_core_grant_to_optional_plugin_schema(tmp_path: Path) -> None:
+    plugin_manifest = tmp_path / "plugins/drop_box.json"
+    plugin_manifest.parent.mkdir(parents=True, exist_ok=True)
+    plugin_manifest.write_text(
+        '{"database":{"schemas":[{"schema_name":"orac_dropbox"}]}}\n',
+        encoding="utf-8",
+    )
+    grant_path = (
+        tmp_path
+        / "resources/db/schema/orac_plugin/grant/example_to_dropbox.sql"
+    )
+    grant_path.parent.mkdir(parents=True, exist_ok=True)
+    grant_path.write_text(
+        textwrap.dedent(
+            """\
+            --liquibase formatted sql
+
+            --changeset clive:grant_example_to_dropbox context:core labels:core stripComments:false runOnChange:true
+            grant execute on orac_plugin.example_api to orac_dropbox;
+            --rollback revoke execute on orac_plugin.example_api from orac_dropbox;
+            """
+        ),
+        encoding="utf-8",
+    )
+    _write_product_controller(tmp_path, include_plugin=True)
+    _write_schema_controller(
+        tmp_path,
+        '<includeAll path="grant" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>',
+        schema="orac_plugin",
+    )
+    _write_schema_controller(tmp_path, "")
+    _write_properties(tmp_path)
+
+    issues = check_core_liquibase.run_checks(tmp_path)
+
+    assert any(
+        "core changelog grants to optional plugin schema orac_dropbox" in issue
+        for issue in issues
+    )
 
 
 def test_rejects_same_schema_view_dependency_without_force_view(tmp_path: Path) -> None:

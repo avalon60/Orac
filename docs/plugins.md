@@ -78,6 +78,7 @@ Optional manifest fields currently supported by schema version 2 include:
 - `ui`
 - `apex_apps`
 - `python_dependencies`
+- `command_dependencies`
 
 Routing text is derived only from routing-semantic metadata. Runtime,
 configuration, database, and execution-policy data do not become prompt or
@@ -484,6 +485,9 @@ Database metadata is declared with the optional `database` object:
       "version_check": {
         "enabled": false
       },
+      "bridge_api_dependencies": [
+        "knowledge_scope_validation"
+      ],
       "backup": {
         "include": true,
         "export_mode": "schema"
@@ -510,6 +514,18 @@ Plugins must not connect with core-schema owner credentials or bypass the
 `orac_plugin` bridge. Runtime database access is restricted to declared,
 approved APIs and grants. Database deployment status and audit data remain core
 platform responsibilities.
+
+`bridge_api_dependencies` requests narrowly catalogued privileges on
+host-owned `orac_plugin` APIs. The host validates each identifier against its
+internal catalogue; manifests cannot supply owner names, object names, or
+privilege text. During install or reconcile, Orac creates or verifies the
+plugin schema first, verifies that each requested bridge object is valid,
+applies the approved grant without grant option, and only then runs the
+plugin-owned Liquibase payload. Payload references to `orac_plugin` objects
+must match the declared dependencies, and unused declarations are rejected.
+
+Core changelogs must never grant to optional plugin-owned schemas. This keeps a
+fresh core deployment independent of which plugins happen to be installed.
 
 Plugins may opt in to SQLcl Liquibase deployment for plugin-owned database
 objects:
@@ -879,6 +895,49 @@ Installation validates configuration, required PAT-vault entries, dependencies,
 database deployment and entry-point readiness. It does not start long-running
 services or contact plugin external APIs. Only a successfully registered and
 enabled installation is eligible for routing or service startup.
+
+On the first installation of a service or hybrid plugin, Orac persists a
+disabled `installing` registry owner before creating dependent service
+lifecycle rows or recording the service-registration prerequisite probe. The
+final registry update enables the plugin only after those steps succeed. This
+preserves the parent-child database boundary without making a partially
+installed service runnable.
+
+## Command Prerequisites
+
+Schema-v2 manifests may declare commands from the Core-owned safe-probe
+catalogue:
+
+```json
+"command_dependencies": [
+  {
+    "command": "pandoc",
+    "version_specifier": ">=3.1,<4",
+    "required": false,
+    "purpose": "Convert supported Office and web documents to Markdown.",
+    "install_hint": "Install Pandoc 3.1+ and place it on the Orac service PATH."
+  }
+]
+```
+
+Declarations are descriptive only. A plugin cannot provide arguments,
+executable paths, environment variables, parsers, filters, package-manager
+commands or shell fragments. Orac resolves only registered command identifiers
+against a platform-controlled absolute-directory `PATH`, invokes the fixed
+catalogue probe without a shell, bounds its output and lifetime, and persists a
+sanitised report without executable paths or raw output.
+
+An optional unavailable command produces `degraded` status while the plugin
+remains enabled. A required failure stops a candidate before configuration,
+Python dependency, database, APEX, promotion or service side effects. A failed
+upgrade leaves an already active prior version untouched. Orac verifies
+prerequisites but never installs system packages.
+
+Install-time and `plugin check` probes are diagnostics for their own process
+identity and environment. Service registration probes again, and a plugin may
+resolve only a command that it declared. Runtime resolution probes immediately
+before use and records fresh status through an Orac-owned registry API. A check
+does not claim to describe another host, container or long-running process.
 
 Repository-level implementation standards remain in
 [`docs/agent-guardrails/50-plugin-standards.md`](agent-guardrails/50-plugin-standards.md).

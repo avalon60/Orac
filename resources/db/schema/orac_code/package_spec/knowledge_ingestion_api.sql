@@ -18,7 +18,16 @@ as
     p_processing_profile_code  in varchar2 default null,
     p_processing_instruction   in clob default null,
     p_source_modified_on       in timestamp with time zone default null,
-    p_legacy_parent_source_reference in varchar2 default null
+    p_legacy_parent_source_reference in varchar2 default null,
+    p_source_format_code        in varchar2 default null,
+    p_normalised_markdown       in clob default null,
+    p_normalised_text_sha256    in varchar2 default null,
+    p_normalised_byte_size      in number default null,
+    p_output_mime_type          in varchar2 default null,
+    p_extractor_code            in varchar2 default null,
+    p_extractor_version         in varchar2 default null,
+    p_extraction_metadata_json  in clob default null,
+    p_classification_tags_json  in clob default null
   ) return number;
 
   function try_claim_next_request(
@@ -45,7 +54,9 @@ as
     p_extractor_code      in varchar2,
     p_extractor_version   in varchar2,
     p_extracted_text      in clob,
-    p_text_sha256         in varchar2
+    p_text_sha256         in varchar2,
+    p_output_mime_type    in varchar2 default null,
+    p_extractor_metadata_json in clob default null
   ) return number;
 
   function create_chunk_set(
@@ -63,7 +74,8 @@ as
     p_span_end        in number,
     p_chunk_text      in clob,
     p_token_count     in number,
-    p_content_sha256  in varchar2
+    p_content_sha256  in varchar2,
+    p_chunk_metadata_json in clob default null
   ) return number;
 
   function upsert_embedding_model(

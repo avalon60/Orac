@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import hashlib
@@ -35,7 +36,29 @@ PROTECTED_ORAC_SCHEMAS = (
     "orac_core",
     "orac_api",
     "orac_code",
+    "orac_plugin",
 )
+
+PLUGIN_BRIDGE_API_CATALOG = {
+    "knowledge_scope_validation": {
+        "owner": "ORAC_PLUGIN",
+        "object_name": "KNOWLEDGE_SCOPE_VALIDATION_API",
+        "object_type": "PACKAGE",
+        "privilege": "EXECUTE",
+    },
+    "knowledge_tag_validation": {
+        "owner": "ORAC_PLUGIN",
+        "object_name": "KNOWLEDGE_TAG_VALIDATION_API",
+        "object_type": "PACKAGE",
+        "privilege": "EXECUTE",
+    },
+}
+_PLUGIN_BRIDGE_CATALOG_FIELDS = frozenset(
+    {"owner", "object_name", "object_type", "privilege"}
+)
+_PLUGIN_BRIDGE_GRANTABLE_PRIVILEGES = {
+    "PACKAGE": frozenset({"EXECUTE"}),
+}
 
 PLUGIN_DB_DEPLOYMENT_STATUSES = (
     "not_required",
@@ -61,12 +84,21 @@ _SCANNED_DDL_SUFFIXES = {".sql", ".pks", ".pkb", ".pls", ".plb"}
 _SCANNED_CHANGELOG_SUFFIXES = {".xml"}
 _PROTECTED_SCHEMA_REFERENCE = re.compile(
     r"(?<![a-z0-9_])\"?("
-    + "|".join(re.escape(schema) for schema in PROTECTED_ORAC_SCHEMAS)
+    + "|".join(
+        re.escape(schema)
+        for schema in PROTECTED_ORAC_SCHEMAS
+        if schema != "orac_plugin"
+    )
     + r")\"?\s*\.",
     re.IGNORECASE,
 )
 _SCHEMA_QUALIFIED_REFERENCE = re.compile(
     r"(?<![a-z0-9_])\"?([a-z][a-z0-9_]*)\"?\s*\.",
+    re.IGNORECASE,
+)
+_PLUGIN_BRIDGE_REFERENCE = re.compile(
+    r'(?<![a-z0-9_])"?orac_plugin"?\s*\.\s*'
+    r'"?([a-z][a-z0-9_]*)"?',
     re.IGNORECASE,
 )
 _PUBLIC_SYNONYM = re.compile(
@@ -117,6 +149,66 @@ class PluginDatabaseDeploymentError(RuntimeError):
 
 class PluginDatabaseValidationError(PluginDatabaseDeploymentError):
     """Raised when plugin database payload validation fails."""
+
+
+def validate_plugin_bridge_api_catalog(
+    catalog: Mapping[str, Mapping[str, str]] = PLUGIN_BRIDGE_API_CATALOG,
+) -> None:
+    """Validate the host-owned bridge dependency allowlist.
+
+    Args:
+        catalog: Dependency identifiers mapped to fixed grant metadata.
+
+    Raises:
+        PluginDatabaseValidationError: If the catalogue can express an unsafe
+            or ambiguous grant.
+    """
+    targets: dict[tuple[str, str, str, str], str] = {}
+    for dependency_id, dependency in catalog.items():
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", dependency_id):
+            raise PluginDatabaseValidationError(
+                f"Invalid plugin bridge API dependency id: {dependency_id}"
+            )
+        if set(dependency) != _PLUGIN_BRIDGE_CATALOG_FIELDS:
+            raise PluginDatabaseValidationError(
+                "Plugin bridge API catalogue entry must contain only owner, "
+                f"object_name, object_type, and privilege: {dependency_id}"
+            )
+        if any(
+            not isinstance(dependency[field], str) or not dependency[field]
+            for field in _PLUGIN_BRIDGE_CATALOG_FIELDS
+        ):
+            raise PluginDatabaseValidationError(
+                f"Plugin bridge API catalogue entry is incomplete: {dependency_id}"
+            )
+
+        owner = dependency["owner"].upper()
+        object_name = dependency["object_name"].upper()
+        object_type = dependency["object_type"].upper()
+        privilege = dependency["privilege"].upper()
+        if owner != "ORAC_PLUGIN":
+            raise PluginDatabaseValidationError(
+                "Plugin bridge API catalogue owner must be ORAC_PLUGIN: "
+                f"{dependency_id}"
+            )
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]*", object_name):
+            raise PluginDatabaseValidationError(
+                f"Invalid plugin bridge API object name: {dependency_id}"
+            )
+        grantable = _PLUGIN_BRIDGE_GRANTABLE_PRIVILEGES.get(object_type)
+        if grantable is None or privilege not in grantable:
+            raise PluginDatabaseValidationError(
+                "Plugin bridge API catalogue privilege is not grantable for "
+                f"{object_type}: {dependency_id}={privilege}"
+            )
+
+        target = (owner, object_name, object_type, privilege)
+        if target in targets:
+            raise PluginDatabaseValidationError(
+                "Plugin bridge API catalogue contains duplicate targets: "
+                f"{targets[target]}, {dependency_id}"
+            )
+        targets[target] = dependency_id
 
 
 @dataclass(frozen=True)
@@ -226,6 +318,11 @@ class PluginDatabaseSchemaProvisioner:
             with session.cursor() as cursor:
                 for schema in manifest.database_schemas:
                     self._ensure_schema(cursor, schema.schema_name)
+                    self._ensure_bridge_api_dependencies(
+                        cursor,
+                        schema.schema_name,
+                        schema.bridge_api_dependencies,
+                    )
             session.commit()
         except Exception as exc:
             raise PluginDatabaseDeploymentError(
@@ -298,6 +395,42 @@ class PluginDatabaseSchemaProvisioner:
         for grant in self._SCHEMA_GRANTS:
             cursor.execute(f"grant {grant} to {identifier}")
         self._log_info(f"Plugin database schema '{identifier}' grants verified.")
+
+    def _ensure_bridge_api_dependencies(
+        self,
+        cursor: Any,
+        schema_name: str,
+        dependency_ids: tuple[str, ...],
+    ) -> None:
+        """Apply approved host bridge API grants to one plugin schema."""
+        validate_plugin_bridge_api_catalog()
+        grantee = _schema_identifier(schema_name)
+        for dependency_id in dependency_ids:
+            dependency = PLUGIN_BRIDGE_API_CATALOG[dependency_id]
+            cursor.execute(
+                "select count(*) from dba_objects "
+                "where owner = :owner and object_name = :object_name "
+                "and object_type = :object_type and status = 'VALID'",
+                {
+                    "owner": dependency["owner"],
+                    "object_name": dependency["object_name"],
+                    "object_type": dependency["object_type"],
+                },
+            )
+            row = cursor.fetchone()
+            if not row or int(row[0]) != 1:
+                raise PluginDatabaseDeploymentError(
+                    "Plugin bridge API dependency is missing or invalid: "
+                    f"{dependency_id}"
+                )
+            cursor.execute(
+                f"grant {dependency['privilege']} on "
+                f"{dependency['owner']}.{dependency['object_name']} to {grantee}"
+            )
+            self._log_info(
+                f"Plugin bridge API dependency '{dependency_id}' granted to "
+                f"'{grantee}'."
+            )
 
     def _log_info(self, message: str) -> None:
         """Write an info message when a logger is available."""
@@ -769,6 +902,11 @@ class PluginDatabaseDeployer:
                 "Plugin database payload validated for "
                 f"'{manifest.plugin_id}' checksum={payload_checksum}."
             )
+            self._log_info(
+                "Provisioning plugin database schemas or reconciling grants for "
+                f"'{manifest.plugin_id}'."
+            )
+            self._schema_provisioner.ensure_schemas(manifest)
             if self._is_already_deployed(
                 manifest,
                 payload_checksum,
@@ -785,10 +923,6 @@ class PluginDatabaseDeployer:
                     message="Plugin database payload already deployed.",
                     payload_checksum=payload_checksum,
                 )
-            self._log_info(
-                f"Provisioning plugin database schemas for '{manifest.plugin_id}'."
-            )
-            self._schema_provisioner.ensure_schemas(manifest)
             self._log_info(
                 f"Packaging plugin database payload for '{manifest.plugin_id}'."
             )
@@ -1031,7 +1165,9 @@ def calculate_payload_checksum(manifest: PluginManifest) -> str:
 
 
 def validate_declared_database_schemas(manifest: PluginManifest) -> None:
-    """Reject manifests that declare protected Orac schemas as plugin schemas."""
+    """Reject unsafe plugin schema and bridge API declarations."""
+    validate_plugin_bridge_api_catalog()
+    dependency_schemas: dict[str, str] = {}
     for schema in manifest.database_schemas:
         schema_name = schema.schema_name.strip().lower()
         if schema_name in PROTECTED_ORAC_SCHEMAS:
@@ -1039,6 +1175,29 @@ def validate_declared_database_schemas(manifest: PluginManifest) -> None:
                 "Plugin database schema declaration targets protected Orac "
                 f"schema '{schema.schema_name}'."
             )
+        dependencies = schema.bridge_api_dependencies
+        if len(set(dependencies)) != len(dependencies):
+            raise PluginDatabaseValidationError(
+                "Plugin bridge API dependency declarations must be unique for "
+                f"schema '{schema.schema_name}'."
+            )
+        unknown_dependencies = sorted(
+            set(dependencies) - set(PLUGIN_BRIDGE_API_CATALOG)
+        )
+        if unknown_dependencies:
+            raise PluginDatabaseValidationError(
+                "Plugin bridge API dependency declaration is not approved: "
+                + ", ".join(unknown_dependencies)
+            )
+        for dependency_id in dependencies:
+            previous_schema = dependency_schemas.get(dependency_id)
+            if previous_schema is not None:
+                raise PluginDatabaseValidationError(
+                    "Plugin bridge API dependency declarations must be unique "
+                    "across plugin schemas: "
+                    f"{dependency_id} ({previous_schema}, {schema.schema_name})"
+                )
+            dependency_schemas[dependency_id] = schema.schema_name
 
 
 def validate_schema_payload(
@@ -1081,13 +1240,50 @@ def validate_plugin_database_security(manifest: PluginManifest) -> None:
     if manifest.database_deployment.deployment_type == "liquibase":
         sql_paths.extend(validate_plugin_liquibase_changelog(manifest))
 
+    declared_bridge_dependencies = {
+        dependency_id
+        for schema in manifest.database_schemas
+        for dependency_id in schema.bridge_api_dependencies
+    }
+    referenced_bridge_dependencies: set[str] = set()
     violations: list[str] = []
     for path in sorted(set(sql_paths)):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for match in _PLUGIN_BRIDGE_REFERENCE.finditer(text):
+            object_name = match.group(1).upper()
+            dependency_id = next(
+                (
+                    candidate_id
+                    for candidate_id, dependency in PLUGIN_BRIDGE_API_CATALOG.items()
+                    if dependency["object_name"] == object_name
+                ),
+                None,
+            )
+            if dependency_id is None:
+                violations.append(
+                    f"{path}: ORAC_PLUGIN object '{object_name}' is not in the "
+                    "host bridge API catalogue"
+                )
+            elif dependency_id not in declared_bridge_dependencies:
+                violations.append(
+                    f"{path}: ORAC_PLUGIN dependency '{dependency_id}' is not "
+                    "declared by the plugin manifest"
+                )
+            else:
+                referenced_bridge_dependencies.add(dependency_id)
         violations.extend(
             _validate_plugin_sql_file(
                 path,
                 declared_schemas=declared_schemas,
             )
+        )
+    unused_dependencies = sorted(
+        declared_bridge_dependencies - referenced_bridge_dependencies
+    )
+    for dependency_id in unused_dependencies:
+        violations.append(
+            "Plugin manifest requests unused ORAC_PLUGIN dependency "
+            f"'{dependency_id}'"
         )
     if violations:
         raise PluginDatabaseValidationError(
@@ -1340,6 +1536,9 @@ def _archive_manifest(
                     "purpose": schema.purpose,
                     "managed_by": schema.managed_by,
                     "minimum_version": schema.minimum_version,
+                    "bridge_api_dependencies": list(
+                        schema.bridge_api_dependencies
+                    ),
                     "version_check": {"enabled": schema.version_check.enabled},
                     "backup": (
                         None
@@ -1515,6 +1714,7 @@ def expected_deployment_objects(
     schema_payload_path: Path,
 ) -> dict[str, list[dict[str, str]]]:
     """Return expected live objects and grants for a deployed plugin payload."""
+    validate_plugin_bridge_api_catalog()
     declared_schemas = {
         schema.schema_name.strip().lower()
         for schema in manifest.database_schemas
@@ -1523,6 +1723,18 @@ def expected_deployment_objects(
     objects: set[tuple[str, str, str]] = set()
     grants: set[tuple[str, str, str, str]] = set()
     columns: set[tuple[str, str, str]] = set()
+
+    for schema in manifest.database_schemas:
+        for dependency_id in schema.bridge_api_dependencies:
+            dependency = PLUGIN_BRIDGE_API_CATALOG[dependency_id]
+            grants.add(
+                (
+                    dependency["owner"],
+                    dependency["object_name"],
+                    dependency["privilege"],
+                    schema.schema_name.upper(),
+                )
+            )
 
     for path in sorted(schema_payload_path.rglob("*")):
         if not path.is_file():

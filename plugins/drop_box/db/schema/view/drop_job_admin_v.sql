@@ -23,12 +23,21 @@ select job.drop_job_id,
        job.effective_processing_profile,
        job.effective_profile_instruction,
        job.effective_instruction,
+       job.effective_classification_tags_json,
+       job.conversion_attempts,
+       job.next_attempt_on,
+       job.failure_reason_code,
+       job.last_warning_on,
        case
          when job.error_message is null then null
          when job.status_code = 'quarantined'
          then 'Drop Box job was quarantined; review restricted logs.'
          when job.status_code = 'failed'
          then 'Drop Box processing failed; review restricted logs.'
+         when job.status_code = 'deferred_prerequisite'
+         then 'A document-conversion prerequisite is unavailable.'
+         when job.status_code = 'conversion_retry_wait'
+         then 'Document conversion is waiting for its next retry.'
          else 'Drop Box reported an error; review restricted logs.'
        end error_summary_redacted,
        job.document_id,

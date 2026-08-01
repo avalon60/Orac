@@ -24,7 +24,8 @@ create or replace package orac_dropbox.drop_box_admin_api as
     p_failed_path            in orac_dropbox.drop_location.failed_path%type,
     p_max_file_size_mb       in orac_dropbox.drop_location.max_file_size_mb%type,
     p_stability_seconds      in orac_dropbox.drop_location.stability_seconds%type,
-    p_drop_location_id       out orac_dropbox.drop_location.drop_location_id%type
+    p_drop_location_id       out orac_dropbox.drop_location.drop_location_id%type,
+    p_classification_tags_json in orac_dropbox.drop_location.classification_tags_json%type default null
   );
 
   procedure update_location(
@@ -45,7 +46,8 @@ create or replace package orac_dropbox.drop_box_admin_api as
     p_failed_path            in orac_dropbox.drop_location.failed_path%type,
     p_max_file_size_mb       in orac_dropbox.drop_location.max_file_size_mb%type,
     p_stability_seconds      in orac_dropbox.drop_location.stability_seconds%type,
-    p_row_version            in orac_dropbox.drop_location.row_version%type
+    p_row_version            in orac_dropbox.drop_location.row_version%type,
+    p_classification_tags_json in orac_dropbox.drop_location.classification_tags_json%type default null
   );
 
   procedure set_enabled(

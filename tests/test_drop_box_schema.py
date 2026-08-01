@@ -151,7 +151,9 @@ class DropBoxSchemaTests(unittest.TestCase):
         self.assertIn("prf.active_yn = 'y'", package_body)
         self.assertIn("processing profile is unknown or inactive", package_body)
         self.assertIn("enabled drop locations require a source path", package_body)
-        self.assertIn("source path must be an absolute filesystem path", package_body)
+        self.assertIn("source path must be absolute or start with", package_body)
+        self.assertIn("'$' || '{orac_home}/'", package_body)
+        self.assertIn("must not contain traversal", package_body)
         self.assertIn("duplicate active source paths are not allowed", package_body)
         self.assertIn("row_version = p_row_version", package_body)
         self.assertIn("from orac_dropbox.drop_job job", package_body)
@@ -442,8 +444,10 @@ class DropBoxSchemaTests(unittest.TestCase):
         self,
     ) -> None:
         controller_sql = (
-            PLUGIN_ROOT / "db" / "liquibase" / "controllers" / "01_table.xml"
-        ).read_text(encoding="utf-8").lower()
+            (PLUGIN_ROOT / "db" / "liquibase" / "controllers" / "01_table.xml")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         package_sql = "\n".join(
             path.read_text(encoding="utf-8").lower()
             for path in (SCHEMA_ROOT / "package_spec").glob("drop_box*.sql")
@@ -459,7 +463,9 @@ class DropBoxSchemaTests(unittest.TestCase):
 
         self.assertIn("drop_job_knowledge_ingestion_request.sql", controller_sql)
         self.assertTrue(
-            (SCHEMA_ROOT / "table" / "drop_job_knowledge_ingestion_request.sql").exists()
+            (
+                SCHEMA_ROOT / "table" / "drop_job_knowledge_ingestion_request.sql"
+            ).exists()
         )
         self.assertIn("knowledge_ingestion_request_id", package_sql)
         self.assertIn("record_core_acceptance", package_sql)
@@ -485,45 +491,98 @@ class DropBoxSchemaTests(unittest.TestCase):
         self.assertNotIn("/home/clive", seed_sql)
         self.assertNotIn("/mnt/orac-drop", seed_sql)
 
-    def test_readme_documents_scanner_operation_and_phase_one_limits(self) -> None:
-        readme = (PLUGIN_ROOT / "README.md").read_text(encoding="utf-8").lower()
+    def test_orac_docs_seed_is_portable_and_canonically_scoped(self) -> None:
+        seed_sql = (
+            (SCHEMA_ROOT / "seed_data" / "drop_location_orac_docs.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        controller_sql = (
+            PLUGIN_ROOT / "db" / "liquibase" / "controllers" / "12_seed_data.xml"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("drop_location_orac_docs.sql", controller_sql)
+        self.assertIn("'orac_docs' location_code", seed_sql)
+        self.assertIn("'$' || '{orac_home}/docs' path", seed_sql)
+        self.assertIn("'project' target_scope_type", seed_sql)
+        self.assertIn("'orac_core' target_scope_key", seed_sql)
+        self.assertIn("'raw_reference' processing_profile", seed_sql)
+        self.assertIn("dst.enabled_yn", seed_sql)
+        self.assertIn("dst.recursive_yn", seed_sql)
+        self.assertIn("dst.allowed_extensions", seed_sql)
+        self.assertIn("pending_work/**", seed_sql)
+        self.assertIn("backlog/**", seed_sql)
+        self.assertIn("knowledge_ingestion_request_id is null", seed_sql)
+        self.assertIn("'conversion_retry_wait'", seed_sql)
+        self.assertIn(
+            "knowledge_scope_validation_api.scope_status('project', 'orac_core')",
+            seed_sql,
+        )
+        self.assertNotIn("/home/clive", seed_sql)
+
+    def test_guides_document_operation_and_ingestion_boundaries(self) -> None:
+        operator_guide = (
+            (PLUGIN_ROOT / "docs" / "drop-box.md").read_text(encoding="utf-8").lower()
+        )
+        lifecycle_guide = (
+            (PLUGIN_ROOT / "docs" / "drop-box-data-lifecycle.md")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        documentation = " ".join((operator_guide + "\n" + lifecycle_guide).split())
+        normalised_lifecycle = " ".join(lifecycle_guide.split())
 
         for token in (
-            "testing scanner operation",
+            "first ingestion test",
             "/tmp/orac-dropbox-test/inbox",
             "bin/orac-plugin.sh service run drop_box",
-            "bin/orac-plugin.sh service run drop_box --duration-seconds 90",
             "runtime filesystem namespace",
             "docker",
-            "bind-mounted",
-            "service lifecycle",
-            "(drop_box, scanner)",
+            "bind-mount it",
+            "service policy",
+            "plugin: drop_box",
+            "service: scanner",
             "bin/orac-plugin.sh service policy drop_box scanner auto",
-            "orac_code.plugin_service_status_v",
-            "effective_policy",
-            "last_heartbeat_on",
             "foreground diagnostic",
-            "not the normal operational start path",
+            "not the normal startup path",
             "scanner-test.md",
-            "select location_code",
-            "from orac_dropbox.drop_location",
-            "from orac_dropbox.drop_job",
-            "from orac_dropbox.drop_job_event",
-            "testing with project docs",
             "cp docs/agent-guardrails/50-plugin-standards.md",
             "plugin-standards.md",
-            "does not currently persist scanner-only skip observations",
+            "scanner-only observations",
             "missing paths",
             "ignored files",
             "unstable files",
             "disallowed extensions",
-            "too-large files",
+            "oversized files",
             "symlinks",
+            "docx",
+            "pandoc",
+            "canonical markdown",
+            "classification tags",
+            "knowledge ingestion",
         ):
-            self.assertIn(token, readme)
+            self.assertIn(token, documentation)
 
-        self.assertIn("does not convert, summarise, chunk, embed, move", readme)
-        self.assertIn("delete, or quarantine files", readme)
+        self.assertIn(
+            "it owns local file discovery, source validation, canonical markdown production",
+            normalised_lifecycle,
+        )
+        self.assertIn(
+            "it does not own the core corpus, chunking, embeddings",
+            normalised_lifecycle,
+        )
+        self.assertIn(
+            "classification tags and ingestion notes have no behavioural authority",
+            normalised_lifecycle,
+        )
+        self.assertNotIn(
+            "drop box still does not convert",
+            documentation,
+        )
+        self.assertIn(
+            "does not move, delete, or quarantine source files",
+            documentation,
+        )
 
 
 if __name__ == "__main__":

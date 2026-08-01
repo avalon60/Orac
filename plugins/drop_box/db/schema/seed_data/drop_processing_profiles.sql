@@ -76,48 +76,48 @@ begin
   upsert_profile(
     'raw_reference',
     'Raw Reference',
-    'Use the source as reference material. Preserve facts and provenance; do not summarise or rewrite unless a location-specific instruction says otherwise.',
-    to_clob('Treat the source as reference material. Preserve the original meaning, important facts, terminology, and provenance. Do not summarise, rewrite, or infer new conclusions unless the location-specific instruction explicitly requests it.'),
+    'Non-transforming compatibility classification for raw reference material.',
+    null,
     10
   );
 
   upsert_profile(
     'concise_knowledge_note',
     'Concise Knowledge Note',
-    'Create a short reusable note containing durable facts, operational guidance, and key context.',
-    to_clob('Create a concise knowledge note. Keep durable facts, operational guidance, important caveats, and reusable context. Remove incidental wording, repetition, and temporary details unless they are necessary to understand the source.'),
+    'Non-transforming compatibility classification for concise knowledge notes.',
+    null,
     20
   );
 
   upsert_profile(
     'implementation_decision_record',
     'Implementation Decision Record',
-    'Extract the problem, decision, rationale, consequences, and follow-up work from the source.',
-    to_clob('Create an implementation decision record. Identify the problem, the decision made or proposed, rationale, alternatives considered where present, consequences, risks, and concrete follow-up work. Do not invent decisions not supported by the source.'),
+    'Non-transforming compatibility classification for implementation decisions.',
+    null,
     30
   );
 
   upsert_profile(
     'technical_manual',
     'Technical Manual',
-    'Turn the source into procedural or reference documentation suitable for engineers and operators.',
-    to_clob('Create technical manual content. Organise concepts, prerequisites, procedures, configuration values, examples, warnings, and verification steps. Prefer precise, repeatable instructions over narrative summary.'),
+    'Non-transforming compatibility classification for technical manuals.',
+    null,
     40
   );
 
   upsert_profile(
     'troubleshooting_note',
     'Troubleshooting Note',
-    'Extract symptoms, likely causes, diagnostics, fixes, and verification steps.',
-    to_clob('Create a troubleshooting note. Capture symptoms, affected components, likely causes, diagnostic checks, remediation steps, verification steps, and known limits. Keep commands and error text precise.'),
+    'Non-transforming compatibility classification for troubleshooting material.',
+    null,
     50
   );
 
   upsert_profile(
     'automation_rule_note',
     'Automation Rule Note',
-    'Extract trigger, conditions, actions, safety constraints, and expected outcomes for automation rules.',
-    to_clob('Create an automation rule note. Identify trigger events, required conditions, actions, safety constraints, failure handling, and expected outcomes. Make assumptions explicit and do not expand authority beyond the source.'),
+    'Non-transforming compatibility classification for automation rule notes.',
+    null,
     60
   );
 

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import hashlib
 from pathlib import Path
 import sys
 import unittest
@@ -18,17 +19,21 @@ for path in (SRC_ROOT, PLUGINS_ROOT):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from drop_box.models import (
+from drop_box.models import (  # noqa: E402
     CandidateFile,
     DropBoxHandoffJob,
     DropLocation,
     FileObservation,
     HashedCandidate,
 )
-from drop_box.models import ScanResult
-from orac_core.knowledge import ManagedCaptureResult
-from orac_core.knowledge.capture import KnowledgeCaptureError
-from drop_box.service import DropBoxService
+from drop_box.models import ScanResult  # noqa: E402
+from orac_core.knowledge import ManagedCaptureResult  # noqa: E402
+from orac_core.knowledge.capture import KnowledgeCaptureError  # noqa: E402
+from orac_core.knowledge.managed_store import (  # noqa: E402
+    ManagedStoreConfigurationError,
+)
+from drop_box.service import DropBoxService  # noqa: E402
+from drop_box.conversion import NormalisedDocument  # noqa: E402
 
 
 class _Repository:
@@ -202,6 +207,7 @@ class DropBoxServiceTests(unittest.TestCase):
             scanner=_Scanner(),
             repository_factory=lambda _context: repository,
             capture_service_factory=lambda _context: capture,
+            converter=_Converter(),
         )
 
         service.tick(object())
@@ -212,7 +218,7 @@ class DropBoxServiceTests(unittest.TestCase):
         self.assertEqual(
             capture.requests[0].legacy_source_key, "TEST:/tmp/drop/source.md"
         )
-        self.assertEqual(repository.status_updates, [])
+        self.assertEqual(repository.status_updates[0]["status_code"], "processing")
         self.assertEqual(
             repository.core_acceptances[-1]["knowledge_ingestion_request_id"],
             1234,
@@ -251,6 +257,7 @@ class DropBoxServiceTests(unittest.TestCase):
             capture_service_factory=lambda _context: _CaptureService(
                 fail=KnowledgeCaptureError("source file changed")
             ),
+            converter=_Converter(),
         )
 
         service.tick(object())
@@ -273,14 +280,41 @@ class DropBoxServiceTests(unittest.TestCase):
             capture_service_factory=lambda _context: _CaptureService(
                 fail=RuntimeError("package invalid")
             ),
+            converter=_Converter(),
         )
 
         service.tick(object())
 
-        self.assertEqual(repository.status_updates, [])
+        self.assertEqual(
+            [item["status_code"] for item in repository.status_updates],
+            ["processing", "queued"],
+        )
         self.assertEqual(repository.core_acceptances, [])
         self.assertEqual(service.last_stats.handoff_failed, 0)
         self.assertIn("remains queued", logger.warnings[-1])
+
+    def test_store_configuration_failure_aborts_before_per_job_retry(self) -> None:
+        repository = _Repository(handoff_available=True)
+        repository.handoff_jobs = [_handoff_job()]
+
+        def unavailable_store(_context):
+            raise ManagedStoreConfigurationError(
+                "STORE_HARDLINK_UNSUPPORTED",
+                "Managed-store no-clobber promotion is unavailable.",
+            )
+
+        service = DropBoxService(
+            scanner=_Scanner(),
+            repository_factory=lambda _context: repository,
+            capture_service_factory=unavailable_store,
+        )
+
+        with self.assertRaises(ManagedStoreConfigurationError):
+            service.tick(object())
+
+        self.assertEqual(repository.status_updates, [])
+        self.assertEqual(repository.core_acceptances, [])
+        self.assertIn("no-clobber promotion", service.last_error or "")
 
     def test_missing_core_handoff_leaves_jobs_queued(self) -> None:
         repository = _Repository(handoff_available=False)
@@ -339,6 +373,21 @@ class _CaptureService:
             ingestion_request_id=1234,
             content_uri="sha256/aa/bb/" + "a" * 64,
             content_sha256="a" * 64,
+        )
+
+
+class _Converter:
+    def normalise(self, *_args, **_kwargs):
+        return NormalisedDocument(
+            markdown="# Source\n",
+            text_sha256=hashlib.sha256(b"# Source\n").hexdigest(),
+            byte_size=len(b"# Source\n"),
+            source_format_code="markdown",
+            source_mime_type="text/markdown",
+            output_mime_type="text/markdown; charset=utf-8",
+            extractor_code="dropbox_markdown_passthrough",
+            extractor_version="1",
+            metadata_json='{"schema_version":1}',
         )
 
 

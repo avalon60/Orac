@@ -22,6 +22,10 @@ create or replace package body orac_code.plugin_registry_api as
     p_database_schemas_summary in orac_api.plugin_registry_v.database_schemas_summary%type,
     p_dependency_declarations  in orac_api.plugin_registry_v.dependency_declarations%type,
     p_dependency_fingerprint   in orac_api.plugin_registry_v.dependency_fingerprint%type,
+    p_command_dependency_declarations in orac_api.plugin_registry_v.command_dependency_declarations%type,
+    p_command_dependency_fingerprint in orac_api.plugin_registry_v.command_dependency_fingerprint%type,
+    p_command_prerequisite_status in orac_api.plugin_registry_v.command_prerequisite_status%type,
+    p_command_dependency_report in orac_api.plugin_registry_v.command_dependency_report%type,
     p_install_status           in orac_api.plugin_registry_v.install_status%type,
     p_configuration_status     in orac_api.plugin_registry_v.configuration_status%type,
     p_dependency_status        in orac_api.plugin_registry_v.dependency_status%type,
@@ -63,6 +67,10 @@ create or replace package body orac_code.plugin_registry_api as
     l_row.ui_accent_class := p_ui_accent_class;
     l_row.dependency_declarations := p_dependency_declarations;
     l_row.dependency_fingerprint := p_dependency_fingerprint;
+    l_row.command_dependency_declarations := p_command_dependency_declarations;
+    l_row.command_dependency_fingerprint := p_command_dependency_fingerprint;
+    l_row.command_prerequisite_status := p_command_prerequisite_status;
+    l_row.command_dependency_report := p_command_dependency_report;
     l_row.install_status := p_install_status;
     l_row.configuration_status := p_configuration_status;
     l_row.dependency_status := p_dependency_status;
@@ -82,6 +90,29 @@ create or replace package body orac_code.plugin_registry_api as
       l_row.plugin_registry_id
     );
   end upsert_plugin;
+
+  procedure update_command_prerequisite_status(
+    p_plugin_id in orac_api.plugin_registry_v.plugin_id%type,
+    p_command_prerequisite_status in orac_api.plugin_registry_v.command_prerequisite_status%type,
+    p_command_dependency_report in orac_api.plugin_registry_v.command_dependency_report%type
+  )
+  is
+  begin
+    if p_command_prerequisite_status not in (
+         'not_applicable', 'success', 'degraded', 'failed'
+       )
+    then
+      raise_application_error(-20042, 'Invalid command prerequisite status.');
+    end if;
+    update orac_api.plugin_registry_v
+       set command_prerequisite_status = p_command_prerequisite_status,
+           command_dependency_report = p_command_dependency_report
+     where plugin_id = p_plugin_id;
+    if sql%rowcount <> 1
+    then
+      raise_application_error(-20043, 'Plugin registry row was not found.');
+    end if;
+  end update_command_prerequisite_status;
 end plugin_registry_api;
 /
 

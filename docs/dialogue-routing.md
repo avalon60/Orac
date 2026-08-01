@@ -58,7 +58,7 @@ Canonical identities can be selected directly:
 
 ```text
 Consult PROJECT:ORAC_CORE knowledge source for the installation procedure.
-Query the PLUGIN:drop_box knowledge base for processing profile guidance.
+Query the PLUGIN:drop_box knowledge base for classification tag guidance.
 ```
 
 An explicit source name that is unknown, inactive, or unauthorised terminates
@@ -102,6 +102,11 @@ boundaries. With the shipped aliases, these turns match:
 How do I configure a Drop Box processing profile?
 What does the Orac documentation say about plugin installation?
 ```
+
+`processing profile` remains an implicit-routing compatibility phrase for
+historical dialogue. Current Drop Box administration uses Core-owned
+classification tags and provenance-only ingestion notes; profiles do not
+execute conversion or chunking behaviour.
 
 These turns do not match implicit local knowledge routing:
 
@@ -147,9 +152,11 @@ Core owns that pure eligibility policy in
 database/runtime adapter and reuses the Core predicate; knowledge discovery
 uses the same predicate rather than importing the model adapter.
 
-`ORAC_CORE` is administrator-maintained and is not seeded from Drop Box
-configuration. Before enabling dialogue retrieval, provision it through the
-published maintenance boundary:
+`ORAC_CORE` and its canonical project scope are seeded by the Core database
+install. They are explicit platform metadata and are not inferred from Drop
+Box configuration. If an administrator has deactivated the project, reactivate
+it through the published maintenance boundary before enabling dialogue
+retrieval:
 
 ```sql
 begin
@@ -165,6 +172,10 @@ end;
 
 Run this as an administrative identity already entitled to execute that API;
 do not insert directly into `orac_core.project_registry`.
+
+The Drop Box plugin seeds the `ORAC_DOCS` adapter location separately. That
+location targets `PROJECT:ORAC_CORE`; its location code is not another scope or
+an automatic dialogue alias.
 
 Privileges reference `orac_core.users.user_id` and the canonical scope id;
 `TYPE:key` is derived from immutable project/plugin identifiers. Usernames are
@@ -243,6 +254,8 @@ controlled inbox and leaves it enabled after the Core worker completes. The
 retained location and corpus make the test reproducible. Verify the current
 file SHA-256, non-test parent reference, canonical scope, completed request,
 current document version, chunks, embeddings, model shape, processing profile,
-and provenance through published views. The deterministic `hash-embedding-v1`
+classification tags, and provenance through published views. The compatibility
+processing profile has no behavioural authority. The deterministic
+`hash-embedding-v1`
 values prove shape and lifecycle only; lexical relevance is the actual
 first-release selection gate.

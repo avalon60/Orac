@@ -38,9 +38,34 @@ end;
 
 --changeset clive:create_trigger_orac_core_kn_docver_bu context:core labels:core stripComments:false splitStatements:false endDelimiter:/ runOnChange:true
 create or replace trigger orac_core.kn_docver_bu
-before update on orac_core.knowledge_document_versions
+before update or delete on orac_core.knowledge_document_versions
 for each row
 begin
+  if deleting
+  then
+    raise_application_error(
+      -20520,
+      'Knowledge document versions are immutable and cannot be deleted.'
+    );
+  end if;
+  if updating('DOCUMENT_VERSION_ID')
+     or updating('DOCUMENT_ID')
+     or updating('SOURCE_OBJECT_ID')
+     or updating('CONTENT_SHA256')
+     or updating('CONTENT_URI')
+     or updating('MIME_TYPE')
+     or updating('ORIGINAL_FILENAME')
+     or updating('BYTE_SIZE')
+     or updating('SOURCE_MODIFIED_ON')
+     or updating('SOURCE_FORMAT_CODE')
+     or updating('CREATED_BY')
+     or updating('CREATED_ON')
+  then
+    raise_application_error(
+      -20521,
+      'Knowledge document-version identity and provenance are immutable.'
+    );
+  end if;
   :new.updated_on := systimestamp;
   :new.updated_by := coalesce(
                        sys_context('apex$session', 'app_user'),

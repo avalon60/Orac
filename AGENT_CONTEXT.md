@@ -69,8 +69,10 @@ files own their ordered object-type includes.
 
 | Saved connection | Role | Purpose |
 | --- | --- | --- |
-| `orac` | `app` | Least-privileged internal Orac verification |
-| `orac-db` | `admin` | Cross-schema grants, invalid objects, container metadata, and installation diagnosis |
+| `orac` | `installer` | Core and plugin schema provisioning, cross-schema grants, and deployment diagnosis |
+| `orac-db` | `admin` | Privileged invalid-object, container-metadata, and installation diagnosis |
+| `orac-service` | `app` | Least-privileged internal Orac runtime verification |
+| `orac-plugin` | `plugin` | Approved plugin-bridge runtime verification |
 | `orac_apx_pub` | `apex` | Objects visible to Orac APEX applications |
 
 Use the least-privileged role that can answer the question.
