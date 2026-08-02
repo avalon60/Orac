@@ -1,7 +1,9 @@
-schema_version=1
+schema_version=2
 template_id=app-engineering/orac
-template_version=1.1.1
-template_payload_hash=97fb8ba975a15efdc62da765e03dda904f125304036c8b72e560fc8eaa6f01f2
-sdk_source=ai-plugins
-sdk_source_ref=origin/master
-sdk_source_commit=bd0a9aec84278eb74031f5509f5e6a7d6df8b931
+template_version=2.1.1
+template_payload_hash=88f6346963151a98d762ec54ebaf6453a617cf89ab6e5d715a9d121e3936975c
+sdk_source=avalon-ai-plugins
+sdk_source_ref=codex-sdk
+sdk_source_commit=1eb6f6ff14fbd4fa5092d858b38bfdef9360ae69
+created_at=2026-08-02T19:42:25Z
+deployed_at=2026-08-02T19:42:25Z
