@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Author: Clive Bostock
-# Date: 20 Jun 2026
+# Date: 11 Aug 2026
 # Description: Repair Oracle listener host binding after container recreation.
+# Codex-assisted modified.
+# Codex SDK reviewability guardrails followed.
 
 PROG="Orac: 005-repair-listener.sh"
 timestamp() { date +"%Y-%m-%d %H:%M:%S"; }
@@ -31,7 +33,8 @@ orac_repair_listener() {
   fi
 
   if pgrep -f "[t]nslsnr .*LISTENER" >/dev/null &&
-     ss -ltn 2>/dev/null | grep -Eq '(^|[[:space:]])0\.0\.0\.0:1521[[:space:]]'; then
+     ss -ltn 2>/dev/null |
+       grep -Eq '(^|[[:space:]])(0\.0\.0\.0|\*|\[::\]|::):1521([[:space:]]|$)'; then
     echo "ORAC_LISTENER_REPAIR_SKIPPED: LISTENER is already running on port 1521."
     return 0
   fi

@@ -1,5 +1,8 @@
 # Author: Clive Bostock
-#   Date: 25 Apr 2026
+# Date: 11 Aug 2026
+# Description: Creates Orac application users and configures required privileges.
+# Codex-assisted modified.
+# Codex SDK reviewability guardrails followed.
 #
 # Orac script to create application schema users during container setup.
 #
@@ -67,6 +70,15 @@ grant create session, create table, create view, create sequence,
 to ${user_name};
 EOF
   done
+
+  echo "[$(timestamp)] ${PROG} Configuring the ORAC_APX_PUB ORDS proxy grant"
+  sqlplus -L / as sysdba <<EOF
+whenever sqlerror exit failure rollback
+alter session set container=${ORACLE_PDB};
+
+alter user orac_apx_pub grant connect through ords_public_user;
+EOF
+  echo "ORAC_ORDS_PROXY_GRANT_COMPLETE: ORAC_APX_PUB may connect through ORDS_PUBLIC_USER."
 
   echo "[$(timestamp)] ${PROG} Granting the bounded hashing dependency to ORAC_CODE"
   sqlplus / as sysdba <<EOF

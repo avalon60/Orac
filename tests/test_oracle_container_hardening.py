@@ -2,6 +2,8 @@
 # Author: Clive Bostock
 # Date: 20-Jun-2026
 # Description: Verifies static and unit behaviour for ORDS/APEX container hardening.
+# Codex-assisted modified.
+# Codex SDK reviewability guardrails followed.
 
 from __future__ import annotations
 
@@ -24,6 +26,7 @@ APEX_ROLE_SETUP = ORACLE_ROOT / "setup" / "050-init-app-role.sh"
 ORDS_STARTUP = ORACLE_ROOT / "startup" / "010-start-ords.sh"
 LISTENER_REPAIR = ORACLE_ROOT / "startup" / "005-repair-listener.sh"
 ORDS_POST_INSTALL = ORACLE_ROOT / "setup" / "024-ords-post-install.sql"
+ORAC_USER_SETUP = ORACLE_ROOT / "setup" / "030-orac-user.sh"
 DEPLOY_SCRIPT = PROJECT_ROOT / "bin" / "orac-db-deploy.sh"
 APEX_DOC = PROJECT_ROOT / "docs" / "apex-administration.md"
 INSTALL_DOC = PROJECT_ROOT / "docs" / "installation.md"
@@ -120,13 +123,70 @@ def test_listener_repair_normalises_tcp_host_and_preserves_extproc() -> None:
     assert "PROTOCOL[[:space:]]*=[[:space:]]*TCP" in script
 
 
+def test_listener_repair_accepts_docker_wildcard_binding(tmp_path: Path) -> None:
+    """A running listener reported as *:1521 should not be started again."""
+    listener_file = tmp_path / "listener.ora"
+    listener_file.write_text(
+        textwrap.dedent(
+            """\
+            LISTENER =
+              (DESCRIPTION_LIST =
+                (DESCRIPTION =
+                  (ADDRESS = (PROTOCOL = TCP)(HOST = 0.0.0.0)(PORT = 1521))
+                  (ADDRESS = (PROTOCOL = IPC)(KEY = EXTPROC1521))
+                )
+              )
+            """
+        ),
+        encoding="utf-8",
+    )
+    command_dir = tmp_path / "bin"
+    command_dir.mkdir()
+    _write_executable(command_dir / "pgrep", "#!/usr/bin/env bash\nexit 0\n")
+    _write_executable(
+        command_dir / "ss",
+        "#!/usr/bin/env bash\nprintf '%s\\n' "
+        "'LISTEN 0 1024 *:1521 *:*'\n",
+    )
+    lsnrctl_called = tmp_path / "lsnrctl-called"
+    _write_executable(
+        command_dir / "lsnrctl",
+        "#!/usr/bin/env bash\nprintf '%s\\n' called >\"${LSNRCTL_CALLED}\"\nexit 1\n",
+    )
+
+    result = subprocess.run(
+        ["bash", str(LISTENER_REPAIR)],
+        cwd=PROJECT_ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{command_dir}:{os.environ['PATH']}",
+            "ORAC_LISTENER_FILE": str(listener_file),
+            "LSNRCTL_CALLED": str(lsnrctl_called),
+        },
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "ORAC_LISTENER_REPAIR_SKIPPED" in result.stdout
+    assert not lsnrctl_called.exists()
+
+
 def test_proxy_grant_is_minimal() -> None:
     sql = ORDS_POST_INSTALL.read_text(encoding="utf-8").lower()
+    user_setup = ORAC_USER_SETUP.read_text(encoding="utf-8").lower()
 
-    assert "alter user orac_apx_pub grant connect through ords_public_user;" in sql
-    assert sql.count("grant connect through ords_public_user") == 4
-    assert "grant dba" not in sql
-    assert "grant all" not in sql
+    assert "alter user orac_apx_pub grant connect through ords_public_user;" not in sql
+    assert sql.count("grant connect through ords_public_user") == 3
+    assert "whenever sqlerror exit failure rollback" in sql
+    assert "alter user orac_apx_pub grant connect through ords_public_user;" in user_setup
+    assert "whenever sqlerror exit failure rollback" in user_setup
+    assert user_setup.index("alter user orac_apx_pub") > user_setup.index("\n  done\n")
+    assert "orac_ords_proxy_grant_complete" in user_setup
+    for script in (sql, user_setup):
+        assert "grant dba" not in script
+        assert "grant all" not in script
 
 
 def test_apex_admin_account_is_reset_and_unexpired_during_setup() -> None:
@@ -251,3 +311,9 @@ def _run_wrapper(
         text=True,
         capture_output=True,
     )
+
+
+def _write_executable(path: Path, content: str) -> None:
+    """Write an executable test command stub."""
+    path.write_text(content, encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
