@@ -71,6 +71,7 @@ class _LifecycleStore:
                 owner_id="owner",
                 lease_token="token",
                 lease_expires_on="2026-07-02T12:01:00",
+                lease_active_yn="Y",
                 last_started_on="2026-07-02T12:00:00",
                 last_heartbeat_on="2026-07-02T12:00:30",
                 last_tick_on="2026-07-02T12:00:40",
@@ -172,6 +173,11 @@ class OracPluginCliTests(unittest.TestCase):
         self.assertEqual(args.service_command, "status")
         self.assertEqual(args.plugin_id, "drop_box")
         self.assertEqual(args.service_code, "scanner")
+
+        health_args = parser.parse_args(
+            ["service", "status", "drop_box", "scanner", "--require-running"]
+        )
+        self.assertTrue(health_args.require_running)
 
     def test_parser_supports_service_policy_surface(self) -> None:
         parser = self.cli.build_parser()
@@ -307,6 +313,38 @@ class OracPluginCliTests(unittest.TestCase):
             "last_error_message",
         ):
             self.assertIn(token, payload)
+
+    def test_service_status_require_running_health_results(self) -> None:
+        scenarios = (
+            ("running", "Y", True, 0),
+            ("stopped", "Y", True, 1),
+            ("running", "N", True, 1),
+            ("running", "Y", False, 1),
+        )
+        for state, lease_active, present, expected in scenarios:
+            store = _LifecycleStore()
+            rows = store.list_services()
+            rows[0].current_state = state
+            rows[0].lease_active_yn = lease_active
+            if not present:
+                rows = []
+            store.list_services = lambda rows=rows: rows
+
+            with self.subTest(
+                state=state,
+                lease_active=lease_active,
+                present=present,
+            ):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    status = self.cli.show_plugin_service_status(
+                        plugin_id="drop_box",
+                        service_code="scanner",
+                        require_running=True,
+                        lifecycle_store=store,
+                    )
+                self.assertEqual(status, expected)
+                self.assertTrue(output.getvalue().strip().startswith("["))
 
     def test_service_policy_updates_hide_row_version_input(self) -> None:
         output = io.StringIO()

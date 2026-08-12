@@ -106,6 +106,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     service_status.add_argument("plugin_id", nargs="?")
     service_status.add_argument("service_code", nargs="?")
+    service_status.add_argument(
+        "--require-running",
+        action="store_true",
+        help="Fail unless every matching service is running with an active lease.",
+    )
     service_policy = service_subparsers.add_parser(
         "policy",
         help="Set plugin service startup policy.",
@@ -132,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
                 return show_plugin_service_status(
                     plugin_id=args.plugin_id,
                     service_code=args.service_code,
+                    require_running=args.require_running,
                 )
             if args.service_command == "policy":
                 return set_plugin_service_policy(
@@ -329,24 +335,31 @@ def show_plugin_service_status(
     *,
     plugin_id: str | None = None,
     service_code: str | None = None,
+    require_running: bool = False,
     lifecycle_store: PluginServiceLifecycleStore | None = None,
 ) -> int:
-    """Print plugin service lifecycle status without changing plugin status output."""
+    """Print service status and optionally assert running, actively leased rows."""
     lifecycle_store = lifecycle_store or PluginServiceLifecycleStore()
-    if plugin_id and service_code:
+    if plugin_id and service_code and not require_running:
         rows = [lifecycle_store.get_service(plugin_id, service_code)]
     else:
         rows = [
             row
             for row in lifecycle_store.list_services()
-            if plugin_id is None or row.plugin_id == plugin_id
+            if (plugin_id is None or row.plugin_id == plugin_id)
+            and (service_code is None or row.service_code == service_code)
         ]
     print(
         json.dumps(
             [row.__dict__ for row in rows], indent=2, default=str, sort_keys=True
         )
     )
-    return 0
+    if not require_running:
+        return 0
+    return 0 if rows and all(
+        row.current_state == "running" and row.lease_active_yn == "Y"
+        for row in rows
+    ) else 1
 
 
 def set_plugin_service_policy(
