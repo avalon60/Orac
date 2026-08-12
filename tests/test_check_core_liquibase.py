@@ -99,7 +99,7 @@ def _write_formatted_table(path: Path) -> None:
             --liquibase formatted sql
 
             --changeset clive:create_table_orac_core_users context:core labels:core stripComments:false
-            --preconditions onFail:HALT onError:HALT
+            --preconditions onFail:MARK_RAN onError:HALT
             --precondition-sql-check expectedResult:0 select count(1) from all_tables where owner = 'ORAC_CORE' and table_name = 'USERS';
             create table orac_core.users (id number);
             --rollback drop table orac_core.users purge;

@@ -71,6 +71,10 @@ TRACKING_TABLE_KEYS = {
 }
 LIQUIBASE_NAMESPACE = {"db": "http://www.liquibase.org/xml/ns/dbchangelog"}
 CHANGESET_PATTERN = re.compile(r"^--changeset\s+(\S+):(\S+)(.*)$", re.MULTILINE)
+AUTHORITATIVE_PRECONDITION_PATTERN = re.compile(
+    r"^--preconditions onFail:(?:HALT|MARK_RAN) onError:HALT$",
+    re.MULTILINE,
+)
 CREATE_CORE_TABLE_PATTERN = re.compile(
     r"\bcreate\s+table\s+orac_core\.([a-z][a-z0-9_]*)\b",
     re.IGNORECASE,
@@ -78,6 +82,11 @@ CREATE_CORE_TABLE_PATTERN = re.compile(
 FORCE_VIEW_PATTERN = re.compile(
     r"\bcreate\s+or\s+replace\s+force\s+view\b",
     re.IGNORECASE,
+)
+PLSQL_CONTENT_PATTERN = re.compile(
+    r"^\s*(?:declare\b|begin\b|create\s+(?:or\s+replace\s+)?"
+    r"(?:package|trigger|procedure|function|type)\b)",
+    re.IGNORECASE | re.MULTILINE,
 )
 GRANT_ON_CORE_PATTERN = re.compile(
     r"\bgrant\s+[^;]+?\s+on\s+orac_core\.([a-z][a-z0-9_]*)\s+to\s+([a-z][a-z0-9_]*)\b",
@@ -473,13 +482,16 @@ def validate_sql_file(path: Path, root: Path) -> list[str]:
                     f"{relative}: hard-object changeset {changeset.changeset_id} "
                     "uses runOnChange:true"
                 )
-            if "--preconditions onFail:HALT onError:HALT" not in text:
+            if not AUTHORITATIVE_PRECONDITION_PATTERN.search(text):
                 issues.append(
                     f"{relative}: hard-object changeset {changeset.changeset_id} "
                     "lacks authoritative preconditions"
                 )
 
-        if directory in PLSQL_DIRS:
+        if (
+            directory in PLSQL_DIRS
+            and PLSQL_CONTENT_PATTERN.search(sql_without_line_comments(text))
+        ):
             if "splitStatements:false" not in attributes or "endDelimiter:/" not in attributes:
                 issues.append(
                     f"{relative}: PL/SQL changeset {changeset.changeset_id} "
