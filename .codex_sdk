@@ -1,9 +1,9 @@
 schema_version=2
 template_id=app-engineering/orac
-template_version=2.1.1
-template_payload_hash=88f6346963151a98d762ec54ebaf6453a617cf89ab6e5d715a9d121e3936975c
+template_version=2.2.0
+template_payload_hash=518ba2473bf5277fb259a7902919f01ab764228711e896b69b453fb6f1815039
 sdk_source=avalon-ai-plugins
 sdk_source_ref=codex-sdk
 sdk_source_commit=1eb6f6ff14fbd4fa5092d858b38bfdef9360ae69
 created_at=2026-08-02T19:42:25Z
-deployed_at=2026-08-02T19:42:25Z
+deployed_at=2026-08-02T20:22:06Z
