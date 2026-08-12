@@ -92,6 +92,20 @@ databasechangeloglock
 This keeps plugin deployment history and locks separate from core deployment
 history and from other plugins.
 
+The host also records each plugin database attempt in
+`orac_core.plugin_db_deployments`. The isolated plugin runner records
+`started` before invoking SQLcl and changes that row to `succeeded` only after
+tracking, expected objects, grants, and object validity have been verified. A
+failed runner or validation records `failed`, and the plugin registry must not
+be promoted to `database_status=deployed` without a successful current-checksum
+ledger row.
+
+SQLcl may create its `databasechangelog_details` helper view before the
+`databasechangelog` table on a schema's first deployment. The plugin runner
+conditionally compiles that helper after SQLcl creates both tracking tables,
+then fails closed if any object in the plugin schema remains invalid. It does
+not broadly recompile or replace plugin-owned application objects.
+
 ## Contexts And Labels
 
 The initial context and label vocabulary is intentionally small:

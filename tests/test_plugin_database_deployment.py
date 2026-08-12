@@ -48,8 +48,10 @@ class _FakeRunner:
         fail: bool = False,
         already_deployed: bool = False,
         payload_objects_deployed: bool | None = None,
+        verify_after_deploy: bool = True,
     ) -> None:
         self.fail = fail
+        self.verify_after_deploy = verify_after_deploy
         self.already_deployed_result = already_deployed
         self.payload_objects_deployed_result = (
             already_deployed
@@ -82,6 +84,9 @@ class _FakeRunner:
         self.calls.append({"manifest": manifest, "archive": archive})
         if self.fail:
             raise PluginDatabaseDeploymentError("mock deployment failed")
+        if self.verify_after_deploy:
+            self.already_deployed_result = True
+            self.payload_objects_deployed_result = True
 
 
 class _FakeProvisioner:
@@ -1197,7 +1202,8 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertEqual(result.status, "deployed")
             self.assertEqual(len(sqlplus_runner.already_deployed_calls), 0)
             self.assertEqual(len(sqlplus_runner.calls), 0)
-            self.assertEqual(len(liquibase_runner.already_deployed_calls), 1)
+            self.assertEqual(len(liquibase_runner.already_deployed_calls), 2)
+            self.assertEqual(len(liquibase_runner.payload_objects_deployed_calls), 1)
             self.assertEqual(len(liquibase_runner.calls), 1)
 
     def test_liquibase_already_deployed_sql_requires_schema_and_tracking(self) -> None:
@@ -1244,6 +1250,42 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertEqual(report["indexed_plugin_count"], 0)
             self.assertEqual(report["deployment_status"]["alpha"], "deployment_failed")
             self.assertIsNone(manager.get_manifest("alpha"))
+            self.assertEqual(len(runner.calls), 1)
+
+    def test_failed_post_deployment_verification_prevents_routing_eligibility(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache, tempfile.TemporaryDirectory() as temp_archive:
+            plugins_dir = Path(temp_plugins)
+            _write_plugin(
+                plugins_dir,
+                "alpha",
+                _manifest("alpha", database=_database()),
+                with_schema=True,
+            )
+            runner = _FakeRunner(verify_after_deploy=False)
+            deployer = PluginDatabaseDeployer(
+                runner=runner,
+                schema_provisioner=_FakeProvisioner(),
+                archive_root=Path(temp_archive),
+                clock=lambda: datetime(2026, 6, 3, 12, 0, tzinfo=UTC),
+            )
+            manager = PluginManager(
+                embedding_provider=HashEmbeddingProvider(),
+                plugins_dir=plugins_dir,
+                cache_dir=Path(temp_cache),
+                database_deployer=deployer,
+            )
+
+            report = manager.refresh()
+
+            self.assertEqual(report["indexed_plugin_count"], 0)
+            self.assertEqual(
+                report["deployment_status"]["alpha"],
+                "deployment_failed",
+            )
+            self.assertIsNone(manager.get_manifest("alpha"))
+            self.assertEqual(len(runner.already_deployed_calls), 2)
             self.assertEqual(len(runner.calls), 1)
 
     def test_deployment_success_allows_routing_eligibility(self) -> None:
@@ -1501,8 +1543,8 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
 
             self.assertEqual(report["indexed_plugin_count"], 1)
             self.assertEqual(report["deployment_status"]["alpha"], "deployed")
-            self.assertEqual(len(runner.already_deployed_calls), 1)
-            self.assertEqual(len(runner.payload_objects_deployed_calls), 0)
+            self.assertEqual(len(runner.already_deployed_calls), 2)
+            self.assertEqual(len(runner.payload_objects_deployed_calls), 1)
             self.assertEqual(len(runner.mark_payload_deployed_calls), 0)
             self.assertEqual(len(provisioner.calls), 1)
             self.assertEqual(len(runner.calls), 1)

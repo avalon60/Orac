@@ -1459,6 +1459,21 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("p2_target_plugin_key", export_sql)
         self.assertIn("p2_target_project_key", export_sql)
         self.assertIn("project target exists", export_sql)
+        self.assertIn(
+            "p_page_template_options=>'#default#:js-dialog-class-t-drawer--pulloutend'",
+            export_sql,
+        )
+        self.assertIn("p_dialog_width=>'1200'", export_sql)
+        classification_item_start = export_sql.index(
+            "p_name=>'p2_classification_tags'"
+        )
+        classification_item_end = export_sql.index(
+            "wwv_flow_imp_page.create_page_item(", classification_item_start
+        )
+        classification_item = export_sql[
+            classification_item_start:classification_item_end
+        ]
+        self.assertNotIn("p_begin_on_new_line=>'n'", classification_item)
         self.assertIn("p_name=>'dialog closed'", export_sql)
         self.assertIn("p_bind_event_type=>'apexafterclosedialog'", export_sql)
         self.assertIn("p_action=>'native_refresh'", export_sql)

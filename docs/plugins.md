@@ -506,9 +506,11 @@ managed by `orac`; plugin DDL must live under:
 plugins/<plugin-id>/db/schema/
 ```
 
-Plugin database deployment status is recorded by Orac. Plugins must not run
-their own setup DDL at ordinary runtime startup and must not write directly to
-Orac core tables.
+Plugin database deployment status is recorded by Orac as a `started`,
+`succeeded`, or `failed` host-owned ledger row. Registry promotion requires a
+successful row for the current payload checksum plus valid Liquibase tracking,
+expected objects, and grants. Plugins must not run their own setup DDL at
+ordinary runtime startup and must not write directly to Orac core tables.
 
 Plugins must not connect with core-schema owner credentials or bypass the
 `orac_plugin` bridge. Runtime database access is restricted to declared,

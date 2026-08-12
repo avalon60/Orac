@@ -933,6 +933,16 @@ class PluginDatabaseDeployer:
             )
             runner = self._runner_for_manifest(manifest)
             runner.deploy(manifest=manifest, archive=archive)
+            if not self._is_already_deployed(
+                manifest,
+                archive.payload_checksum,
+                schema_payload_path,
+            ):
+                raise PluginDatabaseDeploymentError(
+                    "Plugin database deployment completed but final ledger, "
+                    "tracking, object, or grant verification failed for "
+                    f"'{manifest.plugin_id}'."
+                )
         except PluginDatabaseValidationError as exc:
             self._log_warning(
                 "Plugin database validation failed for "

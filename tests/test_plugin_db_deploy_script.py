@@ -66,6 +66,12 @@ def _write_fake_sqlplus(path: Path) -> None:
     path.write_text(
         """#!/usr/bin/env bash
 input="$(cat)"
+if [[ -n "${SQLPLUS_INPUT_CAPTURE:-}" ]]; then
+  printf '%s\n-- SQLPLUS CALL --\n' "${input}" >>"${SQLPLUS_INPUT_CAPTURE}"
+fi
+if [[ "${SQLPLUS_FAIL_ON_STATUS:-0}" == "1" ]] && grep -q "plugin_db_deployment_api.record_status" <<<"${input}"; then
+  exit 1
+fi
 if grep -q "dba_objects" <<<"${input}"; then
   printf '%b' "${SQLPLUS_INVALID_OUTPUT:-}"
 fi
@@ -187,6 +193,68 @@ class PluginDbDeployScriptTests(unittest.TestCase):
             capture_output=True,
             check=False,
         )
+
+    def _run_liquibase_update(
+        self,
+        temp_path: Path,
+        *,
+        invalid_object_output: str = "",
+        fail_on_status: bool = False,
+    ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
+        """Run the Liquibase wrapper with fake SQLcl and SQL*Plus binaries."""
+        archive_path = temp_path / "alpha-db.tar.gz"
+        _write_liquibase_archive(archive_path)
+        sqlcl_home = temp_path / "sqlcl"
+        sql_bin = sqlcl_home / "bin"
+        sql_bin.mkdir(parents=True)
+        sql_path = sql_bin / "sql"
+        sqlcl_input = temp_path / "sqlcl-input.sql"
+        sql_path.write_text(
+            "#!/usr/bin/env bash\ncat >\"${SQLCL_INPUT_CAPTURE}\"\nexit 0\n",
+            encoding="utf-8",
+        )
+        sql_path.chmod(0o755)
+        bin_dir = temp_path / "bin"
+        bin_dir.mkdir()
+        _write_fake_sqlplus(bin_dir / "sqlplus")
+        sqlplus_input = temp_path / "sqlplus-input.sql"
+        properties_path = temp_path / "liquibase-plugin.properties"
+        properties_path.write_text(
+            "changeLogFile=db/liquibase/pluginController.xml\n",
+            encoding="utf-8",
+        )
+        env = _script_env(temp_path / "staging")
+        env["SQLCL_HOME"] = str(sqlcl_home)
+        env["LIQUIBASE_PROPERTIES_SOURCE"] = str(properties_path)
+        env["LOG_ROOT"] = str(temp_path / "logs")
+        env["ORACLE_PWD"] = "secret"
+        env["SQLCL_INPUT_CAPTURE"] = str(sqlcl_input)
+        env["SQLPLUS_INPUT_CAPTURE"] = str(sqlplus_input)
+        env["SQLPLUS_INVALID_OUTPUT"] = invalid_object_output
+        env["SQLPLUS_FAIL_ON_STATUS"] = "1" if fail_on_status else "0"
+        env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+
+        result = subprocess.run(
+            [
+                "bash",
+                str(LIQUIBASE_SCRIPT_PATH),
+                "--plugin-id",
+                "alpha",
+                "--archive",
+                str(archive_path),
+                "--schema-name",
+                "ORAC_ALPHA",
+                "--default-schema-name",
+                "ORAC_ALPHA",
+                "--liquibase-schema-name",
+                "ORAC_ALPHA",
+            ],
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        return result, sqlcl_input, sqlplus_input
 
     def test_dry_run_validates_archive_shape(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -415,6 +483,54 @@ class PluginDbDeployScriptTests(unittest.TestCase):
                 "liquibase.command.liquibaseSchemaName=ORAC_ALPHA",
                 generated_properties,
             )
+
+    def test_liquibase_update_records_status_and_repairs_helper_view(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result, _sqlcl_input, sqlplus_input = self._run_liquibase_update(
+                Path(temp_dir)
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn("ORAC_PLUGIN_DB_DEPLOYMENT_COMPLETE", result.stdout)
+            input_text = sqlplus_input.read_text(encoding="utf-8")
+            self.assertIn("p_deployment_status   => 'started'", input_text)
+            self.assertIn("p_deployment_status   => 'succeeded'", input_text)
+            self.assertNotIn("p_deployment_status   => 'failed'", input_text)
+            self.assertIn(
+                "alter view ORAC_ALPHA.DATABASECHANGELOG_DETAILS compile",
+                input_text,
+            )
+
+    def test_liquibase_update_records_failure_for_invalid_object(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result, _sqlcl_input, sqlplus_input = self._run_liquibase_update(
+                Path(temp_dir),
+                invalid_object_output=(
+                    "INVALID_OBJECT PACKAGE BODY ORAC_ALPHA.BAD_API\n"
+                ),
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("left invalid objects", result.stderr)
+            self.assertIn("ORAC_PLUGIN_DB_DEPLOYMENT_FAILED", result.stderr)
+            input_text = sqlplus_input.read_text(encoding="utf-8")
+            self.assertIn("p_deployment_status   => 'started'", input_text)
+            self.assertIn("p_deployment_status   => 'failed'", input_text)
+            self.assertNotIn("p_deployment_status   => 'succeeded'", input_text)
+
+    def test_liquibase_update_stops_when_started_status_cannot_be_recorded(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result, sqlcl_input, sqlplus_input = self._run_liquibase_update(
+                Path(temp_dir),
+                fail_on_status=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(sqlcl_input.exists())
+            input_text = sqlplus_input.read_text(encoding="utf-8")
+            self.assertIn("p_deployment_status   => 'started'", input_text)
 
     def test_liquibase_requires_default_schema_name(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
