@@ -68,6 +68,9 @@ class _Repository:
         self.failed: list[dict] = []
         self.stages: list[tuple[int, str, str]] = []
         self.embeddings: list[int] = []
+        self.existing_extractions: dict[int, tuple[int, str]] = {}
+        self.created_extractions = 0
+        self.inserted_chunk_texts: list[str] = []
 
     def add_payload(self, request_id: int, text: str) -> None:
         payload = text.encode("utf-8")
@@ -97,7 +100,7 @@ class _Repository:
 
     def request_detail(self, request_id: int) -> dict:
         content_uri, content_sha256, byte_size = self._payloads[request_id]
-        return {
+        detail = {
             "ingestion_request_id": request_id,
             "lease_owner": "worker",
             "lease_token": f"token-{request_id}",
@@ -107,6 +110,10 @@ class _Repository:
             "original_filename": f"payload-{request_id}.md",
             "source_modified_on": None,
         }
+        existing = self.existing_extractions.get(request_id)
+        if existing is not None:
+            detail["extraction_id"], detail["extracted_text"] = existing
+        return detail
 
     def mark_stage(
         self,
@@ -142,6 +149,7 @@ class _Repository:
         text_sha256: str,
     ) -> int:
         del extractor_code, extractor_version, extracted_text, text_sha256
+        self.created_extractions += 1
         return document_version_id + 1
 
     def create_chunk_set(
@@ -168,11 +176,11 @@ class _Repository:
         content_sha256: str,
         metadata_json: str | None = None,
     ) -> int:
+        self.inserted_chunk_texts.append(chunk_text)
         del (
             chunk_set_id,
             span_start,
             span_end,
-            chunk_text,
             token_count,
             content_sha256,
             metadata_json,
@@ -315,6 +323,36 @@ class KnowledgeIngestionWorkerTests(unittest.TestCase):
                 repository.failed[0]["error_code"], "EMPTY_MANAGED_PAYLOAD"
             )
             self.assertFalse(repository.failed[0]["retryable"])
+
+    def test_existing_extraction_is_chunked_and_embedded_as_materialised_text(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            managed_root = Path(temp)
+            repository = _Repository(managed_root=managed_root, request_ids=[1])
+            repository.add_payload(1, "raw payload must not be extracted again")
+            repository.existing_extractions[1] = (
+                91,
+                "# Existing extraction\n\nMaterialised lumen text.",
+            )
+            service = KnowledgeIngestionService(
+                repository=repository,
+                managed_root=managed_root,
+            )
+
+            service.tick(object())
+
+            self.assertEqual(repository.created_extractions, 0)
+            self.assertEqual(repository.completed, [1])
+            self.assertEqual(repository.failed, [])
+            self.assertTrue(repository.inserted_chunk_texts)
+            self.assertIn(
+                "Materialised lumen text.",
+                "\n".join(repository.inserted_chunk_texts),
+            )
+            self.assertEqual(
+                len(repository.embeddings), len(repository.inserted_chunk_texts)
+            )
 
     def test_managed_store_reason_mapping_is_stable(self) -> None:
         expected = {

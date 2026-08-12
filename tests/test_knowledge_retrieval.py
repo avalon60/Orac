@@ -16,10 +16,12 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from orac_core.knowledge import KnowledgeRetrievalError
-from orac_core.knowledge import KnowledgeRetrievalService
-from orac_core.knowledge import KnowledgeScope
-from orac_core.knowledge.repository import KnowledgeIngestionRepository
+from orac_core.knowledge import KnowledgeRetrievalError  # noqa: E402
+from orac_core.knowledge import KnowledgeRetrievalService  # noqa: E402
+from orac_core.knowledge import KnowledgeScope  # noqa: E402
+from orac_core.knowledge.repository import (  # noqa: E402
+    KnowledgeIngestionRepository,
+)
 
 FIXTURE_SENTENCE = "ORAC_INGESTION_FIXTURE_20260713_LUMEN_PATHWAY"
 
@@ -54,12 +56,12 @@ class _Repository:
 class _ConnectionBoundValue:
     """Test value that can only be read while its database session is open."""
 
-    def __init__(self, session, value: str) -> None:
+    def __init__(self, session, value: object) -> None:
         self._session = session
         self._value = value
         self.read_count = 0
 
-    def read(self) -> str:
+    def read(self) -> object:
         """Return the value while the owning fake session remains open."""
         if self._session.closed:
             raise RuntimeError("not connected to database")
@@ -72,7 +74,12 @@ class _SearchCursor:
 
     def __init__(self, session) -> None:
         self._session = session
-        self.description = [("EMBEDDING_VECTOR",), ("CHUNK_TEXT",)]
+        self.description = [
+            ("EMBEDDING_VECTOR",),
+            ("CHUNK_TEXT",),
+            ("CLASSIFICATION_TAGS_JSON",),
+            ("CHUNK_METADATA_JSON",),
+        ]
 
     def __enter__(self):
         return self
@@ -84,17 +91,32 @@ class _SearchCursor:
         self.statement = statement
         self.parameters = parameters
 
-    def fetchall(self) -> list[tuple[object, object]]:
-        return [(self._session.vector, self._session.chunk_text)]
+    def fetchall(self) -> list[tuple[object, ...]]:
+        return [
+            (
+                self._session.vector,
+                self._session.chunk_text,
+                self._session.classification,
+                self._session.native_json,
+            )
+        ]
 
 
 class _SearchSession:
     """Minimal session recording when its connection-bound values are read."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        overrides: dict[str, object] | None = None,
+    ) -> None:
         self.closed = False
         self.vector = _ConnectionBoundValue(self, "[1.0,0.0]")
         self.chunk_text = _ConnectionBoundValue(self, "stable scanner evidence")
+        self.classification = _ConnectionBoundValue(self, '["RAW_REFERENCE"]')
+        self.native_json = {"source": "oracle-json"}
+        for name, value in (overrides or {}).items():
+            setattr(self, name, value)
 
     def cursor(self) -> _SearchCursor:
         return _SearchCursor(self)
@@ -149,8 +171,60 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         self.assertTrue(session.closed)
         self.assertEqual(rows[0]["embedding_vector"], "[1.0,0.0]")
         self.assertEqual(rows[0]["chunk_text"], "stable scanner evidence")
+        self.assertEqual(rows[0]["classification_tags_json"], '["RAW_REFERENCE"]')
+        self.assertEqual(rows[0]["chunk_metadata_json"], session.native_json)
         self.assertEqual(session.vector.read_count, 1)
         self.assertEqual(session.chunk_text.read_count, 1)
+        self.assertEqual(session.classification.read_count, 1)
+
+    def test_repository_rejects_non_text_retrieval_clob_payloads(self) -> None:
+        for attribute, field_name in (
+            ("vector", "embedding_vector"),
+            ("chunk_text", "chunk_text"),
+            ("classification", "classification_tags_json"),
+        ):
+            with self.subTest(field_name=field_name):
+                session = _SearchSession()
+                value = _ConnectionBoundValue(session, b"not text")
+                setattr(session, attribute, value)
+                repository = KnowledgeIngestionRepository(
+                    session_factory=lambda: session
+                )
+
+                with self.assertRaisesRegex(TypeError, field_name):
+                    repository.load_searchable_chunks(
+                        target_scope_type="PLUGIN",
+                        target_scope_key="drop_box",
+                        embedding_model_identifier="hash-embedding-v1",
+                        embedding_dimensions=32,
+                        candidate_limit=10,
+                    )
+
+                self.assertTrue(session.closed)
+                self.assertEqual(value.read_count, 1)
+
+    def test_repository_rejects_direct_bytes_in_retrieval_clob_fields(self) -> None:
+        for attribute, field_name in (
+            ("vector", "embedding_vector"),
+            ("chunk_text", "chunk_text"),
+            ("classification", "classification_tags_json"),
+        ):
+            with self.subTest(field_name=field_name):
+                session = _SearchSession(overrides={attribute: b"not text"})
+                repository = KnowledgeIngestionRepository(
+                    session_factory=lambda: session
+                )
+
+                with self.assertRaisesRegex(TypeError, field_name):
+                    repository.load_searchable_chunks(
+                        target_scope_type="PLUGIN",
+                        target_scope_key="drop_box",
+                        embedding_model_identifier="hash-embedding-v1",
+                        embedding_dimensions=32,
+                        candidate_limit=10,
+                    )
+
+                self.assertTrue(session.closed)
 
     def test_search_passes_scope_and_scores_compatible_vectors(self) -> None:
         repository = _Repository([_row()])

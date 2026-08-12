@@ -14,6 +14,10 @@ from lib.fsutils import project_home
 from lib.session_manager import DBSession
 from lib.user_security import UserSecurity
 
+_RETRIEVAL_CLOB_FIELDS = frozenset(
+    {"chunk_text", "classification_tags_json", "embedding_vector"}
+)
+
 
 def default_orac_session() -> Any:
     """Open the saved Orac runtime database connection."""
@@ -177,7 +181,12 @@ class KnowledgeIngestionRepository:
                         f"Knowledge request not found: {ingestion_request_id}"
                     )
                 columns = [description[0].lower() for description in cursor.description]
-                return dict(zip(columns, row, strict=True))
+                detail = dict(zip(columns, row, strict=True))
+                detail["extracted_text"] = _optional_oracle_text(
+                    detail.get("extracted_text"),
+                    field_name="extracted_text",
+                )
+                return detail
         finally:
             _close_quietly(session)
 
@@ -258,7 +267,11 @@ class KnowledgeIngestionRepository:
                 columns = [description[0].lower() for description in cursor.description]
                 return [
                     {
-                        column: _materialize_query_value(value)
+                        column: (
+                            _optional_oracle_text(value, field_name=column)
+                            if column in _RETRIEVAL_CLOB_FIELDS
+                            else _materialize_query_value(value)
+                        )
                         for column, value in zip(columns, row, strict=True)
                     }
                     for row in cursor.fetchall()
@@ -483,8 +496,36 @@ class KnowledgeIngestionRepository:
         )
 
 
+def _optional_oracle_text(value: Any, *, field_name: str) -> str | None:
+    """Materialise and validate one optional Oracle text projection.
+
+    Args:
+        value: Plain text, null, or a connection-bound Oracle LOB.
+        field_name: Projection name used in validation errors.
+
+    Returns:
+        The materialised Python string, or ``None`` for a database null.
+
+    Raises:
+        TypeError: If the value or its LOB payload is not text.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    read_value = getattr(value, "read", None)
+    if not callable(read_value):
+        raise TypeError(f"Core knowledge {field_name} must be text or an Oracle LOB.")
+    payload = read_value()
+    if not isinstance(payload, str):
+        raise TypeError(
+            f"Core knowledge {field_name} Oracle LOB must contain text."
+        )
+    return payload
+
+
 def _materialize_query_value(value: Any) -> Any:
-    """Read connection-bound Oracle values before their session is closed."""
+    """Read a connection-bound value while preserving native Oracle JSON."""
     read_value = getattr(value, "read", None)
     return read_value() if callable(read_value) else value
 

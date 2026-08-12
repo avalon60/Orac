@@ -189,6 +189,11 @@ class KnowledgeIngestionService:
 
         text = detail.get("extracted_text")
         extraction_id = detail.get("extraction_id")
+        if text is not None and not isinstance(text, str):
+            raise TypeError(
+                "Knowledge repository extracted_text must be a materialised "
+                "Python string."
+            )
         if text is None or extraction_id is None:
             try:
                 text = bytes(payload or b"").decode("utf-8")
