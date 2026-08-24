@@ -70,7 +70,6 @@ create or replace package body orac_code.orac_prefs_seed as
             p_user_id     => p_user_id,
             p_pref_key    => rec.pref_key,
             p_pref_value  => l_pref_value,
-            p_value_type  => rec.value_type,
             p_row_version => l_row_version
           );
         end if;
@@ -83,7 +82,6 @@ create or replace package body orac_code.orac_prefs_seed as
             p_user_id     => p_user_id,
             p_pref_key    => rec.pref_key,
             p_pref_value  => l_pref_value,
-            p_value_type  => rec.value_type,
             p_row_version => l_row_version
           );
       end;

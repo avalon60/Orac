@@ -17,13 +17,14 @@ contract is in [Document Ingestion](../../../docs/document-ingestion.md).
 | Drop Box scanner | Filesystem observations, in-process stability memory, SHA-256 hashing, and durable enqueue. |
 | Drop Box converter | Source-format validation, native canonicalisation, controlled Pandoc invocation, and bounded extraction provenance. |
 | `ORAC_PLUGIN` bridge | Approved Core validation interfaces exposed to plugin-owned schemas. |
-| Orac Core capture | Source revalidation, original content-addressed storage, scope resolution, transactional document lineage, tags, and ingestion request creation. |
-| Orac Core worker | Leased request processing, structure-aware Markdown chunks, embeddings, completion, retry, and Core events. |
+| Orac Core capture | Source revalidation, content-addressed storage of the raw original and canonical Markdown, atomic normalised output-set registration, scope resolution, transactional document lineage, tags, and ingestion request creation. |
+| Orac Core worker | Leased request processing, verification and independent chunking of PRIMARY, MANIFEST, or TABLE members, embeddings, completion, retry, and Core events. |
 
 The expected grant direction is:
 
 ```text
-ORAC_DROPBOX -> ORAC_PLUGIN -> approved Core runtime path
+ORAC_DROPBOX -> ORAC_PLUGIN (approved validation interfaces only)
+host-managed Drop Box service -> Core capture service -> ORAC_CODE
 ORAC_CODE    -> ORAC_APX_PUB
 ORAC_DROPBOX -> ORAC_APX_PUB (approved admin views and package only)
 ```
@@ -39,6 +40,9 @@ During plugin install or reconcile, the host provisions `ORAC_DROPBOX`, checks
 that both `ORAC_PLUGIN` packages are valid, grants only `EXECUTE` to
 `ORAC_DROPBOX`, and then runs the plugin changelog. These grants are not part of
 the core changelog, so core deployment remains valid when Drop Box is absent.
+The host-managed scanner invokes the Core capture service in-process; its Core
+database work uses the `ORAC` runtime repository. Neither `ORAC_PLUGIN` nor
+`ORAC_DROPBOX` receives execution on the broad ingestion package.
 
 ## Location and Job Snapshots
 
@@ -58,9 +62,10 @@ notes onto the job. Later location edits do not rewrite historical job
 snapshots.
 
 The legacy `drop_processing_profile` table and related columns remain because
-older jobs and schema relationships depend on them. For new jobs, the primary
-compatibility profile is derived from the first canonical classification tag.
-Neither a legacy profile nor its instruction is an executable recipe.
+older jobs and schema relationships depend on them. Processing profiles and
+classifications are configured independently: profiles preserve compatibility
+metadata, while classifications are uppercase Core `DOC_CLASS` reference
+codes. Neither a legacy profile nor its instruction is an executable recipe.
 
 ## Scanner Lifecycle
 
@@ -185,7 +190,7 @@ Core independently verifies:
 - source format and MIME agree with the approved Drop Box formats;
 - canonical Markdown is non-empty UTF-8 and no larger than 50 MiB;
 - canonical hash, size, output MIME, extractor, and metadata agree;
-- tags are one to ten distinct lower-case strings;
+- tags are one to ten distinct uppercase `DOC_CLASS` reference codes;
 - ingestion notes are no larger than 16 KiB.
 
 The database then validates active tag identities and canonical scope
@@ -193,17 +198,20 @@ eligibility. Scope rejection is redacted at the Core boundary.
 
 ## Source Storage and Identity
 
-Core copies the verified original file through a temporary path and promotes it
-to:
+Core streams the verified original and canonical Markdown through the same
+managed-store abstraction. Each payload is promoted to the content-addressed
+layout derived from its own hash:
 
 ```text
 sha256/<first-two>/<next-two>/<full-source-sha256>
 ```
 
-Existing content with the same hash is verified and reused. The original
-source, not the Pandoc output, occupies this content-addressed path. Canonical
-Markdown and its extraction provenance are registered transactionally in the
-knowledge lineage.
+Existing content with the same hash is verified and reused. The raw original
+is authoritative for document-version source identity. Canonical Markdown is
+a distinct immutable PRIMARY artefact whose managed key, hash, byte size,
+media type, and extraction provenance are registered as one complete output
+set in the ingestion transaction. The extraction CLOB is a compatibility
+projection and must have the same canonical UTF-8 identity as the PRIMARY.
 
 The stable source key is:
 
@@ -231,15 +239,17 @@ After successful handoff, Drop Box records
 The synthetic Core `orac_core:knowledge_ingestion` service:
 
 1. claims the oldest queued, due retry, or expired-lease request;
-2. verifies the managed source still exists and matches its stored hash;
-3. uses the registered canonical extraction, with a limited native-text
-   compatibility path for older requests;
-4. creates or reuses the document version;
-5. creates a deterministic `core_markdown_blocks` version 1 chunk set;
-6. persists chunks with source spans, text hashes, and bounded structure
-   metadata;
-7. embeds every chunk with the configured provider and dimensions;
-8. completes only when searchable chunks and matching embeddings exist.
+2. verifies each registered chunkable managed member by logical key, hash, and
+   byte size without following symlinks;
+3. chunks PRIMARY and MANIFEST members as canonical Markdown and TABLE members
+   as complete CSV records, using the legacy CLOB path only when no artefacts
+   exist;
+4. creates or reuses one artefact-aware chunk set per member;
+5. persists chunks with text hashes, source spans, and bounded Markdown or
+   spreadsheet provenance;
+6. embeds every chunk with the configured provider and dimensions;
+7. completes only when the output set is complete, searchable chunks exist,
+   and every searchable chunk has a matching embedding.
 
 Core statuses are `QUEUED`, `PROCESSING`, `RETRY_WAIT`, `COMPLETED`, and
 `FAILED`. Worker errors are recorded under bounded error codes and retry policy.
@@ -262,11 +272,10 @@ under the Core grounding boundary.
 
 Dialogue retrieval independently requires:
 
-- `[knowledge.dialogue].enabled`;
+- `[knowledge.dialogue].enabled` (enabled in the shipped configuration);
 - an authenticated active principal;
 - an active eligible canonical project or plugin scope;
-- an effective RAG usage privilege unless the narrow administrative bypass is
-  deliberately enabled;
+- an effective RAG usage privilege for the authenticated principal and scope;
 - compatible stored embedding identity/dimensions;
 - lexical relevance and evidence-budget checks.
 
@@ -282,6 +291,27 @@ messages. Raw Pandoc stderr, executable paths, stack traces, credentials,
 ingestion notes, unrestricted event payloads, document text, and vectors are
 not rendered.
 
+## Failure, Retry, and Reconciliation Boundary
+
+A Core/database failure after managed promotion restores the Drop Box job to a
+retryable state. The promoted immutable object is retained; the next attempt
+verifies and reuses it instead of creating another physical copy. Concurrent
+promoters similarly converge on one verified object. An interrupted promotion
+may leave a store-owned temporary entry, while a completed promotion without a
+database reference may later appear as an unregistered object.
+
+Missing or corrupt registered objects, stale temporary entries, confirmed
+orphans, unsafe layout, symlinks, and database-lineage failures are reported by
+Core's bounded read-only reconciliation workflow. Recent unregistered objects
+and unresolved concurrent changes produce `INCOMPLETE`, not a premature orphan
+classification. Stable divergence produces `BLOCKED`.
+
+Neither Drop Box nor reconciliation automatically repairs, registers, moves,
+quarantines, deletes, rewrites, or recovers managed content. Use the
+[Core maintenance guide](../../../docs/knowledge-maintenance.md#read-only-operational-reconciliation)
+for inspection. Any recovery action requires a separately authorised and
+audited workflow.
+
 ## Deferred Work
 
 The current lifecycle deliberately excludes:
@@ -293,3 +323,8 @@ The current lifecycle deliberately excludes:
 - automatic regeneration of historical completed versions when a converter or
   chunker changes;
 - native Oracle vector search and a production semantic embedding migration.
+
+Raw-binary model submission and model-capability routing are Phase 2 work.
+Drop Box currently hands Core canonical Markdown only; future spreadsheet
+artefact shapes are supported by Core lineage but spreadsheet conversion is
+not a current Drop Box capability.

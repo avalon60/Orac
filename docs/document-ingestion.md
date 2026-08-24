@@ -16,8 +16,8 @@ should also read the
 | Owner | Responsibilities |
 | --- | --- |
 | Drop Box plugin | Filesystem discovery, stability checks, source hashing, format and archive validation, native text normalisation, allowlisted Pandoc conversion, plugin-owned job/audit state, and submission to the Core capture service. |
-| Orac Core capture | Revalidate the source identity and canonical Markdown, copy the original into the Core-managed content-addressed store, resolve the canonical scope, and create the transactional knowledge lineage and ingestion request. |
-| Orac Core worker | Claim queued requests, create structure-aware Markdown chunks, create embeddings, enforce completion invariants, and record bounded request events and failure state. |
+| Orac Core capture | Revalidate the source identity and canonical Markdown, persist both immutable representations in the Core-managed content-addressed store, register the complete normalised output set, resolve the canonical scope, and create the transactional knowledge lineage and ingestion request. |
+| Orac Core worker | Claim queued requests, verify registered managed artefacts, create source-specific Markdown or CSV chunk sets, create embeddings, enforce completion invariants, and record bounded request events and failure state. |
 | Orac Core retrieval | Authorise an authenticated principal for one active canonical scope, select searchable chunks, construct bounded untrusted evidence, and retain response provenance. |
 
 Plugins do not write to protected Core tables. Drop Box owns its private
@@ -38,20 +38,24 @@ and the model-facing context boundary.
 5. `KnowledgeManagedFileCaptureService` revalidates the original file, hashes,
    canonical Markdown, MIME values, extractor identity, bounded extraction
    metadata, classification tags, and ingestion notes.
-6. Core copies the original source into the managed content store and calls
-   `orac_code.knowledge_ingestion_api.submit_managed_file`.
+6. Core copies the original and canonical Markdown into the managed content
+   store and calls `orac_code.knowledge_ingestion_api.submit_managed_file` with
+   the complete normalised output-set envelope.
 7. The database creates or reuses the source object and document, creates the
-   appropriate document version and extraction, persists relational tags, and
-   queues an ingestion request transactionally.
-8. The Core `knowledge_ingestion` worker claims the request, creates a
-   `core_markdown_blocks` chunk set, embeds every searchable chunk, and marks
-   the request complete only when all completion invariants pass.
+   appropriate document version and extraction, atomically registers its
+   immutable artefact members, persists relational tags, and queues an
+   ingestion request.
+8. The Core `knowledge_ingestion` worker claims the request, verifies every
+   chunkable managed member, creates one artefact-owned chunk set per PRIMARY,
+   MANIFEST, or TABLE member, embeds every searchable chunk, and marks the
+   request complete only when output-set and embedding invariants pass. Legacy
+   extractions without artefacts retain their CLOB-backed chunk path.
 9. Scope-authorised dialogue retrieval may use the completed current chunks
-   when `[knowledge.dialogue].enabled` is explicitly enabled.
+   when `[knowledge.dialogue].enabled` is enabled.
 
 Ingestion and dialogue retrieval are separate controls. A document can be
-ingested while dialogue retrieval remains disabled, and a RAG usage grant does
-not authorise document submission.
+ingested while dialogue retrieval is explicitly disabled, and a RAG usage
+grant does not authorise document submission.
 
 ## Source Identity and Revisions
 
@@ -83,7 +87,7 @@ one unambiguous match without colliding with an existing stable reference.
 ## Managed Content and Database Lineage
 
 The `[knowledge].managed_root` directory is the Core-owned content-addressed
-pool for raw originals and future normalised artefacts. Database references
+pool for raw originals and normalised artefacts. Database references
 use the root-independent logical key:
 
 ```text
@@ -125,9 +129,9 @@ Runtime code has one physical-path authority:
 `src/orac_core/knowledge/managed_store.py`. Capture, worker, plugin, and
 database code may handle logical keys but must not construct shard paths.
 Permitted physical inspection is limited to managed-store tests, the P1-05
-controlled locator migration, and the future P1-09 inventory/reconciliation
-implementation; those downstream tools must consume the store's canonical
-layout rules rather than establish an independent runtime resolver.
+controlled locator migration, and the implemented P1-09 read-only inventory
+and reconciliation service. Those tools consume the store's canonical layout
+rules rather than establishing an independent runtime resolver.
 
 The database owns the relational lineage:
 
@@ -137,15 +141,37 @@ knowledge scope
   -> document
   -> document version
   -> extraction
-  -> chunk set
+  -> normalised artefact
+  -> artefact-owned chunk set
   -> chunk
   -> chunk embedding
 ```
 
 The ingestion request and its events record the asynchronous lifecycle. Core
-stores canonical Markdown on the extraction created during submission; the
-worker chunks that canonical representation. The managed file remains the
-verified original source, not a plugin-owned knowledge store.
+stores canonical Markdown as an immutable managed PRIMARY artefact during
+submission. The extraction CLOB remains a compatibility projection whose
+canonical UTF-8 hash must agree with the PRIMARY or spreadsheet MANIFEST. The
+worker chunks verified managed bytes and records the precise source artefact on
+each new chunk set. The raw managed object remains the verified original
+source, not a plugin-owned knowledge store.
+
+SINGLE output sets contain exactly one Markdown PRIMARY plus optional bounded
+METADATA. SPREADSHEET output sets contain exactly one Markdown MANIFEST and one
+or more independently chunkable CSV TABLE members with bounded sheet, table,
+cell-range, header-row, and hidden-sheet metadata. A set is registered
+atomically and idempotently; incomplete or inconsistent sets cannot become
+searchable or complete.
+
+### Lifecycle authority
+
+| Lifecycle object | Authority and compatibility boundary |
+| --- | --- |
+| Raw original | The immutable document-version hash, byte size, MIME type, and logical storage key identify the source bytes accepted by Core. Drop Box authorises the source location but does not own the durable copy. |
+| Extraction CLOB | A compatibility projection and the legacy source for extractions that have no artefacts. For new sets, its canonical UTF-8 identity must match the PRIMARY or MANIFEST member. |
+| Normalised output set | The immutable managed PRIMARY, MANIFEST, TABLE, and optional METADATA members are authoritative for new worker, retrieval, and materialisation reads. The database owns membership, order, completeness, and extraction lineage. |
+| Chunk set and chunks | Each new chunk set belongs to one exact chunkable artefact in the same extraction. A null source remains valid only for legacy CLOB-backed lineage. |
+| Retrieval and materialisation | Core authorises a principal and canonical scope, resolves database identities, verifies registered content, and emits bounded untrusted evidence. Callers never supply paths or storage keys. |
+| Reconciliation | The read-only operator service compares bounded Oracle snapshots with a non-following physical inventory. It reports divergence but has no authority to repair or mutate either side. |
 
 Raw document-version identity and durable provenance are immutable during
 ordinary runtime operation: document-version and document identifiers, source
@@ -155,6 +181,14 @@ timestamp. The database trigger rejects updates to those columns and rejects
 document-version deletion. Audit update fields and row version remain the only
 mutable document-version fields. P1-05 is the sole planned exception for a
 controlled legacy raw-locator migration.
+
+Existing canonical CLOB-only extractions can be migrated without changing
+chunk or embedding identities. The dry-run-first
+[`orac-knowledge` maintenance command](knowledge-maintenance.md) runs a
+read-only preflight, writes or reuses the CLOB bytes as a PRIMARY artefact,
+and attaches existing legacy chunk sets in the same per-extraction database
+transaction. Liquibase deployment installs the migration API but never runs
+this operational backfill automatically.
 
 Core schema ownership follows the normal Orac layers:
 
@@ -190,35 +224,46 @@ Capture validates before handing authority to the database. A validation or
 idempotency conflict fails the Drop Box handoff. A transient Core/database
 failure leaves the plugin job queued for a later attempt. If source promotion
 succeeds but database registration fails, the content-addressed file may remain
-as an orphan; a retry verifies and safely reuses the same hash.
+as an unregistered object; a retry verifies and safely reuses the same hash.
+Reconciliation treats a recent object as an incomplete concurrent-promotion
+case and only calls a stable, sufficiently old object a confirmed orphan.
+
+An interrupted promotion can leave either no destination and a removable
+store-owned temporary file, or a complete durable destination that a retry can
+reuse. Stale temporary files, confirmed orphans, missing objects, and corrupt
+objects are diagnostics, not automatic repair instructions. Operators may use
+the [read-only reconciliation command](knowledge-maintenance.md#read-only-operational-reconciliation)
+to classify them, but cleanup, registration, quarantine, deletion, locator
+rewriting, and content recovery require a separately authorised future
+workflow.
 
 The Drop Box-specific states and conversion retry rules are documented in the
 [data lifecycle](../plugins/drop_box/docs/drop-box-data-lifecycle.md).
 
 ## Classification Tags and Ingestion Notes
 
-Core owns the controlled classification-tag catalogue. Drop Box requires one to
-ten active, distinct, lower-case tags and snapshots the selection with each
-job. Core validates the snapshot again and persists authoritative relational
-links on the document version.
+Core owns document classifications as reference values in the fixed
+`DOC_CLASS` domain. Drop Box requires one to ten active, distinct uppercase
+reference-value codes and snapshots the selection with each job. Core validates
+the snapshot again and persists the composite domain/reference keys on the
+document version.
 
 The seeded tags are:
 
-- `raw_reference`
-- `concise_knowledge_note`
-- `implementation_decision_record`
-- `technical_manual`
-- `troubleshooting_note`
-- `automation_rule_note`
+- `RAW_REFERENCE`
+- `CONCISE_KNOWLEDGE_NOTE`
+- `IMPLEMENTATION_DECISION_RECORD`
+- `TECHNICAL_MANUAL`
+- `TROUBLESHOOTING_NOTE`
+- `AUTOMATION_RULE_NOTE`
 
 Tags describe content. They do not select converters, alter chunking or
 embeddings, influence ranking or authorisation, enter privileged prompts, or
 change routing.
 
 Ingestion notes are bounded, untrusted provenance. They are never executed and
-are not model instructions. Legacy processing-profile columns remain for
-compatibility; their primary tag and historical instruction snapshots have no
-behavioural authority.
+are not model instructions. Processing profiles remain operational metadata;
+they are not converted into document classifications.
 
 There is currently no classification-tag maintenance page in Core App 1042.
 Drop Box App 10020 selects active Core-owned tags through
@@ -248,15 +293,18 @@ refresh or restart; it does not delete existing knowledge records.
 
 ### `[knowledge.dialogue]`
 
-This section controls opt-in dialogue retrieval, not ingestion. Important
-settings include the `enabled` switch, canonical scope aliases, registry cache
-lifetime, candidate and selected-chunk limits, context budgets, and lexical
-relevance threshold.
+This section controls dialogue retrieval, not ingestion. The shipped
+configuration enables it; an explicit `enabled = false` disables it. Other
+settings include canonical scope aliases, registry cache lifetime, candidate
+and selected-chunk limits, context budgets, and the lexical relevance
+threshold.
 
-`allow_all_scopes` defaults to false. When deliberately enabled, it bypasses
-only the matching privilege-row requirement; authentication, active principal
-registration, canonical scope resolution, registry activity, plugin
-eligibility, and retrieval bounds still apply.
+Every retrieval requires a current Oracle `USE` privilege. The former
+`allow_all_scopes` bypass is retired and rejected at startup if configured.
+
+Normalised document, artefact, member, table, section, and chunk retrieval is
+described in [Authorised Knowledge Retrieval](knowledge-retrieval.md). Raw
+binary submission remains outside this interface.
 
 See [Dialogue Routing](dialogue-routing.md) for the matching and grounding
 contract.
@@ -270,7 +318,7 @@ defaults:
 - source path `${ORAC_HOME}/docs`, resolved by the scanner against its runtime
   project home;
 - recursive Markdown-only scanning;
-- target `PROJECT:ORAC_CORE` and classification tag `raw_reference`;
+- target `PROJECT:ORAC_CORE` and classification code `RAW_REFERENCE`;
 - exclusions for `pending_work/**`, `backlog/**`, hidden files, and common
   temporary or partial-file patterns;
 - no source-file movement, deletion, or quarantine.
@@ -306,8 +354,17 @@ enabled and runtime-eligible. They are not created from a Drop Box location.
 
 - Page 39 reports active, scheduled, expired, and revoked `USE` privilege
   history for canonical project and plugin scopes.
-- Page 40 grants or revokes a scope for an active principal, with effective and
-  expiry timestamps plus a reason code.
+- Page 39 displays Scope Type and Target separately and passes only the
+  selected numeric privilege ID to Page 40. Project and Plugin filters are
+  mutually exclusive and follow Scope Type.
+- In new-grant mode, Page 40 keeps scope type separate from its conditional
+  Project or Plugin selector. The selected target is a `knowledge_scope_id`;
+  no `TYPE:key` value is concatenated or split.
+- In existing-entry mode, principal, scope type, target, effective timestamp,
+  and expiry timestamp are read-only. Revoke uses the selected row ID and
+  protected row version to soft-delete that exact stored-active entry. It sets
+  `active_yn = 'N'`, records revocation metadata, and retains the row as
+  view-only history. Re-granting the relationship creates a new active row.
 - Both pages use `orac_code.rag_usage_privilege_api`; they do not perform direct
   table DML.
 
@@ -362,3 +419,8 @@ The current ingestion path does not provide:
 - an unreviewed manual terminal-job requeue action;
 - production semantic vector search. The shipped `hash-embedding-v1` provider
   proves lifecycle and shape; lexical relevance is the current evidence gate.
+
+Phase 2 raw-binary submission and model-capability routing are also deferred.
+The current model path accepts only authorised, bounded normalised text
+evidence; neither a raw document locator nor a provider's text-evidence
+eligibility grants binary attachment capability.

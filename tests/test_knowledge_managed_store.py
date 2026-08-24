@@ -88,6 +88,38 @@ class KnowledgeManagedStoreTests(unittest.TestCase):
             self.assertEqual(raw.storage_key, f"sha256:{identity.sha256}")
             self.assertEqual(raw.identity, normalised.identity)
 
+    def test_configured_alternate_roots_remain_isolated(self) -> None:
+        """Configuration can select an isolated store without cross-root reuse."""
+
+        class _Config:
+            def __init__(self, root: Path) -> None:
+                self.root = root
+
+            def path_config_value(self, *_args, **_kwargs) -> Path:
+                return self.root
+
+        payload = b"same payload in independent stores"
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            first = KnowledgeManagedStore.from_config(_Config(base / "first"))
+            second = KnowledgeManagedStore.from_config(_Config(base / "second"))
+
+            first_write = first.put_bytes(payload)
+            second_write = second.put_bytes(payload)
+
+            self.assertEqual(first_write.outcome, ManagedStoreWriteOutcome.INSTALLED)
+            self.assertEqual(second_write.outcome, ManagedStoreWriteOutcome.INSTALLED)
+            self.assertEqual(first_write.identity, second_write.identity)
+            self.assertNotEqual(first.managed_root, second.managed_root)
+            self.assertEqual(
+                first.facts().configuration_source,
+                "[knowledge].managed_root",
+            )
+            self.assertEqual(
+                second.facts().configuration_source,
+                "[knowledge].managed_root",
+            )
+
     def test_accepts_logical_and_exact_legacy_keys(self) -> None:
         payload = b"legacy-compatible"
         with tempfile.TemporaryDirectory() as temp:

@@ -30,6 +30,8 @@ class ProviderCapabilities:
     supports_model_pull: bool
     requires_loaded_model: bool
     cancellation_semantics: str
+    processing_locality: str
+    text_evidence_eligible: bool
 
 
 class ProviderRegistry:
@@ -49,6 +51,8 @@ class ProviderRegistry:
                 supports_model_pull=True,
                 requires_loaded_model=False,
                 cancellation_semantics="client_disconnect_stops_stream_consumer",
+                processing_locality="LOCAL",
+                text_evidence_eligible=True,
             ),
         ),
         "lmstudio": (
@@ -64,6 +68,8 @@ class ProviderRegistry:
                 supports_model_pull=False,
                 requires_loaded_model=True,
                 cancellation_semantics="fallback_non_streaming_call_cannot_be_cancelled_mid_generation",
+                processing_locality="LOCAL",
+                text_evidence_eligible=True,
             ),
         ),
     }

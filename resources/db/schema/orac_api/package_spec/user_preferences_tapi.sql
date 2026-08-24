@@ -57,7 +57,6 @@ as
       , p_user_id          in       orac_api.user_preferences_v.user_id%type
       , p_pref_key         in       orac_api.user_preferences_v.pref_key%type
       , p_pref_value       in       orac_api.user_preferences_v.pref_value%type
-      , p_value_type       in       orac_api.user_preferences_v.value_type%type                                 := 'string'
       , p_row_version         out   orac_api.user_preferences_v.row_version%type
    );
 
@@ -83,7 +82,6 @@ as
       , p_user_id             out   orac_api.user_preferences_v.user_id%type
       , p_pref_key            out   orac_api.user_preferences_v.pref_key%type
       , p_pref_value          out   orac_api.user_preferences_v.pref_value%type
-      , p_value_type          out   orac_api.user_preferences_v.value_type%type
       , p_created_on          out   orac_api.user_preferences_v.created_on%type
       , p_created_by          out   orac_api.user_preferences_v.created_by%type
       , p_updated_on          out   orac_api.user_preferences_v.updated_on%type
@@ -113,7 +111,6 @@ as
       , p_user_id          in       orac_api.user_preferences_v.user_id%type
       , p_pref_key         in       orac_api.user_preferences_v.pref_key%type
       , p_pref_value       in       orac_api.user_preferences_v.pref_value%type
-      , p_value_type       in       orac_api.user_preferences_v.value_type%type
       , p_row_version         out   orac_api.user_preferences_v.row_version%type
    );
 

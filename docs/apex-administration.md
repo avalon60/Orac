@@ -29,10 +29,30 @@ http://localhost:8042/ords/r/apex/workspace-sign-in/oracle-apex-sign-in
 ## RAG Usage Privileges
 
 Application 1042 Page 39 reports active, scheduled, expired, and revoked RAG
-usage privilege history. Page 40 selects active principals and eligible
-canonical scopes and calls `orac_code.rag_usage_privilege_api`; it performs no
-direct table DML. APEX is an administration surface, not an independent
-authorization authority.
+usage privilege history. Its manage action passes only the numeric privilege
+row ID to Page 40. Scope type and target are displayed separately; no
+concatenated canonical scope is used as a report value or form protocol.
+
+For a new grant, Page 40 presents scope type separately from a conditional
+Project or Plugin selector. Each selector returns a `knowledge_scope_id`. For
+an existing entry, principal, scope type, target, effective date, and expiry
+date are read-only. Revoke targets that exact row by ID and protected row
+version, sets its stored active state to `N`, and records the revocation actor,
+reason, and timestamp. The row remains visible as revoked history and becomes
+view-only; re-granting creates a new history row. Project and Plugin filters
+and form targets are mutually exclusive and are shown declaratively from Scope
+Type. Page 40 calls
+`orac_code.rag_usage_privilege_api` and performs no direct table DML. APEX is
+an administration surface, not an independent authorization authority.
+
+In new-grant mode, changes to Principal, Scope Type, Project, or Plugin invoke
+the package's read-only lifecycle check. If an unexpired stored-active grant
+already reserves that principal/target relationship, Page 40 displays `An
+applicable grant already exists for this principal and target.` and disables
+Grant. Clearing or changing the selection hides the message and enables the
+button again. The same package check runs as a Grant-only server validation,
+and the grant process converts a race-time `RAG_USAGE_ALREADY_GRANTED` result
+to the same clear inline error rather than reporting a no-op as success.
 
 ## Document Ingestion Administration
 
@@ -56,6 +76,12 @@ Pages 39/40 control dialogue retrieval permission. A RAG usage grant does not
 create a scope, enable ingestion, or authorise a Drop Box submission.
 Classification tags are Core-owned, but there is currently no tag-maintenance
 page in App 1042; App 10020 selects active tags through the approved Core LOV.
+
+The same `USE` grant authorises the Core runtime's bounded normalised-content
+retrieval API. App 1042 administers and reports privileges only: neither
+`ORAC_APX_PUB` nor any APEX application receives document bytes, artefact
+descriptors, the content-bearing chunk view, managed-store keys, or filesystem
+access. A future download UI requires a separate reviewed design.
 
 The Core `orac_core` / `knowledge_ingestion` worker appears in managed service
 status only when `[knowledge].enabled` permits registration. App 1043 does not

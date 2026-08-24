@@ -179,7 +179,6 @@ class KnowledgeScopeAuthorizer:
         aliases: Mapping[str, KnowledgeScope],
         registry: KnowledgeScopeRegistryRepository,
         authorization_repository: RagUsageAuthorizationRepository,
-        allow_all_scopes: bool = False,
         cache_ttl_seconds: int = 30,
         max_scopes_per_request: int = 3,
         logger: Any | None = None,
@@ -199,7 +198,6 @@ class KnowledgeScopeAuthorizer:
         )
         self._registry = registry
         self._authorization_repository = authorization_repository
-        self._allow_all_scopes = bool(allow_all_scopes)
         self._cache_ttl_seconds = cache_ttl_seconds
         self._max_scopes_per_request = max_scopes_per_request
         self._logger = logger
@@ -228,9 +226,6 @@ class KnowledgeScopeAuthorizer:
             authorization_repository=(
                 authorization_repository or RagUsageAuthorizationRepository()
             ),
-            allow_all_scopes=config_mgr.bool_config_value(
-                "knowledge.dialogue", "allow_all_scopes", default=False
-            ),
             cache_ttl_seconds=config_mgr.int_config_value(
                 "knowledge.dialogue", "registry_cache_ttl_seconds", default=30
             ),
@@ -245,9 +240,9 @@ class KnowledgeScopeAuthorizer:
         """Reject obsolete security settings even when dialogue RAG is disabled."""
         section_reader = getattr(config_mgr, "section_dict", None)
         if callable(section_reader):
-            obsolete_present = "user_scope_allowlist_json" in section_reader(
-                "knowledge.dialogue"
-            )
+            configured_keys = section_reader("knowledge.dialogue")
+            obsolete_present = "user_scope_allowlist_json" in configured_keys
+            bypass_present = "allow_all_scopes" in configured_keys
         else:
             missing = object()
             obsolete_present = (
@@ -258,10 +253,21 @@ class KnowledgeScopeAuthorizer:
                 )
                 is not missing
             )
+            bypass_present = (
+                config_mgr.config_value(
+                    "knowledge.dialogue", "allow_all_scopes", default=missing
+                )
+                is not missing
+            )
         if obsolete_present:
             raise KnowledgeScopeConfigurationError(
                 "knowledge.dialogue.user_scope_allowlist_json is obsolete; "
                 "administer RAG usage privileges in Oracle."
+            )
+        if bypass_present:
+            raise KnowledgeScopeConfigurationError(
+                "knowledge.dialogue.allow_all_scopes is retired; "
+                "every retrieval requires an Oracle USE privilege."
             )
 
     def validate_startup(self) -> KnowledgeScopeResolution:
@@ -279,11 +285,6 @@ class KnowledgeScopeAuthorizer:
                 + ", ".join(sorted(scope.canonical_name for scope in invalid))
             )
             return KnowledgeScopeResolution("degraded", "configured_scope_inactive")
-        if self._allow_all_scopes:
-            self._log_warning(
-                "SECURITY WARNING: rag_usage_allow_all_scopes is enabled; "
-                "database privilege rows are bypassed for authenticated active users only."
-            )
         return KnowledgeScopeResolution("ready", "scope_configuration_valid")
 
     def resolve_for_user(
@@ -314,7 +315,6 @@ class KnowledgeScopeAuthorizer:
             if scope not in resolved:
                 resolved.append(scope)
 
-        bypassed = False
         for scope in resolved:
             try:
                 result = self._authorization_repository.authorization_result(
@@ -325,12 +325,6 @@ class KnowledgeScopeAuthorizer:
                     "unavailable", "RAG_USAGE_AUTHORIZATION_UNAVAILABLE"
                 )
             if result == "RAG_USAGE_GRANTED":
-                continue
-            if self._allow_all_scopes and result in {
-                "RAG_USAGE_NOT_GRANTED",
-                "RAG_USAGE_EXPIRED",
-            }:
-                bypassed = True
                 continue
             if result in {
                 "RAG_USAGE_SCOPE_INACTIVE",
@@ -349,7 +343,7 @@ class KnowledgeScopeAuthorizer:
             return KnowledgeScopeResolution("inactive", "knowledge_scope_inactive")
         return KnowledgeScopeResolution(
             "authorised",
-            "rag_usage_allow_all_scopes" if bypassed else "RAG_USAGE_GRANTED",
+            "RAG_USAGE_GRANTED",
             tuple(resolved),
         )
 

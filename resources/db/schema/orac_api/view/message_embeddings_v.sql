@@ -14,7 +14,7 @@ create or replace force view orac_api.message_embeddings_v as
          , embedding
          , embedding_model
          , embedding_provider
-         , distance_metric
+         , vector_distance_metric_ref_value_code distance_metric
          , tokens_used
          , created_on
          , created_by

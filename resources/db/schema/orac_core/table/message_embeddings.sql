@@ -20,7 +20,10 @@ create table orac_core.message_embeddings
   embedding          vector(*, *) not null,
   embedding_model    varchar2(100 char) not null,
   embedding_provider varchar2(100 char) default on null 'oracle' not null,
-  distance_metric    varchar2(16 char) default 'COSINE' not null,
+  vector_distance_metric_domain_code    varchar2(100 char)
+                                          default on null 'VECTOR_DISTANCE_METRIC' not null,
+  vector_distance_metric_ref_value_code varchar2(100 char)
+                                          default on null 'COSINE' not null,
   tokens_used        number,
   created_on         timestamp default systimestamp not null,
   created_by         varchar2(128 char) default sys_context('userenv', 'session_user') not null,

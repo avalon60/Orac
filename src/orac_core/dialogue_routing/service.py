@@ -28,6 +28,19 @@ _EXPLICIT_UNNAMED_KNOWLEDGE_SOURCE = re.compile(
     r"\b(?:use|search|query|consult)\s+(?:the\s+)?knowledge\s+" r"(?:base|source)\b",
     re.IGNORECASE,
 )
+_BROAD_DOCUMENT_INTENT = re.compile(
+    r"\b(?P<purpose>summari[sz]e|review|extract|analy[sz]e|compare)\b",
+    re.IGNORECASE,
+)
+_MATERIALISATION_PURPOSES = {
+    "summarise": "SUMMARISE",
+    "summarize": "SUMMARISE",
+    "review": "REVIEW",
+    "extract": "EXTRACT",
+    "analyse": "ANALYSE",
+    "analyze": "ANALYSE",
+    "compare": "COMPARE",
+}
 
 _KNOWLEDGE_DENIED_MESSAGE = "I can’t use that knowledge source for this user."
 _KNOWLEDGE_UNAVAILABLE_MESSAGE = "That knowledge source is unavailable right now."
@@ -98,10 +111,16 @@ class DialogueRoutingService:
                 fallback_reason=resolution.reason_code,
                 user_visible_message=message,
             )
+        intent = _BROAD_DOCUMENT_INTENT.search(prompt)
         return DialogueRouteDecision(
             route_type="knowledge",
             reason_codes=(resolution.reason_code,),
             knowledge_scopes=resolution.scopes,
+            materialisation_purpose=(
+                _MATERIALISATION_PURPOSES[intent.group("purpose").casefold()]
+                if intent is not None
+                else None
+            ),
         )
 
     def explicit_knowledge_route(

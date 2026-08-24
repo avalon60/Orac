@@ -45,7 +45,7 @@ credentials, retrieval, plugins, and home-automation integrations.
   normalises Markdown and plain text, and converts supported DOCX, HTML, ODT,
   RTF, and EPUB documents to canonical Markdown. Core then owns managed source
   storage, chunking, embedding, relational tags, and provenance. Ingested
-  content can support opt-in, scope-authorised grounded dialogue retrieval.
+  content supports scope-authorised grounded dialogue retrieval by default.
 - Browser and desktop display surfaces for runtime state and transcripts.
 - Oracle APEX administration, including framework-managed plugin applications
   such as Home Assistant Status and Drop Box Admin, plus backup and restore
@@ -60,8 +60,9 @@ some advertised capabilities remain intentionally constrained:
   light, switch, and scene operations. Arbitrary services, whole-home commands,
   and control of locks, alarms, climate, covers, fans, scripts, and automations
   are not enabled.
-- Local-knowledge dialogue retrieval is disabled by default. Document
-  ingestion supports native UTF-8 text/Markdown and optional Pandoc-backed
+- Local-knowledge dialogue retrieval is enabled by default and remains
+  protected by per-principal Oracle usage grants. Document ingestion supports
+  native UTF-8 text/Markdown and optional Pandoc-backed
   DOCX, HTML, ODT, RTF, and EPUB conversion. PDF/OCR, spreadsheets, and
   presentations are not supported. The shipped hash embedding is
   development/test infrastructure, lexical relevance is the current evidence

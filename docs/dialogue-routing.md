@@ -120,6 +120,22 @@ The current retrieval execution path requires one resolved scope. Name one
 alias or canonical identity in a turn rather than relying on a multi-scope
 request.
 
+### Broad Document Intents
+
+Within an authorised single-scope knowledge route, the explicit verbs
+`summarise`, `summarize`, `review`, `extract`, `analyse`, `analyze`, and
+`compare` mark a trusted P1-08 materialisation purpose. They do not themselves
+authorise content. Existing RAG must resolve exactly one document version, and
+P1-06 and P1-07 still perform current authorisation, verification, selection,
+and downgrade decisions. Ordinary questions retain the existing chunk-grounded
+route.
+
+When P1-08 follow-ups are enabled, another explicit broad request in the same
+authorised scope may reuse only the registered same-document target state. It
+repeats P1-06 and P1-07 and is subject to cumulative round, byte, token, member,
+chunk, row, and elapsed-time ceilings. Model prose is never interpreted as a
+retrieval request.
+
 ### Triggering Versus Grounding
 
 Matching either trigger selects a local knowledge route; it does not guarantee
@@ -132,7 +148,9 @@ knowledge.
 
 ## Knowledge Scope
 
-Dialogue retrieval is disabled by default under `[knowledge.dialogue]`.
+Dialogue retrieval is enabled in the shipped `[knowledge.dialogue]`
+configuration. An explicit `enabled = false`, or a configuration that omits
+the setting, keeps retrieval disabled.
 Database-maintained RAG usage privileges bind the exact authenticated username
 to canonical relational scope identities displayed as:
 
@@ -196,9 +214,10 @@ execution and without exposing whether a requested corpus exists.
 
 ## Retrieval
 
-The first release reads current, completed chunks through
-`orac_code.knowledge_searchable_chunks_v` and joins the approved ingestion
-request view for processing-profile provenance. It requires the configured
+The runtime reads current, completed chunks only through the definer-rights
+`orac_code.knowledge_retrieval_api`. That package revalidates the authenticated
+username, scope status, and current `USE` privilege before opening the bounded
+cursor. The runtime has no direct searchable-view grant or synonym. It requires the configured
 embedding model identifier and dimensions to match stored chunks. The current
 `hash-embedding-v1` provider is deterministic development/test infrastructure;
 its cosine value is diagnostic, not a meaningful semantic relevance signal.
@@ -244,8 +263,9 @@ denial/unavailability, model incompatibility, and candidate-limit failure.
 For an explicit knowledge route, denial, unavailability, no evidence, and
 retrieval failure are terminal and do not execute a plugin or generate an LLM
 answer. Denied/unavailable provenance contains only the Core source, terminal
-route/outcome, and safe reason codes. Combined local and internet evidence and
-bounded follow-up routing are later phases.
+route/outcome, and safe reason codes. Combined local and internet evidence
+remains a later phase. P1-08 bounded same-document follow-ups are available only
+behind their separate disabled feature flag.
 
 ## Acceptance Ingestion
 

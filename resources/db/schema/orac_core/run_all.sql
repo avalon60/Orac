@@ -3,12 +3,21 @@ set echo on
 spool run_all.log
 
 prompt === tables ===
+@table/domain_codes.sql
+@table/domain_ref_values.sql
 @table/preference_definitions.sql
-@table/preference_definitions_slider_metadata.sql
-@table/timezones.sql
 @table/conversations.sql
 @table/devices.sql
 @table/llm_registry.sql
+@table/llm_providers.sql
+@table/llm_capabilities.sql
+@table/llm_input_representations.sql
+@table/llm_input_media_types.sql
+@table/llm_provider_inputs.sql
+@table/llm_provider_input_limits.sql
+@table/llm_model_capabilities.sql
+@table/llm_model_cap_inputs.sql
+@table/llm_model_input_limits.sql
 @table/tts_voices.sql
 @table/model_generation_presets.sql
 @table/message_embeddings.sql
@@ -33,8 +42,9 @@ prompt === tables ===
 prompt === indexes ===
 @index/prfdfn_pk.sql
 @index/prfdfn_uk1_idx.sql
-@index/tmzone_pk.sql
-@index/tmzone_uk1_idx.sql
+@index/prfdfn_dom_refval_fk1_idx.sql
+@index/prfdfn_dom_refval_fk2_idx.sql
+@index/prfdfn_dom_refval_fk3_idx.sql
 @index/convs_llm_reg_fk1_idx.sql
 @index/convs_pk.sql
 @index/convs_uk1_idx.sql
@@ -43,6 +53,30 @@ prompt === indexes ===
 @index/device_users_fk1_idx.sql
 @index/llm_reg_pk.sql
 @index/llm_reg_uk1_idx.sql
+@index/llm_reg_dom_refval_fk1_idx.sql
+@index/llm_reg_uk2_idx.sql
+@index/llm_reg_llm_prov_fk1_idx.sql
+@index/llm_prov_pk.sql
+@index/llm_prov_fks_indexes.sql
+@index/llm_cap_pk.sql
+@index/llm_cap_fks_indexes.sql
+@index/llm_inrep_pk.sql
+@index/llm_mtype_pk.sql
+@index/llm_mtype_fks_indexes.sql
+@index/llm_prvin_pk.sql
+@index/llm_prvin_uk1_idx.sql
+@index/llm_prvin_fks_indexes.sql
+@index/llm_pilim_pk.sql
+@index/llm_pilim_uk1_idx.sql
+@index/llm_pilim_fks_indexes.sql
+@index/llm_modcap_pk.sql
+@index/llm_modcap_fks_indexes.sql
+@index/llm_mcin_pk.sql
+@index/llm_mcin_uk1_idx.sql
+@index/llm_mcin_fks_indexes.sql
+@index/llm_milim_pk.sql
+@index/llm_milim_uk1_idx.sql
+@index/llm_milim_fks_indexes.sql
 @index/tts_voice_pk.sql
 @index/tts_voice_uk1_idx.sql
 @index/model_generation_presets_pk.sql
@@ -50,6 +84,7 @@ prompt === indexes ===
 @index/mesg_emb_mesgs_fk1_idx.sql
 @index/mesg_emb_pk.sql
 @index/mesg_emb_uk1_idx.sql
+@index/mesg_emb_dom_refval_fk1_idx.sql
 @index/mesgs_convs_fk1_idx.sql
 @index/mesgs_llm_reg_fk1_idx.sql
 @index/mesgs_pk.sql
@@ -72,6 +107,9 @@ prompt === indexes ===
 @index/plgsvc_uk1_idx.sql
 @index/prjreg_pk.sql
 @index/prjreg_uk1_idx.sql
+@index/dom_codes_pk.sql
+@index/dom_refval_pk.sql
+@index/dom_refval_dom_refval_fk1_idx.sql
 @index/orac_srch_q_pk.sql
 @index/orac_srch_res_pk.sql
 @index/orac_srch_res_srch_q_fk1_idx.sql
@@ -84,6 +122,7 @@ prompt === indexes ===
 @index/user_pref_pk.sql
 @index/user_pref_uk1_idx.sql
 @index/user_pref_users_fk1_idx.sql
+@index/user_pref_prfdfn_fk1_idx.sql
 @index/user_syns_pk.sql
 @index/user_syns_users_fk1_idx.sql
 @index/users_pk.sql
@@ -91,10 +130,18 @@ prompt === indexes ===
 
 prompt === constraints_pk ===
 @constraint_pk/prfdfn_pk.sql
-@constraint_pk/tmzone_pk.sql
 @constraint_pk/convs_pk.sql
 @constraint_pk/device_pk.sql
 @constraint_pk/llm_reg_pk.sql
+@constraint_pk/llm_prov_pk.sql
+@constraint_pk/llm_cap_pk.sql
+@constraint_pk/llm_inrep_pk.sql
+@constraint_pk/llm_mtype_pk.sql
+@constraint_pk/llm_prvin_pk.sql
+@constraint_pk/llm_pilim_pk.sql
+@constraint_pk/llm_modcap_pk.sql
+@constraint_pk/llm_mcin_pk.sql
+@constraint_pk/llm_milim_pk.sql
 @constraint_pk/tts_voice_pk.sql
 @constraint_pk/model_generation_presets_pk.sql
 @constraint_pk/mesg_emb_pk.sql
@@ -106,6 +153,8 @@ prompt === constraints_pk ===
 @constraint_pk/plgreg_pk.sql
 @constraint_pk/plgsvc_pk.sql
 @constraint_pk/prjreg_pk.sql
+@constraint_pk/dom_codes_pk.sql
+@constraint_pk/dom_refval_pk.sql
 @constraint_pk/orac_srch_q_pk.sql
 @constraint_pk/orac_srch_res_pk.sql
 @constraint_pk/orac_fch_src_pk.sql
@@ -117,9 +166,9 @@ prompt === constraints_pk ===
 
 prompt === constraints_uc ===
 @constraint_uc/prfdfn_uk1.sql
-@constraint_uc/tmzone_uk1.sql
 @constraint_uc/convs_uk1.sql
 @constraint_uc/llm_reg_uk1.sql
+@constraint_uc/llm_reg_uk2.sql
 @constraint_uc/tts_voice_uk1.sql
 @constraint_uc/model_generation_presets_uk1.sql
 @constraint_uc/mesg_emb_uk1.sql
@@ -133,10 +182,28 @@ prompt === constraints_uc ===
 @constraint_uc/user_pref_uk1.sql
 @constraint_uc/users_uk1.sql
 
+prompt === migrations ===
+@migration/p2_03_metadata_seed.sql
+@migration/p2_03_z_metadata_corrections.sql
+
 prompt === constraints_fk ===
+@constraint_fk/prfdfn_dom_refval_fk1.sql
+@constraint_fk/prfdfn_dom_refval_fk2.sql
+@constraint_fk/prfdfn_dom_refval_fk3.sql
 @constraint_fk/convs_llm_reg_fk1.sql
 @constraint_fk/convs_users_fk1.sql
 @constraint_fk/device_users_fk1.sql
+@constraint_fk/llm_reg_dom_refval_fk1.sql
+@constraint_fk/llm_reg_llm_prov_fk1.sql
+@constraint_fk/llm_prov_fks.sql
+@constraint_fk/llm_cap_fks.sql
+@constraint_fk/llm_mtype_fks.sql
+@constraint_fk/llm_prvin_fks.sql
+@constraint_fk/llm_pilim_fks.sql
+@constraint_fk/llm_modcap_fks.sql
+@constraint_fk/llm_mcin_fks.sql
+@constraint_fk/llm_milim_fks.sql
+@constraint_fk/mesg_emb_dom_refval_fk1.sql
 @constraint_fk/mesg_emb_mesgs_fk1.sql
 @constraint_fk/mesgs_convs_fk1.sql
 @constraint_fk/mesgs_llm_reg_fk1.sql
@@ -144,34 +211,46 @@ prompt === constraints_fk ===
 @constraint_fk/plg_inv_mesgs_fk1.sql
 @constraint_fk/plg_inv_users_fk1.sql
 @constraint_fk/plg_audevt_plg_inv_fk1.sql
+@constraint_fk/dom_refval_dom_codes_fk1.sql
+@constraint_fk/dom_refval_dom_refval_fk1.sql
 @constraint_fk/orac_srch_res_orac_srch_q_fk1.sql
 @constraint_fk/orac_fch_src_srch_res_fk1.sql
 @constraint_fk/orpers_model_preset_fk1.sql
 @constraint_fk/user_pe_users_fk1.sql
 @constraint_fk/user_pref_users_fk1.sql
+@constraint_fk/user_pref_prfdfn_fk1.sql
+@constraint_fk/user_syns_dom_refval_fk1.sql
 @constraint_fk/user_syns_users_fk1.sql
 
 prompt === constraints_other ===
-@constraint_other/prfdfn_ck1.sql
-@constraint_other/prfdfn_ck2.sql
-@constraint_other/prfdfn_ck2_slider_control_type.sql
-@constraint_other/prfdfn_ck3.sql
+@constraint_other/prfdfn_ck1_pref_value_type.sql
+@constraint_other/prfdfn_ck2_pref_control_type.sql
+@constraint_other/prfdfn_ck3_pref_lov_type.sql
 @constraint_other/prfdfn_ck4.sql
 @constraint_other/prfdfn_ck5.sql
 @constraint_other/prfdfn_ck6.sql
 @constraint_other/prfdfn_ck7.sql
-@constraint_other/tmzone_ck1.sql
 @constraint_other/convs_ck1.sql
 @constraint_other/device_ck1.sql
-@constraint_other/llm_reg_ck1.sql
+@constraint_other/llm_reg_ck1_context_domain.sql
 @constraint_other/llm_reg_ck2.sql
+@constraint_other/llm_reg_ck3_p203_reserved.sql
+@constraint_other/llm_prov_checks.sql
+@constraint_other/llm_cap_checks.sql
+@constraint_other/llm_inrep_checks.sql
+@constraint_other/llm_mtype_checks.sql
+@constraint_other/llm_prvin_checks.sql
+@constraint_other/llm_pilim_checks.sql
+@constraint_other/llm_modcap_checks.sql
+@constraint_other/llm_mcin_checks.sql
+@constraint_other/llm_milim_checks.sql
 @constraint_other/tts_voice_ck1.sql
 @constraint_other/tts_voice_ck2.sql
 @constraint_other/tts_voice_ck3.sql
 @constraint_other/model_generation_presets_ck1.sql
 @constraint_other/model_generation_presets_ck2.sql
 @constraint_other/model_generation_presets_ck3.sql
-@constraint_other/mesg_emb_ck1.sql
+@constraint_other/mesg_emb_ck1_distance_domain.sql
 @constraint_other/mesgs_ck1.sql
 @constraint_other/mesgs_ck2.sql
 @constraint_other/plg_inv_ck1.sql
@@ -190,20 +269,35 @@ prompt === constraints_other ===
 @constraint_other/plgsvc_ck3.sql
 @constraint_other/prjreg_ck1.sql
 @constraint_other/prjreg_ck2.sql
+@constraint_other/dom_codes_ck1.sql
+@constraint_other/dom_codes_ck2.sql
+@constraint_other/dom_codes_ck3.sql
+@constraint_other/dom_refval_ck1.sql
+@constraint_other/dom_refval_ck2.sql
+@constraint_other/dom_refval_ck3.sql
+@constraint_other/dom_refval_ck4.sql
+@constraint_other/dom_refval_ck5.sql
 @constraint_other/orpers_ck1.sql
 @constraint_other/orpers_ck2.sql
 @constraint_other/orpers_ck3.sql
-@constraint_other/user_pref_ck1.sql
-@constraint_other/user_pref_ck2.sql
 @constraint_other/user_pe_ck1.sql
 @constraint_other/user_syns_ck1.sql
+@constraint_other/user_syns_ck2_alias_domain.sql
 @constraint_other/users_ck1.sql
 
 prompt === comments ===
 @comment/preference_definitions.sql
-@comment/timezones.sql
 @comment/conversations.sql
 @comment/llm_registry.sql
+@comment/llm_providers.sql
+@comment/llm_capabilities.sql
+@comment/llm_input_representations.sql
+@comment/llm_input_media_types.sql
+@comment/llm_provider_inputs.sql
+@comment/llm_provider_input_limits.sql
+@comment/llm_model_capabilities.sql
+@comment/llm_model_cap_inputs.sql
+@comment/llm_model_input_limits.sql
 @comment/tts_voices.sql
 @comment/model_generation_presets.sql
 @comment/message_embeddings.sql
@@ -215,16 +309,45 @@ prompt === comments ===
 @comment/plugin_registry.sql
 @comment/plugin_services.sql
 @comment/project_registry.sql
+@comment/domain_codes.sql
+@comment/domain_ref_values.sql
 @comment/orac_personalities.sql
 @comment/user_preferences.sql
+@comment/user_synonyms.sql
 @comment/users.sql
+
+prompt === annotations ===
+@annotation/domain_codes.sql
+@annotation/domain_ref_values.sql
+@annotation/preference_definitions.sql
+@annotation/llm_registry.sql
+@annotation/llm_providers.sql
+@annotation/llm_capabilities.sql
+@annotation/llm_input_representations.sql
+@annotation/llm_input_media_types.sql
+@annotation/llm_provider_inputs.sql
+@annotation/llm_provider_input_limits.sql
+@annotation/llm_model_capabilities.sql
+@annotation/llm_model_cap_inputs.sql
+@annotation/llm_model_input_limits.sql
+@annotation/message_embeddings.sql
+@annotation/user_preferences.sql
+@annotation/user_synonyms.sql
 
 prompt === triggers ===
 @trigger/prfdfn_bu.sql
-@trigger/tmzone_bu.sql
 @trigger/convs_bu.sql
 @trigger/device_bu.sql
 @trigger/llm_reg_bu.sql
+@trigger/llm_prov_bu.sql
+@trigger/llm_cap_bu.sql
+@trigger/llm_inrep_bu.sql
+@trigger/llm_mtype_bu.sql
+@trigger/llm_prvin_bu.sql
+@trigger/llm_pilim_bu.sql
+@trigger/llm_modcap_biu.sql
+@trigger/llm_mcin_biu.sql
+@trigger/llm_milim_bu.sql
 @trigger/model_generation_presets_bu.sql
 @trigger/mesg_emb_bu.sql
 @trigger/mesgs_bu.sql
@@ -235,9 +358,16 @@ prompt === triggers ===
 @trigger/plgreg_bu.sql
 @trigger/plgsvc_bu.sql
 @trigger/prjreg_bu.sql
+@trigger/dom_codes_bud.sql
+@trigger/dom_refval_bud.sql
 @trigger/user_pe_bu.sql
 @trigger/user_pref_bu.sql
 @trigger/user_syns_bu.sql
 @trigger/users_bu.sql
+
+prompt === seed data ===
+@seed_data/application_reference_domains.sql
+@seed_data/document_classifications.sql
+@seed_data/timezones.sql
 
 spool off

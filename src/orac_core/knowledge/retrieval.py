@@ -10,11 +10,12 @@ import json
 import math
 import re
 from typing import Any
+import uuid
 
 from model.plugin_routing.embeddings import EmbeddingProvider, HashEmbeddingProvider
 
 from .models import KnowledgeRetrievalOutcome, KnowledgeSearchResult
-from .repository import KnowledgeIngestionRepository
+from .repository import KnowledgeRetrievalRepository
 from .scope import KnowledgeScope, KnowledgeScopeConfigurationError
 
 _LEXICAL_TOKEN = re.compile(r"[a-z0-9]+(?:[._-][a-z0-9]+)*", re.IGNORECASE)
@@ -60,11 +61,11 @@ class KnowledgeRetrievalService:
     def __init__(
         self,
         *,
-        repository: KnowledgeIngestionRepository | None = None,
+        repository: KnowledgeRetrievalRepository | None = None,
         embedding_provider: EmbeddingProvider | None = None,
     ) -> None:
         """Initialise retrieval with injectable persistence and embeddings."""
-        self._repository = repository or KnowledgeIngestionRepository()
+        self._repository = repository or KnowledgeRetrievalRepository()
         self._embedding_provider = embedding_provider or HashEmbeddingProvider()
 
     def search(
@@ -73,6 +74,7 @@ class KnowledgeRetrievalService:
         *,
         target_scope_type: str,
         target_scope_key: str,
+        principal_username: str,
         top_k: int = 5,
     ) -> list[KnowledgeSearchResult]:
         """Compatibility wrapper returning matches for one canonical scope."""
@@ -84,6 +86,7 @@ class KnowledgeRetrievalService:
             ) from exc
         outcome = self.retrieve(
             query,
+            principal_username=principal_username,
             scope=scope,
             max_selected_chunks=top_k,
             min_lexical_score=0.0,
@@ -96,6 +99,7 @@ class KnowledgeRetrievalService:
         self,
         query: str,
         *,
+        principal_username: str,
         scope: KnowledgeScope,
         max_candidate_chunks: int = 1000,
         max_selected_chunks: int = 6,
@@ -116,14 +120,29 @@ class KnowledgeRetrievalService:
         except Exception as exc:
             raise KnowledgeRetrievalError("query_embedding_failed") from exc
         dimensions = len(query_vector)
-        rows = self._repository.load_searchable_chunks(
+        retrieval_id, resolution, rows = self._repository.open_search_candidates(
+            principal_username=principal_username,
             target_scope_type=scope.scope_type,
             target_scope_key=scope.scope_key,
             embedding_model_identifier=self._embedding_provider.model_id,
             embedding_dimensions=dimensions,
             candidate_limit=max_candidate_chunks,
+            retrieval_id=str(uuid.uuid4()),
         )
+        if resolution.get("status") != "APPROVED":
+            return KnowledgeRetrievalOutcome(
+                status="failed",
+                reason_codes=(str(resolution.get("reason_code") or "RETRIEVAL_NOT_AUTHORISED"),),
+                scope=scope,
+                embedding_model_identifier=self._embedding_provider.model_id,
+            )
         if len(rows) > max_candidate_chunks:
+            self._repository.record_outcome(
+                retrieval_id=retrieval_id,
+                outcome_code="FAILED",
+                reason_code="RETRIEVAL_LIMIT_EXCEEDED",
+                chunk_count=len(rows),
+            )
             return KnowledgeRetrievalOutcome(
                 status="failed",
                 reason_codes=("candidate_limit_exceeded",),
@@ -181,7 +200,6 @@ class KnowledgeRetrievalService:
                     source_type=str(row.get("source_type") or ""),
                     document_title=_optional_string(row.get("document_title")),
                     original_filename=_optional_string(row.get("original_filename")),
-                    content_uri=_optional_string(row.get("content_uri")),
                     span_start=_optional_int(row.get("span_start")),
                     span_end=_optional_int(row.get("span_end")),
                     chunk_content_sha256=_optional_string(
@@ -216,6 +234,46 @@ class KnowledgeRetrievalService:
                     chunk_metadata_json=_optional_string(
                         row.get("chunk_metadata_json")
                     ),
+                    source_artefact_id=_optional_int(
+                        row.get("source_artefact_id")
+                    ),
+                    source_artefact_role_code=_optional_string(
+                        row.get("source_artefact_role_code")
+                    ),
+                    source_artefact_logical_name=_optional_string(
+                        row.get("source_artefact_logical_name")
+                    ),
+                    source_artefact_media_type=_optional_string(
+                        row.get("source_artefact_media_type")
+                    ),
+                    source_artefact_sha256=_optional_string(
+                        row.get("source_artefact_sha256")
+                    ),
+                    source_artefact_ordinal=_optional_int(
+                        row.get("source_artefact_ordinal")
+                    ),
+                    source_sheet_name=_optional_string(
+                        row.get("source_sheet_name")
+                    ),
+                    source_table_name=_optional_string(
+                        row.get("source_table_name")
+                    ),
+                    source_member_cell_range=_optional_string(
+                        row.get("source_member_cell_range")
+                    ),
+                    source_header_rows_json=_optional_string(
+                        row.get("source_header_rows_json")
+                    ),
+                    source_hidden_sheet=_optional_string(
+                        row.get("source_hidden_sheet")
+                    ),
+                    source_row_start=_optional_int(row.get("source_row_start")),
+                    source_row_end=_optional_int(row.get("source_row_end")),
+                    source_chunk_cell_range=_optional_string(
+                        row.get("source_chunk_cell_range")
+                    ),
+                    extraction_id=_optional_int(row.get("extraction_id")),
+                    chunk_set_id=_optional_int(row.get("chunk_set_id")),
                 )
             )
 
@@ -245,6 +303,13 @@ class KnowledgeRetrievalService:
                     else "no_evidence_above_threshold"
                 )
             )
+            self._repository.record_outcome(
+                retrieval_id=retrieval_id,
+                outcome_code="COMPLETED",
+                reason_code="RETRIEVAL_CHUNKS_RETURNED",
+                returned_byte_size=0,
+                chunk_count=0,
+            )
             return KnowledgeRetrievalOutcome(
                 status="failed" if all_rows_malformed else "no_evidence",
                 reason_codes=(reason,),
@@ -254,6 +319,15 @@ class KnowledgeRetrievalService:
                 malformed_count=malformed_count,
                 embedding_model_identifier=self._embedding_provider.model_id,
             )
+        self._repository.record_outcome(
+            retrieval_id=retrieval_id,
+            outcome_code="COMPLETED",
+            reason_code="RETRIEVAL_CHUNKS_RETURNED",
+            returned_byte_size=sum(
+                len(item.chunk_text.encode("utf-8")) for item in selected
+            ),
+            chunk_count=len(selected),
+        )
         return KnowledgeRetrievalOutcome(
             status="grounded",
             reason_codes=("local_evidence_selected",),

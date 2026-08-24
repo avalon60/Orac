@@ -73,6 +73,15 @@ create or replace package body orac_dropbox.drop_box_api as
        and prf.active_yn = 'Y'
      where loc.drop_location_id = p_drop_location_id;
 
+    if l_classification_tags is null
+       or dbms_lob.getlength(l_classification_tags) = 0
+    then
+      raise_application_error(
+        -20022,
+        'Drop location is missing configured classifications.'
+      );
+    end if;
+
     insert into orac_dropbox.drop_job (
       drop_location_id,
       source_path,
@@ -103,10 +112,7 @@ create or replace package body orac_dropbox.drop_box_api as
       l_processing_profile,
       l_profile_instruction,
       l_instruction,
-      coalesce(
-        l_classification_tags,
-        json_array(l_processing_profile returning clob)
-      )
+      l_classification_tags
     )
     returning drop_job_id into l_job_id;
 

@@ -7,33 +7,62 @@ resolves it to an active `orac_core.users` row. Aliases never grant authority.
 
 ## Administration API
 
-Use `orac_code.rag_usage_privilege_api` from an approved administrative schema:
+Use `orac_code.rag_usage_privilege_api` from an approved administrative schema.
+APEX uses the ID-based entry points: a new grant submits one
+`knowledge_scope_id`, and the package resolves and validates its registered
+type and key internally. Revocation submits the selected historical privilege
+ID and its protected row version, so it cannot drift to another row with the
+same principal and scope.
 
 ```sql
-select orac_code.rag_usage_privilege_api.grant_scope_usage(
-         p_username          => 'clive',
-         p_scope_type        => 'PLUGIN',
-         p_scope_key         => 'drop_box',
-         p_granted_by        => 'LOCAL_ACCEPTANCE',
-         p_grant_reason_code => 'LOCAL_ACCEPTANCE'
+select orac_code.rag_usage_privilege_api.grant_scope_usage_by_id(
+         p_username           => 'clive',
+         p_knowledge_scope_id => :knowledge_scope_id,
+         p_granted_by         => 'LOCAL_ACCEPTANCE',
+         p_grant_reason_code  => 'LOCAL_ACCEPTANCE'
        ) result
   from dual;
 
-select orac_code.rag_usage_privilege_api.revoke_scope_usage(
-         p_username           => 'clive',
-         p_scope_type         => 'PLUGIN',
-         p_scope_key          => 'drop_box',
-         p_revoked_by         => 'LOCAL_ACCEPTANCE',
-         p_revoke_reason_code => 'LOCAL_ACCEPTANCE'
+select orac_code.rag_usage_privilege_api.revoke_scope_usage_by_id(
+         p_rag_usage_privilege_id => :rag_usage_privilege_id,
+         p_row_version            => :row_version,
+         p_revoked_by             => 'LOCAL_ACCEPTANCE',
+         p_revoke_reason_code     => 'LOCAL_ACCEPTANCE'
        ) result
   from dual;
 ```
 
-Duplicate effective grants return `RAG_USAGE_ALREADY_GRANTED`. Revocation
-updates stored state and preserves history. Re-grant after revocation inserts a
-new row. Re-grant after expiry first closes the expired stored-active row with
-reason `EXPIRED`, then inserts a new row. The unique index uses only stored
+The original type/key functions remain available for compatibility. The
+read-only `grant_scope_usage_status_by_id` function and the mutating grant API
+share one lifecycle assessment. They return `RAG_USAGE_ALREADY_GRANTED` when
+an unexpired stored-active grant exists and `RAG_USAGE_GRANT_AVAILABLE` when a
+new grant may be created. Exact revocation returns distinct results for
+unknown, already-revoked, and concurrently changed rows.
+It updates stored state through the TAPI and preserves history; it never
+commits or physically deletes. Re-grant after revocation inserts a new row.
+Re-grant after expiry first closes the expired stored-active row with reason
+`EXPIRED`, then inserts a new row. The unique index uses only stored
 `active_yn`; it contains no current-time expression.
+
+A scheduled grant is stored active before its effective timestamp. Under the
+existing lifecycle model it therefore reserves the principal/scope
+relationship and prevents another scheduled or current grant until it expires
+or is revoked. Revoked rows and rows whose expiry is in the past do not prevent
+a new grant.
+
+Application 1042 Page 40 presents the scope type and Project or Plugin target
+as separate controls. New-grant mode is editable. Existing-entry mode makes
+the identity and effective/expiry dates read-only, allows only the revoke
+reason to be entered for a stored-active row, and displays revoked rows as
+view-only history. Page 39 displays `SCOPE_TYPE` and `SCOPE_KEY` as separate
+Scope Type and Target columns and passes only `RAG_USAGE_PRIVILEGE_ID` when
+opening Page 40. Project and Plugin filters and form targets are conditionally
+shown from Scope Type; the irrelevant value is hidden and cleared.
+After principal, scope type, and target are selected, Page 40 calls the shared
+status function. An applicable grant displays an inline warning and disables
+Grant. A Grant-only server validation repeats the authoritative check, and the
+mutating API still rejects a duplicate if state changes between validation and
+submission.
 
 ## Dependency and lifecycle matrix
 
@@ -66,17 +95,16 @@ ordinary child rows have been removed.
 
 ## Security and audit
 
-The runtime schema can execute only
-`orac_code.rag_usage_authorization_api`. APEX can execute the administrative
-package and read reporting/LOV views, but receives no direct Core table access.
-Decisions persist or log only principal, canonical scope, route, safe reason
-code, bypass flag, counts, and approved timing. Chunk text, embeddings, prompts,
-evidence blocks, and complete documents are prohibited.
+The runtime schema executes the authorisation package and the definer-rights
+`orac_code.knowledge_retrieval_api`; it cannot read the searchable chunk view
+or execute the artefact registration package directly. APEX can execute the
+administrative package and read reporting/LOV views, but receives no content
+surface or direct Core table access. Retrieval audits contain principal,
+canonical scope, controlled identities, safe reason codes, counts, sizes,
+hashes, and timing—not content, filenames, labels, locators, or paths.
 
-`allow_all_scopes` defaults to `false` and skips only the matching privilege-row
-requirement. It does not bypass authentication, active principal registration,
-canonical resolution, registry activity, plugin eligibility, retrieval bounds,
-or database failures.
+Every retrieval requires an active `USE` privilege. `allow_all_scopes` is
+retired and its presence is rejected at startup.
 
 ## Architectural exception
 

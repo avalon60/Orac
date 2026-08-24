@@ -1,5 +1,7 @@
 --liquibase formatted sql
 
+-- Codex-assisted modified.
+-- Codex SDK reviewability guardrails followed.
 -- __author__: clive
 -- __date__: 2026-04-25
 -- __description__: grant ORAC_CODE reporting and business views to consumer schemas
@@ -25,8 +27,8 @@ grant select on orac_code.message_role_breakdown_v to orac_apx_pub;
 --rollback revoke select on orac_code.message_role_breakdown_v from orac_apx_pub;
 
 --changeset clive:grant_orac_code_user_preferences_v_to_orac_apx_pub_06 context:core labels:core stripComments:false runOnChange:true
-grant select, insert, update, delete on orac_code.user_preferences_v to orac_apx_pub;
---rollback revoke select, insert, update, delete on orac_code.user_preferences_v from orac_apx_pub;
+grant select on orac_code.user_preferences_v to orac_apx_pub;
+--rollback revoke select on orac_code.user_preferences_v from orac_apx_pub;
 
 --changeset clive:grant_orac_code_user_preferences_v_to_orac_apx_pub_07 context:core labels:core stripComments:false runOnChange:true
 grant read on orac_code.user_preferences_v to orac_apx_pub;
@@ -85,8 +87,8 @@ grant select on orac_code.message_role_breakdown_v to orac;
 --rollback revoke select on orac_code.message_role_breakdown_v from orac;
 
 --changeset clive:grant_orac_code_user_preferences_v_to_orac_15 context:core labels:core stripComments:false runOnChange:true
-grant select, insert, update, delete on orac_code.user_preferences_v to orac;
---rollback revoke select, insert, update, delete on orac_code.user_preferences_v from orac;
+grant select on orac_code.user_preferences_v to orac;
+--rollback revoke select on orac_code.user_preferences_v from orac;
 
 --changeset clive:grant_orac_code_user_preferences_v_to_orac_16 context:core labels:core stripComments:false runOnChange:true
 grant read on orac_code.user_preferences_v to orac;

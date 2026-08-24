@@ -8,7 +8,6 @@ create or replace force view orac_api.user_preferences_v as
          , user_id
          , pref_key
          , pref_value
-         , value_type
          , created_on
          , created_by
          , updated_on

@@ -12,3 +12,11 @@ comment on column orac_core.message_embeddings.message_id is
 comment on column orac_core.message_embeddings.chunk_index is
   '1-based ordinal of chunk within the message.'
 ;
+
+comment on column orac_core.message_embeddings.vector_distance_metric_domain_code is
+  'Fixed VECTOR_DISTANCE_METRIC reference domain for embedding comparison.'
+;
+
+comment on column orac_core.message_embeddings.vector_distance_metric_ref_value_code is
+  'Vector distance metric used when comparing this embedding.'
+;

@@ -55,4 +55,4 @@ The bump configs are source-maintenance files and are excluded from plugin
 archives and managed installs.
 
 Agent and maintainer requirements are defined in
-[`docs/agent-guardrails/50-plugin-standards.md`](../docs/agent-guardrails/50-plugin-standards.md).
+[`docs/agent-guardrails/avalon-50-plugin-standards.md`](../docs/agent-guardrails/avalon-50-plugin-standards.md).

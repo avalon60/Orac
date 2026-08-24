@@ -409,7 +409,7 @@ Policy evaluates:
 Unknown or incompletely declared actions fail closed. Informational read-only
 plugins may be allowed by default. Higher-risk actions require explicit policy
 and, where declared, confirmation. See
-[Plugin Execution Boundaries](agent-guardrails/55-plugin-execution-boundaries.md).
+[Plugin Execution Boundaries](agent-guardrails/avalon-55-plugin-execution-boundaries.md).
 
 ## Lifecycle and Services
 
@@ -942,7 +942,7 @@ before use and records fresh status through an Orac-owned registry API. A check
 does not claim to describe another host, container or long-running process.
 
 Repository-level implementation standards remain in
-[`docs/agent-guardrails/50-plugin-standards.md`](agent-guardrails/50-plugin-standards.md).
+[`docs/agent-guardrails/avalon-50-plugin-standards.md`](agent-guardrails/avalon-50-plugin-standards.md).
 
 ## Supplementary Documentation
 

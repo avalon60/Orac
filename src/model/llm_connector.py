@@ -14,6 +14,7 @@ from typing import Any, cast
 from lib.config_mgr import ConfigManager
 from lib.fsutils import project_home
 from lib.logutil import Logger
+from orac_core.knowledge.model_submission import StrictModelInvocationOptions
 
 
 APP_HOME = project_home()
@@ -146,6 +147,21 @@ def provider_generation_options(
     return {}
 
 
+def strict_generation_options(
+    options: dict[str, Any] | None,
+    invocation_options: StrictModelInvocationOptions | None,
+) -> dict[str, Any] | None:
+    """Apply an immutable output cap for evidence-backed submissions."""
+    if invocation_options is None:
+        return options
+    clean = normalise_generation_options(options)
+    requested = _coerce_int(clean.get("num_predict"))
+    if requested is not None and requested > invocation_options.max_output_tokens:
+        raise ValueError("MAT_SUB_OUTPUT_RESERVE_EXCEEDED")
+    clean["num_predict"] = invocation_options.max_output_tokens
+    return clean
+
+
 def _usage_metadata_from_result(
     result: dict[str, Any],
 ) -> LLMUsageMetadata | None:
@@ -238,6 +254,7 @@ class LLMConnector(LLMConnectorABC):
         prompt: str,
         stream: bool = False,
         generation_options: dict[str, Any] | None = None,
+        invocation_options: StrictModelInvocationOptions | None = None,
     ) -> str:
         """
         Send a prompt to the LLM backend and return the response.
@@ -260,14 +277,21 @@ class LLMConnector(LLMConnectorABC):
         prompt: str,
         stream: bool = False,
         generation_options: dict[str, Any] | None = None,
+        invocation_options: StrictModelInvocationOptions | None = None,
     ) -> dict[str, Any]:
         """Send a prompt and return response text with optional usage metadata."""
-        raw = self.send_prompt(
-            prompt_type=prompt_type,
-            prompt=prompt,
-            stream=stream,
-            generation_options=generation_options,
-        )
+        call_kwargs = {
+            "prompt_type": prompt_type,
+            "prompt": prompt,
+            "stream": stream,
+            "generation_options": strict_generation_options(
+                generation_options,
+                invocation_options,
+            ),
+        }
+        if invocation_options is not None:
+            call_kwargs["invocation_options"] = invocation_options
+        raw = self.send_prompt(**call_kwargs)
         if hasattr(raw, "content"):
             text = raw.content
         else:
@@ -285,18 +309,22 @@ class LLMConnector(LLMConnectorABC):
         prompt: str,
         generation_options: dict[str, Any] | None = None,
         on_usage_metadata: LLMUsageMetadataCallback | None = None,
+        invocation_options: StrictModelInvocationOptions | None = None,
     ) -> Iterator[str]:
         """Yield streamed response text deltas.
 
         Connectors without a native streaming implementation fall back to
         the existing non-streaming path and emit one final delta.
         """
-        result = self.send_prompt_with_meta(
-            prompt_type=prompt_type,
-            prompt=prompt,
-            stream=False,
-            generation_options=generation_options,
-        )
+        call_kwargs = {
+            "prompt_type": prompt_type,
+            "prompt": prompt,
+            "stream": False,
+            "generation_options": generation_options,
+        }
+        if invocation_options is not None:
+            call_kwargs["invocation_options"] = invocation_options
+        result = self.send_prompt_with_meta(**call_kwargs)
         if on_usage_metadata is not None:
             usage = _usage_metadata_from_result(result)
             if usage is not None:
@@ -355,11 +383,12 @@ class LMStudioConnector(LLMConnector):
         self,
         prompt: str,
         generation_options: dict[str, Any] | None = None,
+        invocation_options: StrictModelInvocationOptions | None = None,
     ) -> Any:
         """Invoke LM Studio with OpenAI-compatible options when available."""
         request_options = provider_generation_options(
             "lmstudio",
-            generation_options,
+            strict_generation_options(generation_options, invocation_options),
         )
         if request_options and hasattr(self.llm_session, "bind"):
             return self.llm_session.bind(**request_options).invoke(prompt)
@@ -371,10 +400,15 @@ class LMStudioConnector(LLMConnector):
         prompt: str,
         stream: bool = False,
         generation_options: dict[str, Any] | None = None,
+        invocation_options: StrictModelInvocationOptions | None = None,
     ) -> str:
         """Send prompt to LM Studio."""
         self.logger.log_info(f"📤 Sending prompt to LM Studio (stream={stream})...")
-        return self._invoke_with_generation_options(prompt, generation_options)
+        return self._invoke_with_generation_options(
+            prompt,
+            generation_options,
+            invocation_options,
+        )
 
     def send_prompt_with_meta(
         self,
@@ -382,10 +416,15 @@ class LMStudioConnector(LLMConnector):
         prompt: str,
         stream: bool = False,
         generation_options: dict[str, Any] | None = None,
+        invocation_options: StrictModelInvocationOptions | None = None,
     ) -> dict[str, Any]:
         """Send prompt to LM Studio and return text with token metadata when available."""
         self.logger.log_info(f"📤 Sending prompt to LM Studio (stream={stream})...")
-        raw = self._invoke_with_generation_options(prompt, generation_options)
+        raw = self._invoke_with_generation_options(
+            prompt,
+            generation_options,
+            invocation_options,
+        )
         text = raw.content if hasattr(raw, "content") else raw
         usage = getattr(raw, "usage_metadata", None) or {}
         prompt_tokens = int(
@@ -535,9 +574,12 @@ class OllamaConnector(LLMConnector):
     def _initial_num_predict(
         self,
         generation_options: dict[str, Any] | None,
+        invocation_options: StrictModelInvocationOptions | None = None,
     ) -> int:
         """Return the initial completion budget for this request."""
-        options = normalise_generation_options(generation_options)
+        options = normalise_generation_options(
+            strict_generation_options(generation_options, invocation_options)
+        )
         return int(options.get("num_predict") or self.default_num_predict)
 
     def _ollama_options(
@@ -789,6 +831,7 @@ class OllamaConnector(LLMConnector):
         prompt: str,
         stream: bool = False,
         generation_options: dict[str, Any] | None = None,
+        invocation_options: StrictModelInvocationOptions | None = None,
     ) -> str:
         """
         FORCE think=False (hide visible chain-of-thought). For very short prompts (like "Hi"),
@@ -801,6 +844,23 @@ class OllamaConnector(LLMConnector):
         # Heuristic: for very short inputs, match your curl exactly (no system message)
         p = (prompt or "").strip()
         is_very_short = len(p) <= 12  # "Hi", "Hello", etc.
+
+        if invocation_options is not None:
+            strict_options = strict_generation_options(
+                generation_options,
+                invocation_options,
+            )
+            result = self._run_strict_pre_output(
+                lambda: self._chat_once(
+                    p,
+                    show_reasoning=False,
+                    num_predict=invocation_options.max_output_tokens,
+                    use_system=not is_very_short,
+                    generation_options=strict_options,
+                ),
+                invocation_options=invocation_options,
+            )
+            return str(result.get("text") or "").strip()
 
         result = self._run_with_num_predict_growth(
             lambda num_predict: self._chat_once(
@@ -840,12 +900,41 @@ class OllamaConnector(LLMConnector):
         prompt: str,
         generation_options: dict[str, Any] | None = None,
         on_usage_metadata: LLMUsageMetadataCallback | None = None,
+        invocation_options: StrictModelInvocationOptions | None = None,
     ) -> Iterator[str]:
         """Yield Ollama response text deltas using native HTTP streaming."""
         del prompt_type
         p = (prompt or "").strip()
         is_very_short = len(p) <= 12
         yielded = False
+
+        if invocation_options is not None:
+            strict_options = strict_generation_options(
+                generation_options,
+                invocation_options,
+            )
+            attempts = 0
+            while True:
+                emitted_this_attempt = False
+                try:
+                    for delta in self._chat_stream(
+                        p,
+                        show_reasoning=False,
+                        num_predict=invocation_options.max_output_tokens,
+                        use_system=not is_very_short,
+                        generation_options=strict_options,
+                        on_usage_metadata=on_usage_metadata,
+                    ):
+                        emitted_this_attempt = True
+                        yielded = True
+                        yield delta
+                    return
+                except (requests.RequestException, TimeoutError):
+                    if emitted_this_attempt:
+                        raise
+                    if attempts >= invocation_options.maximum_pre_output_retries:
+                        raise
+                    attempts += 1
 
         for delta in self._chat_stream(
             p,
@@ -878,6 +967,7 @@ class OllamaConnector(LLMConnector):
         prompt: str,
         stream: bool = False,
         generation_options: dict[str, Any] | None = None,
+        invocation_options: StrictModelInvocationOptions | None = None,
     ) -> dict[str, Any]:
         """
         Send prompt to Ollama and return text plus token metadata.
@@ -887,6 +977,28 @@ class OllamaConnector(LLMConnector):
         """
         p = (prompt or "").strip()
         is_very_short = len(p) <= 12
+
+        if invocation_options is not None:
+            strict_options = strict_generation_options(
+                generation_options,
+                invocation_options,
+            )
+            result = self._run_strict_pre_output(
+                lambda: self._chat_once(
+                    p,
+                    show_reasoning=False,
+                    num_predict=invocation_options.max_output_tokens,
+                    use_system=not is_very_short,
+                    generation_options=strict_options,
+                ),
+                invocation_options=invocation_options,
+            )
+            return {
+                "text": str(result.get("text") or "").strip(),
+                "prompt_tokens": int(result.get("prompt_tokens") or 0),
+                "completion_tokens": int(result.get("completion_tokens") or 0),
+                "total_tokens": int(result.get("total_tokens") or 0),
+            }
 
         result = self._run_with_num_predict_growth(
             lambda num_predict: self._chat_once(
@@ -921,3 +1033,19 @@ class OllamaConnector(LLMConnector):
             "completion_tokens": int(result.get("completion_tokens") or 0),
             "total_tokens": int(result.get("total_tokens") or 0),
         }
+
+    @staticmethod
+    def _run_strict_pre_output(
+        runner: Callable[[], dict[str, Any]],
+        *,
+        invocation_options: StrictModelInvocationOptions,
+    ) -> dict[str, Any]:
+        """Retry only transient failures that occur before any response exists."""
+        attempts = 0
+        while True:
+            try:
+                return runner()
+            except (requests.RequestException, TimeoutError):
+                if attempts >= invocation_options.maximum_pre_output_retries:
+                    raise
+                attempts += 1

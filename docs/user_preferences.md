@@ -27,7 +27,7 @@ metadata, not just a scalar value:
 
 | Preference | Effect | Type and acceptable values | Defaults and validation | Implemented use |
 |---|---|---|---|---|
-| `timezone` | Conversational engine, UI/display | String; valid IANA timezone name such as `Europe/London`. | Config default `settings.timezone_default`; built-in `Europe/London`. Invalid values are ignored with warning/fallback. | Builds clock/date context, local time instructions, and timezone-derived location fallback. |
+| `timezone` | Conversational engine, UI/display | String; valid IANA timezone name such as `Europe/London`. The administration selector uses the curated `TIMEZONE` reference domain, grouped through `TIMEZONE_GROUP`. | Config default `settings.timezone_default`; built-in `Europe/London`. Invalid values are ignored with warning/fallback. | Builds clock/date context, local time instructions, and timezone-derived location fallback. |
 | `date_format` | Conversational engine, UI/display | String; `DD-MON-YYYY HH24:MI`, `YYYY-MM-DD HH24:MI`, `DD/MM/YYYY HH24:MI`, or `DD Mon YYYY HH24:MI`. | Config default `settings.date_format_default`; built-in `DD-MON-YYYY HH24:MI`. Unsupported masks are ignored with warning/fallback. | Formats user-facing clock/date context. |
 | `force_concise` | Conversational engine | Boolean. | Config default `settings.force_concise_default`; built-in `false`. | Adds `Keep answers concise.` to contextual prompt only when true. |
 | `max_tokens` | Conversational engine | Integer. | Config default `settings.max_tokens_default`; bounded to `1..32768`; optionally capped by `settings.max_tokens_limit` when that setting is present and at least `1`. | Applied to provider-neutral generation options as `num_predict`; the connector keeps `num_predict` for Ollama and maps it to `max_tokens` for LM Studio/OpenAI-compatible providers. |
@@ -43,6 +43,13 @@ User preference definitions may include UI metadata such as `control_type`,
 `min_number`, `max_number`, `step_number`, `unit_label`,
 `display_min_label`, `display_max_label`, and `display_value_format`.
 `control_type = 'slider'` is UI sugar for bounded numeric preferences.
+
+The permitted value types, control types, and LOV types are maintained in the
+Core reference domains `PREF_VALUE_TYPE`, `PREF_CONTROL_TYPE`, and
+`PREF_LOV_TYPE`. `preference_definitions` stores fixed-domain reference pairs;
+`user_preferences` stores only `pref_key` and its value, deriving `value_type`
+through the referenced definition. App 1042 sources its metadata selectors
+from the corresponding active-only `ORAC_CODE` LOV views.
 
 APEX Page 6 uses this metadata only to render the editing control. Slider
 preferences are rendered as native range inputs created inside the fixed

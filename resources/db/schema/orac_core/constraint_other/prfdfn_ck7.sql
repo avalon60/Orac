@@ -10,10 +10,10 @@ alter table orac_core.preference_definitions
   add constraint prfdfn_ck7
   check
   (
-    control_type <> 'slider'
+    pref_control_type_ref_value_code <> 'slider'
     or
     (
-      value_type = 'number'
+      pref_value_type_ref_value_code = 'number'
       and min_number is not null
       and max_number is not null
       and step_number is not null

@@ -11,6 +11,9 @@ select loc.drop_location_id,
        loc.display_name,
        loc.processing_profile,
        case
+         when loc.classification_tags_json is null
+           or dbms_lob.getlength(loc.classification_tags_json) = 0
+         then 'Classifications are missing.'
          when prf.profile_code is null then 'Processing profile is unknown.'
          when prf.active_yn <> 'Y' then 'Processing profile is inactive.'
        end as error_message
@@ -18,7 +21,12 @@ select loc.drop_location_id,
   left join orac_dropbox.drop_processing_profile prf
     on prf.profile_code = loc.processing_profile
  where loc.enabled_yn = 'Y'
-   and (prf.profile_code is null or prf.active_yn <> 'Y');
+   and (
+     loc.classification_tags_json is null
+     or dbms_lob.getlength(loc.classification_tags_json) = 0
+     or prf.profile_code is null
+     or prf.active_yn <> 'Y'
+   );
 /
 
 --rollback drop view orac_dropbox.drop_location_config_error_v;

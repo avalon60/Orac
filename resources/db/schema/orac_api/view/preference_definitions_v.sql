@@ -8,9 +8,9 @@ create or replace force view orac_api.preference_definitions_v as
       , pref_key
       , display_label
       , description
-      , value_type
-      , control_type
-      , lov_type
+      , pref_value_type_ref_value_code value_type
+      , pref_control_type_ref_value_code control_type
+      , pref_lov_type_ref_value_code lov_type
       , lov_query
       , static_lov_code
       , default_value

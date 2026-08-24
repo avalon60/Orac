@@ -9,12 +9,19 @@ as
   is
   begin
     insert into orac_api.knowledge_document_version_tags_v (
-      document_version_id, knowledge_tag_id, tag_order
-    ) values (
-      p_row.document_version_id, p_row.knowledge_tag_id, p_row.tag_order
+      document_version_id,
+      doc_class_domain_code,
+      doc_class_ref_value_code,
+      tag_order
     )
-    returning knowledge_document_version_tag_id
-         into p_row.knowledge_document_version_tag_id;
+    values (
+      p_row.document_version_id,
+      'DOC_CLASS',
+      p_row.doc_class_ref_value_code,
+      p_row.tag_order
+    );
+
+    p_row.doc_class_domain_code := 'DOC_CLASS';
   end ins;
 end knowledge_document_version_tags_tapi;
 /

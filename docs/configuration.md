@@ -1092,6 +1092,123 @@ Vector dimension count for the default local embedding provider.
 
 **Example:** `embedding_dimensions = 32`
 
+## `[knowledge.reconciliation]`
+
+Strictly read-only operational inventory limits for
+`bin/orac-knowledge.sh reconcile`. Hitting any scan ceiling returns
+`INCOMPLETE`; it never produces `READY`. CLI overrides may lower, but cannot
+raise, the shipped ceilings. See
+[Knowledge Storage Maintenance](knowledge-maintenance.md#read-only-operational-reconciliation)
+for result semantics, redaction, concurrency, and the separate-authorisation
+boundary for any future recovery action.
+
+### `max_database_rows`
+
+- **Type:** integer
+- **Shipped value:** `250000`
+- **Runtime fallback:** `250000`
+- **Allowed values:** `2` to `1000000`
+- **Status:** active
+
+Maximum combined rows retained across the two short Oracle read-only
+snapshots. Half of the limit is reserved for each snapshot.
+
+### `max_filesystem_entries`
+
+- **Type:** integer
+- **Shipped value:** `250000`
+- **Runtime fallback:** `250000`
+- **Allowed values:** `1` to `1000000`
+- **Status:** active
+
+Maximum physical entries enumerated without following symbolic links.
+
+### `max_hashed_bytes`
+
+- **Type:** integer
+- **Shipped value:** `10737418240`
+- **Runtime fallback:** `10737418240`
+- **Allowed values:** `1` to `107374182400`
+- **Status:** active
+
+Maximum bytes read through verified descriptors for object and bounded
+temporary-file hashing.
+
+### `max_temporary_files_hashed`
+
+- **Type:** integer
+- **Shipped value:** `1000`
+- **Runtime fallback:** `1000`
+- **Allowed values:** `1` to `10000`
+- **Status:** active
+
+Independent maximum number of temporary regular files hashed per scan.
+
+### `max_elapsed_seconds`
+
+- **Type:** integer
+- **Shipped value:** `300`
+- **Runtime fallback:** `300`
+- **Allowed values:** `1` to `1800`
+- **Status:** active
+
+Maximum elapsed time for bounded physical enumeration and hashing.
+
+### `max_report_items_per_reason`
+
+- **Type:** integer
+- **Shipped value:** `20`
+- **Runtime fallback:** `20`
+- **Allowed values:** `1` to `100`
+- **Status:** active
+
+Maximum sampled numeric database identities retained for each reason code.
+Physical names and identities are never sampled.
+
+### `max_report_bytes`
+
+- **Type:** integer
+- **Shipped value:** `1048576`
+- **Runtime fallback:** `1048576`
+- **Allowed values:** `512` to `4194304`
+- **Status:** active
+
+Maximum UTF-8 JSON report size. Samples are removed deterministically before a
+minimal `RECON_REPORT_BYTE_LIMIT_EXCEEDED` result is returned.
+
+### `stale_temporary_age_seconds`
+
+- **Type:** integer
+- **Shipped value:** `86400`
+- **Runtime fallback:** `86400`
+- **Allowed values:** Positive integer seconds
+- **Status:** active
+
+Minimum unchanged temporary-file age classified as stale. Reconciliation only
+reports the entry; it does not remove or quarantine it.
+
+### `unregistered_object_grace_seconds`
+
+- **Type:** integer
+- **Shipped value:** `86400`
+- **Runtime fallback:** `86400`
+- **Allowed values:** Positive integer seconds
+- **Status:** active
+
+Minimum age before a verified object absent from both database snapshots can
+be classified as an orphan. Younger objects produce `INCOMPLETE` and a safe
+retry reason.
+
+### `concurrency`
+
+- **Type:** integer
+- **Shipped value:** `1`
+- **Runtime fallback:** `1`
+- **Allowed values:** `1`
+- **Status:** active
+
+Fixed single-threaded traversal for deterministic accounting and bounded I/O.
+
 ## `[knowledge.dialogue]`
 
 The Core database install seeds the canonical `ORAC_CORE` project and its
@@ -1104,13 +1221,13 @@ does not enable document ingestion; that worker is controlled by
 `[knowledge].enabled`.
 
 Authenticated, scope-isolated local-knowledge retrieval during normal dialogue.
-The shipped feature switch is `false`; enable it only after the configured
-registry scopes contain accepted, searchable documents.
+The shipped feature switch is `true`. Retrieval still requires accepted,
+searchable documents and a current Oracle `USE` privilege for the authenticated
+principal and canonical scope.
 
 | Key | Shipped value | Contract |
 |---|---|---|
-| `enabled` | `false` | Enables dialogue retrieval; ingestion remains controlled by `[knowledge].enabled`. |
-| `allow_all_scopes` | `false` | Security-sensitive administrative bypass that skips only the matching privilege-row requirement. Authentication, active principal registration, canonical scope resolution, active registry state, plugin eligibility, and retrieval boundaries remain mandatory. |
+| `enabled` | `true` | Enables dialogue retrieval; ingestion remains controlled by `[knowledge].enabled`. |
 | `scope_aliases_json` | `{"orac":"PROJECT:ORAC_CORE","orac core":"PROJECT:ORAC_CORE","drop box":"PLUGIN:drop_box"}` | JSON object mapping case-insensitive dialogue aliases to canonical scopes. Unknown or ambiguous aliases do not retrieve. |
 | `registry_cache_ttl_seconds` | `30` | Positive lifetime for active-scope registry snapshots. An expired refresh failure denies retrieval rather than serving stale eligibility. |
 | `max_scopes_per_request` | `3` | Maximum requested canonical scopes. The first vertical slice routes one explicit scope. |
@@ -1122,21 +1239,9 @@ registry scopes contain accepted, searchable documents.
 
 ### `enabled`
 
-Boolean master switch for local-knowledge dialogue retrieval. Shipped value and
-runtime fallback: `false`.
-
-### `allow_all_scopes`
-
-Boolean administrative bypass. The shipped value and runtime fallback are
-`false`. It still requires a known active principal and a known active eligible
-scope; only a missing or expired matching `USE` privilege is bypassed. Database
-failures remain terminal. Startup emits the `rag_usage_allow_all_scopes`
-security warning and bypassed decisions carry that safe marker. Use only for
-controlled development, acceptance, or emergency operation.
-
-`user_scope_allowlist_json` has been removed. Its presence is a startup error
-even when dialogue retrieval is disabled. Manage access through Oracle or APEX
-application 1042.
+Boolean master switch for local-knowledge dialogue retrieval. The shipped value
+is `true`; the runtime fallback remains `false` when the setting is absent.
+Set it explicitly to `false` to disable dialogue retrieval.
 
 ### `scope_aliases_json`
 
@@ -1178,11 +1283,269 @@ counted as topical matches, so an explicit knowledge directive cannot satisfy
 the threshold without substantive query evidence.
 
 Environment overrides use the existing form, for example
-`ORAC__KNOWLEDGE.DIALOGUE__ENABLED=true`. Malformed JSON, duplicate object keys,
+`ORAC__KNOWLEDGE.DIALOGUE__ENABLED=false`. Malformed JSON, duplicate object keys,
 registry unavailability, inactive scopes, and unauthorised users fail closed.
 Denied and unavailable explicit knowledge requests terminate with safe,
 non-disclosing responses; they do not fall through to plugins or an LLM.
 See [Dialogue Routing](dialogue-routing.md).
+
+`allow_all_scopes` and `user_scope_allowlist_json` are retired settings. Their
+presence is a startup error. Every chunk or normalised-content retrieval must
+have a current Oracle `USE` privilege.
+
+## `[knowledge.retrieval]`
+
+Controls the bounded P1-06 normalised-content materialisation service. These
+limits do not widen the smaller dialogue grounding budgets.
+
+### `enabled`
+
+Feature switch for whole-document and selected-member materialisation. Shipped
+value: `false`. Authorised chunk search remains controlled by
+`[knowledge.dialogue].enabled`.
+
+### `max_metadata_members`
+
+Maximum member descriptors returned by one metadata request. Shipped and hard
+maximum: `256`.
+
+### `max_selected_members`
+
+Maximum explicitly selected artefact members. Shipped and hard maximum: `32`.
+
+### `max_selected_chunks`
+
+Maximum chunks in an identity-bounded chunk or section range. Shipped and hard
+maximum: `64`.
+
+### `max_table_rows`
+
+Maximum CSV rows in one table-range result. Shipped and hard maximum: `10000`.
+
+### `max_member_source_bytes`
+
+Maximum registered source size for one materialised member. Shipped and hard
+maximum: `8388608` bytes.
+
+### `max_aggregate_source_bytes`
+
+Maximum aggregate registered source size inspected for one request. Shipped
+and hard maximum: `16777216` bytes.
+
+### `max_emitted_bytes`
+
+Maximum bytes emitted by one materialisation request. Shipped and hard maximum:
+`4194304` bytes. Oversized results fail rather than truncate.
+
+### `stream_block_bytes`
+
+Maximum response iteration block size. Shipped and hard maximum: `1048576`
+bytes.
+
+## `[knowledge.materialisation]`
+
+Controls the P1-07 progressive normalised materialisation policy above P1-06.
+It never enables raw binary routing and does not connect the result to an LLM.
+
+### `enabled`
+
+Feature switch for P1-07. Shipped value: `false`. It has no effect unless
+`[knowledge.retrieval].enabled=true`.
+
+### `token_safety_margin_percent`
+
+Safety margin added to the conservative UTF-8 token estimate. Shipped value:
+`20`.
+
+### `max_complete_bytes`
+
+Maximum verified bytes for a complete normalised document. Shipped value:
+`262144`; it cannot exceed the P1-06 emitted-byte ceiling.
+
+### `max_complete_tokens`
+
+Maximum safety-adjusted evidence tokens for a complete document. Shipped value:
+`12000`.
+
+### `max_complete_context_percent`
+
+Maximum percentage of currently usable model input context occupied by a
+complete document. Shipped value: `25`.
+
+### `max_surrounding_chunks_each_side`
+
+Maximum surrounding chunks selected before and after controlled anchors.
+Shipped value: `2`; the immutable retrieval-envelope ceiling is `8`.
+
+### `local_only_broad_materialisation`
+
+Restricts levels broader than relevant chunks to explicitly local processing.
+Shipped value: `true`.
+
+### `classification_enforcement_enabled`
+
+Enables an approved classification-to-locality policy mapping. Shipped value:
+`false`; current `DOC_CLASS` codes are descriptive only.
+
+### `truncation_permitted`
+
+Reserved fail-closed setting. Shipped and only accepted P1-07 value: `false`.
+P1-07 downgrades or rejects instead of truncating.
+
+## `[knowledge.binary_materialisation]`
+
+Controls the internal P2-06 secure attachment boundary. It does not enable
+routing, register a processor, invoke a provider, or alter the Phase 1
+prompt-only path. The shipped runtime has an empty processor registry and a
+fail-closed route revalidator, so changing configuration alone cannot make a
+binary route eligible.
+
+### `enabled`
+
+Shipped value: `false`. When `true`, initialises the private attachment store
+and bounded startup reconciliation. Materialisation still `DEFER`s unless an
+exact separately reviewed P2-05 route revalidator and deterministic processor
+profile are registered in code.
+
+### `runtime_root`
+
+Host-owned private attachment runtime directory. Shipped value:
+`${ORAC_HOME}/var/knowledge/attachments`. The service requires an owner-only
+mode-`0700` directory, stores payload/metadata files as mode `0600`, and never
+returns this path to callers.
+
+### `max_source_bytes`
+
+Host ceiling for one registered source. Shipped value: `16777216`. The smaller
+P2-04/P2-05 approved `BYTES` limit remains authoritative.
+
+### `max_output_bytes`
+
+Host ceiling for one materialised attachment. Shipped value: `16777216`. The
+smaller approved `OUTPUT_BYTES` limit remains authoritative.
+
+### `max_elapsed_seconds`
+
+Host ceiling for deterministic inspection and materialisation. Shipped value:
+`30`. The smaller approved `ELAPSED_TIME` limit remains authoritative.
+
+### `max_ttl_seconds`
+
+Maximum lifetime of an opaque unconsumed handle. Shipped value: `300`.
+
+### `max_cleanup_grace_seconds`
+
+Maximum interval between handle expiry and its required cleanup deadline.
+Shipped value: `60`.
+
+### `max_recovery_entries`
+
+Maximum runtime-root entries inspected by one startup or shutdown recovery
+pass. Shipped value: `4096`.
+
+### `max_recovery_elapsed_seconds`
+
+Maximum elapsed time for one reconciliation pass. Shipped value: `10`.
+
+### `stale_allocation_seconds`
+
+Minimum age before an exact owner-controlled temporary allocation layout may be
+removed during reconciliation. Shipped value: `300`. Unknown or ambiguous
+entries are reported and retained.
+
+## `[knowledge.model_evidence]`
+
+Controls the P1-08 canonical text-evidence submission layer. It has no effect
+unless `[knowledge.dialogue].enabled`, `[knowledge.retrieval].enabled`, and
+`[knowledge.materialisation].enabled` are also true. See
+[Knowledge Model Evidence Submission](knowledge-model-evidence.md).
+
+### `enabled`
+
+Shipped value: `false`. Enables eligible approved evidence submission to the
+primary local text adapter.
+
+### `shadow_mode`
+
+Shipped value: `false`. Runs envelope and budget diagnostics without recording
+a submission decision or invoking with materialised evidence.
+
+### `envelope_version`
+
+Shipped and only accepted value: `1`.
+
+### `reserved_output_tokens`
+
+Shipped and only accepted value: `2048`. This is both the fixed output reserve
+and the strict adapter output cap.
+
+### `context_safety_percent`
+
+Shipped value: `5`. Percentage of registered context reserved as an additional
+final-prompt safety margin.
+
+### `context_safety_min_tokens`
+
+Shipped value: `256`. Minimum additional context safety margin.
+
+### `max_evidence_context_percent`
+
+Shipped value: `25`. Maximum percentage of usable input occupied by the exact
+rendered envelope.
+
+### `classification_enforcement_enabled`
+
+Shipped value: `true`. Enables the P1-08 classification gate when the feature
+itself is enabled.
+
+### `local_text_models_only`
+
+Shipped value: `true`. Requires an explicitly local,
+text-evidence-eligible provider capability.
+
+### `follow_up_enabled`
+
+Shipped value: `false`. Enables registered same-document follow-up state after
+initial rollout.
+
+### `follow_up_max_rounds`
+
+Shipped value: `2`. Maximum follow-up rounds after the initial evidence turn.
+
+### `follow_up_max_bytes`
+
+Shipped value: `524288`. Cumulative rendered-envelope byte ceiling.
+
+### `follow_up_max_tokens`
+
+Shipped value: `24000`. Cumulative conservative evidence-token ceiling.
+
+### `follow_up_max_members`
+
+Shipped value: `16`. Cumulative selected-member ceiling.
+
+### `follow_up_max_chunks`
+
+Shipped value: `64`. Cumulative selected-chunk ceiling.
+
+### `follow_up_max_rows`
+
+Shipped value: `2000`. Cumulative emitted CSV-row ceiling.
+
+### `follow_up_max_elapsed_seconds`
+
+Shipped value: `120`. Expiry measured from the initial evidence turn.
+
+### `pre_output_retry_count`
+
+Shipped and only accepted value: `1`. This permits one transient retry before
+any model output.
+
+`MAX_CONTEXT_TOKENS` must be a current positive value on the exact enabled
+registry row. A row-version change forces a fresh P1-07 decision. The provider
+must declare `processing_locality=LOCAL` and `text_evidence_eligible=true`;
+locality is never inferred from a service URL. Prompt dumps are disabled for an
+evidence turn regardless of the general context dump settings.
 
 ## `[display]`
 

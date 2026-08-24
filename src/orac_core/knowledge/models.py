@@ -78,7 +78,6 @@ class KnowledgeSearchResult:
     source_type: str = ""
     document_title: str | None = None
     original_filename: str | None = None
-    content_uri: str | None = None
     span_start: int | None = None
     span_end: int | None = None
     chunk_content_sha256: str | None = None
@@ -93,6 +92,22 @@ class KnowledgeSearchResult:
     extractor_version: str | None = None
     extractor_metadata_json: str | None = None
     chunk_metadata_json: str | None = None
+    source_artefact_id: int | None = None
+    source_artefact_role_code: str | None = None
+    source_artefact_logical_name: str | None = None
+    source_artefact_media_type: str | None = None
+    source_artefact_sha256: str | None = None
+    source_artefact_ordinal: int | None = None
+    source_sheet_name: str | None = None
+    source_table_name: str | None = None
+    source_member_cell_range: str | None = None
+    source_header_rows_json: str | None = None
+    source_hidden_sheet: str | None = None
+    source_row_start: int | None = None
+    source_row_end: int | None = None
+    source_chunk_cell_range: str | None = None
+    extraction_id: int | None = None
+    chunk_set_id: int | None = None
 
     @property
     def score(self) -> float:

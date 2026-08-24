@@ -8,14 +8,16 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 import errno
 import hashlib
 import io
 import os
 from pathlib import Path, PurePosixPath
+import re
 import stat
+import time
 from typing import BinaryIO
 import uuid
 
@@ -36,6 +38,9 @@ TRANSIENT_ERRNOS = {
     errno.ENFILE,
     errno.ETIMEDOUT,
 }
+CANONICAL_DIGEST_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+CANONICAL_SHARD_PATTERN = re.compile(r"^[0-9a-f]{2}$")
+TEMPORARY_NAME_PATTERN = re.compile(r"^capture-[0-9a-f]{32}\.tmp$")
 
 
 class ManagedStoreWriteOutcome(StrEnum):
@@ -99,6 +104,62 @@ class ManagedStoreInspection:
     ok: bool
     reason_code: str
     identity: ManagedObjectIdentity | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ManagedStoreInventoryLimits:
+    """Hard bounds applied to one physical managed-store inventory."""
+
+    max_filesystem_entries: int
+    max_hashed_bytes: int
+    max_temporary_files_hashed: int
+    max_elapsed_seconds: int
+    stale_temporary_age_seconds: int
+    max_traversal_depth: int = 4
+
+    def __post_init__(self) -> None:
+        """Reject non-positive or unsafe inventory limits."""
+        for name in (
+            "max_filesystem_entries",
+            "max_hashed_bytes",
+            "max_temporary_files_hashed",
+            "max_elapsed_seconds",
+            "stale_temporary_age_seconds",
+            "max_traversal_depth",
+        ):
+            if int(getattr(self, name)) < 1:
+                raise ValueError(f"{name} must be positive.")
+        if self.max_traversal_depth > 4:
+            raise ValueError("max_traversal_depth cannot exceed 4.")
+
+
+@dataclass(frozen=True, slots=True)
+class ManagedStoreInventoryEntry:
+    """Private identity-bearing facts for one bounded physical entry."""
+
+    entry_kind: str
+    reason_codes: tuple[str, ...]
+    byte_size: int
+    age_seconds: int
+    stable: bool
+    identity_digest: str | None = field(default=None, repr=False)
+    content_digest: str | None = field(default=None, repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ManagedStoreInventory:
+    """Bounded physical inventory without public paths or entry names."""
+
+    entries: tuple[ManagedStoreInventoryEntry, ...] = field(repr=False)
+    complete: bool
+    incomplete_reason_codes: tuple[str, ...]
+    filesystem_entries: int
+    hashed_bytes: int
+    temporary_files_hashed: int
+    elapsed_milliseconds: int
+    root_identity_stable: bool
+    object_directory_stable: bool
+    temporary_directory_stable: bool
 
 
 class ManagedStoreError(RuntimeError):
@@ -179,6 +240,54 @@ class KnowledgeManagedStore:
             )
             root = Path(os.path.expandvars(os.path.expanduser(str(raw_root))))
         return cls(Path(root), configuration_source="[knowledge].managed_root")
+
+    @classmethod
+    def for_read_only_inspection(
+        cls,
+        managed_root: Path,
+        *,
+        configuration_source: str = "injected",
+    ) -> "KnowledgeManagedStore":
+        """Open an existing store without creating or probing filesystem state.
+
+        Args:
+            managed_root: Existing configured managed-store root.
+            configuration_source: Non-sensitive source label for reporting.
+
+        Returns:
+            A store instance restricted by convention to inspection methods.
+
+        Raises:
+            ManagedStoreConfigurationError: If the existing layout is unsafe.
+        """
+        configured_root = Path(managed_root).expanduser()
+        if configured_root.is_symlink():
+            raise ManagedStoreConfigurationError(
+                "STORE_ROOT_SYMLINK",
+                "Configured managed-store root must not be a symbolic link.",
+            )
+        if not configured_root.is_dir():
+            raise ManagedStoreConfigurationError(
+                "STORE_ROOT_NOT_DIRECTORY",
+                "Configured managed-store root must already be a directory.",
+            )
+        store = cls.__new__(cls)
+        store._configured_root = configured_root
+        store._configuration_source = configuration_source
+        store._root = configured_root.resolve(strict=True)
+        root_stat = store._stat_root()
+        store._root_device = int(root_stat.st_dev)
+        store._root_inode = int(root_stat.st_ino)
+        temporary_stat = store._stat_directory((".tmp",))
+        object_stat = store._stat_directory(("sha256",))
+        store._temporary_device = int(temporary_stat.st_dev)
+        store._object_device = int(object_stat.st_dev)
+        if temporary_stat.st_dev != object_stat.st_dev:
+            raise ManagedStoreConfigurationError(
+                "STORE_FILESYSTEM_MISMATCH",
+                "Managed temporary and object directories must share a filesystem.",
+            )
+        return store
 
     @property
     def managed_root(self) -> Path:
@@ -379,6 +488,367 @@ class KnowledgeManagedStore:
             ok=True,
             reason_code="OK",
             identity=expected_identity,
+        )
+
+    def inventory(
+        self,
+        limits: ManagedStoreInventoryLimits,
+        *,
+        observed_at: float | None = None,
+    ) -> ManagedStoreInventory:
+        """Enumerate and verify the physical store within fixed read-only bounds.
+
+        The scan holds directory descriptors while enumerating, never follows
+        symbolic links, and retains entry names only on the Python stack. Returned
+        records contain private digests needed for reconciliation but no paths.
+
+        Args:
+            limits: Hard ceilings for traversal and hashing.
+            observed_at: Optional wall-clock timestamp used by deterministic tests.
+
+        Returns:
+            Immutable physical inventory and resource usage.
+        """
+        started = time.monotonic()
+        wall_clock = time.time() if observed_at is None else float(observed_at)
+        entries: list[ManagedStoreInventoryEntry] = []
+        incomplete_reasons: list[str] = []
+        filesystem_entries = 0
+        hashed_bytes = 0
+        temporary_files_hashed = 0
+        root_stable = True
+        object_stable = True
+        temporary_stable = True
+
+        class _InventoryCeilingReached(Exception):
+            pass
+
+        def elapsed_seconds() -> float:
+            return time.monotonic() - started
+
+        def stop(reason_code: str) -> None:
+            if reason_code not in incomplete_reasons:
+                incomplete_reasons.append(reason_code)
+            raise _InventoryCeilingReached
+
+        def check_time() -> None:
+            if elapsed_seconds() >= limits.max_elapsed_seconds:
+                stop("RECON_ELAPSED_TIME_LIMIT_EXCEEDED")
+
+        def count_entry() -> None:
+            nonlocal filesystem_entries
+            check_time()
+            if filesystem_entries >= limits.max_filesystem_entries:
+                stop("RECON_FILESYSTEM_ENTRY_LIMIT_EXCEEDED")
+            filesystem_entries += 1
+
+        def permission_reasons(
+            entry_stat: os.stat_result,
+            *,
+            directory: bool,
+            temporary_directory: bool = False,
+        ) -> list[str]:
+            reasons: list[str] = []
+            if entry_stat.st_uid != os.geteuid():
+                reasons.append("STORE_ENTRY_OWNER_INVALID")
+            mode = stat.S_IMODE(entry_stat.st_mode)
+            if directory:
+                allowed = TEMP_DIRECTORY_MODE if temporary_directory else 0o755
+                if mode & ~allowed or mode & 0o022 or mode & 0o700 != 0o700:
+                    reasons.append("STORE_ENTRY_MODE_INVALID")
+            elif mode & ~FILE_MODE:
+                reasons.append("STORE_ENTRY_MODE_INVALID")
+            return reasons
+
+        def hash_regular(
+            directory_fd: int,
+            name: str,
+            entry_stat: os.stat_result,
+        ) -> tuple[str | None, bool]:
+            nonlocal hashed_bytes
+            file_fd = -1
+            try:
+                file_fd = os.open(
+                    name,
+                    os.O_RDONLY | os.O_NOFOLLOW,
+                    dir_fd=directory_fd,
+                )
+                before = os.fstat(file_fd)
+                if not stat.S_ISREG(before.st_mode):
+                    return None, False
+                calculator = hashlib.sha256()
+                while True:
+                    check_time()
+                    chunk = os.read(file_fd, BUFFER_SIZE)
+                    if not chunk:
+                        break
+                    if hashed_bytes + len(chunk) > limits.max_hashed_bytes:
+                        stop("RECON_HASH_BYTE_LIMIT_EXCEEDED")
+                    hashed_bytes += len(chunk)
+                    calculator.update(chunk)
+                after = os.fstat(file_fd)
+                stable_fields = (
+                    "st_dev",
+                    "st_ino",
+                    "st_size",
+                    "st_mtime_ns",
+                    "st_ctime_ns",
+                )
+                stable = all(
+                    getattr(before, field_name)
+                    == getattr(after, field_name)
+                    == getattr(entry_stat, field_name)
+                    for field_name in stable_fields
+                )
+                return calculator.hexdigest(), stable
+            except OSError:
+                return None, False
+            finally:
+                if file_fd >= 0:
+                    os.close(file_fd)
+
+        def add_regular(
+            directory_fd: int,
+            name: str,
+            relative_parts: tuple[str, ...],
+            entry_stat: os.stat_result,
+        ) -> None:
+            nonlocal temporary_files_hashed
+            full_parts = (*relative_parts, name)
+            reasons = permission_reasons(entry_stat, directory=False)
+            age_seconds = max(0, int(wall_clock - entry_stat.st_mtime))
+            identity_digest: str | None = None
+            content_digest: str | None = None
+            stable = True
+            entry_kind = "UNEXPECTED_FILE"
+
+            if full_parts[0] == ".tmp" and len(full_parts) == 2:
+                entry_kind = "TEMPORARY"
+                if not TEMPORARY_NAME_PATTERN.fullmatch(name):
+                    reasons.append("STORE_TEMP_NAME_UNEXPECTED")
+                if temporary_files_hashed >= limits.max_temporary_files_hashed:
+                    stop("RECON_TEMP_HASH_FILE_LIMIT_EXCEEDED")
+                temporary_files_hashed += 1
+                content_digest, stable = hash_regular(directory_fd, name, entry_stat)
+                reasons.append(
+                    "STORE_TEMP_STALE"
+                    if age_seconds >= limits.stale_temporary_age_seconds
+                    else "STORE_TEMP_ACTIVE"
+                )
+            elif full_parts[0] == "sha256" and len(full_parts) == 4:
+                entry_kind = "OBJECT"
+                first_shard, second_shard = full_parts[1], full_parts[2]
+                if not CANONICAL_DIGEST_PATTERN.fullmatch(name):
+                    reasons.append("MANAGED_OBJECT_FILENAME_INVALID")
+                elif first_shard != name[:2] or second_shard != name[2:4]:
+                    reasons.append("MANAGED_OBJECT_SHARD_INVALID")
+                else:
+                    identity_digest = name
+                    content_digest, stable = hash_regular(
+                        directory_fd,
+                        name,
+                        entry_stat,
+                    )
+                    if content_digest is None:
+                        reasons.append("MANAGED_OBJECT_NOT_REGULAR")
+                    elif content_digest != identity_digest:
+                        reasons.append("MANAGED_OBJECT_HASH_MISMATCH")
+                    if entry_stat.st_nlink != 1:
+                        reasons.append("MANAGED_OBJECT_LINK_COUNT_UNEXPECTED")
+            else:
+                reasons.append("STORE_UNEXPECTED_REGULAR_FILE")
+
+            if not stable:
+                reasons.append("STORE_ENTRY_CHANGED_DURING_SCAN")
+            entries.append(
+                ManagedStoreInventoryEntry(
+                    entry_kind=entry_kind,
+                    reason_codes=tuple(dict.fromkeys(reasons)),
+                    byte_size=int(entry_stat.st_size),
+                    age_seconds=age_seconds,
+                    stable=stable,
+                    identity_digest=identity_digest,
+                    content_digest=content_digest,
+                )
+            )
+
+        def walk(directory_fd: int, relative_parts: tuple[str, ...]) -> None:
+            check_time()
+            with os.scandir(directory_fd) as iterator:
+                names = sorted(entry.name for entry in iterator)
+            for name in names:
+                count_entry()
+                try:
+                    entry_stat = os.stat(
+                        name,
+                        dir_fd=directory_fd,
+                        follow_symlinks=False,
+                    )
+                except OSError:
+                    entries.append(
+                        ManagedStoreInventoryEntry(
+                            entry_kind="UNREADABLE",
+                            reason_codes=("STORE_ENTRY_CHANGED_DURING_SCAN",),
+                            byte_size=0,
+                            age_seconds=0,
+                            stable=False,
+                        )
+                    )
+                    continue
+                full_parts = (*relative_parts, name)
+                if stat.S_ISLNK(entry_stat.st_mode):
+                    entries.append(
+                        ManagedStoreInventoryEntry(
+                            entry_kind="SYMLINK",
+                            reason_codes=("STORE_SYMLINK_FOUND",),
+                            byte_size=0,
+                            age_seconds=max(0, int(wall_clock - entry_stat.st_mtime)),
+                            stable=True,
+                        )
+                    )
+                    continue
+                if stat.S_ISREG(entry_stat.st_mode):
+                    add_regular(directory_fd, name, relative_parts, entry_stat)
+                    continue
+                if not stat.S_ISDIR(entry_stat.st_mode):
+                    entries.append(
+                        ManagedStoreInventoryEntry(
+                            entry_kind="UNSUPPORTED",
+                            reason_codes=("STORE_UNSUPPORTED_FILE_TYPE",),
+                            byte_size=int(entry_stat.st_size),
+                            age_seconds=max(0, int(wall_clock - entry_stat.st_mtime)),
+                            stable=True,
+                        )
+                    )
+                    continue
+
+                reasons = permission_reasons(
+                    entry_stat,
+                    directory=True,
+                    temporary_directory=full_parts == (".tmp",),
+                )
+                expected_directory = (
+                    full_parts in {(".tmp",), ("sha256",)}
+                    or (
+                        len(full_parts) == 2
+                        and full_parts[0] == "sha256"
+                        and CANONICAL_SHARD_PATTERN.fullmatch(name) is not None
+                    )
+                    or (
+                        len(full_parts) == 3
+                        and full_parts[0] == "sha256"
+                        and CANONICAL_SHARD_PATTERN.fullmatch(name) is not None
+                    )
+                )
+                if not expected_directory:
+                    reasons.append(
+                        "MANAGED_OBJECT_SHARD_INVALID"
+                        if full_parts[0] == "sha256" and len(full_parts) <= 3
+                        else "STORE_UNEXPECTED_DIRECTORY"
+                    )
+                entries.append(
+                    ManagedStoreInventoryEntry(
+                        entry_kind="DIRECTORY",
+                        reason_codes=tuple(dict.fromkeys(reasons)),
+                        byte_size=0,
+                        age_seconds=max(0, int(wall_clock - entry_stat.st_mtime)),
+                        stable=True,
+                    )
+                )
+                if len(full_parts) >= limits.max_traversal_depth:
+                    if expected_directory:
+                        entries.append(
+                            ManagedStoreInventoryEntry(
+                                entry_kind="DEPTH_LIMIT",
+                                reason_codes=("STORE_UNEXPECTED_DIRECTORY",),
+                                byte_size=0,
+                                age_seconds=0,
+                                stable=True,
+                            )
+                        )
+                    continue
+                try:
+                    child_fd = os.open(
+                        name,
+                        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                        dir_fd=directory_fd,
+                    )
+                except OSError:
+                    entries.append(
+                        ManagedStoreInventoryEntry(
+                            entry_kind="UNREADABLE_DIRECTORY",
+                            reason_codes=("STORE_ENTRY_CHANGED_DURING_SCAN",),
+                            byte_size=0,
+                            age_seconds=0,
+                            stable=False,
+                        )
+                    )
+                    continue
+                try:
+                    walk(child_fd, full_parts)
+                finally:
+                    os.close(child_fd)
+
+        root_before = self._stat_root()
+        object_before = self._stat_directory(("sha256",))
+        temporary_before = self._stat_directory((".tmp",))
+        root_fd = self._open_root()
+        try:
+            try:
+                walk(root_fd, ())
+            except _InventoryCeilingReached:
+                pass
+        finally:
+            os.close(root_fd)
+
+        def stable_directory(
+            before: os.stat_result,
+            after: os.stat_result,
+        ) -> bool:
+            return all(
+                getattr(before, field_name) == getattr(after, field_name)
+                for field_name in (
+                    "st_dev",
+                    "st_ino",
+                    "st_mtime_ns",
+                    "st_ctime_ns",
+                )
+            )
+
+        try:
+            root_after = self._stat_root()
+            root_stable = stable_directory(root_before, root_after)
+        except ManagedStoreError:
+            root_stable = False
+        try:
+            object_after = self._stat_directory(("sha256",))
+            object_stable = stable_directory(object_before, object_after)
+        except ManagedStoreError:
+            object_stable = False
+        try:
+            temporary_after = self._stat_directory((".tmp",))
+            temporary_stable = stable_directory(temporary_before, temporary_after)
+        except ManagedStoreError:
+            temporary_stable = False
+        for stable, reason in (
+            (root_stable, "STORE_ROOT_CHANGED_DURING_SCAN"),
+            (object_stable, "STORE_OBJECT_DIRECTORY_CHANGED_DURING_SCAN"),
+            (temporary_stable, "STORE_TEMP_DIRECTORY_CHANGED_DURING_SCAN"),
+        ):
+            if not stable and reason not in incomplete_reasons:
+                incomplete_reasons.append(reason)
+
+        return ManagedStoreInventory(
+            entries=tuple(entries),
+            complete=not incomplete_reasons,
+            incomplete_reason_codes=tuple(incomplete_reasons),
+            filesystem_entries=filesystem_entries,
+            hashed_bytes=hashed_bytes,
+            temporary_files_hashed=temporary_files_hashed,
+            elapsed_milliseconds=max(0, int(elapsed_seconds() * 1000)),
+            root_identity_stable=root_stable,
+            object_directory_stable=object_stable,
+            temporary_directory_stable=temporary_stable,
         )
 
     def _promote(
@@ -688,6 +1158,12 @@ class KnowledgeManagedStore:
         """Return the canonical logical key for one validated digest."""
         ManagedObjectIdentity(digest, 0)
         return f"{LOGICAL_KEY_PREFIX}{digest}"
+
+    @staticmethod
+    def legacy_storage_key(digest: str) -> str:
+        """Return the exact supported legacy shard locator for one digest."""
+        ManagedObjectIdentity(digest, 0)
+        return f"sha256/{digest[:2]}/{digest[2:4]}/{digest}"
 
     @staticmethod
     def _parse_storage_key(storage_key: str) -> str:

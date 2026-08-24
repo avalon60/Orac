@@ -49,14 +49,12 @@ as
               user_id
             , pref_key
             , pref_value
-            , value_type
          )
       values
          (
               p_row.user_id
             , p_row.pref_key
             , p_row.pref_value
-            , p_row.value_type
          )
       ;
 
@@ -80,7 +78,6 @@ as
       , p_user_id          in       orac_api.user_preferences_v.user_id%type
       , p_pref_key         in       orac_api.user_preferences_v.pref_key%type
       , p_pref_value       in       orac_api.user_preferences_v.pref_value%type
-      , p_value_type       in       orac_api.user_preferences_v.value_type%type                                 := 'string'
       , p_row_version         out   orac_api.user_preferences_v.row_version%type
    )
    is
@@ -90,14 +87,12 @@ as
               user_id
             , pref_key
             , pref_value
-            , value_type
          )
       values
          (
               p_user_id
             , p_pref_key
             , p_pref_value
-            , p_value_type
          )
       ;
 
@@ -127,7 +122,6 @@ as
          , user_id
          , pref_key
          , pref_value
-         , value_type
          , created_on
          , created_by
          , updated_on
@@ -138,7 +132,6 @@ as
          , p_row.user_id
          , p_row.pref_key
          , p_row.pref_value
-         , p_row.value_type
          , p_row.created_on
          , p_row.created_by
          , p_row.updated_on
@@ -160,7 +153,6 @@ as
       , p_user_id             out   orac_api.user_preferences_v.user_id%type
       , p_pref_key            out   orac_api.user_preferences_v.pref_key%type
       , p_pref_value          out   orac_api.user_preferences_v.pref_value%type
-      , p_value_type          out   orac_api.user_preferences_v.value_type%type
       , p_created_on          out   orac_api.user_preferences_v.created_on%type
       , p_created_by          out   orac_api.user_preferences_v.created_by%type
       , p_updated_on          out   orac_api.user_preferences_v.updated_on%type
@@ -174,7 +166,6 @@ as
          , user_id
          , pref_key
          , pref_value
-         , value_type
          , created_on
          , created_by
          , updated_on
@@ -185,7 +176,6 @@ as
          , p_user_id
          , p_pref_key
          , p_pref_value
-         , p_value_type
          , p_created_on
          , p_created_by
          , p_updated_on
@@ -213,7 +203,6 @@ as
            user_id                        = p_row.user_id
          , pref_key                       = p_row.pref_key
          , pref_value                     = p_row.pref_value
-         , value_type                     = p_row.value_type
       where
             pref_id = p_pref_id;
 
@@ -236,7 +225,6 @@ as
       , p_user_id          in       orac_api.user_preferences_v.user_id%type
       , p_pref_key         in       orac_api.user_preferences_v.pref_key%type
       , p_pref_value       in       orac_api.user_preferences_v.pref_value%type
-      , p_value_type       in       orac_api.user_preferences_v.value_type%type
       , p_row_version         out   orac_api.user_preferences_v.row_version%type
    )
    is
@@ -246,7 +234,6 @@ as
            user_id                        = p_user_id
          , pref_key                       = p_pref_key
          , pref_value                     = p_pref_value
-         , value_type                     = p_value_type
       where
             pref_id = p_pref_id;
 

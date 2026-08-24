@@ -2,6 +2,8 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
+from orac_core.knowledge.model_submission import StrictModelInvocationOptions
+
 MODEL_SERVICE_DESCRIPTORS = {
     "lmstudio": "LM Studio",
     "ollama": "Ollama",
@@ -18,6 +20,7 @@ class LLMConnectorABC(ABC):
         prompt_type: str,
         prompt: str,
         generation_options: dict[str, Any] | None = None,
+        invocation_options: StrictModelInvocationOptions | None = None,
     ) -> str:
         """Send a prompt to the LLM and return the response.
 
@@ -33,6 +36,7 @@ class LLMConnectorABC(ABC):
         prompt: str,
         stream: bool = False,
         generation_options: dict[str, Any] | None = None,
+        invocation_options: StrictModelInvocationOptions | None = None,
     ) -> dict:
         """Send a prompt and return response text plus usage metadata."""
 

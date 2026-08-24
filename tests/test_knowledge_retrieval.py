@@ -20,7 +20,7 @@ from orac_core.knowledge import KnowledgeRetrievalError  # noqa: E402
 from orac_core.knowledge import KnowledgeRetrievalService  # noqa: E402
 from orac_core.knowledge import KnowledgeScope  # noqa: E402
 from orac_core.knowledge.repository import (  # noqa: E402
-    KnowledgeIngestionRepository,
+    KnowledgeRetrievalRepository,
 )
 
 FIXTURE_SENTENCE = "ORAC_INGESTION_FIXTURE_20260713_LUMEN_PATHWAY"
@@ -48,9 +48,48 @@ class _Repository:
         self.rows = rows
         self.calls: list[dict] = []
 
-    def load_searchable_chunks(self, **kwargs) -> list[dict]:
+        self.outcomes: list[dict] = []
+
+    def open_search_candidates(self, **kwargs):
         self.calls.append(kwargs)
-        return self.rows
+        return (
+            kwargs["retrieval_id"],
+            {"status": "APPROVED", "reason_code": "RETRIEVAL_APPROVED"},
+            self.rows,
+        )
+
+    def record_outcome(self, **kwargs) -> None:
+        self.outcomes.append(kwargs)
+
+
+class _Var:
+    def __init__(self) -> None:
+        self.value = None
+
+    def getvalue(self):
+        return self.value
+
+
+class _ResultCursor:
+    def __init__(self, session) -> None:
+        self._session = session
+        self.description = [
+            ("EMBEDDING_VECTOR",),
+            ("CHUNK_TEXT",),
+            ("CLASSIFICATION_TAGS_JSON",),
+            ("CHUNK_METADATA_JSON",),
+        ]
+
+    def fetchall(self):
+        return [(
+            self._session.vector,
+            self._session.chunk_text,
+            self._session.classification,
+            self._session.native_json,
+        )]
+
+    def close(self) -> None:
+        return None
 
 
 class _ConnectionBoundValue:
@@ -74,12 +113,6 @@ class _SearchCursor:
 
     def __init__(self, session) -> None:
         self._session = session
-        self.description = [
-            ("EMBEDDING_VECTOR",),
-            ("CHUNK_TEXT",),
-            ("CLASSIFICATION_TAGS_JSON",),
-            ("CHUNK_METADATA_JSON",),
-        ]
 
     def __enter__(self):
         return self
@@ -87,19 +120,14 @@ class _SearchCursor:
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         return None
 
-    def execute(self, statement, parameters) -> None:
-        self.statement = statement
-        self.parameters = parameters
+    def var(self, data_type):
+        return _Var()
 
-    def fetchall(self) -> list[tuple[object, ...]]:
-        return [
-            (
-                self._session.vector,
-                self._session.chunk_text,
-                self._session.classification,
-                self._session.native_json,
-            )
-        ]
+    def callproc(self, name, parameters) -> None:
+        parameters[-2].value = json.dumps(
+            {"status": "APPROVED", "reason_code": "RETRIEVAL_APPROVED"}
+        )
+        parameters[-1].value = _ResultCursor(self._session)
 
 
 class _SearchSession:
@@ -154,13 +182,17 @@ class KnowledgeRetrievalTests(unittest.TestCase):
             repository=_Repository([_row()]), embedding_provider=_Provider()
         )
         with self.assertRaisesRegex(KnowledgeRetrievalError, "requires"):
-            service.search("lumen", target_scope_type="", target_scope_key="")
+            service.search(
+                "lumen", target_scope_type="", target_scope_key="",
+                principal_username="clive",
+            )
 
     def test_repository_materializes_lobs_before_closing_session(self) -> None:
         session = _SearchSession()
-        repository = KnowledgeIngestionRepository(session_factory=lambda: session)
+        repository = KnowledgeRetrievalRepository(session_factory=lambda: session)
 
-        rows = repository.load_searchable_chunks(
+        _, _, rows = repository.open_search_candidates(
+            principal_username="clive",
             target_scope_type="PLUGIN",
             target_scope_key="drop_box",
             embedding_model_identifier="hash-embedding-v1",
@@ -187,12 +219,13 @@ class KnowledgeRetrievalTests(unittest.TestCase):
                 session = _SearchSession()
                 value = _ConnectionBoundValue(session, b"not text")
                 setattr(session, attribute, value)
-                repository = KnowledgeIngestionRepository(
+                repository = KnowledgeRetrievalRepository(
                     session_factory=lambda: session
                 )
 
                 with self.assertRaisesRegex(TypeError, field_name):
-                    repository.load_searchable_chunks(
+                    repository.open_search_candidates(
+                        principal_username="clive",
                         target_scope_type="PLUGIN",
                         target_scope_key="drop_box",
                         embedding_model_identifier="hash-embedding-v1",
@@ -211,12 +244,13 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         ):
             with self.subTest(field_name=field_name):
                 session = _SearchSession(overrides={attribute: b"not text"})
-                repository = KnowledgeIngestionRepository(
+                repository = KnowledgeRetrievalRepository(
                     session_factory=lambda: session
                 )
 
                 with self.assertRaisesRegex(TypeError, field_name):
-                    repository.load_searchable_chunks(
+                    repository.open_search_candidates(
+                        principal_username="clive",
                         target_scope_type="PLUGIN",
                         target_scope_key="drop_box",
                         embedding_model_identifier="hash-embedding-v1",
@@ -233,6 +267,7 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         )
         results = service.search(
             "lumen pathway",
+            principal_username="clive",
             target_scope_type="project",
             target_scope_key="ORAC_CORE",
         )
@@ -248,7 +283,8 @@ class KnowledgeRetrievalTests(unittest.TestCase):
             embedding_provider=_Provider(),
         )
         outcome = service.retrieve(
-            "lumen pathway", scope=KnowledgeScope("PROJECT", "ORAC_CORE")
+            "lumen pathway", principal_username="clive",
+            scope=KnowledgeScope("PROJECT", "ORAC_CORE")
         )
         self.assertEqual(outcome.status, "no_evidence")
         self.assertEqual(outcome.reason_codes, ("no_evidence_above_threshold",))
@@ -275,6 +311,7 @@ class KnowledgeRetrievalTests(unittest.TestCase):
                 "Use the Drop Box knowledge base to explain mitochondrial "
                 "ribosome assembly in Antarctic krill."
             ),
+            principal_username="clive",
             scope=KnowledgeScope("PLUGIN", "drop_box"),
         )
 
@@ -288,6 +325,7 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         )
         outcome = service.retrieve(
             "lumen",
+            principal_username="clive",
             scope=KnowledgeScope("PROJECT", "ORAC_CORE"),
             max_candidate_chunks=2,
         )
@@ -301,7 +339,8 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(KnowledgeRetrievalError, "model"):
             service.search(
-                "lumen", target_scope_type="PROJECT", target_scope_key="ORAC_CORE"
+                "lumen", target_scope_type="PROJECT", target_scope_key="ORAC_CORE",
+                principal_username="clive",
             )
 
     def test_rejects_dimension_mismatch(self) -> None:
@@ -311,7 +350,8 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(KnowledgeRetrievalError, "dimension"):
             service.search(
-                "lumen", target_scope_type="PROJECT", target_scope_key="ORAC_CORE"
+                "lumen", target_scope_type="PROJECT", target_scope_key="ORAC_CORE",
+                principal_username="clive",
             )
 
     def test_rejects_malformed_vectors(self) -> None:
@@ -321,7 +361,8 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(KnowledgeRetrievalError, "non_numeric"):
             service.search(
-                "lumen", target_scope_type="PROJECT", target_scope_key="ORAC_CORE"
+                "lumen", target_scope_type="PROJECT", target_scope_key="ORAC_CORE",
+                principal_username="clive",
             )
 
 

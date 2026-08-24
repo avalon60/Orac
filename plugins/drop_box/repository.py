@@ -122,22 +122,6 @@ class DropBoxRepository:
         )
         return [DropBoxHandoffJob.from_row(row) for row in rows]
 
-    def core_handoff_available(self) -> bool:
-        """Return whether the Core knowledge handoff package is visible."""
-        rows = self._db_session.fetch_dicts(
-            """
-            select count(*) as available_count
-              from all_objects
-             where owner = 'ORAC_CODE'
-               and object_name = 'KNOWLEDGE_INGESTION_API'
-               and object_type = 'PACKAGE'
-               and status = 'VALID'
-            """
-        )
-        if not rows:
-            return False
-        return int(rows[0].get("AVAILABLE_COUNT") or 0) > 0
-
     def update_status(
         self,
         *,

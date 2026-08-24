@@ -14,7 +14,6 @@ create table orac_core.user_preferences
   user_id     number not null,
   pref_key    varchar2(100 byte) not null,
   pref_value  json,
-  value_type  varchar2(8 byte) default 'string' not null,
   created_on  timestamp default on null systimestamp not null,
   created_by  varchar2(128 byte) default on null coalesce(
                 sys_context('apex$session', 'app_user'),

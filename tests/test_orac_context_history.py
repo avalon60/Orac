@@ -1860,9 +1860,8 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
                 aliases={"drop box": scope},
                 registry=_Registry(),
                 authorization_repository=_KnowledgeAuthorization(
-                    "RAG_USAGE_NOT_GRANTED"
+                    "RAG_USAGE_GRANTED"
                 ),
-                allow_all_scopes=True,
             )
         )
         orchestrator.knowledge_retrieval_service = retrieval
@@ -1890,11 +1889,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         provenance = response["meta"]["provenance"]
         self.assertEqual(provenance["outcome"], "no_evidence")
         self.assertEqual(provenance["sources"], [])
-        self.assertTrue(provenance["rag_usage_bypass"])
-        self.assertEqual(
-            provenance["authorization_reason_codes"],
-            ["rag_usage_allow_all_scopes"],
-        )
+        self.assertNotIn("rag_usage_bypass", provenance)
 
     def test_contextual_prompt_suppresses_identity_for_date_questions(self) -> None:
         """Date questions should not invite the standard Orac identity answer."""

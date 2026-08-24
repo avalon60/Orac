@@ -79,6 +79,16 @@ class DialogueRoutingTests(unittest.TestCase):
         )
         self.assertEqual(decision.route_type, "knowledge")
         self.assertEqual(decision.reason_codes, ("RAG_USAGE_GRANTED",))
+        self.assertIsNone(decision.materialisation_purpose)
+
+    def test_explicit_broad_document_intent_is_trusted_route_state(self) -> None:
+        decision = self.service.knowledge_route(
+            "Summarise the Drop Box documentation.",
+            authenticated_username="clive",
+        )
+
+        self.assertEqual(decision.route_type, "knowledge")
+        self.assertEqual(decision.materialisation_purpose, "SUMMARISE")
 
     def test_missing_privilege_is_terminally_denied(self) -> None:
         decision = _service(result="RAG_USAGE_NOT_GRANTED").knowledge_route(

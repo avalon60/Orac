@@ -10,7 +10,12 @@
 
 alter table orac_core.user_synonyms
   add constraint user_syns_pk
-  primary key (alias_type, alias_value)
+  primary key
+  (
+    user_alias_type_domain_code,
+    user_alias_type_ref_value_code,
+    alias_value
+  )
 ;
 
 --rollback alter table orac_core.user_synonyms drop constraint user_syns_pk;

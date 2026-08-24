@@ -248,6 +248,13 @@ class _EnabledKnowledgeConfigManager(_FakeConfigManager):
         return default
 
 
+class _DisabledKnowledgeConfigManager(_FakeConfigManager):
+    def bool_config_value(self, section: str, key: str, default=None):
+        if (section, key) == ("knowledge.dialogue", "enabled"):
+            return False
+        return default
+
+
 class _UnavailableKnowledgeAuthorizer:
     aliases: dict = {}
     max_scopes_per_request = 3
@@ -431,6 +438,26 @@ class OracPluginIntegrationTests(unittest.TestCase):
         self.assertEqual(fetcher._timeout_seconds, 7.5)
         self.assertEqual(fetcher._max_bytes, 1234)
         self.assertEqual(fetcher._max_redirects, 2)
+
+    def test_missing_knowledge_dialogue_setting_remains_disabled(self) -> None:
+        orchestrator = self._make_orac_stub()
+        orchestrator.config_mgr = _FakeConfigManager()
+
+        orchestrator._init_knowledge_dialogue()
+
+        self.assertIsNone(orchestrator.dialogue_routing_service)
+        self.assertIsNone(orchestrator.knowledge_retrieval_service)
+        self.assertIsNone(orchestrator.knowledge_grounding_builder)
+
+    def test_explicit_false_disables_knowledge_dialogue(self) -> None:
+        orchestrator = self._make_orac_stub()
+        orchestrator.config_mgr = _DisabledKnowledgeConfigManager()
+
+        orchestrator._init_knowledge_dialogue()
+
+        self.assertIsNone(orchestrator.dialogue_routing_service)
+        self.assertIsNone(orchestrator.knowledge_retrieval_service)
+        self.assertIsNone(orchestrator.knowledge_grounding_builder)
 
     def test_registry_startup_failure_keeps_terminal_knowledge_routing(self) -> None:
         orchestrator = self._make_orac_stub()

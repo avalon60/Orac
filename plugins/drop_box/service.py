@@ -93,13 +93,7 @@ class DropBoxService:
                 repository.enqueue_job(hashed)
                 stats.enqueued += 1
             repository.commit()
-            if repository.core_handoff_available():
-                self._handoff_jobs(context, repository, stats)
-            else:
-                self._log_warning(
-                    "Drop-box Core handoff skipped because "
-                    "ORAC_CODE.KNOWLEDGE_INGESTION_API is not available."
-                )
+            self._handoff_jobs(context, repository, stats)
             repository.commit()
             self.last_error = None
             self.last_stats = stats

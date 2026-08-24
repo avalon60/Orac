@@ -18,6 +18,7 @@ as
     l_count    number;
     l_expired  number;
     l_username varchar2(4000 char) := trim(p_username);
+    l_scope_status varchar2(100 char);
   begin
     if l_username is null
     then
@@ -35,6 +36,13 @@ as
     end;
     if l_active <> 'Y' then return 'RAG_USAGE_PRINCIPAL_INACTIVE'; end if;
 
+    l_scope_status := orac_code.knowledge_scope_api.scope_status(
+                        p_scope_type, p_scope_key
+                      );
+    if l_scope_status <> 'RAG_USAGE_SCOPE_ELIGIBLE'
+    then
+      return l_scope_status;
+    end if;
     l_scope_id := orac_code.knowledge_scope_api.resolve_scope_id(
                     p_scope_type, p_scope_key
                   );

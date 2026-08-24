@@ -14,7 +14,9 @@ create table orac_core.llm_registry
   name               varchar2(100 byte) not null,
   provider           varchar2(100 byte),
   model              varchar2(200 byte) not null,
-  context_policy     varchar2(20 byte) not null,
+  llm_context_policy_domain_code    varchar2(100 char)
+                                      default on null 'LLM_CONTEXT_POLICY' not null,
+  llm_context_policy_ref_value_code varchar2(100 char) not null,
   max_context_tokens number,
   is_enabled         char(1 byte) default 'Y' not null,
   properties         json,
@@ -32,3 +34,9 @@ create table orac_core.llm_registry
 ;
 
 --rollback drop table orac_core.llm_registry purge;
+
+--changeset clive:make_orac_core_llm_registry_provider_required context:core labels:core stripComments:false
+--preconditions onFail:HALT onError:HALT
+--precondition-sql-check expectedResult:0 select count(1) from orac_core.llm_registry where provider is null;
+alter table orac_core.llm_registry modify provider not null;
+--rollback alter table orac_core.llm_registry modify provider null;

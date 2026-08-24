@@ -51,6 +51,13 @@ class KnowledgeGroundingPackBuilder:
                 "normalised_text_sha256": result.normalised_text_sha256,
                 "extractor_code": result.extractor_code,
                 "extractor_version": result.extractor_version,
+                "source_artefact_id": result.source_artefact_id,
+                "source_artefact_role_code": result.source_artefact_role_code,
+                "source_artefact_logical_name": result.source_artefact_logical_name,
+                "source_artefact_ordinal": result.source_artefact_ordinal,
+                "source_sheet_name": result.source_sheet_name,
+                "source_table_name": result.source_table_name,
+                "source_member_cell_range": result.source_member_cell_range,
             }
             chunks_by_source[source_key].append(result.chunk_id)
             evidence.append(
@@ -66,6 +73,10 @@ class KnowledgeGroundingPackBuilder:
                     or result.parent_source_reference
                     or result.source_reference,
                     "text": text,
+                    "source_artefact_id": result.source_artefact_id,
+                    "source_row_start": result.source_row_start,
+                    "source_row_end": result.source_row_end,
+                    "source_cell_range": result.source_chunk_cell_range,
                 }
             )
 

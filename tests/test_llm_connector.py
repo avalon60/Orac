@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import requests
 import sys
 import types
 import unittest
@@ -46,6 +47,7 @@ from model.llm_connector import (
     provider_generation_options,
 )
 from model.provider_registry import ProviderRegistry
+from orac_core.knowledge.model_submission import StrictModelInvocationOptions
 
 
 class _FakeLogger:
@@ -70,7 +72,7 @@ class _StubOllamaConnector(OllamaConnector):
     def __init__(
         self,
         *,
-        chat_results: list[dict[str, str]],
+        chat_results: list[dict[str, str] | Exception],
         default_num_predict: int = 2048,
         num_predict_incr_pct: int = 100,
         max_num_predict_retries: int = 2,
@@ -97,7 +99,10 @@ class _StubOllamaConnector(OllamaConnector):
         del prompt, show_reasoning, use_system, generation_options
         self.chat_num_predicts.append(num_predict)
         if self._chat_results:
-            return self._chat_results.pop(0)
+            result = self._chat_results.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
         return {"text": "", "done_reason": "stop"}
 
     def _generate_once(
@@ -199,6 +204,8 @@ class OllamaConnectorRetryTests(unittest.TestCase):
         self.assertTrue(capabilities.supports_model_details)
         self.assertTrue(capabilities.supports_model_pull)
         self.assertFalse(capabilities.requires_loaded_model)
+        self.assertEqual(capabilities.processing_locality, "LOCAL")
+        self.assertTrue(capabilities.text_evidence_eligible)
 
     def test_lmstudio_capabilities_are_explicit(self) -> None:
         capabilities = ProviderRegistry().capabilities("lmstudio")
@@ -210,6 +217,8 @@ class OllamaConnectorRetryTests(unittest.TestCase):
         self.assertFalse(capabilities.supports_model_details)
         self.assertFalse(capabilities.supports_model_pull)
         self.assertTrue(capabilities.requires_loaded_model)
+        self.assertEqual(capabilities.processing_locality, "LOCAL")
+        self.assertTrue(capabilities.text_evidence_eligible)
 
     def test_registry_owns_ollama_latest_alias_candidates(self) -> None:
         registry = ProviderRegistry()
@@ -388,6 +397,40 @@ class OllamaConnectorRetryTests(unittest.TestCase):
 
         self.assertEqual(response, "complete answer")
         self.assertEqual(connector.chat_num_predicts, [768])
+
+    def test_strict_submission_disables_growth_and_endpoint_fallback(self) -> None:
+        connector = _StubOllamaConnector(
+            chat_results=[{"text": "partial answer", "done_reason": "length"}],
+            default_num_predict=200,
+        )
+
+        response = connector.send_prompt(
+            prompt_type="U",
+            prompt="Review the evidence.",
+            invocation_options=StrictModelInvocationOptions(),
+        )
+
+        self.assertEqual(response, "partial answer")
+        self.assertEqual(connector.chat_num_predicts, [2048])
+        self.assertEqual(connector.generate_num_predicts, [])
+
+    def test_strict_submission_retries_one_transient_pre_output_failure(self) -> None:
+        connector = _StubOllamaConnector(
+            chat_results=[
+                requests.Timeout("timed out"),
+                {"text": "complete answer", "done_reason": "stop"},
+            ],
+        )
+
+        result = connector.send_prompt_with_meta(
+            prompt_type="U",
+            prompt="Review the evidence.",
+            invocation_options=StrictModelInvocationOptions(),
+        )
+
+        self.assertEqual(result["text"], "complete answer")
+        self.assertEqual(connector.chat_num_predicts, [2048, 2048])
+        self.assertEqual(connector.generate_num_predicts, [])
 
     def test_stream_prompt_deltas_captures_final_ollama_usage(self) -> None:
         connector = _StubOllamaConnector(chat_results=[])

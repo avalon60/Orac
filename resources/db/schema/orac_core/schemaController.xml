@@ -19,4 +19,5 @@
   <includeAll path="trigger" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>
   <includeAll path="seed_data" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>
   <includeAll path="comment" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>
+  <includeAll path="annotation" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>
 </databaseChangeLog>

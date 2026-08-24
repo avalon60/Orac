@@ -10,7 +10,7 @@ as
   is
     l_array             json_array_t;
     l_element           json_element_t;
-    l_tag_code          varchar2(100 char);
+    l_ref_value_code    varchar2(100 char);
     l_tag_count         number;
     l_active_count      number;
     l_canonical         clob;
@@ -49,12 +49,12 @@ as
         then
           raise_application_error(-20204, 'Classification tag entries must be strings.');
         end if;
-        l_tag_code := l_array.get_string(l_index);
-        if l_seen_tags.exists(l_tag_code)
+        l_ref_value_code := l_array.get_string(l_index);
+        if l_seen_tags.exists(l_ref_value_code)
         then
           raise_application_error(-20205, 'Duplicate classification tags are not allowed.');
         end if;
-        l_seen_tags(l_tag_code) := true;
+        l_seen_tags(l_ref_value_code) := true;
       end loop;
     end if;
 
@@ -69,10 +69,10 @@ as
       join json_table(
              p_classification_tags_json,
              '$[*]' columns (
-               tag_code varchar2(100 char) path '$'
+               ref_value_code varchar2(100 char) path '$'
              )
            ) selected
-        on selected.tag_code = tag.return_value;
+        on selected.ref_value_code = tag.return_value;
 
     if l_active_count <> l_tag_count
     then

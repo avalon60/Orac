@@ -82,8 +82,9 @@ Before creating a location:
 4. In App 1043 Page 1, leave the `drop_box` / `scanner` service policy as
    `auto` for normal operation.
 5. If users will query the resulting corpus through dialogue, grant each
-   principal the relevant canonical scope in App 1042 Pages 39/40 and then
-   enable `[knowledge.dialogue]`.
+   principal the relevant canonical scope in App 1042 Pages 39/40. The shipped
+   configuration enables `[knowledge.dialogue]`; confirm it has not been
+   explicitly disabled.
 
 A RAG usage grant is required for dialogue retrieval, not ingestion. It does
 not make an unknown or inactive target eligible.
@@ -100,7 +101,7 @@ repository documentation:
 | Target | `PROJECT:ORAC_CORE` |
 | Extensions | `md` |
 | Recursive | Yes |
-| Classification | `raw_reference` |
+| Classification | `RAW_REFERENCE` |
 | Maximum size | 10 MiB |
 | Stability | 10 seconds |
 
@@ -170,6 +171,9 @@ historical and consistency conditions and does not by itself prove that an
 incident is still active.
 
 ### Page 2: Drop Location Form
+
+Page 2 opens as a resizable right-side drawer. The classification-tag shuttle
+uses a full form row so that descriptive tag names remain visible.
 
 Use Page 2 to create or edit a watched folder. Save through the form so the
 approved admin API validates the configuration and canonical target.
@@ -305,10 +309,16 @@ CLI equivalents are:
 
 ```bash
 bin/orac-plugin.sh service status drop_box
+bin/orac-plugin.sh service status drop_box scanner --require-running
 bin/orac-plugin.sh service policy drop_box scanner auto
 bin/orac-plugin.sh service policy drop_box scanner manual
 bin/orac-plugin.sh service policy drop_box scanner disabled
 ```
+
+Use `--require-running` in automation and rebuild checks. The command keeps the
+normal JSON output and succeeds only when the matching service exists, its
+state is `running`, and its database lease is active. Without the flag, status
+remains observational and returns success after printing available rows.
 
 `bin/orac-plugin.sh service run drop_box` is a foreground diagnostic, not the
 normal startup path. It uses the managed service lease and refuses to run when
@@ -332,7 +342,7 @@ Source Path: /tmp/orac-dropbox-test/inbox
 Enabled: No
 Target Scope Type: Project
 Project Code: ORAC_CORE
-Classification Tags: raw_reference
+Classification Tags: RAW_REFERENCE
 Allowed Extensions: md,txt
 Recursive Scan: No
 Maximum File Size MB: 10
@@ -407,5 +417,11 @@ no unreviewed manual terminal-job requeue action.
 - Compare Drop Box and Core state on Page 5.
 - Check for missing managed payload, hash mismatch, empty canonical content,
   worker retry, or embedding failure in restricted logs.
+- Run `bin/orac-knowledge.sh reconcile` for a bounded read-only comparison of
+  database lineage and managed-store state. `BLOCKED` identifies durable
+  divergence; `INCOMPLETE` means the scan must be safely retried.
 - Do not grant broad schema access or use direct table DML to repair the
   lifecycle.
+- Do not delete, register, quarantine, rewrite, or recover managed content to
+  make a test or reconciliation report pass. Those actions require a separate
+  authorised recovery workflow that is not supplied by Drop Box.

@@ -1,5 +1,8 @@
 --liquibase formatted sql
 
+-- Codex-assisted modified.
+-- Codex SDK reviewability guardrails followed.
+
 --changeset clive:create_package_body_orac_code_rag_usage_privilege_api context:core labels:core stripComments:false endDelimiter:/ runOnChange:true splitStatements:false
 -- __author__: clive
 -- __date__: 2026-07-20
@@ -44,6 +47,124 @@ as
       return null;
   end active_user_id;
 
+  procedure assess_grant_request(
+    p_username        in varchar2,
+    p_scope_type      in varchar2,
+    p_scope_key       in varchar2,
+    p_lock_active_row in boolean,
+    p_user_id         out number,
+    p_scope_id        out number,
+    p_active_row      out orac_api.rag_usage_privileges_v%rowtype,
+    p_result          out varchar2
+  )
+  is
+    l_scope_status varchar2(100 char);
+  begin
+    p_active_row.rag_usage_privilege_id := null;
+    p_user_id := active_user_id(p_username);
+
+    if p_user_id is null
+    then
+      p_result := 'RAG_USAGE_PRINCIPAL_UNKNOWN';
+      return;
+    elsif p_user_id = -1
+    then
+      p_result := 'RAG_USAGE_PRINCIPAL_INACTIVE';
+      return;
+    end if;
+
+    p_scope_id := orac_code.knowledge_scope_api.resolve_scope_id(
+                    p_scope_type,
+                    p_scope_key
+                  );
+    if p_scope_id is null
+    then
+      p_result := 'RAG_USAGE_SCOPE_UNKNOWN';
+      return;
+    end if;
+
+    l_scope_status := orac_code.knowledge_scope_api.scope_status(
+                        p_scope_type,
+                        p_scope_key
+                      );
+    if l_scope_status = 'RAG_USAGE_SCOPE_INACTIVE'
+    then
+      p_result := l_scope_status;
+      return;
+    elsif l_scope_status <> 'RAG_USAGE_SCOPE_ELIGIBLE'
+    then
+      p_result := 'RAG_USAGE_SCOPE_INELIGIBLE';
+      return;
+    end if;
+
+    begin
+      if p_lock_active_row
+      then
+        select *
+          into p_active_row
+          from orac_api.rag_usage_privileges_v
+         where user_id = p_user_id
+           and knowledge_scope_id = p_scope_id
+           and privilege_code = 'USE'
+           and active_yn = 'Y'
+           for update;
+      else
+        select *
+          into p_active_row
+          from orac_api.rag_usage_privileges_v
+         where user_id = p_user_id
+           and knowledge_scope_id = p_scope_id
+           and privilege_code = 'USE'
+           and active_yn = 'Y';
+      end if;
+
+      if p_active_row.expires_on is null
+         or p_active_row.expires_on > systimestamp
+      then
+        p_result := 'RAG_USAGE_ALREADY_GRANTED';
+      else
+        p_result := 'RAG_USAGE_GRANT_AVAILABLE';
+      end if;
+    exception
+      when no_data_found then
+        p_active_row.rag_usage_privilege_id := null;
+        p_result := 'RAG_USAGE_GRANT_AVAILABLE';
+    end;
+  end assess_grant_request;
+
+  function grant_scope_usage_status_by_id(
+    p_username           in varchar2,
+    p_knowledge_scope_id in orac_api.knowledge_scopes_v.knowledge_scope_id%type
+  ) return varchar2
+  is
+    l_scope_type orac_api.knowledge_scopes_v.scope_type%type;
+    l_scope_key  varchar2(4000 char);
+    l_user_id    number;
+    l_scope_id   number;
+    l_active_row orac_api.rag_usage_privileges_v%rowtype;
+    l_result     varchar2(100 char);
+  begin
+    select scope_type, scope_key
+      into l_scope_type, l_scope_key
+      from orac_code.knowledge_scope_registry_v
+     where knowledge_scope_id = p_knowledge_scope_id;
+
+    assess_grant_request(
+      p_username        => p_username,
+      p_scope_type      => l_scope_type,
+      p_scope_key       => l_scope_key,
+      p_lock_active_row => false,
+      p_user_id         => l_user_id,
+      p_scope_id        => l_scope_id,
+      p_active_row      => l_active_row,
+      p_result          => l_result
+    );
+    return l_result;
+  exception
+    when no_data_found then
+      return 'RAG_USAGE_SCOPE_UNKNOWN';
+  end grant_scope_usage_status_by_id;
+
   function grant_scope_usage(
     p_username          in varchar2,
     p_scope_type        in varchar2,
@@ -54,55 +175,40 @@ as
     p_grant_reason_code in varchar2 default 'ADMIN_GRANT'
   ) return varchar2
   is
-    l_user_id  number;
-    l_scope_id number;
-    l_row      orac_api.rag_usage_privileges_v%rowtype;
-    l_new_row  orac_api.rag_usage_privileges_v%rowtype;
+    l_user_id    number;
+    l_scope_id   number;
+    l_active_row orac_api.rag_usage_privileges_v%rowtype;
+    l_new_row    orac_api.rag_usage_privileges_v%rowtype;
+    l_result     varchar2(100 char);
   begin
-    l_user_id := active_user_id(p_username);
-    if l_user_id is null then return 'RAG_USAGE_PRINCIPAL_UNKNOWN'; end if;
-    if l_user_id = -1 then return 'RAG_USAGE_PRINCIPAL_INACTIVE'; end if;
+    assess_grant_request(
+      p_username        => p_username,
+      p_scope_type      => p_scope_type,
+      p_scope_key       => p_scope_key,
+      p_lock_active_row => true,
+      p_user_id         => l_user_id,
+      p_scope_id        => l_scope_id,
+      p_active_row      => l_active_row,
+      p_result          => l_result
+    );
 
-    l_scope_id := orac_code.knowledge_scope_api.resolve_scope_id(
-                    p_scope_type, p_scope_key
-                  );
-    if l_scope_id is null then return 'RAG_USAGE_SCOPE_UNKNOWN'; end if;
-    if orac_code.knowledge_scope_api.scope_status(p_scope_type, p_scope_key) =
-       'RAG_USAGE_SCOPE_INACTIVE'
+    if l_result <> 'RAG_USAGE_GRANT_AVAILABLE'
     then
-      return 'RAG_USAGE_SCOPE_INACTIVE';
-    elsif orac_code.knowledge_scope_api.scope_status(p_scope_type, p_scope_key) <>
-          'RAG_USAGE_SCOPE_ELIGIBLE'
-    then
-      return 'RAG_USAGE_SCOPE_INELIGIBLE';
+      return l_result;
     end if;
 
-    begin
-      select *
-        into l_row
-        from orac_api.rag_usage_privileges_v
-       where user_id = l_user_id
-         and knowledge_scope_id = l_scope_id
-         and privilege_code = 'USE'
-         and active_yn = 'Y'
-       for update;
-
-      if l_row.expires_on is null or l_row.expires_on > systimestamp
-      then
-        return 'RAG_USAGE_ALREADY_GRANTED';
-      end if;
-
-      l_row.active_yn := 'N';
-      l_row.revoked_on := systimestamp;
-      l_row.revoked_by := actor_name(p_granted_by);
-      l_row.revoke_reason_code := 'EXPIRED';
+    if l_active_row.rag_usage_privilege_id is not null
+    then
+      l_active_row.active_yn := 'N';
+      l_active_row.revoked_on := systimestamp;
+      l_active_row.revoked_by := actor_name(p_granted_by);
+      l_active_row.revoke_reason_code := 'EXPIRED';
       orac_api.rag_usage_privileges_tapi.upd(
-        l_row.rag_usage_privilege_id, l_row, l_row.row_version
+        l_active_row.rag_usage_privilege_id,
+        l_active_row,
+        l_active_row.row_version
       );
-    exception
-      when no_data_found then
-        null;
-    end;
+    end if;
 
     l_new_row.user_id := l_user_id;
     l_new_row.knowledge_scope_id := l_scope_id;
@@ -119,6 +225,37 @@ as
     when dup_val_on_index then
       return 'RAG_USAGE_ALREADY_GRANTED';
   end grant_scope_usage;
+
+  function grant_scope_usage_by_id(
+    p_username           in varchar2,
+    p_knowledge_scope_id in orac_api.knowledge_scopes_v.knowledge_scope_id%type,
+    p_effective_on       in timestamp with time zone default systimestamp,
+    p_expires_on         in timestamp with time zone default null,
+    p_granted_by         in varchar2 default null,
+    p_grant_reason_code  in varchar2 default 'ADMIN_GRANT'
+  ) return varchar2
+  is
+    l_scope_type orac_api.knowledge_scopes_v.scope_type%type;
+    l_scope_key  varchar2(4000 char);
+  begin
+    select scope_type, scope_key
+      into l_scope_type, l_scope_key
+      from orac_code.knowledge_scope_registry_v
+     where knowledge_scope_id = p_knowledge_scope_id;
+
+    return grant_scope_usage(
+             p_username          => p_username,
+             p_scope_type        => l_scope_type,
+             p_scope_key         => l_scope_key,
+             p_effective_on      => p_effective_on,
+             p_expires_on        => p_expires_on,
+             p_granted_by        => p_granted_by,
+             p_grant_reason_code => p_grant_reason_code
+           );
+  exception
+    when no_data_found then
+      return 'RAG_USAGE_SCOPE_UNKNOWN';
+  end grant_scope_usage_by_id;
 
   function revoke_scope_usage(
     p_username           in varchar2,
@@ -163,6 +300,56 @@ as
     );
     return 'RAG_USAGE_REVOKED';
   end revoke_scope_usage;
+
+  function revoke_scope_usage_by_id(
+    p_rag_usage_privilege_id in orac_api.rag_usage_privileges_v.rag_usage_privilege_id%type,
+    p_row_version            in orac_api.rag_usage_privileges_v.row_version%type,
+    p_revoked_by             in varchar2 default null,
+    p_revoke_reason_code     in varchar2 default 'ADMIN_REVOKE'
+  ) return varchar2
+  is
+    l_row orac_api.rag_usage_privileges_v%rowtype;
+  begin
+    begin
+      select *
+        into l_row
+        from orac_api.rag_usage_privileges_v
+       where rag_usage_privilege_id = p_rag_usage_privilege_id
+       for update;
+    exception
+      when no_data_found then
+        return 'RAG_USAGE_PRIVILEGE_UNKNOWN';
+    end;
+
+    if p_row_version is null or l_row.row_version <> p_row_version
+    then
+      return 'RAG_USAGE_PRIVILEGE_CHANGED';
+    end if;
+
+    if l_row.active_yn <> 'Y'
+    then
+      return 'RAG_USAGE_ALREADY_REVOKED';
+    end if;
+
+    l_row.active_yn := 'N';
+    l_row.revoked_on := systimestamp;
+    l_row.revoked_by := actor_name(p_revoked_by);
+    l_row.revoke_reason_code := trim(
+                                  coalesce(
+                                    p_revoke_reason_code,
+                                    'ADMIN_REVOKE'
+                                  )
+                                );
+    orac_api.rag_usage_privileges_tapi.upd(
+      l_row.rag_usage_privilege_id,
+      l_row,
+      p_row_version
+    );
+    return 'RAG_USAGE_REVOKED';
+  exception
+    when no_data_found then
+      return 'RAG_USAGE_PRIVILEGE_CHANGED';
+  end revoke_scope_usage_by_id;
 end rag_usage_privilege_api;
 /
 --rollback drop package body orac_code.rag_usage_privilege_api;

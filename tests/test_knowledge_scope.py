@@ -141,7 +141,6 @@ class KnowledgeScopeAuthorizerTests(unittest.TestCase):
         registry: _Registry,
         authorization: _Authorization | None = None,
         *,
-        allow_all: bool = False,
         clock=lambda: 0.0,
     ) -> KnowledgeScopeAuthorizer:
         return KnowledgeScopeAuthorizer(
@@ -151,7 +150,6 @@ class KnowledgeScopeAuthorizerTests(unittest.TestCase):
             },
             registry=registry,
             authorization_repository=authorization or _Authorization(),
-            allow_all_scopes=allow_all,
             cache_ttl_seconds=30,
             clock=clock,
         )
@@ -204,43 +202,24 @@ class KnowledgeScopeAuthorizerTests(unittest.TestCase):
         self.assertEqual(result.status, "unavailable")
         self.assertEqual(result.reason_code, "scope_registry_unavailable")
 
-    def test_database_failure_never_activates_allow_all(self) -> None:
+    def test_database_failure_fails_closed(self) -> None:
         authorization = _Authorization("RAG_USAGE_NOT_GRANTED")
         authorization.fail = True
         result = self._authorizer(
             _Registry({KnowledgeScope("PLUGIN", "drop_box")}),
             authorization,
-            allow_all=True,
         ).resolve_for_user("clive", ("drop box",))
 
         self.assertEqual(result.status, "unavailable")
         self.assertEqual(result.reason_code, "RAG_USAGE_AUTHORIZATION_UNAVAILABLE")
 
-    def test_allow_all_skips_only_missing_privilege(self) -> None:
-        registry = _Registry({KnowledgeScope("PLUGIN", "drop_box")})
-        result = self._authorizer(
-            registry,
-            _Authorization("RAG_USAGE_NOT_GRANTED"),
-            allow_all=True,
-        ).resolve_for_user("clive", ("drop box",))
+    def test_retired_allow_all_setting_is_rejected(self) -> None:
+        class _RetiredConfig(_Config):
+            def section_dict(self, section: str) -> dict[str, str]:
+                return {"allow_all_scopes": "true"}
 
-        self.assertEqual(result.status, "authorised")
-        self.assertEqual(result.reason_code, "rag_usage_allow_all_scopes")
-
-    def test_allow_all_never_bypasses_principal_or_scope_activity(self) -> None:
-        denied = self._authorizer(
-            _Registry({KnowledgeScope("PLUGIN", "drop_box")}),
-            _Authorization("RAG_USAGE_PRINCIPAL_UNKNOWN"),
-            allow_all=True,
-        ).resolve_for_user("unknown", ("drop box",))
-        inactive = self._authorizer(
-            _Registry(set()),
-            _Authorization("RAG_USAGE_NOT_GRANTED"),
-            allow_all=True,
-        ).resolve_for_user("clive", ("drop box",))
-
-        self.assertEqual(denied.status, "denied")
-        self.assertEqual(inactive.status, "inactive")
+        with self.assertRaisesRegex(KnowledgeScopeConfigurationError, "retired"):
+            KnowledgeScopeAuthorizer.validate_config(_RetiredConfig())
 
     def test_obsolete_allowlist_is_rejected(self) -> None:
         with self.assertRaisesRegex(KnowledgeScopeConfigurationError, "obsolete"):
@@ -274,14 +253,12 @@ class KnowledgeScopeAuthorizerTests(unittest.TestCase):
                     expected,
                 )
 
-    def test_shipped_configuration_is_fail_closed(self) -> None:
+    def test_shipped_configuration_enables_authorised_dialogue_retrieval(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             config = ConfigManager(PROJECT_ROOT / "resources/config/orac.ini")
 
-        self.assertFalse(config.bool_config_value("knowledge.dialogue", "enabled"))
-        self.assertFalse(
-            config.bool_config_value("knowledge.dialogue", "allow_all_scopes")
-        )
+        self.assertTrue(config.bool_config_value("knowledge.dialogue", "enabled"))
+        self.assertNotIn("allow_all_scopes", config.section_dict("knowledge.dialogue"))
         self.assertNotIn(
             "user_scope_allowlist_json",
             config.section_dict("knowledge.dialogue"),

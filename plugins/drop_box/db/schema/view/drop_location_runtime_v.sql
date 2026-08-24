@@ -16,5 +16,7 @@ select loc.drop_location_id,
   join orac_dropbox.drop_processing_profile prf
     on prf.profile_code = loc.processing_profile
    and prf.active_yn = 'Y'
- where loc.enabled_yn = 'Y';
+ where loc.enabled_yn = 'Y'
+   and loc.classification_tags_json is not null
+   and dbms_lob.getlength(loc.classification_tags_json) > 0;
 /

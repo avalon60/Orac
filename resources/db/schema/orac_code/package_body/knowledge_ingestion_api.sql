@@ -179,47 +179,6 @@ as
         or (p_left is not null and p_right is null);
   end timestamp_differs;
 
-  procedure calculate_utf8_identity(
-    p_text      in clob,
-    p_sha256    out varchar2,
-    p_byte_size out number
-  )
-  is
-    l_blob         blob;
-    l_destination_offset integer := 1;
-    l_source_offset integer := 1;
-    l_language_context integer := dbms_lob.default_lang_ctx;
-    l_warning      integer;
-  begin
-    dbms_lob.createtemporary(l_blob, true);
-    dbms_lob.converttoblob(
-      dest_lob     => l_blob,
-      src_clob     => p_text,
-      amount       => dbms_lob.lobmaxsize,
-      dest_offset  => l_destination_offset,
-      src_offset   => l_source_offset,
-      blob_csid    => nls_charset_id('AL32UTF8'),
-      lang_context => l_language_context,
-      warning      => l_warning
-    );
-    if l_warning <> dbms_lob.no_warning
-    then
-      raise_application_error(-20427, 'Normalised Markdown UTF-8 conversion failed.');
-    end if;
-    p_byte_size := dbms_lob.getlength(l_blob);
-    p_sha256 := lower(
-      rawtohex(dbms_crypto.hash(l_blob, dbms_crypto.hash_sh256))
-    );
-    dbms_lob.freetemporary(l_blob);
-  exception
-    when others then
-      if dbms_lob.istemporary(l_blob) = 1
-      then
-        dbms_lob.freetemporary(l_blob);
-      end if;
-      raise;
-  end calculate_utf8_identity;
-
   procedure assert_lease(
     p_ingestion_request_id in number,
     p_owner_id             in varchar2,
@@ -266,7 +225,8 @@ as
     p_extractor_code            in varchar2 default null,
     p_extractor_version         in varchar2 default null,
     p_extraction_metadata_json  in clob default null,
-    p_classification_tags_json  in clob default null
+    p_classification_tags_json  in clob default null,
+    p_output_set_json           in clob default null
   ) return number
   is
     l_source_type          varchar2(50);
@@ -293,8 +253,7 @@ as
     l_extraction_id        number;
     l_tag_array            json_array_t;
     l_tag_count            number;
-    l_tag_code             varchar2(100);
-    l_tag_id               number;
+    l_classification_code  varchar2(100);
     l_duplicate_count      number;
     l_existing_tag_count   number;
     l_tag_order            number;
@@ -306,6 +265,7 @@ as
     l_calculated_byte_size number;
     l_metadata_object        json_object_t;
     l_metadata_keys          json_key_list;
+    l_output_set_result      clob;
     type tag_seen_type is table of boolean index by varchar2(100);
     l_seen_tags tag_seen_type;
     l_tag_element json_element_t;
@@ -358,7 +318,7 @@ as
       then
         raise_application_error(-20413, 'Extraction metadata is oversized.');
       end if;
-      calculate_utf8_identity(
+      orac_code.knowledge_text_identity_api.calculate_canonical_markdown(
         p_normalised_markdown,
         l_calculated_text_sha256,
         l_calculated_byte_size
@@ -614,6 +574,26 @@ as
         p_output_mime_type,
         p_extraction_metadata_json
       );
+      if p_output_set_json is null
+      then
+        raise_application_error(-20430, 'New normalised content requires a managed artefact output set.');
+      end if;
+      l_output_set_result := orac_code.knowledge_artefact_api.register_output_set(
+        p_extraction_id   => l_extraction_id,
+        p_output_set_json => p_output_set_json
+      );
+    elsif p_output_set_json is not null
+    then
+      raise_application_error(-20431, 'An output set requires normalised extraction content.');
+    end if;
+
+    if p_classification_tags_json is null
+       and l_source_type = 'DROP_BOX'
+    then
+      raise_application_error(
+        -20416,
+        'Drop Box requires at least one classification tag.'
+      );
     end if;
 
     if p_classification_tags_json is not null
@@ -645,17 +625,21 @@ as
           then
             raise_application_error(-20418, 'Classification tag entries must be strings.');
           end if;
-          l_tag_code := l_tag_array.get_string(l_index);
-          if l_seen_tags.exists(l_tag_code)
+          l_classification_code := l_tag_array.get_string(l_index);
+          if l_seen_tags.exists(l_classification_code)
           then
             raise_application_error(-20421, 'Duplicate classification tags are not allowed.');
           end if;
-          l_seen_tags(l_tag_code) := true;
+          l_seen_tags(l_classification_code) := true;
           select count(*)
             into l_duplicate_count
-            from orac_api.knowledge_tags_v
-           where tag_code = l_tag_code
-             and active_yn = 'Y';
+            from orac_api.domain_codes_v dom
+            join orac_api.domain_ref_values_v ref
+              on ref.domain_code = dom.domain_code
+           where dom.domain_code = 'DOC_CLASS'
+             and dom.active_yn = 'Y'
+             and ref.ref_value_code = l_classification_code
+             and ref.active_yn = 'Y';
           if l_duplicate_count <> 1
           then
             raise_application_error(-20419, 'Classification tag is unknown or inactive.');
@@ -666,7 +650,8 @@ as
       select count(*)
         into l_existing_tag_count
         from orac_api.knowledge_document_version_tags_v
-       where document_version_id = l_document_version_id;
+       where document_version_id = l_document_version_id
+         and doc_class_domain_code = 'DOC_CLASS';
       if l_existing_tag_count not in (0, l_tag_count)
       then
         raise_application_error(
@@ -677,23 +662,29 @@ as
 
       l_tag_order := 0;
       for tag_rec in (
-        select tag.knowledge_tag_id
-          from orac_api.knowledge_tags_v tag
+        select ref.ref_value_code
+          from orac_api.domain_codes_v dom
+          join orac_api.domain_ref_values_v ref
+            on ref.domain_code = dom.domain_code
           join json_table(
                  p_classification_tags_json,
                  '$[*]' columns (
-                   tag_code varchar2(100) path '$'
+                   ref_value_code varchar2(100) path '$'
                  )
                ) selected
-            on selected.tag_code = tag.tag_code
-         order by tag.sort_order, tag.tag_code
+            on selected.ref_value_code = ref.ref_value_code
+         where dom.domain_code = 'DOC_CLASS'
+           and dom.active_yn = 'Y'
+           and ref.active_yn = 'Y'
+         order by ref.display_sequence, ref.ref_value_code
       )
       loop
         l_tag_order := l_tag_order + 1;
         if l_existing_tag_count = 0
         then
           l_tag_link_row.document_version_id := l_document_version_id;
-          l_tag_link_row.knowledge_tag_id := tag_rec.knowledge_tag_id;
+          l_tag_link_row.doc_class_domain_code := 'DOC_CLASS';
+          l_tag_link_row.doc_class_ref_value_code := tag_rec.ref_value_code;
           l_tag_link_row.tag_order := l_tag_order;
           orac_api.knowledge_document_version_tags_tapi.ins(l_tag_link_row);
         else
@@ -701,7 +692,8 @@ as
             into l_duplicate_count
             from orac_api.knowledge_document_version_tags_v
            where document_version_id = l_document_version_id
-             and knowledge_tag_id = tag_rec.knowledge_tag_id
+             and doc_class_domain_code = 'DOC_CLASS'
+             and doc_class_ref_value_code = tag_rec.ref_value_code
              and tag_order = l_tag_order;
           if l_duplicate_count <> 1
           then
@@ -712,20 +704,6 @@ as
           end if;
         end if;
       end loop;
-    elsif p_processing_profile_code is not null
-    then
-      begin
-        select knowledge_tag_id into l_tag_id
-          from orac_api.knowledge_tags_v
-         where tag_code = p_processing_profile_code and active_yn = 'Y';
-        l_tag_link_row.document_version_id := l_document_version_id;
-        l_tag_link_row.knowledge_tag_id := l_tag_id;
-        l_tag_link_row.tag_order := 1;
-        orac_api.knowledge_document_version_tags_tapi.ins(l_tag_link_row);
-      exception when dup_val_on_index then null;
-               when no_data_found then
-                 raise_application_error(-20419, 'Legacy profile tag is unknown or inactive.');
-      end;
     end if;
 
     begin
@@ -922,18 +900,42 @@ as
     p_chunker_code       in varchar2,
     p_chunker_version    in varchar2,
     p_chunk_size_tokens  in number,
-    p_overlap_tokens     in number
+    p_overlap_tokens     in number,
+    p_source_artefact_id in number default null
   ) return number
   is
     l_chunk_set_id number;
     l_chunker_code varchar2(100);
     l_chunker_version varchar2(100);
+    l_artefact_count number;
+    l_valid_source_count number;
   begin
     l_chunker_code := normalised_required(p_chunker_code, 'Chunker code');
     l_chunker_version := normalised_required(p_chunker_version, 'Chunker version');
+    select count(*)
+      into l_artefact_count
+      from orac_api.knowledge_artefacts_v
+     where extraction_id = p_extraction_id;
+    if p_source_artefact_id is null and l_artefact_count > 0
+    then
+      raise_application_error(-20432, 'Artefact-backed extractions require a source artefact.');
+    elsif p_source_artefact_id is not null
+    then
+      select count(*)
+        into l_valid_source_count
+        from orac_api.knowledge_artefacts_v
+       where extraction_id = p_extraction_id
+         and artefact_id = p_source_artefact_id
+         and artefact_role_code in ('PRIMARY', 'MANIFEST', 'TABLE');
+      if l_valid_source_count <> 1
+      then
+        raise_application_error(-20433, 'Chunk source artefact is invalid for this extraction.');
+      end if;
+    end if;
     begin
       insert into orac_api.knowledge_chunk_sets_v (
         extraction_id,
+        source_artefact_id,
         chunker_code,
         chunker_version,
         chunk_size_tokens,
@@ -941,6 +943,7 @@ as
       )
       values (
         p_extraction_id,
+        p_source_artefact_id,
         l_chunker_code,
         l_chunker_version,
         p_chunk_size_tokens,
@@ -953,6 +956,7 @@ as
           into l_chunk_set_id
           from orac_api.knowledge_chunk_sets_v
          where extraction_id = p_extraction_id
+           and nvl(source_artefact_id, -1) = nvl(p_source_artefact_id, -1)
            and chunker_code = l_chunker_code
            and chunker_version = l_chunker_version
            and chunk_size_tokens = p_chunk_size_tokens
@@ -1098,6 +1102,14 @@ as
     return l_chunk_embedding_id;
   end insert_chunk_embedding;
 
+  function worker_output_set_json(
+    p_extraction_id in number
+  ) return clob
+  is
+  begin
+    return orac_code.knowledge_artefact_api.output_set_json(p_extraction_id);
+  end worker_output_set_json;
+
   procedure complete_request(
     p_ingestion_request_id in number,
     p_owner_id             in varchar2,
@@ -1112,6 +1124,8 @@ as
     l_bad_vector_count       number := 0;
     l_model_key              varchar2(600);
     l_expected_model_key     varchar2(600);
+    l_extraction_id          number;
+    l_artefact_count         number;
   begin
     assert_lease(p_ingestion_request_id, p_owner_id, p_lease_token);
 
@@ -1128,6 +1142,19 @@ as
     if l_request_count <> 1
     then
       raise_application_error(-20406, 'Cannot complete a knowledge request without a valid document and revision.');
+    end if;
+
+    select min(ext.extraction_id), count(art.artefact_id)
+      into l_extraction_id, l_artefact_count
+      from orac_api.knowledge_ingestion_requests_v req
+      join orac_api.knowledge_extractions_v ext
+        on ext.document_version_id = req.document_version_id
+      left join orac_api.knowledge_artefacts_v art
+        on art.extraction_id = ext.extraction_id
+     where req.ingestion_request_id = p_ingestion_request_id;
+    if l_artefact_count > 0
+    then
+      orac_code.knowledge_artefact_api.assert_complete_set(l_extraction_id);
     end if;
 
     for rec in (

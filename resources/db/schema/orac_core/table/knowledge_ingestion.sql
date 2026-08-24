@@ -243,7 +243,9 @@ create table orac_core.knowledge_embedding_models
   model_name         varchar2(255 char) not null,
   model_revision     varchar2(100 char) not null,
   dimensions         number not null,
-  distance_metric    varchar2(50 char) not null,
+  vector_distance_metric_domain_code    varchar2(100 char)
+                                          default on null 'VECTOR_DISTANCE_METRIC' not null,
+  vector_distance_metric_ref_value_code varchar2(100 char) not null,
   normalisation      varchar2(50 char) not null,
   active_yn          varchar2(1 char) default 'Y' not null,
   created_by         varchar2(128 char) default coalesce(

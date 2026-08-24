@@ -71,7 +71,7 @@ class KnowledgeSchemaTests(unittest.TestCase):
             for path in (CORE_SCHEMA / "constraint_fk").glob("*.sql")
         )
         id_columns = set(re.findall(r"\b([a-z][a-z0-9_]*_id)\s+number\b", table_text))
-        deliberate_non_fk = {"ingestion_event_id"}
+        deliberate_non_fk = {"ingestion_event_id", "target_id"}
         parent_or_identity = {
             "source_object_id",
             "ingestion_request_id",
@@ -83,11 +83,17 @@ class KnowledgeSchemaTests(unittest.TestCase):
             "embedding_model_id",
             "chunk_embedding_id",
             "knowledge_scope_id",
-            "knowledge_tag_id",
-            "knowledge_document_version_tag_id",
+            "artefact_id",
+            "retrieval_event_id",
         }
-        for constraint_name in ("kn_docvtag_docver_fk", "kn_docvtag_tag_fk"):
-            self.assertIn(f"constraint {constraint_name} foreign key", fk_text)
+        for constraint_name in (
+            "kn_docvtag_kn_docver_fk1",
+            "kn_docvtag_dom_refval_fk1",
+        ):
+            self.assertRegex(
+                fk_text,
+                rf"constraint {constraint_name}\s+foreign key",
+            )
         for column_name in id_columns - parent_or_identity - deliberate_non_fk:
             self.assertRegex(
                 fk_text,
@@ -269,6 +275,209 @@ class KnowledgeSchemaTests(unittest.TestCase):
             )
         self.assertIn("if deleting", trigger_sql)
 
+    def test_document_classifications_use_domain_reference_keys(self) -> None:
+        """Classifications use the fixed DOC_CLASS composite reference."""
+        table_sql = (
+            (CORE_SCHEMA / "table" / "knowledge_document_version_tags.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        primary_key_sql = (
+            (CORE_SCHEMA / "constraint_pk" / "kn_docvtag_pk.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        foreign_key_sql = (
+            (CORE_SCHEMA / "constraint_fk" / "kn_docvtag_dom_refval_fk1.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        check_sql = (
+            (CORE_SCHEMA / "constraint_other" / "kn_docvtag_ck1.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        index_sql = (
+            (CORE_SCHEMA / "index" / "kn_docvtag_dom_refval_fk1_idx.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+
+        self.assertIn(
+            "default on null 'doc_class' not null",
+            " ".join(table_sql.split()),
+        )
+        self.assertIn("doc_class_ref_value_code", table_sql)
+        self.assertNotIn("knowledge_tag_id", table_sql)
+        self.assertNotIn("knowledge_document_version_tag_id", table_sql)
+        self.assertIn(
+            "primary key (document_version_id, doc_class_domain_code, "
+            "doc_class_ref_value_code)",
+            " ".join(primary_key_sql.split()),
+        )
+        self.assertIn(
+            "foreign key (doc_class_domain_code, doc_class_ref_value_code)",
+            " ".join(foreign_key_sql.split()),
+        )
+        self.assertIn(
+            "references orac_core.domain_ref_values (domain_code, "
+            "ref_value_code)",
+            " ".join(foreign_key_sql.split()),
+        )
+        self.assertIn("doc_class_domain_code = 'doc_class'", check_sql)
+        self.assertIn(
+            "(doc_class_domain_code, doc_class_ref_value_code)",
+            " ".join(index_sql.split()),
+        )
+        self.assertFalse((CORE_SCHEMA / "table" / "knowledge_tags.sql").exists())
+
+    def test_normalised_artefacts_are_atomic_and_own_chunk_lineage(self) -> None:
+        """Managed output sets enforce identity, completeness, and lineage."""
+        table_sql = (
+            (CORE_SCHEMA / "table" / "knowledge_artefacts.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        migration_sql = (
+            (CORE_SCHEMA / "migration" / "knowledge_chunk_set_artefact_lineage.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        foreign_key_sql = (
+            (CORE_SCHEMA / "constraint_fk" / "kn_artf_fks.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        package_sql = (
+            (CORE_CODE_SCHEMA / "package_body" / "knowledge_artefact_api.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        searchable_sql = (
+            (CORE_CODE_SCHEMA / "view" / "knowledge_searchable_chunks_v.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+
+        for column in (
+            "artefact_id",
+            "extraction_id",
+            "artefact_role_code",
+            "content_sha256",
+            "storage_key",
+            "member_ordinal",
+            "metadata_json",
+        ):
+            self.assertIn(column, table_sql)
+        self.assertIn("metadata_json     json", table_sql)
+        self.assertIn("source_artefact_id number", migration_sql)
+        self.assertIn(
+            "source_artefact_key number generated always as "
+            "(nvl(source_artefact_id, -1)) virtual",
+            " ".join(migration_sql.split()),
+        )
+        self.assertIn("source_artefact_key", migration_sql)
+        self.assertIn(
+            "foreign key (extraction_id, source_artefact_id)",
+            " ".join(foreign_key_sql.split()),
+        )
+        self.assertIn(
+            "references orac_core.knowledge_artefacts "
+            "(extraction_id, artefact_id)",
+            " ".join(foreign_key_sql.split()),
+        )
+        self.assertIn("savepoint knowledge_artefact_set_registration", package_sql)
+        self.assertIn("rollback to knowledge_artefact_set_registration", package_sql)
+        self.assertIn("member.byte_size <> l_expected_byte_size", package_sql)
+        self.assertIn("assert_complete_set(p_extraction_id)", package_sql)
+        self.assertIn("artset.complete_yn = 'y'", searchable_sql)
+        self.assertIn("chs.source_artefact_id is null", searchable_sql)
+        self.assertIn("not exists", searchable_sql)
+
+    def test_knowledge_migration_api_is_runtime_only_and_data_neutral(self) -> None:
+        """P1-05 uses a narrow API and never runs data migration at deployment."""
+        package_spec = (
+            (CORE_CODE_SCHEMA / "package_spec" / "knowledge_migration_api.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        package_body = (
+            (CORE_CODE_SCHEMA / "package_body" / "knowledge_migration_api.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        grant_sql = (
+            (CORE_CODE_SCHEMA / "grant" / "knowledge_migration_api_access.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        trigger_sql = (
+            (CORE_SCHEMA / "trigger" / "kn_knowledge_bu.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+
+        for name in (
+            "open_backfill_candidates",
+            "open_raw_locator_candidates",
+            "backfill_extraction",
+            "migrate_raw_locator",
+        ):
+            self.assertIn(name, package_spec)
+        self.assertNotIn("commit;", package_body)
+        self.assertIn(
+            "grant execute on orac_code.knowledge_migration_api to orac;",
+            grant_sql,
+        )
+        self.assertNotIn("orac_plugin", grant_sql)
+        self.assertIn("called_from_migration_api", trigger_sql)
+        self.assertIn("'sha256:' || :old.content_sha256", trigger_sql)
+        self.assertIn("updating('content_uri')", trigger_sql)
+
+    def test_reconciliation_api_is_read_only_runtime_only_and_bounded(self) -> None:
+        """P1-09 exposes only bounded read inventories to the ORAC runtime."""
+        package_spec = (
+            (CORE_CODE_SCHEMA / "package_spec" / "knowledge_reconciliation_api.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        package_body = (
+            (CORE_CODE_SCHEMA / "package_body" / "knowledge_reconciliation_api.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        grant_sql = (
+            (CORE_CODE_SCHEMA / "grant" / "knowledge_reconciliation_api_access.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+
+        for procedure in (
+            "open_registered_references",
+            "open_lineage_inventory",
+        ):
+            self.assertIn(procedure, package_spec)
+            self.assertIn(procedure, package_body)
+        for forbidden in (
+            "insert into",
+            "update orac_",
+            "delete from",
+            "merge into",
+            "commit;",
+            "autonomous_transaction",
+            "orac_core.",
+        ):
+            self.assertNotIn(forbidden, package_body)
+        self.assertIn("c_max_inventory_rows", package_body)
+        self.assertIn("order by reference_kind, reference_id", package_body)
+        self.assertIn("order by lineage_kind, lineage_id", package_body)
+        self.assertIn(
+            "grant execute on orac_code.knowledge_reconciliation_api to orac;",
+            grant_sql,
+        )
+        self.assertNotIn("orac_plugin", grant_sql)
+        self.assertNotIn("orac_apx_pub", grant_sql)
+
     def test_tag_writes_use_tapi_and_plugin_validation_bridge(self) -> None:
         ingestion_sql = (
             (CORE_CODE_SCHEMA / "package_body" / "knowledge_ingestion_api.sql")
@@ -276,7 +485,11 @@ class KnowledgeSchemaTests(unittest.TestCase):
             .lower()
         )
         api_grants = (
-            (CORE_API_SCHEMA / "grant" / "knowledge_tag_api_access.sql")
+            (
+                CORE_API_SCHEMA
+                / "grant"
+                / "knowledge_document_version_tags_api_access.sql"
+            )
             .read_text(encoding="utf-8")
             .lower()
         )
@@ -296,9 +509,18 @@ class KnowledgeSchemaTests(unittest.TestCase):
             ingestion_sql,
         )
         self.assertNotIn(
-            "grant select, insert, update, delete on orac_api.knowledge_tags_v",
+            "knowledge_tags_v",
             api_grants,
         )
+        self.assertIn(
+            "grant read on orac_api.knowledge_document_version_tags_v "
+            "to orac_code with grant option;",
+            api_grants,
+        )
+        self.assertNotIn("tag_code", ingestion_sql)
+        self.assertNotIn("tag_code", bridge_body)
+        self.assertIn("doc_class_ref_value_code", ingestion_sql)
+        self.assertIn("domain_code = 'doc_class'", ingestion_sql)
         self.assertIn("orac_code.knowledge_tag_lov_v", bridge_body)
         self.assertIn(
             "orac_plugin.knowledge_tag_validation_api.canonical_active_tags",

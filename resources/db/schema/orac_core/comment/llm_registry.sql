@@ -14,14 +14,18 @@ comment on column orac_core.llm_registry.name is
 ;
 
 comment on column orac_core.llm_registry.provider is
-  'Vendor/source of the model.'
+  'Reviewed provider adapter code from orac_core.llm_providers.'
 ;
 
 comment on column orac_core.llm_registry.model is
   'Provider model identifier.'
 ;
 
-comment on column orac_core.llm_registry.context_policy is
+comment on column orac_core.llm_registry.llm_context_policy_domain_code is
+  'Fixed LLM_CONTEXT_POLICY reference domain for the model context policy.'
+;
+
+comment on column orac_core.llm_registry.llm_context_policy_ref_value_code is
   'How conversation state is managed for this model.'
 ;
 
@@ -30,5 +34,5 @@ comment on column orac_core.llm_registry.max_context_tokens is
 ;
 
 comment on column orac_core.llm_registry.properties is
-  'Free-form JSON for provider/model metadata.'
+  'Legacy compatibility JSON; controlled capability, evidence, locality, MIME, revision, and limits metadata is stored relationally.'
 ;

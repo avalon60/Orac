@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-import json
 import os
 from pathlib import Path
 
@@ -33,6 +32,32 @@ DEFAULT_IGNORE_PATTERNS: tuple[str, ...] = (
 )
 
 _ORAC_HOME_TOKEN = "${ORAC_HOME}"
+
+
+def _optional_oracle_text(value: object, *, field_name: str) -> str | None:
+    """Return text from a plain string or Oracle LOB-backed field.
+
+    Args:
+        value: Database value to normalise.
+        field_name: Human-readable field name for validation errors.
+
+    Returns:
+        The text value, or ``None`` when the database value is null.
+
+    Raises:
+        TypeError: If the database value or LOB payload is not text.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    reader = getattr(value, "read", None)
+    if not callable(reader):
+        raise TypeError(f"Drop Box {field_name} must be text or an Oracle LOB.")
+    payload = reader()
+    if not isinstance(payload, str):
+        raise TypeError(f"Drop Box {field_name} Oracle LOB must contain text.")
+    return payload
 
 
 def _resolved_location_path(raw_value: object) -> Path:
@@ -185,7 +210,7 @@ class DropBoxHandoffJob:
             drop_job_id=int(row["DROP_JOB_ID"]),
             drop_location_id=int(row["DROP_LOCATION_ID"]),
             location_code=str(row["LOCATION_CODE"]),
-            location_root=Path(str(row["LOCATION_ROOT"])),
+            location_root=_resolved_location_path(row["LOCATION_ROOT"]),
             source_path=Path(str(row["SOURCE_PATH"])),
             source_filename=str(row["SOURCE_FILENAME"]),
             source_hash=str(row["SOURCE_HASH"]),
@@ -194,10 +219,17 @@ class DropBoxHandoffJob:
             effective_scope_type=str(row["EFFECTIVE_SCOPE_TYPE"]),
             effective_scope_key=str(row["EFFECTIVE_SCOPE_KEY"]),
             effective_processing_profile=row.get("EFFECTIVE_PROCESSING_PROFILE"),
-            effective_profile_instruction=row.get("EFFECTIVE_PROFILE_INSTRUCTION"),
-            effective_instruction=row.get("EFFECTIVE_INSTRUCTION"),
-            effective_classification_tags_json=row.get(
-                "EFFECTIVE_CLASSIFICATION_TAGS_JSON"
+            effective_profile_instruction=_optional_oracle_text(
+                row.get("EFFECTIVE_PROFILE_INSTRUCTION"),
+                field_name="profile instruction",
+            ),
+            effective_instruction=_optional_oracle_text(
+                row.get("EFFECTIVE_INSTRUCTION"),
+                field_name="location instruction",
+            ),
+            effective_classification_tags_json=_optional_oracle_text(
+                row.get("EFFECTIVE_CLASSIFICATION_TAGS_JSON"),
+                field_name="classification JSON",
             ),
             conversion_attempts=int(row.get("CONVERSION_ATTEMPTS") or 0),
         )
@@ -209,9 +241,6 @@ class DropBoxHandoffJob:
         """Return the Core capture request for this Drop Box job."""
         instruction = self.effective_instruction or self.effective_profile_instruction
         source_key = self._source_key()
-        tags_json = self.effective_classification_tags_json
-        if tags_json is None and self.effective_processing_profile:
-            tags_json = json.dumps([self.effective_processing_profile])
         return DropBoxCaptureRequest(
             drop_job_id=self.drop_job_id,
             drop_location_id=self.drop_location_id,
@@ -255,7 +284,7 @@ class DropBoxHandoffJob:
             extraction_metadata_json=(
                 normalised.metadata_json if normalised is not None else None
             ),
-            classification_tags_json=tags_json,
+            classification_tags_json=self.effective_classification_tags_json,
         )
 
     def _source_key(self) -> str:

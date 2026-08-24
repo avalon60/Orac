@@ -1771,7 +1771,9 @@ wwv_flow_imp_page.create_page(
 ,p_page_mode=>'MODAL'
 ,p_step_title=>'Drop Location Form'
 ,p_autocomplete_on_off=>'OFF'
-,p_page_template_options=>'#DEFAULT#'
+,p_step_template=>1661186590416509825
+,p_page_template_options=>'#DEFAULT#:js-dialog-class-t-Drawer--pullOutEnd'
+,p_dialog_width=>'1200'
 ,p_required_role=>wwv_flow_imp.id(34538832508386634)
 ,p_dialog_chained=>'N'
 ,p_dialog_resizable=>'Y'
@@ -2063,7 +2065,6 @@ wwv_flow_imp_page.create_page_item(
 '       return_value r',
 '  from orac_code.knowledge_tag_lov_v',
 ' order by sort_order, return_value'))
-,p_begin_on_new_line=>'N'
 ,p_field_template=>1609122147107268652
 ,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
@@ -2353,7 +2354,7 @@ wwv_flow_imp_page.create_page_process(
 '                    else :P2_TARGET_PROJECT_KEY',
 '                  end;',
 '  select json_arrayagg(return_value order by sort_order, return_value returning clob),',
-'         min(return_value) keep (dense_rank first order by sort_order, return_value)',
+'         lower(min(return_value) keep (dense_rank first order by sort_order, return_value))',
 '    into l_classification_tags, l_primary_profile',
 '    from orac_code.knowledge_tag_lov_v',
 '   where return_value in (',
@@ -2466,9 +2467,9 @@ wwv_flow_imp_page.create_page_process(
 '    select location_code, display_name, path, enabled_yn, target_scope_type,',
 '           case when target_scope_type = ''plugin'' then target_scope_key end,',
 '           case when target_scope_type = ''project'' then target_scope_key end,',
-'           (select listagg(tag_code, '':'' ) within group (order by ordinal)',
+'           (select listagg(ref_value_code, '':'' ) within group (order by ordinal)',
 '              from json_table(classification_tags_json, ''$[*]'' columns (',
-'                ordinal for ordinality, tag_code varchar2(100) path ''$''',
+'                ordinal for ordinality, ref_value_code varchar2(100) path ''$''',
 '              ))),',
 '           processing_instruction, allowed_extensions, ignore_patterns,',
 '           recursive_yn, move_processed_yn, processed_path, failed_path,',

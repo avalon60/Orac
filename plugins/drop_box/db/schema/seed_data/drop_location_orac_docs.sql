@@ -39,7 +39,7 @@ when matched then
     dst.failed_path              = null,
     dst.max_file_size_mb         = 10,
     dst.stability_seconds        = 10,
-    dst.classification_tags_json = to_clob('["raw_reference"]')
+    dst.classification_tags_json = to_clob('["RAW_REFERENCE"]')
 when not matched then
   insert (
     location_code,
@@ -76,7 +76,7 @@ when not matched then
     null,
     10,
     10,
-    to_clob('["raw_reference"]')
+    to_clob('["RAW_REFERENCE"]')
   );
 
 update orac_dropbox.drop_job job

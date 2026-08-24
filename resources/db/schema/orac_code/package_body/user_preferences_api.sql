@@ -183,12 +183,12 @@ create or replace package body orac_code.user_preferences_api as
   function validate_preference_value(
     p_pref_key             in orac_api.user_preferences_v.pref_key%type,
     p_pref_value           in orac_api.user_preferences_v.pref_value%type,
-    p_value_type           in orac_api.user_preferences_v.value_type%type default null,
+    p_value_type           in orac_api.preference_definitions_v.value_type%type default null,
     p_apex_page_item_name  in varchar2 default null
   ) return varchar2
   as
     l_pref_definition   orac_api.preference_definitions_v%rowtype;
-    l_value_type        orac_api.user_preferences_v.value_type%type;
+    l_value_type        orac_api.preference_definitions_v.value_type%type;
     l_display_label     orac_api.preference_definitions_v.display_label%type;
     l_string_value      varchar2(4000);
     l_boolean_value     varchar2(10);
@@ -396,7 +396,7 @@ create or replace package body orac_code.user_preferences_api as
   procedure assert_valid_preference_value(
     p_pref_key             in orac_api.user_preferences_v.pref_key%type,
     p_pref_value           in orac_api.user_preferences_v.pref_value%type,
-    p_value_type           in orac_api.user_preferences_v.value_type%type,
+    p_value_type           in orac_api.preference_definitions_v.value_type%type,
     p_apex_page_item_name  in varchar2 default null
   ) as
     l_error_message varchar2(4000);
@@ -418,7 +418,7 @@ create or replace package body orac_code.user_preferences_api as
     p_user_id      in     orac_api.user_preferences_v.user_id%type,
     p_pref_key     in     orac_api.user_preferences_v.pref_key%type,
     p_pref_value   in     orac_api.user_preferences_v.pref_value%type,
-    p_value_type   in     orac_api.user_preferences_v.value_type%type,
+    p_value_type   in     orac_api.preference_definitions_v.value_type%type,
     p_row_version     out orac_api.user_preferences_v.row_version%type,
     p_apex_page_item_name in varchar2 default null
   ) as
@@ -435,7 +435,6 @@ create or replace package body orac_code.user_preferences_api as
       p_user_id     => p_user_id,
       p_pref_key    => p_pref_key,
       p_pref_value  => p_pref_value,
-      p_value_type  => p_value_type,
       p_row_version => p_row_version
     );
   end ins;
@@ -445,7 +444,7 @@ create or replace package body orac_code.user_preferences_api as
     p_user_id      in     orac_api.user_preferences_v.user_id%type,
     p_pref_key     in     orac_api.user_preferences_v.pref_key%type,
     p_pref_value   in     orac_api.user_preferences_v.pref_value%type,
-    p_value_type   in     orac_api.user_preferences_v.value_type%type,
+    p_value_type   in     orac_api.preference_definitions_v.value_type%type,
     p_row_version     out orac_api.user_preferences_v.row_version%type,
     p_apex_page_item_name in varchar2 default null
   ) as
@@ -462,7 +461,6 @@ create or replace package body orac_code.user_preferences_api as
       p_user_id     => p_user_id,
       p_pref_key    => p_pref_key,
       p_pref_value  => p_pref_value,
-      p_value_type  => p_value_type,
       p_row_version => p_row_version
     );
   end upd;

@@ -21,16 +21,28 @@ comment on column orac_core.preference_definitions.description is
   'Optional internal description of the preference.'
 ;
 
-comment on column orac_core.preference_definitions.value_type is
+comment on column orac_core.preference_definitions.pref_value_type_domain_code is
+  'Fixed PREF_VALUE_TYPE reference domain for the logical preference value type.'
+;
+
+comment on column orac_core.preference_definitions.pref_value_type_ref_value_code is
   'Logical data type for stored preference values.'
 ;
 
-comment on column orac_core.preference_definitions.control_type is
-  'Preferred UI control type for editing the preference, such as text, select_list, or popup_lov.'
+comment on column orac_core.preference_definitions.pref_control_type_domain_code is
+  'Fixed PREF_CONTROL_TYPE reference domain for the preference editor control.'
 ;
 
-comment on column orac_core.preference_definitions.lov_type is
-  'LOV source type when the preference is backed by a selectable list.'
+comment on column orac_core.preference_definitions.pref_control_type_ref_value_code is
+  'Preferred UI control type for editing the preference.'
+;
+
+comment on column orac_core.preference_definitions.pref_lov_type_domain_code is
+  'Fixed PREF_LOV_TYPE reference domain for the selectable-value source.'
+;
+
+comment on column orac_core.preference_definitions.pref_lov_type_ref_value_code is
+  'Optional LOV source type when the preference uses selectable values.'
 ;
 
 comment on column orac_core.preference_definitions.lov_query is

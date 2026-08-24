@@ -13,6 +13,7 @@ import time
 from datetime import datetime, timezone
 import oracledb  # for error code inspection
 from lib.session_manager import DBSession  # <- your DBSession wrapper
+from orac_core.knowledge import PromptContextSnapshot
 
 
 class OracContextManager:
@@ -258,7 +259,8 @@ class OracContextManager:
                 f"       context_policy,"
                 f"       max_context_tokens,"
                 f"       is_enabled,"
-                f"       properties "
+                f"       properties,"
+                f"       row_version "
                 f"from {self.llm_registry_object} "
                 f"where llm_id = :llm_id"
             ),
@@ -286,7 +288,8 @@ class OracContextManager:
                 f"       context_policy,"
                 f"       max_context_tokens,"
                 f"       is_enabled,"
-                f"       properties "
+                f"       properties,"
+                f"       row_version "
                 f"from {self.llm_registry_object} "
                 f"where lower(provider) = :provider "
                 f"  and model = :model "
@@ -723,6 +726,63 @@ class OracContextManager:
                     text = str(content)
             out.append({"role": r["ROLE"], "content": text})
         return out
+
+    def get_prompt_context_snapshot(
+        self,
+        session_id: str,
+        *,
+        system_prompt_fingerprint: str,
+        policy_config_fingerprint: str,
+    ) -> PromptContextSnapshot:
+        """Return immutable conversation and policy facts for prompt submission."""
+        conversation_id = self._conversation_id(session_id)
+        if conversation_id is None:
+            raise ValueError("conversation does not exist")
+        return PromptContextSnapshot(
+            conversation_id=conversation_id,
+            highest_turn_index=self.last_turn_index(session_id),
+            system_prompt_fingerprint=system_prompt_fingerprint,
+            policy_config_fingerprint=policy_config_fingerprint,
+        )
+
+    def get_stored_assistant_by_request_id(
+        self,
+        session_id: str,
+        request_id: str,
+    ) -> Dict[str, Any] | None:
+        """Return an already persisted assistant result for an idempotent request."""
+        conversation_id = self._conversation_id(session_id)
+        request_key = str(request_id or "").strip()
+        if conversation_id is None or not request_key:
+            return None
+        rows = self.db.dict_sql_dataset(
+            (
+                f"select turn_index, content, meta, tokens_used, llm_id "
+                f"from {self.messages_object} "
+                f"where conversation_id = :conversation_id "
+                f"  and role = 'assistant' "
+                f"  and (json_value(meta, '$.req_id') = :request_id "
+                f"       or json_value(meta, '$.submission_id') = :request_id) "
+                f"order by turn_index desc fetch first 1 row only"
+            ),
+            {
+                "conversation_id": conversation_id,
+                "request_id": request_key,
+            },
+        )
+        if not rows:
+            return None
+        row = rows[0]
+        for key in ("CONTENT", "META"):
+            value = row.get(key)
+            if hasattr(value, "read"):
+                value = value.read()
+            if isinstance(value, str):
+                try:
+                    row[key] = json.loads(value)
+                except json.JSONDecodeError:
+                    row[key] = value
+        return row
 
     def prune_context(self, session_id: str, *, keep_messages: int = 100,
                       archive_conversation: bool = False) -> int:

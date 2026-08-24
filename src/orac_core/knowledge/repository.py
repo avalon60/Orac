@@ -7,15 +7,29 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
+import uuid
+
+import oracledb
 
 from lib.config_mgr import ConfigManager
 from lib.fsutils import project_home
 from lib.session_manager import DBSession
 from lib.user_security import UserSecurity
 
+if TYPE_CHECKING:
+    from .model_submission import PrepareModelSubmissionRequest
+    from .model_submission import PreparedModelSubmission
+
 _RETRIEVAL_CLOB_FIELDS = frozenset(
-    {"chunk_text", "classification_tags_json", "embedding_vector"}
+    {
+        "chunk_text",
+        "classification_tags_json",
+        "embedding_vector",
+        "extractor_metadata_json",
+        "artefact_metadata_json",
+        "legacy_extracted_text",
+    }
 )
 
 
@@ -82,6 +96,7 @@ class KnowledgeIngestionRepository:
         extractor_version: str | None = None,
         extraction_metadata_json: str | None = None,
         classification_tags_json: str | None = None,
+        output_set_json: str | None = None,
     ) -> int:
         """Register a captured managed file and return its ingestion request id."""
         session = self._session_factory()
@@ -114,6 +129,7 @@ class KnowledgeIngestionRepository:
                         extractor_version,
                         extraction_metadata_json,
                         classification_tags_json,
+                        output_set_json,
                     ],
                 )
             session.commit()
@@ -168,6 +184,7 @@ class KnowledgeIngestionRepository:
                            req.source_modified_on
                            , ext.extraction_id
                            , ext.extracted_text
+                           , req.artefact_count
                       from orac_code.knowledge_ingestion_requests_v req
                       left join orac_api.knowledge_extractions_v ext
                         on ext.document_version_id = req.document_version_id
@@ -187,95 +204,6 @@ class KnowledgeIngestionRepository:
                     field_name="extracted_text",
                 )
                 return detail
-        finally:
-            _close_quietly(session)
-
-    def load_searchable_chunks(
-        self,
-        *,
-        target_scope_type: str,
-        target_scope_key: str,
-        embedding_model_identifier: str,
-        embedding_dimensions: int,
-        candidate_limit: int,
-    ) -> list[dict[str, Any]]:
-        """Load searchable chunks visible to a retrieval scope."""
-        if candidate_limit <= 0:
-            raise ValueError("candidate_limit must be positive")
-        session = self._session_factory()
-        try:
-            parameters: dict[str, Any] = {
-                "embedding_model_identifier": embedding_model_identifier,
-                "embedding_dimensions": int(embedding_dimensions),
-                "target_scope_type": target_scope_type,
-                "target_scope_key": target_scope_key,
-                "candidate_fetch_limit": int(candidate_limit) + 1,
-            }
-
-            with session.cursor() as cursor:
-                cursor.execute(
-                    """
-                    select *
-                      from (
-                        select chunk.ingestion_request_id,
-                               chunk.source_object_id,
-                               chunk.source_type,
-                               chunk.source_reference,
-                               chunk.parent_source_reference,
-                               chunk.document_id,
-                               chunk.title document_title,
-                               chunk.document_version_id,
-                               chunk.original_filename,
-                               chunk.content_uri,
-                               chunk.target_scope_type,
-                               chunk.target_scope_key,
-                               chunk.chunk_id,
-                               chunk.chunk_no,
-                               chunk.span_start,
-                               chunk.span_end,
-                               chunk.chunk_content_sha256,
-                               chunk.chunk_text,
-                               chunk.chunk_metadata_json,
-                               chunk.source_format_code,
-                               chunk.normalised_text_sha256,
-                               chunk.output_mime_type,
-                               chunk.extractor_code,
-                               chunk.extractor_version,
-                               chunk.extractor_metadata_json,
-                               chunk.classification_tags_json,
-                               chunk.embedding_vector,
-                               chunk.provider_code embedding_provider_code,
-                               chunk.embedding_model_identifier,
-                               chunk.model_revision embedding_model_revision,
-                               chunk.embedding_dimensions,
-                               request.processing_profile_code
-                          from orac_code.knowledge_searchable_chunks_v chunk
-                          join orac_code.knowledge_ingestion_requests_v request
-                            on request.ingestion_request_id = chunk.ingestion_request_id
-                         where chunk.embedding_model_identifier = :embedding_model_identifier
-                           and chunk.embedding_dimensions = :embedding_dimensions
-                           and chunk.target_scope_type = :target_scope_type
-                           and chunk.target_scope_key = :target_scope_key
-                         order by chunk.document_id,
-                                  chunk.document_version_id,
-                                  chunk.chunk_no
-                      )
-                     where rownum <= :candidate_fetch_limit
-                    """,
-                    parameters,
-                )
-                columns = [description[0].lower() for description in cursor.description]
-                return [
-                    {
-                        column: (
-                            _optional_oracle_text(value, field_name=column)
-                            if column in _RETRIEVAL_CLOB_FIELDS
-                            else _materialize_query_value(value)
-                        )
-                        for column, value in zip(columns, row, strict=True)
-                    }
-                    for row in cursor.fetchall()
-                ]
         finally:
             _close_quietly(session)
 
@@ -342,6 +270,7 @@ class KnowledgeIngestionRepository:
         chunker_version: str,
         chunk_size_tokens: int,
         overlap_tokens: int,
+        source_artefact_id: int | None = None,
     ) -> int:
         """Create or reuse a chunk-set row."""
         return int(
@@ -354,9 +283,33 @@ class KnowledgeIngestionRepository:
                     chunker_version,
                     chunk_size_tokens,
                     overlap_tokens,
+                    source_artefact_id,
                 ],
             )
         )
+
+    def output_set(self, extraction_id: int) -> dict[str, Any]:
+        """Load one complete managed artefact descriptor set."""
+        session = self._session_factory()
+        try:
+            with session.cursor() as cursor:
+                payload = cursor.callfunc(
+                    "orac_code.knowledge_ingestion_api.worker_output_set_json",
+                    str,
+                    [extraction_id],
+                )
+            text_payload = _optional_oracle_text(
+                payload,
+                field_name="output_set_json",
+            )
+            if text_payload is None:
+                raise LookupError(f"Knowledge output set not found: {extraction_id}")
+            result = json.loads(text_payload)
+            if not isinstance(result, dict):
+                raise TypeError("Knowledge output-set JSON must be an object.")
+            return result
+        finally:
+            _close_quietly(session)
 
     def insert_chunk(
         self,
@@ -536,3 +489,251 @@ def _close_quietly(session: Any) -> None:
         session.close()
     except Exception:
         pass
+
+
+class KnowledgeRetrievalRepository:
+    """Call the single authorised retrieval boundary as the Core runtime."""
+
+    _PACKAGE = "orac_code.knowledge_retrieval_api"
+
+    def __init__(
+        self,
+        *,
+        session_factory: Callable[[], Any] | None = None,
+    ) -> None:
+        """Initialise authorised retrieval access with an injectable session."""
+        self._session_factory = session_factory or default_orac_session
+
+    def open_search_candidates(
+        self,
+        *,
+        principal_username: str,
+        target_scope_type: str,
+        target_scope_key: str,
+        embedding_model_identifier: str,
+        embedding_dimensions: int,
+        candidate_limit: int,
+        retrieval_id: str | None = None,
+    ) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
+        """Authorise and load bounded searchable chunks in one package call."""
+        return self._call_with_cursor(
+            "open_search_candidates",
+            [
+                retrieval_id or str(uuid.uuid4()),
+                principal_username,
+                target_scope_type,
+                target_scope_key,
+                embedding_model_identifier,
+                int(embedding_dimensions),
+                int(candidate_limit),
+            ],
+        )
+
+    def resolve_request(
+        self,
+        *,
+        retrieval_id: str,
+        principal_username: str,
+        target_scope_type: str,
+        target_scope_key: str,
+        request_json: str,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Authorise and resolve controlled identities to internal descriptors."""
+        _, resolution, rows = self._call_with_cursor(
+            "resolve_request",
+            [
+                retrieval_id,
+                principal_username,
+                target_scope_type,
+                target_scope_key,
+                request_json,
+            ],
+        )
+        return resolution, rows
+
+    def record_policy_decision(
+        self,
+        *,
+        policy_request_id: str,
+        principal_username: str,
+        target_scope_type: str,
+        target_scope_key: str,
+        target_type: str,
+        target_id: int,
+        decision_code: str,
+        reason_code: str,
+        purpose_code: str,
+        requested_level_code: str,
+        effective_level_code: str | None,
+        policy_version: str,
+        estimator_code: str | None,
+        estimated_byte_size: int | None,
+        estimated_token_count: int | None,
+        usable_context_tokens: int | None,
+        member_count: int | None,
+        chunk_count: int | None,
+        complete: bool,
+        selected: bool,
+        downgraded: bool,
+        truncated: bool,
+    ) -> None:
+        """Record allowlisted P1-07 decision dimensions without content."""
+        session = self._session_factory()
+        try:
+            with session.cursor() as cursor:
+                cursor.callproc(
+                    f"{self._PACKAGE}.record_policy_decision",
+                    [
+                        policy_request_id,
+                        principal_username,
+                        target_scope_type,
+                        target_scope_key,
+                        target_type,
+                        int(target_id),
+                        decision_code,
+                        reason_code,
+                        purpose_code,
+                        requested_level_code,
+                        effective_level_code,
+                        policy_version,
+                        estimator_code,
+                        estimated_byte_size,
+                        estimated_token_count,
+                        usable_context_tokens,
+                        member_count,
+                        chunk_count,
+                        "Y" if complete else "N",
+                        "Y" if selected else "N",
+                        "Y" if downgraded else "N",
+                        "Y" if truncated else "N",
+                    ],
+                )
+        finally:
+            _close_quietly(session)
+
+    def record_outcome(
+        self,
+        *,
+        retrieval_id: str,
+        outcome_code: str,
+        reason_code: str,
+        returned_byte_size: int | None = None,
+        returned_sha256: str | None = None,
+        member_count: int | None = None,
+        chunk_count: int | None = None,
+        duration_ms: int | None = None,
+    ) -> None:
+        """Append a bounded terminal retrieval outcome."""
+        session = self._session_factory()
+        try:
+            with session.cursor() as cursor:
+                cursor.callproc(
+                    f"{self._PACKAGE}.record_outcome",
+                    [
+                        retrieval_id,
+                        outcome_code,
+                        reason_code,
+                        returned_byte_size,
+                        returned_sha256,
+                        member_count,
+                        chunk_count,
+                        duration_ms,
+                    ],
+                )
+        finally:
+            _close_quietly(session)
+
+    def record_model_submission_decision(
+        self,
+        *,
+        request: "PrepareModelSubmissionRequest",
+        prepared: "PreparedModelSubmission",
+        reason_code: str,
+    ) -> None:
+        """Record allowlisted P1-08 submission dimensions without prompt content."""
+        approval = request.approval
+        envelope = request.envelope
+        model = request.model
+        session = self._session_factory()
+        try:
+            with session.cursor() as cursor:
+                cursor.callproc(
+                    f"{self._PACKAGE}.record_model_submission_decision",
+                    [
+                        request.submission_id,
+                        approval.policy_request_id,
+                        approval.principal_username,
+                        approval.scope.scope_type,
+                        approval.scope.scope_key,
+                        approval.target_type,
+                        approval.target_id,
+                        model.llm_id,
+                        model.row_version,
+                        model.provider_code,
+                        model.context_policy_code,
+                        envelope.version,
+                        envelope.effective_level,
+                        envelope.part_count,
+                        envelope.member_count or None,
+                        envelope.chunk_count or None,
+                        envelope.source_byte_size,
+                        envelope.byte_size,
+                        prepared.evidence_safe_tokens,
+                        prepared.occupied_safe_tokens,
+                        prepared.final_prompt_safe_tokens,
+                        request.reserved_output_tokens,
+                        prepared.context_safety_tokens,
+                        "Y" if envelope.complete else "N",
+                        "Y" if envelope.selected else "N",
+                        "Y" if envelope.downgraded else "N",
+                        "Y" if envelope.non_truncated else "N",
+                        0,
+                        reason_code,
+                    ],
+                )
+        finally:
+            _close_quietly(session)
+
+    def _call_with_cursor(
+        self,
+        procedure_name: str,
+        inputs: list[Any],
+    ) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
+        """Materialise package CLOB/cursor outputs before closing the session."""
+        session = self._session_factory()
+        retrieval_id = str(inputs[0])
+        try:
+            with session.cursor() as cursor:
+                resolution_var = cursor.var(oracledb.DB_TYPE_CLOB)
+                rows_var = cursor.var(oracledb.DB_TYPE_CURSOR)
+                cursor.callproc(
+                    f"{self._PACKAGE}.{procedure_name}",
+                    [*inputs, resolution_var, rows_var],
+                )
+                resolution_text = _optional_oracle_text(
+                    resolution_var.getvalue(), field_name="resolution_json"
+                )
+                result_cursor = rows_var.getvalue()
+                try:
+                    columns = [item[0].lower() for item in result_cursor.description]
+                    rows = [
+                        {
+                            column: (
+                                _optional_oracle_text(value, field_name=column)
+                                if column in _RETRIEVAL_CLOB_FIELDS
+                                else _materialize_query_value(value)
+                            )
+                            for column, value in zip(columns, row, strict=True)
+                        }
+                        for row in result_cursor.fetchall()
+                    ]
+                finally:
+                    result_cursor.close()
+            if resolution_text is None:
+                raise RuntimeError("Authorised retrieval returned no resolution.")
+            resolution = json.loads(resolution_text)
+            if not isinstance(resolution, dict):
+                raise TypeError("Retrieval resolution JSON must be an object.")
+            return retrieval_id, resolution, rows
+        finally:
+            _close_quietly(session)

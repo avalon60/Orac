@@ -118,6 +118,8 @@ class KnowledgeManagedFileCaptureService:
             self._validate_normalised_content(request)
             opened_source.stream.seek(0)
             write_result = self._put_raw_source(request, opened_source.stream)
+            normalised_result = self._put_normalised_markdown(request)
+            output_set_json = self._single_output_set_json(normalised_result)
             source_key = self._source_key(request, opened_source.relative_path)
         try:
             ingestion_request_id = self._repository.submit_managed_file(
@@ -144,6 +146,7 @@ class KnowledgeManagedFileCaptureService:
                 extractor_version=request.extractor_version,
                 extraction_metadata_json=request.extraction_metadata_json,
                 classification_tags_json=request.classification_tags_json,
+                output_set_json=output_set_json,
             )
         except Exception as exc:
             if "ORA-20409" in str(exc).upper():
@@ -281,10 +284,57 @@ class KnowledgeManagedFileCaptureService:
                 "Captured file does not match the authorised source identity."
             ) from exc
 
+    def _put_normalised_markdown(
+        self,
+        request: DropBoxCaptureRequest,
+    ) -> ManagedStoreWriteResult:
+        """Store canonical Markdown under its producer-supplied identity."""
+        try:
+            payload = str(request.normalised_markdown).encode("utf-8")
+            identity = ManagedObjectIdentity(
+                str(request.normalised_text_sha256).lower().strip(),
+                int(request.normalised_byte_size),
+            )
+            return self._managed_store.put_bytes(payload, identity)
+        except (ManagedStoreError, ValueError, TypeError) as exc:
+            raise KnowledgeCaptureError(
+                "Canonical Markdown does not match its managed identity."
+            ) from exc
+
+    @staticmethod
+    def _single_output_set_json(
+        result: ManagedStoreWriteResult,
+    ) -> str:
+        """Build the version-one single-member registration envelope."""
+        return json.dumps(
+            {
+                "schema_version": 1,
+                "set_kind": "SINGLE",
+                "members": [
+                    {
+                        "role": "PRIMARY",
+                        "media_type": NORMALISED_OUTPUT_MIME,
+                        "content_sha256": result.identity.sha256,
+                        "storage_key": result.storage_key,
+                        "byte_size": result.identity.byte_size,
+                        "logical_name": "primary.md",
+                        "ordinal": 1,
+                        "metadata": None,
+                    }
+                ],
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+
     def _validate_normalised_content(self, request: DropBoxCaptureRequest) -> None:
         text = request.normalised_markdown
         if text is None or not text.strip():
             raise KnowledgeCaptureError("Canonical Markdown is required.")
+        if text.startswith("\ufeff") or "\r" in text or not text.endswith("\n"):
+            raise KnowledgeCaptureError(
+                "Canonical Markdown must not contain a BOM or CR and must end with LF."
+            )
         try:
             encoded = text.encode("utf-8")
         except UnicodeEncodeError as exc:
@@ -365,13 +415,25 @@ class KnowledgeManagedFileCaptureService:
             not isinstance(tags, list)
             or not 1 <= len(tags) <= 10
             or any(
-                not isinstance(tag, str) or not tag or tag != tag.lower()
+                not isinstance(tag, str)
+                or not tag
+                or not tag.isascii()
+                or not tag[0].isalpha()
+                or tag != tag.upper()
+                or any(
+                    not (
+                        character.isupper()
+                        or character.isdigit()
+                        or character == "_"
+                    )
+                    for character in tag
+                )
                 for tag in tags
             )
             or len(set(tags)) != len(tags)
         ):
             raise KnowledgeCaptureError(
-                "Drop Box requires one to ten distinct lower-case tags."
+                "Drop Box requires one to ten distinct uppercase DOC_CLASS codes."
             )
 
     def _upgrade_legacy_native_request(
@@ -416,9 +478,6 @@ class KnowledgeManagedFileCaptureService:
         )
         source_format = "markdown" if suffix == ".md" else "plain_text"
         mime_type = "text/markdown" if suffix == ".md" else "text/plain"
-        tags_json = request.classification_tags_json
-        if tags_json is None and request.processing_profile:
-            tags_json = json.dumps([request.processing_profile])
         return DropBoxCaptureRequest(
             **{
                 **request.__dict__,
@@ -442,7 +501,7 @@ class KnowledgeManagedFileCaptureService:
                     separators=(",", ":"),
                     sort_keys=True,
                 ),
-                "classification_tags_json": tags_json,
+                "classification_tags_json": request.classification_tags_json,
             }
         )
 

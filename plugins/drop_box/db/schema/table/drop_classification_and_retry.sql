@@ -29,16 +29,6 @@ alter table orac_dropbox.drop_job add (
 );
 --rollback alter table orac_dropbox.drop_job drop (conversion_attempts, next_attempt_on, failure_reason_code, last_warning_on);
 
---changeset clive:drop_box_backfill_classification_tags context:plugin,prod labels:plugin,drop_box stripComments:false
-update orac_dropbox.drop_location
-   set classification_tags_json = json_array(processing_profile returning clob)
- where classification_tags_json is null;
-update orac_dropbox.drop_job
-   set effective_classification_tags_json =
-         json_array(effective_processing_profile returning clob)
- where effective_classification_tags_json is null;
---rollback update orac_dropbox.drop_job set effective_classification_tags_json = null; update orac_dropbox.drop_location set classification_tags_json = null;
-
 --changeset clive:drop_box_make_profile_instruction_optional context:plugin,prod labels:plugin,drop_box stripComments:false
 --preconditions onFail:MARK_RAN onError:HALT
 --precondition-sql-check expectedResult:N select nullable from all_tab_columns where owner = 'ORAC_DROPBOX' and table_name = 'DROP_PROCESSING_PROFILE' and column_name = 'DEFAULT_INSTRUCTION';

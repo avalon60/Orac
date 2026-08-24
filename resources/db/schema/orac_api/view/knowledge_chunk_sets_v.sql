@@ -4,6 +4,7 @@
 create or replace force view orac_api.knowledge_chunk_sets_v as
 select chunk_set_id,
        extraction_id,
+       source_artefact_id,
        chunker_code,
        chunker_version,
        chunk_size_tokens,

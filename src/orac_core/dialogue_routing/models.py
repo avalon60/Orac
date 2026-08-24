@@ -20,5 +20,8 @@ class DialogueRouteDecision:
     reason_codes: tuple[str, ...]
     knowledge_scopes: tuple[KnowledgeScope, ...] = ()
     external_search_request: SearchRequest | None = None
+    materialisation_purpose: str | None = None
+    materialisation_target_type: str | None = None
+    materialisation_target_id: int | None = None
     fallback_reason: str | None = None
     user_visible_message: str | None = None

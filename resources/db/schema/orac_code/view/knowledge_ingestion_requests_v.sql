@@ -13,6 +13,8 @@ with event_rollup as (
 artifact_rollup as (
   select req.ingestion_request_id,
          count(distinct ext.extraction_id) as extraction_count,
+         count(distinct artf.artefact_id) as artefact_count,
+         min(artset.complete_yn) as artefact_set_complete_yn,
          count(distinct chn.chunk_id) as chunk_count,
          count(distinct emb.chunk_embedding_id) as embedded_chunk_count,
          count(distinct modl.model_name || ':' || to_char(modl.dimensions)) as embedding_model_shape_count,
@@ -23,6 +25,10 @@ artifact_rollup as (
       on ext.document_version_id = req.document_version_id
     left join orac_api.knowledge_chunk_sets_v chs
       on chs.extraction_id = ext.extraction_id
+    left join orac_api.knowledge_artefacts_v artf
+      on artf.extraction_id = ext.extraction_id
+    left join orac_code.knowledge_artefact_sets_v artset
+      on artset.extraction_id = ext.extraction_id
     left join orac_api.knowledge_chunks_v chn
       on chn.chunk_set_id = chs.chunk_set_id
     left join orac_api.knowledge_chunk_embeddings_v emb
@@ -72,6 +78,11 @@ select req.ingestion_request_id,
        ver.byte_size,
        ver.source_modified_on,
        coalesce(art.extraction_count, 0) as extraction_count,
+       coalesce(art.artefact_count, 0) as artefact_count,
+       case
+         when coalesce(art.artefact_count, 0) = 0 then 'Y'
+         else coalesce(art.artefact_set_complete_yn, 'N')
+       end as artefact_set_complete_yn,
        coalesce(art.chunk_count, 0) as chunk_count,
        coalesce(art.embedded_chunk_count, 0) as embedded_chunk_count,
        case
@@ -79,6 +90,10 @@ select req.ingestion_request_id,
           and coalesce(art.chunk_count, 0) > 0
           and art.chunk_count = art.embedded_chunk_count
           and art.embedding_model_shape_count = 1
+          and (
+            coalesce(art.artefact_count, 0) = 0
+            or art.artefact_set_complete_yn = 'Y'
+          )
          then 'Y'
          else 'N'
        end as searchable_yn,

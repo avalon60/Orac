@@ -1,5 +1,8 @@
 --liquibase formatted sql
 
+-- Codex-assisted modified.
+-- Codex SDK reviewability guardrails followed.
+
 --changeset clive:create_package_spec_orac_code_rag_usage_privilege_api context:core labels:core stripComments:false endDelimiter:/ runOnChange:true splitStatements:false
 -- __author__: clive
 -- __date__: 2026-07-20
@@ -7,6 +10,11 @@
 create or replace package orac_code.rag_usage_privilege_api
 authid definer
 as
+  function grant_scope_usage_status_by_id(
+    p_username           in varchar2,
+    p_knowledge_scope_id in orac_api.knowledge_scopes_v.knowledge_scope_id%type
+  ) return varchar2;
+
   function grant_scope_usage(
     p_username          in varchar2,
     p_scope_type        in varchar2,
@@ -17,12 +25,28 @@ as
     p_grant_reason_code in varchar2 default 'ADMIN_GRANT'
   ) return varchar2;
 
+  function grant_scope_usage_by_id(
+    p_username           in varchar2,
+    p_knowledge_scope_id in orac_api.knowledge_scopes_v.knowledge_scope_id%type,
+    p_effective_on       in timestamp with time zone default systimestamp,
+    p_expires_on         in timestamp with time zone default null,
+    p_granted_by         in varchar2 default null,
+    p_grant_reason_code  in varchar2 default 'ADMIN_GRANT'
+  ) return varchar2;
+
   function revoke_scope_usage(
     p_username           in varchar2,
     p_scope_type         in varchar2,
     p_scope_key          in varchar2,
     p_revoked_by         in varchar2 default null,
     p_revoke_reason_code in varchar2 default 'ADMIN_REVOKE'
+  ) return varchar2;
+
+  function revoke_scope_usage_by_id(
+    p_rag_usage_privilege_id in orac_api.rag_usage_privileges_v.rag_usage_privilege_id%type,
+    p_row_version            in orac_api.rag_usage_privileges_v.row_version%type,
+    p_revoked_by             in varchar2 default null,
+    p_revoke_reason_code     in varchar2 default 'ADMIN_REVOKE'
   ) return varchar2;
 end rag_usage_privilege_api;
 /

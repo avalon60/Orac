@@ -657,6 +657,29 @@ abstraction.
 **Objective:** Register normalised Markdown and future CSV outputs on disk and
 in the database.
 
+**Status:** Completed on 12 August 2026.
+
+**Delivered:**
+
+- Added immutable extraction-owned `knowledge_artefacts`, insert-only API
+  registration, output-set completeness, canonical UTF-8 identity checks, and
+  root-independent managed storage keys.
+- Made capture persist canonical Markdown beside the raw original and register
+  the complete SINGLE output set in the ingestion transaction.
+- Added nullable artefact lineage to chunk sets, including a composite
+  same-extraction foreign key and artefact-aware idempotency.
+- Made the worker verify managed PRIMARY, MANIFEST, and TABLE bytes before
+  source-specific chunking; spreadsheet CSV is split only at complete record
+  boundaries and retains worksheet row and cell-range provenance.
+- Kept legacy null-artefact chunk sets readable while making incomplete new
+  output sets non-searchable and impossible to complete.
+- Exposed exact artefact and spreadsheet provenance through searchable chunks,
+  retrieval models, and grounding provenance.
+- Added capture, worker, CSV, schema, and live rollback-only database coverage.
+  Operational diagnostics use the existing ingestion request/event pathway;
+  adoption of a separate PL/SQL Logger framework remains deferred because it
+  is not installed in the repository or development database.
+
 **Work:**
 
 - Extend capture or ingestion flow to write immutable normalised artefacts.
@@ -693,6 +716,26 @@ in the database.
 **Objective:** Make existing database-held normalised content compatible with
 new disk-backed retrieval.
 
+**Status:** Completed on 13 August 2026.
+
+**Delivered:**
+
+- Added a reusable, dry-run-first `orac-knowledge` operator command with
+  read-only preflight, bounded extraction backfill, and controlled raw-locator
+  migration operations.
+- Implemented the P1-09 preflight subset required by this migration: bounded
+  candidate classification, safe reference verification, machine-readable
+  reason codes, and non-sensitive managed-store facts. Full orphan,
+  stale-temporary-file, and physical inventory reconciliation remains P1-09.
+- Added a least-privilege ORAC-only migration API with one-item transaction
+  boundaries, append-only migration events, and a narrowly constrained
+  legacy-shard-to-logical locator exception.
+- Backfilled the development environment in two bounded batches. All 43
+  canonical legacy extractions now have complete managed PRIMARY artefacts and
+  artefact-owned existing chunk sets; no re-chunking or re-embedding occurred.
+- Verified that all 43 development raw locators were already logical, so no raw
+  locator rows required mutation.
+
 **Work:**
 
 - Run the P1-09 read-only preflight in each target environment before
@@ -727,6 +770,27 @@ new disk-backed retrieval.
 **Objective:** Retrieve raw metadata and normalised content through controlled
 Core interfaces.
 
+**Status:** Completed on 13 August 2026.
+
+**Delivered:**
+
+- Added a scope-first, principal-authorised `ORAC_CODE` retrieval package that
+  returns bounded metadata, managed member descriptors, legacy CLOB content,
+  and searchable chunks only after a current Oracle `USE` decision.
+- Added append-only retrieval decision/outcome auditing without content,
+  filenames, metadata JSON, storage keys, locators, or physical paths.
+- Added Core Python materialisation for complete normalised content, selected
+  members, UTF-8 text ranges, chunk-anchored sections, chunk ranges, and
+  worksheet/table A1 ranges with full source verification and emitted hashes.
+- Cut existing dialogue RAG over to the authorised cursor while retaining its
+  scoring, searchable-chunk, grounding, and provenance behaviour.
+- Retired `allow_all_scopes`, removed the runtime searchable-view and broad
+  artefact-package access, removed the plugin bridge's broad ingestion grant,
+  and dropped the obsolete runtime synonym.
+- Preserved explicit legacy/null artefact provenance and the P1-04/P1-05
+  lineage without re-chunking or re-embedding. Raw binary retrieval remains a
+  separate Phase 2 attachment concern.
+
 **Work:**
 
 - Define approved API ownership across `ORAC_CORE`, `ORAC_API`, `ORAC_CODE`,
@@ -748,6 +812,9 @@ Core interfaces.
 
 ### P1-07: Add progressive normalised materialisation policy
 
+**Status:** Implemented behind disabled feature flag on 14-Aug-2026. See
+`docs/knowledge-materialisation-policy.md`.
+
 **Objective:** Decide how much content may be exposed for one model request.
 
 **Work:**
@@ -767,6 +834,18 @@ Core interfaces.
 - Decisions are deterministic enough to test and audit.
 
 ### P1-08: Integrate Markdown and CSV with the primary LLM adapter
+
+**Status:** Implemented behind disabled feature flags on 14-Aug-2026. See
+`docs/knowledge-model-evidence.md`.
+
+**Verified implementation notes:** No architecture deviation was required.
+The repository contains the backward-compatible constraint/package delta, but
+the development database was intentionally inspected read-only rather than
+deployed during P1-08 implementation. Invocation rollout remains blocked until
+eligible enabled local model rows have verified positive context limits; all 20
+currently enabled rows still have `MAX_CONTEXT_TOKENS = NULL`. Follow-ups use
+explicit same-scope requests resolved back to the registered document target;
+no model tool or model-prose retrieval parser was introduced.
 
 **Objective:** Submit approved normalised content to the existing text model.
 
@@ -792,11 +871,40 @@ Core interfaces.
 
 **Objective:** Make disk/database divergence visible and recoverable.
 
+**Status:** Deployed and operationally verified in development on 15-Aug-2026.
+The specification and body are `VALID`; the only package privilege is
+non-grantable `EXECUTE` to `ORAC`, and both bounded inventory cursors execute
+successfully through that runtime account.
+
+The development reconciliation currently returns `BLOCKED` because its
+disposable managed store contains confirmed orphan candidates and stale
+temporary entries. That result is an operational diagnostic, not a P1-10
+prerequisite, and no cleanup or managed-store mutation is implied.
+
+**Delivered:**
+
+- Added independent `orac-knowledge reconcile` human and version-one JSON
+  contracts without changing P1-05 migration-preflight semantics.
+- Added a bounded ORAC-only, read-only reconciliation package that streams
+  registered payload and lineage inventories through existing ORAC_API views.
+- Added descriptor-oriented, non-following, deterministic physical inventory
+  in the Core managed-store module, including full canonical-object hashing,
+  temporary-file accounting, layout/type/permission checks, and root/directory
+  stability checks.
+- Added before/after Oracle snapshot comparison without holding a database
+  transaction across filesystem work.
+- Added stable `READY`, `BLOCKED`, and `INCOMPLETE` semantics, resource ceilings,
+  safe retry classification, bounded numeric database samples, and redacted
+  state fingerprints.
+- Kept audit persistence, repair, quarantine, deletion, locator rewriting,
+  content recovery, APEX, plugins, and model tools outside P1-09.
+
 **Work:**
 
 - Implement the reusable read-only environment preflight specified by the
   P1-01 audit.
-- Report the effective managed root and configuration source, database counts,
+- Report the managed-root configuration source and opaque compatibility facts,
+  never the configured or resolved path, together with database counts,
   locator classifications, shared payloads, missing or unreadable objects,
   hash and size mismatches, malformed layouts, unsafe paths, and symlinks.
 - Add inventory and safe checks for corrupt, unregistered, and orphaned
@@ -821,9 +929,36 @@ Core interfaces.
   and auditable.
 - No unrestricted directory listing is exposed through APEX or model tools.
 
+P1-09 makes divergence safely diagnosable for a future approved recovery
+workflow. It does not itself implement repair, quarantine, deletion, locator
+rewriting, or content recovery.
+
 ### P1-10: Update documentation and regression coverage
 
 **Objective:** Make the new lifecycle maintainable.
+
+**Status:** Completed on 15-Aug-2026 without database deployment or managed-store
+mutation.
+
+**Delivered:**
+
+- Updated Core ingestion, maintenance, configuration, and Drop Box operator and
+  lifecycle guides to describe the implemented raw, normalised artefact,
+  extraction, chunk, retrieval, materialisation, and reconciliation authority
+  boundaries.
+- Documented bounded configuration, `READY`/`BLOCKED`/`INCOMPLETE` semantics,
+  concurrency and interrupted-promotion classification, redaction, and the
+  separately authorised recovery boundary without advertising automatic repair.
+- Added deterministic isolated regression coverage for database registration
+  failure after promotion and retry reuse, configured alternate roots, exact
+  spreadsheet provenance, UTF-8/BOM/newline compatibility, and documentation
+  contracts, while retaining the existing concurrency, corruption, traversal,
+  symlink, retrieval, reconciliation, and model-adapter suites.
+- Added a rollback-only, controller-excluded Oracle acceptance script for
+  output-set atomicity, artefact-backed chunk-set idempotency, cross-extraction
+  denial, `MANIFEST`/`TABLE` behaviour, legacy null sources, incomplete-set
+  denial, and retry after rejected registration.
+- Kept Phase 2 raw-binary submission and model-capability routing deferred.
 
 **Work:**
 
@@ -850,7 +985,11 @@ Core interfaces.
 
 ### Separate security decision identified by P1-01
 
-**Finding:** `ORAC_PLUGIN` currently has execute on the complete
+**Status:** Resolved by P1-06. The broad `ORAC_PLUGIN` ingestion-package grant
+was revoked; the current runtime path uses `ORAC`, and reconciliation adds only
+non-grantable package `EXECUTE` for `ORAC`.
+
+**Historical finding:** `ORAC_PLUGIN` had execute on the complete
 `orac_code.knowledge_ingestion_api` package.
 
 **Required decision:**
@@ -925,22 +1064,12 @@ required capabilities =
     + user-request requirements
 ```
 
-Examples of stable capability codes may include:
-
-```text
-text_reasoning
-tool_calling
-long_context
-document_vision
-general_vision
-chart_interpretation
-audio_transcription
-audio_understanding
-video_understanding
-binary_pdf_input
-structured_query
-code_execution
-```
+The stable behavioural vocabulary is now controlled by
+[`p2-02-controlled-capability-taxonomy.md`](p2-02-controlled-capability-taxonomy.md)
+and the completed P2-02 record below. Earlier illustrative transport-oriented
+or overly broad examples are superseded; MIME acceptance, context size, tool
+calling, file transport, and code execution are not silently treated as the
+document/media behaviours defined by P2-02.
 
 A capability provider may be:
 
@@ -1063,16 +1192,199 @@ Future planning must address:
 These are future backlog tickets. They should be documented but not included in
 near-term execution unless separately authorised.
 
+P2-08 is a viability and decision gate, not an assumed bridge to P2-09 and
+P2-10. P2-09 and P2-10 are contingent placeholders only. Their presence in the
+backlog does not authorise them, establish that they are necessary, or imply
+that they will proceed. Do not produce detailed P2-09 or P2-10 plans until
+P2-08 has been implemented and accepted.
+
+For every final activity below, return the next-step plan as a self-contained,
+copy/paste-ready Markdown object in its own fenced block. It must be usable to
+start a fresh Codex planning session without relying on the current chat and
+must include the source-plan path, planning-only constraint, current resolved
+evidence, objectives, required repository inspection, deliverables, acceptance
+criteria, and explicit in-scope and out-of-scope boundaries.
+
 ### P2-01: Catalogue binary and multimodal use cases
 
 Identify concrete cases where normalised Markdown or CSV is insufficient.
 Record expected media types, security classification, payload sizes, provider
 options, and fallback behaviour.
 
+**P2-01 completed: 22-Aug-2026.**
+
+The evidence-backed planning catalogue is
+[`p2-01-binary-multimodal-use-case-catalogue.md`](p2-01-binary-multimodal-use-case-catalogue.md).
+It evaluated all eight initial use cases and the required negative cases:
+
+- `CANDIDATE`: `UC-PDF-SCAN`, `UC-PDF-VISUAL`,
+  `UC-IMAGE-TECHNICAL`, `UC-SPREADSHEET-VISUAL`,
+  `UC-PRESENTATION-VISUAL`, and `UC-AUDIO-SPEECH`;
+- `VALIDATED`: none; there are no approved representative fixtures paired
+  with an evidenced user outcome that normalised Markdown or CSV cannot serve;
+- `DEFERRED`: `UC-VIDEO-TEMPORAL` and `UC-OFFICE-ORIGINAL`;
+- `REJECTED`: no positive use-case ID. The catalogue rejects adequate
+  Markdown/CSV replacements, arbitrary provider-accepted files,
+  model-performed spreadsheet arithmetic, unsafe/active/encrypted containers,
+  caller-supplied paths or managed keys, policy-free remote processing,
+  unbounded submissions, and reuse of interactive voice as knowledge
+  ingestion.
+
+There are no validated use cases in P2-01.
+
+The priority ordering passed to P2-02 is:
+
+1. deterministic inspection and bounded selection for every media family;
+2. Tier 1 PDF inspection/rendering/OCR, selected PDF/image interpretation, and
+   deterministic spreadsheet parsing/calculation plus selected chart/layout
+   interpretation;
+3. Tier 2 presentation extraction/rendering and bounded local speech
+   transcription;
+4. Tier 3 video-temporal behaviour and direct Office-original handling remain
+   deferred.
+
+Unresolved evidence includes representative fixtures, measured expansion and
+derived-output envelopes, fixture ownership, and demonstrated
+normalisation-insufficient user outcomes. Current `DOC_CLASS` values remain
+content-purpose classifications rather than sensitivity policy; remote
+processing remains ineligible until the separate locality and sensitivity
+policy is approved. Official Ollama and LM Studio image-input mechanisms were
+checked on 22-Aug-2026, but no registered underlying multimodal model was
+verified and the configured Ollama endpoint was unavailable for a bounded
+metadata-only probe.
+
+P2-01 added documentation and structural regression coverage only. No binary
+runtime support was enabled, and no database object, configuration, privilege,
+provider adapter, plugin capability, managed-store content, model, or deployed
+service was changed. P2-03 through P2-10 remain not started.
+
+**Final activity after resolution:** Return to
+[@orac_document_materialisation_enhancements_plan](thread://019ff810-7695-7282-84e4-5fce86936a56)
+and produce a decision-complete plan for P2-02, using the resolved P2-01 use-case
+catalogue as evidence. Return it in the copy/paste-ready form required above.
+Do not implement P2-02 during that planning activity.
+
 ### P2-02: Define controlled capability taxonomy
 
 Create stable capability codes and distinguish deterministic tools from model
 providers. Avoid provider names in capability semantics.
+
+**P2-02 completed: 22-Aug-2026.**
+
+The controlled provider-neutral taxonomy is
+[`p2-02-controlled-capability-taxonomy.md`](p2-02-controlled-capability-taxonomy.md).
+It is a planning and P2-03 input document under `pending_work`, not an operator
+guide or feature-availability statement.
+
+The final capability classes are:
+
+- `PRIMARY_TEXT_REASONING`;
+- `DETERMINISTIC_INSPECTION`;
+- `DETERMINISTIC_TRANSFORMATION`;
+- `DETERMINISTIC_CALCULATION`;
+- `SPECIALIST_INTERPRETATION`.
+
+The final stable capability codes are:
+
+- foundational: `text_reasoning`, `container_inspection`, and
+  `bounded_media_selection`;
+- document/image: `layout_extraction`, `page_rendering`,
+  `ocr_text_extraction`, `document_visual_interpretation`,
+  `technical_image_interpretation`, and `chart_visual_interpretation`;
+- spreadsheet: `workbook_structured_extraction`, `spreadsheet_calculation`,
+  and `sheet_chart_rendering`;
+- presentation: `presentation_structured_extraction`, `slide_rendering`, and
+  `presentation_visual_interpretation`;
+- audio: `audio_metadata_inspection`, `speech_transcription`,
+  `speaker_diarisation`, and `audio_semantic_interpretation`;
+- video: `video_metadata_inspection`, `subtitle_extraction`,
+  `keyframe_extraction`, and `video_temporal_interpretation`.
+
+Each code names one behaviour rather than a MIME type, transport field,
+provider, model, implementation, or enabled state. Every record defines the
+accepted source/derived representation, required characteristics, structured
+output evidence, authority, selection, provenance, bound dimensions, locality,
+fallback, evidence status, related use cases, deferred behaviour, and P2-03
+metadata note. `speech_transcription` is specialist interpretation even when it
+is required by the audio use case; required behaviour is not automatically
+deterministic. OCR remains a controlled versioned transformation with explicit
+uncertainty. Deterministic spreadsheet parsing and calculation remain
+authoritative, and the primary text model consumes structured evidence without
+silently replacing source or deterministic facts.
+
+The P2-01 mapping resolved as follows:
+
+- `UC-PDF-SCAN` requires inspection, bounded selection, page rendering, OCR,
+  and final text reasoning; document visual interpretation is optional.
+- `UC-PDF-VISUAL` requires inspection, layout extraction, bounded selection,
+  page rendering, and final text reasoning; document/chart interpretation is
+  optional.
+- `UC-IMAGE-TECHNICAL` requires inspection, bounded selection, OCR, and final
+  text reasoning; technical-image interpretation is optional.
+- `UC-SPREADSHEET-VISUAL` requires inspection, workbook extraction,
+  deterministic calculation, bounded selection, sheet/chart rendering, and
+  final text reasoning; chart interpretation is optional.
+- `UC-PRESENTATION-VISUAL` requires inspection, presentation extraction,
+  bounded selection, slide rendering, and final text reasoning;
+  presentation/chart interpretation is optional.
+- `UC-AUDIO-SPEECH` requires audio inspection, bounded selection,
+  transcription, and final text reasoning; diarisation and broader audio
+  interpretation remain optional and evidence-pending.
+- `UC-VIDEO-TEMPORAL` retains metadata inspection, selection, subtitles,
+  transcription, keyframes, and temporal interpretation as documented but
+  deferred behaviour.
+- `UC-OFFICE-ORIGINAL` retains container inspection plus format-specific
+  deterministic extraction/rendering; direct original-container
+  interpretation remains deferred.
+
+The evidence-state vocabulary passed to P2-03 is `UNASSESSED`,
+`API_DECLARED`, `MODEL_METADATA_VERIFIED`, `BOUNDED_PROBE_VERIFIED`, and
+`REJECTED`. These states apply to dated provider/model/capability associations,
+not taxonomy existence, runtime enablement, or health. Official Ollama and LM
+Studio image mechanisms checked on 22-Aug-2026 remain `API_DECLARED` transport
+evidence only. The configured Ollama endpoint was still unavailable for a
+metadata-only probe; no exact underlying model/revision was metadata- or
+probe-verified, and no model was downloaded, loaded, or invoked.
+
+A read-only development query reconfirmed 20 enabled `ollama` registry rows,
+all with effective model type `TEXT`; all 20 JSON property objects omitted
+`model_type`. Counts and types match P2-01, no row was created or updated after
+the P2-01 evidence date, and same-day ordering remains unknowable because the
+P2-01 baseline recorded no exact query timestamp. No Core capability/modality
+table or view exists. Deployed artefacts comprised 60 Markdown `PRIMARY` rows.
+The mapped application saved connection was unavailable, so the same bounded
+aggregate query used the mapped administrative connection without selecting
+prompts, document content, filenames, paths, or managed-store keys.
+
+P2-03 must keep stable codes/classes, representation and MIME associations,
+provider/model identities, capability associations, evidence state and dated
+source, bound dimensions, locality/policy, effective dates, suitability,
+health, selection/provenance contracts, and audit identity as separate
+controlled concerns. Provider endpoint/request-field quirks and opaque native
+metadata may remain bounded documented JSON only where they are not needed for
+relational validation, policy, or routing. Current `properties.model_type`
+defaulting to `TEXT` is not capability evidence.
+
+Unresolved evidence remains: no P2-01 use case is validated; approved fixtures,
+owners, measured expansion/output envelopes, and demonstrated
+normalisation-insufficient outcomes are absent; sensitivity, consent,
+locality, remote-processing, processor/backend, quality, cost, health, and
+runtime-bound policy remain unresolved. `DOC_CLASS` remains content purpose,
+all use cases remain `UNMAPPED` and remote-ineligible, direct Office-original
+interpretation and video-temporal interpretation remain deferred, and all
+negative P2-01 patterns remain rejected.
+
+P2-02 added only the taxonomy document and structural documentation regression
+coverage. No runtime or database capability was enabled. No database object,
+row, property, configuration, privilege, provider adapter, plugin,
+managed-store content, model, or deployed service was changed. P2-03 through
+P2-10 remain not started.
+
+**Final activity after resolution:** Return to
+[@orac_document_materialisation_enhancements_plan](thread://019ff810-7695-7282-84e4-5fce86936a56)
+and produce a decision-complete plan for P2-03, treating the approved capability
+taxonomy as authoritative. Return it in the copy/paste-ready form required
+above. Do not implement P2-03 during that planning activity.
 
 ### P2-03: Extend model and provider metadata
 
@@ -1080,20 +1392,146 @@ Design normalised capability and MIME associations around the existing
 `llm_registry`, retaining JSON only for provider-specific details that do not
 require relational validation or routing queries.
 
+**P2-03 implemented and validated: 23-Aug-2026.**
+
+The implementation record is
+[`p2-03-controlled-model-provider-metadata.md`](p2-03-controlled-model-provider-metadata.md).
+It adds controlled provider, capability, representation, MIME, provider-input,
+model-evidence, and dimension-qualified limit structures around the existing
+registry. The seed contains two reviewed adapters, 23 capability codes, 13
+representations, three exact image MIME values, and six provider transport
+declarations. No concrete-model capability was seeded or inferred from the
+legacy effective `TEXT` default.
+
+Concrete-model evidence is eligibility evidence for one configured immutable
+model revision; it is not route authority. Route authority is a versioned
+capability-requirement contract, while the exact provider/model/evidence chosen
+for a real invocation is frozen later as runtime and audit evidence.
+
+The existing `llm_registry_v` shape and Phase 1 prompt-only submission
+behaviour remain unchanged. New read projections are exposed only through the
+API and Code layers; runtime, APEX, and plugins received no new metadata DML or
+read grant. Deployment and validation used the bounded `orac-db` fallback
+because the local `orac-service` saved connection remained unavailable. No
+model was queried, listed, loaded, downloaded, registered, probed, or invoked.
+
+**Final activity after resolution:** Return to
+[@orac_document_materialisation_enhancements_plan](thread://019ff810-7695-7282-84e4-5fce86936a56)
+and produce a decision-complete plan for P2-04 against the resolved model and
+provider metadata contract. Return it in the copy/paste-ready form required
+above. Do not implement P2-04 during that planning activity.
+
 ### P2-04: Define media-type processing policy
 
 Map media types to normalisation and materialisation strategies, not directly
 to a single model. Support content-driven characteristic overrides.
+
+**P2-04 policy planning completed: 23-Aug-2026.**
+
+The approved planning record is
+[`p2-04-media-type-processing-policy.md`](p2-04-media-type-processing-policy.md).
+It defines provider/model-neutral media defaults, deterministic characteristic
+overrides, fail-closed precedence, processing chains, representations,
+dimension-qualified bounds, reason codes, and the P2-01 use-case mapping.
+Optional specialist branches declare capability, representation/MIME,
+behavioural-evidence, output, selection, and limit requirements rather than a
+concrete model.
+Existing Phase 1 text handling remains unchanged; direct Office-original and
+video-temporal interpretation remain deferred. No processor, routing path,
+attachment path, provider invocation, or policy table was implemented.
+
+The standalone next-stage planning input is
+[`p2-05-capability-aware-routing-and-fallback-plan.md`](p2-05-capability-aware-routing-and-fallback-plan.md).
+P2-05 has not been implemented.
+
+**Final activity after resolution:** Return to
+[@orac_document_materialisation_enhancements_plan](thread://019ff810-7695-7282-84e4-5fce86936a56)
+and produce a decision-complete plan for P2-05 using the approved media-type
+processing policy. Return it in the copy/paste-ready form required above. Do not
+implement P2-05 during that planning activity.
 
 ### P2-05: Define routing and fallback policy
 
 Specify provider ordering, locality, classification, quality, cost,
 availability, and fallback rules.
 
+**P2-05 policy planning completed: 23-Aug-2026.**
+
+The approved planning record is
+[`p2-05-capability-aware-routing-and-fallback-policy.md`](p2-05-capability-aware-routing-and-fallback-policy.md).
+It defines four controlled route kinds, ordered fail-closed eligibility gates,
+stable reason codes, deterministic candidate ordering, independent
+representation/MIME checks, explicit locality/classification and dated
+observation contracts, and a non-widening fallback chain for every P2-04 media
+family. Deterministic processor output remains authoritative and optional
+specialist output remains attributed.
+
+For `SPECIALIST_MODEL`, the controlled route identity is the immutable
+capability-requirement identity. P2-05 evaluates configured concrete models as
+candidates, excludes any without complete current evidence, orders the
+remaining eligible candidates deterministically, and freezes the exact
+provider/model revision, evidence, associations, observations, and effective
+limits in one selection result. A different eligible model does not redefine
+the route; it requires a new evaluation result.
+
+Read-only validation reconfirmed two providers, 23 capabilities, 13
+representations, three MIME values, six provider transport declarations, and
+no concrete-model evidence or input limits. Image adapter support remains
+`NOT_IMPLEMENTED`; no specialist or binary route is eligible. The existing
+Phase 1 primary-text path remains an unchanged compatibility surface. No
+routing engine, table, provider/model row, configuration, probe, attachment,
+adapter, plugin path, or invocation was added.
+
+The standalone next-stage planning input is
+[`p2-06-secure-binary-materialisation-plan.md`](p2-06-secure-binary-materialisation-plan.md).
+P2-06 has not been implemented.
+
+**Final activity after resolution:** Return to
+[@orac_document_materialisation_enhancements_plan](thread://019ff810-7695-7282-84e4-5fce86936a56)
+and produce a decision-complete plan for P2-06, carrying forward the resolved
+routing, fallback, locality, and classification decisions. Return it in the
+copy/paste-ready form required above. Do not implement P2-06 during that
+planning activity.
+
 ### P2-06: Implement secure binary materialisation
 
 Create verified short-lived attachments from managed artefacts without exposing
 content-store paths.
+
+**P2-06 implemented and validated behind a disabled feature flag: 23-Aug-2026.**
+
+The implementation record is
+[`p2-06-secure-binary-materialisation-implementation-record.md`](p2-06-secure-binary-materialisation-implementation-record.md).
+It delivers immutable P2-04/P2-05-bound request/result contracts,
+descriptor-oriented managed-source revalidation, a bounded deterministic
+processor seam, and private opaque single-use attachment handles with atomic
+binding, expiry, cancellation, cleanup, startup recovery, and content-free
+provenance. It reuses the existing authorised Core retrieval API and requires
+no database persistence or privilege change.
+
+P2-06 binds the exact P2-05 result without becoming model-selection authority.
+For a specialist route the route fingerprint identifies the capability
+requirement; any selected concrete-model evidence snapshot is per-evaluation
+binding data. Changing that selection requires a new P2-05 result and a new
+single-use attachment.
+
+The shipped runtime remains disabled and has no eligible production processor
+profile. Its default route revalidator defers every route, so P2-06 does not
+manufacture binary or specialist eligibility. Positive tests use only isolated
+synthetic fixtures. Phase 1 prompt-only behaviour remains unchanged, and no
+provider/model was invoked, listed, loaded, pulled, downloaded, probed, or
+registered.
+
+The standalone P2-07 planning input is
+[`p2-07-specialist-model-adapters-plan.md`](p2-07-specialist-model-adapters-plan.md).
+P2-07 has not been implemented.
+
+**Final activity after resolution:** Return to
+[@orac_document_materialisation_enhancements_plan](thread://019ff810-7695-7282-84e4-5fce86936a56)
+and produce a decision-complete plan for P2-07 against the implemented binary
+materialisation interface and its verified limits. Return it in the
+copy/paste-ready form required above. Do not implement P2-07 during that
+planning activity.
 
 ### P2-07: Integrate specialist model adapters
 
@@ -1101,10 +1539,149 @@ Add adapters only for approved providers and proven use cases. Keep the primary
 model responsible for final response generation unless a use case explicitly
 requires otherwise.
 
-### P2-08: Add binary submission audit and observability
+Adapters are registered to exact provider/protocol/input-schema versions, not
+to concrete models or route identities. P2-07 consumes the exact candidate
+already selected by P2-05, revalidates that its P2-03 evidence still satisfies
+the unchanged capability requirement, invokes only that identity, and records
+the complete selection as runtime evidence. It cannot discover, rank,
+substitute, or bless a model. Offline implementation and validation may use
+synthetic model/evidence identities and a fake provider; a real provider call
+remains disabled until at least one configured model is currently eligible.
+
+**Final activity after resolution:** Return to
+[@orac_document_materialisation_enhancements_plan](thread://019ff810-7695-7282-84e4-5fce86936a56)
+and produce a standalone, decision-complete viability and implementation plan
+for P2-08 using the accepted P2-03 through P2-07 authority and correlation
+contracts. The plan must resolve or deliberately redesign around the P2-08
+blockers below and must not assume that P2-09 or P2-10 will follow. Synthetic
+identities and the fake provider may be used for planning and structural
+validation; valid current runtime model evidence remains mandatory for any real
+invocation. Return the P2-08 plan in the copy/paste-ready form required above.
+Do not implement P2-08, P2-09, or P2-10 during that planning activity.
+
+### P2-08: Decide viability of binary submission audit and observability
 
 Record policy decisions, selected capability providers, hashes, payload shape,
 timing, safe errors, and fallback outcomes.
+
+**Status: viability and decision gate; no standalone implementation plan has
+been accepted.**
+
+P2-08 must first become a complete, internally consistent, and implementable
+plan. Its blockers must be resolved or deliberately redesigned around before
+implementation authorisation. It must demonstrate that audit lifecycle,
+persistence, idempotency, terminal-state, retry, cancellation, attachment,
+reconciliation, and provider-correlation contracts can be implemented without
+violating the established P2-03 through P2-07 authority boundaries.
+
+The P2-03 model-evidence catalogue remains eligibility evidence, not route or
+audit authority. P2-05 remains the capability-based routing and exact
+per-evaluation model-selection authority. P2-06 remains the source and
+single-use attachment authority. P2-07 remains the exact adapter invocation and
+attributed specialist-output authority. P2-08 may observe and correlate those
+decisions and lifecycles, but must not rediscover, infer, widen, replace, or
+retroactively bless them.
+
+P2-08 planning and contract validation are not blocked by the absence of an
+eligible production concrete model. Synthetic provider, model, evidence,
+capability-requirement, route-selection, adapter, attachment, attempt, and
+outcome identities plus the fake provider are sufficient to prove cardinality,
+lineage, redaction, timing, fallback, and terminal-state contracts. Real
+invocation audit must nevertheless record the exact provider, `llm_id`,
+immutable model revision/digest, model-evidence and capability associations,
+route requirement, selected limits, adapter/protocol, and fallback position
+actually used. Synthetic evidence can never authorise a real invocation.
+
+#### P2-08 blocker classification
+
+1. **Genuine prerequisites before P2-08 implementation**
+
+   - The P2-03 through P2-07 authority, identity, correlation, and redaction
+     contracts consumed by P2-08 must be accepted and stable enough that P2-08
+     cannot become an alternate route, model-evidence, attachment, adapter, or
+     fallback authority.
+   - The standalone P2-08 plan must define one authoritative audit lifecycle
+     and ownership model for request, route evaluation, attachment, provider
+     attempt, retry, cancellation, late result, terminal outcome, cleanup, and
+     reconciliation events.
+   - Persistence authority, least-privilege access, retention, redaction,
+     immutable identities, cardinality, idempotency keys, terminal-state
+     transitions, transaction boundaries, rollback, and bounded reconciliation
+     must be decision-complete before database implementation is proposed.
+   - The plan must prove that no database transaction spans long filesystem,
+     attachment, processor, or provider work and that repeated delivery,
+     cancellation, timeout, crash recovery, and late provider results cannot
+     create contradictory terminal outcomes.
+
+2. **Planning dependencies that can be represented conditionally**
+
+   - Provider-specific correlation IDs, timing, usage, retention, and error
+     fields may be expressed as controlled optional capabilities with explicit
+     `AVAILABLE`, `UNAVAILABLE`, and `NOT_APPLICABLE` semantics. Their absence
+     must not be filled by inference.
+   - The plan may describe conditional persistence alternatives depending on
+     whether existing retrieval audit structures can preserve the required
+     cardinality and lifecycle without boundary widening. No new database
+     object is assumed until that comparison is resolved.
+   - Synthetic provider/model/evidence, route, attachment, adapter, attempt,
+     retry, cancellation, reconciliation, and outcome identities plus the fake
+     provider are sufficient for planning, schema-shape tests, state-machine
+     tests, and structural validation.
+   - Real-provider correlation and operational acceptance remain conditional on
+     valid current P2-03 model evidence, an eligible P2-05 result, an approved
+     P2-07 adapter, and separately authorised invocation. Those conditions do
+     not block P2-08 design.
+
+3. **Unnecessary coupling to remove**
+
+   - P2-08 design must not require a blessed, production-eligible, locally
+     installed, or remotely available concrete model.
+   - P2-08 design must not require model listing, loading, pulling, download,
+     probing, registration, inference, real provider state, or real document
+     content.
+   - P2-08 must not be designed around anticipated P2-09 administration screens
+     or P2-10 end-to-end tests. Those placeholders cannot define P2-08 storage,
+     event, privilege, or lifecycle contracts.
+   - Provider identity must not replace capability-based routing, and an audit
+     row must never be treated as route eligibility, model evidence, attachment
+     authority, or permission to retry.
+
+4. **Evidence that P2-08 should be decomposed if a clean single-phase design
+   cannot be proved**
+
+   - If immutable audit persistence and the runtime terminal-state machine
+     cannot share one clear ownership and idempotency contract, separate the
+     audit event/state contract from its database persistence and recovery
+     implementation.
+   - If provider correlation, timing, usage, and retention vary too widely for
+     one stable bounded contract, separate provider-correlation observability
+     from the core content-free lifecycle audit.
+   - If attachment cleanup/reconciliation and provider-attempt reconciliation
+     require different recovery authorities, keep those recovery slices
+     separate and correlate them by immutable identities rather than creating a
+     cross-boundary repair service.
+   - If a proposed complete submission audit requires storing content,
+     credentials, provider payloads/replies, paths, managed keys, or inferred
+     model evidence, reduce scope, split the work, or reject that design.
+
+#### P2-08 decision outcomes
+
+The standalone P2-08 plan must end in one explicit outcome:
+
+- `ACCEPT`: the design is decision-complete and implementable without widening
+  P2-03 through P2-07 authority;
+- `REVISE`: specified blockers require another planning pass;
+- `REDUCE_SCOPE`: only a narrower audit lifecycle is coherent;
+- `DECOMPOSE`: two or more smaller independently accepted phases are required;
+  or
+- `REJECT`: the proposed audit/observability architecture cannot be implemented
+  safely within the established boundaries.
+
+Only `ACCEPT`, followed by separately authorised implementation and acceptance
+of P2-08, permits reconsideration of downstream placeholders. A `DECOMPOSE`
+outcome requires each replacement phase to be implemented and accepted before
+that reconsideration. `REVISE`, `REDUCE_SCOPE`, or `REJECT` does not implicitly
+authorise P2-09 or P2-10.
 
 ### P2-09: Add administration and validation tooling
 
@@ -1112,11 +1689,32 @@ Provide maintainable configuration and capability tests. Do not allow an
 administrator to declare unsupported capabilities without a validation or
 health signal.
 
+**Status: contingent placeholder only.**
+
+P2-09 is neither assumed nor authorised. Do not create a detailed P2-09 plan
+until P2-08, or every accepted replacement phase from a P2-08 decomposition,
+has been implemented and accepted. At that point the master plan must first
+decide whether administration or validation tooling is still necessary,
+whether it belongs in P2-09, and whether it can consume the accepted audit
+contracts without becoming capability, model-evidence, routing, or invocation
+authority. If P2-08 is revised, reduced, deferred, or rejected, retain,
+rescope, defer, or remove this placeholder accordingly.
+
 ### P2-10: Add end-to-end multimodal security tests
 
 Test unauthorised access, remote-processing restrictions, classification
 ceilings, corrupt files, MIME spoofing, oversized payloads, unsupported
 modalities, provider failure, and safe fallback.
+
+**Status: contingent placeholder only.**
+
+P2-10 is neither assumed nor authorised. Do not create a detailed P2-10 plan
+until P2-08, or every accepted replacement phase from a P2-08 decomposition,
+has been implemented and accepted and the continued need and scope of P2-09 has
+been decided. Existing component-level security tests remain mandatory and
+must not be deferred to P2-10. If P2-08 does not establish a coherent accepted
+audit lifecycle, this end-to-end phase must be rescoped, deferred, or removed
+rather than forcing tests around unresolved architecture.
 
 ## Cross-cutting requirements
 

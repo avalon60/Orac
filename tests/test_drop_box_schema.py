@@ -520,6 +520,53 @@ class DropBoxSchemaTests(unittest.TestCase):
         )
         self.assertNotIn("/home/clive", seed_sql)
 
+    def test_document_classifications_are_independent_reference_codes(self) -> None:
+        """Drop Box requires canonical classifications without profile backfill."""
+        admin_sql = (
+            SCHEMA_ROOT / "package_body" / "drop_box_admin_api.sql"
+        ).read_text(encoding="utf-8")
+        table_sql = (
+            SCHEMA_ROOT / "table" / "drop_classification_and_retry.sql"
+        ).read_text(encoding="utf-8")
+        seed_sql = (
+            SCHEMA_ROOT / "seed_data" / "drop_location_orac_docs.sql"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('["RAW_REFERENCE"]', seed_sql)
+        self.assertNotIn("drop_box_backfill_classification_tags", table_sql)
+        self.assertNotIn("json_array(processing_profile", table_sql.lower())
+        self.assertNotIn("p_legacy_profile", admin_sql.lower())
+        self.assertNotIn("selected.tag_code", admin_sql.lower())
+
+    def test_enqueue_snapshots_classifications_without_profile_fallback(self) -> None:
+        package_sql = (
+            SCHEMA_ROOT / "package_body" / "drop_box_api.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("loc.classification_tags_json", package_sql)
+        self.assertIn(
+            "'drop location is missing configured classifications.'",
+            package_sql,
+        )
+        self.assertIn("l_classification_tags", package_sql)
+        self.assertNotIn("json_array(l_processing_profile", package_sql)
+
+    def test_locations_without_classifications_are_excluded_and_reported(self) -> None:
+        runtime_sql = (
+            SCHEMA_ROOT / "view" / "drop_location_runtime_v.sql"
+        ).read_text(encoding="utf-8").lower()
+        error_sql = (
+            SCHEMA_ROOT / "view" / "drop_location_config_error_v.sql"
+        ).read_text(encoding="utf-8").lower()
+
+        self.assertIn("loc.classification_tags_json is not null", runtime_sql)
+        self.assertIn(
+            "dbms_lob.getlength(loc.classification_tags_json) > 0",
+            runtime_sql,
+        )
+        self.assertIn("'classifications are missing.'", error_sql)
+        self.assertIn("loc.classification_tags_json is null", error_sql)
+
     def test_guides_document_operation_and_ingestion_boundaries(self) -> None:
         operator_guide = (
             (PLUGIN_ROOT / "docs" / "drop-box.md").read_text(encoding="utf-8").lower()

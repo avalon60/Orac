@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -71,6 +72,9 @@ class _Repository:
         self.existing_extractions: dict[int, tuple[int, str]] = {}
         self.created_extractions = 0
         self.inserted_chunk_texts: list[str] = []
+        self.inserted_chunk_metadata: list[str | None] = []
+        self.chunk_sets: list[dict] = []
+        self.output_sets: dict[int, dict] = {}
 
     def add_payload(self, request_id: int, text: str) -> None:
         payload = text.encode("utf-8")
@@ -113,7 +117,30 @@ class _Repository:
         existing = self.existing_extractions.get(request_id)
         if existing is not None:
             detail["extraction_id"], detail["extracted_text"] = existing
+            detail["artefact_count"] = len(
+                self.output_sets.get(detail["extraction_id"], {}).get("members", [])
+            )
         return detail
+
+    def add_artefact_payload(self, payload: bytes) -> dict:
+        """Store one managed artefact payload and return its identity fields."""
+        digest = hashlib.sha256(payload).hexdigest()
+        payload_path = self._managed_root / "sha256" / digest[:2] / digest[2:4] / digest
+        payload_path.parent.mkdir(parents=True, exist_ok=True)
+        current = payload_path.parent
+        while current != self._managed_root:
+            current.chmod(0o750)
+            current = current.parent
+        payload_path.write_bytes(payload)
+        payload_path.chmod(0o600)
+        return {
+            "content_sha256": digest,
+            "storage_key": f"sha256:{digest}",
+            "byte_size": len(payload),
+        }
+
+    def output_set(self, extraction_id: int) -> dict:
+        return self.output_sets[extraction_id]
 
     def mark_stage(
         self,
@@ -160,8 +187,18 @@ class _Repository:
         chunker_version: str,
         chunk_size_tokens: int,
         overlap_tokens: int,
+        source_artefact_id: int | None = None,
     ) -> int:
-        del chunker_code, chunker_version, chunk_size_tokens, overlap_tokens
+        self.chunk_sets.append(
+            {
+                "extraction_id": extraction_id,
+                "chunker_code": chunker_code,
+                "chunker_version": chunker_version,
+                "chunk_size_tokens": chunk_size_tokens,
+                "overlap_tokens": overlap_tokens,
+                "source_artefact_id": source_artefact_id,
+            }
+        )
         return extraction_id + 1
 
     def insert_chunk(
@@ -177,6 +214,7 @@ class _Repository:
         metadata_json: str | None = None,
     ) -> int:
         self.inserted_chunk_texts.append(chunk_text)
+        self.inserted_chunk_metadata.append(metadata_json)
         del (
             chunk_set_id,
             span_start,
@@ -352,6 +390,115 @@ class KnowledgeIngestionWorkerTests(unittest.TestCase):
             )
             self.assertEqual(
                 len(repository.embeddings), len(repository.inserted_chunk_texts)
+            )
+
+    def test_managed_primary_artefact_is_verified_and_owns_chunk_lineage(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            managed_root = Path(temp)
+            repository = _Repository(managed_root=managed_root, request_ids=[1])
+            repository.add_payload(1, "raw payload must not be chunked")
+            repository.existing_extractions[1] = (91, "legacy compatibility text")
+            identity = repository.add_artefact_payload(b"# Canonical\n\nArtefact text.\n")
+            repository.output_sets[91] = {
+                "schema_version": 1,
+                "set_kind": "SINGLE",
+                "members": [
+                    {
+                        "artefact_id": 501,
+                        "role": "PRIMARY",
+                        "media_type": "text/markdown; charset=utf-8",
+                        "logical_name": "primary.md",
+                        "ordinal": 1,
+                        "metadata": None,
+                        **identity,
+                    }
+                ],
+            }
+
+            KnowledgeIngestionService(
+                repository=repository,
+                managed_root=managed_root,
+            ).tick(object())
+
+            self.assertEqual(repository.completed, [1])
+            self.assertEqual(repository.failed, [])
+            self.assertEqual(repository.chunk_sets[0]["source_artefact_id"], 501)
+            self.assertIn("Artefact text.", "\n".join(repository.inserted_chunk_texts))
+            self.assertNotIn(
+                "legacy compatibility text",
+                "\n".join(repository.inserted_chunk_texts),
+            )
+
+    def test_spreadsheet_tables_use_record_chunks_and_preserve_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            managed_root = Path(temp)
+            repository = _Repository(managed_root=managed_root, request_ids=[1])
+            repository.add_payload(1, "raw workbook placeholder")
+            repository.existing_extractions[1] = (91, "# Workbook manifest\n")
+            manifest = repository.add_artefact_payload(b"# Workbook manifest\n")
+            table = repository.add_artefact_payload(
+                b'name,notes\nAda,"first line\nsecond line"\nGrace,compiler\n'
+            )
+            repository.output_sets[91] = {
+                "schema_version": 1,
+                "set_kind": "SPREADSHEET",
+                "members": [
+                    {
+                        "artefact_id": 601,
+                        "role": "MANIFEST",
+                        "media_type": "text/markdown; charset=utf-8",
+                        "logical_name": "manifest.md",
+                        "ordinal": 1,
+                        "metadata": None,
+                        **manifest,
+                    },
+                    {
+                        "artefact_id": 602,
+                        "role": "TABLE",
+                        "media_type": "text/csv; charset=utf-8",
+                        "logical_name": "people.csv",
+                        "ordinal": 2,
+                        "metadata": {
+                            "schema_version": 1,
+                            "sheet_name": "People",
+                            "table_name": "PeopleTable",
+                            "source_cell_range": "A4:B6",
+                            "header_rows": [4],
+                            "hidden_sheet": False,
+                        },
+                        **table,
+                    },
+                ],
+            }
+
+            KnowledgeIngestionService(
+                config_mgr=_Config({"chunk_size_tokens": 5}),
+                repository=repository,
+                managed_root=managed_root,
+            ).tick(object())
+
+            self.assertEqual(repository.completed, [1])
+            self.assertEqual(
+                [item["source_artefact_id"] for item in repository.chunk_sets],
+                [601, 602],
+            )
+            self.assertEqual(repository.chunk_sets[1]["chunker_code"], "core_csv_records")
+            csv_metadata = [
+                json.loads(item)
+                for item in repository.inserted_chunk_metadata
+                if item is not None
+            ]
+            self.assertTrue(csv_metadata)
+            for metadata in csv_metadata:
+                self.assertEqual(metadata["schema_version"], 1)
+                self.assertRegex(
+                    metadata["source_cell_range"],
+                    r"^A[4-6]:B[4-6]$",
+                )
+            self.assertEqual(csv_metadata[0]["source_row_start"], 4)
+            self.assertEqual(csv_metadata[-1]["source_row_end"], 6)
+            self.assertTrue(
+                any("first line\nsecond line" in text for text in repository.inserted_chunk_texts)
             )
 
     def test_managed_store_reason_mapping_is_stable(self) -> None:

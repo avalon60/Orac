@@ -21,6 +21,7 @@ for path in (SRC_ROOT, PLUGINS_ROOT):
 
 from drop_box.models import (  # noqa: E402
     CandidateFile,
+    DropBoxHandoffJob,
     DropLocation,
     FileObservation,
     HashedCandidate,
@@ -78,6 +79,17 @@ class _FakeContext:
 
     def plugin_db_session(self) -> _FakeSession:
         return self.session
+
+
+class _FakeOracleLob:
+    """Small Oracle LOB stand-in returning a configured payload."""
+
+    def __init__(self, payload: object) -> None:
+        self.payload = payload
+
+    def read(self) -> object:
+        """Return the configured LOB payload."""
+        return self.payload
 
 
 class DropBoxRepositoryTests(unittest.TestCase):
@@ -168,24 +180,7 @@ class DropBoxRepositoryTests(unittest.TestCase):
 
     def test_load_handoff_jobs_reads_handoff_view(self) -> None:
         session = _FakeSession()
-        session.rows = [
-            {
-                "DROP_JOB_ID": 10,
-                "DROP_LOCATION_ID": 1,
-                "LOCATION_CODE": "TEST",
-                "LOCATION_ROOT": "/tmp/drop",
-                "SOURCE_PATH": "/tmp/drop/source.md",
-                "SOURCE_FILENAME": "source.md",
-                "SOURCE_HASH": "a" * 64,
-                "SOURCE_SIZE_BYTES": 7,
-                "SOURCE_MTIME": datetime(2026, 6, 27, 12, 0),
-                "EFFECTIVE_SCOPE_TYPE": "PROJECT",
-                "EFFECTIVE_SCOPE_KEY": "orac",
-                "EFFECTIVE_PROCESSING_PROFILE": "markdown",
-                "EFFECTIVE_PROFILE_INSTRUCTION": "profile instruction",
-                "EFFECTIVE_INSTRUCTION": "location instruction",
-            }
-        ]
+        session.rows = [_handoff_row()]
         repository = DropBoxRepository(_FakeContext(session))
 
         jobs = repository.load_handoff_jobs()
@@ -194,14 +189,87 @@ class DropBoxRepositoryTests(unittest.TestCase):
         self.assertEqual(jobs[0].to_capture_request().target_scope_key, "orac")
         self.assertIn("orac_dropbox.drop_job_handoff_v", session.fetch_queries[-1])
 
-    def test_core_handoff_available_checks_visible_core_package(self) -> None:
-        session = _FakeSession()
-        repository = DropBoxRepository(_FakeContext(session))
+    def test_handoff_clob_fields_are_normalised_to_text(self) -> None:
+        row = _handoff_row()
+        row.update(
+            {
+                "EFFECTIVE_PROFILE_INSTRUCTION": _FakeOracleLob("profile text"),
+                "EFFECTIVE_INSTRUCTION": "location text",
+                "EFFECTIVE_CLASSIFICATION_TAGS_JSON": _FakeOracleLob(
+                    '["RAW_REFERENCE"]'
+                ),
+            }
+        )
 
-        self.assertTrue(repository.core_handoff_available())
+        request = DropBoxHandoffJob.from_row(row).to_capture_request()
 
-        self.assertIn("all_objects", session.fetch_queries[-1].lower())
-        self.assertIn("knowledge_ingestion_api", session.fetch_queries[-1].lower())
+        self.assertEqual(request.processing_instruction, "location text")
+        self.assertEqual(request.classification_tags_json, '["RAW_REFERENCE"]')
+        self.assertIsInstance(request.processing_instruction, str)
+        self.assertIsInstance(request.classification_tags_json, str)
+
+    def test_handoff_rejects_non_text_lob_contents(self) -> None:
+        fields = (
+            "EFFECTIVE_PROFILE_INSTRUCTION",
+            "EFFECTIVE_INSTRUCTION",
+            "EFFECTIVE_CLASSIFICATION_TAGS_JSON",
+        )
+        for field in fields:
+            row = _handoff_row()
+            row[field] = _FakeOracleLob(b"not text")
+
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(TypeError, "must contain text"):
+                    DropBoxHandoffJob.from_row(row)
+
+    def test_handoff_does_not_derive_classification_from_profile(self) -> None:
+        row = _handoff_row()
+        row["EFFECTIVE_CLASSIFICATION_TAGS_JSON"] = None
+
+        request = DropBoxHandoffJob.from_row(row).to_capture_request()
+
+        self.assertEqual(request.processing_profile, "markdown")
+        self.assertIsNone(request.classification_tags_json)
+
+    def test_handoff_job_expands_orac_home_token(self) -> None:
+        row = _handoff_row(
+            location_root="${ORAC_HOME}/docs",
+            source_path="/srv/orac/docs/source.md",
+        )
+
+        with patch.dict(os.environ, {"ORAC_HOME": "/srv/orac"}, clear=False):
+            job = DropBoxHandoffJob.from_row(row)
+
+        self.assertEqual(job.location_root, Path("/srv/orac/docs"))
+        self.assertEqual(job.to_capture_request().source_key, "TEST:source.md")
+
+    def test_handoff_job_uses_project_home_fallback(self) -> None:
+        row = _handoff_row(
+            location_root="${ORAC_HOME}/docs",
+            source_path="/opt/orac/docs/source.md",
+        )
+
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("drop_box.models.project_home", return_value=Path("/opt/orac")),
+        ):
+            job = DropBoxHandoffJob.from_row(row)
+
+        self.assertEqual(job.location_root, Path("/opt/orac/docs"))
+
+    def test_handoff_job_rejects_unsafe_location_roots(self) -> None:
+        for unsafe_path in (
+            "relative/docs",
+            "${OTHER_HOME}/docs",
+            "${ORAC_HOME}/../secrets",
+            "/tmp/docs/../secrets",
+            "/tmp/docs\nsecrets",
+        ):
+            with self.subTest(path=unsafe_path):
+                with self.assertRaisesRegex(ValueError, "Drop Box"):
+                    DropBoxHandoffJob.from_row(
+                        _handoff_row(location_root=unsafe_path)
+                    )
 
     def test_update_status_matches_database_package_signature(self) -> None:
         session = _FakeSession()
@@ -235,6 +303,31 @@ def _candidate() -> CandidateFile:
             observed_at=observed_at,
         ),
     )
+
+
+def _handoff_row(
+    *,
+    location_root: str = "/tmp/drop",
+    source_path: str = "/tmp/drop/source.md",
+) -> dict:
+    """Return one database-shaped handoff row for repository tests."""
+    return {
+        "DROP_JOB_ID": 10,
+        "DROP_LOCATION_ID": 1,
+        "LOCATION_CODE": "TEST",
+        "LOCATION_ROOT": location_root,
+        "SOURCE_PATH": source_path,
+        "SOURCE_FILENAME": "source.md",
+        "SOURCE_HASH": "a" * 64,
+        "SOURCE_SIZE_BYTES": 7,
+        "SOURCE_MTIME": datetime(2026, 6, 27, 12, 0),
+        "EFFECTIVE_SCOPE_TYPE": "PROJECT",
+        "EFFECTIVE_SCOPE_KEY": "orac",
+        "EFFECTIVE_PROCESSING_PROFILE": "markdown",
+        "EFFECTIVE_PROFILE_INSTRUCTION": "profile instruction",
+        "EFFECTIVE_INSTRUCTION": "location instruction",
+        "EFFECTIVE_CLASSIFICATION_TAGS_JSON": '["RAW_REFERENCE"]',
+    }
 
 
 if __name__ == "__main__":

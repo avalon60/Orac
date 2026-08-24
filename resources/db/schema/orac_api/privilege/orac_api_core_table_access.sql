@@ -12,10 +12,6 @@ grant select, insert, update, delete on orac_core.users to orac_api with grant o
 grant select, insert, update, delete on orac_core.preference_definitions to orac_api with grant option;
 --rollback revoke select, insert, update, delete on orac_core.preference_definitions from orac_api;
 
---changeset clive:grant_orac_core_timezones_to_orac_api_03 context:core labels:core stripComments:false runOnChange:true
-grant select on orac_core.timezones to orac_api with grant option;
---rollback revoke select on orac_core.timezones from orac_api;
-
 --changeset clive:grant_orac_core_user_synonyms_to_orac_api_04 context:core labels:core stripComments:false runOnChange:true
 grant select, insert, update, delete on orac_core.user_synonyms to orac_api with grant option;
 --rollback revoke select, insert, update, delete on orac_core.user_synonyms from orac_api;

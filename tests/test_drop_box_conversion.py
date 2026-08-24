@@ -35,10 +35,16 @@ from model.plugin_command_dependencies import (  # noqa: E402
 class DropBoxConversionTests(unittest.TestCase):
     """Tests the Drop Box-owned conversion boundary."""
 
-    def test_native_canonicalisation_preserves_content_and_normalises_lines(self) -> None:
-        payload = b"\xef\xbb\xbf# Heading\r\nbody\r"
-        self.assertEqual(canonicalise_utf8(payload), "# Heading\nbody\n")
-        self.assertEqual(canonicalise_utf8(b"text\n\n"), "text\n\n")
+    def test_native_canonicalisation_preserves_utf8_and_normalises_lines(self) -> None:
+        cases = (
+            (b"\xef\xbb\xbf# Heading\r\nbody\r", "# Heading\nbody\n"),
+            ("café 🙂".encode("utf-8"), "café 🙂\n"),
+            (b"one\rtwo\r\nthree\n", "one\ntwo\nthree\n"),
+            (b"text\n\n", "text\n\n"),
+        )
+        for payload, expected in cases:
+            with self.subTest(payload=payload):
+                self.assertEqual(canonicalise_utf8(payload), expected)
 
     def test_native_rejects_invalid_utf8_nul_and_blank_output(self) -> None:
         for payload in (b"\xff", b"a\x00b", b" \r\n\t"):

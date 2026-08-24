@@ -8,10 +8,6 @@
 grant select, insert, update, delete on orac_api.preference_definitions_v to orac_apx_pub;
 --rollback revoke select, insert, update, delete on orac_api.preference_definitions_v from orac_apx_pub;
 
---changeset clive:grant_orac_api_timezones_v_to_orac_apx_pub_02 context:core labels:core stripComments:false runOnChange:true
-grant select on orac_api.timezones_v to orac_apx_pub;
---rollback revoke select on orac_api.timezones_v from orac_apx_pub;
-
 --changeset clive:grant_orac_api_users_to_orac_apx_pub_03 context:core labels:core stripComments:false runOnChange:true
 grant select, insert, update, delete on orac_api.users to orac_apx_pub;
 --rollback revoke select, insert, update, delete on orac_api.users from orac_apx_pub;
@@ -21,8 +17,8 @@ grant select, insert, update, delete on orac_api.user_synonyms_v to orac_apx_pub
 --rollback revoke select, insert, update, delete on orac_api.user_synonyms_v from orac_apx_pub;
 
 --changeset clive:grant_orac_api_user_preferences_v_to_orac_apx_pub_05 context:core labels:core stripComments:false runOnChange:true
-grant select, insert, update, delete on orac_api.user_preferences_v to orac_apx_pub;
---rollback revoke select, insert, update, delete on orac_api.user_preferences_v from orac_apx_pub;
+grant select on orac_api.user_preferences_v to orac_apx_pub;
+--rollback revoke select on orac_api.user_preferences_v from orac_apx_pub;
 
 --changeset clive:grant_orac_api_messages_v_to_orac_apx_pub_06 context:core labels:core stripComments:false runOnChange:true
 grant select, insert, update, delete on orac_api.messages_v to orac_apx_pub;
@@ -51,10 +47,6 @@ grant select, insert, update, delete on orac_api.orac_personalities_v to orac_ap
 --changeset clive:grant_orac_api_preference_definitions_v_to_orac_apx_pub_12 context:core labels:core stripComments:false runOnChange:true
 grant read on orac_api.preference_definitions_v to orac_apx_pub;
 --rollback revoke read on orac_api.preference_definitions_v from orac_apx_pub;
-
---changeset clive:grant_orac_api_timezones_v_to_orac_apx_pub_13 context:core labels:core stripComments:false runOnChange:true
-grant read on orac_api.timezones_v to orac_apx_pub;
---rollback revoke read on orac_api.timezones_v from orac_apx_pub;
 
 --changeset clive:grant_orac_api_users_to_orac_apx_pub_14 context:core labels:core stripComments:false runOnChange:true
 grant read on orac_api.users to orac_apx_pub;
@@ -96,10 +88,6 @@ grant read on orac_api.orac_personalities_v to orac_apx_pub;
 grant select, insert, update, delete on orac_api.preference_definitions_v to orac;
 --rollback revoke select, insert, update, delete on orac_api.preference_definitions_v from orac;
 
---changeset clive:grant_orac_api_timezones_v_to_orac_24 context:core labels:core stripComments:false runOnChange:true
-grant select on orac_api.timezones_v to orac;
---rollback revoke select on orac_api.timezones_v from orac;
-
 --changeset clive:grant_orac_api_users_to_orac_25 context:core labels:core stripComments:false runOnChange:true
 grant select, insert, update, delete on orac_api.users to orac;
 --rollback revoke select, insert, update, delete on orac_api.users from orac;
@@ -109,8 +97,8 @@ grant select, insert, update, delete on orac_api.user_synonyms_v to orac;
 --rollback revoke select, insert, update, delete on orac_api.user_synonyms_v from orac;
 
 --changeset clive:grant_orac_api_user_preferences_v_to_orac_27 context:core labels:core stripComments:false runOnChange:true
-grant select, insert, update, delete on orac_api.user_preferences_v to orac;
---rollback revoke select, insert, update, delete on orac_api.user_preferences_v from orac;
+grant select on orac_api.user_preferences_v to orac;
+--rollback revoke select on orac_api.user_preferences_v from orac;
 
 --changeset clive:grant_orac_api_messages_v_to_orac_28 context:core labels:core stripComments:false runOnChange:true
 grant select, insert, update, delete on orac_api.messages_v to orac;
@@ -139,10 +127,6 @@ grant select, insert, update, delete on orac_api.orac_personalities_v to orac;
 --changeset clive:grant_orac_api_preference_definitions_v_to_orac_34 context:core labels:core stripComments:false runOnChange:true
 grant read on orac_api.preference_definitions_v to orac;
 --rollback revoke read on orac_api.preference_definitions_v from orac;
-
---changeset clive:grant_orac_api_timezones_v_to_orac_35 context:core labels:core stripComments:false runOnChange:true
-grant read on orac_api.timezones_v to orac;
---rollback revoke read on orac_api.timezones_v from orac;
 
 --changeset clive:grant_orac_api_users_to_orac_36 context:core labels:core stripComments:false runOnChange:true
 grant read on orac_api.users to orac;
@@ -184,10 +168,6 @@ grant read on orac_api.orac_personalities_v to orac;
 grant select on orac_api.preference_definitions_v to orac_code with grant option;
 --rollback revoke select on orac_api.preference_definitions_v from orac_code;
 
---changeset clive:grant_orac_api_timezones_v_to_orac_code_46 context:core labels:core stripComments:false runOnChange:true
-grant select on orac_api.timezones_v to orac_code with grant option;
---rollback revoke select on orac_api.timezones_v from orac_code;
-
 --changeset clive:grant_orac_api_users_to_orac_code_47 context:core labels:core stripComments:false runOnChange:true
 grant select on orac_api.users to orac_code with grant option;
 --rollback revoke select on orac_api.users from orac_code;
@@ -197,8 +177,8 @@ grant select on orac_api.user_synonyms_v to orac_code with grant option;
 --rollback revoke select on orac_api.user_synonyms_v from orac_code;
 
 --changeset clive:grant_orac_api_user_preferences_v_to_orac_code_49 context:core labels:core stripComments:false runOnChange:true
-grant select, insert, update, delete on orac_api.user_preferences_v to orac_code with grant option;
---rollback revoke select, insert, update, delete on orac_api.user_preferences_v from orac_code;
+grant select on orac_api.user_preferences_v to orac_code with grant option;
+--rollback revoke select on orac_api.user_preferences_v from orac_code;
 
 --changeset clive:grant_orac_api_messages_v_to_orac_code_50 context:core labels:core stripComments:false runOnChange:true
 grant select on orac_api.messages_v to orac_code with grant option;
@@ -227,10 +207,6 @@ grant select on orac_api.orac_personalities_v to orac_code with grant option;
 --changeset clive:grant_orac_api_preference_definitions_v_to_orac_code_56 context:core labels:core stripComments:false runOnChange:true
 grant read on orac_api.preference_definitions_v to orac_code with grant option;
 --rollback revoke read on orac_api.preference_definitions_v from orac_code;
-
---changeset clive:grant_orac_api_timezones_v_to_orac_code_57 context:core labels:core stripComments:false runOnChange:true
-grant read on orac_api.timezones_v to orac_code with grant option;
---rollback revoke read on orac_api.timezones_v from orac_code;
 
 --changeset clive:grant_orac_api_users_to_orac_code_58 context:core labels:core stripComments:false runOnChange:true
 grant read on orac_api.users to orac_code with grant option;

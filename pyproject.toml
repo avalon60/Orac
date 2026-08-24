@@ -69,10 +69,14 @@ files = [
     "src/orac_core/knowledge/capture.py",
     "src/orac_core/knowledge/grounding.py",
     "src/orac_core/knowledge/managed_store.py",
+    "src/orac_core/knowledge/materialisation.py",
+    "src/orac_core/knowledge/materialisation_policy.py",
     "src/orac_core/knowledge/models.py",
+    "src/orac_core/knowledge/reconciliation.py",
     "src/orac_core/knowledge/repository.py",
     "src/orac_core/knowledge/retrieval.py",
     "src/orac_core/knowledge/scope.py",
+    "src/orac_core/knowledge/token_estimation.py",
     "src/orac_core/knowledge/worker.py",
 ]
 follow_imports = "skip"

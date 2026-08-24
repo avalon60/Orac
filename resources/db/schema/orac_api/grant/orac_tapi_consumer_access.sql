@@ -17,8 +17,8 @@ grant select, insert, update, delete on orac_api.user_synonyms_v to orac_apx_pub
 --rollback revoke select, insert, update, delete on orac_api.user_synonyms_v from orac_apx_pub;
 
 --changeset clive:grant_orac_api_user_preferences_v_to_orac_apx_pub_04 context:core labels:core stripComments:false runOnChange:true
-grant select, insert, update, delete on orac_api.user_preferences_v to orac_apx_pub;
---rollback revoke select, insert, update, delete on orac_api.user_preferences_v from orac_apx_pub;
+grant select on orac_api.user_preferences_v to orac_apx_pub;
+--rollback revoke select on orac_api.user_preferences_v from orac_apx_pub;
 
 --changeset clive:grant_orac_api_messages_v_to_orac_apx_pub_05 context:core labels:core stripComments:false runOnChange:true
 grant select, insert, update, delete on orac_api.messages_v to orac_apx_pub;
@@ -113,8 +113,8 @@ grant select, insert, update, delete on orac_api.user_synonyms_v to orac;
 --rollback revoke select, insert, update, delete on orac_api.user_synonyms_v from orac;
 
 --changeset clive:grant_orac_api_user_preferences_v_to_orac_28 context:core labels:core stripComments:false runOnChange:true
-grant select, insert, update, delete on orac_api.user_preferences_v to orac;
---rollback revoke select, insert, update, delete on orac_api.user_preferences_v from orac;
+grant select on orac_api.user_preferences_v to orac;
+--rollback revoke select on orac_api.user_preferences_v from orac;
 
 --changeset clive:grant_orac_api_messages_v_to_orac_29 context:core labels:core stripComments:false runOnChange:true
 grant select, insert, update, delete on orac_api.messages_v to orac;
@@ -209,8 +209,8 @@ grant select on orac_api.user_synonyms_v to orac_code with grant option;
 --rollback revoke select on orac_api.user_synonyms_v from orac_code;
 
 --changeset clive:grant_orac_api_user_preferences_v_to_orac_code_52 context:core labels:core stripComments:false runOnChange:true
-grant select, insert, update, delete on orac_api.user_preferences_v to orac_code with grant option;
---rollback revoke select, insert, update, delete on orac_api.user_preferences_v from orac_code;
+grant select on orac_api.user_preferences_v to orac_code with grant option;
+--rollback revoke select on orac_api.user_preferences_v from orac_code;
 
 --changeset clive:grant_orac_api_messages_v_to_orac_code_53 context:core labels:core stripComments:false runOnChange:true
 grant select on orac_api.messages_v to orac_code with grant option;

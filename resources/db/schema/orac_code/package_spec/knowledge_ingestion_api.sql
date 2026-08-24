@@ -27,7 +27,8 @@ as
     p_extractor_code            in varchar2 default null,
     p_extractor_version         in varchar2 default null,
     p_extraction_metadata_json  in clob default null,
-    p_classification_tags_json  in clob default null
+    p_classification_tags_json  in clob default null,
+    p_output_set_json           in clob default null
   ) return number;
 
   function try_claim_next_request(
@@ -64,7 +65,8 @@ as
     p_chunker_code       in varchar2,
     p_chunker_version    in varchar2,
     p_chunk_size_tokens  in number,
-    p_overlap_tokens     in number
+    p_overlap_tokens     in number,
+    p_source_artefact_id in number default null
   ) return number;
 
   function insert_chunk(
@@ -93,6 +95,10 @@ as
     p_embedding_vector      in clob,
     p_embedding_text_sha256 in varchar2
   ) return number;
+
+  function worker_output_set_json(
+    p_extraction_id in number
+  ) return clob;
 
   procedure complete_request(
     p_ingestion_request_id in number,

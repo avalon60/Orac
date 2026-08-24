@@ -130,21 +130,18 @@ class TtsVoiceSchemaTests(unittest.TestCase):
 
     self.assertNotIn("tts_voices", combined_fk_sql)
 
-  def test_user_preference_constraint_allows_empty_string_json_scalar(self) -> None:
-    """The preference type check should allow optional empty string values."""
-    constraint_sql = (
-      CORE_ROOT / "constraint_other" / "user_pref_ck1.sql"
+  def test_user_preference_type_is_derived_from_definition(self) -> None:
+    """Stored preferences should not duplicate their definition's value type."""
+    table_sql = (
+      CORE_ROOT / "table" / "user_preferences.sql"
+    ).read_text(encoding="utf-8").lower()
+    code_view_sql = (
+      CODE_ROOT / "view" / "user_preferences_v.sql"
     ).read_text(encoding="utf-8").lower()
 
-    self.assertIn('value_type = \'string\'', constraint_sql)
-    self.assertIn(
-      'json_exists(pref_value, \'$?(@.type() == "string")\')',
-      constraint_sql,
-    )
-    self.assertNotIn(
-      "json_value(pref_value, '$' returning varchar2(4000) null on error) is not null",
-      constraint_sql,
-    )
+    self.assertNotIn("value_type", table_sql)
+    self.assertIn("orac_api.preference_definitions_v d", code_view_sql)
+    self.assertIn("d.value_type", code_view_sql)
 
   def test_user_preference_api_allows_empty_string_json_scalar(self) -> None:
     """The preference API should not reject optional empty string text."""

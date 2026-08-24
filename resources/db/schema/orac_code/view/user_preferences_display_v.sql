@@ -10,7 +10,7 @@ select
   p.pref_id,
   p.user_id,
   p.pref_key,
-  p.value_type,
+  d.value_type,
   p.row_version,
   coalesce(d.is_active, 'N') as is_active,
   coalesce(d.is_user_editable, 'N') as is_user_editable,
@@ -67,13 +67,13 @@ select
         )
       , json_value(p.pref_value, '$' returning varchar2(4000) null on error)
       )
-    when p.value_type = 'string' then
+    when d.value_type = 'string' then
       json_value(p.pref_value, '$' returning varchar2(4000) null on error)
-    when p.value_type = 'number' then
+    when d.value_type = 'number' then
       to_char(json_value(p.pref_value, '$' returning number null on error))
-    when p.value_type = 'boolean' then
+    when d.value_type = 'boolean' then
       lower(json_value(p.pref_value, '$' returning varchar2(5) null on error))
-    when p.value_type = 'json' then
+    when d.value_type = 'json' then
       json_serialize(p.pref_value returning varchar2(4000) null on error)
   end as value_display,
   coalesce(d.display_label, p.pref_key) as pref_label

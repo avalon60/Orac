@@ -8,7 +8,7 @@ create or replace force view orac_api.llm_registry_v as
          , name
          , provider
          , model
-         , context_policy
+         , llm_context_policy_ref_value_code context_policy
          , max_context_tokens
          , is_enabled
          , properties

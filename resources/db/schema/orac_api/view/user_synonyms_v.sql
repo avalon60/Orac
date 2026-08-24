@@ -5,7 +5,7 @@
 create or replace force view orac_api.user_synonyms_v as
    select
         user_id
-         , alias_type
+         , user_alias_type_ref_value_code alias_type
          , alias_value
          , is_active
          , created_on

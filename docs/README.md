@@ -25,6 +25,17 @@ to complete.
 - [Document Ingestion](document-ingestion.md): Core-managed source storage,
   document lineage, worker configuration, APEX scope administration, chunking,
   embeddings, tags, and retrieval boundaries.
+- [Knowledge Storage Maintenance](knowledge-maintenance.md): run read-only
+  migration preflight, full read-only reconciliation, backfill legacy
+  extractions, and migrate verified raw locators in bounded resumable batches.
+- [Authorised Knowledge Retrieval](knowledge-retrieval.md): retrieve bounded
+  metadata and verified normalised content through the Core-only P1-06 boundary.
+- [Progressive Knowledge Materialisation Policy](knowledge-materialisation-policy.md):
+  select and audit the narrowest P1-07 normalised representation that fits the
+  authorised purpose and model budget.
+- [Knowledge Model Evidence Submission](knowledge-model-evidence.md): wrap
+  approved P1-07 Markdown/CSV/text as canonical untrusted evidence, revalidate
+  the complete prompt, and invoke local text adapters under P1-08 controls.
 - [Drop Box](../plugins/drop_box/docs/drop-box.md): install the local-file
   adapter, configure App 10020 locations, verify conversion, and troubleshoot
   ingestion.
@@ -49,7 +60,7 @@ to complete.
 - [Drop Box Data Lifecycle](../plugins/drop_box/docs/drop-box-data-lifecycle.md)
 - [Voice Turn Lifecycle](voice-turn-lifecycle.md)
 - [Home Assistant Data Lifecycle](../plugins/home_assistant/docs/home-assistant-data-lifecycle.md)
-- [Plugin Execution Boundaries](agent-guardrails/55-plugin-execution-boundaries.md)
+- [Plugin Execution Boundaries](agent-guardrails/avalon-55-plugin-execution-boundaries.md)
 - [Plugin Audit Persistence](plugin-audit-persistence.md)
 - [Plugin Audit Database/API Design](plugin-audit-db-api-design.md)
 - [Protocol Contract and Release Guide](../protocol/README.md)
@@ -61,15 +72,15 @@ Agent and maintainer guardrails remain under
 [`docs/agent-guardrails/`](agent-guardrails/) because their paths are checked by
 repository tooling and referenced by `AGENTS.md`.
 
-- [Project Principles](agent-guardrails/00-project-principles.md)
-- [Architecture Boundaries](agent-guardrails/10-architecture-boundaries.md)
-- [Python Engineering Foundations](agent-guardrails/30-python-engineering-foundations.md)
-- [Python Standards](agent-guardrails/31-python-standards.md)
-- [Frontend Vite React Standards](agent-guardrails/35-frontend-vite-react-standards.md)
-- [Plugin Standards](agent-guardrails/50-plugin-standards.md)
-- [Plugin Execution Boundaries](agent-guardrails/55-plugin-execution-boundaries.md)
-- [Security and Risk](agent-guardrails/60-security-and-risk.md)
-- [Context Management](agent-guardrails/70-context-management.md)
+- [Project Principles](agent-guardrails/avalon-00-project-principles.md)
+- [Architecture Boundaries](agent-guardrails/avalon-10-architecture-boundaries.md)
+- [Python Engineering Foundations](agent-guardrails/avalon-30-python-engineering-foundations.md)
+- [Python Standards](agent-guardrails/avalon-31-python-standards.md)
+- [Frontend Vite React Standards](agent-guardrails/avalon-35-frontend-vite-react-standards.md)
+- [Plugin Standards](agent-guardrails/avalon-50-plugin-standards.md)
+- [Plugin Execution Boundaries](agent-guardrails/avalon-55-plugin-execution-boundaries.md)
+- [Security and Risk](agent-guardrails/avalon-60-security-and-risk.md)
+- [Context Management](agent-guardrails/avalon-70-context-management.md)
 
 Planning documents and work-in-progress investigations remain separate from
 canonical operating guidance and should not be treated as runtime contracts.

@@ -19,6 +19,7 @@ from .managed_store import ManagedObjectIdentity
 from .managed_store import ManagedStoreConfigurationError
 from .managed_store import ManagedStoreError
 from .repository import KnowledgeIngestionRepository
+from .csv_chunking import chunk_csv
 from .markdown_chunking import MarkdownChunk as TextChunk
 from .markdown_chunking import chunk_markdown
 
@@ -37,6 +38,8 @@ MANAGED_STORE_FAILURES: dict[str, tuple[str, bool]] = {
         "MANAGED_PAYLOAD_PERMISSION_ERROR",
         False,
     ),
+    "MANAGED_OBJECT_ENCODING_INVALID": ("INVALID_MANAGED_PAYLOAD_ENCODING", False),
+    "MANAGED_OBJECT_TEXT_NONCANONICAL": ("NONCANONICAL_MANAGED_PAYLOAD", False),
     "MANAGED_STORE_TRANSIENT_IO": ("MANAGED_STORE_UNAVAILABLE", True),
     "MANAGED_STORE_IO_ERROR": ("MANAGED_STORE_UNAVAILABLE", False),
 }
@@ -237,31 +240,33 @@ class KnowledgeIngestionService:
             status="PROCESSING",
             stage="CHUNK",
         )
-        chunks = chunk_markdown(
-            text,
-            chunk_size_tokens=self._chunk_size_tokens,
-            overlap_tokens=self._overlap_tokens,
-        )
-        chunk_set_id = self._repository.create_chunk_set(
-            extraction_id=extraction_id,
-            chunker_code=CHUNKER_CODE,
-            chunker_version=CHUNKER_VERSION,
-            chunk_size_tokens=self._chunk_size_tokens,
-            overlap_tokens=self._overlap_tokens,
-        )
-        chunk_ids: list[tuple[int, TextChunk]] = []
-        for chunk in chunks:
-            chunk_id = self._repository.insert_chunk(
-                chunk_set_id=chunk_set_id,
-                chunk_no=chunk.chunk_no,
-                span_start=chunk.span_start,
-                span_end=chunk.span_end,
-                chunk_text=chunk.text,
-                token_count=chunk.token_count,
-                content_sha256=_sha256_text(chunk.text),
-                metadata_json=chunk.metadata_json,
+        chunk_ids: list[tuple[int, Any]] = []
+        artefact_count = int(detail.get("artefact_count") or 0)
+        if artefact_count > 0:
+            output_set = self._repository.output_set(int(extraction_id))
+            members = output_set.get("members")
+            if not isinstance(members, list) or not members:
+                raise ValueError("Managed output set has no members.")
+            for member in members:
+                chunk_ids.extend(
+                    self._chunk_artefact_member(
+                        extraction_id=int(extraction_id),
+                        member=member,
+                    )
+                )
+        else:
+            chunk_ids.extend(
+                self._persist_chunks(
+                    extraction_id=int(extraction_id),
+                    source_artefact_id=None,
+                    chunker_code=CHUNKER_CODE,
+                    chunks=chunk_markdown(
+                        text,
+                        chunk_size_tokens=self._chunk_size_tokens,
+                        overlap_tokens=self._overlap_tokens,
+                    ),
+                )
             )
-            chunk_ids.append((chunk_id, chunk))
 
         self._repository.mark_stage(
             ingestion_request_id=request_id,
@@ -295,6 +300,102 @@ class KnowledgeIngestionService:
             owner_id=owner_id,
             lease_token=lease_token,
         )
+
+    def _chunk_artefact_member(
+        self,
+        *,
+        extraction_id: int,
+        member: object,
+    ) -> list[tuple[int, Any]]:
+        """Verify, decode, chunk, and persist one eligible artefact member."""
+        if not isinstance(member, dict):
+            raise TypeError("Managed output-set members must be objects.")
+        role = str(member.get("role") or "")
+        if role == "METADATA":
+            return []
+        if role not in {"PRIMARY", "MANIFEST", "TABLE"}:
+            raise ValueError("Managed output-set member role is invalid.")
+        artefact_id = int(member["artefact_id"])
+        identity = ManagedObjectIdentity(
+            str(member["content_sha256"]),
+            int(member["byte_size"]),
+        )
+        with self._managed_store.open_verified(
+            str(member["storage_key"]),
+            identity,
+        ) as stream:
+            payload = stream.read()
+        try:
+            text = payload.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ManagedStoreError(
+                "MANAGED_OBJECT_ENCODING_INVALID",
+                "Managed normalised artefact is not valid UTF-8.",
+            ) from exc
+        if text.startswith("\ufeff") or "\r" in text or not text.endswith("\n"):
+            raise ManagedStoreError(
+                "MANAGED_OBJECT_TEXT_NONCANONICAL",
+                "Managed normalised text is not canonical UTF-8 text.",
+            )
+        if role in {"PRIMARY", "MANIFEST"}:
+            chunks = chunk_markdown(
+                text,
+                chunk_size_tokens=self._chunk_size_tokens,
+                overlap_tokens=self._overlap_tokens,
+            )
+            chunker_code = CHUNKER_CODE
+        else:
+            metadata = member.get("metadata")
+            if not isinstance(metadata, dict):
+                raise ValueError("TABLE artefact metadata is required.")
+            chunks = chunk_csv(
+                text,
+                source_cell_range=str(metadata.get("source_cell_range") or ""),
+                chunk_size_tokens=self._chunk_size_tokens,
+            )
+            chunker_code = "core_csv_records"
+        if not chunks:
+            raise ValueError("Managed normalised artefact has no chunkable content.")
+        return self._persist_chunks(
+            extraction_id=extraction_id,
+            source_artefact_id=artefact_id,
+            chunker_code=chunker_code,
+            chunks=chunks,
+        )
+
+    def _persist_chunks(
+        self,
+        *,
+        extraction_id: int,
+        source_artefact_id: int | None,
+        chunker_code: str,
+        chunks: list[Any],
+    ) -> list[tuple[int, Any]]:
+        """Create one source-specific chunk set and persist its chunks."""
+        chunk_set_id = self._repository.create_chunk_set(
+            extraction_id=extraction_id,
+            chunker_code=chunker_code,
+            chunker_version=CHUNKER_VERSION,
+            chunk_size_tokens=self._chunk_size_tokens,
+            overlap_tokens=(
+                self._overlap_tokens if chunker_code == CHUNKER_CODE else 0
+            ),
+            source_artefact_id=source_artefact_id,
+        )
+        persisted: list[tuple[int, Any]] = []
+        for chunk in chunks:
+            chunk_id = self._repository.insert_chunk(
+                chunk_set_id=chunk_set_id,
+                chunk_no=chunk.chunk_no,
+                span_start=chunk.span_start,
+                span_end=chunk.span_end,
+                chunk_text=chunk.text,
+                token_count=chunk.token_count,
+                content_sha256=_sha256_text(chunk.text),
+                metadata_json=chunk.metadata_json,
+            )
+            persisted.append((chunk_id, chunk))
+        return persisted
 
     def _fail_request(
         self,

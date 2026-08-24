@@ -76,7 +76,8 @@ alter table orac_core.knowledge_embedding_models add constraint kn_embmod_uk1
     model_name,
     model_revision,
     dimensions,
-    distance_metric,
+    vector_distance_metric_domain_code,
+    vector_distance_metric_ref_value_code,
     normalisation
   )
   using index orac_core.kn_embmod_uk1_idx;

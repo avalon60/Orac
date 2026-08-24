@@ -11,7 +11,8 @@
 create unique index orac_core.user_syns_pk
   on orac_core.user_synonyms
   (
-    alias_type asc,
+    user_alias_type_domain_code asc,
+    user_alias_type_ref_value_code asc,
     alias_value asc
   )
 ;
