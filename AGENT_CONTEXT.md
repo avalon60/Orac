@@ -67,15 +67,19 @@ files own their ordered object-type includes.
 
 ## SQLcl Saved Connections
 
-| Saved connection | Role | Purpose |
-| --- | --- | --- |
-| `orac` | `installer` | Core and plugin schema provisioning, cross-schema grants, and deployment diagnosis |
-| `orac-db` | `admin` | Privileged invalid-object, container-metadata, and installation diagnosis |
-| `orac-service` | `app` | Least-privileged internal Orac runtime verification |
-| `orac-plugin` | `plugin` | Approved plugin-bridge runtime verification |
-| `orac_apx_pub` | `apex` | Objects visible to Orac APEX applications |
+| Saved connection | Database user | Role | Purpose |
+| --- | --- | --- | --- |
+| `orac` | `ORAC` | `app` | Least-privileged internal runtime verification through the `orac` access schema |
+| `orac_apx_pub` | `ORAC_APX_PUB` | `apex` | Objects and approved plugin surfaces visible to Orac APEX applications and clients |
+| `orac-db` | `SYSTEM` | `admin` | Schema provisioning, cross-schema grants, invalid-object and container metadata, and installation diagnosis when elevated access is required |
 
 Use the least-privileged role that can answer the question.
+
+No owner-scoped SQLcl saved connections are currently available for the core
+layer schemas or plugin-private schemas. `orac-service` and `orac-plugin` are
+application-managed encrypted DSN names configured under `[database]`; they are
+not SQLcl saved connections or Oracle Net service aliases and are therefore not
+listed in this table.
 
 ## Plugin Context and Provenance
 
