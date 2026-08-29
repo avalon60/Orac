@@ -57,7 +57,11 @@ reason to be entered for a stored-active row, and displays revoked rows as
 view-only history. Page 39 displays `SCOPE_TYPE` and `SCOPE_KEY` as separate
 Scope Type and Target columns and passes only `RAG_USAGE_PRIVILEGE_ID` when
 opening Page 40. Project and Plugin filters and form targets are conditionally
-shown from Scope Type; the irrelevant value is hidden and cleared.
+shown from Scope Type; the irrelevant value is hidden and cleared. Apply
+Filters refreshes the report without reloading the page. Clear Filters resets
+the five external selectors and restores the externally unfiltered result
+without discarding the Interactive Report's own search, sorting, filters, or
+column customisations.
 After principal, scope type, and target are selected, Page 40 calls the shared
 status function. An applicable grant displays an inline warning and disables
 Grant. A Grant-only server validation repeats the authoritative check, and the

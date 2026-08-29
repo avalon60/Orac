@@ -271,8 +271,15 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
         self.assertIn(
             "username:scope_type:scope_key:privilege_state", page_39
         )
-        for action in ("native_show", "native_hide", "native_clear"):
-            self.assertEqual(page_39.count(f"p_action=>'{action}'"), 2)
+        expected_action_counts = {
+            "native_show": 2,
+            "native_hide": 3,
+            "native_clear": 3,
+        }
+        for action, expected_count in expected_action_counts.items():
+            self.assertEqual(
+                page_39.count(f"p_action=>'{action}'"), expected_count
+            )
         self.assertIn("p_triggering_expression=>'project'", page_39)
         self.assertIn("p_triggering_expression=>'plugin'", page_39)
         self.assertIn("p_affected_elements=>'p39_project_id'", page_39)
@@ -413,6 +420,109 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
         )
         self.assertIn("p_process_when_type=>'expression'", close_dialog)
         self.assertNotIn("insert into orac_core.rag_usage_privileges", export)
+
+    def test_apex_1042_page39_uses_responsive_filter_grid(self) -> None:
+        """Verify Page 39 keeps filters in the intended Universal Theme grid."""
+        export = _read(APEX_EXPORT)
+        page_39 = export.split("prompt --application/pages/page_00039", 1)[1].split(
+            "prompt --application/pages/page_00040", 1
+        )[0]
+
+        self.assertIn("p_plug_name=>'filters'", page_39)
+        self.assertIn(
+            "p_region_template_options=>'#default#:t-form--stretchinputs:margin-bottom-sm'",
+            page_39,
+        )
+        self.assertEqual(
+            page_39.count("p_item_plug_id=>wwv_flow_imp.id(15100100000000215)"),
+            5,
+        )
+        self.assertEqual(
+            page_39.count("p_field_template=>1609121967514267634"),
+            5,
+        )
+
+        expected_grid = {
+            "p39_username": (3, 1),
+            "p39_scope_type": (2, 4),
+            "p39_project_id": (3, 6),
+            "p39_state": (2, 9),
+        }
+        for item_name, (column_span, grid_column) in expected_grid.items():
+            item = page_39.split(f"p_name=>'{item_name}'", 1)[1].split(");", 1)[0]
+            self.assertIn(f"p_colspan=>{column_span}", item)
+            self.assertIn(f"p_grid_column=>{grid_column}", item)
+
+        plugin = page_39.split("p_name=>'p39_plugin_registry_id'", 1)[1].split(");", 1)[
+            0
+        ]
+        self.assertIn("p_begin_on_new_field=>'n'", plugin)
+
+        apply_filters = page_39.split("p_button_name=>'apply_filters'", 1)[1].split(
+            ");", 1
+        )[0]
+        self.assertIn(
+            "p_button_plug_id=>wwv_flow_imp.id(15100100000000215)\n"
+            ",p_button_name=>'apply_filters'",
+            page_39,
+        )
+        self.assertNotIn("p_button_position=>'right_of_ir_search_bar'", apply_filters)
+        self.assertIn("p_grid_column_span=>2", apply_filters)
+        self.assertIn("p_grid_column=>11", apply_filters)
+
+    def test_apex_1042_page39_filters_refresh_without_page_submit(self) -> None:
+        """Verify Page 39 applies and clears external filters through AJAX."""
+        export = _read(APEX_EXPORT)
+        page_39 = export.split("prompt --application/pages/page_00039", 1)[1].split(
+            "prompt --application/pages/page_00040", 1
+        )[0]
+
+        expected_items = (
+            "p39_username,p39_scope_type,p39_project_id,"
+            "p39_plugin_registry_id,p39_state"
+        )
+        self.assertIn(f"p_ajax_items_to_submit=>'{expected_items}'", page_39)
+
+        apply_button = page_39.split("p_button_name=>'apply_filters'", 1)[1].split(
+            ");", 1
+        )[0]
+        self.assertIn("p_button_action=>'defined_by_da'", apply_button)
+        self.assertNotIn("p_button_action=>'submit'", apply_button)
+
+        clear_button = page_39.split("p_button_name=>'clear_filters'", 1)[1].split(
+            ");", 1
+        )[0]
+        self.assertIn("p_button_action=>'defined_by_da'", clear_button)
+        self.assertIn("p_button_image_alt=>'clear filters'", clear_button)
+        self.assertNotIn("p_button_is_hot=>'y'", clear_button)
+
+        apply_action = page_39.split("p_name=>'apply filters'", 1)[1].split(
+            "p_name=>'clear filters'", 1
+        )[0]
+        self.assertIn(
+            "p_triggering_button_id=>wwv_flow_imp.id(15100100000000206)",
+            apply_action,
+        )
+        self.assertIn("p_action=>'native_refresh'", apply_action)
+        self.assertIn(
+            "p_affected_region_id=>wwv_flow_imp.id(15100100000000202)",
+            apply_action,
+        )
+
+        clear_action = page_39.split("p_name=>'clear filters'", 1)[1]
+        self.assertIn(
+            "p_triggering_button_id=>wwv_flow_imp.id(15100100000000216)",
+            clear_action,
+        )
+        self.assertIn("p_action=>'native_clear'", clear_action)
+        self.assertIn(f"p_affected_elements=>'{expected_items}'", clear_action)
+        self.assertIn("p_action=>'native_hide'", clear_action)
+        self.assertIn(
+            "p_affected_elements=>'p39_project_id,p39_plugin_registry_id'",
+            clear_action,
+        )
+        self.assertIn("p_action=>'native_refresh'", clear_action)
+        self.assertEqual(page_39.count("p_action=>'native_refresh'"), 3)
 
 
 if __name__ == "__main__":
