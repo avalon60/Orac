@@ -142,3 +142,58 @@ def test_p1_08_submission_audit_arguments_exclude_content_and_locators():
         "url",
     ):
         assert forbidden not in procedure
+
+
+def test_plugin_search_entry_point_is_structurally_self_scoped():
+    spec = _text(SCHEMA / "orac_code/package_spec/knowledge_retrieval_api.sql")
+    body = _text(SCHEMA / "orac_code/package_body/knowledge_retrieval_api.sql")
+    plugin_spec = spec[
+        spec.index("procedure open_plugin_search_candidates") :
+        spec.index("procedure record_policy_decision")
+    ]
+    plugin_body = body[
+        body.index("procedure open_plugin_search_candidates") :
+        body.index("procedure record_policy_decision")
+    ]
+
+    assert "p_plugin_id" in plugin_spec
+    assert "p_username" in plugin_spec
+    assert "p_scope_type" not in plugin_spec
+    assert "p_scope_key" not in plugin_spec
+    assert "knowledge_scope_id" not in plugin_spec
+    assert "open_search_candidates_internal(" in plugin_body
+    assert "p_username, 'plugin', trim(p_plugin_id)" in plugin_body
+    assert "rag_usage_authorization_api.authorization_result" in body
+
+
+def test_plugin_search_audit_provenance_is_bounded_and_scope_validated():
+    spec = _text(SCHEMA / "orac_code/package_spec/knowledge_retrieval_api.sql")
+    body = _text(SCHEMA / "orac_code/package_body/knowledge_retrieval_api.sql")
+
+    assert "p_selected_chunk_ids_json" in spec
+    assert "p_selected_chunk_ids_json is not json" in body
+    assert "l_selected_count > 64" in body
+    assert "l_selected_count <> l_distinct_count" in body
+    assert "source_object.knowledge_scope_id = l_decision.knowledge_scope_id" in body
+    assert "'executing_plugin_id'" in body
+    assert "'correlation_id'" in body
+    assert "'document_version_id'" in body
+    assert "'chunk_id'" in body
+    outcome_spec = spec[spec.index("procedure record_outcome") :]
+    for forbidden in ("query", "chunk_text", "filename", "source_locator"):
+        assert forbidden not in outcome_spec
+
+
+def test_plugin_and_apex_principals_receive_no_core_retrieval_grants():
+    grant_text = "\n".join(
+        _text(path) for path in (SCHEMA / "orac_code/grant").glob("*.sql")
+    )
+    protected_objects = (
+        "knowledge_retrieval_api",
+        "knowledge_searchable_chunks_v",
+    )
+    for line in grant_text.splitlines():
+        if "grant " not in line or not any(name in line for name in protected_objects):
+            continue
+        assert " to orac_plugin" not in line
+        assert " to orac_apx" not in line

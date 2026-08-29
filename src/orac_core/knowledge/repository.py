@@ -21,13 +21,11 @@ if TYPE_CHECKING:
     from .model_submission import PrepareModelSubmissionRequest
     from .model_submission import PreparedModelSubmission
 
-_RETRIEVAL_CLOB_FIELDS = frozenset(
+_RETRIEVAL_TEXT_FIELDS = frozenset(
     {
         "chunk_text",
         "classification_tags_json",
         "embedding_vector",
-        "extractor_metadata_json",
-        "artefact_metadata_json",
         "legacy_extracted_text",
     }
 )
@@ -527,6 +525,39 @@ class KnowledgeRetrievalRepository:
                 int(embedding_dimensions),
                 int(candidate_limit),
             ],
+            row_defaults={
+                "embedding_model_identifier": embedding_model_identifier,
+                "embedding_dimensions": int(embedding_dimensions),
+            },
+        )
+
+    def open_plugin_search_candidates(
+        self,
+        *,
+        principal_username: str,
+        plugin_id: str,
+        embedding_model_identifier: str,
+        embedding_dimensions: int,
+        candidate_limit: int,
+        retrieval_id: str | None = None,
+        correlation_id: str | None = None,
+    ) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
+        """Load candidates through the host-only, self-scoped plugin entry point."""
+        return self._call_with_cursor(
+            "open_plugin_search_candidates",
+            [
+                retrieval_id or str(uuid.uuid4()),
+                principal_username,
+                plugin_id,
+                embedding_model_identifier,
+                int(embedding_dimensions),
+                int(candidate_limit),
+                correlation_id,
+            ],
+            row_defaults={
+                "embedding_model_identifier": embedding_model_identifier,
+                "embedding_dimensions": int(embedding_dimensions),
+            },
         )
 
     def resolve_request(
@@ -622,6 +653,7 @@ class KnowledgeRetrievalRepository:
         member_count: int | None = None,
         chunk_count: int | None = None,
         duration_ms: int | None = None,
+        selected_chunk_ids: tuple[int, ...] | list[int] | None = None,
     ) -> None:
         """Append a bounded terminal retrieval outcome."""
         session = self._session_factory()
@@ -638,6 +670,14 @@ class KnowledgeRetrievalRepository:
                         member_count,
                         chunk_count,
                         duration_ms,
+                        (
+                            json.dumps(
+                                [int(chunk_id) for chunk_id in selected_chunk_ids],
+                                separators=(",", ":"),
+                            )
+                            if selected_chunk_ids is not None
+                            else None
+                        ),
                     ],
                 )
         finally:
@@ -698,6 +738,8 @@ class KnowledgeRetrievalRepository:
         self,
         procedure_name: str,
         inputs: list[Any],
+        *,
+        row_defaults: dict[str, Any] | None = None,
     ) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
         """Materialise package CLOB/cursor outputs before closing the session."""
         session = self._session_factory()
@@ -705,28 +747,30 @@ class KnowledgeRetrievalRepository:
         try:
             with session.cursor() as cursor:
                 resolution_var = cursor.var(oracledb.DB_TYPE_CLOB)
-                rows_var = cursor.var(oracledb.DB_TYPE_CURSOR)
-                cursor.callproc(
-                    f"{self._PACKAGE}.{procedure_name}",
-                    [*inputs, resolution_var, rows_var],
-                )
-                resolution_text = _optional_oracle_text(
-                    resolution_var.getvalue(), field_name="resolution_json"
-                )
-                result_cursor = rows_var.getvalue()
+                result_cursor = session.cursor()
                 try:
+                    cursor.callproc(
+                        f"{self._PACKAGE}.{procedure_name}",
+                        [*inputs, resolution_var, result_cursor],
+                    )
+                    resolution_text = _optional_oracle_text(
+                        resolution_var.getvalue(), field_name="resolution_json"
+                    )
                     columns = [item[0].lower() for item in result_cursor.description]
                     rows = [
                         {
                             column: (
                                 _optional_oracle_text(value, field_name=column)
-                                if column in _RETRIEVAL_CLOB_FIELDS
+                                if column in _RETRIEVAL_TEXT_FIELDS
                                 else _materialize_query_value(value)
                             )
                             for column, value in zip(columns, row, strict=True)
                         }
                         for row in result_cursor.fetchall()
                     ]
+                    for row in rows:
+                        for column, value in (row_defaults or {}).items():
+                            row.setdefault(column, value)
                 finally:
                     result_cursor.close()
             if resolution_text is None:

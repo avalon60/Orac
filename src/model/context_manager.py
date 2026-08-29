@@ -268,6 +268,29 @@ class OracContextManager:
         )
         return rows[0] if rows else {}
 
+    def get_llm_tool_capability_evidence(
+        self,
+        llm_id: int | str | None,
+    ) -> list[Dict[str, Any]]:
+        """Return governed structured-tool evidence for one exact model."""
+        if llm_id in (None, ""):
+            return []
+        try:
+            resolved_llm_id = int(llm_id)
+        except Exception:
+            return []
+        return self.db.dict_sql_dataset(
+            (
+                "select capability_code, evidence_state, model_revision "
+                "from orac_code.llm_current_model_evidence_v "
+                "where llm_id = :llm_id "
+                "and capability_code in ("
+                "'structured_tool_calling', "
+                "'streamed_structured_tool_calling')"
+            ),
+            {"llm_id": resolved_llm_id},
+        )
+
     def get_llm_registry_entry_by_provider_model(
         self,
         provider: str,
@@ -671,9 +694,9 @@ class OracContextManager:
 
         if limit and limit > 0:
             sql = f"""
-                select turn_index, role, content, tokens_used, meta, created_on
+                select message_id, turn_index, role, content, tokens_used, meta, created_on
                   from (
-                    select turn_index, role, content, tokens_used, meta, created_on
+                    select message_id, turn_index, role, content, tokens_used, meta, created_on
                       from {self.messages_object}
                      where conversation_id = :cid
                        {role_filter}
@@ -684,7 +707,7 @@ class OracContextManager:
             """
         else:
             sql = f"""
-                select turn_index, role, content, tokens_used, meta, created_on
+                select message_id, turn_index, role, content, tokens_used, meta, created_on
                   from {self.messages_object}
                  where conversation_id = :cid
                    {role_filter}
@@ -706,14 +729,16 @@ class OracContextManager:
                     pass
         return rows
 
-    def get_messages_for_prompt(self, session_id: str, limit: int = 20) -> List[Dict[str, str]]:
+    def get_messages_for_prompt(
+        self, session_id: str, limit: int = 20
+    ) -> List[Dict[str, Any]]:
         """
         Returns OpenAI-like messages list for a prompt:
         [{'role': 'user'|'assistant'|'system'|'tool', 'content': '...'}, ...]
         Uses 'text' field of CONTENT if present, else dumps JSON compactly.
         """
         rows = self.load_context(session_id=session_id, limit=limit, include_system=True)
-        out: List[Dict[str, str]] = []
+        out: List[Dict[str, Any]] = []
         for r in rows:
             content = r.get("CONTENT")
             if isinstance(content, dict) and "text" in content and isinstance(content["text"], str):
@@ -724,7 +749,14 @@ class OracContextManager:
                     text = json.dumps(content, ensure_ascii=False, separators=(",", ":"))
                 except Exception:
                     text = str(content)
-            out.append({"role": r["ROLE"], "content": text})
+            out.append(
+                {
+                    "message_id": r.get("MESSAGE_ID"),
+                    "turn_index": r.get("TURN_INDEX"),
+                    "role": r["ROLE"],
+                    "content": text,
+                }
+            )
         return out
 
     def get_prompt_context_snapshot(
@@ -787,7 +819,10 @@ class OracContextManager:
     def prune_context(self, session_id: str, *, keep_messages: int = 100,
                       archive_conversation: bool = False) -> int:
         """
-        Keeps only the last `keep_messages` by turn_index.
+        Explicitly deletes all but the last `keep_messages` by turn_index.
+
+        This destructive administrative operation is not used for ordinary
+        live-context selection. Prompt history is a non-destructive projection.
         Returns: number of deleted rows.
         If archive_conversation=True and nothing left to delete, marks conv state 'archived'.
         """

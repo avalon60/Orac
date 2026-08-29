@@ -17,6 +17,8 @@ from types import ModuleType
 from typing import Any, Iterator
 
 from model.plugin_config import PluginConfigManager
+from model.plugin_knowledge_retrieval import PluginKnowledgeRetrievalBridge
+from model.plugin_knowledge_retrieval import PluginKnowledgeRetrievalResult
 from model.plugin_resources import resource_reader_for_manifest
 from model.plugin_resources import resolve_plugin_resource
 from model.plugin_routing.interception import PluginDialogInterceptor
@@ -352,6 +354,12 @@ class PluginRuntimeContext:
     plugin_service_manager: Any | None = None
     plugin_config_manager: PluginConfigManager | None = None
     _secret_vault: PluginSecretVault | None = None
+    _knowledge_retrieval_bridge: PluginKnowledgeRetrievalBridge | None = field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     @property
     def plugin_id(self) -> str:
@@ -379,6 +387,20 @@ class PluginRuntimeContext:
                 "plugin configuration manager is configured."
             )
         return self.plugin_config_manager
+
+    def retrieve_my_knowledge(
+        self,
+        query: str,
+        *,
+        limit: int = 5,
+    ) -> PluginKnowledgeRetrievalResult:
+        """Retrieve bounded evidence from this plugin's host-bound Core scope."""
+        if self._knowledge_retrieval_bridge is None:
+            return PluginKnowledgeRetrievalResult(
+                status="failed",
+                reason_codes=("retrieval_unavailable",),
+            )
+        return self._knowledge_retrieval_bridge.retrieve(query, limit=limit)
 
     @property
     def secret_vault(self) -> PluginSecretVault:

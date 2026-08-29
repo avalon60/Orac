@@ -32,6 +32,9 @@ class ProviderCapabilities:
     cancellation_semantics: str
     processing_locality: str
     text_evidence_eligible: bool
+    supports_structured_tool_calling: bool
+    supports_streamed_structured_tool_calling: bool
+    structured_tools_require_buffered_decision: bool
 
 
 class ProviderRegistry:
@@ -53,6 +56,9 @@ class ProviderRegistry:
                 cancellation_semantics="client_disconnect_stops_stream_consumer",
                 processing_locality="LOCAL",
                 text_evidence_eligible=True,
+                supports_structured_tool_calling=True,
+                supports_streamed_structured_tool_calling=True,
+                structured_tools_require_buffered_decision=False,
             ),
         ),
         "lmstudio": (
@@ -70,6 +76,9 @@ class ProviderRegistry:
                 cancellation_semantics="fallback_non_streaming_call_cannot_be_cancelled_mid_generation",
                 processing_locality="LOCAL",
                 text_evidence_eligible=True,
+                supports_structured_tool_calling=True,
+                supports_streamed_structured_tool_calling=True,
+                structured_tools_require_buffered_decision=False,
             ),
         ),
     }

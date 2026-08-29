@@ -132,6 +132,7 @@ class KnowledgeRetrievalOutcome:
     malformed_count: int = 0
     embedding_model_identifier: str | None = None
     results: tuple[KnowledgeSearchResult, ...] = ()
+    retrieval_id: str | None = None
 
 
 @dataclass(frozen=True)

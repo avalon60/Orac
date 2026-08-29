@@ -18,7 +18,30 @@ artefact, chunk-set, and chunk identities. Filesystem paths, Oracle directory
 objects, `content_uri`, and managed-store keys are not accepted. The runtime
 schema cannot read `knowledge_searchable_chunks_v` directly and cannot execute
 the artefact registration package. Plugins, `ORAC_PLUGIN`, APEX, and
-`ORAC_APX_PUB` receive no retrieval access.
+`ORAC_APX_PUB` receive no direct retrieval access. The trusted `ORAC` host may
+use the narrow `open_plugin_search_candidates` procedure for request-bound
+plugin self-knowledge retrieval; this is a host capability, not a database
+grant to plugin code or schemas.
+
+### Plugin self-scope bridge
+
+`PLUGIN` scopes associate knowledge with one active Core plugin registration.
+For plugin runtime retrieval, the host captures the trusted manifest plugin ID,
+authenticated username, and request correlation context. Oracle's narrow
+plugin entry point accepts that plugin ID but no arbitrary scope type, scope
+key, or scope ID; it hardcodes `PLUGIN`, resolves the registered scope, and
+reuses the same authorised candidate implementation as generic retrieval.
+
+The authenticated user remains the authorisation subject. Existing scope
+eligibility/readiness checks and the active user-to-scope `USE` privilege are
+re-evaluated in Core for every request. The manifest entitlement
+`knowledge.self_scope_retrieval` must also be both declared and effective before
+the host bridge will retrieve evidence.
+
+Plugin query text is content only. A query mentioning `PROJECT:foo`, another
+plugin, or a scope identifier is searched inside the bound plugin corpus and
+does not select a different scope. There is no Project, multi-scope, arbitrary
+scope, or background-service plugin API.
 
 ## Supported retrievals
 
@@ -90,9 +113,17 @@ cancelled status, returned counts, the exact bytes actually yielded and their
 hash, and duration. Audit rows
 are append-only and retained indefinitely; P1-06 adds no purge operation.
 
+For self-scoped plugin searches, the same audit stream also records the
+executing plugin identity and available request correlation identifier. The
+terminal outcome validates and records the selected document, version, and
+chunk identities. Malformed JSON, duplicate or excessive identities, count
+mismatches, or identities outside the resolved scope fail closed.
+
 Audit data excludes retrieved content, prompts, queries, filenames, worksheet
 and table labels, metadata JSON, `content_uri`, storage keys, and physical paths.
 Safe application logs correlate through retrieval UUID and reason code only.
+Plugin audit extensions likewise exclude query text, chunk text, filenames, and
+source locators.
 
 If a privilege is revoked during an already approved bounded stream, that
 stream may finish under decision-time snapshot semantics. Every new request

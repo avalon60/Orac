@@ -21,6 +21,8 @@ from model.plugin_execution_policy import (
     plugin_policy_message,
 )
 from model.plugin_config import PluginConfigManager
+from model.plugin_knowledge_retrieval import SELF_SCOPE_RETRIEVAL_ENTITLEMENT
+from model.plugin_knowledge_retrieval import plugin_knowledge_bridge
 from model.plugin_routing.models import PluginManifest
 from model.plugin_routing.models import PluginRouteCandidate
 from model.plugin_routing.handoff import PluginRoutingHandoff
@@ -173,6 +175,7 @@ class PluginRouter:
         confirmation_broker=None,
         plugin_service_manager=None,
         plugin_db_session_factory=None,
+        knowledge_retrieval_service=None,
         execution_timeout_seconds: float | None = None,
     ):
         self._plugin_manager = plugin_manager
@@ -188,6 +191,7 @@ class PluginRouter:
                 logger=logger,
             ).create
         )
+        self._knowledge_retrieval_service = knowledge_retrieval_service
         self._execution_timeout_seconds = _resolve_execution_timeout_seconds(
             config_mgr,
             explicit_timeout=execution_timeout_seconds,
@@ -289,6 +293,7 @@ class PluginRouter:
                         auth_user=auth_user,
                         policy_decision=policy_decision,
                         audit_session=audit_session,
+                        request_context=request_context,
                     )
                 )
             except _PluginInvocationTimeout:
@@ -395,6 +400,7 @@ class PluginRouter:
         auth_user: str,
         policy_decision=None,
         audit_session: PluginAuditSession | None = None,
+        request_context: dict[str, Any] | None = None,
     ) -> PluginExecutionResult | object | None:
         """Load and invoke one policy-approved plugin candidate."""
         try:
@@ -423,6 +429,18 @@ class PluginRouter:
                 _secret_vault=PluginSecretVault(
                     plugin_id=manifest.plugin_id,
                     manifest=manifest,
+                ),
+            )
+            object.__setattr__(
+                runtime_context,
+                "_knowledge_retrieval_bridge",
+                plugin_knowledge_bridge(
+                    plugin_id=manifest.plugin_id,
+                    principal_username=auth_user,
+                    retrieval_service=self._knowledge_retrieval_service,
+                    correlation_id=_retrieval_correlation_id(request_context),
+                    entitled=_has_self_scope_retrieval_entitlement(manifest),
+                    logger=self._logger,
                 ),
             )
             plugin_instance = instantiate_plugin(
@@ -840,6 +858,28 @@ def _with_arbitration_provenance(
         merged["route_confidence"] = candidate.confidence
         merged["route_match_reasons"] = tuple(candidate.match_reasons)
     return merged
+
+
+def _has_self_scope_retrieval_entitlement(manifest: PluginManifest) -> bool:
+    """Require the entitlement in both declared and effective policy sets."""
+    policy = manifest.execution_policy
+    return (
+        SELF_SCOPE_RETRIEVAL_ENTITLEMENT in manifest.entitlements
+        and policy is not None
+        and SELF_SCOPE_RETRIEVAL_ENTITLEMENT in policy.entitlements
+    )
+
+
+def _retrieval_correlation_id(
+    request_context: dict[str, Any] | None,
+) -> str | None:
+    """Select the existing request correlation identifier when available."""
+    context = request_context or {}
+    for key in ("correlation_id", "request_id", "turn_id"):
+        value = str(context.get(key) or "").strip()
+        if value:
+            return value
+    return None
 
 
 def _resolve_execution_timeout_seconds(

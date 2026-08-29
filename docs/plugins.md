@@ -225,6 +225,43 @@ does not invoke plugin code or grant plugin database access. Plugin execution
 still passes through arbitration, entitlements, confirmation, audit, timeout,
 redaction, and the managed invocation boundary.
 
+## Self-Scoped Plugin Knowledge
+
+An already executing on-demand plugin may declare the entitlement
+`knowledge.self_scope_retrieval` at both the top level and in its effective
+`execution.entitlements` list. When the host exposes the request-bound runtime
+capability, plugin code can call:
+
+```python
+result = context.retrieve_my_knowledge("minority attack plans", limit=5)
+```
+
+The API deliberately has no scope or plugin-identity parameter. Orac captures
+the authenticated username and trusted `manifest.plugin_id` when it creates the
+runtime bridge, then derives `PLUGIN:<plugin_id>` internally. Text such as
+`PROJECT:foo` or `PLUGIN:another_plugin` inside the query remains ordinary
+search text and cannot change that binding.
+
+The entitlement requests access but does not grant it. Core still requires the
+authenticated user to have an active `USE` grant on the derived scope, and the
+plugin registration and readiness state must satisfy the normal `PLUGIN` scope
+eligibility checks. Missing authentication, entitlement, readiness, privilege,
+retrieval availability, or valid audit provenance produces a controlled
+failure. The result contains only bounded immutable evidence and safe status
+information.
+
+For example, a future `chess` plugin could have knowledge ingested under
+`PLUGIN:chess` and call
+`context.retrieve_my_knowledge("minority attack plans")`. The host derives
+`PLUGIN:chess`; the plugin never supplies that identity itself.
+
+This capability does not invoke a plugin, run arbitration, affect dialogue
+knowledge routing, or inject evidence into dialogue grounding. It is available
+only to an on-demand plugin that is already executing with a request-bound
+principal. `PluginServiceContext` does not expose it. Plugin schemas and the
+managed `ORAC_PLUGIN` database principal receive no access to Core retrieval
+packages, tables, or views.
+
 ## Plugin APEX Apps
 
 Plugin APEX applications should be derived from the maintained scaffold export:

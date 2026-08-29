@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from decimal import Decimal
 import json
 import math
 import re
@@ -108,6 +110,61 @@ class KnowledgeRetrievalService:
         max_context_chars: int = 12000,
     ) -> KnowledgeRetrievalOutcome:
         """Retrieve bounded lexical evidence from one canonical scope."""
+        return self._retrieve(
+            query,
+            principal_username=principal_username,
+            scope=scope,
+            max_candidate_chunks=max_candidate_chunks,
+            max_selected_chunks=max_selected_chunks,
+            min_lexical_score=min_lexical_score,
+            max_chunk_chars=max_chunk_chars,
+            max_context_chars=max_context_chars,
+            plugin_id=None,
+            correlation_id=None,
+        )
+
+    def retrieve_for_plugin(
+        self,
+        query: str,
+        *,
+        principal_username: str,
+        plugin_id: str,
+        max_selected_chunks: int = 5,
+        correlation_id: str | None = None,
+    ) -> KnowledgeRetrievalOutcome:
+        """Retrieve from the plugin scope derived by the trusted host bridge."""
+        try:
+            scope = KnowledgeScope("PLUGIN", plugin_id)
+        except KnowledgeScopeConfigurationError as exc:
+            raise KnowledgeRetrievalError("plugin_scope_invalid") from exc
+        return self._retrieve(
+            query,
+            principal_username=principal_username,
+            scope=scope,
+            max_candidate_chunks=1000,
+            max_selected_chunks=max_selected_chunks,
+            min_lexical_score=0.25,
+            max_chunk_chars=2200,
+            max_context_chars=12000,
+            plugin_id=plugin_id,
+            correlation_id=correlation_id,
+        )
+
+    def _retrieve(
+        self,
+        query: str,
+        *,
+        principal_username: str,
+        scope: KnowledgeScope,
+        max_candidate_chunks: int,
+        max_selected_chunks: int,
+        min_lexical_score: float,
+        max_chunk_chars: int,
+        max_context_chars: int,
+        plugin_id: str | None,
+        correlation_id: str | None,
+    ) -> KnowledgeRetrievalOutcome:
+        """Run the shared authorised retrieval and ranking implementation."""
         if not query.strip():
             raise ValueError("query is required")
         if max_candidate_chunks <= 0 or max_selected_chunks <= 0:
@@ -120,21 +177,36 @@ class KnowledgeRetrievalService:
         except Exception as exc:
             raise KnowledgeRetrievalError("query_embedding_failed") from exc
         dimensions = len(query_vector)
-        retrieval_id, resolution, rows = self._repository.open_search_candidates(
-            principal_username=principal_username,
-            target_scope_type=scope.scope_type,
-            target_scope_key=scope.scope_key,
-            embedding_model_identifier=self._embedding_provider.model_id,
-            embedding_dimensions=dimensions,
-            candidate_limit=max_candidate_chunks,
-            retrieval_id=str(uuid.uuid4()),
-        )
+        requested_retrieval_id = str(uuid.uuid4())
+        if plugin_id is None:
+            retrieval_id, resolution, rows = self._repository.open_search_candidates(
+                principal_username=principal_username,
+                target_scope_type=scope.scope_type,
+                target_scope_key=scope.scope_key,
+                embedding_model_identifier=self._embedding_provider.model_id,
+                embedding_dimensions=dimensions,
+                candidate_limit=max_candidate_chunks,
+                retrieval_id=requested_retrieval_id,
+            )
+        else:
+            retrieval_id, resolution, rows = self._repository.open_plugin_search_candidates(
+                principal_username=principal_username,
+                plugin_id=plugin_id,
+                embedding_model_identifier=self._embedding_provider.model_id,
+                embedding_dimensions=dimensions,
+                candidate_limit=max_candidate_chunks,
+                retrieval_id=requested_retrieval_id,
+                correlation_id=correlation_id,
+            )
+        if retrieval_id != requested_retrieval_id:
+            raise KnowledgeRetrievalError("retrieval_contract_invalid")
         if resolution.get("status") != "APPROVED":
             return KnowledgeRetrievalOutcome(
                 status="failed",
                 reason_codes=(str(resolution.get("reason_code") or "RETRIEVAL_NOT_AUTHORISED"),),
                 scope=scope,
                 embedding_model_identifier=self._embedding_provider.model_id,
+                retrieval_id=retrieval_id,
             )
         if len(rows) > max_candidate_chunks:
             self._repository.record_outcome(
@@ -149,6 +221,7 @@ class KnowledgeRetrievalService:
                 scope=scope,
                 considered_count=len(rows),
                 embedding_model_identifier=self._embedding_provider.model_id,
+                retrieval_id=retrieval_id,
             )
 
         scored: list[KnowledgeSearchResult] = []
@@ -173,6 +246,14 @@ class KnowledgeRetrievalService:
                         or ""
                     ),
                     excluded_tokens=_scope_tokens(scope),
+                )
+                extractor_metadata_json = _optional_json_object_text(
+                    row.get("extractor_metadata_json"),
+                    field_name="extractor_metadata_json",
+                )
+                chunk_metadata_json = _optional_json_object_text(
+                    row.get("chunk_metadata_json"),
+                    field_name="chunk_metadata_json",
                 )
             except (KeyError, TypeError, ValueError, KnowledgeRetrievalError) as exc:
                 malformed_count += 1
@@ -228,12 +309,8 @@ class KnowledgeRetrievalService:
                     extractor_version=_optional_string(
                         row.get("extractor_version")
                     ),
-                    extractor_metadata_json=_optional_string(
-                        row.get("extractor_metadata_json")
-                    ),
-                    chunk_metadata_json=_optional_string(
-                        row.get("chunk_metadata_json")
-                    ),
+                    extractor_metadata_json=extractor_metadata_json,
+                    chunk_metadata_json=chunk_metadata_json,
                     source_artefact_id=_optional_int(
                         row.get("source_artefact_id")
                     ),
@@ -309,6 +386,7 @@ class KnowledgeRetrievalService:
                 reason_code="RETRIEVAL_CHUNKS_RETURNED",
                 returned_byte_size=0,
                 chunk_count=0,
+                selected_chunk_ids=(),
             )
             return KnowledgeRetrievalOutcome(
                 status="failed" if all_rows_malformed else "no_evidence",
@@ -318,6 +396,7 @@ class KnowledgeRetrievalService:
                 threshold_count=len(ordered),
                 malformed_count=malformed_count,
                 embedding_model_identifier=self._embedding_provider.model_id,
+                retrieval_id=retrieval_id,
             )
         self._repository.record_outcome(
             retrieval_id=retrieval_id,
@@ -327,6 +406,7 @@ class KnowledgeRetrievalService:
                 len(item.chunk_text.encode("utf-8")) for item in selected
             ),
             chunk_count=len(selected),
+            selected_chunk_ids=tuple(item.chunk_id for item in selected),
         )
         return KnowledgeRetrievalOutcome(
             status="grounded",
@@ -337,6 +417,7 @@ class KnowledgeRetrievalService:
             malformed_count=malformed_count,
             embedding_model_identifier=self._embedding_provider.model_id,
             results=tuple(selected),
+            retrieval_id=retrieval_id,
         )
 
     def _assert_compatible_row(self, row: dict[str, Any], dimensions: int) -> None:
@@ -463,6 +544,58 @@ def _optional_string(value: Any) -> str | None:
     """Return a stripped optional string."""
     text = str(value or "").strip()
     return text or None
+
+
+def _optional_json_object_text(value: Any, *, field_name: str) -> str | None:
+    """Return deterministic JSON text from native Oracle JSON or text.
+
+    Args:
+        value: Null, serialized JSON, or a native JSON mapping.
+        field_name: Projection name used in validation errors.
+
+    Returns:
+        Compact, deterministic JSON object text, or ``None`` for null.
+
+    Raises:
+        KnowledgeRetrievalError: If the value is not a valid JSON object.
+    """
+    if value is None:
+        return None
+    try:
+        parsed = json.loads(value) if isinstance(value, str) else value
+        if not isinstance(parsed, Mapping):
+            raise TypeError("JSON metadata must be an object")
+        return json.dumps(
+            dict(parsed),
+            allow_nan=False,
+            default=_json_metadata_scalar,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        raise KnowledgeRetrievalError(
+            f"{field_name} projection is malformed."
+        ) from exc
+
+
+def _json_metadata_scalar(value: Any) -> int | float:
+    """Convert supported Oracle native JSON scalars for JSON serialization.
+
+    Args:
+        value: A scalar not handled natively by :func:`json.dumps`.
+
+    Returns:
+        The equivalent standard JSON numeric value.
+
+    Raises:
+        TypeError: If the value is not a finite Oracle JSON decimal.
+    """
+    if not isinstance(value, Decimal) or not value.is_finite():
+        raise TypeError("Unsupported native JSON metadata scalar")
+    if value == value.to_integral_value():
+        return int(value)
+    return float(value)
 
 
 def _optional_int(value: Any) -> int | None:

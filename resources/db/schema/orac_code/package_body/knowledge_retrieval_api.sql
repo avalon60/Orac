@@ -667,7 +667,7 @@ as
       empty_cursor(p_content_rows);
   end resolve_request;
 
-  procedure open_search_candidates(
+  procedure open_search_candidates_internal(
     p_retrieval_id               in  varchar2,
     p_username                   in  varchar2,
     p_scope_type                 in  varchar2,
@@ -675,6 +675,8 @@ as
     p_embedding_model_identifier in  varchar2,
     p_embedding_dimensions       in  number,
     p_candidate_limit            in  number,
+    p_executing_plugin_id        in  varchar2,
+    p_correlation_id             in  varchar2,
     p_resolution_json            out clob,
     p_content_rows               out sys_refcursor
   )
@@ -682,6 +684,7 @@ as
     l_user_id    number;
     l_scope_id   number;
     l_authorized varchar2(100);
+    l_detail_json json;
   begin
     if not regexp_like(
          lower(trim(p_retrieval_id)),
@@ -690,6 +693,9 @@ as
        or p_candidate_limit not between 1 and c_max_candidates
        or p_embedding_dimensions <= 0
        or trim(p_embedding_model_identifier) is null
+       or (p_executing_plugin_id is not null
+           and upper(trim(p_scope_type)) <> 'PLUGIN')
+       or length(p_correlation_id) > 128
     then
       raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
     end if;
@@ -697,11 +703,24 @@ as
       p_username, p_scope_type, p_scope_key,
       l_user_id, l_scope_id, l_authorized
     );
+    if p_executing_plugin_id is not null
+    then
+      select json_object(
+               'schema_version' value 1,
+               'executing_plugin_id' value trim(p_executing_plugin_id),
+               'correlation_id' value trim(p_correlation_id)
+               absent on null
+               returning json
+             )
+        into l_detail_json
+        from dual;
+    end if;
     if l_authorized <> 'RAG_USAGE_GRANTED'
     then
       write_event(
         p_retrieval_id, 'DECISION', p_username, l_user_id, l_scope_id,
-        'CHUNK_SEARCH', null, null, 'REJECTED', l_authorized
+        'CHUNK_SEARCH', null, null, 'REJECTED', l_authorized,
+        p_detail_json => l_detail_json
       );
       p_resolution_json := resolution_json(
         p_retrieval_id, 'REJECTED', 'RETRIEVAL_NOT_AUTHORISED', 'CHUNK_SEARCH'
@@ -711,7 +730,8 @@ as
     end if;
     write_event(
       p_retrieval_id, 'DECISION', p_username, l_user_id, l_scope_id,
-      'CHUNK_SEARCH', null, null, 'APPROVED', 'RETRIEVAL_APPROVED'
+      'CHUNK_SEARCH', null, null, 'APPROVED', 'RETRIEVAL_APPROVED',
+      p_detail_json => l_detail_json
     );
     p_resolution_json := resolution_json(
       p_retrieval_id, 'APPROVED', 'RETRIEVAL_APPROVED', 'CHUNK_SEARCH'
@@ -781,7 +801,52 @@ as
         raise;
       end if;
       raise_application_error(-20633, 'RETRIEVAL_AUTHORIZATION_UNAVAILABLE');
+  end open_search_candidates_internal;
+
+  procedure open_search_candidates(
+    p_retrieval_id               in  varchar2,
+    p_username                   in  varchar2,
+    p_scope_type                 in  varchar2,
+    p_scope_key                  in  varchar2,
+    p_embedding_model_identifier in  varchar2,
+    p_embedding_dimensions       in  number,
+    p_candidate_limit            in  number,
+    p_resolution_json            out clob,
+    p_content_rows               out sys_refcursor
+  )
+  is
+  begin
+    open_search_candidates_internal(
+      p_retrieval_id, p_username, p_scope_type, p_scope_key,
+      p_embedding_model_identifier, p_embedding_dimensions,
+      p_candidate_limit, null, null, p_resolution_json, p_content_rows
+    );
   end open_search_candidates;
+
+  procedure open_plugin_search_candidates(
+    p_retrieval_id               in  varchar2,
+    p_username                   in  varchar2,
+    p_plugin_id                  in  varchar2,
+    p_embedding_model_identifier in  varchar2,
+    p_embedding_dimensions       in  number,
+    p_candidate_limit            in  number,
+    p_correlation_id             in  varchar2 default null,
+    p_resolution_json            out clob,
+    p_content_rows               out sys_refcursor
+  )
+  is
+  begin
+    if trim(p_plugin_id) is null
+    then
+      raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
+    end if;
+    open_search_candidates_internal(
+      p_retrieval_id, p_username, 'PLUGIN', trim(p_plugin_id),
+      p_embedding_model_identifier, p_embedding_dimensions,
+      p_candidate_limit, trim(p_plugin_id), p_correlation_id,
+      p_resolution_json, p_content_rows
+    );
+  end open_plugin_search_candidates;
 
   procedure record_policy_decision(
     p_policy_request_id       in varchar2,
@@ -1108,11 +1173,16 @@ as
     p_returned_sha256    in varchar2 default null,
     p_member_count       in number default null,
     p_chunk_count        in number default null,
-    p_duration_ms        in number default null
+    p_duration_ms        in number default null,
+    p_selected_chunk_ids_json in clob default null
   )
   is
     l_decision       orac_api.knowledge_retrieval_events_v%rowtype;
     l_existing_count pls_integer;
+    l_selected_count pls_integer;
+    l_distinct_count pls_integer;
+    l_scope_count    pls_integer;
+    l_detail_json    json;
   begin
     if p_outcome_code not in ('COMPLETED', 'FAILED', 'CANCELLED')
        or not regexp_like(p_reason_code, '^[A-Z0-9_]{1,100}$')
@@ -1122,6 +1192,9 @@ as
        or p_member_count < 0
        or p_chunk_count < 0
        or p_duration_ms < 0
+       or (p_selected_chunk_ids_json is not null
+           and (dbms_lob.getlength(p_selected_chunk_ids_json) > 4096
+                or p_selected_chunk_ids_json is not json))
     then
       raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
     end if;
@@ -1150,18 +1223,166 @@ as
       from orac_api.knowledge_retrieval_events_v
      where retrieval_id = lower(trim(p_retrieval_id))
        and event_type_code = 'DECISION';
+    if p_selected_chunk_ids_json is not null
+    then
+      select count(*), count(distinct selected.chunk_id)
+        into l_selected_count, l_distinct_count
+        from json_table(
+               p_selected_chunk_ids_json,
+               '$[*]' columns (
+                 chunk_id number path '$' error on error
+               )
+             ) selected;
+      if l_selected_count > 64
+         or l_selected_count <> l_distinct_count
+         or l_selected_count <> coalesce(p_chunk_count, 0)
+      then
+        raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
+      end if;
+      select count(*)
+        into l_scope_count
+        from (
+          select distinct selected.chunk_id
+            from json_table(
+                   p_selected_chunk_ids_json,
+                   '$[*]' columns (
+                     chunk_id number path '$' error on error
+                   )
+                 ) selected
+            join orac_code.knowledge_searchable_chunks_v chunk
+              on chunk.chunk_id = selected.chunk_id
+            join orac_api.knowledge_source_objects_v source_object
+              on source_object.source_object_id = chunk.source_object_id
+             and source_object.knowledge_scope_id = l_decision.knowledge_scope_id
+           where selected.chunk_id > 0
+        );
+      if l_scope_count <> l_selected_count
+      then
+        raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
+      end if;
+      select json_object(
+               'schema_version' value 1,
+               'executing_plugin_id' value json_value(
+                 l_decision.detail_json,
+                 '$.executing_plugin_id' returning varchar2(255)
+               ),
+               'correlation_id' value json_value(
+                 l_decision.detail_json,
+                 '$.correlation_id' returning varchar2(128)
+               ),
+               'selected_chunks' value coalesce((
+                 select json_arrayagg(
+                          json_object(
+                            'document_id' value provenance.document_id,
+                            'document_version_id' value provenance.document_version_id,
+                            'chunk_id' value provenance.chunk_id
+                            returning clob
+                          ) order by provenance.chunk_id
+                          returning clob
+                        )
+                   from (
+                     select distinct chunk.document_id,
+                                     chunk.document_version_id,
+                                     chunk.chunk_id
+                       from json_table(
+                              p_selected_chunk_ids_json,
+                              '$[*]' columns (
+                                chunk_id number path '$' error on error
+                              )
+                            ) selected
+                       join orac_code.knowledge_searchable_chunks_v chunk
+                         on chunk.chunk_id = selected.chunk_id
+                       join orac_api.knowledge_source_objects_v source_object
+                         on source_object.source_object_id = chunk.source_object_id
+                        and source_object.knowledge_scope_id = l_decision.knowledge_scope_id
+                   ) provenance
+               ), to_clob('[]')) format json
+               absent on null
+               returning json
+             )
+        into l_detail_json
+        from dual;
+    end if;
     write_event(
       p_retrieval_id, 'OUTCOME', l_decision.username_snapshot,
       l_decision.user_id, l_decision.knowledge_scope_id,
       l_decision.operation_code, l_decision.target_type_code,
       l_decision.target_id, p_outcome_code, p_reason_code,
       l_decision.expected_byte_size, p_returned_byte_size,
-      p_returned_sha256, p_member_count, p_chunk_count, p_duration_ms
+      p_returned_sha256, p_member_count, p_chunk_count, p_duration_ms,
+      l_detail_json
     );
   exception
     when no_data_found then
       raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
   end record_outcome;
+
+  procedure record_governed_retrieval_event(
+    p_event_id                    in varchar2,
+    p_username                    in varchar2,
+    p_domain_code                 in varchar2,
+    p_status_code                 in varchar2,
+    p_reason_code                 in varchar2,
+    p_tool_mode                   in varchar2,
+    p_tool_timing                 in varchar2,
+    p_stream_health_state         in varchar2,
+    p_committed_before_tool_yn    in varchar2 default 'N',
+    p_continuation_recovery_yn    in varchar2 default 'N',
+    p_final_invocation_id         in varchar2 default null,
+    p_duration_ms                 in number default null
+  )
+  is
+    l_user_id     number;
+    l_detail_json json;
+    l_domain      varchar2(30) := upper(trim(p_domain_code));
+    l_mode        varchar2(20) := upper(trim(p_tool_mode));
+    l_timing      varchar2(20) := upper(trim(p_tool_timing));
+  begin
+    if l_domain not in ('CONVERSATION', 'PROJECT', 'PLUGIN', 'NONE')
+       or l_mode not in ('STREAMING', 'BUFFERED')
+       or l_timing not in ('EARLY', 'LATE', 'NONE')
+       or p_status_code not in ('COMPLETED', 'FAILED', 'CANCELLED')
+       or p_committed_before_tool_yn not in ('Y', 'N')
+       or p_continuation_recovery_yn not in ('Y', 'N')
+       or length(trim(p_reason_code)) > 100
+       or length(trim(p_stream_health_state)) > 100
+       or length(trim(p_final_invocation_id)) > 128
+    then
+      raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
+    end if;
+
+    begin
+      select user_id
+        into l_user_id
+        from orac_api.users_v
+       where username = trim(p_username);
+    exception
+      when no_data_found then
+        l_user_id := null;
+    end;
+
+    select json_object(
+             'schema_version' value 1,
+             'retrieval_domain' value l_domain,
+             'tool_mode' value l_mode,
+             'tool_timing' value l_timing,
+             'stream_health_state' value substr(trim(p_stream_health_state), 1, 100),
+             'committed_before_tool_yn' value p_committed_before_tool_yn,
+             'continuation_recovery_yn' value p_continuation_recovery_yn,
+             'final_invocation_id' value substr(trim(p_final_invocation_id), 1, 128)
+             absent on null
+             returning json
+           )
+      into l_detail_json
+      from dual;
+
+    write_event(
+      p_event_id, 'OUTCOME', p_username, l_user_id, null,
+      'GOVERNED_RETRIEVAL', 'RETRIEVAL_DOMAIN', null,
+      p_status_code, substr(trim(p_reason_code), 1, 100),
+      null, null, null, null, null, p_duration_ms, l_detail_json
+    );
+  end record_governed_retrieval_event;
 end knowledge_retrieval_api;
 /
 --rollback drop package body orac_code.knowledge_retrieval_api;

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 import json
 from pathlib import Path
 import sys
@@ -58,6 +59,14 @@ class _Repository:
             self.rows,
         )
 
+    def open_plugin_search_candidates(self, **kwargs):
+        self.calls.append(kwargs)
+        return (
+            kwargs["retrieval_id"],
+            {"status": "APPROVED", "reason_code": "RETRIEVAL_APPROVED"},
+            self.rows,
+        )
+
     def record_outcome(self, **kwargs) -> None:
         self.outcomes.append(kwargs)
 
@@ -78,6 +87,8 @@ class _ResultCursor:
             ("CHUNK_TEXT",),
             ("CLASSIFICATION_TAGS_JSON",),
             ("CHUNK_METADATA_JSON",),
+            ("EXTRACTOR_METADATA_JSON",),
+            ("ARTEFACT_METADATA_JSON",),
         ]
 
     def fetchall(self):
@@ -86,6 +97,8 @@ class _ResultCursor:
             self._session.chunk_text,
             self._session.classification,
             self._session.native_json,
+            self._session.extractor_metadata,
+            self._session.artefact_metadata,
         )]
 
     def close(self) -> None:
@@ -127,7 +140,8 @@ class _SearchCursor:
         parameters[-2].value = json.dumps(
             {"status": "APPROVED", "reason_code": "RETRIEVAL_APPROVED"}
         )
-        parameters[-1].value = _ResultCursor(self._session)
+        if isinstance(parameters[-1], _Var):
+            parameters[-1].value = _ResultCursor(self._session)
 
 
 class _SearchSession:
@@ -139,14 +153,20 @@ class _SearchSession:
         overrides: dict[str, object] | None = None,
     ) -> None:
         self.closed = False
+        self._cursor_calls = 0
         self.vector = _ConnectionBoundValue(self, "[1.0,0.0]")
         self.chunk_text = _ConnectionBoundValue(self, "stable scanner evidence")
         self.classification = _ConnectionBoundValue(self, '["RAW_REFERENCE"]')
         self.native_json = {"source": "oracle-json"}
+        self.extractor_metadata = {"producer": "drop_box", "schema_version": 1}
+        self.artefact_metadata = {"sheet_name": "Overview"}
         for name, value in (overrides or {}).items():
             setattr(self, name, value)
 
-    def cursor(self) -> _SearchCursor:
+    def cursor(self):
+        self._cursor_calls += 1
+        if self._cursor_calls % 2 == 0:
+            return _ResultCursor(self)
         return _SearchCursor(self)
 
     def close(self) -> None:
@@ -187,6 +207,31 @@ class KnowledgeRetrievalTests(unittest.TestCase):
                 principal_username="clive",
             )
 
+    def test_plugin_retrieval_uses_narrow_repository_path_and_audits_chunks(self) -> None:
+        repository = _Repository([
+            _row(target_scope_type="PLUGIN", target_scope_key="weather")
+        ])
+        service = KnowledgeRetrievalService(
+            repository=repository,
+            embedding_provider=_Provider(),
+        )
+
+        outcome = service.retrieve_for_plugin(
+            "lumen",
+            principal_username="clive",
+            plugin_id="weather",
+            max_selected_chunks=1,
+            correlation_id="request-17",
+        )
+
+        self.assertEqual(outcome.status, "grounded")
+        self.assertEqual(repository.calls[0]["plugin_id"], "weather")
+        self.assertNotIn("target_scope_type", repository.calls[0])
+        self.assertNotIn("target_scope_key", repository.calls[0])
+        self.assertEqual(repository.calls[0]["principal_username"], "clive")
+        self.assertEqual(repository.calls[0]["correlation_id"], "request-17")
+        self.assertEqual(repository.outcomes[0]["selected_chunk_ids"], (501,))
+
     def test_repository_materializes_lobs_before_closing_session(self) -> None:
         session = _SearchSession()
         repository = KnowledgeRetrievalRepository(session_factory=lambda: session)
@@ -204,7 +249,17 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         self.assertEqual(rows[0]["embedding_vector"], "[1.0,0.0]")
         self.assertEqual(rows[0]["chunk_text"], "stable scanner evidence")
         self.assertEqual(rows[0]["classification_tags_json"], '["RAW_REFERENCE"]')
+        self.assertEqual(
+            rows[0]["embedding_model_identifier"], "hash-embedding-v1"
+        )
+        self.assertEqual(rows[0]["embedding_dimensions"], 32)
         self.assertEqual(rows[0]["chunk_metadata_json"], session.native_json)
+        self.assertEqual(
+            rows[0]["extractor_metadata_json"], session.extractor_metadata
+        )
+        self.assertEqual(
+            rows[0]["artefact_metadata_json"], session.artefact_metadata
+        )
         self.assertEqual(session.vector.read_count, 1)
         self.assertEqual(session.chunk_text.read_count, 1)
         self.assertEqual(session.classification.read_count, 1)
@@ -276,6 +331,55 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         self.assertEqual(repository.calls[0]["candidate_limit"], 1000)
         self.assertEqual(len(results), 1)
         self.assertGreaterEqual(results[0].score, 0.75)
+
+    def test_native_oracle_metadata_is_canonical_json_in_search_results(self) -> None:
+        service = KnowledgeRetrievalService(
+            repository=_Repository([
+                _row(
+                    extractor_metadata_json={
+                        "zeta": Decimal("2"),
+                        "alpha": Decimal("1.25"),
+                    },
+                    chunk_metadata_json={"source_row_start": Decimal("3")},
+                )
+            ]),
+            embedding_provider=_Provider(),
+        )
+
+        outcome = service.retrieve(
+            "lumen pathway",
+            principal_username="clive",
+            scope=KnowledgeScope("PROJECT", "ORAC_CORE"),
+        )
+
+        self.assertEqual(outcome.status, "grounded")
+        self.assertEqual(
+            outcome.results[0].extractor_metadata_json,
+            '{"alpha":1.25,"zeta":2}',
+        )
+        self.assertEqual(
+            outcome.results[0].chunk_metadata_json,
+            '{"source_row_start":3}',
+        )
+
+    def test_malformed_metadata_rejects_only_the_affected_row(self) -> None:
+        service = KnowledgeRetrievalService(
+            repository=_Repository([
+                _row(chunk_id=501, extractor_metadata_json=["not", "an", "object"]),
+                _row(chunk_id=502, extractor_metadata_json={"schema_version": 1}),
+            ]),
+            embedding_provider=_Provider(),
+        )
+
+        outcome = service.retrieve(
+            "lumen pathway",
+            principal_username="clive",
+            scope=KnowledgeScope("PROJECT", "ORAC_CORE"),
+        )
+
+        self.assertEqual(outcome.status, "grounded")
+        self.assertEqual(outcome.malformed_count, 1)
+        self.assertEqual(tuple(result.chunk_id for result in outcome.results), (502,))
 
     def test_no_evidence_below_lexical_threshold(self) -> None:
         service = KnowledgeRetrievalService(

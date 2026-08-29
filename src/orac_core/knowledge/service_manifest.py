@@ -14,12 +14,21 @@ from model.plugin_routing.models import PluginServiceRuntime
 from model.plugin_routing.models import PluginServiceSchedule
 
 
-def core_knowledge_service_manifest() -> PluginManifest:
-    """Return a synthetic manifest for the Core-owned knowledge worker."""
+def core_knowledge_service_manifest(
+    *,
+    include_knowledge: bool = True,
+    include_conversation_memory: bool = False,
+) -> PluginManifest:
+    """Return a synthetic manifest for enabled Core-owned workers."""
     src_root = project_home() / "src"
     plugin_dir = src_root / "orac_core"
-    manifest_hash = hashlib.sha256(b"orac-core-knowledge-service-v1").hexdigest()
-    runtime = PluginServiceRuntime(
+    manifest_hash = hashlib.sha256(
+        (
+            "orac-core-services-v2:"
+            f"knowledge={include_knowledge}:memory={include_conversation_memory}"
+        ).encode("utf-8")
+    ).hexdigest()
+    knowledge_runtime = PluginServiceRuntime(
         service_code="knowledge_ingestion",
         entry_point="knowledge.worker:KnowledgeIngestionService",
         execution_model="scheduled",
@@ -34,14 +43,49 @@ def core_knowledge_service_manifest() -> PluginManifest:
             timeout_seconds=300,
         ),
     )
+    memory_runtime = PluginServiceRuntime(
+        service_code="conversation_memory",
+        entry_point=(
+            "conversation_memory.worker:"
+            "ConversationMemoryMaterialisationService"
+        ),
+        execution_model="scheduled",
+        start_policy="auto",
+        restart_policy="on_failure",
+        shutdown_timeout_seconds=10,
+        health_check=PluginHealthCheck(enabled=True, method="health"),
+        schedule=PluginServiceSchedule(
+            interval_seconds=30,
+            run_on_start=True,
+            jitter_seconds=5,
+            timeout_seconds=300,
+        ),
+    )
+    runtimes = tuple(
+        runtime
+        for enabled, runtime in (
+            (include_knowledge, knowledge_runtime),
+            (include_conversation_memory, memory_runtime),
+        )
+        if enabled
+    )
+    if not runtimes:
+        raise ValueError("At least one Core service runtime must be enabled.")
     return PluginManifest(
         schema_version=1,
         plugin_id="orac_core",
-        name="Core Knowledge Ingestion",
-        description="Core-owned managed-file knowledge ingestion worker.",
+        name="Core Background Services",
+        description="Core-owned knowledge and conversation-memory workers.",
         version="1.0.0",
         enabled=True,
-        capabilities=("knowledge.ingest",),
+        capabilities=tuple(
+            capability
+            for enabled, capability in (
+                (include_knowledge, "knowledge.ingest"),
+                (include_conversation_memory, "conversation_memory.materialise"),
+            )
+            if enabled
+        ),
         entitlements=(),
         entities=("knowledge_document",),
         examples=(),
@@ -50,5 +94,6 @@ def core_knowledge_service_manifest() -> PluginManifest:
         plugin_dir=plugin_dir,
         manifest_hash=manifest_hash,
         runtime_mode="service",
-        service_runtime=runtime,
+        service_runtime=runtimes[0],
+        service_runtimes=runtimes,
     )
