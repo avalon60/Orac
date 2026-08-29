@@ -76,6 +76,10 @@ from orac_core.knowledge.models import KnowledgeSearchResult
 from orac_core.knowledge.scope import KnowledgeScope
 from orac_core.knowledge.scope import KnowledgeScopeAuthorizer
 from orac_core.dialogue_routing import DialogueRoutingService
+from orac_core.context_budget import ContextBudgetConfiguration
+from orac_core.context_budget import ContextBudgetPlanner
+from orac_core.context_budget import ProviderContextAccountant
+from orac_core.context_budget import RuntimeContextObservation
 
 
 class _KnowledgeAuthorization:
@@ -145,8 +149,9 @@ class _FakeLLM:
         prompt: str,
         stream: bool = False,
         generation_options: dict | None = None,
+        invocation_options=None,
     ) -> str:
-        del prompt_type, stream
+        del prompt_type, stream, invocation_options
         self.prompts.append(prompt)
         self.generation_options_seen.append(generation_options)
         if self._responses:
@@ -159,12 +164,14 @@ class _FakeLLM:
         prompt: str,
         stream: bool = False,
         generation_options: dict | None = None,
+        invocation_options=None,
     ) -> dict[str, int | str]:
         text = self.send_prompt(
             prompt_type=prompt_type,
             prompt=prompt,
             stream=stream,
             generation_options=generation_options,
+            invocation_options=invocation_options,
         )
         return {
             "text": text,
@@ -179,6 +186,7 @@ class _FakeLLM:
         prompt: str,
         generation_options: dict | None = None,
         on_usage_metadata=None,
+        invocation_options=None,
     ):
         """Yield a queued response as one streaming delta."""
         text = self.send_prompt(
@@ -186,6 +194,7 @@ class _FakeLLM:
             prompt=prompt,
             stream=True,
             generation_options=generation_options,
+            invocation_options=invocation_options,
         )
         yield text
         if self.stream_usage_metadata is not None and on_usage_metadata is not None:
@@ -208,6 +217,42 @@ class _SplitThinkStreamingLLM(_FakeLLM):
         self.generation_options_seen.append(generation_options)
         for delta in ("Visible ", "<thi", "nk>hidden</thi", "nk> done."):
             yield delta
+
+
+class _LengthThenCompleteLLM(_FakeLLM):
+    """Return one bounded length stop followed by a completed retry."""
+
+    def __init__(self) -> None:
+        super().__init__([])
+        self.output_allowances: list[int] = []
+
+    def send_prompt_with_meta(
+        self,
+        prompt_type: str,
+        prompt: str,
+        stream: bool = False,
+        generation_options: dict | None = None,
+        invocation_options=None,
+    ) -> dict[str, int | str]:
+        del prompt_type, stream
+        self.prompts.append(prompt)
+        self.generation_options_seen.append(generation_options)
+        self.output_allowances.append(invocation_options.max_output_tokens)
+        if len(self.output_allowances) == 1:
+            return {
+                "text": "Partial",
+                "done_reason": "length",
+                "prompt_tokens": 100,
+                "completion_tokens": self.output_allowances[-1],
+                "total_tokens": 100 + self.output_allowances[-1],
+            }
+        return {
+            "text": "Completed after re-plan.",
+            "done_reason": "stop",
+            "prompt_tokens": 90,
+            "completion_tokens": 20,
+            "total_tokens": 110,
+        }
 
 
 class _FakeConfigManager:
@@ -1384,6 +1429,60 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         return orchestrator
 
     @staticmethod
+    def _enable_context_budget(
+        orchestrator: Orac,
+        *,
+        shadow_mode: bool,
+        runtime_limit: int | None = 32768,
+    ) -> None:
+        """Enable Phase 2B against the in-memory model and connector fixtures."""
+        configuration = ContextBudgetConfiguration(
+            enabled=True,
+            shadow_mode=shadow_mode,
+        )
+        orchestrator.context_budget_configuration = configuration
+        orchestrator.context_budget_planner = ContextBudgetPlanner(configuration)
+        orchestrator.context_budget_accountant = ProviderContextAccountant(
+            estimator_uncertainty_percent=(
+                configuration.estimator_uncertainty_margin_percent
+            )
+        )
+        orchestrator.ctx.llm_registry_entries[1].update(
+            {
+                "MAX_CONTEXT_TOKENS": 49152,
+                "ROW_VERSION": 7,
+            }
+        )
+        orchestrator.llm.provider_context_serialization = (
+            lambda *, prompt=None, messages=None, tools=None: (
+                json.dumps(
+                    {
+                        "messages": (
+                            messages
+                            if messages is not None
+                            else [{"role": "user", "content": prompt}]
+                        ),
+                        "tools": list(tools or ()),
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                "TEST_PROVIDER_CONTEXT_V1",
+            )
+        )
+        orchestrator.llm.runtime_context_observation = lambda: (
+            RuntimeContextObservation(
+                context_limit_tokens=runtime_limit,
+                source_code="TEST_RUNTIME",
+                observation_fingerprint=(
+                    f"runtime-{runtime_limit}" if runtime_limit else None
+                ),
+                can_reliably_reread=True,
+            )
+        )
+
+    @staticmethod
     def _request(
         prompt: str,
         *,
@@ -1417,6 +1516,50 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("Session timezone preference: Europe/Paris.", prompt)
         self.assertIn("answer with the exact HH:MM value", prompt)
+
+    def test_live_history_projection_retains_messages_outside_prompt(self) -> None:
+        """Old turns leave the live prompt without leaving persisted history."""
+        context_manager = _MemoryContextManager()
+        orchestrator = self._make_orac_stub(
+            llm_responses=[],
+            context_manager=context_manager,
+        )
+        orchestrator._history_budget_tokens = 110
+        orchestrator._history_budget_reserve = 30
+        context_manager.ensure_conversation(
+            user_name="clive",
+            session_id="long-conversation",
+            llm_id=1,
+        )
+        for exchange in range(25):
+            context_manager.save_user_turn(
+                "long-conversation",
+                "clive",
+                f"user exchange {exchange}: retained historical detail",
+            )
+            context_manager.save_assistant_turn(
+                "long-conversation",
+                "clive",
+                f"assistant exchange {exchange}: retained response detail",
+            )
+
+        persisted_count = len(
+            context_manager.messages_by_session["long-conversation"]
+        )
+        Orac._maybe_prune(orchestrator, "long-conversation", persisted_count)
+        prompt = orchestrator._build_contextual_prompt(
+            "long-conversation",
+            "Continue with the current design.",
+            {},
+            "clive",
+        )
+
+        self.assertNotIn("user exchange 0: retained historical detail", prompt)
+        self.assertIn("assistant exchange 24: retained response detail", prompt)
+        self.assertEqual(
+            len(context_manager.messages_by_session["long-conversation"]),
+            persisted_count,
+        )
 
     async def test_direct_time_query_bypasses_llm(self) -> None:
         """Direct local time questions should be answered from runtime clock data."""
@@ -3902,6 +4045,198 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("404 Client Error", merged["history_probe_error"])
         self.assertEqual(merged["size_bytes"], 999)
         self.assertEqual(merged["parameter_size"], "14B")
+
+
+    async def test_context_budget_shadow_records_effective_runtime_limit(self) -> None:
+        """Shadow mode should observe without changing the ordinary prompt path."""
+        context_manager = _MemoryContextManager()
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Shadow answer."],
+            context_manager=context_manager,
+        )
+        self._enable_context_budget(
+            orchestrator,
+            shadow_mode=True,
+            runtime_limit=32768,
+        )
+
+        response = json.loads(
+            await orchestrator.handle_request(
+                self._request("Use shadow budgeting.", req_id="req-budget-shadow")
+            )
+        )
+
+        self.assertEqual(response["payload"]["content"], "Shadow answer.")
+        assistant = context_manager.messages_by_session["clive"][-1]
+        budget = assistant["meta"]["context_budget"]
+        self.assertEqual(budget["mode"], "shadow")
+        self.assertEqual(budget["governed_context_limit"], 49152)
+        self.assertEqual(budget["runtime_context_limit"], 32768)
+        self.assertEqual(budget["effective_context_limit"], 32768)
+        self.assertTrue(budget["runtime_limit_constrained"])
+
+    async def test_context_budget_unknown_runtime_uses_registry_ceiling(self) -> None:
+        """An unavailable runtime limit should remain diagnostic, not rejecting."""
+        context_manager = _MemoryContextManager()
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Registry-limited answer."],
+            context_manager=context_manager,
+        )
+        self._enable_context_budget(
+            orchestrator,
+            shadow_mode=False,
+            runtime_limit=None,
+        )
+
+        response = json.loads(
+            await orchestrator.handle_request(
+                self._request("Use the registry ceiling.", req_id="req-budget-unknown")
+            )
+        )
+
+        self.assertEqual(response["meta"]["status"], "ok")
+        assistant = context_manager.messages_by_session["clive"][-1]
+        budget = assistant["meta"]["context_budget"]
+        self.assertEqual(budget["effective_context_limit"], 49152)
+        self.assertIn(
+            "CTX_RUNTIME_LIMIT_UNKNOWN",
+            budget["diagnostic_reason_codes"],
+        )
+
+    async def test_context_budget_enforcement_preserves_persisted_older_exchange(
+        self,
+    ) -> None:
+        """An older exchange may leave context without being deleted."""
+        context_manager = _MemoryContextManager()
+        context_manager.conversation_ids["clive"] = 1
+        context_manager.conversation_llm_ids["clive"] = 1
+        context_manager.messages_by_session["clive"] = [
+            {"role": "user", "content": "old-user-" + "x" * 7000},
+            {"role": "assistant", "content": "old-assistant-" + "y" * 7000},
+        ]
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Bounded answer."],
+            context_manager=context_manager,
+        )
+        self._enable_context_budget(
+            orchestrator,
+            shadow_mode=False,
+            runtime_limit=8192,
+        )
+
+        response = json.loads(
+            await orchestrator.handle_request(
+                self._request(
+                    "Answer within the active context.",
+                    req_id="req-budget-enforced",
+                    meta={"max_tokens": 512},
+                )
+            )
+        )
+
+        self.assertEqual(response["meta"]["status"], "ok")
+        self.assertNotIn("old-user-", orchestrator.llm.prompts[-1])
+        self.assertEqual(len(context_manager.messages_by_session["clive"]), 2)
+        self.assertEqual(
+            sum(len(rows) for rows in context_manager.messages_by_session.values()),
+            5,
+        )
+        assistant = next(
+            row
+            for rows in context_manager.messages_by_session.values()
+            for row in reversed(rows)
+            if row["role"] == "assistant"
+            and "context_budget" in row.get("meta", {})
+        )
+        budget = assistant["meta"]["context_budget"]
+        self.assertEqual(budget["mode"], "enforced")
+        self.assertLessEqual(
+            budget["safe_preflight_estimated_tokens"]
+            + budget["response_allowance"]
+            + budget["context_safety_reserve"],
+            budget["effective_context_limit"],
+        )
+
+    async def test_context_budget_replans_non_streaming_output_growth(self) -> None:
+        """A length retry must receive a fresh larger response reservation."""
+        context_manager = _MemoryContextManager()
+        orchestrator = self._make_orac_stub(
+            llm_responses=[],
+            context_manager=context_manager,
+        )
+        orchestrator.llm = _LengthThenCompleteLLM()
+        orchestrator._get_llm_connector = lambda **kwargs: orchestrator.llm
+        self._enable_context_budget(
+            orchestrator,
+            shadow_mode=False,
+            runtime_limit=16384,
+        )
+
+        response = json.loads(
+            await orchestrator.handle_request(
+                self._request(
+                    "Generate a bounded answer.",
+                    req_id="req-budget-retry",
+                    meta={"max_tokens": 128},
+                )
+            )
+        )
+
+        self.assertEqual(
+            response["payload"]["content"],
+            "Completed after re-plan.",
+        )
+        self.assertEqual(orchestrator.llm.output_allowances, [128, 256])
+        assistant = context_manager.messages_by_session["clive"][-1]
+        self.assertEqual(
+            assistant["meta"]["context_budget"]["output_retry_replan_count"],
+            1,
+        )
+
+    async def test_context_budget_replans_changed_runtime_limit(self) -> None:
+        """A reliably changed active runtime limit must replace stale planning."""
+        context_manager = _MemoryContextManager()
+        orchestrator = self._make_orac_stub(
+            llm_responses=["Replanned answer."],
+            context_manager=context_manager,
+        )
+        self._enable_context_budget(
+            orchestrator,
+            shadow_mode=False,
+            runtime_limit=32768,
+        )
+        observations = iter((32768, 16384, 16384, 16384))
+
+        def observe_runtime():
+            limit = next(observations)
+            return RuntimeContextObservation(
+                context_limit_tokens=limit,
+                source_code="TEST_RUNTIME",
+                observation_fingerprint=f"runtime-{limit}",
+                can_reliably_reread=True,
+            )
+
+        orchestrator.llm.runtime_context_observation = observe_runtime
+
+        response = json.loads(
+            await orchestrator.handle_request(
+                self._request(
+                    "Re-plan if the runtime changes.",
+                    req_id="req-budget-runtime-change",
+                    meta={"max_tokens": 256},
+                )
+            )
+        )
+
+        self.assertEqual(response["meta"]["status"], "ok")
+        assistant = context_manager.messages_by_session["clive"][-1]
+        budget = assistant["meta"]["context_budget"]
+        self.assertEqual(budget["effective_context_limit"], 16384)
+        self.assertEqual(budget["replan_count"], 1)
+        self.assertEqual(
+            budget["replan_reason_code"],
+            "CTX_RUNTIME_LIMIT_CHANGED",
+        )
 
 
 class OracContextManagerLoadTests(unittest.TestCase):

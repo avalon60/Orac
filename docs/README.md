@@ -36,6 +36,15 @@ to complete.
 - [Knowledge Model Evidence Submission](knowledge-model-evidence.md): wrap
   approved P1-07 Markdown/CSV/text as canonical untrusted evidence, revalidate
   the complete prompt, and invoke local text adapters under P1-08 controls.
+- [Conversational Memory](conversational-memory.md): retain authoritative
+  dialogue outside the live prompt and recover bounded, principal-owned source
+  evidence through explicit recall.
+- [Governed Semantic Retrieval](governed-retrieval.md): expose one bounded,
+  read-only model retrieval capability without weakening conversation,
+  PROJECT, or PLUGIN authority.
+- [Unified Model-Aware Context Budgeting](context-budgeting.md): allocate
+  dialogue and evidence under the effective governed/runtime context limit and
+  apply one provider-bound preflight guard.
 - [Drop Box](../plugins/drop_box/docs/drop-box.md): install the local-file
   adapter, configure App 10020 locations, verify conversion, and troubleshoot
   ingestion.
@@ -84,3 +93,6 @@ repository tooling and referenced by `AGENTS.md`.
 
 Planning documents and work-in-progress investigations remain separate from
 canonical operating guidance and should not be treated as runtime contracts.
+The [Phase 2B context-budget readiness record](pending_work/phase2b-context-budget-readiness.md)
+is retained as historical implementation evidence; the canonical runtime
+contract is [Unified Model-Aware Context Budgeting](context-budgeting.md).

@@ -8,13 +8,23 @@
 from model.orac_abc import LLMConnectorABC, MODEL_SERVICE_DESCRIPTORS
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
+import hashlib
+import json
+import math
+import re
+import time
 from typing import Any, cast
+from urllib.parse import urlparse, urlunparse
+import requests
 from lib.config_mgr import ConfigManager
 from lib.fsutils import project_home
 from lib.logutil import Logger
 from orac_core.knowledge.model_submission import StrictModelInvocationOptions
+from orac_core.governed_retrieval.protocol import ToolStreamEvent
+from orac_core.governed_retrieval.protocol import ToolStreamEventKind
+from orac_core.context_budget import RuntimeContextObservation
 
 
 APP_HOME = project_home()
@@ -244,6 +254,46 @@ class LLMConnector(LLMConnectorABC):
         """Return available models with any backend-provided metadata."""
         return []
 
+    def runtime_context_observation(self) -> RuntimeContextObservation:
+        """Return a bounded active context observation when reliably available."""
+        return RuntimeContextObservation(
+            context_limit_tokens=None,
+            source_code=f"{self.interface_id().upper()}_UNAVAILABLE",
+        )
+
+    def provider_context_serialization(
+        self,
+        *,
+        prompt: str | None = None,
+        messages: Sequence[Mapping[str, Any]] | None = None,
+        tools: Sequence[Mapping[str, Any]] | None = None,
+    ) -> tuple[str, str]:
+        """Return the exact context-bearing provider invocation shape.
+
+        Transport-only options such as endpoints, streaming flags, and output
+        limits are excluded because they are not tokenised model context.
+        """
+        if prompt is not None and messages is not None:
+            raise ValueError("prompt and messages are mutually exclusive")
+        if prompt is None and messages is None:
+            raise ValueError("prompt or messages is required")
+        context_shape: dict[str, Any] = {
+            "messages": (
+                [dict(item) for item in messages]
+                if messages is not None
+                else [{"role": "user", "content": str(prompt or "")}]
+            ),
+        }
+        if tools:
+            context_shape["tools"] = [dict(item) for item in tools]
+        serialized = json.dumps(
+            context_shape,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return serialized, "PROVIDER_NEUTRAL_CHAT_V1"
+
     def switch_model(self, model_name):
         message = f"Switching models is not implemented for LLM Service {self.llm_service_id}"
         raise NotImplementedError(message)
@@ -331,6 +381,32 @@ class LLMConnector(LLMConnectorABC):
                 on_usage_metadata(usage)
         text = result.get("text", "")
         yield text if isinstance(text, str) else str(text)
+
+    def stream_tool_events(
+        self,
+        *,
+        messages: Sequence[Mapping[str, Any]],
+        tools: Sequence[Mapping[str, Any]],
+        generation_options: dict[str, Any] | None = None,
+    ) -> Iterator[ToolStreamEvent]:
+        """Yield normalized streamed structured-tool events."""
+        del messages, tools, generation_options
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support streamed structured tools"
+        )
+
+    def buffered_tool_events(
+        self,
+        *,
+        messages: Sequence[Mapping[str, Any]],
+        tools: Sequence[Mapping[str, Any]],
+        generation_options: dict[str, Any] | None = None,
+    ) -> Iterator[ToolStreamEvent]:
+        """Yield normalized events from one buffered structured-tool decision."""
+        del messages, tools, generation_options
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support structured tools"
+        )
 
     def interface_name(self) -> str:
         """Return the backend name (e.g. 'LM Studio', 'Ollama', etc)."""
@@ -441,11 +517,17 @@ class LMStudioConnector(LLMConnector):
             usage.get("total_tokens")
             or (prompt_tokens + completion_tokens)
         )
+        response_metadata = getattr(raw, "response_metadata", None) or {}
         return {
             "text": text if isinstance(text, str) else str(text),
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "total_tokens": total_tokens,
+            "done_reason": str(
+                response_metadata.get("finish_reason")
+                or response_metadata.get("stop_reason")
+                or ""
+            ),
         }
 
     def list_models(self):
@@ -459,13 +541,221 @@ class LMStudioConnector(LLMConnector):
         )
         return [model["id"] for model in response.json().get("data", [])]
 
+    def provider_context_serialization(
+        self,
+        *,
+        prompt: str | None = None,
+        messages: Sequence[Mapping[str, Any]] | None = None,
+        tools: Sequence[Mapping[str, Any]] | None = None,
+    ) -> tuple[str, str]:
+        """Serialize LM Studio's OpenAI-compatible context-bearing fields."""
+        if prompt is not None and messages is not None:
+            raise ValueError("prompt and messages are mutually exclusive")
+        if prompt is None and messages is None:
+            raise ValueError("prompt or messages is required")
+        payload: dict[str, Any] = {
+            "messages": (
+                [dict(item) for item in messages]
+                if messages is not None
+                else [{"role": "user", "content": str(prompt or "")}]
+            )
+        }
+        if tools:
+            payload["tools"] = [dict(item) for item in tools]
+            payload["tool_choice"] = "auto"
+        return (
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            "LMSTUDIO_OPENAI_CHAT_CONTEXT_V1",
+        )
 
-import json
-import requests
-import re
-import time
-import math
-from urllib.parse import urlparse, urlunparse
+    def _openai_tool_payload(
+        self,
+        *,
+        messages: Sequence[Mapping[str, Any]],
+        tools: Sequence[Mapping[str, Any]],
+        generation_options: dict[str, Any] | None,
+        stream: bool,
+    ) -> dict[str, Any]:
+        """Build one OpenAI-compatible request without exposing wire details."""
+        payload: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": [dict(item) for item in messages],
+            "stream": stream,
+        }
+        if tools:
+            payload["tools"] = [dict(item) for item in tools]
+            payload["tool_choice"] = "auto"
+        payload.update(provider_generation_options("lmstudio", generation_options))
+        return payload
+
+    def stream_tool_events(
+        self,
+        *,
+        messages: Sequence[Mapping[str, Any]],
+        tools: Sequence[Mapping[str, Any]],
+        generation_options: dict[str, Any] | None = None,
+    ) -> Iterator[ToolStreamEvent]:
+        """Normalize LM Studio OpenAI-compatible streamed tool deltas."""
+        payload = self._openai_tool_payload(
+            messages=messages,
+            tools=tools,
+            generation_options=generation_options,
+            stream=True,
+        )
+        calls: dict[int, dict[str, str]] = {}
+        with requests.post(
+            f"{self.service_url}/v1/chat/completions",
+            json=payload,
+            stream=True,
+            timeout=(self._connect_timeout, self._read_timeout),
+        ) as response:
+            response.raise_for_status()
+            for raw_line in response.iter_lines(decode_unicode=True):
+                if not raw_line:
+                    continue
+                line = str(raw_line).strip()
+                if not line.startswith("data:"):
+                    continue
+                body = line[5:].strip()
+                if body == "[DONE]":
+                    break
+                try:
+                    frame = json.loads(body)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    yield ToolStreamEvent(
+                        ToolStreamEventKind.ERROR,
+                        error_code="LMSTUDIO_STREAM_FRAME_INVALID",
+                    )
+                    return
+                choices = frame.get("choices") or []
+                if choices:
+                    choice = choices[0] if isinstance(choices[0], dict) else {}
+                    delta = choice.get("delta") if isinstance(choice.get("delta"), dict) else {}
+                    content = delta.get("content")
+                    if content:
+                        yield ToolStreamEvent(
+                            ToolStreamEventKind.ASSISTANT_TEXT_DELTA,
+                            text=str(content),
+                        )
+                    reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+                    if reasoning:
+                        yield ToolStreamEvent(
+                            ToolStreamEventKind.REASONING_DELTA,
+                            text=str(reasoning),
+                        )
+                    for native_call in delta.get("tool_calls") or []:
+                        if not isinstance(native_call, dict):
+                            continue
+                        index = int(native_call.get("index") or 0)
+                        function = native_call.get("function") or {}
+                        record = calls.get(index)
+                        if record is None:
+                            record = {
+                                "id": str(native_call.get("id") or f"call_{index}"),
+                                "name": str(function.get("name") or ""),
+                            }
+                            calls[index] = record
+                            yield ToolStreamEvent(
+                                ToolStreamEventKind.TOOL_CALL_START,
+                                call_id=record["id"],
+                                call_index=index,
+                                tool_name=record["name"],
+                            )
+                        elif function.get("name"):
+                            record["name"] += str(function["name"])
+                        arguments = function.get("arguments")
+                        if arguments:
+                            yield ToolStreamEvent(
+                                ToolStreamEventKind.TOOL_CALL_ARGUMENT_DELTA,
+                                call_id=record["id"],
+                                call_index=index,
+                                tool_name=record["name"],
+                                arguments_delta=str(arguments),
+                            )
+                    finish_reason = str(choice.get("finish_reason") or "")
+                    if finish_reason:
+                        for index, record in sorted(calls.items()):
+                            yield ToolStreamEvent(
+                                ToolStreamEventKind.TOOL_CALL_COMPLETED,
+                                call_id=record["id"],
+                                call_index=index,
+                                tool_name=record["name"],
+                            )
+                        yield ToolStreamEvent(
+                            ToolStreamEventKind.ASSISTANT_COMPLETION,
+                            finish_reason=finish_reason,
+                        )
+                usage = frame.get("usage")
+                if isinstance(usage, dict):
+                    yield ToolStreamEvent(ToolStreamEventKind.USAGE, usage=usage)
+
+    def buffered_tool_events(
+        self,
+        *,
+        messages: Sequence[Mapping[str, Any]],
+        tools: Sequence[Mapping[str, Any]],
+        generation_options: dict[str, Any] | None = None,
+    ) -> Iterator[ToolStreamEvent]:
+        """Normalize one buffered LM Studio tool decision."""
+        payload = self._openai_tool_payload(
+            messages=messages,
+            tools=tools,
+            generation_options=generation_options,
+            stream=False,
+        )
+        response = requests.post(
+            f"{self.service_url}/v1/chat/completions",
+            json=payload,
+            timeout=(self._connect_timeout, self._read_timeout),
+        )
+        response.raise_for_status()
+        frame = response.json()
+        choices = frame.get("choices") or []
+        choice = choices[0] if choices and isinstance(choices[0], dict) else {}
+        message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
+        if message.get("content"):
+            yield ToolStreamEvent(
+                ToolStreamEventKind.ASSISTANT_TEXT_DELTA,
+                text=str(message["content"]),
+            )
+        for index, native_call in enumerate(message.get("tool_calls") or []):
+            if not isinstance(native_call, dict):
+                continue
+            function = native_call.get("function") or {}
+            call_id = str(native_call.get("id") or f"call_{index}")
+            name = str(function.get("name") or "")
+            yield ToolStreamEvent(
+                ToolStreamEventKind.TOOL_CALL_START,
+                call_id=call_id,
+                call_index=index,
+                tool_name=name,
+            )
+            yield ToolStreamEvent(
+                ToolStreamEventKind.TOOL_CALL_ARGUMENT_DELTA,
+                call_id=call_id,
+                call_index=index,
+                tool_name=name,
+                arguments_delta=str(function.get("arguments") or ""),
+            )
+            yield ToolStreamEvent(
+                ToolStreamEventKind.TOOL_CALL_COMPLETED,
+                call_id=call_id,
+                call_index=index,
+                tool_name=name,
+            )
+        usage = frame.get("usage")
+        if isinstance(usage, dict):
+            yield ToolStreamEvent(ToolStreamEventKind.USAGE, usage=usage)
+        yield ToolStreamEvent(
+            ToolStreamEventKind.ASSISTANT_COMPLETION,
+            finish_reason=str(choice.get("finish_reason") or "stop"),
+        )
+
 
 class OllamaConnector(LLMConnector):
     def __init__(self, model_name: str, service_url: str):
@@ -725,6 +1015,239 @@ class OllamaConnector(LLMConnector):
                         on_usage_metadata(usage)
                     break
 
+    def _ollama_tool_payload(
+        self,
+        *,
+        messages: Sequence[Mapping[str, Any]],
+        tools: Sequence[Mapping[str, Any]],
+        generation_options: dict[str, Any] | None,
+        stream: bool,
+    ) -> dict[str, Any]:
+        """Build one native Ollama structured chat request."""
+        payload: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": self._ollama_tool_messages(messages),
+            "stream": stream,
+            "think": False,
+            "options": self._ollama_options(
+                num_predict=self._initial_num_predict(generation_options),
+                generation_options=generation_options,
+            ),
+        }
+        if tools:
+            payload["tools"] = [dict(item) for item in tools]
+        return payload
+
+    @staticmethod
+    def _ollama_tool_messages(
+        messages: Sequence[Mapping[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Translate provider-neutral tool transcripts to native Ollama messages."""
+        native_messages: list[dict[str, Any]] = []
+        for message in messages:
+            native_message = dict(message)
+            native_calls: list[dict[str, Any]] = []
+            for call in message.get("tool_calls") or []:
+                if not isinstance(call, Mapping):
+                    continue
+                native_call = dict(call)
+                function = call.get("function")
+                if isinstance(function, Mapping):
+                    native_function = dict(function)
+                    arguments = function.get("arguments")
+                    if isinstance(arguments, str):
+                        try:
+                            parsed_arguments = json.loads(arguments)
+                        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                            raise ValueError(
+                                "invalid provider-neutral tool arguments"
+                            ) from exc
+                        if not isinstance(parsed_arguments, dict):
+                            raise ValueError(
+                                "provider-neutral tool arguments must be an object"
+                            )
+                        native_function["arguments"] = parsed_arguments
+                    native_call["function"] = native_function
+                native_calls.append(native_call)
+            if "tool_calls" in native_message:
+                native_message["tool_calls"] = native_calls
+            native_messages.append(native_message)
+        return native_messages
+
+    @staticmethod
+    def _ollama_argument_fragment(value: Any) -> str:
+        """Return one exact JSON argument fragment from Ollama framing."""
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):
+            return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        return ""
+
+    def stream_tool_events(
+        self,
+        *,
+        messages: Sequence[Mapping[str, Any]],
+        tools: Sequence[Mapping[str, Any]],
+        generation_options: dict[str, Any] | None = None,
+    ) -> Iterator[ToolStreamEvent]:
+        """Normalize native Ollama streamed content and tool calls."""
+        payload = self._ollama_tool_payload(
+            messages=messages,
+            tools=tools,
+            generation_options=generation_options,
+            stream=True,
+        )
+        calls: dict[int, dict[str, str]] = {}
+        with requests.post(
+            f"{self.service_url}/api/chat",
+            json=payload,
+            stream=True,
+            timeout=(self._connect_timeout, self._read_timeout),
+        ) as response:
+            response.raise_for_status()
+            for raw_line in response.iter_lines(decode_unicode=True):
+                if not raw_line:
+                    continue
+                try:
+                    frame = json.loads(raw_line)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    yield ToolStreamEvent(
+                        ToolStreamEventKind.ERROR,
+                        error_code="OLLAMA_STREAM_FRAME_INVALID",
+                    )
+                    return
+                message = frame.get("message") if isinstance(frame.get("message"), dict) else {}
+                content = message.get("content")
+                if content:
+                    yield ToolStreamEvent(
+                        ToolStreamEventKind.ASSISTANT_TEXT_DELTA,
+                        text=str(content),
+                    )
+                thinking = message.get("thinking")
+                if thinking:
+                    yield ToolStreamEvent(
+                        ToolStreamEventKind.REASONING_DELTA,
+                        text=str(thinking),
+                    )
+                for index, native_call in enumerate(message.get("tool_calls") or []):
+                    if not isinstance(native_call, dict):
+                        continue
+                    function = native_call.get("function") or {}
+                    record = calls.get(index)
+                    if record is None:
+                        record = {
+                            "id": str(native_call.get("id") or f"call_{index}"),
+                            "name": str(function.get("name") or ""),
+                        }
+                        calls[index] = record
+                        yield ToolStreamEvent(
+                            ToolStreamEventKind.TOOL_CALL_START,
+                            call_id=record["id"],
+                            call_index=index,
+                            tool_name=record["name"],
+                        )
+                    arguments = self._ollama_argument_fragment(function.get("arguments"))
+                    if arguments:
+                        yield ToolStreamEvent(
+                            ToolStreamEventKind.TOOL_CALL_ARGUMENT_DELTA,
+                            call_id=record["id"],
+                            call_index=index,
+                            tool_name=record["name"],
+                            arguments_delta=arguments,
+                        )
+                if frame.get("done") is True:
+                    for index, record in sorted(calls.items()):
+                        yield ToolStreamEvent(
+                            ToolStreamEventKind.TOOL_CALL_COMPLETED,
+                            call_id=record["id"],
+                            call_index=index,
+                            tool_name=record["name"],
+                        )
+                    usage = _usage_metadata_from_ollama_response(frame)
+                    if usage is not None:
+                        yield ToolStreamEvent(
+                            ToolStreamEventKind.USAGE,
+                            usage={
+                                "prompt_tokens": usage.prompt_tokens,
+                                "completion_tokens": usage.completion_tokens,
+                                "total_tokens": usage.total_tokens,
+                            },
+                        )
+                    yield ToolStreamEvent(
+                        ToolStreamEventKind.ASSISTANT_COMPLETION,
+                        finish_reason=(
+                            "tool_calls"
+                            if calls
+                            else str(frame.get("done_reason") or "stop")
+                        ),
+                    )
+                    break
+
+    def buffered_tool_events(
+        self,
+        *,
+        messages: Sequence[Mapping[str, Any]],
+        tools: Sequence[Mapping[str, Any]],
+        generation_options: dict[str, Any] | None = None,
+    ) -> Iterator[ToolStreamEvent]:
+        """Normalize one buffered Ollama structured-tool decision."""
+        payload = self._ollama_tool_payload(
+            messages=messages,
+            tools=tools,
+            generation_options=generation_options,
+            stream=False,
+        )
+        frame = self._post_json(f"{self.service_url}/api/chat", payload)
+        message = frame.get("message") if isinstance(frame.get("message"), dict) else {}
+        if message.get("content"):
+            yield ToolStreamEvent(
+                ToolStreamEventKind.ASSISTANT_TEXT_DELTA,
+                text=str(message["content"]),
+            )
+        for index, native_call in enumerate(message.get("tool_calls") or []):
+            if not isinstance(native_call, dict):
+                continue
+            function = native_call.get("function") or {}
+            call_id = str(native_call.get("id") or f"call_{index}")
+            name = str(function.get("name") or "")
+            yield ToolStreamEvent(
+                ToolStreamEventKind.TOOL_CALL_START,
+                call_id=call_id,
+                call_index=index,
+                tool_name=name,
+            )
+            yield ToolStreamEvent(
+                ToolStreamEventKind.TOOL_CALL_ARGUMENT_DELTA,
+                call_id=call_id,
+                call_index=index,
+                tool_name=name,
+                arguments_delta=self._ollama_argument_fragment(function.get("arguments")),
+            )
+            yield ToolStreamEvent(
+                ToolStreamEventKind.TOOL_CALL_COMPLETED,
+                call_id=call_id,
+                call_index=index,
+                tool_name=name,
+            )
+        usage = _usage_metadata_from_ollama_response(frame)
+        if usage is not None:
+            yield ToolStreamEvent(
+                ToolStreamEventKind.USAGE,
+                usage={
+                    "prompt_tokens": usage.prompt_tokens,
+                    "completion_tokens": usage.completion_tokens,
+                    "total_tokens": usage.total_tokens,
+                },
+            )
+        yield ToolStreamEvent(
+            ToolStreamEventKind.ASSISTANT_COMPLETION,
+            finish_reason=(
+                "tool_calls"
+                if message.get("tool_calls")
+                else str(frame.get("done_reason") or "stop")
+            ),
+        )
+
     def _run_with_num_predict_growth(
         self,
         runner,
@@ -816,6 +1339,7 @@ class OllamaConnector(LLMConnector):
             models.append(
                 {
                     "name": name,
+                    "digest": item.get("digest"),
                     "size_bytes": size_bytes,
                     "size_mb": size_mb,
                     "parameter_size": parameter_size,
@@ -824,6 +1348,109 @@ class OllamaConnector(LLMConnector):
             )
 
         return models
+
+    def model_runtime_details(self, model_name: str) -> dict[str, Any]:
+        """Return structured Ollama metadata for one exact installed model."""
+        response = requests.post(
+            f"{self.service_url}/api/show",
+            json={"model": str(model_name).strip(), "verbose": False},
+            timeout=(self._connect_timeout, self._read_timeout),
+        )
+        response.raise_for_status()
+        payload = response.json()
+        model_info = payload.get("model_info")
+        info = model_info if isinstance(model_info, dict) else {}
+        context_values: list[int] = []
+        for key, value in info.items():
+            if not str(key).lower().endswith(".context_length"):
+                continue
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                continue
+            if parsed > 0:
+                context_values.append(parsed)
+        parameters = payload.get("parameters")
+        configured_runtime_context: int | None = None
+        if isinstance(parameters, str):
+            configured_context = re.search(
+                r"(?m)^num_ctx\s+([1-9][0-9]*)\s*$",
+                parameters,
+            )
+            if configured_context is not None:
+                configured_runtime_context = int(configured_context.group(1))
+        capabilities = payload.get("capabilities")
+        return {
+            "provider_declared_context_tokens": (
+                min(context_values) if context_values else None
+            ),
+            "runtime_execution_context_tokens": configured_runtime_context,
+            "provider_declared_capabilities": (
+                sorted(str(item) for item in capabilities)
+                if isinstance(capabilities, list)
+                else []
+            ),
+            "provider_minimum_version": str(payload.get("requires") or "") or None,
+        }
+
+    def runtime_context_observation(self) -> RuntimeContextObservation:
+        """Observe Ollama's active/model context allocation for this model."""
+        details = self.model_runtime_details(self.model_name)
+        limit = _coerce_int(details.get("runtime_execution_context_tokens"))
+        safe_metadata = {
+            "context_limit_tokens": limit,
+            "minimum_version": details.get("provider_minimum_version"),
+        }
+        fingerprint = hashlib.sha256(
+            json.dumps(
+                safe_metadata,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        return RuntimeContextObservation(
+            context_limit_tokens=limit if limit and limit > 0 else None,
+            source_code="OLLAMA_SHOW",
+            observation_fingerprint=fingerprint,
+            source_version=str(details.get("provider_minimum_version") or "") or None,
+            can_reliably_reread=True,
+        )
+
+    def provider_context_serialization(
+        self,
+        *,
+        prompt: str | None = None,
+        messages: Sequence[Mapping[str, Any]] | None = None,
+        tools: Sequence[Mapping[str, Any]] | None = None,
+    ) -> tuple[str, str]:
+        """Serialize Ollama's native context-bearing messages and tool schema."""
+        if prompt is not None and messages is not None:
+            raise ValueError("prompt and messages are mutually exclusive")
+        if prompt is None and messages is None:
+            raise ValueError("prompt or messages is required")
+        if messages is not None:
+            native_messages = self._ollama_tool_messages(messages)
+        else:
+            value = str(prompt or "")
+            native_messages = [{"role": "user", "content": value}]
+            system_hint = getattr(self, "system_hint", "")
+            if len(value.strip()) > 12 and system_hint:
+                native_messages.insert(
+                    0,
+                    {"role": "system", "content": system_hint},
+                )
+        context_shape: dict[str, Any] = {"messages": native_messages}
+        if tools:
+            context_shape["tools"] = [dict(item) for item in tools]
+        return (
+            json.dumps(
+                context_shape,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            "OLLAMA_NATIVE_CHAT_CONTEXT_V1",
+        )
 
     def send_prompt(
         self,
@@ -838,9 +1465,6 @@ class OllamaConnector(LLMConnector):
         avoid a system prompt to match the working curl. Retry with larger budget, then fall back
         to /api/generate. Always return non-empty text.
         """
-        # Hard override: do NOT show visible reasoning
-        show_reasoning = False
-
         # Heuristic: for very short inputs, match your curl exactly (no system message)
         p = (prompt or "").strip()
         is_very_short = len(p) <= 12  # "Hi", "Hello", etc.
@@ -995,6 +1619,7 @@ class OllamaConnector(LLMConnector):
             )
             return {
                 "text": str(result.get("text") or "").strip(),
+                "done_reason": str(result.get("done_reason") or ""),
                 "prompt_tokens": int(result.get("prompt_tokens") or 0),
                 "completion_tokens": int(result.get("completion_tokens") or 0),
                 "total_tokens": int(result.get("total_tokens") or 0),
@@ -1029,6 +1654,7 @@ class OllamaConnector(LLMConnector):
 
         return {
             "text": text,
+            "done_reason": str(result.get("done_reason") or ""),
             "prompt_tokens": int(result.get("prompt_tokens") or 0),
             "completion_tokens": int(result.get("completion_tokens") or 0),
             "total_tokens": int(result.get("total_tokens") or 0),

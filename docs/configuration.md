@@ -281,7 +281,7 @@ Kokoro and Piper currently ignore pitch safely.
 
 ## `[context]`
 
-Conversation history, prompt policy, rollover, and context-budget behavior.
+Conversation history, prompt policy, and rollover behavior.
 
 ### `enable_context_history`
 
@@ -296,31 +296,9 @@ Enables persisted conversation history during context assembly.
 
 **Example:** `enable_context_history = true`
 
-### `keep_messages`
-
-- **Type:** integer
-- **Shipped value:** `200`
-- **Runtime fallback:** The shipped value is authoritative; loaders without a separate default require the configured key
-- **Required:** No; supplied by the shipped configuration
-- **Allowed values:** Any value valid for the described subsystem
-- **Status:** active
-
-Configures keep messages for the `[context]` subsystem.
-
-**Example:** `keep_messages = 200`
-
-### `prune_every_n_turns`
-
-- **Type:** integer
-- **Shipped value:** `50`
-- **Runtime fallback:** The shipped value is authoritative; loaders without a separate default require the configured key
-- **Required:** No; supplied by the shipped configuration
-- **Allowed values:** Any value valid for the described subsystem
-- **Status:** active
-
-Configures prune every n turns for the `[context]` subsystem.
-
-**Example:** `prune_every_n_turns = 50`
+Persisted conversation retention and live prompt history are separate. Orac no
+longer deletes old messages as part of normal prompt trimming. Explicit
+conversation deletion remains a separate lifecycle operation.
 
 ### `enable_prompt_dump`
 
@@ -505,6 +483,274 @@ Configures archive on rollover for the `[context]` subsystem.
 Configures close on rollover for the `[context]` subsystem.
 
 **Example:** `close_on_rollover = true`
+
+## `[context_budget]`
+
+Unified model-aware context allocation and provider-bound preflight safety. See
+[Unified Model-Aware Context Budgeting](context-budgeting.md) for the capacity,
+allocation, telemetry, and rollout contract.
+
+### `enabled`
+
+- **Type:** boolean
+- **Shipped value:** `true`
+- **Allowed values:** `true`, `false`
+- **Status:** active
+
+Enables Phase 2B planning. Disabling it retains the legacy prompt assembly
+path.
+
+### `shadow_mode`
+
+- **Type:** boolean
+- **Shipped value:** `true`
+- **Allowed values:** `true`, `false`
+- **Status:** active
+
+When true, Orac calculates and records the unified decision but sends the
+legacy prompt. Set false only after reviewing representative shadow telemetry.
+
+### `estimator_uncertainty_margin_percent`
+
+- **Type:** integer
+- **Shipped value:** `20`
+- **Allowed values:** `10` to `50`
+- **Status:** active
+
+Uncertainty uplift applied exactly once to the conservative estimate over the
+provider-bound context serialization. It is distinct from deliberate context
+headroom and is changed only through reviewed configuration.
+
+### `context_safety_percent`
+
+- **Type:** integer
+- **Shipped value:** `5`
+- **Allowed values:** `5` to `25`
+- **Status:** active
+
+Percentage of the effective context limit deliberately left unused after
+estimation.
+
+### `context_safety_min_tokens`
+
+- **Type:** integer
+- **Shipped value:** `256`
+- **Allowed values:** `256` to `8192`
+- **Status:** active
+
+Minimum deliberate unused context headroom. Orac uses the greater of this
+value and `context_safety_percent` of the effective limit.
+
+### `recent_dialogue_min_exchanges`
+
+- **Type:** integer
+- **Shipped value:** `1`
+- **Allowed values:** `1` to `4`
+- **Status:** active
+
+Newest completed user/assistant exchanges considered before evidence and older
+history. Selection is exchange-atomic and never deletes persisted messages.
+
+## `[conversation_memory]`
+
+Opt-in provenance-backed recall over retained conversation history. Phase 1
+uses a deterministic explicit intent policy and a host-owned retrieval service;
+it does not expose an MCP or model-callable retrieval tool.
+
+### `enabled`
+
+- **Type:** boolean
+- **Shipped value:** `true`
+
+Enables checkpoint materialisation and conservative explicit recall. Persisted
+conversation retention and non-destructive live-history projection do not
+depend on this switch.
+
+### `checkpoint_exchange_count`
+
+- **Type:** positive integer
+- **Shipped value:** `20`
+
+Number of completed user/assistant exchanges in each canonical checkpoint.
+
+### `materialisation_profile`
+
+- **Type:** string
+- **Shipped value:** `conversation-memory-v2`
+
+Idempotency and compatibility identity for checkpoint materialisation.
+
+### `prompt_version`
+
+- **Type:** string
+- **Shipped value:** `conversation-v1`
+
+Version recorded with each derived summary.
+
+### `embedding_model_id`
+
+- **Type:** string
+- **Shipped value:** `nomic-embed-text:latest`
+
+Pinned Phase 1 embedding profile for summaries and source messages.
+
+### `embedding_provider`
+
+- **Type:** string
+- **Shipped value:** `ollama`
+- **Allowed values:** `ollama`, `hash`
+
+Provider used only for conversational-memory summary and source-message
+embeddings. `hash` remains a deterministic development/test option and is not
+semantic retrieval.
+
+### `embedding_service_url`
+
+- **Type:** HTTP(S) URL
+- **Shipped value:** `http://localhost:11434`
+
+Trusted host configuration for the Ollama embedding endpoint. Dialogue or
+model output cannot override this URL.
+
+### `embedding_dimensions`
+
+- **Type:** positive integer
+- **Shipped value:** `768`
+
+Required dimensions for the pinned embedding profile.
+
+### `summary_max_chars`
+
+- **Type:** positive integer
+- **Shipped value:** `6000`
+
+Maximum size of the deterministic derived summary.
+
+### `batch_size`
+
+- **Type:** positive integer
+- **Shipped value:** `4`
+
+Maximum materialisation requests processed during one scheduled worker tick.
+
+### `max_attempts`
+
+- **Type:** positive integer
+- **Shipped value:** `5`
+
+Retry limit before a materialisation request becomes terminally failed.
+
+### `max_checkpoint_candidates`
+
+- **Type:** positive integer
+- **Shipped value:** `40`
+
+Maximum principal-owned checkpoints considered during summary discovery.
+
+### `max_selected_checkpoints`
+
+- **Type:** positive integer
+- **Shipped value:** `4`
+
+Maximum discovered checkpoints passed to source-message retrieval.
+
+### `max_source_candidates`
+
+- **Type:** positive integer
+- **Shipped value:** `80`
+
+Maximum lineage-backed source messages considered during evidence selection.
+
+### `min_summary_score`
+
+- **Type:** number
+- **Shipped value:** `0.05`
+
+Minimum cosine similarity for summary-level discovery.
+
+### `min_source_score`
+
+- **Type:** number
+- **Shipped value:** `0.05`
+
+Minimum cosine similarity for source-message evidence.
+
+### `max_evidence_tokens`
+
+- **Type:** positive integer
+- **Shipped value:** `1200`
+
+Hard local ceiling for memory evidence before model headroom is applied.
+
+### `context_safety_tokens`
+
+- **Type:** positive integer
+- **Shipped value:** `256`
+
+Minimum prompt safety reserve retained when memory evidence is added.
+
+The host derives the authenticated principal, active conversation,
+recent-message exclusions, and effective evidence budget; they are not
+caller-selectable retrieval fields.
+
+## `[governed_retrieval]`
+
+Phase 2A model-facing, read-only retrieval mediation. Enabling the feature does
+not make a model eligible by itself: the selected concrete model must have
+current governed structured-tool capability evidence, provider adapter support,
+safe context headroom, and acceptable runtime health.
+
+### `enabled`
+
+- **Type:** boolean
+- **Shipped value:** `true`
+
+Enables capability/evidence-based resolution of `STREAMING`, `BUFFERED`, or
+`NONE`. It never overrides missing or rejected model evidence.
+
+### `stream_commit_delay_ms`
+
+- **Type:** integer
+- **Shipped value:** `350`
+- **Allowed range:** `100` to `1000`
+
+Maximum pre-tool delay before buffered visible assistant text is committed on
+the next visible delta. This is host configuration and is never model supplied.
+
+### `stream_commit_max_characters`
+
+- **Type:** integer
+- **Shipped value:** `128`
+- **Allowed range:** `32` to `512`
+
+Maximum visible characters retained by the pre-tool commit gate. Once text is
+committed, retrieval authority for that turn closes.
+
+### `max_evidence_tokens`
+
+- **Type:** integer
+- **Shipped value:** `1200`
+- **Allowed range:** `64` to `4096`
+
+Independent ceiling for governed tool evidence. Actual evidence is reduced to
+the selected model's remaining safe context headroom.
+
+### `context_safety_tokens`
+
+- **Type:** integer
+- **Shipped value:** `256`
+- **Allowed range:** `128` to `4096`
+
+Minimum reserve retained when accounting for the base prompt, tool schema,
+provider framing, response allowance, and serialized tool result.
+
+### `project_scope`
+
+- **Type:** canonical host scope (`PROJECT:key`) or empty
+- **Shipped value:** `PROJECT:ORAC_CORE`
+
+Host-owned PROJECT binding offered only after the existing Oracle RAG USE
+authorization succeeds. The model cannot select or replace the scope key.
 
 ## `[vector_db]`
 
