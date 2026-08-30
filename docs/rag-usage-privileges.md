@@ -58,7 +58,7 @@ view-only history. Page 39 displays `SCOPE_TYPE` and `SCOPE_KEY` as separate
 Scope Type and Target columns and passes only `RAG_USAGE_PRIVILEGE_ID` when
 opening Page 40. Project and Plugin filters and form targets are conditionally
 shown from Scope Type; the irrelevant value is hidden and cleared. Apply
-Filters refreshes the report without reloading the page. Clear Filters resets
+Filters refreshes the report without reloading the page. Reset Filters resets
 the five external selectors and restores the externally unfiltered result
 without discarding the Interactive Report's own search, sorting, filters, or
 column customisations.

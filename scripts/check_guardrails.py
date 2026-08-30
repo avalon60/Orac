@@ -17,7 +17,10 @@ import sys
 ALLOWED_TOP_LEVEL_ASSETS = {"table-abbreviations.csv"}
 BACKUP_SUFFIXES = (".bak", ".tmp", ".swp")
 GUARDRAIL_DIR = Path("docs/agent-guardrails")
-GUARDRAIL_FILE_PATTERN = re.compile(r"^\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
+GUARDRAIL_FILE_PATTERN = re.compile(
+    r"^(?:(?:avalon-)?\d{2}|global-always-\d{2})-"
+    r"[a-z0-9]+(?:-[a-z0-9]+)*\.md$"
+)
 MARKDOWN_LINK_PATTERN = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 PLAIN_GUARDRAIL_REF_PATTERN = re.compile(
     r"docs/agent-guardrails/[A-Za-z0-9_./ -]+?\.(?:md|csv)"
@@ -164,7 +167,11 @@ def invalid_top_level_file_reasons(path: Path) -> list[str]:
         return []
     if suffix == ".md":
         if not GUARDRAIL_FILE_PATTERN.fullmatch(name):
-            reasons.append("markdown file must match NN-kebab-case.md")
+            reasons.append(
+                "markdown file must match NN-kebab-case.md, "
+                "avalon-NN-kebab-case.md, or "
+                "global-always-NN-kebab-case.md"
+            )
         return reasons
 
     reasons.append("unsupported top-level guardrail asset")

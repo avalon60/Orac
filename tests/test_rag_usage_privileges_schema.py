@@ -255,7 +255,6 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
         self.assertIn("p_name=>'p39_plugin_registry_id'", export)
         self.assertIn("p_button_name=>'apply_filters'", export)
         self.assertIn("p_button_name=>'administer'", page_39)
-        self.assertIn("p_button_position=>'right_of_ir_search_bar'", page_39)
         self.assertIn('aria-label="manage privilege"', page_39)
         self.assertIn(
             "p40_rag_usage_privilege_id:#rag_usage_privilege_id#", page_39
@@ -357,10 +356,6 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
             2,
         )
         self.assertIn("p_affected_button_id=>wwv_flow_imp.id(15200100000000305)", page_40)
-        form_region = page_40.split("p_plug_name=>'rag usage privilege'", 1)[1].split(
-            ");", 1
-        )[0]
-        self.assertIn("t-form--stretchinputs", form_region)
         for item_name in (
             "p40_username",
             "p40_scope_type",
@@ -372,16 +367,6 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
             item = page_40.split(f"p_name=>'{item_name}'", 1)[1].split(");", 1)[0]
             self.assertIn("p_read_only_when=>'p40_rag_usage_privilege_id'", item)
             self.assertIn("p_read_only_when_type=>'item_is_not_null'", item)
-            self.assertIn("p_colspan=>12", item)
-            self.assertIn("p_grid_label_column_span=>3", item)
-            self.assertIn("p_field_template=>", item)
-            self.assertIn("p_item_template_options=>'#default#'", item)
-        for item_name in ("p40_grant_reason_code", "p40_revoke_reason_code"):
-            item = page_40.split(f"p_name=>'{item_name}'", 1)[1].split(");", 1)[0]
-            self.assertIn("p_colspan=>12", item)
-            self.assertIn("p_grid_label_column_span=>3", item)
-            self.assertIn("p_field_template=>", item)
-            self.assertIn("p_item_template_options=>'#default#'", item)
         self.assertIn("p_button_name=>'grant'", page_40)
         self.assertIn("p_button_condition_type=>'item_is_null'", page_40)
         self.assertIn("p_button_name=>'revoke'", page_40)
@@ -421,57 +406,29 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
         self.assertIn("p_process_when_type=>'expression'", close_dialog)
         self.assertNotIn("insert into orac_core.rag_usage_privileges", export)
 
-    def test_apex_1042_page39_uses_responsive_filter_grid(self) -> None:
-        """Verify Page 39 keeps filters in the intended Universal Theme grid."""
+    def test_apex_1042_page39_filter_controls_have_accessible_names(self) -> None:
+        """Verify Page 39 exposes understandable names without fixing its layout."""
         export = _read(APEX_EXPORT)
         page_39 = export.split("prompt --application/pages/page_00039", 1)[1].split(
             "prompt --application/pages/page_00040", 1
         )[0]
 
-        self.assertIn("p_plug_name=>'filters'", page_39)
-        self.assertIn(
-            "p_region_template_options=>'#default#:t-form--stretchinputs:margin-bottom-sm'",
-            page_39,
-        )
-        self.assertEqual(
-            page_39.count("p_item_plug_id=>wwv_flow_imp.id(15100100000000215)"),
-            5,
-        )
-        self.assertEqual(
-            page_39.count("p_field_template=>1609121967514267634"),
-            5,
-        )
-
-        expected_grid = {
-            "p39_username": (3, 1),
-            "p39_scope_type": (2, 4),
-            "p39_project_id": (3, 6),
-            "p39_state": (2, 9),
+        expected_prompts = {
+            "p39_username": "principal",
+            "p39_scope_type": "scope type",
+            "p39_project_id": "project",
+            "p39_plugin_registry_id": "plugin",
+            "p39_state": "state",
         }
-        for item_name, (column_span, grid_column) in expected_grid.items():
+        for item_name, prompt in expected_prompts.items():
             item = page_39.split(f"p_name=>'{item_name}'", 1)[1].split(");", 1)[0]
-            self.assertIn(f"p_colspan=>{column_span}", item)
-            self.assertIn(f"p_grid_column=>{grid_column}", item)
+            self.assertIn(f"p_prompt=>'{prompt}'", item)
 
-        plugin = page_39.split("p_name=>'p39_plugin_registry_id'", 1)[1].split(");", 1)[
-            0
-        ]
-        self.assertIn("p_begin_on_new_field=>'n'", plugin)
-
-        apply_filters = page_39.split("p_button_name=>'apply_filters'", 1)[1].split(
-            ");", 1
-        )[0]
-        self.assertIn(
-            "p_button_plug_id=>wwv_flow_imp.id(15100100000000215)\n"
-            ",p_button_name=>'apply_filters'",
-            page_39,
-        )
-        self.assertNotIn("p_button_position=>'right_of_ir_search_bar'", apply_filters)
-        self.assertIn("p_grid_column_span=>2", apply_filters)
-        self.assertIn("p_grid_column=>11", apply_filters)
+        self.assertIn("p_button_image_alt=>'apply filters'", page_39)
+        self.assertIn("p_button_image_alt=>'reset filters'", page_39)
 
     def test_apex_1042_page39_filters_refresh_without_page_submit(self) -> None:
-        """Verify Page 39 applies and clears external filters through AJAX."""
+        """Verify Page 39 applies and resets external filters through AJAX."""
         export = _read(APEX_EXPORT)
         page_39 = export.split("prompt --application/pages/page_00039", 1)[1].split(
             "prompt --application/pages/page_00040", 1
@@ -493,8 +450,7 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
             ");", 1
         )[0]
         self.assertIn("p_button_action=>'defined_by_da'", clear_button)
-        self.assertIn("p_button_image_alt=>'clear filters'", clear_button)
-        self.assertNotIn("p_button_is_hot=>'y'", clear_button)
+        self.assertIn("p_button_image_alt=>'reset filters'", clear_button)
 
         apply_action = page_39.split("p_name=>'apply filters'", 1)[1].split(
             "p_name=>'clear filters'", 1

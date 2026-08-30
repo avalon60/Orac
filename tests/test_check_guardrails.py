@@ -98,12 +98,14 @@ def test_invalid_top_level_guardrail_names_are_reported(tmp_path: Path) -> None:
         "scratch.tmp",
         ".hidden.md",
         "extensionless",
+        "dggiu-45-test-design.md",
+        "global-45-test-design.md",
     ]:
         (guardrail_dir / name).write_text("", encoding="utf-8")
 
     issues = check_guardrails.validate_guardrail_tree(tmp_path)
 
-    assert len(issues) == 6
+    assert len(issues) == 8
     assert any("Untitled Document" in issue for issue in issues)
     assert any("backup or temporary suffix" in issue for issue in issues)
     assert any("leading dotfile" in issue for issue in issues)
@@ -116,6 +118,8 @@ def test_valid_top_level_guardrail_names_are_allowed(tmp_path: Path) -> None:
     for name in [
         "00-project-principles.md",
         "10-architecture-boundaries.md",
+        "avalon-28-apex-standards.md",
+        "global-always-45-test-design.md",
         "70-context-management.md",
         "table-abbreviations.csv",
     ]:
@@ -170,26 +174,30 @@ def test_current_agents_guardrail_references_resolve() -> None:
 
 
 def test_apex_guardrail_requires_maintenance_dialog_action_review() -> None:
-    apex_standards = (
-        PROJECT_ROOT / "docs/agent-guardrails/28-apex-standards.md"
-    ).read_text(encoding="utf-8").lower()
+    apex_standards_text = (
+        (PROJECT_ROOT / "docs/agent-guardrails/avalon-28-apex-standards.md")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+    apex_standards = " ".join(apex_standards_text.split())
 
     assert "maintenance dialog actions" in apex_standards
     assert "visible `cancel` and `save` actions by default" in apex_standards
-    assert "ask whether a `delete`" in apex_standards
-    assert "action is required" in apex_standards
+    assert "ask whether a `delete` action is required" in apex_standards
     assert "include a recommendation" in apex_standards
-    assert "make deletion conditional" in apex_standards
+    assert "`delete` must be conditional" in apex_standards
     assert "confirmation-protected" in apex_standards
     assert "skip validation" in apex_standards
-    assert "must not use direct table dml" in apex_standards
-    assert "native_close_window" in apex_standards
-    assert "apexafterclosedialog" in apex_standards
+    assert "maintenance pages must not use direct table dml" in apex_standards
+    assert "successful modal actions must use the platform close-dialog pattern" in (
+        apex_standards
+    )
+    assert "refresh the owning parent region" in apex_standards
     assert "do not redirect a full page" in apex_standards
-    assert "item-reference integrity checks" in apex_standards
+    assert "maintain item-reference integrity" in apex_standards
     assert "item-submit lists" in apex_standards
     assert "must not reference page" in apex_standards
-    assert "items that are not defined in the current export" in apex_standards
+    assert "items absent from the current export" in apex_standards
     assert "removed or renamed" in apex_standards
 
 

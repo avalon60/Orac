@@ -33,8 +33,8 @@ prompt APPLICATION 1042 - Orac Administration
 -- Application Export:
 --   Application:     1042
 --   Name:            Orac Administration
---   Date and Time:   23:36 Monday August 24, 2026
---   Exported By:     ORAC_ADMIN
+--   Date and Time:   15:50 Sunday August 30, 2026
+--   Exported By:     ORAC_APX_PUB
 --   Flashback:       0
 --   Export Type:     Application Export
 --     Pages:                     40
@@ -69,7 +69,7 @@ prompt APPLICATION 1042 - Orac Administration
 --       E-Mail:
 --     Supporting Objects:  Included
 --   Version:         24.2.0
---   Instance ID:     968039034607177
+--   Instance ID:     1052937516869959
 --
 
 prompt --application/delete_application
@@ -1977,11 +1977,6 @@ wwv_flow_imp_page.create_page_group(
 );
 end;
 /
-prompt --application/comments
-begin
-null;
-end;
-/
 prompt --application/shared_components/navigation/breadcrumbs/breadcrumb
 begin
 wwv_flow_imp_shared.create_menu(
@@ -2163,11 +2158,6 @@ null;
 end;
 /
 prompt --application/shared_components/globalization/language
-begin
-null;
-end;
-/
-prompt --application/shared_components/globalization/translations
 begin
 null;
 end;
@@ -16143,12 +16133,13 @@ wwv_flow_imp_page.create_page_button(
 ,p_button_action=>'DEFINED_BY_DA'
 ,p_button_template_options=>'#DEFAULT#:t-Button--iconLeft:t-Button--large:t-Button--stretch:t-Button--simple'
 ,p_button_template_id=>4072362960822175091
-,p_button_is_hot=>'Y'
-,p_button_image_alt=>'Clear Filters'
+,p_button_image_alt=>'Reset Filters'
 ,p_warn_on_unsaved_changes=>null
 ,p_icon_css_classes=>'fa-times'
 ,p_grid_new_row=>'N'
 ,p_grid_new_column=>'Y'
+,p_grid_column_span=>2
+,p_grid_column=>11
 );
 wwv_flow_imp_page.create_page_button(
  p_id=>wwv_flow_imp.id(15100100000000203)

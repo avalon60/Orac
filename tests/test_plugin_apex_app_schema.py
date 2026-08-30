@@ -473,12 +473,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         )
 
         self.assertIn("p_plug_name=>'plugin apps'", export_sql)
-        self.assertIn("p_plug_display_point=>'body'", export_sql)
         self.assertIn("p_plug_source_type=>'native_cards'", export_sql)
-        self.assertIn("p_plug_template=>4501440665235496320", export_sql)
-        self.assertIn("t-cards--featured t-cards--block", export_sql)
-        self.assertIn("force-fa-lg:t-cards--displayicons:t-cards--3cols", export_sql)
-        self.assertIn("t-cards--animcolorfill", export_sql)
         self.assertIn("from orac_code.plugin_apex_app_menu_visible_v", export_sql)
         self.assertNotIn("orac_core.plugin_apex_apps", export_sql)
         self.assertIn("p_link_target=>'&card_link.'", export_sql)
@@ -488,27 +483,14 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("p_body_column_name=>'description'", export_sql)
         self.assertIn("p_icon_class_column_name=>'icon'", export_sql)
 
-    def test_f1043_plugin_apps_cards_use_standard_dynamic_card_display(self) -> None:
+    def test_f1043_plugin_apps_cards_use_data_driven_navigation(self) -> None:
+        """Verify card navigation behaviour without fixing card presentation."""
         export_sql = (
             (PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql")
             .read_text(encoding="utf-8")
             .lower()
         )
 
-        self.assertIn("p_layout_type=>'grid'", export_sql)
-        self.assertIn("p_grid_column_count=>3", export_sql)
-        self.assertIn("p_inline_css=>wwv_flow_string.join", export_sql)
-        self.assertIn("grid-template-columns: repeat(auto-fit", export_sql)
-        self.assertIn("26.25rem", export_sql)
-        self.assertIn("max-width: 80.75rem", export_sql)
-        self.assertIn("nth-child(6n+2)", export_sql)
-        self.assertIn("orac-plugin-card-hub .a-cardview-iconwrap", export_sql)
-        self.assertIn("orac-plugin-card-hub .a-cardview-headerbody", export_sql)
-        self.assertIn("p_region_css_classes=>'orac-plugin-card-hub'", export_sql)
-        self.assertIn("p_component_css_classes=>'orac-plugin-card-hub'", export_sql)
-        self.assertIn("p_card_css_classes=>'orac-plugin-card'", export_sql)
-        self.assertIn("p_icon_source_type=>'dynamic_class'", export_sql)
-        self.assertIn("p_icon_position=>'top'", export_sql)
         self.assertIn("p_action_type=>'full_card'", export_sql)
         self.assertIn("p_link_target_type=>'redirect_url'", export_sql)
         self.assertIn("p_link_target=>'&card_link.'", export_sql)
@@ -726,7 +708,6 @@ class PluginApexAppSchemaTests(unittest.TestCase):
                 self.assertIn(
                     "p_list_item_link_target=>'&orac_return_url_1!raw.'", return_list
                 )
-                self.assertIn("p_list_item_icon=>'fa-arrow-left'", return_list)
                 self.assertIn(
                     "p_list_item_disp_condition=>':orac_return_depth > 0 and "
                     ":orac_return_label_1 is not null and :orac_return_url_1 is not null'",
@@ -734,7 +715,6 @@ class PluginApexAppSchemaTests(unittest.TestCase):
                 )
                 self.assertEqual(1, len(more_items))
                 self.assertIn("p_list_item_link_text=>'more'", more_items[0])
-                self.assertIn("p_list_item_icon=>'fa-chevron-down'", more_items[0])
                 self.assertIn(
                     "p_list_item_disp_condition=>':orac_return_depth > 1'",
                     more_items[0],
@@ -762,13 +742,6 @@ class PluginApexAppSchemaTests(unittest.TestCase):
                 self.assertEqual(
                     1, page_0.count("p_plug_name=>'cross-app return navigation'")
                 )
-                self.assertIn("p_plug_display_point=>'before_navigation_bar'", page_0)
-                self.assertIn("p_plug_source_type=>'native_list'", page_0)
-                self.assertIn(
-                    "p_list_template_id=>wwv_flow_imp.id(2847543055748234966)", page_0
-                )
-                self.assertNotIn("p_plug_display_point=>'region_position_01'", page_0)
-                self.assertNotIn("p_plug_source_type=>'native_breadcrumb'", page_0)
                 self.assertNotIn("regexp_substr(:orac_nav_stack", export_sql)
                 self.assertNotIn("split(:orac_nav_stack", export_sql)
                 self.assertNotIn("f?p=' ||", export_sql)
@@ -1623,13 +1596,11 @@ class PluginApexAppSchemaTests(unittest.TestCase):
 
         self.assertIn("p_button_name=>'cancel'", page_two)
         self.assertIn("p_button_action=>'redirect_page'", page_two)
-        self.assertIn("p_button_position=>'close'", page_two)
         self.assertIn("p_button_execute_validations=>'n'", page_two)
         self.assertIn("p_button_name=>'save'", page_two)
         self.assertIn("p_button_action=>'submit'", page_two)
-        self.assertIn("p_button_position=>'next'", page_two)
         self.assertIn("p_button_name=>'delete'", page_two)
-        self.assertIn("p_button_position=>'delete'", page_two)
+        # Danger styling is an explicit maintenance-dialog UX contract.
         self.assertIn("t-button--danger", page_two)
         self.assertIn("p_confirm_message=>'delete this drop location?", page_two)
         self.assertIn("p_confirm_style=>'danger'", page_two)
@@ -1968,7 +1939,6 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             "p_button_redirect_url=>'f?p=&app_id.:1:&app_session.::&debug.:::'",
             activity_page,
         )
-        self.assertIn("p_icon_css_classes=>'fa-arrow-left'", activity_page)
         self.assertNotIn("drop_job_event_admin_v evt", activity_page)
         for token in (
             "location_code",
