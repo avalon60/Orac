@@ -1,10 +1,10 @@
 """Static schema-contract tests for Phase 2A governed retrieval."""
+
 # Author: Clive Bostock
 # Date: 2026-08-29
 # Description: Verifies capability governance and content-free durable audit wiring.
 
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "resources" / "db" / "schema"
@@ -26,9 +26,7 @@ def test_capability_definitions_do_not_self_grant_model_evidence() -> None:
 
 def test_host_instruction_forbids_simulated_tool_results() -> None:
     """The live path must tell models not to imitate retrieval in text."""
-    protocol = _text(
-        ROOT / "src" / "orac_core" / "governed_retrieval" / "protocol.py"
-    )
+    protocol = _text(ROOT / "src" / "orac_core" / "governed_retrieval" / "protocol.py")
     controller = _text(ROOT / "src" / "controller" / "orac.py")
 
     assert "must issue exactly" in protocol
@@ -39,15 +37,9 @@ def test_host_instruction_forbids_simulated_tool_results() -> None:
 
 
 def test_existing_audit_boundary_accepts_only_allowlisted_governed_metadata() -> None:
-    checks = _text(
-        SCHEMA / "orac_core" / "constraint_other" / "kn_retev_checks.sql"
-    )
-    spec = _text(
-        SCHEMA / "orac_code" / "package_spec" / "knowledge_retrieval_api.sql"
-    )
-    body = _text(
-        SCHEMA / "orac_code" / "package_body" / "knowledge_retrieval_api.sql"
-    )
+    checks = _text(SCHEMA / "orac_core" / "constraint_other" / "kn_retev_checks.sql")
+    spec = _text(SCHEMA / "orac_code" / "package_spec" / "knowledge_retrieval_api.sql")
+    body = _text(SCHEMA / "orac_code" / "package_body" / "knowledge_retrieval_api.sql")
     assert "governed_retrieval" in checks
     assert "retrieval_domain" in checks
     assert "record_governed_retrieval_event" in spec
@@ -77,9 +69,46 @@ def test_runtime_reads_current_evidence_without_model_name_conditions() -> None:
     assert "streaminghealthstate.suppressed" in capability
     assert "model_name" not in capability
     grant = _text(
-        SCHEMA
-        / "orac_code"
-        / "grant"
-        / "governed_retrieval_capability_access.sql"
+        SCHEMA / "orac_code" / "grant" / "governed_retrieval_capability_access.sql"
     )
     assert "grant read on orac_code.llm_current_model_evidence_v to orac" in grant
+
+
+def test_phase2c_catalogue_reuses_existing_least_privilege_packages() -> None:
+    """Discovery adds package contracts without a new table or direct runtime view."""
+    auth_spec = _text(
+        SCHEMA / "orac_code" / "package_spec" / "rag_usage_authorization_api.sql"
+    )
+    auth_body = _text(
+        SCHEMA / "orac_code" / "package_body" / "rag_usage_authorization_api.sql"
+    )
+    memory_spec = _text(
+        SCHEMA / "orac_code" / "package_spec" / "conversation_memory_api.sql"
+    )
+    memory_body = _text(
+        SCHEMA / "orac_code" / "package_body" / "conversation_memory_api.sql"
+    )
+    assert "open_authorised_project_domains" in auth_spec
+    assert "privilege.expires_on > systimestamp" in auth_body
+    assert "scope.scope_type = 'project'" in auth_body
+    assert "usr.is_active = 'y'" in auth_body
+    assert "has_retrievable_memory" in memory_spec
+    assert "conversation.user_id = l_user_id" in memory_body
+    assert "checkpoint.embedding_model = trim(p_embedding_model)" in memory_body
+    assert not list(SCHEMA.rglob("*domain_descriptor*.sql"))
+
+
+def test_phase2c_audit_extension_remains_content_free_and_bounded() -> None:
+    """The optional telemetry document has a strict size and no content fields."""
+    spec = _text(SCHEMA / "orac_code" / "package_spec" / "knowledge_retrieval_api.sql")
+    body = _text(SCHEMA / "orac_code" / "package_body" / "knowledge_retrieval_api.sql")
+    assert "p_phase2c_detail_json" in spec
+    assert "dbms_lob.getlength(p_phase2c_detail_json) > 8192" in body
+    assert "p_phase2c_detail_json is json" in body
+    for forbidden in (
+        "p_query",
+        "p_prompt",
+        "p_evidence_text",
+        "p_domain_description",
+    ):
+        assert forbidden not in spec

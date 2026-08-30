@@ -87,10 +87,6 @@ class PluginBumpVersionConfigTests(unittest.TestCase):
                     self.assertIn(search, target_path.read_text(encoding="utf-8"))
 
     def test_controlled_bump_updates_all_configured_home_assistant_targets(self) -> None:
-        executable = shutil.which("bump2version")
-        if executable is None:
-            self.skipTest("bump2version executable is not available")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             plugin_dir = root / "home_assistant"
@@ -109,7 +105,13 @@ class PluginBumpVersionConfigTests(unittest.TestCase):
             )
 
             result = subprocess.run(
-                [executable, "--allow-dirty", "patch"],
+                [
+                    sys.executable,
+                    "-m",
+                    "bumpversion",
+                    "--allow-dirty",
+                    "patch",
+                ],
                 cwd=plugin_dir,
                 check=False,
                 text=True,

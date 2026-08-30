@@ -752,6 +752,147 @@ provider framing, response allowance, and serialized tool result.
 Host-owned PROJECT binding offered only after the existing Oracle RAG USE
 authorization succeeds. The model cannot select or replace the scope key.
 
+This is the legacy Phase 2A binding and remains active while Phase 2C is
+disabled or running in shadow mode.
+
+### Phase 2C discovery settings
+
+### `domain_discovery_enabled`
+
+- **Type:** boolean
+- **Shipped value:** `false`
+
+Enables invocation-scoped semantic domain offers instead of the legacy binding.
+
+### `domain_discovery_shadow_mode`
+
+- **Type:** boolean
+- **Shipped value:** `true`
+
+Evaluates the current authorised catalogue while preserving Phase 2A output.
+
+### `descriptor_embedding_profile`
+
+- **Type:** logical profile name
+- **Shipped value:** `domain_discovery`
+
+Pins discovery to the independent Core embedding profile.
+
+### `domain_descriptor_schema_version`
+
+- **Type:** version string
+- **Shipped value:** `domain-descriptor-v1`
+
+Invalidates cache identity when descriptor construction changes.
+
+### `domain_min_relevance_score`
+
+- **Type:** number from `0` to `1`
+- **Shipped value:** `0.50`
+
+Minimum combined score for PROJECT or eligible PLUGIN advertisement.
+
+### `domain_semantic_weight`
+
+- **Type:** number from `0` to `1`
+- **Shipped value:** `0.85`
+
+Embedding-similarity share of discovery ranking.
+
+### `domain_lexical_weight`
+
+- **Type:** number from `0` to `1`
+- **Shipped value:** `0.15`
+
+Query-term coverage share. Both weights must sum to `1`.
+
+### `domain_embedding_batch_size`
+
+- **Type:** integer from `1` to `512`
+- **Shipped value:** `64`
+
+Maximum cold descriptor vectors generated in one provider request.
+
+### `domain_catalogue_hard_limit`
+
+- **Type:** integer from `128` to `10000`
+- **Shipped value:** `4096`
+
+Exceptional defensive limit, not a normal shortlist or evaluation cliff.
+
+### `max_advertised_domains`
+
+- **Type:** integer from `1` to `8`
+- **Shipped value:** `3`
+
+Maximum total PROJECT, CONVERSATION, and PLUGIN advertisements.
+
+### `max_selected_domains`
+
+- **Type:** integer from `1` to `3`
+- **Shipped value:** `2`
+
+Maximum unique advertised handles accepted in the single tool call.
+
+### `max_catalogue_characters`
+
+- **Type:** integer from `256` to `8000`
+- **Shipped value:** `2000`
+
+Hard character bound for the safe model-facing catalogue instruction.
+
+### `max_federated_evidence_items`
+
+- **Type:** integer from `1` to `20`
+- **Shipped value:** `6`
+
+Maximum merged evidence candidates before Phase 2B final accounting.
+
+## `[embedding.domain_discovery]`
+
+The independent Core semantic profile used only for domain-descriptor ranking.
+
+### `provider`
+
+- **Type:** provider code
+- **Shipped value:** `ollama`
+
+Phase 2C v1 accepts the existing Ollama provider implementation.
+
+### `service_url`
+
+- **Type:** HTTP(S) URL
+- **Shipped value:** `http://localhost:11434`
+
+Trusted host endpoint for descriptor and per-turn query embeddings.
+
+### `model_id`
+
+- **Type:** string
+- **Shipped value:** `nomic-embed-text:latest`
+
+Exact semantic model identity for discovery.
+
+### `dimensions`
+
+- **Type:** positive integer
+- **Shipped value:** `768`
+
+Required output vector dimensions.
+
+### `profile_version`
+
+- **Type:** version string
+- **Shipped value:** `domain-discovery-v1`
+
+Operator-controlled semantic cache/version identity.
+
+This profile may share an endpoint and model with conversation memory, but it
+does not read `[conversation_memory]` embedding settings. Provider, model,
+dimensions, profile version, descriptor schema, registry version, and
+descriptor digest participate in cache identity. If the semantic profile is
+invalid or unavailable, discovery fails soft and ordinary dialogue continues.
+
 ## `[vector_db]`
 
 Reserved settings for future persistent vector storage. They are not an active vector service contract.

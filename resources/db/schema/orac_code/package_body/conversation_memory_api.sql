@@ -48,6 +48,40 @@ as
       return null;
   end active_user_id;
 
+  function has_retrievable_memory(
+    p_principal_username   in varchar2,
+    p_embedding_model      in varchar2,
+    p_embedding_dimensions in number
+  ) return varchar2
+  is
+    l_user_id number;
+    l_found   number;
+  begin
+    l_user_id := active_user_id(p_principal_username);
+    if l_user_id is null
+       or trim(p_embedding_model) is null
+       or p_embedding_dimensions <= 0
+    then
+      return 'N';
+    end if;
+    select count(*)
+      into l_found
+      from (
+        select 1
+          from orac_api.conversation_summary_checkpoints_v checkpoint
+          join orac_api.conversations_v conversation
+            on conversation.conversation_id = checkpoint.conversation_id
+           and conversation.user_id = l_user_id
+         where checkpoint.embedding_model = trim(p_embedding_model)
+           and checkpoint.embedding_dimensions = p_embedding_dimensions
+         fetch first 1 row only
+      );
+    return case when l_found > 0 then 'Y' else 'N' end;
+  exception
+    when others then
+      return 'N';
+  end has_retrievable_memory;
+
   function reconcile_eligible_ranges(
     p_checkpoint_exchange_count in number,
     p_materialisation_profile   in varchar2,

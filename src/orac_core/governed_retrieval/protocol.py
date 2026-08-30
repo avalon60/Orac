@@ -1,4 +1,5 @@
 """Provider-neutral structured-tool protocol for governed retrieval."""
+
 # Author: Clive Bostock
 # Date: 2026-08-29
 # Description: Defines normalized incremental events and the exact retrieval schema.
@@ -8,7 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Mapping
-
 
 RETRIEVE_TOOL_NAME = "retrieve"
 GOVERNED_RETRIEVAL_SYSTEM_INSTRUCTION = (
@@ -69,9 +69,47 @@ class StructuredToolCall:
 
 
 def governed_retrieve_tool_schema(
-    allowed_domains: tuple[str, ...],
+    allowed_domains: tuple[str, ...] = (),
+    *,
+    domain_handles: tuple[str, ...] | None = None,
+    max_selected_domains: int = 1,
 ) -> dict[str, Any]:
     """Return the exact model-facing schema for host-governed retrieval."""
+    if domain_handles is not None:
+        handles = tuple(dict.fromkeys(str(item) for item in domain_handles))
+        if not handles:
+            raise ValueError("at least one governed domain handle is required")
+        if max_selected_domains <= 0:
+            raise ValueError("maximum selected domains must be positive")
+        return {
+            "type": "function",
+            "function": {
+                "name": RETRIEVE_TOOL_NAME,
+                "description": (
+                    "Search one or more advertised authorised knowledge domains. "
+                    "Use only opaque handles from this invocation."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["query", "domains"],
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048,
+                        },
+                        "domains": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": min(max_selected_domains, len(handles)),
+                            "uniqueItems": True,
+                            "items": {"type": "string", "enum": list(handles)},
+                        },
+                    },
+                },
+            },
+        }
     domains = tuple(dict.fromkeys(str(item).upper() for item in allowed_domains))
     if not domains:
         raise ValueError("at least one governed retrieval domain is required")

@@ -12,6 +12,12 @@ as
     p_scope_type in varchar2,
     p_scope_key  in varchar2
   ) return varchar2;
+
+  procedure open_authorised_project_domains(
+    p_username        in varchar2,
+    p_candidate_limit in number,
+    p_domains            out sys_refcursor
+  );
 end rag_usage_authorization_api;
 /
 --rollback drop package orac_code.rag_usage_authorization_api;

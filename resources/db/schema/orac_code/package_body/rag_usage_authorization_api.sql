@@ -64,6 +64,93 @@ as
     when others then
       return 'RAG_USAGE_AUTHORIZATION_UNAVAILABLE';
   end authorization_result;
+
+  procedure open_authorised_project_domains(
+    p_username        in varchar2,
+    p_candidate_limit in number,
+    p_domains            out sys_refcursor
+  )
+  is
+    l_username varchar2(4000 char) := trim(p_username);
+  begin
+    if l_username is null
+    then
+      open p_domains for
+        select cast(null as varchar2(100)) project_code,
+               cast(null as varchar2(200)) display_name,
+               cast(null as varchar2(1000)) description,
+               cast(null as varchar2(64)) descriptor_version,
+               cast(null as number) authorised_catalogue_size
+          from dual
+         where 1 = 0;
+      return;
+    end if;
+
+    if p_candidate_limit is null
+       or p_candidate_limit <= 0
+       or p_candidate_limit > 10001
+    then
+      open p_domains for
+        select cast(null as varchar2(100)) project_code,
+               cast(null as varchar2(200)) display_name,
+               cast(null as varchar2(1000)) description,
+               cast(null as varchar2(64)) descriptor_version,
+               cast(null as number) authorised_catalogue_size
+          from dual
+         where 1 = 0;
+      return;
+    end if;
+
+    open p_domains for
+      with authorised_projects as (
+        select project.project_id,
+               project.project_code,
+               project.display_name,
+               project.description,
+               project.row_version
+          from orac_api.users_v usr
+          join orac_api.rag_usage_privileges_v privilege
+            on privilege.user_id = usr.user_id
+           and privilege.privilege_code = 'USE'
+           and privilege.active_yn = 'Y'
+           and privilege.effective_on <= systimestamp
+           and (
+                 privilege.expires_on is null
+                 or privilege.expires_on > systimestamp
+               )
+          join orac_api.knowledge_scopes_v scope
+            on scope.knowledge_scope_id = privilege.knowledge_scope_id
+           and scope.scope_type = 'PROJECT'
+          join orac_api.project_registry_v project
+            on project.project_id = scope.project_id
+           and project.active_yn = 'Y'
+         where lower(usr.username) = lower(l_username)
+           and usr.is_active = 'Y'
+         group by project.project_id,
+                  project.project_code,
+                  project.display_name,
+                  project.description,
+                  project.row_version
+      )
+      select project_code,
+             display_name,
+             description,
+             to_char(row_version) descriptor_version,
+             count(*) over () authorised_catalogue_size
+        from authorised_projects
+       order by project_id
+       fetch first p_candidate_limit rows only;
+  exception
+    when others then
+      open p_domains for
+        select cast(null as varchar2(100)) project_code,
+               cast(null as varchar2(200)) display_name,
+               cast(null as varchar2(1000)) description,
+               cast(null as varchar2(64)) descriptor_version,
+               cast(null as number) authorised_catalogue_size
+          from dual
+         where 1 = 0;
+  end open_authorised_project_domains;
 end rag_usage_authorization_api;
 /
 --rollback drop package body orac_code.rag_usage_authorization_api;

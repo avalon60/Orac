@@ -19,6 +19,9 @@ database services and account provisioning:
   created by the existing user-creation scripts.
 - core schema objects are probed, validated, and applied by
   `resources/docker/oracle/setup/040-orac-liquibase-deltas.sh`.
+  Post-update runtime compilation prefers container-local SQL*Plus, using
+  `SQLPLUS_BIN` when explicitly configured, and falls back to the configured
+  SQLcl executable. Host SQL*Plus is not required.
 - APEX workspace and application exports are imported by
   `resources/docker/oracle/setup/045-orac-apex-import.sh` after core schema
   objects, grants, synonyms, and parsing-schema dependencies exist.

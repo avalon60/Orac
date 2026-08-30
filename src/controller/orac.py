@@ -125,12 +125,16 @@ from orac_core.governed_retrieval import EffectiveToolModeResolver
 from orac_core.governed_retrieval import GovernedRetrievalConfiguration
 from orac_core.governed_retrieval import GovernedRetrievalAuditRepository
 from orac_core.governed_retrieval import GovernedRetrievalToolCoordinator
+from orac_core.governed_retrieval import AuthorisedKnowledgeDomainRepository
+from orac_core.governed_retrieval import DomainDiscoveryService
+from orac_core.governed_retrieval import FederatedRetrievalExecutor
 from orac_core.governed_retrieval import GOVERNED_RETRIEVAL_SYSTEM_INSTRUCTION
 from orac_core.governed_retrieval import ModelToolCapabilityEvidence
 from orac_core.governed_retrieval import StreamingHealthKey
 from orac_core.governed_retrieval import StreamingToolHealthTracker
 from orac_core.governed_retrieval import ToolDecisionMode
 from orac_core.governed_retrieval import governed_retrieve_tool_schema
+from orac_core.governed_retrieval import domain_discovery_embedding_provider
 from orac_core.context_budget import ContextBudgetConfiguration
 from orac_core.context_budget import ContextBudgetPlanner
 from orac_core.context_budget import ContextBudgetRejection
@@ -3068,7 +3072,7 @@ class Orac:
             _log_exception("Conversational memory initialisation failed", exc)
 
     def _init_governed_retrieval(self) -> None:
-        """Initialise the bounded Phase 2A tool mediation components."""
+        """Initialise Phase 2A mediation and optional Phase 2C discovery."""
         self.governed_retrieval_configuration = (
             GovernedRetrievalConfiguration.from_config(self.config_mgr)
         )
@@ -3079,18 +3083,135 @@ class Orac:
         )
         self.governed_retrieval_coordinator = None
         self.governed_retrieval_audit_repository = None
+        self.domain_discovery_service = None
         if not self.governed_retrieval_configuration.enabled:
             logger.log_info("Governed model retrieval is disabled by configuration.")
             return
+        discovery_requested = bool(
+            self.governed_retrieval_configuration.domain_discovery_enabled
+            or self.governed_retrieval_configuration.domain_discovery_shadow_mode
+        )
+        if (
+            discovery_requested
+            and self.knowledge_scope_authorizer is None
+            and self.config_mgr.bool_config_value("knowledge", "enabled", default=False)
+        ):
+            try:
+                self.knowledge_scope_authorizer = KnowledgeScopeAuthorizer.from_config(
+                    self.config_mgr,
+                    logger=logger,
+                )
+            except Exception as exc:
+                _log_exception(
+                    "Phase 2C PROJECT authorisation initialisation failed (non-fatal)",
+                    exc,
+                )
+        if (
+            discovery_requested
+            and self.knowledge_retrieval_service is None
+            and self.config_mgr.bool_config_value("knowledge", "enabled", default=False)
+        ):
+            self.knowledge_retrieval_service = KnowledgeRetrievalService(
+                embedding_provider=HashEmbeddingProvider(
+                    model_id=self.config_mgr.config_value(
+                        "knowledge", "embedding_model_id", default="hash-embedding-v1"
+                    ),
+                    dimensions=self.config_mgr.int_config_value(
+                        "knowledge", "embedding_dimensions", default=32
+                    ),
+                )
+            )
+        if (
+            self.conversation_memory_retrieval_service is not None
+            or self.knowledge_retrieval_service is not None
+        ):
+            self.host_retrieval_mediator = HostRetrievalMediator(
+                conversation_service=self.conversation_memory_retrieval_service,
+                project_service=self.knowledge_retrieval_service,
+            )
         if self.host_retrieval_mediator is None:
             logger.log_warning(
-                "Governed model retrieval disabled because conversation retrieval "
-                "mediation is unavailable."
+                "Governed model retrieval disabled because retrieval mediation "
+                "is unavailable."
             )
             return
+        federated_executor = None
+        if discovery_requested:
+            try:
+                embedding_provider, profile_identity = (
+                    domain_discovery_embedding_provider(self.config_mgr)
+                )
+                aliases = (
+                    self.knowledge_scope_authorizer.aliases
+                    if self.knowledge_scope_authorizer is not None
+                    else {}
+                )
+                self.domain_discovery_service = DomainDiscoveryService(
+                    repository=AuthorisedKnowledgeDomainRepository(),
+                    embedding_provider=embedding_provider,
+                    profile_identity=profile_identity,
+                    descriptor_schema_version=(
+                        self.governed_retrieval_configuration
+                        .domain_descriptor_schema_version
+                    ),
+                    aliases=aliases,
+                    minimum_score=(
+                        self.governed_retrieval_configuration
+                        .domain_min_relevance_score
+                    ),
+                    semantic_weight=(
+                        self.governed_retrieval_configuration.domain_semantic_weight
+                    ),
+                    lexical_weight=(
+                        self.governed_retrieval_configuration.domain_lexical_weight
+                    ),
+                    embedding_batch_size=(
+                        self.governed_retrieval_configuration
+                        .domain_embedding_batch_size
+                    ),
+                    catalogue_hard_limit=(
+                        self.governed_retrieval_configuration
+                        .domain_catalogue_hard_limit
+                    ),
+                    max_advertised_domains=(
+                        self.governed_retrieval_configuration.max_advertised_domains
+                    ),
+                    max_catalogue_characters=(
+                        self.governed_retrieval_configuration
+                        .max_catalogue_characters
+                    ),
+                    conversation_embedding_model=self.config_mgr.config_value(
+                        "conversation_memory",
+                        "embedding_model_id",
+                        default="",
+                    ),
+                    conversation_embedding_dimensions=self.config_mgr.int_config_value(
+                        "conversation_memory",
+                        "embedding_dimensions",
+                        default=0,
+                    ),
+                    project_discovery_enabled=(
+                        self.knowledge_scope_authorizer is not None
+                        and self.knowledge_retrieval_service is not None
+                    ),
+                )
+                federated_executor = FederatedRetrievalExecutor(
+                    mediator=self.host_retrieval_mediator,
+                    project_authorizer=self.knowledge_scope_authorizer,
+                    max_evidence_items=(
+                        self.governed_retrieval_configuration
+                        .max_federated_evidence_items
+                    ),
+                )
+            except Exception as exc:
+                self.domain_discovery_service = None
+                _log_exception(
+                    "Phase 2C discovery initialisation failed soft", exc
+                )
         self.governed_retrieval_coordinator = GovernedRetrievalToolCoordinator(
             mediator=self.host_retrieval_mediator,
             configuration=self.governed_retrieval_configuration,
+            federated_executor=federated_executor,
         )
         self.governed_retrieval_audit_repository = GovernedRetrievalAuditRepository()
         logger.log_info("Governed model retrieval coordinator initialised.")
@@ -4160,6 +4281,7 @@ class Orac:
         *,
         llm_connector: Any,
         final_prompt: str,
+        discovery_query: str,
         auth_user: str,
         session_id: str,
         request_id: str | None,
@@ -4182,7 +4304,11 @@ class Orac:
         if max_context_tokens <= 0:
             return None
 
-        project_scope = self._governed_project_scope(auth_user=auth_user)
+        project_scope = (
+            None
+            if configuration.domain_discovery_enabled
+            else self._governed_project_scope(auth_user=auth_user)
+        )
         current_conversation_id = None
         conversation_lookup = getattr(self.ctx, "_conversation_id", None)
         if callable(conversation_lookup):
@@ -4196,20 +4322,66 @@ class Orac:
             project_scope=project_scope,
         )
         allowed_domains = mediator.available_domains(context=trusted_context)
-        if not allowed_domains:
+        domain_offer = None
+        discovery_service = getattr(self, "domain_discovery_service", None)
+        if configuration.domain_discovery_enabled and discovery_service is None:
+            return None
+        if discovery_service is not None:
+            try:
+                discovered_offer = discovery_service.discover(
+                    query=discovery_query,
+                    principal_username=auth_user,
+                    conversation_eligible=(
+                        self.conversation_memory_retrieval_service is not None
+                        and getattr(self, "_use_history", True)
+                    ),
+                )
+                logger.log_info(
+                    "Governed domain discovery: "
+                    f"authorised={discovered_offer.telemetry.authorised_catalogue_size} "
+                    f"scored={discovered_offer.telemetry.domains_scored} "
+                    f"advertised={discovered_offer.telemetry.advertised_count} "
+                    f"cache_hits={discovered_offer.telemetry.cache_hits} "
+                    f"cache_misses={discovered_offer.telemetry.cache_misses} "
+                    f"embedding_batches={discovered_offer.telemetry.embedding_batches} "
+                    f"fallback={discovered_offer.telemetry.fallback_mode} "
+                    f"duration_ms={discovered_offer.telemetry.duration_ms}"
+                )
+                if configuration.domain_discovery_enabled:
+                    domain_offer = discovered_offer
+                    if not domain_offer.advertisements:
+                        return None
+            except Exception as exc:
+                _log_exception("Phase 2C discovery failed soft for this turn", exc)
+                if configuration.domain_discovery_enabled:
+                    return None
+        if domain_offer is None and not allowed_domains:
             return None
 
         response_tokens = max(1, _as_int(generation_options.get("num_predict"), 2048))
-        schema = governed_retrieve_tool_schema(
-            tuple(domain.value for domain in allowed_domains)
+        schema = (
+            governed_retrieve_tool_schema(
+                domain_handles=tuple(
+                    item.handle for item in domain_offer.advertisements
+                ),
+                max_selected_domains=configuration.max_selected_domains,
+            )
+            if domain_offer is not None
+            else governed_retrieve_tool_schema(
+                tuple(domain.value for domain in allowed_domains)
+            )
         )
         initial_messages = [
             {
                 "role": "system",
                 "content": GOVERNED_RETRIEVAL_SYSTEM_INSTRUCTION,
             },
-            {"role": "user", "content": final_prompt},
         ]
+        if domain_offer is not None:
+            initial_messages.append(
+                {"role": "system", "content": domain_offer.render_instruction()}
+            )
+        initial_messages.append({"role": "user", "content": final_prompt})
         context_configuration = getattr(
             self,
             "context_budget_configuration",
@@ -4309,7 +4481,9 @@ class Orac:
         health_key = StreamingHealthKey(
             provider_id=effective_provider,
             runtime_fingerprint=runtime_fingerprint,
-            adapter_revision="phase2a-v1",
+            adapter_revision=(
+                "phase2c-v1" if domain_offer is not None else "phase2a-v1"
+            ),
             llm_id=effective_llm_id,
             model_revision=evidence.model_revision,
         )
@@ -4363,6 +4537,7 @@ class Orac:
             mode=mode,
             allowed_domains=allowed_domains,
             context=trusted_context,
+            domain_offer=domain_offer,
             generation_options=generation_options,
             final_context_guard=final_context_guard,
         )
@@ -4423,7 +4598,11 @@ class Orac:
             try:
                 audit_event_id = audit_repository.record_turn(
                     principal_username=principal_username,
-                    domain_code=result.retrieval_domain or "NONE",
+                    domain_code=(
+                        "MULTIPLE"
+                        if "," in str(result.retrieval_domain or "")
+                        else result.retrieval_domain or "NONE"
+                    ),
                     status_code="COMPLETED",
                     reason_code=(
                         result.reason_codes[0]
@@ -4439,6 +4618,29 @@ class Orac:
                     continuation_recovery=result.continuation_recovery_used,
                     final_invocation_id=result.final_continuation_id,
                     duration_ms=duration_ms,
+                    phase2c_detail=(
+                        {
+                            "schema_version": 1,
+                            "discovery": dict(result.discovery_telemetry),
+                            "selected_handles": list(
+                                result.selected_domain_handles
+                            ),
+                            "successful_domain_types": list(
+                                result.successful_domain_types
+                            ),
+                            "unavailable_domain_count": (
+                                result.unavailable_domain_count
+                            ),
+                            "selected_evidence_count": (
+                                result.selected_evidence_count
+                            ),
+                            "omitted_evidence_count": (
+                                result.omitted_evidence_count
+                            ),
+                        }
+                        if result.discovery_telemetry is not None
+                        else None
+                    ),
                 )
             except Exception as exc:
                 _log_exception(
@@ -8691,6 +8893,7 @@ class Orac:
                     prepared_governed = self._prepare_governed_tool_execution(
                         llm_connector=llm_connector,
                         final_prompt=final_prompt,
+                        discovery_query=llm_prompt,
                         auth_user=auth_user,
                         session_id=session_id,
                         request_id=req_env.get("id"),

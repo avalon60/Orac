@@ -122,7 +122,8 @@ as
     p_committed_before_tool_yn    in varchar2 default 'N',
     p_continuation_recovery_yn    in varchar2 default 'N',
     p_final_invocation_id         in varchar2 default null,
-    p_duration_ms                 in number default null
+    p_duration_ms                 in number default null,
+    p_phase2c_detail_json         in clob default null
   );
 end knowledge_retrieval_api;
 /

@@ -20,7 +20,7 @@ class HostRetrievalMediator:
     def __init__(
         self,
         *,
-        conversation_service: Any,
+        conversation_service: Any | None,
         project_service: Any | None = None,
     ) -> None:
         """Initialise independently governed conversation and project services."""
@@ -33,7 +33,9 @@ class HostRetrievalMediator:
         context: TrustedRetrievalContext,
     ) -> tuple[RetrievalDomain, ...]:
         """Return only domains with host-derived authority for this request."""
-        domains = [RetrievalDomain.CONVERSATION]
+        domains = []
+        if self._conversation_service is not None:
+            domains.append(RetrievalDomain.CONVERSATION)
         scope = context.project_scope
         if (
             self._project_service is not None
@@ -71,6 +73,12 @@ class HostRetrievalMediator:
         context: TrustedRetrievalContext,
     ) -> GovernedRetrievalResult:
         """Invoke principal-owned conversational memory retrieval."""
+        if self._conversation_service is None:
+            return GovernedRetrievalResult(
+                domain=request.domain,
+                status="failed",
+                reason_codes=("retrieval_domain_not_enabled",),
+            )
         outcome = self._conversation_service.retrieve(request, context=context)
         provenance = None
         if outcome.provenance is not None:

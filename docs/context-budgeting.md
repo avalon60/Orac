@@ -129,3 +129,11 @@ Recommended rollout:
 5. Set `shadow_mode = false` and restart Orac to enforce decisions.
 
 No database migration is required for Phase 2B.
+
+Phase 2C domain discovery reuses this same accounting path. The bounded
+catalogue instruction and exact handle-enumerated tool schema are included in
+the initial provider serialization. Federated candidates retain primary
+evidence priority and the existing evidence ceiling. If the final
+tools-disabled continuation would exceed the safety equation, candidates are
+removed from the end of their deterministic ranking until the exact
+serialization fits. Phase 2C has no separate token allocator or safety reserve.

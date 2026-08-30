@@ -51,9 +51,9 @@ class RestoreRecoverySchemaTests(unittest.TestCase):
         self.assertIn("l_row.enabled := 'n'", package_body)
         self.assertIn("gc_recovery_status", package_body)
         self.assertIn("recovery_pending", package_body)
-        self.assertIn("where enabled = 'y'", menu_view)
-        self.assertIn("and install_status = 'installed'", menu_view)
-        self.assertIn("and installed_app_id is not null", menu_view)
+        self.assertIn("where app.enabled = 'y'", menu_view)
+        self.assertIn("and app.install_status = 'installed'", menu_view)
+        self.assertIn("and app.installed_app_id is not null", menu_view)
 
 
 if __name__ == "__main__":

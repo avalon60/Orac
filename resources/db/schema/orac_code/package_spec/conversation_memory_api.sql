@@ -16,6 +16,12 @@ as
 
   function next_request_id return number;
 
+  function has_retrievable_memory(
+    p_principal_username   in varchar2,
+    p_embedding_model      in varchar2,
+    p_embedding_dimensions in number
+  ) return varchar2;
+
   procedure open_request_sources(
     p_memory_request_id in number,
     p_sources              out sys_refcursor

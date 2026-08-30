@@ -14,10 +14,24 @@ timestamp() {
 
 compile_and_validate_core_runtime() {
   local oracle_pdb="$1"
+  local sqlcl_bin="$2"
+  local database_cli
   local compile_output
 
+  if [[ -n "${SQLPLUS_BIN:-}" && -x "${SQLPLUS_BIN}" ]]; then
+    database_cli="${SQLPLUS_BIN}"
+  elif [[ -z "${SQLPLUS_BIN:-}" ]] && command -v sqlplus >/dev/null 2>&1; then
+    database_cli="$(command -v sqlplus)"
+  elif [[ -x "${sqlcl_bin}" ]]; then
+    database_cli="${sqlcl_bin}"
+  else
+    echo "ORAC_CORE_RUNTIME_VALIDATION_FAILED: neither SQL*Plus nor SQLcl is available."
+    return 1
+  fi
+
+  printf '%s Database validation client: %s\n' "${PROG}" "${database_cli}"
   printf '%s Compiling core runtime schemas.\n' "${PROG}"
-  if ! compile_output=$(sqlplus -L -s / as sysdba <<SQL
+  if ! compile_output=$("${database_cli}" -L -s / as sysdba <<SQL
 set heading off feedback off pagesize 0 verify off echo off serveroutput on
 whenever sqlerror exit failure rollback
 alter session set container=${oracle_pdb};
@@ -186,7 +200,7 @@ orac_liquibase_delta_setup() {
       LIQUIBASE_SEARCH_PATH="${liquibase_search_path}" \
       "${deploy_script}" --update --contexts core,prod --labels core
 
-    compile_and_validate_core_runtime "${oracle_pdb}"
+    compile_and_validate_core_runtime "${oracle_pdb}" "${sqlcl_bin}"
 
     printf '[%s] %s Complete\n' "$(timestamp)" "${PROG}"
   } 2>&1 | tee "${log_file}"

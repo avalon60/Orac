@@ -1329,7 +1329,8 @@ as
     p_committed_before_tool_yn    in varchar2 default 'N',
     p_continuation_recovery_yn    in varchar2 default 'N',
     p_final_invocation_id         in varchar2 default null,
-    p_duration_ms                 in number default null
+    p_duration_ms                 in number default null,
+    p_phase2c_detail_json         in clob default null
   )
   is
     l_user_id     number;
@@ -1337,8 +1338,9 @@ as
     l_domain      varchar2(30) := upper(trim(p_domain_code));
     l_mode        varchar2(20) := upper(trim(p_tool_mode));
     l_timing      varchar2(20) := upper(trim(p_tool_timing));
+    l_json_valid  number;
   begin
-    if l_domain not in ('CONVERSATION', 'PROJECT', 'PLUGIN', 'NONE')
+    if l_domain not in ('CONVERSATION', 'PROJECT', 'PLUGIN', 'MULTIPLE', 'NONE')
        or l_mode not in ('STREAMING', 'BUFFERED')
        or l_timing not in ('EARLY', 'LATE', 'NONE')
        or p_status_code not in ('COMPLETED', 'FAILED', 'CANCELLED')
@@ -1375,6 +1377,32 @@ as
            )
       into l_detail_json
       from dual;
+
+    if p_phase2c_detail_json is not null
+    then
+      if dbms_lob.getlength(p_phase2c_detail_json) > 8192
+      then
+        raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
+      end if;
+      select count(*)
+        into l_json_valid
+        from dual
+       where p_phase2c_detail_json is json;
+      if l_json_valid <> 1
+      then
+        raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
+      end if;
+      select json_mergepatch(
+               l_detail_json,
+               json_object(
+                 'phase2c' value p_phase2c_detail_json format json
+                 returning json
+               )
+               returning json
+             )
+        into l_detail_json
+        from dual;
+    end if;
 
     write_event(
       p_event_id, 'OUTCOME', p_username, l_user_id, null,

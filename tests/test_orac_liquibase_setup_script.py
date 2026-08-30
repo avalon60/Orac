@@ -35,10 +35,34 @@ def _write_mock_environment(root: Path) -> dict[str, str]:
     liquibase_home = root / "liquibase"
     schema_home = orac_home / "schema"
     log_root = root / "logs"
+    database_client_calls = root / "database-client-calls.txt"
 
     _write_executable(
         sqlcl_home / "bin" / "sql",
-        "#!/usr/bin/env bash\nprintf 'SQLcl mock 25.2\\n'\n",
+        """#!/usr/bin/env bash
+if [[ "${1:-}" == "-V" ]]; then
+  printf 'SQLcl mock 25.2\n'
+  exit 0
+fi
+cat >/dev/null
+printf 'sqlcl-runtime\n' >> "${DATABASE_CLIENT_CALLS}"
+if [[ "${SQLCL_RUNTIME_FAIL:-0}" == "1" ]]; then
+  exit 44
+fi
+printf '%s\n' "${SQLCL_RUNTIME_STATUS:-VALID}"
+""",
+    )
+    sqlplus_bin = root / "container-bin" / "sqlplus"
+    _write_executable(
+        sqlplus_bin,
+        """#!/usr/bin/env bash
+cat >/dev/null
+printf 'sqlplus-runtime\n' >> "${DATABASE_CLIENT_CALLS}"
+if [[ "${SQLPLUS_RUNTIME_FAIL:-0}" == "1" ]]; then
+  exit 45
+fi
+printf '%s\n' "${SQLPLUS_RUNTIME_STATUS:-VALID}"
+""",
     )
     liquibase_home.mkdir(parents=True)
     schema_home.mkdir(parents=True)
@@ -74,6 +98,8 @@ exit 0
             "LIQUIBASE_HOME": str(liquibase_home),
             "LIQUIBASE_SEARCH_PATH": str(schema_home),
             "LIQUIBASE_SETUP_LOG_ROOT": str(log_root),
+            "SQLPLUS_BIN": str(sqlplus_bin),
+            "DATABASE_CLIENT_CALLS": str(database_client_calls),
         }
     )
     return env
@@ -109,6 +135,43 @@ class OracLiquibaseSetupScriptTests(unittest.TestCase):
             self.assertIn("--update --contexts core,prod --labels core", calls[2])
             self.assertIn(str(root / "logs"), calls[0])
             self.assertTrue(list((root / "logs").glob("*/040-orac-liquibase-deltas.log")))
+            self.assertEqual(
+                (root / "database-client-calls.txt").read_text(encoding="utf-8"),
+                "sqlplus-runtime\n",
+            )
+
+    def test_falls_back_to_sqlcl_when_sqlplus_is_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            env = _write_mock_environment(root)
+            env["SQLPLUS_BIN"] = str(root / "missing" / "sqlplus")
+
+            result = _run_script(env)
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn(
+                str(root / "sqlcl" / "bin" / "sql"),
+                result.stdout,
+            )
+            self.assertEqual(
+                (root / "database-client-calls.txt").read_text(encoding="utf-8"),
+                "sqlcl-runtime\n",
+            )
+
+    def test_runtime_validation_failure_is_not_retried_with_sqlcl(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            env = _write_mock_environment(root)
+            env["SQLPLUS_RUNTIME_FAIL"] = "1"
+
+            result = _run_script(env)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("core runtime validation command failed", result.stdout)
+            self.assertEqual(
+                (root / "database-client-calls.txt").read_text(encoding="utf-8"),
+                "sqlplus-runtime\n",
+            )
 
     def test_ignores_generic_log_root_from_sourced_setup_scripts(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
