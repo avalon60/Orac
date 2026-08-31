@@ -16,12 +16,16 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from model.plugin_database_session import DEFAULT_PLUGIN_DATABASE_CONNECTION_NAME
-from model.plugin_database_session import ORAC_PLUGIN_DATABASE_USER
-from model.plugin_database_session import OracPluginDatabaseSession
-from model.plugin_database_session import OracPluginDatabaseSessionFactory
-from model.plugin_database_session import PluginDatabaseSessionError
-from model.plugin_service_manager import PluginServiceContext
+from model.plugin_database_session import (  # noqa: E402
+    DEFAULT_PLUGIN_DATABASE_CONNECTION_NAME,
+)
+from model.plugin_database_session import ORAC_PLUGIN_DATABASE_USER  # noqa: E402
+from model.plugin_database_session import OracPluginDatabaseSession  # noqa: E402
+from model.plugin_database_session import (  # noqa: E402
+    OracPluginDatabaseSessionFactory,
+)
+from model.plugin_database_session import PluginDatabaseSessionError  # noqa: E402
+from model.plugin_service_manager import PluginServiceContext  # noqa: E402
 
 
 class _FakeLogger:
@@ -30,6 +34,26 @@ class _FakeLogger:
 
     def log_debug(self, message: str) -> None:
         self.debug.append(message)
+
+
+class _FakeConfigManager:
+    def __init__(self, values: dict[tuple[str, str], str]) -> None:
+        self.values = values
+        self.calls: list[tuple[str, str, Any]] = []
+
+    def config_value(
+        self,
+        section: str,
+        key: str,
+        default: Any = None,
+    ) -> Any:
+        self.calls.append((section, key, default))
+        lookup_key = (section, key)
+        if lookup_key in self.values:
+            return self.values[lookup_key]
+        if default is not None:
+            return default
+        raise KeyError(f"Missing config key {section}.{key}")
 
 
 class _FakeUserSecurity:
@@ -131,6 +155,42 @@ class PluginDatabaseSessionTests(unittest.TestCase):
         self.assertFalse(
             any("super-secret-password" in message for message in logger.debug)
         )
+
+    def test_factory_uses_configured_plugin_dsn_credential_entry(self) -> None:
+        config_mgr = _FakeConfigManager(
+            {
+                ("database", "plugin_dsn_credential_entry"): (
+                    "custom-plugin-entry"
+                )
+            }
+        )
+        logger = _FakeLogger()
+        factory = OracPluginDatabaseSessionFactory(
+            config_mgr=config_mgr,
+            user_security_factory=lambda **kwargs: _FakeUserSecurity(**kwargs),
+            db_session_factory=lambda **kwargs: _FakeDBSession(**kwargs),
+            logger=logger,
+        )
+
+        factory.create()
+
+        self.assertEqual(
+            config_mgr.calls[0],
+            ("database", "plugin_dsn_credential_entry", None),
+        )
+        self.assertTrue(
+            any("custom-plugin-entry" in message for message in logger.debug)
+        )
+
+    def test_factory_requires_configured_plugin_dsn_credential_entry(self) -> None:
+        factory = OracPluginDatabaseSessionFactory(
+            config_mgr=_FakeConfigManager({}),
+            user_security_factory=lambda **kwargs: _FakeUserSecurity(**kwargs),
+            db_session_factory=lambda **kwargs: _FakeDBSession(**kwargs),
+        )
+
+        with self.assertRaisesRegex(KeyError, "plugin_dsn_credential_entry"):
+            factory.create()
 
     def test_factory_rejects_core_or_plugin_owner_credentials(self) -> None:
         for username in ("ORAC", "ORAC_CORE", "ORAC_API", "ORAC_CODE", "ORAC_HA", "SYSTEM", "SYS"):

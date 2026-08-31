@@ -251,8 +251,9 @@ class OracPluginDatabaseSessionFactory:
 
         Args:
             config_mgr: Optional Orac configuration manager.
-            connection_name: Saved DSN connection name. Defaults to
-                ``database.plugin_connection_name`` or ``orac-plugin``.
+            connection_name: Saved DSN credential entry override. Defaults to
+                ``database.plugin_dsn_credential_entry`` when configuration is
+                supplied, or ``orac-plugin`` without a configuration manager.
             project_identifier: Credential-store project identifier override.
             user_security_factory: Injectable ``UserSecurity`` factory for tests.
             db_session_factory: Injectable DB session factory for tests.
@@ -321,8 +322,7 @@ class OracPluginDatabaseSessionFactory:
         if self._config_mgr is not None:
             value = self._config_mgr.config_value(
                 section="database",
-                key="plugin_connection_name",
-                default=DEFAULT_PLUGIN_DATABASE_CONNECTION_NAME,
+                key="plugin_dsn_credential_entry",
             )
             return str(value or DEFAULT_PLUGIN_DATABASE_CONNECTION_NAME).strip()
         return DEFAULT_PLUGIN_DATABASE_CONNECTION_NAME

@@ -20,8 +20,10 @@ default_num_predict = 2048
 num_predict_incr_pct = 100
 
 [database]
-connection_name = orac-service
-plugin_connection_name = orac-plugin
+# Credential-store lookup keys, not tnsnames.ora aliases. Each selected entry's
+# resource_id contains the Oracle DSN, which may itself be a TNS alias.
+dsn_credential_entry = orac-service
+plugin_dsn_credential_entry = orac-plugin
 
 [client]
 llm_timeout = 120

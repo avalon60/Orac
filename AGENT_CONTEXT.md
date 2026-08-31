@@ -77,9 +77,10 @@ Use the least-privileged role that can answer the question.
 
 No owner-scoped SQLcl saved connections are currently available for the core
 layer schemas or plugin-private schemas. `orac-service` and `orac-plugin` are
-application-managed encrypted DSN names configured under `[database]`; they are
-not SQLcl saved connections or Oracle Net service aliases and are therefore not
-listed in this table.
+application-managed encrypted DSN credential entries selected by
+`database.dsn_credential_entry` and
+`database.plugin_dsn_credential_entry`. They are not SQLcl saved connections or
+Oracle Net service aliases and are therefore not listed in this table.
 
 ## Plugin Context and Provenance
 

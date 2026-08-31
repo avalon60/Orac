@@ -10,10 +10,22 @@ from collections import Counter
 from configparser import ConfigParser
 from pathlib import Path
 import re
+import sys
 from urllib.parse import unquote
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+SRC_ROOT = PROJECT_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from lib.config_mgr import ConfigManager  # noqa: E402
+
 CONFIG_PATH = PROJECT_ROOT / "resources/config/orac.ini"
+SHIPPED_CONFIG_PATHS = (
+    CONFIG_PATH,
+    PROJECT_ROOT / "resources/config/orac.ini.kokoro",
+    PROJECT_ROOT / "resources/config/orac.ini.piper",
+)
 CONFIG_DOC_PATH = PROJECT_ROOT / "docs/configuration.md"
 CONVERSATION_GUIDE_PATH = PROJECT_ROOT / "docs/conversation-context-memory-and-rag.md"
 CANONICAL_DOC_PATHS = (
@@ -111,6 +123,54 @@ def test_configuration_reference_matches_shipped_ini() -> None:
     assert duplicates == []
     assert missing == []
     assert stale == []
+
+
+def test_shipped_profiles_use_explicit_dsn_credential_entry_keys() -> None:
+    """Every shipped profile uses credential-store terminology."""
+    for config_path in SHIPPED_CONFIG_PATHS:
+        parser = ConfigParser(interpolation=None)
+        parser.read(config_path, encoding="utf-8")
+
+        assert parser.get("database", "dsn_credential_entry") == "orac-service"
+        assert (
+            parser.get("database", "plugin_dsn_credential_entry")
+            == "orac-plugin"
+        )
+        assert not parser.has_option("database", "connection_name")
+        assert not parser.has_option("database", "plugin_connection_name")
+
+
+def test_dsn_credential_entry_environment_overrides(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Documented environment variables override both credential entries."""
+    config_path = tmp_path / "orac.ini"
+    config_path.write_text(
+        "[database]\n"
+        "dsn_credential_entry = file-core\n"
+        "plugin_dsn_credential_entry = file-plugin\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(
+        "ORAC__DATABASE__DSN_CREDENTIAL_ENTRY",
+        "environment-core",
+    )
+    monkeypatch.setenv(
+        "ORAC__DATABASE__PLUGIN_DSN_CREDENTIAL_ENTRY",
+        "environment-plugin",
+    )
+
+    config = ConfigManager(config_file_path=config_path)
+
+    assert (
+        config.config_value("database", "dsn_credential_entry")
+        == "environment-core"
+    )
+    assert (
+        config.config_value("database", "plugin_dsn_credential_entry")
+        == "environment-plugin"
+    )
 
 
 def test_canonical_documentation_links_resolve() -> None:

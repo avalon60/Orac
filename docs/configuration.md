@@ -103,31 +103,42 @@ Percentage increase applied when generation reaches the token limit.
 
 Named encrypted database connections used by core and plugin runtime paths.
 
-### `connection_name`
+`dsn_credential_entry` and `plugin_dsn_credential_entry` are lookup keys for
+entries in the encrypted DSN credentials store. They are not `tnsnames.ora`
+aliases. The selected credential entry's `resource_id` contains the Oracle DSN,
+which may itself be a TNS alias.
+
+This is a breaking configuration rename. Existing configurations must replace
+`connection_name` and `plugin_connection_name`; the old keys are no longer
+read. Environment overrides must likewise use
+`ORAC__DATABASE__DSN_CREDENTIAL_ENTRY` and
+`ORAC__DATABASE__PLUGIN_DSN_CREDENTIAL_ENTRY`.
+
+### `dsn_credential_entry`
 
 - **Type:** string
 - **Shipped value:** `orac-service`
-- **Runtime fallback:** The shipped value is authoritative; loaders without a separate default require the configured key
+- **Runtime fallback:** None; the configured key is required
 - **Required:** Yes for the corresponding database path
-- **Allowed values:** Any value valid for the described subsystem
+- **Allowed values:** A named entry in the encrypted DSN credentials store
 - **Status:** active
 
-Names the encrypted least-privilege core runtime database connection.
+Selects the encrypted least-privilege core runtime credential entry.
 
-**Example:** `connection_name = orac-service`
+**Example:** `dsn_credential_entry = orac-service`
 
-### `plugin_connection_name`
+### `plugin_dsn_credential_entry`
 
 - **Type:** string
 - **Shipped value:** `orac-plugin`
-- **Runtime fallback:** The shipped value is authoritative; loaders without a separate default require the configured key
+- **Runtime fallback:** None when configuration is supplied; standalone factories without a configuration manager use `orac-plugin`
 - **Required:** Yes for the corresponding database path
-- **Allowed values:** Any value valid for the described subsystem
+- **Allowed values:** A named entry in the encrypted DSN credentials store
 - **Status:** active
 
-Names the encrypted plugin-bridge database connection.
+Selects the encrypted plugin-bridge runtime credential entry.
 
-**Example:** `plugin_connection_name = orac-plugin`
+**Example:** `plugin_dsn_credential_entry = orac-plugin`
 
 ## `[client]`
 

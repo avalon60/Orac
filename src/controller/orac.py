@@ -1200,14 +1200,13 @@ class Orac:
             ])
 
             project_id = conf_manager.config_value(section="global", key="project_identifier", default="Orac")
-            db_connection_name = self.config_mgr.config_value(
+            dsn_credential_entry = self.config_mgr.config_value(
                 section="database",
-                key="connection_name",
-                default="orac-service",
+                key="dsn_credential_entry",
             )
             user_sec = UserSecurity(project_identifier=project_id, resource_type="dsn")
             self._user, self._password, self._dsn = user_sec.named_connection_creds(
-                connection_name=db_connection_name
+                connection_name=dsn_credential_entry
             )
 
             # Initialize the database session
