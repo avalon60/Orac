@@ -288,6 +288,50 @@ class DropBoxServiceTests(unittest.TestCase):
         self.assertEqual(service.last_stats.handoff_failed, 0)
         self.assertIn("remains queued", logger.warnings[-1])
 
+    def test_immutable_metadata_conflict_is_explained_and_remains_queued(
+        self,
+    ) -> None:
+        repository = _Repository()
+        repository.handoff_jobs = [_handoff_job()]
+        logger = _Logger()
+        oracle_error = (
+            "ORA-20429: Immutable raw document-version metadata conflicts with "
+            "the existing version. Conflicting fields: mime_type, "
+            "source_modified_on."
+        )
+        service = DropBoxService(
+            logger=logger,
+            scanner=_Scanner(),
+            repository_factory=lambda _context: repository,
+            capture_service_factory=lambda _context: _CaptureService(
+                fail=RuntimeError(oracle_error)
+            ),
+            converter=_Converter(),
+        )
+
+        service.tick(object())
+
+        self.assertEqual(
+            [item["status_code"] for item in repository.status_updates],
+            ["processing", "queued"],
+        )
+        self.assertEqual(
+            repository.status_updates[-1],
+            {
+                "drop_job_id": 99,
+                "status_code": "queued",
+                "error_message": None,
+                "reason_code": None,
+            },
+        )
+        self.assertEqual(repository.core_acceptances, [])
+        self.assertEqual(service.last_stats.handoff_failed, 0)
+        warning = logger.warnings[-1]
+        self.assertIn("existing content-hash version", warning)
+        self.assertIn("field names only", warning)
+        self.assertIn("mime_type, source_modified_on", warning)
+        self.assertNotIn("temporarily unavailable", warning)
+
     def test_store_configuration_failure_aborts_before_per_job_retry(self) -> None:
         repository = _Repository()
         repository.handoff_jobs = [_handoff_job()]
@@ -310,6 +354,7 @@ class DropBoxServiceTests(unittest.TestCase):
         self.assertEqual(repository.status_updates, [])
         self.assertEqual(repository.core_acceptances, [])
         self.assertIn("no-clobber promotion", service.last_error or "")
+
 
 def _location() -> DropLocation:
     return DropLocation(

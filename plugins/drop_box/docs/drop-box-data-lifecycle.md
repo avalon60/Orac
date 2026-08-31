@@ -163,9 +163,12 @@ Retryable converter failures wait one minute, then five minutes. The third
 attempt becomes terminally failed. A new corrected source observation creates a
 new lifecycle; no automatic reopening or unreviewed manual requeue exists.
 
-An unexpected transient Core/database exception restores the job to `queued`
-without exposing raw diagnostics. A `KnowledgeCaptureError` records a terminal
-failed handoff for that observation.
+An unexpected Core/database exception restores the job to `queued` without
+persisting raw diagnostics on the job. `ORA-20429` follows that same
+retry-preserving path, but the restricted service warning explains that an
+existing same-content version has conflicting immutable metadata and lists the
+field names only. A `KnowledgeCaptureError` records a terminal failed handoff
+for that observation.
 
 ## Core Handoff Contract
 

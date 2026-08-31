@@ -1,6 +1,6 @@
 -- Author: Clive Bostock
 -- Date: 15-Aug-2026
--- Purpose: Exercise Phase 1 artefact and chunk-set lineage in a rollback-only transaction.
+-- Purpose: Exercise immutable ingestion metadata and Phase 1 lineage in a rollback-only transaction.
 -- Usage: sql -S -name orac-db @resources/db/acceptance/knowledge_materialisation_lifecycle.sql
 -- Codex-assisted generated/modified.
 -- Codex SDK reviewability guardrails followed.
@@ -14,6 +14,7 @@ set serveroutput on size unlimited
 declare
   l_suffix                 varchar2(32) := lower(rawtohex(sys_guid()));
   l_request_id             number;
+  l_conflict_request_id    number;
   l_document_version_id    number;
   l_legacy_extraction_id   number;
   l_single_extraction_id   number;
@@ -31,6 +32,7 @@ declare
   l_alpha_chunk_set_id     number;
   l_beta_chunk_set_id      number;
   l_result                 clob;
+  l_conflict_message       varchar2(2048);
 
   procedure assert_equal(
     p_actual   in number,
@@ -57,6 +59,32 @@ declare
       raise_application_error(-20991, p_message);
     end if;
   end assert_distinct;
+
+  procedure assert_text_contains(
+    p_text     in varchar2,
+    p_fragment in varchar2,
+    p_message  in varchar2
+  )
+  is
+  begin
+    if instr(p_text, p_fragment) = 0
+    then
+      raise_application_error(-20988, p_message);
+    end if;
+  end assert_text_contains;
+
+  procedure assert_text_absent(
+    p_text     in varchar2,
+    p_fragment in varchar2,
+    p_message  in varchar2
+  )
+  is
+  begin
+    if instr(p_text, p_fragment) > 0
+    then
+      raise_application_error(-20989, p_message);
+    end if;
+  end assert_text_absent;
 
   function artefact_id(
     p_output_set_json in clob,
@@ -95,6 +123,64 @@ begin
     p_target_scope_key        => 'ORAC_CORE',
     p_source_format_code      => 'markdown'
   );
+
+  begin
+    l_conflict_request_id := orac_code.knowledge_ingestion_api.submit_managed_file(
+      p_source_type             => 'P1_10_TEST',
+      p_source_reference        => 'p1-10:' || l_suffix,
+      p_parent_source_reference => 'p1-10:' || l_suffix,
+      p_content_sha256          => '7ce478cce767735522a8002c8900b3237cc273c1a79f3fc56fa65a93e5b5b1c5',
+      p_content_uri             => 'sha256:7ce478cce767735522a8002c8900b3237cc273c1a79f3fc56fa65a93e5b5b1c5',
+      p_mime_type               => 'application/x-orac-conflict-fixture',
+      p_original_filename       => 'private-conflict-fixture.secret',
+      p_byte_size               => 1234567,
+      p_target_scope_type       => 'PROJECT',
+      p_target_scope_key        => 'ORAC_CORE',
+      p_source_modified_on      => to_timestamp_tz(
+                                     '2031-02-03 04:05:06 +00:00',
+                                     'YYYY-MM-DD HH24:MI:SS TZH:TZM'
+                                   ),
+      p_source_format_code      => 'conflict_fixture_format'
+    );
+    raise_application_error(-20987, 'Conflicting immutable metadata was accepted.');
+  exception
+    when others then
+      if sqlcode <> -20429
+      then
+        raise;
+      end if;
+      l_conflict_message := lower(sqlerrm);
+      assert_text_contains(
+        l_conflict_message,
+        'conflicting fields: mime_type, original_filename, byte_size, source_modified_on, source_format_code.',
+        'ORA-20429 did not report the expected deterministic field list.'
+      );
+      assert_text_absent(
+        l_conflict_message,
+        'application/x-orac-conflict-fixture',
+        'ORA-20429 exposed the conflicting MIME value.'
+      );
+      assert_text_absent(
+        l_conflict_message,
+        'private-conflict-fixture.secret',
+        'ORA-20429 exposed the conflicting filename value.'
+      );
+      assert_text_absent(
+        l_conflict_message,
+        '1234567',
+        'ORA-20429 exposed the conflicting byte-size value.'
+      );
+      assert_text_absent(
+        l_conflict_message,
+        '2031-02-03',
+        'ORA-20429 exposed the conflicting timestamp value.'
+      );
+      assert_text_absent(
+        l_conflict_message,
+        'conflict_fixture_format',
+        'ORA-20429 exposed the conflicting format value.'
+      );
+  end;
 
   select document_version_id
     into l_document_version_id

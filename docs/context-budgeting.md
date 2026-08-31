@@ -10,6 +10,10 @@ calculates and records the decision while preserving the existing prompt. Move
 to enforcement only after reviewing provider/runtime telemetry for the models
 actually in service.
 
+See [Conversation Context, Memory, and RAG](conversation-context-memory-and-rag.md)
+for the operator-facing turn flow and the relationship between budgeting,
+history, conversational recall, and PROJECT or PLUGIN evidence.
+
 ## Capacity Model
 
 The enabled `llm_registry` row is the governed ceiling for the exact selected

@@ -812,7 +812,8 @@ Core interfaces.
 
 ### P1-07: Add progressive normalised materialisation policy
 
-**Status:** Implemented behind disabled feature flag on 14-Aug-2026. See
+**Status:** Implemented behind a disabled feature flag on 14-Aug-2026 and
+enabled by default with a per-model effective-context gate on 31-Aug-2026. See
 `docs/knowledge-materialisation-policy.md`.
 
 **Objective:** Decide how much content may be exposed for one model request.
@@ -835,15 +836,18 @@ Core interfaces.
 
 ### P1-08: Integrate Markdown and CSV with the primary LLM adapter
 
-**Status:** Implemented behind disabled feature flags on 14-Aug-2026. See
-`docs/knowledge-model-evidence.md`.
+**Status:** Implemented behind disabled feature flags on 14-Aug-2026 and
+enabled by default with a 32,768-token per-model effective-context floor on
+31-Aug-2026. See `docs/knowledge-model-evidence.md`.
 
 **Verified implementation notes:** No architecture deviation was required.
 The repository contains the backward-compatible constraint/package delta, but
 the development database was intentionally inspected read-only rather than
-deployed during P1-08 implementation. Invocation rollout remains blocked until
-eligible enabled local model rows have verified positive context limits; all 20
-currently enabled rows still have `MAX_CONTEXT_TOKENS = NULL`. Follow-ups use
+deployed during P1-08 implementation. At that time invocation rollout was
+blocked because all 20 enabled rows had `MAX_CONTEXT_TOKENS = NULL`; that is a
+historical implementation observation, not the current shipped configuration
+contract. Current runtime eligibility requires a positive governed ceiling and
+an effective registry/runtime ceiling of at least 32,768 tokens. Follow-ups use
 explicit same-scope requests resolved back to the registered document target;
 no model tool or model-prose retrieval parser was introduced.
 

@@ -5,6 +5,23 @@ logical `CONVERSATION`, `PROJECT`, and `PLUGIN` domains. Orac remains the
 security boundary. A model can provide only the retrieval query and one domain
 from the exact schema advertised for that turn.
 
+See [Conversation Context, Memory, and RAG](conversation-context-memory-and-rag.md)
+for the operator-facing turn flow, shipped-state matrix, invocation examples,
+and rollout checks.
+
+## Shipped Effective State
+
+The shipped `[governed_retrieval].enabled = true` initialises the coordinator,
+but it does not make every model eligible. Exact governed capability evidence,
+provider support, a positive model context limit, authorised domains, and
+acceptable runtime health still resolve the effective mode.
+
+Phase 2C discovery currently runs in observation-only mode because
+`domain_discovery_enabled = false` and `domain_discovery_shadow_mode = true`.
+It may calculate bounded authorised offers and telemetry, but the model-facing
+contract remains Phase 2A. Activation is a separate reviewed configuration
+change.
+
 ## Authority
 
 The host derives the authenticated principal and every concrete scope.
@@ -98,7 +115,7 @@ these Orac-owned retrieval services and authority decisions. Phase 2B now
 accounts for the advertised schema and the final ephemeral tool exchange under
 the shared effective context limit without changing Phase 2A authorization.
 
-## Phase 2C: Authorised Domain Discovery
+## Phase 2C: Authorised Domain Discovery (Shadowed in the Shipped Configuration)
 
 Phase 2C extends the existing coordinator and mediator. On each eligible turn,
 Orac reads the principal's current authorised PROJECT catalogue through

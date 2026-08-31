@@ -351,5 +351,5 @@ def test_phase_one_prompt_and_text_local_guards_remain_unchanged() -> None:
     assert "attachment" not in connector_abc
     assert "images" not in connector_abc
     assert 'model_type = "TEXT"' in model_submission
-    assert 'current.model_type.strip().upper() != "TEXT"' in model_submission
-    assert 'current.processing_locality.strip().upper() != "LOCAL"' in model_submission
+    assert 'model.model_type.strip().upper() != "TEXT"' in model_submission
+    assert 'model.processing_locality.strip().upper() != "LOCAL"' in model_submission

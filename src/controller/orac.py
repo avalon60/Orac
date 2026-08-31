@@ -1272,6 +1272,7 @@ class Orac:
             self._knowledge_model_evidence_enabled = False
             self._knowledge_model_evidence_shadow_mode = False
             self._knowledge_model_evidence_fingerprint = ""
+            self._knowledge_model_evidence_min_effective_context_tokens = 32768
             self.knowledge_follow_up_tracker: KnowledgeEvidenceFollowUpTracker | None = None
             self._knowledge_evidence_state_by_session: dict[
                 str,
@@ -3410,7 +3411,7 @@ class Orac:
             )
 
     def _init_knowledge_model_evidence(self) -> None:
-        """Initialise the disabled-by-default P1-08 Core submission boundary."""
+        """Initialise the model-gated P1-08 Core submission boundary."""
         section = "knowledge.model_evidence"
         self._knowledge_model_evidence_enabled = False
         self._knowledge_model_evidence_shadow_mode = self.config_mgr.bool_config_value(
@@ -3426,6 +3427,7 @@ class Orac:
             "context_safety_percent",
             "context_safety_min_tokens",
             "max_evidence_context_percent",
+            "min_effective_context_tokens",
             "classification_enforcement_enabled",
             "local_text_models_only",
             "follow_up_enabled",
@@ -3499,6 +3501,13 @@ class Orac:
                 estimator=self.knowledge_token_estimator,
             )
             self.knowledge_submission_repository = KnowledgeRetrievalRepository()
+            self._knowledge_model_evidence_min_effective_context_tokens = (
+                self.config_mgr.int_config_value(
+                    section,
+                    "min_effective_context_tokens",
+                    default=32768,
+                )
+            )
             self.knowledge_submission_guard = KnowledgeModelSubmissionGuard(
                 estimator=self.knowledge_token_estimator,
                 registry_reader=self._read_model_registry_snapshot,
@@ -3521,6 +3530,9 @@ class Orac:
                     section,
                     "max_evidence_context_percent",
                     default=25,
+                ),
+                min_effective_context_tokens=(
+                    self._knowledge_model_evidence_min_effective_context_tokens
                 ),
             )
             if self.config_mgr.bool_config_value(
@@ -3558,22 +3570,42 @@ class Orac:
             self._knowledge_model_evidence_enabled = True
             logger.log_info(
                 "Knowledge model evidence initialised "
-                f"(shadow_mode={self._knowledge_model_evidence_shadow_mode})."
+                f"(shadow_mode={self._knowledge_model_evidence_shadow_mode}, "
+                "min_effective_context_tokens="
+                f"{self._knowledge_model_evidence_min_effective_context_tokens})."
             )
+            self._log_configured_model_evidence_readiness()
         except Exception as exc:
             self.knowledge_evidence_builder = None
             self.knowledge_submission_guard = None
             self.knowledge_submission_repository = None
             _log_exception("Knowledge model evidence initialisation failed", exc)
 
-    def _read_model_registry_snapshot(self, llm_id: int) -> ModelRegistrySnapshot:
-        """Read one exact registry row with explicit provider capabilities."""
+    def _read_model_registry_snapshot(
+        self,
+        llm_id: int,
+        *,
+        llm_connector: Any | None = None,
+    ) -> ModelRegistrySnapshot:
+        """Read one exact model row with capabilities and runtime context."""
         row = self.ctx.get_llm_registry_entry(llm_id)
         if not row:
             raise LookupError("model registry row is unavailable")
         provider = str(row.get("PROVIDER") or "").strip().lower()
         model_name = str(row.get("MODEL") or "").strip()
         capabilities = self.provider_registry.capabilities(provider)
+        observation = RuntimeContextObservation(
+            context_limit_tokens=None,
+            source_code=f"{provider.upper()}_UNAVAILABLE",
+        )
+        observer = getattr(llm_connector, "runtime_context_observation", None)
+        if callable(observer):
+            try:
+                candidate = observer()
+                if isinstance(candidate, RuntimeContextObservation):
+                    observation = candidate
+            except Exception:
+                pass
         return model_registry_snapshot_from_row(
             row,
             processing_locality=capabilities.processing_locality,
@@ -3582,7 +3614,91 @@ class Orac:
                 provider=provider,
                 model_name=model_name,
             ),
+            runtime_context_tokens=observation.context_limit_tokens,
+            runtime_observation_source=observation.source_code,
+            runtime_observation_fingerprint=observation.observation_fingerprint,
+            runtime_observation_version=observation.source_version,
         )
+
+    def _log_model_evidence_readiness(
+        self,
+        model: ModelRegistrySnapshot,
+        *,
+        stage: str,
+    ) -> str | None:
+        """Log content-free P1-08 readiness and return any eligibility reason."""
+        guard = self.knowledge_submission_guard
+        if guard is None:
+            return "MAT_SUB_MODEL_UNAVAILABLE"
+        if model.runtime_context_tokens is None:
+            logger.log_warning(
+                "Knowledge model evidence runtime context is unknown; using "
+                "the governed registry ceiling: "
+                f"stage={stage} reason=CTX_RUNTIME_LIMIT_UNKNOWN "
+                f"llm_id={model.llm_id} governed_context_tokens="
+                f"{model.max_context_tokens}."
+            )
+        reason = guard.model_eligibility_reason(model)
+        if reason is not None:
+            logger.log_warning(
+                "Knowledge model evidence is ineligible for the selected model; "
+                "bounded RAG remains available: "
+                f"stage={stage} reason={reason} llm_id={model.llm_id} "
+                f"governed_context_tokens={model.max_context_tokens} "
+                f"runtime_context_tokens={model.runtime_context_tokens} "
+                f"effective_context_tokens={model.effective_context_tokens} "
+                "min_effective_context_tokens="
+                f"{self._knowledge_model_evidence_min_effective_context_tokens}."
+            )
+        elif stage == "startup":
+            logger.log_info(
+                "Knowledge model evidence default model is eligible: "
+                f"llm_id={model.llm_id} effective_context_tokens="
+                f"{model.effective_context_tokens}."
+            )
+        return reason
+
+    def _log_configured_model_evidence_readiness(self) -> None:
+        """Report readiness for the configured default model without blocking startup."""
+        try:
+            row = self._configured_fallback_registry_row()
+            llm_id = int(row.get("LLM_ID")) if row else 0
+            if llm_id <= 0:
+                raise LookupError("configured model registry row is unavailable")
+            model = self._read_model_registry_snapshot(
+                llm_id,
+                llm_connector=self.llm,
+            )
+            self._log_model_evidence_readiness(model, stage="startup")
+        except Exception as exc:
+            logger.log_warning(
+                "Knowledge model evidence default-model readiness is unavailable: "
+                f"reason=MAT_SUB_MODEL_UNAVAILABLE error={type(exc).__name__}."
+            )
+
+    def _eligible_model_evidence_snapshot(
+        self,
+        *,
+        llm_id: int,
+        llm_connector: Any,
+        stage: str,
+    ) -> ModelRegistrySnapshot | None:
+        """Return an eligible effective model snapshot or preserve RAG fallback."""
+        try:
+            candidate = self._read_model_registry_snapshot(
+                llm_id,
+                llm_connector=llm_connector,
+            )
+            if self._log_model_evidence_readiness(candidate, stage=stage) is None:
+                return candidate
+        except Exception as exc:
+            logger.log_warning(
+                "Knowledge model evidence model readiness failed; bounded RAG "
+                "remains available: "
+                f"stage={stage} reason=MAT_SUB_MODEL_UNAVAILABLE "
+                f"error={type(exc).__name__}."
+            )
+        return None
 
     def refresh_plugin_routing(self) -> dict[str, Any] | None:
         """Bootstraps or refreshes plugin routing state on demand."""
@@ -8308,7 +8424,8 @@ class Orac:
                 if knowledge_route_decision is not None
                 else None
             )
-            if (
+            materialisation_model: ModelRegistrySnapshot | None = None
+            model_evidence_requested = bool(
                 getattr(self, "_knowledge_model_evidence_enabled", False)
                 and materialisation_purpose
                 and knowledge_outcome is not None
@@ -8317,7 +8434,14 @@ class Orac:
                 and self.knowledge_submission_guard is not None
                 and self.knowledge_token_estimator is not None
                 and effective_llm_id is not None
-            ):
+            )
+            if model_evidence_requested:
+                materialisation_model = self._eligible_model_evidence_snapshot(
+                    llm_id=effective_llm_id,
+                    llm_connector=llm_connector,
+                    stage="request",
+                )
+            if materialisation_model is not None:
                 version_ids = {
                     int(item.document_version_id)
                     for item in knowledge_outcome.results
@@ -8367,9 +8491,7 @@ class Orac:
                         voice_session_id=incoming_voice_session_id,
                     )
                 try:
-                    initial_model = self._read_model_registry_snapshot(
-                        effective_llm_id
-                    )
+                    initial_model = materialisation_model
                     base_prompt = self._build_contextual_prompt(
                         session_id,
                         llm_prompt,
@@ -8412,7 +8534,9 @@ class Orac:
                             llm_id=initial_model.llm_id,
                             registry_row_version=initial_model.row_version,
                             context_policy_code=initial_model.context_policy_code,
-                            max_context_tokens=initial_model.max_context_tokens,
+                            max_context_tokens=(
+                                initial_model.effective_context_tokens
+                            ),
                             occupied_input_tokens=occupied,
                             reserved_output_tokens=2048,
                             processing_locality=initial_model.processing_locality,
@@ -8560,7 +8684,13 @@ class Orac:
                             model=initial_model,
                         )
                         prepared = self.knowledge_submission_guard.prepare(
-                            submission_request
+                            submission_request,
+                            registry_reader=lambda llm_id: (
+                                self._read_model_registry_snapshot(
+                                    llm_id,
+                                    llm_connector=llm_connector,
+                                )
+                            ),
                         )
                         if isinstance(prepared, ModelSubmissionRejection):
                             logger.log_warning(

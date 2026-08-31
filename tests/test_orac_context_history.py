@@ -73,6 +73,8 @@ from orac_core.retrieval import SearchResult
 from orac_core.knowledge.grounding import KnowledgeGroundingPackBuilder
 from orac_core.knowledge.models import KnowledgeRetrievalOutcome
 from orac_core.knowledge.models import KnowledgeSearchResult
+from orac_core.knowledge.model_submission import KnowledgeModelSubmissionGuard
+from orac_core.knowledge.model_submission import ModelRegistrySnapshot
 from orac_core.knowledge.scope import KnowledgeScope
 from orac_core.knowledge.scope import KnowledgeScopeAuthorizer
 from orac_core.dialogue_routing import DialogueRoutingService
@@ -4074,6 +4076,75 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(budget["runtime_context_limit"], 32768)
         self.assertEqual(budget["effective_context_limit"], 32768)
         self.assertTrue(budget["runtime_limit_constrained"])
+
+    def test_model_evidence_context_floor_preserves_rag_fallback(self) -> None:
+        """A below-floor model should bypass P1-08 and leave RAG available."""
+        orchestrator = self._make_orac_stub(llm_responses=[])
+        orchestrator.knowledge_submission_guard = KnowledgeModelSubmissionGuard()
+        orchestrator._knowledge_model_evidence_min_effective_context_tokens = 32768
+        model = ModelRegistrySnapshot(
+            llm_id=1,
+            row_version=7,
+            provider_code="ollama",
+            model_name="test-model",
+            model_type="TEXT",
+            context_policy_code="APP",
+            max_context_tokens=49152,
+            processing_locality="LOCAL",
+            text_evidence_eligible=True,
+            runtime_context_tokens=16384,
+            runtime_observation_source="TEST_RUNTIME",
+            runtime_observation_fingerprint="runtime-16384",
+        )
+        orchestrator._read_model_registry_snapshot = lambda *args, **kwargs: model
+
+        selected = orchestrator._eligible_model_evidence_snapshot(
+            llm_id=1,
+            llm_connector=orchestrator.llm,
+            stage="request",
+        )
+
+        self.assertIsNone(selected)
+        warning_text = "\n".join(
+            message
+            for level, message in orac_module.logger.messages
+            if level == "warning"
+        )
+        self.assertIn("MAT_SUB_MODEL_CONTEXT_BELOW_MINIMUM", warning_text)
+        self.assertIn("bounded RAG remains available", warning_text)
+
+    def test_model_evidence_unknown_runtime_uses_registry_with_warning(self) -> None:
+        """A governed limit remains eligible when runtime observation is absent."""
+        orchestrator = self._make_orac_stub(llm_responses=[])
+        orchestrator.knowledge_submission_guard = KnowledgeModelSubmissionGuard()
+        orchestrator._knowledge_model_evidence_min_effective_context_tokens = 32768
+        model = ModelRegistrySnapshot(
+            llm_id=1,
+            row_version=7,
+            provider_code="lmstudio",
+            model_name="test-model",
+            model_type="TEXT",
+            context_policy_code="APP",
+            max_context_tokens=49152,
+            processing_locality="LOCAL",
+            text_evidence_eligible=True,
+            runtime_observation_source="LMSTUDIO_UNAVAILABLE",
+        )
+        orchestrator._read_model_registry_snapshot = lambda *args, **kwargs: model
+
+        selected = orchestrator._eligible_model_evidence_snapshot(
+            llm_id=1,
+            llm_connector=orchestrator.llm,
+            stage="request",
+        )
+
+        self.assertIs(selected, model)
+        warning_text = "\n".join(
+            message
+            for level, message in orac_module.logger.messages
+            if level == "warning"
+        )
+        self.assertIn("CTX_RUNTIME_LIMIT_UNKNOWN", warning_text)
 
     async def test_context_budget_unknown_runtime_uses_registry_ceiling(self) -> None:
         """An unavailable runtime limit should remain diagnostic, not rejecting."""

@@ -67,6 +67,12 @@ some advertised capabilities remain intentionally constrained:
   presentations are not supported. The shipped hash embedding is
   development/test infrastructure, lexical relevance is the current evidence
   gate, and native Oracle vector search is not yet part of the runtime.
+- Conversation memory and governed read-only retrieval are enabled in the
+  shipped configuration, subject to principal ownership, scope grants, exact
+  model capability evidence, provider support, and safe context headroom.
+  Unified context budgeting and Phase 2C domain discovery currently observe in
+  shadow mode; they do not yet replace the shipped prompt or Phase 2A tool
+  contract.
 - Barge-in, native playback, and acoustic echo cancellation include
   experimental modes and require explicit configuration.
 - Media control remains a policy-blocked scaffold, and the OpenAI-compatible
@@ -149,11 +155,11 @@ deployment script currently supports only `TOPOLOGY=db-local`.
 - [Weather](plugins/weather/README.md)
 - [Internet retrieval](docs/retrieval.md)
 - [Dialogue routing and local knowledge](docs/dialogue-routing.md)
+- [Conversation context, memory, and RAG](docs/conversation-context-memory-and-rag.md)
 - [Voice pipeline](docs/voice-pipeline.md)
 - [APEX administration](docs/apex-administration.md)
 - [Backup and restore](docs/backup-restore.md)
 - [Docker Compose deployment](docs/docker-compose-deployment.md)
-- [Architecture overview](detailed-architecture.md)
 
 ## Common Commands
 

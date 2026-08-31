@@ -53,10 +53,12 @@ An ordinary relevant-chunk request with insufficient evidence returns
 Trusted Core code supplies the authenticated principal, canonical authorised
 scope, controlled target identity, purpose, optional requested level, registered
 logical selector, existing RAG sufficiency, authorised metadata characteristics,
-and a registry-derived model budget. A model budget includes `llm_id`, registry
-row version, context policy, configured maximum context, already occupied input,
-reserved output, and explicit processing locality. A missing context maximum
-fails broad materialisation closed.
+and a Core-derived model budget. A model budget includes `llm_id`, registry row
+version, context policy, the lower of the governed registry maximum and any
+observed provider runtime maximum, already occupied input, reserved output, and
+explicit processing locality. A missing governed context maximum fails broad
+materialisation closed. If runtime capacity cannot be observed, Core uses the
+governed maximum and emits a safe warning.
 
 `UTF8_CONSERVATIVE` version 1 estimates registered content before reading it and
 re-estimates strict UTF-8 after P1-06 verification. The estimator uses a 20%
@@ -122,13 +124,16 @@ mapped to bounded policy reasons without database or filesystem details.
 
 ## Compatibility and rollout
 
-`[knowledge.materialisation].enabled=false` ships disabled and additionally
-requires `[knowledge.retrieval].enabled=true`. Existing searchable-chunk
-ranking, grounding, legacy CLOB verification, Markdown artefacts, spreadsheet
-packages, plugins, APEX, and model adapters remain unchanged. Rollback is to
-disable P1-07; P1-06 retrieval and existing RAG continue normally. Database
-rollback removes only the additional audit operation constraint value and the
-run-on-change package/view additions.
+P1-06 and P1-07 ship enabled. P1-07 still requires
+`[knowledge.retrieval].enabled=true`, and P1-08 applies a per-model effective
+context floor of 32,768 tokens. A selected model below that floor bypasses the
+P1-07/P1-08 whole-content path for the turn; existing bounded RAG continues
+normally. Existing searchable-chunk ranking, grounding, legacy CLOB
+verification, Markdown artefacts, spreadsheet packages, plugins, APEX, and
+model adapters remain unchanged. The switches remain independent rollback
+controls: disabling P1-07 leaves P1-06 retrieval and existing RAG operational.
+Database rollback removes only the additional audit operation constraint value
+and the run-on-change package/view additions.
 
 P1-08 consumes only an approved `ProgressiveMaterialisationResult`, captures
 its immutable approval snapshot, and wraps every part as canonical untrusted

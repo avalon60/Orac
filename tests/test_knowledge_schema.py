@@ -247,6 +247,41 @@ class KnowledgeSchemaTests(unittest.TestCase):
         )
         self.assertIn("equivalent_storage_key(", package_sql)
         self.assertIn("immutable raw document-version metadata", package_sql)
+        conflict_start = package_sql.index("l_conflicting_fields := null;")
+        conflict_end = package_sql.index("exception", conflict_start)
+        conflict_sql = package_sql[conflict_start:conflict_end]
+        conflicting_fields = (
+            "source_object_id",
+            "content_uri",
+            "mime_type",
+            "original_filename",
+            "byte_size",
+            "source_modified_on",
+            "source_format_code",
+        )
+        previous_position = -1
+        for field_name in conflicting_fields:
+            call = f"append_conflicting_field(l_conflicting_fields, '{field_name}')"
+            position = conflict_sql.index(call)
+            self.assertGreater(position, previous_position)
+            previous_position = position
+        self.assertIn(
+            "'conflicting fields: ' || l_conflicting_fields || '.'",
+            conflict_sql,
+        )
+        self.assertIn(
+            "'conflicting fields: source_modified_on.'",
+            package_sql,
+        )
+        for value_expression in (
+            "|| l_existing_content_uri",
+            "|| l_existing_mime_type",
+            "|| l_existing_original_filename",
+            "|| l_existing_byte_size",
+            "|| l_existing_source_modified_on",
+            "|| l_existing_source_format_code",
+        ):
+            self.assertNotIn(value_expression, conflict_sql)
         self.assertNotIn(
             "update orac_api.knowledge_document_versions_v",
             package_sql,
@@ -320,8 +355,7 @@ class KnowledgeSchemaTests(unittest.TestCase):
             " ".join(foreign_key_sql.split()),
         )
         self.assertIn(
-            "references orac_core.domain_ref_values (domain_code, "
-            "ref_value_code)",
+            "references orac_core.domain_ref_values (domain_code, ref_value_code)",
             " ".join(foreign_key_sql.split()),
         )
         self.assertIn("doc_class_domain_code = 'doc_class'", check_sql)
@@ -382,8 +416,7 @@ class KnowledgeSchemaTests(unittest.TestCase):
             " ".join(foreign_key_sql.split()),
         )
         self.assertIn(
-            "references orac_core.knowledge_artefacts "
-            "(extraction_id, artefact_id)",
+            "references orac_core.knowledge_artefacts (extraction_id, artefact_id)",
             " ".join(foreign_key_sql.split()),
         )
         self.assertIn("savepoint knowledge_artefact_set_registration", package_sql)
@@ -527,9 +560,7 @@ class KnowledgeSchemaTests(unittest.TestCase):
             drop_box_admin,
         )
         manifest = json.loads(DROP_BOX_MANIFEST.read_text(encoding="utf-8"))
-        dependencies = manifest["database"]["schemas"][0][
-            "bridge_api_dependencies"
-        ]
+        dependencies = manifest["database"]["schemas"][0]["bridge_api_dependencies"]
         self.assertIn("knowledge_tag_validation", dependencies)
         self.assertFalse(
             (

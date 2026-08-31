@@ -553,18 +553,22 @@ history. Selection is exchange-atomic and never deletes persisted messages.
 
 ## `[conversation_memory]`
 
-Opt-in provenance-backed recall over retained conversation history. Phase 1
-uses a deterministic explicit intent policy and a host-owned retrieval service;
-it does not expose an MCP or model-callable retrieval tool.
+Provenance-backed recall over retained conversation history. The direct Phase 1
+path uses a deterministic explicit intent policy and a host-owned retrieval
+service. The separate governed-retrieval feature may expose that same service
+through a bounded model-callable CONVERSATION domain without changing its
+authority contract. No MCP surface is exposed. See
+[Conversation Context, Memory, and RAG](conversation-context-memory-and-rag.md).
 
 ### `enabled`
 
 - **Type:** boolean
 - **Shipped value:** `true`
 
-Enables checkpoint materialisation and conservative explicit recall. Persisted
-conversation retention and non-destructive live-history projection do not
-depend on this switch.
+Enables checkpoint materialisation, conservative explicit recall, and
+conversation-domain availability to otherwise eligible governed retrieval.
+Persisted conversation retention and non-destructive live-history projection
+do not depend on this switch.
 
 ### `checkpoint_exchange_count`
 
@@ -757,19 +761,31 @@ disabled or running in shadow mode.
 
 ### Phase 2C discovery settings
 
+The effective rollout states are:
+
+| `domain_discovery_enabled` | `domain_discovery_shadow_mode` | Behaviour |
+| --- | --- | --- |
+| `false` | `false` | Phase 2C discovery is off. |
+| `false` | `true` | Discovery is evaluated for bounded telemetry while Phase 2A remains model-facing. This is the shipped state. |
+| `true` | `false` | Phase 2C handle-enumerated domain offers are model-facing. |
+| `true` | `true` | Enabled behavior takes runtime precedence; avoid this ambiguous operator configuration. |
+
 ### `domain_discovery_enabled`
 
 - **Type:** boolean
 - **Shipped value:** `false`
 
 Enables invocation-scoped semantic domain offers instead of the legacy binding.
+When true, this model-facing behaviour takes precedence over the shadow flag.
 
 ### `domain_discovery_shadow_mode`
 
 - **Type:** boolean
 - **Shipped value:** `true`
 
-Evaluates the current authorised catalogue while preserving Phase 2A output.
+When discovery is not enabled, evaluates the current authorised catalogue while
+preserving Phase 2A output. Set this false as part of an approved Phase 2C
+activation.
 
 ### `descriptor_embedding_profile`
 
@@ -1688,7 +1704,7 @@ limits do not widen the smaller dialogue grounding budgets.
 ### `enabled`
 
 Feature switch for whole-document and selected-member materialisation. Shipped
-value: `false`. Authorised chunk search remains controlled by
+value: `true`. Authorised chunk search remains controlled by
 `[knowledge.dialogue].enabled`.
 
 ### `max_metadata_members`
@@ -1736,7 +1752,7 @@ It never enables raw binary routing and does not connect the result to an LLM.
 
 ### `enabled`
 
-Feature switch for P1-07. Shipped value: `false`. It has no effect unless
+Feature switch for P1-07. Shipped value: `true`. It has no effect unless
 `[knowledge.retrieval].enabled=true`.
 
 ### `token_safety_margin_percent`
@@ -1849,7 +1865,7 @@ unless `[knowledge.dialogue].enabled`, `[knowledge.retrieval].enabled`, and
 
 ### `enabled`
 
-Shipped value: `false`. Enables eligible approved evidence submission to the
+Shipped value: `true`. Enables eligible approved evidence submission to the
 primary local text adapter.
 
 ### `shadow_mode`
@@ -1879,6 +1895,14 @@ Shipped value: `256`. Minimum additional context safety margin.
 
 Shipped value: `25`. Maximum percentage of usable input occupied by the exact
 rendered envelope.
+
+### `min_effective_context_tokens`
+
+Shipped value: `32768`. P1-08 is eligible only when the lower of the governed
+registry context ceiling and any observed provider runtime ceiling meets this
+floor. When runtime capacity cannot be observed, Core uses the governed
+registry ceiling and emits a safe warning. A model below the floor bypasses
+P1-07/P1-08 for that turn; existing bounded RAG remains available.
 
 ### `classification_enforcement_enabled`
 
@@ -1929,10 +1953,13 @@ Shipped and only accepted value: `1`. This permits one transient retry before
 any model output.
 
 `MAX_CONTEXT_TOKENS` must be a current positive value on the exact enabled
-registry row. A row-version change forces a fresh P1-07 decision. The provider
-must declare `processing_locality=LOCAL` and `text_evidence_eligible=true`;
-locality is never inferred from a service URL. Prompt dumps are disabled for an
-evidence turn regardless of the general context dump settings.
+registry row. When the selected connector reports its active runtime limit,
+Core uses the smaller registry/runtime value for P1-07 and the final P1-08
+budget check. A row-version or runtime-observation change forces a fresh P1-07
+decision. The provider must declare `processing_locality=LOCAL` and
+`text_evidence_eligible=true`; locality is never inferred from a service URL.
+Prompt dumps are disabled for an evidence turn regardless of the general
+context dump settings.
 
 ## `[display]`
 

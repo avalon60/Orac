@@ -417,6 +417,14 @@ no unreviewed manual terminal-job requeue action.
 - Compare Drop Box and Core state on Page 5.
 - Check for missing managed payload, hash mismatch, empty canonical content,
   worker retry, or embedding failure in restricted logs.
+- `ORA-20429` means Core found an existing document version with the same
+  content hash, but one or more immutable metadata fields differ. The warning
+  lists only the conflicting field names in deterministic order; it does not
+  log their values. A common `source_modified_on` conflict occurs when a file
+  is touched or regenerated without changing its content. The Drop Box job
+  remains queued under the existing retry policy, so the warning will recur
+  until the observation and existing lineage are reconciled through an
+  authorised recovery workflow.
 - Run `bin/orac-knowledge.sh reconcile` for a bounded read-only comparison of
   database lineage and managed-store state. `BLOCKED` identifies durable
   divergence; `INCOMPLETE` means the scan must be safely retried.

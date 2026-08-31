@@ -25,6 +25,11 @@ __date__ = "27-Jun-2026"
 __description__ = "Runs non-overlapping scans and creates durable drop-box jobs."
 
 
+def _is_immutable_document_version_conflict(error: Exception) -> bool:
+    """Return whether Core reported immutable document-version metadata drift."""
+    return "ORA-20429" in str(error).upper()
+
+
 class DropBoxService:
     """Orac-managed scheduled service for drop-box scanning."""
 
@@ -207,11 +212,20 @@ class DropBoxService:
                     error_message=None,
                     reason_code=None,
                 )
-                self._log_warning(
-                    "Drop-box job "
-                    f"{job.drop_job_id} remains queued because Core handoff "
-                    f"is temporarily unavailable: {exc}"
-                )
+                if _is_immutable_document_version_conflict(exc):
+                    self._log_warning(
+                        "Drop-box job "
+                        f"{job.drop_job_id} remains queued after Core rejected reuse "
+                        "of an existing content-hash version because immutable "
+                        "metadata differs. The Oracle diagnostic lists conflicting "
+                        f"field names only: {exc}"
+                    )
+                else:
+                    self._log_warning(
+                        "Drop-box job "
+                        f"{job.drop_job_id} remains queued because Core handoff "
+                        f"is temporarily unavailable: {exc}"
+                    )
 
     def health(self, context: Any) -> bool:
         """Return whether the service has no currently recorded error."""

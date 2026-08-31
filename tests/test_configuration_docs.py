@@ -15,11 +15,17 @@ from urllib.parse import unquote
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = PROJECT_ROOT / "resources/config/orac.ini"
 CONFIG_DOC_PATH = PROJECT_ROOT / "docs/configuration.md"
+CONVERSATION_GUIDE_PATH = PROJECT_ROOT / "docs/conversation-context-memory-and-rag.md"
 CANONICAL_DOC_PATHS = (
     PROJECT_ROOT / "README.md",
     PROJECT_ROOT / "docs/README.md",
     PROJECT_ROOT / "docs/installation.md",
     CONFIG_DOC_PATH,
+    CONVERSATION_GUIDE_PATH,
+    PROJECT_ROOT / "docs/conversational-memory.md",
+    PROJECT_ROOT / "docs/governed-retrieval.md",
+    PROJECT_ROOT / "docs/context-budgeting.md",
+    PROJECT_ROOT / "docs/dialogue-routing.md",
     PROJECT_ROOT / "docs/plugins.md",
     PROJECT_ROOT / "docs/document-ingestion.md",
     PROJECT_ROOT / "plugins/home_assistant/docs/home-assistant.md",
@@ -38,6 +44,22 @@ SECTION_HEADING_PATTERN = re.compile(r"^## `\[([^]]+)]`$")
 PARAMETER_HEADING_PATTERN = re.compile(r"^### `([^`]+)`$")
 MARKDOWN_LINK_PATTERN = re.compile(r"\[[^]]*]\(([^)]+)\)")
 HTML_LINK_PATTERN = re.compile(r"(?:href|src)=['\"]([^'\"]+)['\"]")
+CONVERSATION_GUIDE_SHIPPED_SETTINGS = (
+    ("context", "enable_context_history"),
+    ("context_budget", "enabled"),
+    ("context_budget", "shadow_mode"),
+    ("conversation_memory", "enabled"),
+    ("governed_retrieval", "enabled"),
+    ("governed_retrieval", "project_scope"),
+    ("governed_retrieval", "domain_discovery_enabled"),
+    ("governed_retrieval", "domain_discovery_shadow_mode"),
+    ("knowledge", "enabled"),
+    ("knowledge.dialogue", "enabled"),
+    ("knowledge.retrieval", "enabled"),
+    ("knowledge.materialisation", "enabled"),
+    ("knowledge.model_evidence", "enabled"),
+    ("knowledge.model_evidence", "min_effective_context_tokens"),
+)
 
 
 def _configured_parameters() -> set[tuple[str, str]]:
@@ -105,3 +127,63 @@ def test_canonical_documentation_links_resolve() -> None:
                 missing.append(f"{source.relative_to(PROJECT_ROOT)} -> {raw_target}")
 
     assert missing == []
+
+
+def test_conversation_guide_status_matches_shipped_configuration() -> None:
+    """The canonical guide reports exact current feature-switch values."""
+    parser = ConfigParser(
+        interpolation=None,
+        inline_comment_prefixes=(";", "#"),
+    )
+    parser.read(CONFIG_PATH, encoding="utf-8")
+    guide = CONVERSATION_GUIDE_PATH.read_text(encoding="utf-8").lower()
+
+    for section, key in CONVERSATION_GUIDE_SHIPPED_SETTINGS:
+        value = parser.get(section, key).strip().lower()
+        assert f"`[{section}].{key} = {value}`" in guide
+
+
+def test_conversation_guidance_rejects_known_stale_claims() -> None:
+    """Canonical routes cannot reintroduce superseded rollout statements."""
+    memory = (
+        (PROJECT_ROOT / "docs/conversational-memory.md")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+    guide = CONVERSATION_GUIDE_PATH.read_text(encoding="utf-8").lower()
+    materialisation = (
+        (PROJECT_ROOT / "docs/knowledge-materialisation-policy.md")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+    model_evidence = (
+        (PROJECT_ROOT / "docs/knowledge-model-evidence.md")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "the shipped default is disabled" not in memory
+    assert "phase 2b remains deferred" not in memory
+    assert "ships disabled" not in materialisation
+    assert "the feature ships disabled" not in model_evidence
+    assert "persisted history is therefore not rag by itself" in guide
+    assert "takes precedence at runtime" in guide
+
+
+def test_conversation_guide_is_discoverable_from_canonical_routes() -> None:
+    """User and maintainer entry points link to the consolidated guide."""
+    guide_link = "conversation-context-memory-and-rag.md"
+    for relative_path in (
+        "README.md",
+        "docs/README.md",
+        "docs/conversational-memory.md",
+        "docs/governed-retrieval.md",
+        "docs/context-budgeting.md",
+        "docs/dialogue-routing.md",
+    ):
+        text = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+        assert guide_link in text
+
+    for relative_path in ("README.md", "docs/README.md"):
+        text = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+        assert "detailed-architecture.md" not in text

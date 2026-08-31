@@ -53,6 +53,32 @@ class ModelRegistrySnapshot:
     text_evidence_eligible: bool
     enabled: bool = True
     available: bool = True
+    runtime_context_tokens: int | None = None
+    runtime_observation_source: str | None = None
+    runtime_observation_fingerprint: str | None = None
+    runtime_observation_version: str | None = None
+
+    def __post_init__(self) -> None:
+        """Validate governed and observed context-limit fields."""
+        if self.max_context_tokens < 0:
+            raise ValueError("max_context_tokens cannot be negative")
+        if self.runtime_context_tokens is not None and self.runtime_context_tokens <= 0:
+            raise ValueError("runtime_context_tokens must be positive when supplied")
+
+    @property
+    def effective_context_tokens(self) -> int:
+        """Return the lower of governed and known runtime context limits."""
+        if self.runtime_context_tokens is None:
+            return self.max_context_tokens
+        return min(self.max_context_tokens, self.runtime_context_tokens)
+
+    @property
+    def runtime_constrained(self) -> bool:
+        """Return whether runtime capacity reduces the governed ceiling."""
+        return (
+            self.runtime_context_tokens is not None
+            and self.runtime_context_tokens < self.max_context_tokens
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -320,6 +346,7 @@ class KnowledgeModelSubmissionGuard:
         context_safety_percent: int = 5,
         context_safety_min_tokens: int = 256,
         max_evidence_context_percent: int = 25,
+        min_effective_context_tokens: int = 32768,
     ) -> None:
         """Initialise final checks with injectable registry and audit boundaries."""
         if not 5 <= context_safety_percent <= 100:
@@ -328,16 +355,31 @@ class KnowledgeModelSubmissionGuard:
             raise ValueError("context_safety_min_tokens cannot relax the 256 minimum")
         if not 1 <= max_evidence_context_percent <= 25:
             raise ValueError("max_evidence_context_percent cannot exceed 25")
+        if min_effective_context_tokens <= 0:
+            raise ValueError("min_effective_context_tokens must be positive")
         self._estimator = estimator or ConservativeUtf8TokenEstimator()
         self._registry_reader = registry_reader
         self._decision_recorder = decision_recorder
         self._context_safety_percent = context_safety_percent
         self._context_safety_min_tokens = context_safety_min_tokens
         self._max_evidence_context_percent = max_evidence_context_percent
+        self._min_effective_context_tokens = min_effective_context_tokens
+
+    def model_eligibility_reason(
+        self,
+        model: ModelRegistrySnapshot,
+    ) -> str | None:
+        """Return a safe reason when a model cannot receive P1-08 evidence."""
+        return _model_eligibility_failure(
+            model,
+            min_effective_context_tokens=self._min_effective_context_tokens,
+        )
 
     def prepare(
         self,
         request: PrepareModelSubmissionRequest,
+        *,
+        registry_reader: Callable[[int], ModelRegistrySnapshot] | None = None,
     ) -> PreparedModelSubmission | ModelSubmissionRejection:
         """Re-read the approved model and guard the exact rendered prompt."""
         invalid = _request_identity_failure(request)
@@ -353,9 +395,10 @@ class KnowledgeModelSubmissionGuard:
             != request.prompt_context.policy_config_fingerprint
         ):
             return self._reject(request, "MAT_SUB_POLICY_STALE")
-        if self._registry_reader is not None:
+        active_registry_reader = registry_reader or self._registry_reader
+        if active_registry_reader is not None:
             try:
-                current_model = self._registry_reader(approval.llm_id)
+                current_model = active_registry_reader(approval.llm_id)
             except Exception:
                 return self._reject(request, "MAT_SUB_MODEL_UNAVAILABLE")
         else:
@@ -364,6 +407,7 @@ class KnowledgeModelSubmissionGuard:
             approved=request.model,
             current=current_model,
             approval=approval,
+            min_effective_context_tokens=self._min_effective_context_tokens,
         )
         if model_failure is not None:
             return self._reject(request, model_failure)
@@ -379,7 +423,7 @@ class KnowledgeModelSubmissionGuard:
         envelope_estimate = self._estimator.estimate_envelope(request.envelope.text)
         if envelope_estimate.safe_token_count != request.envelope.safe_token_count:
             return self._reject(request, "MAT_SUB_VERIFICATION_FAILED")
-        maximum = current_model.max_context_tokens
+        maximum = current_model.effective_context_tokens
         safety = max(
             math.ceil(maximum * self._context_safety_percent / 100),
             self._context_safety_min_tokens,
@@ -451,26 +495,44 @@ def _model_failure(
     approved: ModelRegistrySnapshot,
     current: ModelRegistrySnapshot,
     approval: MaterialisationApprovalSnapshot,
+    min_effective_context_tokens: int,
 ) -> str | None:
     """Return a safe reason when the exact registry row is no longer eligible."""
     if current.llm_id != approval.llm_id or current.llm_id != approved.llm_id:
         return "MAT_SUB_MODEL_STALE"
     if current.row_version != approval.registry_row_version:
         return "MAT_SUB_MODEL_STALE"
-    if not current.enabled:
-        return "MAT_SUB_MODEL_DISABLED"
-    if not current.available:
-        return "MAT_SUB_MODEL_UNAVAILABLE"
-    if current.max_context_tokens <= 0:
-        return "MAT_SUB_MODEL_CONTEXT_UNKNOWN"
-    if current.model_type.strip().upper() != "TEXT":
-        return "MAT_SUB_MEDIA_UNSUPPORTED"
-    if current.processing_locality.strip().upper() != "LOCAL":
-        return "MAT_SUB_LOCALITY_RESTRICTED"
-    if not current.text_evidence_eligible:
-        return "MAT_SUB_LOCALITY_RESTRICTED"
+    eligibility_failure = _model_eligibility_failure(
+        current,
+        min_effective_context_tokens=min_effective_context_tokens,
+    )
+    if eligibility_failure is not None:
+        return eligibility_failure
     if current != approved:
         return "MAT_SUB_MODEL_STALE"
+    return None
+
+
+def _model_eligibility_failure(
+    model: ModelRegistrySnapshot,
+    *,
+    min_effective_context_tokens: int,
+) -> str | None:
+    """Return a safe reason when one current model is ineligible for P1-08."""
+    if not model.enabled:
+        return "MAT_SUB_MODEL_DISABLED"
+    if not model.available:
+        return "MAT_SUB_MODEL_UNAVAILABLE"
+    if model.max_context_tokens <= 0:
+        return "MAT_SUB_MODEL_CONTEXT_UNKNOWN"
+    if model.model_type.strip().upper() != "TEXT":
+        return "MAT_SUB_MEDIA_UNSUPPORTED"
+    if model.processing_locality.strip().upper() != "LOCAL":
+        return "MAT_SUB_LOCALITY_RESTRICTED"
+    if not model.text_evidence_eligible:
+        return "MAT_SUB_LOCALITY_RESTRICTED"
+    if model.effective_context_tokens < min_effective_context_tokens:
+        return "MAT_SUB_MODEL_CONTEXT_BELOW_MINIMUM"
     return None
 
 
@@ -480,6 +542,10 @@ def model_registry_snapshot_from_row(
     processing_locality: str,
     text_evidence_eligible: bool,
     available: bool = True,
+    runtime_context_tokens: int | None = None,
+    runtime_observation_source: str | None = None,
+    runtime_observation_fingerprint: str | None = None,
+    runtime_observation_version: str | None = None,
 ) -> ModelRegistrySnapshot:
     """Build a strict registry snapshot from one database row and provider facts."""
     properties = row.get("PROPERTIES") or row.get("properties") or {}
@@ -508,4 +574,8 @@ def model_registry_snapshot_from_row(
         enabled=str(row.get("IS_ENABLED") or row.get("is_enabled") or "N").upper()
         == "Y",
         available=available,
+        runtime_context_tokens=runtime_context_tokens,
+        runtime_observation_source=runtime_observation_source,
+        runtime_observation_fingerprint=runtime_observation_fingerprint,
+        runtime_observation_version=runtime_observation_version,
     )

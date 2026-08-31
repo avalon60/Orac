@@ -36,9 +36,12 @@ to complete.
 - [Knowledge Model Evidence Submission](knowledge-model-evidence.md): wrap
   approved P1-07 Markdown/CSV/text as canonical untrusted evidence, revalidate
   the complete prompt, and invoke local text adapters under P1-08 controls.
+- [Conversation Context, Memory, and RAG](conversation-context-memory-and-rag.md):
+  understand what Orac persists, what enters a live prompt, which retrieval
+  path handles a turn, what ships enabled or shadowed, and how to verify it.
 - [Conversational Memory](conversational-memory.md): retain authoritative
   dialogue outside the live prompt and recover bounded, principal-owned source
-  evidence through explicit recall.
+  evidence through explicit host recall or eligible governed retrieval.
 - [Governed Semantic Retrieval](governed-retrieval.md): expose one bounded,
   read-only model retrieval capability without weakening conversation,
   PROJECT, or PLUGIN authority.
@@ -64,7 +67,7 @@ to complete.
 
 ## Architecture and Protocols
 
-- [Architecture Overview](../detailed-architecture.md)
+- [Conversation Context, Memory, and RAG](conversation-context-memory-and-rag.md)
 - [Core Document Ingestion](document-ingestion.md)
 - [Drop Box Data Lifecycle](../plugins/drop_box/docs/drop-box-data-lifecycle.md)
 - [Voice Turn Lifecycle](voice-turn-lifecycle.md)

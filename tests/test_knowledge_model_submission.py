@@ -124,6 +124,70 @@ class KnowledgeModelSubmissionGuardTests(unittest.TestCase):
         self.assertEqual(len(audit), 1)
         self.assertEqual(audit[0]["reason_code"], "MAT_SUB_APPROVED")
 
+    def test_effective_context_uses_smaller_runtime_limit(self) -> None:
+        runtime_limited = replace(
+            self.model,
+            max_context_tokens=49152,
+            runtime_context_tokens=32768,
+            runtime_observation_source="OLLAMA_SHOW",
+            runtime_observation_fingerprint="runtime-1",
+        )
+
+        self.assertEqual(runtime_limited.effective_context_tokens, 32768)
+        self.assertTrue(runtime_limited.runtime_constrained)
+        self.assertIsNone(
+            KnowledgeModelSubmissionGuard().model_eligibility_reason(
+                runtime_limited
+            )
+        )
+
+    def test_runtime_limit_below_context_floor_is_ineligible(self) -> None:
+        runtime_limited = replace(
+            self.model,
+            max_context_tokens=49152,
+            runtime_context_tokens=32767,
+            runtime_observation_source="OLLAMA_SHOW",
+            runtime_observation_fingerprint="runtime-1",
+        )
+        guard = KnowledgeModelSubmissionGuard(
+            estimator=self.estimator,
+            registry_reader=lambda llm_id: runtime_limited,
+        )
+
+        result = guard.prepare(self.request(model=runtime_limited))
+
+        self.assertEqual(
+            result.reason_code,
+            "MAT_SUB_MODEL_CONTEXT_BELOW_MINIMUM",
+        )
+
+    def test_unknown_runtime_uses_governed_context_floor(self) -> None:
+        guard = KnowledgeModelSubmissionGuard()
+
+        self.assertEqual(self.model.effective_context_tokens, 32768)
+        self.assertIsNone(guard.model_eligibility_reason(self.model))
+
+    def test_runtime_observation_change_is_stale(self) -> None:
+        approved = replace(
+            self.model,
+            max_context_tokens=49152,
+            runtime_context_tokens=32768,
+            runtime_observation_source="OLLAMA_SHOW",
+            runtime_observation_fingerprint="runtime-1",
+        )
+        current = replace(
+            approved,
+            runtime_context_tokens=49152,
+            runtime_observation_fingerprint="runtime-2",
+        )
+        guard = KnowledgeModelSubmissionGuard(
+            registry_reader=lambda llm_id: current,
+        )
+
+        result = guard.prepare(self.request(model=approved))
+
+        self.assertEqual(result.reason_code, "MAT_SUB_MODEL_STALE")
+
     def test_registry_row_change_requires_fresh_p1_07(self) -> None:
         stale = replace(self.model, row_version=5)
         guard = KnowledgeModelSubmissionGuard(
@@ -186,6 +250,7 @@ class KnowledgeModelSubmissionGuardTests(unittest.TestCase):
         guard = KnowledgeModelSubmissionGuard(
             estimator=self.estimator,
             registry_reader=lambda llm_id: small_model,
+            min_effective_context_tokens=1,
         )
 
         result = guard.prepare(self.request(model=small_model, approval=approval))
@@ -220,6 +285,8 @@ class KnowledgeModelSubmissionGuardTests(unittest.TestCase):
             KnowledgeModelSubmissionGuard(context_safety_min_tokens=255)
         with self.assertRaisesRegex(ValueError, "cannot exceed 25"):
             KnowledgeModelSubmissionGuard(max_evidence_context_percent=26)
+        with self.assertRaisesRegex(ValueError, "must be positive"):
+            KnowledgeModelSubmissionGuard(min_effective_context_tokens=0)
 
     def test_follow_up_configuration_cannot_exceed_approved_ceilings(self) -> None:
         excessive_limits = (

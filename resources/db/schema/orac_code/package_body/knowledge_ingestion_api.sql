@@ -179,6 +179,20 @@ as
         or (p_left is not null and p_right is null);
   end timestamp_differs;
 
+  procedure append_conflicting_field(
+    p_conflicting_fields in out nocopy varchar2,
+    p_field_name         in varchar2
+  )
+  is
+  begin
+    if p_conflicting_fields is null
+    then
+      p_conflicting_fields := p_field_name;
+    else
+      p_conflicting_fields := p_conflicting_fields || ', ' || p_field_name;
+    end if;
+  end append_conflicting_field;
+
   procedure assert_lease(
     p_ingestion_request_id in number,
     p_owner_id             in varchar2,
@@ -247,6 +261,7 @@ as
     l_existing_byte_size number;
     l_existing_source_modified_on timestamp with time zone;
     l_existing_source_format_code varchar2(50);
+    l_conflicting_fields  varchar2(1000);
     l_ingestion_request_id number;
     l_legacy_count         number;
     l_existing_count       number;
@@ -488,26 +503,51 @@ as
          and content_sha256 = l_content_sha256
          for update;
 
+      l_conflicting_fields := null;
       if l_existing_source_object_id <> l_source_object_id
-         or not equivalent_storage_key(
-                  l_existing_content_uri,
-                  l_content_sha256
-                )
-         or text_differs(l_existing_mime_type, l_mime_type)
-         or text_differs(l_existing_original_filename, p_original_filename)
-         or number_differs(l_existing_byte_size, p_byte_size)
-         or timestamp_differs(
-              l_existing_source_modified_on,
-              p_source_modified_on
-            )
-         or text_differs(
-              l_existing_source_format_code,
-              p_source_format_code
-            )
+      then
+        append_conflicting_field(l_conflicting_fields, 'source_object_id');
+      end if;
+      if not equivalent_storage_key(
+               l_existing_content_uri,
+               l_content_sha256
+             )
+      then
+        append_conflicting_field(l_conflicting_fields, 'content_uri');
+      end if;
+      if text_differs(l_existing_mime_type, l_mime_type)
+      then
+        append_conflicting_field(l_conflicting_fields, 'mime_type');
+      end if;
+      if text_differs(l_existing_original_filename, p_original_filename)
+      then
+        append_conflicting_field(l_conflicting_fields, 'original_filename');
+      end if;
+      if number_differs(l_existing_byte_size, p_byte_size)
+      then
+        append_conflicting_field(l_conflicting_fields, 'byte_size');
+      end if;
+      if timestamp_differs(
+           l_existing_source_modified_on,
+           p_source_modified_on
+         )
+      then
+        append_conflicting_field(l_conflicting_fields, 'source_modified_on');
+      end if;
+      if text_differs(
+           l_existing_source_format_code,
+           p_source_format_code
+         )
+      then
+        append_conflicting_field(l_conflicting_fields, 'source_format_code');
+      end if;
+
+      if l_conflicting_fields is not null
       then
         raise_application_error(
           -20429,
-          'Immutable raw document-version metadata conflicts with the existing version.'
+          'Immutable raw document-version metadata conflicts with the existing version. '
+          || 'Conflicting fields: ' || l_conflicting_fields || '.'
         );
       end if;
     exception
@@ -832,7 +872,8 @@ as
     then
       raise_application_error(
         -20429,
-        'Immutable raw document-version metadata conflicts with the request.'
+        'Immutable raw document-version metadata conflicts with the request. '
+        || 'Conflicting fields: source_modified_on.'
       );
     end if;
 

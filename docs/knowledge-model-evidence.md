@@ -10,9 +10,11 @@ Raw-binary submission and model-capability routing remain deferred to Phase 2.
 This Phase 1 adapter accepts only the authorised normalised text media above;
 provider support for attachments does not widen that contract.
 
-The feature ships disabled. Enabling it also requires local-knowledge dialogue,
-P1-06 retrieval, and P1-07 materialisation to be enabled. No plugin, APEX
-application, or adapter receives retrieval or storage access.
+The feature ships enabled, but each turn remains gated to an eligible local text
+model whose effective context is at least 32,768 tokens. It also requires
+local-knowledge dialogue, P1-06 retrieval, and P1-07 materialisation to be
+enabled. Ineligible models retain the existing bounded RAG path. No plugin,
+APEX application, or adapter receives retrieval or storage access.
 
 ## Runtime flow
 
@@ -76,7 +78,9 @@ permissions, retrieval limits, or system instructions.
 ## Context accounting
 
 P1-08 reuses the P1-07 conservative UTF-8 estimator, including its 20% uplift.
-For registry maximum `M`:
+`M` is the lower of the governed registry context ceiling and an observed
+provider runtime ceiling. If the runtime ceiling cannot be observed, Core uses
+the governed ceiling and logs a safe warning. For effective maximum `M`:
 
 ```text
 S = max(ceil(M * 0.05), 256)
@@ -88,9 +92,9 @@ E_cap = floor(U * 0.25)
 The exact final prompt must not exceed `U`; the exact rendered envelope must
 not exceed `E_cap`. The calculation includes the system primer, clock, user
 facts, routing hints, web evidence, history, current user message, envelope,
-and directives. A null, zero, or stale context limit is ineligible. A request
-for more than 2,048 output tokens is rejected; a smaller request still reserves
-and invokes with 2,048.
+and directives. A null, zero, stale, or sub-32,768 effective context limit is
+ineligible. A request for more than 2,048 output tokens is rejected; a smaller
+request still reserves and invokes with 2,048.
 
 No evidence part is shortened to fit. Overflow requires a fresh P1-07
 downgrade, a separately authorised bounded follow-up, or rejection.
@@ -138,9 +142,10 @@ are suppressed for every evidence turn, including failure paths.
 
 ## Rollout and rollback
 
-Populate and verify positive context limits for eligible enabled local text
-models before leaving shadow mode. Enable the Core feature for selected local
-models, observe safe aggregate metrics, and enable follow-ups last.
+P1-08 ships active for exact eligible local text models with an effective
+context of at least 32,768 tokens. Models below that floor bypass P1-07/P1-08
+and continue with existing bounded RAG. Review safe readiness and aggregate
+metrics before lowering the floor, and enable follow-ups separately and last.
 
 Set `[knowledge.model_evidence].enabled=false` to return immediately to the
 existing RAG-only behavior. The database operation-code and package additions

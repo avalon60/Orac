@@ -5,17 +5,23 @@ prompt without deleting the authoritative conversation record. When explicit
 recall wording is detected, Orac can recover bounded source-message evidence
 owned by the authenticated principal.
 
-## Enable Phase 1
+For the complete operator-facing relationship between history, prompt
+projection, memory, knowledge RAG, governed tools, and context budgeting, see
+[Conversation Context, Memory, and RAG](conversation-context-memory-and-rag.md).
+
+## Shipped State and Prerequisites
 
 1. Deploy the Core Oracle Liquibase changelog so the conversation-memory
    tables, lineage, TAPIs, and governed business package are installed.
-2. Set `[conversation_memory].enabled = true` in
-   `resources/config/orac.ini`.
+2. Keep the shipped `[conversation_memory].enabled = true`, or set it to true
+   in an environment-specific configuration that previously disabled it.
 3. Restart Orac so the Core conversation-memory worker and explicit retrieval
    policy are initialised.
 
-The shipped default is disabled. Normal PROJECT and PLUGIN retrieval behaviour
-is unchanged.
+The shipped configuration enables conversational memory. Setting it to false
+disables checkpoint materialisation and explicit memory recall without deleting
+authoritative conversation history. Normal PROJECT and PLUGIN retrieval
+authority remains independent.
 
 ## What Is Retained
 
@@ -42,7 +48,7 @@ tests; it is not a production semantic-retrieval profile.
 
 ## Recall Behaviour
 
-Phase 1 uses conservative explicit wording such as:
+The predictable host-policy path uses conservative explicit wording such as:
 
 - “What did we decide about image support?”
 - “Do you remember what we discussed earlier?”
@@ -52,6 +58,12 @@ The wording policy only decides whether to ask for recall. It does not perform
 retrieval or supply authority. The lower-level conversation-memory service can
 also be invoked directly by trusted host code and always derives ownership from
 the authenticated runtime context.
+
+Eligible models may separately receive the Phase 2A governed `retrieve` tool
+with the logical CONVERSATION domain on otherwise ordinary turns. That path
+reuses the same host-owned memory service and authority contract; it does not
+make the model the owner of retrieval scope. Explicit wording remains the
+predictable operator-facing recall mechanism.
 
 Memory evidence is treated as quoted, untrusted historical data. Whole source
 messages are admitted only while both the configured evidence ceiling and the
@@ -102,7 +114,9 @@ logical domain. Principal, conversation ownership, PROJECT scope, plugin
 identity, entitlements, and database scope remain host-derived. See
 [Governed Semantic Retrieval](governed-retrieval.md).
 
-Phase 2B remains deferred and may later introduce a unified model-aware
-allocator across instructions, dialogue, web, knowledge, memory, and response
-allowance. MCP remains deferred; any future MCP server must be a thin facade
-over Orac-owned services.
+Phase 2B unified model-aware context budgeting is implemented and enabled in
+the shipped configuration in shadow mode. It records the allocation decision
+while preserving the existing prompt projection. Phase 2C domain discovery is
+also shadow-evaluated but does not replace the Phase 2A wire contract while
+`domain_discovery_enabled` remains false. MCP remains deferred; any future MCP
+server must be a thin facade over Orac-owned services.

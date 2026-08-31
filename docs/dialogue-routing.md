@@ -15,6 +15,13 @@ not bypass plugin policy, retrieval policy, persistence, or prompt boundaries.
 6. Semantic plugin hints retained for compatibility.
 7. Ordinary LLM response.
 
+This deterministic routing sequence is separate from model-governed retrieval.
+A selected local-knowledge route, including a terminal denial, unavailability,
+or no-evidence result, is resolved before an ordinary model can receive the
+governed retrieval tool. See
+[Conversation Context, Memory, and RAG](conversation-context-memory-and-rag.md)
+for the complete turn flow.
+
 An explicit internet command is evaluated by the existing `[retrieval]` policy
 before a network request is made. A weather plugin therefore cannot capture
 `Search the web for tomorrow's weather in Leeds`, but `What's the weather
@@ -129,6 +136,11 @@ authorise content. Existing RAG must resolve exactly one document version, and
 P1-06 and P1-07 still perform current authorisation, verification, selection,
 and downgrade decisions. Ordinary questions retain the existing chunk-grounded
 route.
+
+P1-06, P1-07, and P1-08 ship enabled, but the broad path runs only when the
+selected local text model's effective registry/runtime context is at least
+32,768 tokens. A model below that floor retains the bounded chunk-grounded
+route and records a safe readiness reason.
 
 When P1-08 follow-ups are enabled, another explicit broad request in the same
 authorised scope may reuse only the registered same-document target state. It
@@ -264,8 +276,9 @@ For an explicit knowledge route, denial, unavailability, no evidence, and
 retrieval failure are terminal and do not execute a plugin or generate an LLM
 answer. Denied/unavailable provenance contains only the Core source, terminal
 route/outcome, and safe reason codes. Combined local and internet evidence
-remains a later phase. P1-08 bounded same-document follow-ups are available only
-behind their separate disabled feature flag.
+remains a later phase. P1-08 bounded same-document follow-ups remain unavailable
+while their separate shipped setting
+`[knowledge.model_evidence].follow_up_enabled=false` is unchanged.
 
 ## Acceptance Ingestion
 
