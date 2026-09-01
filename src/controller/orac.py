@@ -1576,6 +1576,12 @@ class Orac:
         payload: dict[str, Any] | None,
     ) -> None:
         """Queue speech for stream text chunks, coalescing TTS only."""
+        request_meta = req_env.get("meta") if isinstance(req_env, dict) else {}
+        if not isinstance(request_meta, dict):
+            return
+        if str(request_meta.get("channel") or "").strip().lower() != "voice":
+            return
+
         worker = getattr(self, "_tts_worker", None)
         if worker is None:
             return
@@ -1593,7 +1599,6 @@ class Orac:
             or "unknown-turn"
         )
         coalescer = getattr(self, "_tts_coalescer", None)
-        request_meta = req_env.get("meta") if isinstance(req_env, dict) else {}
         tts_voice = (
             request_meta.get("tts_voice")
             if isinstance(request_meta, dict)
@@ -6692,6 +6697,7 @@ class Orac:
             if (
                 req_preview.get("route") == "orac.prompt"
                 and bool(meta.get("stream"))
+                and str(meta.get("channel") or "").strip().lower() == "voice"
             ):
                 voice_session_id = str(meta.get("session_id") or "")
                 voice_turn_id = str(req_preview.get("id") or "")

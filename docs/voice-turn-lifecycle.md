@@ -318,7 +318,9 @@ The following are places where the current code appears to violate or only appro
 
 ### `src/view/slave.py`
 
-- The client accepts `voice_turn_complete` as a stream event and uses it as a session-rearm signal.
+- The text client requests `channel: text` by default. `bin/slave.sh --tts`
+  requests `channel: voice`, accepts `voice_turn_complete`, and follows the
+  playback lifecycle used by local voice sessions.
 - If the server ever emits that frame before the final utterance has really finished, the client will re-arm too early.
 
 ### `protocol/orac_protocol/resources/json_schema/protocol.schema.json`

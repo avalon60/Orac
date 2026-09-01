@@ -7,6 +7,7 @@ the successor ship to Liberator.
 # Date: 2026-04-25
 # Description: Strict protocol-only TCP console client for Orac with persistent local input history.
 
+import argparse
 import asyncio
 import json
 import os
@@ -276,10 +277,24 @@ SECRET = load_secret()
 CALLING_USER = os.getenv("ORAC_CALLING_USER") or getuser()  # allow override for service accounts
 CLIENT_SESSION_ID = f"slave-{CALLING_USER}-{uuid.uuid4().hex[:12]}"
 
-def build_prompt_request(message_text: str, *, session_id: str | None = None) -> dict:
+
+def build_prompt_request(
+    message_text: str,
+    *,
+    session_id: str | None = None,
+    channel: str = "text",
+) -> dict:
     """
     Build a strict protocol-compliant 'request' envelope for route 'orac.prompt'.
-    Streaming on; channel=text. Adds meta.auth (hmac-v1).
+
+    Args:
+        message_text: User prompt text.
+        session_id: Optional caller-provided session identifier.
+        channel: Output channel. Use ``text`` for silent console output and
+            ``voice`` to opt into TTS playback.
+
+    Returns:
+        A signed protocol request envelope.
     """
     route = "orac.prompt"
     payload = {
@@ -294,7 +309,7 @@ def build_prompt_request(message_text: str, *, session_id: str | None = None) ->
         "client": "slave",
         "session_id": session_id or CLIENT_SESSION_ID,
         "stream": True,
-        "channel": "text",
+        "channel": channel,
         "show_reasoning": SHOW_REASONING,
     }
     auth = sign_auth(SECRET, CALLING_USER, route, payload)
@@ -372,7 +387,20 @@ def _render_user_registration_notice(meta: dict | None, notice_shown: bool) -> b
 
     return notice_shown
 
-async def tcp_client(host=DEFAULT_HOST, port=DEFAULT_PORT):
+
+async def tcp_client(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    *,
+    tts_enabled: bool = False,
+) -> None:
+    """Run the interactive TCP console client.
+
+    Args:
+        host: Orac protocol service host.
+        port: Orac protocol service port.
+        tts_enabled: Whether requests should opt into TTS playback.
+    """
     logger.log_info(f"{Icons.rocket} Connecting to Orac at {host}:{port} (protocol {PROTOCOL_VERSION}) ...")
     load_input_history()
 
@@ -397,7 +425,10 @@ async def tcp_client(host=DEFAULT_HOST, port=DEFAULT_PORT):
                 break
 
             # --- Send strict protocol request (with meta.auth) ---
-            req_env = build_prompt_request(user_input)
+            req_env = build_prompt_request(
+                user_input,
+                channel="voice" if tts_enabled else "text",
+            )
             wire = json.dumps(req_env, ensure_ascii=False) + "\n"
             writer.write(wire.encode("utf-8"))
             await writer.drain()
@@ -573,5 +604,38 @@ async def tcp_client(host=DEFAULT_HOST, port=DEFAULT_PORT):
             save_input_history()
             logger.log_warning("Writer was not created; skipping close.")
 
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the console-client argument parser.
+
+    Returns:
+        Configured argument parser.
+    """
+    parser = argparse.ArgumentParser(
+        prog="slave.sh",
+        description="Run the interactive Orac TCP console client.",
+    )
+    parser.add_argument(
+        "--tts",
+        action="store_true",
+        help="Speak Orac responses using the configured TTS provider.",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the console client command line entrypoint.
+
+    Args:
+        argv: Optional command-line arguments for testing.
+
+    Returns:
+        Process exit code.
+    """
+    args = build_parser().parse_args(argv)
+    asyncio.run(tcp_client(tts_enabled=args.tts))
+    return 0
+
+
 if __name__ == "__main__":
-    asyncio.run(tcp_client())
+    raise SystemExit(main())

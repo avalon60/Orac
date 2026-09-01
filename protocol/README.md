@@ -27,6 +27,14 @@ stream events. The required envelope fields are `v`, `type`, `id`, `ts`, and
 `route`. Stream frames also include `reply_to`, `meta`, `payload`, and `error`
 when emitted by the current runtime.
 
+For `orac.prompt` requests, `meta.channel` controls local speech routing:
+
+- `text` requests receive streamed text without local TTS playback.
+- `voice` requests opt into local TTS and playback lifecycle events.
+- Missing or unrecognised channel values are silent.
+
+Clients should request `voice` explicitly only when audio output is intended.
+
 ### Stream Frames
 
 The current stream frame types are:

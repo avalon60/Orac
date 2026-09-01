@@ -3998,7 +3998,10 @@ class OracVoiceTests(unittest.TestCase):
     orchestrator = Orac.__new__(Orac)
     worker = _FakeVoiceWorker()
     orchestrator._tts_worker = worker
-    req_env = {"id": "req1", "meta": {"session_id": "session1"}}
+    req_env = {
+      "id": "req1",
+      "meta": {"session_id": "session1", "channel": "voice"},
+    }
 
     orchestrator._route_stream_event_to_voice(
       req_env,
@@ -4023,7 +4026,10 @@ class OracVoiceTests(unittest.TestCase):
       max_chars=220,
       min_chunks=2,
     )
-    req_env = {"id": "turn1", "meta": {"client": "slave"}}
+    req_env = {
+      "id": "turn1",
+      "meta": {"client": "slave", "channel": "voice"},
+    }
 
     orchestrator._route_stream_event_to_voice(
       req_env,
@@ -4057,6 +4063,7 @@ class OracVoiceTests(unittest.TestCase):
       "id": "req1",
       "meta": {
         "session_id": "session1",
+        "channel": "voice",
         "tts_voice": {
           "tts_voice_key": "piper:en_GB-alan-medium",
           "provider_code": "piper",
@@ -4090,6 +4097,33 @@ class OracVoiceTests(unittest.TestCase):
       worker.enqueued_tts_options,
       [{"tts_rate": 1.1, "tts_pitch": -1.0}],
     )
+
+  def test_orac_does_not_route_non_voice_channels_to_tts(self) -> None:
+    """Missing, text, and unknown channels should remain silent."""
+    for channel in (None, "text", "screen"):
+      with self.subTest(channel=channel):
+        orchestrator = Orac.__new__(Orac)
+        worker = _FakeVoiceWorker()
+        orchestrator._tts_worker = worker
+        orchestrator._tts_coalescer = None
+        meta = {"session_id": "session1"}
+        if channel is not None:
+          meta["channel"] = channel
+        req_env = {"id": "req1", "meta": meta}
+
+        orchestrator._route_stream_event_to_voice(
+          req_env,
+          "text_chunk",
+          {"chunk": "Do not speak this.", "turn_id": "turn1"},
+        )
+        orchestrator._route_stream_event_to_voice(
+          req_env,
+          "stream_end",
+          {"turn_id": "turn1"},
+        )
+
+        self.assertEqual(worker.enqueued, [])
+        self.assertEqual(worker.completed_turns, [])
 
   def test_tts_coalescer_merges_short_complete_chunks(self) -> None:
     """TTS coalescer should merge short chunks for one turn."""
@@ -4139,7 +4173,10 @@ class OracVoiceTests(unittest.TestCase):
       max_chars=220,
       min_chunks=2,
     )
-    req_env = {"id": "req1", "meta": {"session_id": "session1"}}
+    req_env = {
+      "id": "req1",
+      "meta": {"session_id": "session1", "channel": "voice"},
+    }
 
     orchestrator._route_stream_event_to_voice(
       req_env,
@@ -4183,7 +4220,10 @@ class OracVoiceTests(unittest.TestCase):
       turn_id="turn1",
       subscription=subscription,
     )
-    req_env = {"id": "turn1", "meta": {"session_id": "session1"}}
+    req_env = {
+      "id": "turn1",
+      "meta": {"session_id": "session1", "channel": "voice"},
+    }
 
     orchestrator._route_stream_event_to_voice(
       req_env,
@@ -4354,14 +4394,23 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
       "tts_playback_error",
       "voice_turn_complete",
     }
-    fake_slave.build_prompt_request = lambda prompt_text, **_kwargs: {
-      "v": 1,
-      "type": "request",
-      "id": "req_current",
-      "payload": {
-        "messages": [{"role": "user", "content": prompt_text}],
-      },
-    }
+    def _build_prompt_request(prompt_text: str, **kwargs):
+      meta = {}
+      if kwargs.get("session_id") is not None:
+        meta["session_id"] = kwargs["session_id"]
+      if kwargs.get("channel") is not None:
+        meta["channel"] = kwargs["channel"]
+      return {
+        "v": 1,
+        "type": "request",
+        "id": "req_current",
+        "meta": meta,
+        "payload": {
+          "messages": [{"role": "user", "content": prompt_text}],
+        },
+      }
+
+    fake_slave.build_prompt_request = _build_prompt_request
     fake_slave.strip_reasoning_tags = lambda value: value
     fake_slave.strip_reasoning_tags_from_delta = lambda value: value
     self._slave_patch = patch.dict(
@@ -4391,6 +4440,9 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
       session_id = kwargs.get("session_id")
       if session_id is not None:
         meta["session_id"] = session_id
+      channel = kwargs.get("channel")
+      if channel is not None:
+        meta["channel"] = channel
       return {
         "v": 1,
         "type": "request",
@@ -4492,6 +4544,8 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
 
     self.assertEqual(status, 0)
     self.assertIn("Orac: Controller answer.", output.getvalue())
+    request = json.loads(writer.writes[0].decode("utf-8"))
+    self.assertEqual(request["meta"]["channel"], "voice")
     transcript_events = [
       event
       for event in sender.events
@@ -5178,6 +5232,7 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
           "client": "slave",
           "session_id": "session-timeout",
           "stream": True,
+          "channel": "voice",
         },
         "payload": {
           "messages": [
@@ -5322,6 +5377,7 @@ class OracVoiceProtocolTests(unittest.IsolatedAsyncioTestCase):
           "client": "slave",
           "session_id": "session-drained",
           "stream": True,
+          "channel": "voice",
         },
         "payload": {
           "messages": [

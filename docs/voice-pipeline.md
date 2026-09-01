@@ -17,6 +17,26 @@ events.
 The detailed state and event contract is documented in
 [Voice Turn Lifecycle](voice-turn-lifecycle.md).
 
+## Text Console and Optional TTS
+
+The interactive text client is silent by default:
+
+```bash
+bin/slave.sh
+```
+
+To speak every Orac response during that console session, opt into TTS when
+starting the client:
+
+```bash
+bin/slave.sh --tts
+```
+
+The option applies for the lifetime of that interactive session. Local
+microphone-driven voice modes request TTS automatically and do not require the
+flag. Setting `[voice] enabled = false` remains the global switch and disables
+TTS for both console and voice clients.
+
 ## Install Voice Dependencies
 
 Core voice dependencies are part of the project. For openWakeWord support:

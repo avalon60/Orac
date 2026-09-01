@@ -111,6 +111,7 @@ class VoiceTurnController:
     req_env = slave_client.build_prompt_request(
       self.prompt_text,
       session_id=self.voice_session_id,
+      channel="voice",
     )
     req_id = str(req_env.get("id") or "")
     wire = json.dumps(req_env, ensure_ascii=False) + "\n"
