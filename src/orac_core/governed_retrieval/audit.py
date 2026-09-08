@@ -1,8 +1,10 @@
 """Content-free durable audit adapter for governed model retrieval."""
 
 # Author: Clive Bostock
-# Date: 2026-08-29
+# Date: 2026-09-07
 # Description: Records allowlisted Phase 2A execution metadata through ORAC_CODE.
+# Codex-assisted generated/modified.
+# Codex SDK reviewability guardrails followed.
 
 from __future__ import annotations
 
@@ -81,16 +83,25 @@ def _phase2c_json(detail: Mapping[str, Any] | None) -> str | None:
     allowed_top = {
         "schema_version",
         "discovery",
+        "retrieval_required",
+        "retrieval_requirement_reasons",
+        "decision_attempt_count",
+        "discarded_decision_characters",
         "selected_handles",
         "successful_domain_types",
         "unavailable_domain_count",
         "selected_evidence_count",
         "omitted_evidence_count",
+        "retrieval_status",
+        "continuation_suppressed",
+        "host_safe_response",
     }
     allowed_discovery = {
         "authorised_catalogue_size",
         "domains_scored",
         "semantic_matches",
+        "semantic_advertised_count",
+        "conversation_advertised_count",
         "advertised_count",
         "cache_hits",
         "cache_misses",
@@ -107,6 +118,44 @@ def _phase2c_json(detail: Mapping[str, Any] | None) -> str | None:
     discovery = detail.get("discovery")
     if not isinstance(discovery, Mapping) or set(discovery) - allowed_discovery:
         raise ValueError("Phase 2C discovery audit detail is invalid")
+    requirement_reasons = detail.get("retrieval_requirement_reasons", [])
+    if (
+        not isinstance(requirement_reasons, list)
+        or len(requirement_reasons) > 2
+        or any(
+            item
+            not in {
+                "EXPLICIT_LOCAL_RETRIEVAL_INTENT",
+                "SEMANTIC_DOMAIN_MATCH",
+            }
+            for item in requirement_reasons
+        )
+    ):
+        raise ValueError("Phase 2C retrieval requirement detail is invalid")
+    if not isinstance(detail.get("retrieval_required", False), bool):
+        raise ValueError("Phase 2C retrieval requirement flag is invalid")
+    for flag in ("continuation_suppressed", "host_safe_response"):
+        if not isinstance(detail.get(flag, False), bool):
+            raise ValueError(f"Phase 2C {flag} flag is invalid")
+    retrieval_status = detail.get("retrieval_status")
+    if retrieval_status is not None and retrieval_status not in {
+        "grounded",
+        "no_evidence",
+        "unavailable",
+        "denied",
+        "invalid",
+        "failed",
+    }:
+        raise ValueError("Phase 2C retrieval status is invalid")
+    decision_attempt_count = detail.get("decision_attempt_count", 0)
+    if (
+        not isinstance(decision_attempt_count, int)
+        or not 0 <= decision_attempt_count <= 2
+    ):
+        raise ValueError("Phase 2C decision attempt count is invalid")
+    discarded_characters = detail.get("discarded_decision_characters", 0)
+    if not isinstance(discarded_characters, int) or discarded_characters < 0:
+        raise ValueError("Phase 2C discarded character count is invalid")
     advertised = discovery.get("advertised", [])
     if not isinstance(advertised, list) or len(advertised) > 8:
         raise ValueError("Phase 2C advertised audit detail is invalid")

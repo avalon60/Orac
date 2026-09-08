@@ -114,6 +114,45 @@ class DialogueRoutingTests(unittest.TestCase):
         self.assertEqual(decision.route_type, "clarification")
         self.assertEqual(decision.reason_codes, ("knowledge_scope_required",))
 
+    def test_explicit_local_retrieval_intent_is_a_bounded_scope_neutral_signal(
+        self,
+    ) -> None:
+        for prompt in (
+            "Check your knowledge base for John Elder's AI OS.",
+            "Search our internal knowledge for the deployment procedure.",
+            "Retrieve the answer from the project knowledge.",
+            "Look that decision up in the documentation.",
+            "According to your knowledge source, what is the AI OS?",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertTrue(
+                    self.service.has_explicit_local_retrieval_intent(prompt)
+                )
+
+    def test_local_retrieval_intent_does_not_match_web_or_incidental_wording(
+        self,
+    ) -> None:
+        for prompt in (
+            "Search the web for John Elder's AI OS.",
+            "What is the AI OS?",
+            "I maintain a knowledge base.",
+            "Check whether the internet is available.",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertFalse(
+                    self.service.has_explicit_local_retrieval_intent(prompt)
+                )
+
+    def test_local_intent_signal_does_not_change_source_route_precedence(self) -> None:
+        prompt = "Use the knowledge base to answer this."
+        self.assertTrue(self.service.has_explicit_local_retrieval_intent(prompt))
+        decision = self.service.explicit_knowledge_route(
+            prompt,
+            authenticated_username="clive",
+        )
+        self.assertEqual(decision.route_type, "clarification")
+        self.assertEqual(decision.reason_codes, ("knowledge_scope_required",))
+
     def test_excessive_multi_scope_request_requires_narrowing(self) -> None:
         scopes = tuple(
             KnowledgeScope("PROJECT", code)

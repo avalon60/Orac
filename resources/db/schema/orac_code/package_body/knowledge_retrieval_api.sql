@@ -667,49 +667,162 @@ as
       empty_cursor(p_content_rows);
   end resolve_request;
 
-  procedure open_search_candidates_internal(
-    p_retrieval_id               in  varchar2,
-    p_username                   in  varchar2,
-    p_scope_type                 in  varchar2,
-    p_scope_key                  in  varchar2,
-    p_embedding_model_identifier in  varchar2,
-    p_embedding_dimensions       in  number,
-    p_candidate_limit            in  number,
-    p_executing_plugin_id        in  varchar2,
-    p_correlation_id             in  varchar2,
-    p_resolution_json            out clob,
-    p_content_rows               out sys_refcursor
+  function lexical_candidate_score(
+    p_lexical_tokens_json in clob,
+    p_lexical_phrase      in varchar2,
+    p_chunk_text          in clob,
+    p_source_name         in varchar2
+  ) return number
+  is
+    l_text             varchar2(32767);
+    l_source           varchar2(4000) := lower(coalesce(p_source_name, ''));
+    l_token_count      number := 0;
+    l_matched_count    number := 0;
+    l_identifier_match boolean := false;
+    l_source_match     boolean := false;
+    l_score            number := 0;
+    l_pattern          varchar2(1000);
+  begin
+    if p_lexical_tokens_json is null
+       or p_lexical_tokens_json is not json
+       or p_chunk_text is null
+    then
+      return 0;
+    end if;
+    l_text := lower(dbms_lob.substr(p_chunk_text, 32767, 1));
+    for token in (
+      select distinct lower(trim(value)) token_value
+        from json_table(
+               p_lexical_tokens_json,
+               '$[*]' columns (value varchar2(200) path '$' error on error)
+             )
+       where regexp_like(
+               lower(trim(value)),
+               '^[a-z0-9]+([._-][a-z0-9]+)*$'
+             )
+    )
+    loop
+      l_token_count := l_token_count + 1;
+      if l_token_count > 64
+      then
+        raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
+      end if;
+      l_pattern := replace(token.token_value, '.', '\.') ;
+      l_pattern := replace(l_pattern, '-', '\-');
+      l_pattern := '(^|[^a-z0-9._-])' || l_pattern
+        || '($|[^a-z0-9._-])';
+      if regexp_like(l_text, l_pattern)
+      then
+        l_matched_count := l_matched_count + 1;
+        if instr(token.token_value, '.') > 0
+           or instr(token.token_value, '_') > 0
+           or instr(token.token_value, '-') > 0
+        then
+          l_identifier_match := true;
+        end if;
+      end if;
+      if instr(l_source, token.token_value) > 0
+      then
+        l_source_match := true;
+      end if;
+    end loop;
+    if l_token_count = 0
+    then
+      return 0;
+    end if;
+    l_score := (l_matched_count / l_token_count) * 0.75;
+    if l_token_count > 1
+       and trim(p_lexical_phrase) is not null
+       and instr(l_text, lower(trim(p_lexical_phrase))) > 0
+    then
+      l_score := l_score + 0.15;
+    end if;
+    if l_identifier_match
+    then
+      l_score := l_score + 0.10;
+    end if;
+    if l_source_match
+    then
+      l_score := l_score + 0.10;
+    end if;
+    return least(1, l_score);
+  exception
+    when others then
+      if sqlcode = -20632
+      then
+        raise;
+      end if;
+      return 0;
+  end lexical_candidate_score;
+
+  procedure open_hybrid_candidates_internal(
+    p_retrieval_id          in  varchar2,
+    p_username              in  varchar2,
+    p_scope_type            in  varchar2,
+    p_scope_key             in  varchar2,
+    p_embedding_profile_id  in  number,
+    p_query_vector_json     in  clob,
+    p_lexical_tokens_json   in  clob,
+    p_lexical_phrase        in  varchar2,
+    p_semantic_limit        in  number,
+    p_lexical_limit         in  number,
+    p_executing_plugin_id   in  varchar2,
+    p_correlation_id        in  varchar2,
+    p_resolution_json       out clob,
+    p_content_rows          out sys_refcursor
   )
   is
-    l_user_id    number;
-    l_scope_id   number;
-    l_authorized varchar2(100);
-    l_detail_json json;
+    l_user_id      number;
+    l_scope_id     number;
+    l_authorized   varchar2(100);
+    l_query_vector vector(768, float32);
+    l_semantic_threshold number;
+    l_semantic_limit pls_integer;
+    l_lexical_limit pls_integer;
+    l_detail_json  json;
   begin
     if not regexp_like(
          lower(trim(p_retrieval_id)),
          '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
        )
-       or p_candidate_limit not between 1 and c_max_candidates
-       or p_embedding_dimensions <= 0
-       or trim(p_embedding_model_identifier) is null
+       or p_embedding_profile_id <= 0
+       or p_semantic_limit not between 1 and 50
+       or p_lexical_limit not between 1 and 50
+       or p_query_vector_json is null
+       or p_query_vector_json is not json
+       or p_lexical_tokens_json is null
+       or p_lexical_tokens_json is not json
+       or length(p_lexical_phrase) > 2000
+       or length(p_correlation_id) > 128
        or (p_executing_plugin_id is not null
            and upper(trim(p_scope_type)) <> 'PLUGIN')
-       or length(p_correlation_id) > 128
     then
       raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
     end if;
+
     resolve_identity(
-      p_username, p_scope_type, p_scope_key,
-      l_user_id, l_scope_id, l_authorized
+      p_username,
+      p_scope_type,
+      p_scope_key,
+      l_user_id,
+      l_scope_id,
+      l_authorized
     );
     if p_executing_plugin_id is not null
     then
       select json_object(
-               'schema_version' value 1,
+               'schema_version' value 2,
                'executing_plugin_id' value trim(p_executing_plugin_id),
-               'correlation_id' value trim(p_correlation_id)
-               absent on null
+               'correlation_id' value trim(p_correlation_id),
+               'embedding_profile_id' value p_embedding_profile_id
+               absent on null returning json
+             )
+        into l_detail_json
+        from dual;
+    else
+      select json_object(
+               'schema_version' value 2,
+               'embedding_profile_id' value p_embedding_profile_id
                returning json
              )
         into l_detail_json
@@ -723,116 +836,238 @@ as
         p_detail_json => l_detail_json
       );
       p_resolution_json := resolution_json(
-        p_retrieval_id, 'REJECTED', 'RETRIEVAL_NOT_AUTHORISED', 'CHUNK_SEARCH'
+        p_retrieval_id,
+        'REJECTED',
+        'RETRIEVAL_NOT_AUTHORISED',
+        'CHUNK_SEARCH'
       );
       empty_cursor(p_content_rows);
       return;
     end if;
+
+    select profile.semantic_threshold,
+           least(p_semantic_limit, profile.semantic_candidate_limit),
+           least(p_lexical_limit, profile.lexical_candidate_limit)
+      into l_semantic_threshold, l_semantic_limit, l_lexical_limit
+      from orac_api.knowledge_embedding_activations_v activation
+      join orac_api.knowledge_embedding_profiles_v profile
+        on profile.embedding_profile_id = activation.embedding_profile_id
+       and profile.embedding_profile_id = p_embedding_profile_id
+       and profile.purpose_code = 'KNOWLEDGE_CHUNK_RETRIEVAL'
+       and profile.storage_layout_code = 'ORACLE_VECTOR_768_FLOAT32_V1'
+       and profile.semantic_yn = 'Y'
+       and profile.production_allowed_yn = 'Y'
+      join orac_api.knowledge_embedding_models_v model
+        on model.embedding_model_id = profile.embedding_model_id
+       and model.dimensions = 768
+       and model.distance_metric = 'COSINE'
+     where activation.purpose_code = 'KNOWLEDGE_CHUNK_RETRIEVAL';
+
+    l_query_vector := to_vector(p_query_vector_json, 768, float32);
+    if vector_dimension_count(l_query_vector) <> 768
+       or vector_dimension_format(l_query_vector) <> 'FLOAT32'
+       or vector_norm(l_query_vector) not between 0.99 and 1.01
+    then
+      raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
+    end if;
+
     write_event(
       p_retrieval_id, 'DECISION', p_username, l_user_id, l_scope_id,
       'CHUNK_SEARCH', null, null, 'APPROVED', 'RETRIEVAL_APPROVED',
       p_detail_json => l_detail_json
     );
     p_resolution_json := resolution_json(
-      p_retrieval_id, 'APPROVED', 'RETRIEVAL_APPROVED', 'CHUNK_SEARCH'
+      p_retrieval_id,
+      'APPROVED',
+      'RETRIEVAL_APPROVED',
+      'CHUNK_SEARCH'
     );
+
     open p_content_rows for
-      select *
-        from (
-          select chunk.ingestion_request_id,
-                 chunk.source_object_id,
-                 chunk.source_type,
-                 chunk.source_reference,
-                 chunk.parent_source_reference,
-                 chunk.document_id,
-                 chunk.title document_title,
-                 chunk.document_version_id,
-                 chunk.original_filename,
-                 chunk.target_scope_type,
-                 chunk.target_scope_key,
-                 chunk.chunk_set_id,
-                 chunk.chunk_id,
-                 chunk.chunk_no,
-                 chunk.span_start,
-                 chunk.span_end,
-                 chunk.chunk_content_sha256,
+      with scope_chunks as (
+        select chunk.*
+          from orac_code.knowledge_native_searchable_chunks_v chunk
+         where chunk.embedding_profile_id = p_embedding_profile_id
+           and chunk.knowledge_scope_id = l_scope_id
+           and chunk.target_scope_type = upper(trim(p_scope_type))
+           and chunk.target_scope_key = trim(p_scope_key)
+      ),
+      semantic_ranked as (
+        select chunk.chunk_id,
+               1 - vector_distance(
+                     chunk.embedding_vector,
+                     l_query_vector,
+                     cosine
+                   ) semantic_score,
+               row_number() over (
+                 order by vector_distance(
+                            chunk.embedding_vector,
+                            l_query_vector,
+                            cosine
+                          ),
+                          chunk.chunk_id
+               ) semantic_rank
+          from scope_chunks chunk
+         order by vector_distance(
+                    chunk.embedding_vector,
+                    l_query_vector,
+                    cosine
+                  ),
+                  chunk.chunk_id
+         fetch exact first l_semantic_limit rows only
+      ),
+      semantic_candidates as (
+        select chunk_id, semantic_score, semantic_rank
+          from semantic_ranked
+         where semantic_score >= l_semantic_threshold
+      ),
+      lexical_scored as (
+        select chunk.chunk_id,
+               orac_code.knowledge_retrieval_api.lexical_candidate_score(
+                 p_lexical_tokens_json,
+                 p_lexical_phrase,
                  chunk.chunk_text,
-                 chunk.chunk_metadata_json,
-                 chunk.source_artefact_id,
-                 chunk.source_artefact_role_code,
-                 chunk.source_artefact_logical_name,
-                 chunk.source_artefact_media_type,
-                 chunk.source_artefact_sha256,
-                 chunk.source_artefact_ordinal,
-                 chunk.source_sheet_name,
-                 chunk.source_table_name,
-                 chunk.source_member_cell_range,
-                 chunk.source_header_rows_json,
-                 chunk.source_hidden_sheet,
-                 chunk.source_row_start,
-                 chunk.source_row_end,
-                 chunk.source_chunk_cell_range,
-                 chunk.source_format_code,
-                 chunk.normalised_text_sha256,
-                 chunk.output_mime_type,
-                 chunk.extractor_code,
-                 chunk.extractor_version,
-                 chunk.extractor_metadata_json,
-                 chunk.classification_tags_json,
-                 chunk.embedding_vector,
-                 chunk.provider_code embedding_provider_code,
-                 chunk.model_revision embedding_model_revision,
-                 chunk.embedding_dimensions,
-                 request.processing_profile_code
-            from orac_code.knowledge_searchable_chunks_v chunk
-            join orac_code.knowledge_ingestion_requests_v request
-              on request.ingestion_request_id = chunk.ingestion_request_id
-           where chunk.embedding_model_identifier = trim(p_embedding_model_identifier)
-             and chunk.embedding_dimensions = p_embedding_dimensions
-             and chunk.target_scope_type = upper(trim(p_scope_type))
-             and chunk.target_scope_key = trim(p_scope_key)
-           order by chunk.chunk_id
-        )
-       where rownum <= p_candidate_limit + 1;
+                 coalesce(chunk.original_filename, chunk.parent_source_reference)
+               ) lexical_score
+          from scope_chunks chunk
+      ),
+      lexical_ranked as (
+        select lexical_scored.*,
+               row_number() over (
+                 order by lexical_score desc, chunk_id
+               ) lexical_rank
+          from lexical_scored
+         order by lexical_score desc, chunk_id
+         fetch first l_lexical_limit rows only
+      ),
+      lexical_candidates as (
+        select chunk_id, lexical_score, lexical_rank
+          from lexical_ranked
+         where lexical_score >= 0.25
+      ),
+      candidate_keys as (
+        select chunk_id from semantic_candidates
+        union
+        select chunk_id from lexical_candidates
+      )
+      select chunk.ingestion_request_id,
+             chunk.source_object_id,
+             chunk.source_type,
+             chunk.source_reference,
+             chunk.parent_source_reference,
+             chunk.document_id,
+             chunk.title document_title,
+             chunk.document_version_id,
+             chunk.original_filename,
+             chunk.target_scope_type,
+             chunk.target_scope_key,
+             chunk.chunk_set_id,
+             chunk.chunk_id,
+             chunk.chunk_no,
+             chunk.span_start,
+             chunk.span_end,
+             chunk.chunk_content_sha256,
+             chunk.chunk_text,
+             chunk.chunk_metadata_json,
+             chunk.source_artefact_id,
+             chunk.source_artefact_role_code,
+             chunk.source_artefact_logical_name,
+             chunk.source_artefact_media_type,
+             chunk.source_artefact_sha256,
+             chunk.source_artefact_ordinal,
+             chunk.source_sheet_name,
+             chunk.source_table_name,
+             chunk.source_member_cell_range,
+             chunk.source_header_rows_json,
+             chunk.source_hidden_sheet,
+             chunk.source_row_start,
+             chunk.source_row_end,
+             chunk.source_chunk_cell_range,
+             chunk.source_format_code,
+             chunk.normalised_text_sha256,
+             chunk.output_mime_type,
+             chunk.extractor_code,
+             chunk.extractor_version,
+             chunk.extractor_metadata_json,
+             chunk.classification_tags_json,
+             chunk.provider_code embedding_provider_code,
+             chunk.embedding_model_revision,
+             chunk.embedding_model_identifier,
+             chunk.embedding_dimensions,
+             chunk.embedding_profile_id,
+             chunk.profile_version embedding_profile_version,
+             chunk.retrieval_policy_version,
+             semantic.semantic_score,
+             coalesce(lexical.lexical_score, 0) lexical_score,
+             semantic.semantic_rank,
+             lexical.lexical_rank,
+             chunk.processing_profile_code
+        from candidate_keys candidate
+        join scope_chunks chunk
+          on chunk.chunk_id = candidate.chunk_id
+        left join semantic_candidates semantic
+          on semantic.chunk_id = candidate.chunk_id
+        left join lexical_candidates lexical
+          on lexical.chunk_id = candidate.chunk_id
+       order by chunk.chunk_id;
   exception
+    when no_data_found or too_many_rows then
+      raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
     when others then
       if sqlcode in (-20631, -20632)
       then
         raise;
       end if;
       raise_application_error(-20633, 'RETRIEVAL_AUTHORIZATION_UNAVAILABLE');
-  end open_search_candidates_internal;
+  end open_hybrid_candidates_internal;
 
-  procedure open_search_candidates(
-    p_retrieval_id               in  varchar2,
-    p_username                   in  varchar2,
-    p_scope_type                 in  varchar2,
-    p_scope_key                  in  varchar2,
-    p_embedding_model_identifier in  varchar2,
-    p_embedding_dimensions       in  number,
-    p_candidate_limit            in  number,
-    p_resolution_json            out clob,
-    p_content_rows               out sys_refcursor
+  procedure open_hybrid_search_candidates(
+    p_retrieval_id          in  varchar2,
+    p_username              in  varchar2,
+    p_scope_type            in  varchar2,
+    p_scope_key             in  varchar2,
+    p_embedding_profile_id  in  number,
+    p_query_vector_json     in  clob,
+    p_lexical_tokens_json   in  clob,
+    p_lexical_phrase        in  varchar2,
+    p_semantic_limit        in  number default 50,
+    p_lexical_limit         in  number default 50,
+    p_resolution_json       out clob,
+    p_content_rows          out sys_refcursor
   )
   is
   begin
-    open_search_candidates_internal(
-      p_retrieval_id, p_username, p_scope_type, p_scope_key,
-      p_embedding_model_identifier, p_embedding_dimensions,
-      p_candidate_limit, null, null, p_resolution_json, p_content_rows
+    open_hybrid_candidates_internal(
+      p_retrieval_id,
+      p_username,
+      p_scope_type,
+      p_scope_key,
+      p_embedding_profile_id,
+      p_query_vector_json,
+      p_lexical_tokens_json,
+      p_lexical_phrase,
+      p_semantic_limit,
+      p_lexical_limit,
+      null,
+      null,
+      p_resolution_json,
+      p_content_rows
     );
-  end open_search_candidates;
+  end open_hybrid_search_candidates;
 
-  procedure open_plugin_search_candidates(
-    p_retrieval_id               in  varchar2,
-    p_username                   in  varchar2,
-    p_plugin_id                  in  varchar2,
-    p_embedding_model_identifier in  varchar2,
-    p_embedding_dimensions       in  number,
-    p_candidate_limit            in  number,
-    p_correlation_id             in  varchar2 default null,
-    p_resolution_json            out clob,
-    p_content_rows               out sys_refcursor
+  procedure open_plugin_hybrid_candidates(
+    p_retrieval_id          in  varchar2,
+    p_username              in  varchar2,
+    p_plugin_id             in  varchar2,
+    p_embedding_profile_id  in  number,
+    p_query_vector_json     in  clob,
+    p_lexical_tokens_json   in  clob,
+    p_lexical_phrase        in  varchar2,
+    p_semantic_limit        in  number default 50,
+    p_lexical_limit         in  number default 50,
+    p_correlation_id        in  varchar2 default null,
+    p_resolution_json       out clob,
+    p_content_rows          out sys_refcursor
   )
   is
   begin
@@ -840,13 +1075,23 @@ as
     then
       raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
     end if;
-    open_search_candidates_internal(
-      p_retrieval_id, p_username, 'PLUGIN', trim(p_plugin_id),
-      p_embedding_model_identifier, p_embedding_dimensions,
-      p_candidate_limit, trim(p_plugin_id), p_correlation_id,
-      p_resolution_json, p_content_rows
+    open_hybrid_candidates_internal(
+      p_retrieval_id,
+      p_username,
+      'PLUGIN',
+      trim(p_plugin_id),
+      p_embedding_profile_id,
+      p_query_vector_json,
+      p_lexical_tokens_json,
+      p_lexical_phrase,
+      p_semantic_limit,
+      p_lexical_limit,
+      trim(p_plugin_id),
+      p_correlation_id,
+      p_resolution_json,
+      p_content_rows
     );
-  end open_plugin_search_candidates;
+  end open_plugin_hybrid_candidates;
 
   procedure record_policy_decision(
     p_policy_request_id       in varchar2,
@@ -1249,7 +1494,7 @@ as
                      chunk_id number path '$' error on error
                    )
                  ) selected
-            join orac_code.knowledge_searchable_chunks_v chunk
+            join orac_code.knowledge_searchable_chunk_content_v chunk
               on chunk.chunk_id = selected.chunk_id
             join orac_api.knowledge_source_objects_v source_object
               on source_object.source_object_id = chunk.source_object_id
@@ -1290,7 +1535,7 @@ as
                                 chunk_id number path '$' error on error
                               )
                             ) selected
-                       join orac_code.knowledge_searchable_chunks_v chunk
+                       join orac_code.knowledge_searchable_chunk_content_v chunk
                          on chunk.chunk_id = selected.chunk_id
                        join orac_api.knowledge_source_objects_v source_object
                          on source_object.source_object_id = chunk.source_object_id

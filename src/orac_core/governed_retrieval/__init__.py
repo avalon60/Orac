@@ -5,12 +5,14 @@
 # Description: Exposes bounded tool-stream coordination and capability controls.
 
 from .capability import CapabilityEvidenceRepository
+from .capability import CapabilityEvidenceWriter
 from .capability import EffectiveToolModeResolver
 from .capability import ModelToolCapabilityEvidence
 from .configuration import GovernedRetrievalConfiguration
 from .audit import GovernedRetrievalAuditRepository
 from .coordinator import GovernedRetrievalToolCoordinator
 from .coordinator import GovernedToolTurnResult
+from .coordinator import REQUIRED_RETRIEVAL_UNAVAILABLE_MESSAGE
 from .discovery import AuthorisedDomainBinding
 from .discovery import AuthorisedKnowledgeDomain
 from .discovery import AuthorisedKnowledgeDomainRepository
@@ -34,10 +36,13 @@ from .protocol import ToolStreamEvent
 from .protocol import ToolStreamEventKind
 from .protocol import governed_retrieve_tool_schema
 from .probe import StructuredToolCapabilityProbe
+from .probe import ProbeOutcome
 from .probe import ToolCapabilityProbeReport
+from .probe import ToolProbeStageReport
 
 __all__ = [
     "CapabilityEvidenceRepository",
+    "CapabilityEvidenceWriter",
     "AuthorisedDomainBinding",
     "AuthorisedKnowledgeDomain",
     "AuthorisedKnowledgeDomainRepository",
@@ -47,6 +52,7 @@ __all__ = [
     "GovernedRetrievalAuditRepository",
     "GovernedRetrievalToolCoordinator",
     "GovernedToolTurnResult",
+    "REQUIRED_RETRIEVAL_UNAVAILABLE_MESSAGE",
     "FederatedEvidenceCandidate",
     "FederatedGovernedRetrievalResult",
     "FederatedRetrievalExecutor",
@@ -64,7 +70,9 @@ __all__ = [
     "ToolStreamEvent",
     "ToolStreamEventKind",
     "StructuredToolCapabilityProbe",
+    "ProbeOutcome",
     "ToolCapabilityProbeReport",
+    "ToolProbeStageReport",
     "governed_retrieve_tool_schema",
     "domain_discovery_embedding_provider",
     "federated_rank_candidates",

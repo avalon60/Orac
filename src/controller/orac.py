@@ -47,7 +47,7 @@ from orac_voice.voice_events import VoiceEvent
 from model.plugin_audit_adapter import PluginAuditAdapter
 from model.plugin_arbitration import PluginArbiter
 from model.plugin_routing import (
-    HashEmbeddingProvider,
+    DeterministicHashTestEmbeddingProvider,
     PluginManager,
     PluginRoutingHandoff,
     render_plugin_routing_hints,
@@ -79,6 +79,7 @@ from orac_core.retrieval import enforce_high_risk_factual_grounding
 from orac_core.retrieval import PersonFactResolver
 from orac_core.knowledge.service_manifest import core_knowledge_service_manifest
 from orac_core.dialogue_routing import DialogueRoutingService
+from orac_core.dialogue_routing import has_explicit_local_retrieval_intent
 from orac_core.knowledge import KnowledgeGroundingPack
 from orac_core.knowledge import BinaryMaterialisationConfiguration
 from orac_core.knowledge import KnowledgeManagedStore
@@ -109,7 +110,9 @@ from orac_core.knowledge import KnowledgeRetrievalService
 from orac_core.knowledge import KnowledgeScopeAuthorizer
 from orac_core.knowledge import KnowledgeScope
 from orac_core.knowledge.grounding import KnowledgeGroundingPackBuilder
+from orac_core.knowledge.repository import KnowledgeEmbeddingRepository
 from orac_core.knowledge.repository import KnowledgeRetrievalRepository
+from orac_core.knowledge.embeddings import knowledge_embedding_provider
 from orac_core.conversation_memory import ConversationMemoryGroundingPack
 from orac_core.conversation_memory import ConversationMemoryGroundingPackBuilder
 from orac_core.conversation_memory import ConversationMemoryRepository
@@ -122,6 +125,7 @@ from orac_core.conversation_memory import RetrievalInitiator
 from orac_core.conversation_memory import TrustedRetrievalContext
 from orac_core.conversation_memory import conversation_embedding_provider
 from orac_core.governed_retrieval import EffectiveToolModeResolver
+from orac_core.governed_retrieval import CapabilityEvidenceWriter
 from orac_core.governed_retrieval import GovernedRetrievalConfiguration
 from orac_core.governed_retrieval import GovernedRetrievalAuditRepository
 from orac_core.governed_retrieval import GovernedRetrievalToolCoordinator
@@ -130,9 +134,12 @@ from orac_core.governed_retrieval import DomainDiscoveryService
 from orac_core.governed_retrieval import FederatedRetrievalExecutor
 from orac_core.governed_retrieval import GOVERNED_RETRIEVAL_SYSTEM_INSTRUCTION
 from orac_core.governed_retrieval import ModelToolCapabilityEvidence
+from orac_core.governed_retrieval import ProbeOutcome
+from orac_core.governed_retrieval import REQUIRED_RETRIEVAL_UNAVAILABLE_MESSAGE
 from orac_core.governed_retrieval import StreamingHealthKey
 from orac_core.governed_retrieval import StreamingToolHealthTracker
 from orac_core.governed_retrieval import ToolDecisionMode
+from orac_core.governed_retrieval import StructuredToolCapabilityProbe
 from orac_core.governed_retrieval import governed_retrieve_tool_schema
 from orac_core.governed_retrieval import domain_discovery_embedding_provider
 from orac_core.context_budget import ContextBudgetConfiguration
@@ -197,6 +204,18 @@ class _BudgetedDialoguePrompt:
     prepared: PreparedModelContext | None
     audit_metadata: dict[str, Any]
     rejected: ContextBudgetRejection | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _GovernedToolPreparation:
+    """Prepared governed execution or a required fail-closed outcome."""
+
+    execution: Any | None
+    health_key: StreamingHealthKey | None
+    mode_reason: str
+    retrieval_required: bool
+    requirement_reason_codes: tuple[str, ...] = ()
+    unavailable_reason: str | None = None
 
 
 VOICE_PLAYBACK_START_TIMEOUT_SECONDS = 120.0
@@ -1222,6 +1241,9 @@ class Orac:
             # Context manager. Live-history projection is deliberately
             # independent from persistent conversation retention.
             self.ctx = OracContextManager(self.db_session, logger=logger)
+            self.capability_evidence_writer = CapabilityEvidenceWriter()
+            self._governed_capability_probe_lock = threading.Lock()
+            self._governed_capability_probe_keys: set[tuple[int, str]] = set()
             self._sync_llm_registry()
             self._refresh_tts_voice_catalog()
             self._llm_probe_stop = threading.Event()
@@ -1875,9 +1897,8 @@ class Orac:
 
     def _should_dump_prompt(self) -> bool:
         """Return True when the current request should emit prompt debug dumps."""
-        if self.enable_prompt_dump:
-            return True
-        return self._consume_prompt_dump_request()
+        one_shot_requested = self._consume_prompt_dump_request()
+        return self.enable_prompt_dump or one_shot_requested
 
     # --- Prompt building ------------------------------------------------------
     def _build_contextual_prompt(
@@ -2200,23 +2221,22 @@ class Orac:
                         else None
                     )
                     model_metadata = self._lookup_backend_model_metadata(model_name)
-                    if model_name == self.model_name:
-                        runtime_details_getter = getattr(
-                            self.llm, "model_runtime_details", None
-                        )
-                        if callable(runtime_details_getter):
-                            try:
-                                runtime_details = runtime_details_getter(model_name)
-                                if isinstance(runtime_details, dict):
-                                    model_metadata = {
-                                        **model_metadata,
-                                        **runtime_details,
-                                    }
-                            except Exception as exc:
-                                _log_exception(
-                                    "Configured model runtime metadata unavailable",
-                                    exc,
-                                )
+                    runtime_details_getter = getattr(
+                        self.llm, "model_runtime_details", None
+                    )
+                    if callable(runtime_details_getter):
+                        try:
+                            runtime_details = runtime_details_getter(model_name)
+                            if isinstance(runtime_details, dict):
+                                model_metadata = {
+                                    **model_metadata,
+                                    **runtime_details,
+                                }
+                        except Exception as exc:
+                            _log_exception(
+                                "Model runtime metadata unavailable",
+                                exc,
+                            )
                     provider_context_tokens = _as_int(
                         model_metadata.get("provider_declared_context_tokens"),
                         0,
@@ -2303,6 +2323,7 @@ class Orac:
             f"discovered={len(discovered)} synced={synced} "
             f"inserted={inserted} updated={updated}"
         )
+        self._reconcile_llm_capability_metadata(provider=provider)
 
     @staticmethod
     def _build_llm_registry_properties(
@@ -2437,7 +2458,155 @@ class Orac:
         if quantization_level not in (None, ""):
             normalized["quantization_level"] = str(quantization_level)
 
+        digest = model_details.get("digest") or details_map.get("digest")
+        if digest not in (None, ""):
+            normalized["digest"] = str(digest).strip()
+
         return normalized
+
+    def _reconcile_llm_capability_metadata(self, *, provider: str) -> None:
+        """Persist provider declarations and probe the selected exact model."""
+        writer = getattr(self, "capability_evidence_writer", None)
+        if writer is None:
+            return
+        try:
+            rows = self.db_session.dict_sql_dataset(
+                """
+                select llm_id, provider, model, properties
+                  from orac_api.llm_registry_v
+                 where lower(provider) = :provider
+                   and upper(is_enabled) = 'Y'
+                """,
+                {"provider": provider},
+            )
+        except Exception as exc:
+            _log_exception("Capability reconciliation registry read failed", exc)
+            return
+
+        verified = 0
+        unavailable = 0
+        selected_row = None
+        for row in rows:
+            properties = row.get("PROPERTIES") or {}
+            if isinstance(properties, str):
+                try:
+                    properties = json.loads(properties)
+                except json.JSONDecodeError:
+                    properties = {}
+            if not isinstance(properties, dict):
+                properties = {}
+            revision = str(properties.get("digest") or "").strip()
+            capabilities = properties.get("provider_declared_capabilities") or []
+            tools_declared = isinstance(capabilities, list) and any(
+                str(item).strip().lower() == "tools" for item in capabilities
+            )
+            if not revision:
+                unavailable += 1
+                logger.log_warning(
+                    "Model capability metadata remains unassessed: "
+                    f"reason=MODEL_REVISION_UNAVAILABLE llm_id={row.get('LLM_ID')}."
+                )
+                continue
+            try:
+                writer.reconcile_tool_metadata(
+                    llm_id=int(row["LLM_ID"]),
+                    provider_code=str(row.get("PROVIDER") or provider),
+                    model_identity=str(row.get("MODEL") or ""),
+                    model_revision=revision,
+                    tools_declared=tools_declared,
+                )
+                verified += int(tools_declared)
+            except Exception as exc:
+                _log_exception("Capability metadata reconciliation failed", exc)
+                continue
+            if tools_declared and str(row.get("MODEL") or "") == self.model_name:
+                selected_row = (row, revision)
+
+        logger.log_info(
+            "LLM capability metadata reconciliation complete: "
+            f"models={len(rows)} provisional={verified} unavailable={unavailable}."
+        )
+        if selected_row is not None:
+            self._schedule_governed_capability_probe(*selected_row)
+
+    def _schedule_governed_capability_probe(
+        self,
+        row: dict[str, Any],
+        revision: str,
+    ) -> None:
+        """Schedule at most one bounded probe sequence per process/revision."""
+        lock = getattr(self, "_governed_capability_probe_lock", None)
+        keys = getattr(self, "_governed_capability_probe_keys", None)
+        if lock is None or keys is None:
+            return
+        key = (int(row["LLM_ID"]), revision)
+        with lock:
+            if key in keys:
+                return
+            keys.add(key)
+        thread = threading.Thread(
+            target=self._run_governed_capability_probe,
+            args=(dict(row), revision),
+            name=f"orac-tool-probe-{key[0]}",
+            daemon=True,
+        )
+        thread.start()
+        logger.log_info(
+            "Governed capability probe scheduled: "
+            f"llm_id={key[0]} max_attempts=3 retry_delays=10,30."
+        )
+
+    def _run_governed_capability_probe(
+        self,
+        row: dict[str, Any],
+        revision: str,
+    ) -> None:
+        """Probe and persist only demonstrated or genuine model outcomes."""
+        llm_id = int(row["LLM_ID"])
+        provider = str(row.get("PROVIDER") or self.llm_service_id).strip().lower()
+        model_name = str(row.get("MODEL") or "").strip()
+        connector = (
+            self.llm
+            if provider == self.llm_service_id and model_name == self.model_name
+            else self._get_llm_connector(
+                service_id=provider,
+                service_url=self.service_url,
+                model_name=model_name,
+            )
+        )
+        probe_identity = f"governed-tool-v1:{uuid.uuid4()}"
+        report = StructuredToolCapabilityProbe().run_with_retries(connector)
+        writer = self.capability_evidence_writer
+
+        def persist(capability_code: str, outcome: ProbeOutcome) -> None:
+            if outcome not in {ProbeOutcome.PASS, ProbeOutcome.MODEL_REJECTED}:
+                return
+            writer.record_probe_outcome(
+                llm_id=llm_id,
+                provider_code=provider,
+                model_identity=model_name,
+                model_revision=revision,
+                capability_code=capability_code,
+                outcome_code=outcome.value,
+                probe_identity=probe_identity,
+            )
+
+        try:
+            persist("structured_tool_calling", report.structured.outcome)
+            persist(
+                "streamed_structured_tool_calling",
+                report.streamed.outcome,
+            )
+        except Exception as exc:
+            _log_exception("Capability probe evidence persistence failed", exc)
+            return
+        logger.log_info(
+            "Governed capability probe complete: "
+            f"llm_id={llm_id} structured={report.structured.outcome.value} "
+            f"structured_attempts={report.structured.attempts} "
+            f"streamed={report.streamed.outcome.value} "
+            f"streamed_attempts={report.streamed.attempts}."
+        )
 
     def _start_llm_probe_worker(self) -> None:
         """Start a background worker that probes unresolved LLM rows."""
@@ -2792,22 +2961,24 @@ class Orac:
             embedding_dimensions = self.config_mgr.int_config_value(
                 "plugin_routing", "embedding_dimensions", default=32
             )
-            embedding_provider = HashEmbeddingProvider(
+            embedding_provider = DeterministicHashTestEmbeddingProvider(
                 model_id=embedding_model_id,
                 dimensions=embedding_dimensions,
             )
             self.plugin_manager = PluginManager(embedding_provider=embedding_provider, logger=logger)
-            plugin_knowledge_embedding_provider = HashEmbeddingProvider(
-                model_id=self.config_mgr.config_value(
-                    "knowledge", "embedding_model_id", default="hash-embedding-v1"
-                ),
-                dimensions=self.config_mgr.int_config_value(
-                    "knowledge", "embedding_dimensions", default=32
-                ),
-            )
-            self.plugin_knowledge_retrieval_service = KnowledgeRetrievalService(
-                embedding_provider=plugin_knowledge_embedding_provider
-            )
+            try:
+                plugin_knowledge_embedding_provider = knowledge_embedding_provider(
+                    self.config_mgr
+                )
+                self.plugin_knowledge_retrieval_service = KnowledgeRetrievalService(
+                    embedding_provider=plugin_knowledge_embedding_provider
+                )
+            except Exception as exc:
+                self.plugin_knowledge_retrieval_service = None
+                _log_exception(
+                    "Plugin knowledge retrieval initialisation failed (non-fatal)",
+                    exc,
+                )
             plugin_service_lease_seconds = self.config_mgr.int_config_value(
                 "plugin_services",
                 "lease_seconds",
@@ -2959,17 +3130,29 @@ class Orac:
                     "remain terminal."
                 )
                 return
-            embedding_provider = HashEmbeddingProvider(
-                model_id=self.config_mgr.config_value(
-                    "knowledge", "embedding_model_id", default="hash-embedding-v1"
-                ),
-                dimensions=self.config_mgr.int_config_value(
-                    "knowledge", "embedding_dimensions", default=32
-                ),
-            )
+            embedding_provider = knowledge_embedding_provider(self.config_mgr)
+            embedding_repository = KnowledgeEmbeddingRepository()
             self.knowledge_retrieval_service = KnowledgeRetrievalService(
-                embedding_provider=embedding_provider
+                embedding_repository=embedding_repository,
+                embedding_provider=embedding_provider,
             )
+            active_profile = embedding_repository.active_profile()
+            if active_profile is None:
+                logger.log_warning(
+                    "Knowledge semantic retrieval has no active native embedding "
+                    "profile; run the controlled re-embedding workflow."
+                )
+            else:
+                logger.log_info(
+                    "Active knowledge embedding profile: "
+                    f"provider={active_profile.get('provider_code')} "
+                    f"model={active_profile.get('model_name')} "
+                    f"dimensions={active_profile.get('dimensions')} "
+                    f"profile_version={active_profile.get('profile_version')} "
+                    f"current_chunks={active_profile.get('current_chunk_count')} "
+                    f"missing_chunks={active_profile.get('missing_chunk_count')} "
+                    f"stale_chunks={active_profile.get('stale_chunk_count')}."
+                )
             self.knowledge_grounding_builder = KnowledgeGroundingPackBuilder()
             self._knowledge_max_candidate_chunks = self.config_mgr.int_config_value(
                 "knowledge.dialogue",
@@ -3092,6 +3275,11 @@ class Orac:
         if not self.governed_retrieval_configuration.enabled:
             logger.log_info("Governed model retrieval is disabled by configuration.")
             return
+        if self.governed_retrieval_configuration.domain_discovery_shadow_mode:
+            logger.log_warning(
+                "Governed domain discovery is in explicitly selected diagnostic "
+                "shadow mode: reason=DOMAIN_DISCOVERY_DIAGNOSTIC_SHADOW."
+            )
         discovery_requested = bool(
             self.governed_retrieval_configuration.domain_discovery_enabled
             or self.governed_retrieval_configuration.domain_discovery_shadow_mode
@@ -3117,14 +3305,7 @@ class Orac:
             and self.config_mgr.bool_config_value("knowledge", "enabled", default=False)
         ):
             self.knowledge_retrieval_service = KnowledgeRetrievalService(
-                embedding_provider=HashEmbeddingProvider(
-                    model_id=self.config_mgr.config_value(
-                        "knowledge", "embedding_model_id", default="hash-embedding-v1"
-                    ),
-                    dimensions=self.config_mgr.int_config_value(
-                        "knowledge", "embedding_dimensions", default=32
-                    ),
-                )
+                embedding_provider=knowledge_embedding_provider(self.config_mgr)
             )
         if (
             self.conversation_memory_retrieval_service is not None
@@ -4344,28 +4525,36 @@ class Orac:
         except Exception as exc:
             _log_exception("Governed tool capability evidence unavailable", exc)
             return ModelToolCapabilityEvidence()
-        verified_states = {"MODEL_METADATA_VERIFIED", "BOUNDED_PROBE_VERIFIED"}
-        rejected_capabilities = {
-            str(row.get("CAPABILITY_CODE") or "").lower()
-            for row in rows
-            if str(row.get("EVIDENCE_STATE") or "").upper() == "REJECTED"
-        }
-        positive: dict[str, str] = {}
-        positive_states: dict[str, str] = {}
+        current: dict[str, tuple[str, str]] = {}
         for row in rows:
             capability = str(row.get("CAPABILITY_CODE") or "").lower()
             state = str(row.get("EVIDENCE_STATE") or "").upper()
-            if state in verified_states and capability not in rejected_capabilities:
-                positive[capability] = str(row.get("MODEL_REVISION") or "")
-                positive_states[capability] = state
-        revision = next((value for value in positive.values() if value), "")
+            current[capability] = (
+                state,
+                str(row.get("MODEL_REVISION") or ""),
+            )
+        revisions = {value[1] for value in current.values() if value[1]}
+        if len(revisions) > 1:
+            logger.log_warning(
+                "Governed tool capability evidence suppressed: "
+                f"reason=MIXED_MODEL_REVISIONS llm_id={llm_id}."
+            )
+            return ModelToolCapabilityEvidence()
+        structured_state = current.get("structured_tool_calling", ("", ""))[0]
+        streamed_state = current.get(
+            "streamed_structured_tool_calling", ("", "")
+        )[0]
+        revision = next(iter(revisions), "")
         return ModelToolCapabilityEvidence(
-            structured_tool_calling="structured_tool_calling" in positive,
+            structured_tool_calling=(
+                structured_state == "BOUNDED_PROBE_VERIFIED"
+            ),
             streamed_structured_tool_calling=(
-                positive_states.get("streamed_structured_tool_calling")
-                == "BOUNDED_PROBE_VERIFIED"
+                streamed_state == "BOUNDED_PROBE_VERIFIED"
             ),
             model_revision=revision,
+            structured_evidence_state=structured_state,
+            streamed_evidence_state=streamed_state,
         )
 
     def _estimate_governed_tokens(self, text: str) -> int:
@@ -4409,20 +4598,39 @@ class Orac:
         effective_provider: str,
         effective_service_url: str,
         generation_options: dict[str, Any],
-    ) -> tuple[Any, StreamingHealthKey, str] | None:
-        """Prepare one safe tool turn, or return None when any guard fails."""
+        explicit_local_retrieval_intent: bool = False,
+    ) -> _GovernedToolPreparation | None:
+        """Prepare one safe tool turn and retain required fail-closed state."""
         coordinator = getattr(self, "governed_retrieval_coordinator", None)
         configuration = getattr(self, "governed_retrieval_configuration", None)
         resolver = getattr(self, "governed_tool_mode_resolver", None)
         mediator = getattr(self, "host_retrieval_mediator", None)
-        if coordinator is None or configuration is None or resolver is None or mediator is None:
-            return None
-        if effective_llm_id is None:
-            return None
-        registry_row = self.ctx.get_llm_registry_entry(effective_llm_id)
-        max_context_tokens = _as_int(registry_row.get("MAX_CONTEXT_TOKENS"), 0)
-        if max_context_tokens <= 0:
-            return None
+        requirement_reasons = (
+            ["EXPLICIT_LOCAL_RETRIEVAL_INTENT"]
+            if explicit_local_retrieval_intent
+            else []
+        )
+
+        def unavailable(reason: str) -> _GovernedToolPreparation | None:
+            """Preserve required state across otherwise optional guard exits."""
+            if not requirement_reasons:
+                return None
+            return _GovernedToolPreparation(
+                execution=None,
+                health_key=None,
+                mode_reason=reason,
+                retrieval_required=True,
+                requirement_reason_codes=tuple(requirement_reasons),
+                unavailable_reason=reason,
+            )
+
+        if (
+            coordinator is None
+            or configuration is None
+            or resolver is None
+            or mediator is None
+        ):
+            return unavailable("GOVERNED_RETRIEVAL_NOT_INITIALISED")
 
         project_scope = (
             None
@@ -4441,11 +4649,14 @@ class Orac:
             initiator=RetrievalInitiator.MODEL_TOOL,
             project_scope=project_scope,
         )
-        allowed_domains = mediator.available_domains(context=trusted_context)
+        available_domains = getattr(mediator, "available_domains", None)
+        if not callable(available_domains):
+            return unavailable("GOVERNED_RETRIEVAL_MEDIATOR_UNAVAILABLE")
+        allowed_domains = available_domains(context=trusted_context)
         domain_offer = None
         discovery_service = getattr(self, "domain_discovery_service", None)
         if configuration.domain_discovery_enabled and discovery_service is None:
-            return None
+            return unavailable("DOMAIN_DISCOVERY_UNAVAILABLE")
         if discovery_service is not None:
             try:
                 discovered_offer = discovery_service.discover(
@@ -4460,23 +4671,97 @@ class Orac:
                     "Governed domain discovery: "
                     f"authorised={discovered_offer.telemetry.authorised_catalogue_size} "
                     f"scored={discovered_offer.telemetry.domains_scored} "
-                    f"advertised={discovered_offer.telemetry.advertised_count} "
+                    f"semantic_matches={discovered_offer.telemetry.semantic_matches} "
+                    "semantic_advertised="
+                    f"{discovered_offer.telemetry.semantic_advertised_count} "
+                    "conversation_advertised="
+                    f"{discovered_offer.telemetry.conversation_advertised_count} "
+                    f"advertised_total={discovered_offer.telemetry.advertised_count} "
                     f"cache_hits={discovered_offer.telemetry.cache_hits} "
                     f"cache_misses={discovered_offer.telemetry.cache_misses} "
                     f"embedding_batches={discovered_offer.telemetry.embedding_batches} "
                     f"fallback={discovered_offer.telemetry.fallback_mode} "
                     f"duration_ms={discovered_offer.telemetry.duration_ms}"
                 )
+                if (
+                    configuration.domain_discovery_shadow_mode
+                    and discovered_offer.advertisements
+                ):
+                    logger.log_info(
+                        "Governed domain discovery result not model-facing: "
+                        "reason=DOMAIN_DISCOVERY_DIAGNOSTIC_SHADOW."
+                    )
                 if configuration.domain_discovery_enabled:
                     domain_offer = discovered_offer
+                    if discovered_offer.telemetry.semantic_matches > 0:
+                        requirement_reasons.append("SEMANTIC_DOMAIN_MATCH")
+                        if (
+                            discovered_offer.telemetry.semantic_advertised_count
+                            <= 0
+                        ):
+                            return unavailable(
+                                "SEMANTIC_DOMAIN_OFFER_UNAVAILABLE"
+                            )
                     if not domain_offer.advertisements:
-                        return None
+                        logger.log_info(
+                            "Governed retrieval tool unavailable: "
+                            "reason=NO_DOMAINS_ABOVE_THRESHOLD."
+                        )
+                        return unavailable("NO_DOMAINS_ABOVE_THRESHOLD")
             except Exception as exc:
                 _log_exception("Phase 2C discovery failed soft for this turn", exc)
                 if configuration.domain_discovery_enabled:
-                    return None
+                    return unavailable("DOMAIN_DISCOVERY_UNAVAILABLE")
         if domain_offer is None and not allowed_domains:
-            return None
+            return unavailable("NO_AUTHORISED_RETRIEVAL_DOMAINS")
+
+        if effective_llm_id is None:
+            return unavailable("GOVERNED_RETRIEVAL_MODEL_UNKNOWN")
+        registry_row = self.ctx.get_llm_registry_entry(effective_llm_id)
+        max_context_tokens = _as_int(registry_row.get("MAX_CONTEXT_TOKENS"), 0)
+        if max_context_tokens <= 0:
+            logger.log_warning(
+                "Governed retrieval suppressed: "
+                "reason=GOVERNED_RETRIEVAL_RUNTIME_CONTEXT_UNKNOWN."
+            )
+            return unavailable("GOVERNED_RETRIEVAL_RUNTIME_CONTEXT_UNKNOWN")
+        try:
+            eligibility_snapshot = self._context_model_snapshot(
+                effective_llm_id=effective_llm_id,
+                effective_provider=effective_provider,
+                effective_model_name=str(
+                    registry_row.get("MODEL") or registry_row.get("model") or ""
+                ),
+                llm_connector=llm_connector,
+            )
+        except Exception as exc:
+            eligibility_snapshot = None
+            _log_exception("Governed retrieval context eligibility unavailable", exc)
+        effective_context_tokens = (
+            eligibility_snapshot.effective_context_limit
+            if isinstance(eligibility_snapshot, ContextModelSnapshot)
+            else max_context_tokens
+        )
+        if (
+            isinstance(eligibility_snapshot, ContextModelSnapshot)
+            and eligibility_snapshot.runtime_execution_context_limit is None
+        ):
+            logger.log_warning(
+                "Governed retrieval runtime context is unknown; using the "
+                "registry ceiling: "
+                "reason=GOVERNED_RETRIEVAL_RUNTIME_CONTEXT_UNKNOWN "
+                f"llm_id={effective_llm_id}."
+            )
+        if effective_context_tokens < configuration.min_effective_context_tokens:
+            logger.log_info(
+                "Governed retrieval suppressed: "
+                "reason=GOVERNED_RETRIEVAL_CONTEXT_BELOW_MINIMUM "
+                f"llm_id={effective_llm_id} "
+                f"effective_context_tokens={effective_context_tokens} "
+                "min_effective_context_tokens="
+                f"{configuration.min_effective_context_tokens}."
+            )
+            return unavailable("GOVERNED_RETRIEVAL_CONTEXT_BELOW_MINIMUM")
 
         response_tokens = max(1, _as_int(generation_options.get("num_predict"), 2048))
         schema = (
@@ -4491,17 +4776,29 @@ class Orac:
                 tuple(domain.value for domain in allowed_domains)
             )
         )
-        initial_messages = [
+        governed_system_messages = [
             {
                 "role": "system",
                 "content": GOVERNED_RETRIEVAL_SYSTEM_INSTRUCTION,
             },
         ]
         if domain_offer is not None:
-            initial_messages.append(
+            governed_system_messages.append(
                 {"role": "system", "content": domain_offer.render_instruction()}
             )
-        initial_messages.append({"role": "user", "content": final_prompt})
+        answer_messages = [
+            *governed_system_messages,
+            {"role": "user", "content": final_prompt},
+        ]
+        retrieval_required = bool(requirement_reasons)
+        decision_messages = (
+            [
+                *governed_system_messages,
+                {"role": "user", "content": discovery_query},
+            ]
+            if retrieval_required
+            else answer_messages
+        )
         context_configuration = getattr(
             self,
             "context_budget_configuration",
@@ -4511,19 +4808,12 @@ class Orac:
         unified_initial_estimate = None
         unified_safety_reserve = configuration.context_safety_tokens
         if context_configuration.enabled:
-            snapshot_result = self._context_model_snapshot(
-                effective_llm_id=effective_llm_id,
-                effective_provider=effective_provider,
-                effective_model_name=str(
-                    registry_row.get("MODEL") or registry_row.get("model") or ""
-                ),
-                llm_connector=llm_connector,
-            )
+            snapshot_result = eligibility_snapshot
             if isinstance(snapshot_result, ContextModelSnapshot):
                 unified_snapshot = snapshot_result
                 serialized, serialization_code = (
                     llm_connector.provider_context_serialization(
-                        messages=initial_messages,
+                        messages=answer_messages,
                         tools=[schema],
                     )
                 )
@@ -4554,7 +4844,7 @@ class Orac:
                 if not context_configuration.shadow_mode:
                     max_context_tokens = unified_snapshot.effective_context_limit
             elif not context_configuration.shadow_mode:
-                return None
+                return unavailable("CONTEXT_BUDGET_MODEL_SNAPSHOT_UNAVAILABLE")
 
         if unified_initial_estimate is not None and not context_configuration.shadow_mode:
             remaining = (
@@ -4580,17 +4870,36 @@ class Orac:
             )
             remaining = max_context_tokens - fixed_tokens
         if remaining < GovernedRetrievalConfiguration.MIN_EVIDENCE_TOKENS:
-            return None
+            return unavailable("GOVERNED_RETRIEVAL_CONTEXT_UNSAFE")
         trusted_context = replace(
             trusted_context,
             evidence_token_budget=min(configuration.max_evidence_tokens, remaining),
         )
 
         evidence = self._governed_capability_evidence(effective_llm_id)
+        properties = registry_row.get("PROPERTIES") or registry_row.get("properties") or {}
+        if isinstance(properties, str):
+            try:
+                properties = json.loads(properties)
+            except json.JSONDecodeError:
+                properties = {}
+        model_revision = (
+            str(properties.get("digest") or "").strip()
+            if isinstance(properties, dict)
+            else ""
+        )
+        if evidence.model_revision and model_revision != evidence.model_revision:
+            logger.log_warning(
+                "Governed retrieval capability evidence suppressed: "
+                f"reason=MODEL_REVISION_MISMATCH llm_id={effective_llm_id}."
+            )
+            evidence = ModelToolCapabilityEvidence()
+        elif evidence.structured_evidence_state == "MODEL_METADATA_VERIFIED":
+            self._schedule_governed_capability_probe(registry_row, model_revision)
         try:
             provider_capabilities = self.provider_registry.capabilities(effective_provider)
         except ValueError:
-            return None
+            return unavailable("GOVERNED_RETRIEVAL_PROVIDER_UNSUPPORTED")
         runtime_fingerprint = hashlib.sha256(
             (
                 f"{effective_provider}|{effective_service_url}|"
@@ -4621,7 +4930,11 @@ class Orac:
             context_safe=True,
         )
         if mode is ToolDecisionMode.NONE:
-            return None
+            logger.log_info(
+                "Governed retrieval tool unavailable: "
+                f"reason={mode_reason} llm_id={effective_llm_id}."
+            )
+            return unavailable(mode_reason)
 
         def final_context_guard(tool_payload: str) -> bool:
             """Guard the exact tools-disabled continuation serialization."""
@@ -4632,7 +4945,7 @@ class Orac:
                         return False
                     serialized, serialization_code = (
                         llm_connector.provider_context_serialization(
-                            messages=[*initial_messages, *tool_messages],
+                            messages=[*answer_messages, *tool_messages],
                             tools=[],
                         )
                     )
@@ -4653,15 +4966,24 @@ class Orac:
 
         execution = coordinator.begin(
             connector=llm_connector,
-            messages=initial_messages,
+            messages=decision_messages,
+            answer_messages=answer_messages,
             mode=mode,
             allowed_domains=allowed_domains,
             context=trusted_context,
             domain_offer=domain_offer,
+            retrieval_required=retrieval_required,
+            retrieval_requirement_reasons=tuple(requirement_reasons),
             generation_options=generation_options,
             final_context_guard=final_context_guard,
         )
-        return execution, health_key, mode_reason
+        return _GovernedToolPreparation(
+            execution=execution,
+            health_key=health_key,
+            mode_reason=mode_reason,
+            retrieval_required=retrieval_required,
+            requirement_reason_codes=tuple(requirement_reasons),
+        )
 
     def _finalise_governed_tool_execution(
         self,
@@ -4678,6 +5000,7 @@ class Orac:
             "LATE_TOOL_CALL_REJECTED",
             "INVALID_TOOL_CALL_REJECTED",
             "NESTED_TOOL_CALL_REJECTED",
+            "REQUIRED_TOOL_CALL_NOT_EMITTED",
         }
         unhealthy = any(reason in unhealthy_reasons for reason in result.reason_codes)
         if result.mode is ToolDecisionMode.STREAMING:
@@ -4701,6 +5024,12 @@ class Orac:
         logger.log_info(
             "Governed retrieval turn: "
             f"mode={result.mode.value} mode_reason={mode_reason} "
+            f"retrieval_required={result.retrieval_required} "
+            "requirement_reasons="
+            f"{','.join(result.retrieval_requirement_reasons) or 'NONE'} "
+            f"decision_attempts={result.decision_attempt_count} "
+            "discarded_decision_characters="
+            f"{result.discarded_decision_characters} "
             f"tool_timing={result.tool_call_timing} "
             f"committed_before_tool={result.visible_content_committed_before_tool} "
             f"first_delta_to_tool_ms={result.first_delta_to_tool_ms} "
@@ -4742,6 +5071,16 @@ class Orac:
                         {
                             "schema_version": 1,
                             "discovery": dict(result.discovery_telemetry),
+                            "retrieval_required": result.retrieval_required,
+                            "retrieval_requirement_reasons": list(
+                                result.retrieval_requirement_reasons
+                            ),
+                            "decision_attempt_count": (
+                                result.decision_attempt_count
+                            ),
+                            "discarded_decision_characters": (
+                                result.discarded_decision_characters
+                            ),
                             "selected_handles": list(
                                 result.selected_domain_handles
                             ),
@@ -4757,6 +5096,11 @@ class Orac:
                             "omitted_evidence_count": (
                                 result.omitted_evidence_count
                             ),
+                            "retrieval_status": result.retrieval_status,
+                            "continuation_suppressed": (
+                                result.continuation_suppressed
+                            ),
+                            "host_safe_response": result.host_safe_response,
                         }
                         if result.discovery_telemetry is not None
                         else None
@@ -4770,11 +5114,21 @@ class Orac:
             "source": "governed_retrieval",
             "mode": result.mode.value,
             "mode_reason": mode_reason,
+            "retrieval_required": result.retrieval_required,
+            "retrieval_requirement_reasons": (
+                result.retrieval_requirement_reasons
+            ),
+            "decision_attempt_count": result.decision_attempt_count,
+            "discarded_decision_characters": (
+                result.discarded_decision_characters
+            ),
             "tool_call_timing": result.tool_call_timing,
             "retrieval_executed": result.retrieval_executed,
             "retrieval_domain": result.retrieval_domain,
             "retrieval_status": result.retrieval_status,
             "continuation_recovery_used": result.continuation_recovery_used,
+            "continuation_suppressed": result.continuation_suppressed,
+            "host_safe_response": result.host_safe_response,
             "reason_codes": tuple(result.reason_codes),
             "audit_event_id": audit_event_id,
             "final_invocation_id": result.final_continuation_id,
@@ -7461,6 +7815,9 @@ class Orac:
             deterministic_plugin_handoff: PluginRoutingHandoff | None = None
             dialogue_router = getattr(self, "dialogue_routing_service", None)
             explicit_knowledge_route = None
+            explicit_local_retrieval_intent = (
+                has_explicit_local_retrieval_intent(prompt)
+            )
             explicit_search_directive = detect_explicit_search_directive(prompt)
             if explicit_search_directive is not None:
                 explicit_dialogue_route = SimpleNamespace(
@@ -7473,7 +7830,11 @@ class Orac:
                     prompt,
                     authenticated_username=auth_user,
                 )
-            if explicit_dialogue_route is None and explicit_knowledge_route is None:
+            if (
+                explicit_dialogue_route is None
+                and explicit_knowledge_route is None
+                and not explicit_local_retrieval_intent
+            ):
                 deterministic_plugin_handoff = self._collect_plugin_intercept_handoff(
                     prompt,
                     meta,
@@ -7745,6 +8106,7 @@ class Orac:
                 or pending_retrieval_disabled
                 or deterministic_plugin_handoff is not None
                 or knowledge_route_decision is not None
+                or explicit_local_retrieval_intent
             ):
                 pass
             elif decision_service is not None:
@@ -8343,6 +8705,7 @@ class Orac:
             if (
                 explicit_dialogue_route is None
                 and knowledge_route_decision is None
+                and not explicit_local_retrieval_intent
                 and (retrieval_decision is None or not retrieval_decision.should_retrieve)
             ):
                 if plugin_routing_handoff is None:
@@ -9000,9 +9363,9 @@ class Orac:
                     f"prompt_chars={len(final_prompt)} route=ordinary"
                 )
             if (
-                self.enable_prompt_dump
-                and knowledge_route_decision is None
+                knowledge_route_decision is None
                 and prepared_submission is None
+                and self._should_dump_prompt()
             ):
                 _dump_debug_blob("final-prompt", final_prompt)
 
@@ -9040,19 +9403,78 @@ class Orac:
                             effective_llm.get("service_url") or self.service_url
                         ),
                         generation_options=generation_options,
+                        explicit_local_retrieval_intent=(
+                            explicit_local_retrieval_intent
+                        ),
                     )
                     if prepared_governed is not None:
-                        (
-                            governed_execution,
-                            governed_health_key,
-                            governed_mode_reason,
-                        ) = prepared_governed
-                        governed_started_at = time.monotonic()
+                        governed_execution = prepared_governed.execution
+                        governed_health_key = prepared_governed.health_key
+                        governed_mode_reason = prepared_governed.mode_reason
+                        if governed_execution is not None:
+                            governed_started_at = time.monotonic()
+                        elif prepared_governed.retrieval_required:
+                            return await self._return_terminal_dialogue_response(
+                                req_env=req_env,
+                                content=REQUIRED_RETRIEVAL_UNAVAILABLE_MESSAGE,
+                                session_id=session_id,
+                                auth_user=auth_user,
+                                client=client,
+                                show_reasoning=show_reasoning,
+                                effective_llm_id=effective_llm_id,
+                                effective_model_name=effective_model_name,
+                                effective_llm_source=effective_llm_source,
+                                request_flags=request_flags,
+                                event_sink=event_sink,
+                                stream_requested=stream_requested,
+                                provenance={
+                                    "source": "governed_retrieval",
+                                    "outcome": "unavailable",
+                                    "retrieval_required": True,
+                                    "reason_codes": (
+                                        prepared_governed.requirement_reason_codes
+                                    ),
+                                    "unavailable_reason": (
+                                        prepared_governed.unavailable_reason
+                                        or prepared_governed.mode_reason
+                                    ),
+                                },
+                                voice_session_id=incoming_voice_session_id,
+                                context_budget=context_budget_metadata,
+                            )
                 except Exception as exc:
                     _log_exception(
                         "Governed retrieval preparation failed closed (non-fatal)",
                         exc,
                     )
+                    if explicit_local_retrieval_intent:
+                        return await self._return_terminal_dialogue_response(
+                            req_env=req_env,
+                            content=REQUIRED_RETRIEVAL_UNAVAILABLE_MESSAGE,
+                            session_id=session_id,
+                            auth_user=auth_user,
+                            client=client,
+                            show_reasoning=show_reasoning,
+                            effective_llm_id=effective_llm_id,
+                            effective_model_name=effective_model_name,
+                            effective_llm_source=effective_llm_source,
+                            request_flags=request_flags,
+                            event_sink=event_sink,
+                            stream_requested=stream_requested,
+                            provenance={
+                                "source": "governed_retrieval",
+                                "outcome": "unavailable",
+                                "retrieval_required": True,
+                                "reason_codes": (
+                                    "EXPLICIT_LOCAL_RETRIEVAL_INTENT",
+                                ),
+                                "unavailable_reason": (
+                                    "GOVERNED_RETRIEVAL_PREPARATION_FAILED"
+                                ),
+                            },
+                            voice_session_id=incoming_voice_session_id,
+                            context_budget=context_budget_metadata,
+                        )
 
             if stream_requested:
                 await self._emit_stream_event(

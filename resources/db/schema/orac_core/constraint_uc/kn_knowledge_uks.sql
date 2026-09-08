@@ -82,15 +82,3 @@ alter table orac_core.knowledge_embedding_models add constraint kn_embmod_uk1
   )
   using index orac_core.kn_embmod_uk1_idx;
 --rollback alter table orac_core.knowledge_embedding_models drop constraint kn_embmod_uk1;
-
---changeset clive:create_constraint_uc_orac_core_kn_chnkemb_uk1 context:core labels:core stripComments:false
---preconditions onFail:HALT onError:HALT
---precondition-sql-check expectedResult:0 select count(1) from all_constraints where owner = 'ORAC_CORE' and constraint_name = 'KN_CHNKEMB_UK1';
-alter table orac_core.knowledge_chunk_embeddings add constraint kn_chnkemb_uk1
-  unique (
-    chunk_id,
-    embedding_model_id,
-    embedding_text_sha256
-  )
-  using index orac_core.kn_chnkemb_uk1_idx;
---rollback alter table orac_core.knowledge_chunk_embeddings drop constraint kn_chnkemb_uk1;

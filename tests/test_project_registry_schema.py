@@ -160,6 +160,26 @@ class ProjectRegistrySchemaTests(unittest.TestCase):
         self.assertIn("p_row_version", tapi_spec)
         self.assertIn("project code cannot be changed", trigger_sql)
 
+    def test_project_registry_api_is_granted_to_supported_consumers(self) -> None:
+        grants_sql = self._read(
+            "resources/db/schema/orac_code/grant/"
+            "orac_code_consumer_package_access.sql"
+        ).lower()
+
+        self.assertIn(
+            "grant execute on orac_code.project_registry_api to orac;",
+            grants_sql,
+        )
+        self.assertIn(
+            "grant execute on orac_code.project_registry_api to orac_apx_pub;",
+            grants_sql,
+        )
+        self.assertIn(
+            "rollback revoke execute on orac_code.project_registry_api "
+            "from orac_apx_pub;",
+            grants_sql,
+        )
+
     def test_ingestion_target_lov_is_project_only_until_capabilities_exist(
         self,
     ) -> None:

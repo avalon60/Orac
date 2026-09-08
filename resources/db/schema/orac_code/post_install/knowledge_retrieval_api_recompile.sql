@@ -8,6 +8,15 @@ alter package orac_code.knowledge_retrieval_api compile specification;
 alter package orac_code.knowledge_retrieval_api compile body;
 --rollback alter package orac_code.knowledge_retrieval_api compile body;
 
+--changeset clive:recompile_orac_code_native_knowledge_embedding_apis context:core labels:core stripComments:false runOnChange:true runAlways:true
+alter package orac_code.knowledge_embedding_api compile specification;
+alter package orac_code.knowledge_embedding_api compile body;
+alter package orac_code.knowledge_ingestion_api compile specification;
+alter package orac_code.knowledge_ingestion_api compile body;
+alter package orac_code.knowledge_retrieval_api compile specification;
+alter package orac_code.knowledge_retrieval_api compile body;
+--rollback alter package orac_code.knowledge_retrieval_api compile body;
+
 --changeset clive:recompile_orac_code_knowledge_retrieval_api_p1_07 context:core labels:core stripComments:false
 alter package orac_code.knowledge_retrieval_api compile specification;
 alter package orac_code.knowledge_retrieval_api compile body;

@@ -13,13 +13,16 @@ from typing import Any, Mapping
 RETRIEVE_TOOL_NAME = "retrieve"
 GOVERNED_RETRIEVAL_SYSTEM_INSTRUCTION = (
     "You have one advertised read-only retrieve tool for authorised prior "
-    "evidence. If the user explicitly requests that tool, you MUST issue exactly "
-    "one structured tool call before answering and MUST NOT emit explanatory text "
-    "first. Never claim retrieval occurred, invent retrieval output, or simulate a "
-    "tool result unless an actual tool result appears in the provider transcript. "
-    "When retrieval is not needed and was not explicitly requested, answer normally "
-    "without calling the tool. The host controls scope, authority, evidence bounds, "
-    "and execution."
+    "evidence. Advertised domain names and descriptions are routing metadata, not "
+    "evidence. If the user explicitly requests retrieval, or a factual answer "
+    "depends on an advertised domain, you MUST issue exactly one structured tool "
+    "call before answering and MUST NOT emit explanatory text first. "
+    "Never claim retrieval occurred, answer from routing metadata, invent retrieval "
+    "output, or "
+    "simulate a tool result unless an actual tool result appears in the provider "
+    "transcript. When retrieval is not needed and the answer does not depend on an "
+    "advertised domain, answer normally without calling the tool. The host controls "
+    "scope, authority, evidence bounds, and execution."
 )
 
 

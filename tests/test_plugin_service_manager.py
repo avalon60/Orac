@@ -22,7 +22,9 @@ if str(SRC_ROOT) not in sys.path:
 from model.plugin_routing.discovery import PluginDiscovery
 from model.plugin_database_session import PluginDatabaseSessionError
 from model.plugin_database_deployment import PluginDatabaseDeploymentResult
-from model.plugin_routing.embeddings import HashEmbeddingProvider
+from model.plugin_routing.embeddings import (
+    DeterministicHashTestEmbeddingProvider as HashEmbeddingProvider,
+)
 from model.plugin_routing.manager import PluginManager
 from model.plugin_service_manager import PluginServiceManager
 

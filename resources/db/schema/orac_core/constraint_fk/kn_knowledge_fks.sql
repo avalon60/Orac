@@ -81,22 +81,6 @@ alter table orac_core.knowledge_chunks add constraint kn_chnk_kn_chset_fk1
   references orac_core.knowledge_chunk_sets (chunk_set_id);
 --rollback alter table orac_core.knowledge_chunks drop constraint kn_chnk_kn_chset_fk1;
 
---changeset clive:create_constraint_fk_orac_core_kn_chnkemb_kn_chnk_fk1 context:core labels:core stripComments:false
---preconditions onFail:HALT onError:HALT
---precondition-sql-check expectedResult:0 select count(1) from all_constraints where owner = 'ORAC_CORE' and constraint_name = 'KN_CHNKEMB_KN_CHNK_FK1';
-alter table orac_core.knowledge_chunk_embeddings add constraint kn_chnkemb_kn_chnk_fk1
-  foreign key (chunk_id)
-  references orac_core.knowledge_chunks (chunk_id);
---rollback alter table orac_core.knowledge_chunk_embeddings drop constraint kn_chnkemb_kn_chnk_fk1;
-
---changeset clive:create_constraint_fk_orac_core_kn_chnkemb_kn_embmod_fk1 context:core labels:core stripComments:false
---preconditions onFail:HALT onError:HALT
---precondition-sql-check expectedResult:0 select count(1) from all_constraints where owner = 'ORAC_CORE' and constraint_name = 'KN_CHNKEMB_KN_EMBMOD_FK1';
-alter table orac_core.knowledge_chunk_embeddings add constraint kn_chnkemb_kn_embmod_fk1
-  foreign key (embedding_model_id)
-  references orac_core.knowledge_embedding_models (embedding_model_id);
---rollback alter table orac_core.knowledge_chunk_embeddings drop constraint kn_chnkemb_kn_embmod_fk1;
-
 --changeset clive:create_constraint_fk_orac_core_kn_inge_kn_ingreq_fk1 context:core labels:core stripComments:false
 --preconditions onFail:HALT onError:HALT
 --precondition-sql-check expectedResult:0 select count(1) from all_constraints where owner = 'ORAC_CORE' and constraint_name = 'KN_INGE_KN_INGREQ_FK1';

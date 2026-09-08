@@ -230,6 +230,17 @@ def test_conversation_guidance_rejects_known_stale_claims() -> None:
     assert "takes precedence at runtime" in guide
 
 
+def test_ingested_routing_guides_exclude_live_knowledge_regression_wording() -> None:
+    """Operational guides cannot become evidence for the live book regression."""
+    for relative_path in (
+        "docs/governed-retrieval.md",
+        "docs/dialogue-routing.md",
+    ):
+        guide = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8").lower()
+        assert "john elder" not in guide
+        assert "ai os" not in guide
+
+
 def test_conversation_guide_is_discoverable_from_canonical_routes() -> None:
     """User and maintainer entry points link to the consolidated guide."""
     guide_link = "conversation-context-memory-and-rag.md"

@@ -51,8 +51,10 @@ def test_plugin_bridge_has_no_direct_ingestion_or_retrieval_package_access():
     assert "core_handoff_available" not in plugin_service
 
 
-def test_searchable_view_no_longer_projects_raw_locator():
-    view = _text(SCHEMA / "orac_code/view/knowledge_searchable_chunks_v.sql")
+def test_native_searchable_view_does_not_project_raw_locator():
+    view = _text(
+        SCHEMA / "orac_code/view/knowledge_native_searchable_chunks_v.sql"
+    )
     assert "ver.content_uri" not in view
 
 
@@ -144,15 +146,15 @@ def test_p1_08_submission_audit_arguments_exclude_content_and_locators():
         assert forbidden not in procedure
 
 
-def test_plugin_search_entry_point_is_structurally_self_scoped():
+def test_plugin_hybrid_entry_point_is_structurally_self_scoped():
     spec = _text(SCHEMA / "orac_code/package_spec/knowledge_retrieval_api.sql")
     body = _text(SCHEMA / "orac_code/package_body/knowledge_retrieval_api.sql")
     plugin_spec = spec[
-        spec.index("procedure open_plugin_search_candidates") :
+        spec.index("procedure open_plugin_hybrid_candidates") :
         spec.index("procedure record_policy_decision")
     ]
     plugin_body = body[
-        body.index("procedure open_plugin_search_candidates") :
+        body.index("procedure open_plugin_hybrid_candidates") :
         body.index("procedure record_policy_decision")
     ]
 
@@ -161,8 +163,10 @@ def test_plugin_search_entry_point_is_structurally_self_scoped():
     assert "p_scope_type" not in plugin_spec
     assert "p_scope_key" not in plugin_spec
     assert "knowledge_scope_id" not in plugin_spec
-    assert "open_search_candidates_internal(" in plugin_body
-    assert "p_username, 'plugin', trim(p_plugin_id)" in plugin_body
+    assert "open_hybrid_candidates_internal(" in plugin_body
+    assert "p_username, 'plugin', trim(p_plugin_id)" in " ".join(
+        plugin_body.split()
+    )
     assert "rag_usage_authorization_api.authorization_result" in body
 
 
@@ -190,7 +194,7 @@ def test_plugin_and_apex_principals_receive_no_core_retrieval_grants():
     )
     protected_objects = (
         "knowledge_retrieval_api",
-        "knowledge_searchable_chunks_v",
+        "knowledge_native_searchable_chunks_v",
     )
     for line in grant_text.splitlines():
         if "grant " not in line or not any(name in line for name in protected_objects):

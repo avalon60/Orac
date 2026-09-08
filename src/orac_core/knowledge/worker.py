@@ -1,8 +1,10 @@
 """Scheduled worker for Core knowledge ingestion requests."""
 
 # Author: Clive Bostock
-# Date: 12-Jul-2026
+# Date: 07-Sep-2026
 # Description: Extracts, chunks, embeds, and completes Core knowledge requests.
+# Codex-assisted generated/modified.
+# Codex SDK reviewability guardrails followed.
 
 from __future__ import annotations
 
@@ -12,19 +14,22 @@ from pathlib import Path
 import socket
 from typing import Any
 
-from model.plugin_routing.embeddings import EmbeddingProvider, HashEmbeddingProvider
+from model.plugin_routing.embeddings import EmbeddingProvider
 
+from .embeddings import knowledge_embedding_provider
 from .managed_store import KnowledgeManagedStore
 from .managed_store import ManagedObjectIdentity
 from .managed_store import ManagedStoreConfigurationError
 from .managed_store import ManagedStoreError
 from .repository import KnowledgeIngestionRepository
+from .repository import KnowledgeEmbeddingRepository
 from .csv_chunking import chunk_csv
 from .markdown_chunking import MarkdownChunk as TextChunk
 from .markdown_chunking import chunk_markdown
+from .token_accounting import EmbeddingInputContextExceeded
 
 CHUNKER_CODE = "core_markdown_blocks"
-CHUNKER_VERSION = "1"
+CHUNKER_VERSION = "2"
 MANAGED_STORE_FAILURES: dict[str, tuple[str, bool]] = {
     "INVALID_STORAGE_KEY": ("INVALID_MANAGED_STORAGE_KEY", False),
     "STORAGE_KEY_IDENTITY_MISMATCH": ("INVALID_MANAGED_STORAGE_KEY", False),
@@ -55,6 +60,7 @@ class KnowledgeIngestionService:
         manifest: Any | None = None,
         *,
         repository: KnowledgeIngestionRepository | None = None,
+        embedding_repository: KnowledgeEmbeddingRepository | None = None,
         embedding_provider: EmbeddingProvider | None = None,
         managed_root: Path | None = None,
         managed_store: KnowledgeManagedStore | None = None,
@@ -66,20 +72,25 @@ class KnowledgeIngestionService:
         self._config_mgr = config_mgr
         self._manifest = manifest
         self._repository = repository or KnowledgeIngestionRepository()
+        self._embedding_repository = (
+            embedding_repository or KnowledgeEmbeddingRepository()
+        )
         self._managed_store = managed_store or KnowledgeManagedStore.from_config(
             config_mgr,
             root_override=managed_root,
         )
-        chunk_size = self._config_int("chunk_size_tokens", 384)
-        overlap = self._config_int("chunk_overlap_tokens", 48)
-        dimensions = self._config_int("embedding_dimensions", 32)
-        model_id = self._config_value("embedding_model_id", "hash-embedding-v1")
+        chunk_size = self._config_int("chunk_size_tokens", 1536)
+        overlap = self._config_int("chunk_overlap_tokens", 192)
         self._chunk_size_tokens = max(1, chunk_size)
         self._overlap_tokens = max(0, min(overlap, self._chunk_size_tokens - 1))
-        self._embedding_provider = embedding_provider or HashEmbeddingProvider(
-            model_id=model_id,
-            dimensions=dimensions,
+        self._embedding_provider = embedding_provider or knowledge_embedding_provider(
+            config_mgr
         )
+        if getattr(self._embedding_provider, "profile", None) is None:
+            raise ValueError(
+                "Knowledge ingestion requires an immutable native embedding profile."
+            )
+        self._embedding_profile_id: int | None = None
         self._lease_seconds = self._config_int("request_lease_seconds", 300)
         self._batch_size = max(1, self._config_int("batch_size", 5))
         self._owner_id = f"knowledge:{socket.gethostname()}:{os.getpid()}"
@@ -126,6 +137,30 @@ class KnowledgeIngestionService:
                 self.last_error = f"{exc.reason_code}: {exc}"
                 self._log_warning(self.last_error)
                 raise
+            except EmbeddingInputContextExceeded as exc:
+                chunk_no = None
+                if exc.input_index is not None:
+                    chunk_no = exc.input_index + 1
+                diagnostic = (
+                    f"{exc.reason_code}: chunk_no={chunk_no}, "
+                    f"estimated_tokens={exc.estimated_tokens}, "
+                    f"usable_limit_tokens={exc.usable_limit_tokens}, "
+                    f"model_context_tokens={exc.model_context_tokens}, "
+                    f"profile={exc.profile_identity}"
+                )
+                self._fail_request(
+                    request_id=request_id,
+                    owner_id=owner_id,
+                    lease_token=lease_token,
+                    error_code=exc.reason_code,
+                    error_message=diagnostic,
+                    retryable=False,
+                )
+                if first_error is None:
+                    first_error = diagnostic
+                self._log_warning(
+                    f"Knowledge ingestion request {request_id} failed: {diagnostic}"
+                )
             except Exception as exc:
                 if first_error is None:
                     first_error = str(exc)
@@ -264,6 +299,7 @@ class KnowledgeIngestionService:
                         text,
                         chunk_size_tokens=self._chunk_size_tokens,
                         overlap_tokens=self._overlap_tokens,
+                        **self._markdown_budget_arguments(),
                     ),
                 )
             )
@@ -278,27 +314,31 @@ class KnowledgeIngestionService:
         vectors = self._embedding_provider.embed_texts(
             [chunk.text for _, chunk in chunk_ids]
         )
-        dimensions = (
-            len(vectors[0]) if vectors else self._config_int("embedding_dimensions", 32)
-        )
-        embedding_model_id = self._repository.upsert_embedding_model(
-            provider_code="hash",
-            model_name=self._embedding_provider.model_id,
-            model_revision="default",
-            dimensions=dimensions,
-        )
+        profile = self._embedding_provider.profile
+        if self._embedding_profile_id is None:
+            self._embedding_profile_id = self._embedding_repository.ensure_profile(
+                profile
+            )
         for (chunk_id, chunk), vector in zip(chunk_ids, vectors, strict=True):
-            self._repository.insert_embedding(
+            self._embedding_repository.store_native_embedding(
+                embedding_profile_id=self._embedding_profile_id,
                 chunk_id=chunk_id,
-                embedding_model_id=embedding_model_id,
                 vector=vector,
                 embedding_text_sha256=_sha256_text(chunk.text),
             )
 
+        active_profile = self._embedding_repository.active_profile()
+        if active_profile is None:
+            # On a fresh database the current request is not searchable yet,
+            # so activation validates the empty/pre-existing corpus before
+            # this request becomes visible. Later profile changes never
+            # auto-promote and must use the controlled rebuild workflow.
+            self._embedding_repository.activate_profile(self._embedding_profile_id)
         self._repository.complete_request(
             ingestion_request_id=request_id,
             owner_id=owner_id,
             lease_token=lease_token,
+            embedding_profile_id=self._embedding_profile_id,
         )
 
     def _chunk_artefact_member(
@@ -342,6 +382,7 @@ class KnowledgeIngestionService:
                 text,
                 chunk_size_tokens=self._chunk_size_tokens,
                 overlap_tokens=self._overlap_tokens,
+                **self._markdown_budget_arguments(),
             )
             chunker_code = CHUNKER_CODE
         else:
@@ -396,6 +437,21 @@ class KnowledgeIngestionService:
             )
             persisted.append((chunk_id, chunk))
         return persisted
+
+    def _markdown_budget_arguments(self) -> dict[str, Any]:
+        """Return provider-aware hard-limit arguments for Markdown chunking."""
+        counter = getattr(self._embedding_provider, "count_content_tokens", None)
+        hard_limit = getattr(
+            self._embedding_provider,
+            "document_content_token_limit",
+            None,
+        )
+        if not callable(counter) or not isinstance(hard_limit, int):
+            return {}
+        return {
+            "token_counter": counter,
+            "max_content_tokens": hard_limit,
+        }
 
     def _fail_request(
         self,

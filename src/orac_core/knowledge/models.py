@@ -75,6 +75,7 @@ class KnowledgeSearchResult:
     embedding_model_identifier: str
     embedding_dimensions: int
     chunk_text: str
+    fused_score: float = 0.0
     source_type: str = ""
     document_title: str | None = None
     original_filename: str | None = None
@@ -112,7 +113,7 @@ class KnowledgeSearchResult:
     @property
     def score(self) -> float:
         """Return the meaningful first-slice ranking score."""
-        return self.lexical_score
+        return self.fused_score
 
     @property
     def scope(self) -> KnowledgeScope:

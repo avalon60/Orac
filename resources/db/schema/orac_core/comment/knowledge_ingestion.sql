@@ -21,8 +21,6 @@ comment on column orac_core.knowledge_embedding_models.vector_distance_metric_do
 ;
 comment on column orac_core.knowledge_embedding_models.vector_distance_metric_ref_value_code is 'Vector distance metric used for embeddings produced by this model.'
 ;
-comment on table orac_core.knowledge_chunk_embeddings is 'Chunk embedding vectors stored as JSON arrays for portable local retrieval.'
-;
 comment on table orac_core.knowledge_ingestion_events is 'Append-only Core ingestion lifecycle events.'
 ;
 --rollback comment on table orac_core.knowledge_source_objects is null;

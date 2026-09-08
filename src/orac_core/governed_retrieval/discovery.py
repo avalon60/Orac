@@ -104,6 +104,8 @@ class DomainDiscoveryTelemetry:
     authorised_catalogue_size: int = 0
     domains_scored: int = 0
     semantic_matches: int = 0
+    semantic_advertised_count: int = 0
+    conversation_advertised_count: int = 0
     advertised_count: int = 0
     cache_hits: int = 0
     cache_misses: int = 0
@@ -149,6 +151,15 @@ class KnowledgeDomainOffer:
             "Available governed knowledge domains for this invocation:",
             "Select only the exact opaque handles below when calling retrieve.",
         ]
+        if self.telemetry.semantic_matches > 0:
+            lines.extend(
+                [
+                    "At least one governed domain semantically matches the current "
+                    "question.",
+                    "The catalogue text is routing metadata, not answer evidence. "
+                    "You MUST call retrieve exactly once before answering.",
+                ]
+            )
         for item in self.advertisements:
             lines.append(
                 f"{item.handle} - {item.display_name} [{item.domain_type.value}]"
@@ -685,6 +696,14 @@ class DomainDiscoveryService:
             authorised_catalogue_size=catalogue_size,
             domains_scored=scored_count,
             semantic_matches=len(ranked),
+            semantic_advertised_count=sum(
+                item.domain_type is not RetrievalDomain.CONVERSATION
+                for item in advertisements
+            ),
+            conversation_advertised_count=sum(
+                item.domain_type is RetrievalDomain.CONVERSATION
+                for item in advertisements
+            ),
             advertised_count=len(advertisements),
             cache_hits=cache_hits,
             cache_misses=cache_misses,

@@ -70,6 +70,7 @@ prompt === indexes ===
 @index/llm_pilim_uk1_idx.sql
 @index/llm_pilim_fks_indexes.sql
 @index/llm_modcap_pk.sql
+@index/llm_modcap_uk1_idx.sql
 @index/llm_modcap_fks_indexes.sql
 @index/llm_mcin_pk.sql
 @index/llm_mcin_uk1_idx.sql

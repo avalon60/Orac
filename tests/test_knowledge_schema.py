@@ -41,8 +41,6 @@ class KnowledgeSchemaTests(unittest.TestCase):
             "kn_ext_kn_docver_fk1",
             "kn_chset_kn_ext_fk1",
             "kn_chnk_kn_chset_fk1",
-            "kn_chnkemb_kn_chnk_fk1",
-            "kn_chnkemb_kn_embmod_fk1",
             "kn_inge_kn_ingreq_fk1",
         }
         for constraint_name in expected:
@@ -81,7 +79,9 @@ class KnowledgeSchemaTests(unittest.TestCase):
             "chunk_set_id",
             "chunk_id",
             "embedding_model_id",
-            "chunk_embedding_id",
+            "chunk_vector_embedding_id",
+            "embedding_profile_id",
+            "reembedding_run_id",
             "knowledge_scope_id",
             "artefact_id",
             "retrieval_event_id",
@@ -130,49 +130,29 @@ class KnowledgeSchemaTests(unittest.TestCase):
         )
         self.assertIn("select plugin_registry_id", text)
 
-    def test_searchable_chunks_view_exposes_scope_and_vector_metadata(self) -> None:
+    def test_native_searchable_chunks_view_uses_the_active_profile(self) -> None:
         view_sql = (
-            (CORE_CODE_SCHEMA / "view" / "knowledge_searchable_chunks_v.sql")
-            .read_text(encoding="utf-8")
-            .lower()
-        )
-        grant_sql = (
-            (CORE_CODE_SCHEMA / "grant" / "orac_code_consumer_view_access.sql")
-            .read_text(encoding="utf-8")
-            .lower()
-        )
-        synonym_sql = (
-            (ORAC_SCHEMA / "synonym" / "knowledge_searchable_chunks_v.sql")
+            (CORE_CODE_SCHEMA / "view" / "knowledge_native_searchable_chunks_v.sql")
             .read_text(encoding="utf-8")
             .lower()
         )
 
         self.assertIn(
-            "create or replace force view orac_code.knowledge_searchable_chunks_v",
+            "create or replace force view orac_code.knowledge_native_searchable_chunks_v",
             view_sql,
         )
         for token in (
-            "target_scope_type",
-            "target_scope_key",
-            "source_object_id",
-            "document_id",
-            "document_version_id",
-            "chunk_id",
-            "chunk_text",
-            "embedding_model_identifier",
-            "embedding_dimensions",
-            "embedding_vector",
-            "req.status_code = 'completed'",
+            "knowledge_searchable_chunk_content_v",
+            "knowledge_embedding_activations_v",
+            "knowledge_embedding_profiles_v",
+            "knowledge_chunk_vector_embeddings_v",
+            "embedding_text_sha256 = chunk.chunk_content_sha256",
+            "vector_dimension_count(emb.embedding_vector) = model.dimensions",
+            "profile.storage_layout_code",
         ):
             self.assertIn(token, view_sql)
-        self.assertIn(
-            "grant read on orac_code.knowledge_searchable_chunks_v to orac;",
-            grant_sql,
-        )
-        self.assertIn(
-            "create or replace synonym orac.knowledge_searchable_chunks_v",
-            synonym_sql,
-        )
+        self.assertNotIn("model.dimensions = 768", view_sql)
+        self.assertNotIn("knowledge_chunk_embeddings_v", view_sql)
 
     def test_complete_request_invariant_is_fail_closed(self) -> None:
         package_sql = (
@@ -187,7 +167,9 @@ class KnowledgeSchemaTests(unittest.TestCase):
             "l_missing_embedding_count > 0",
             "l_bad_vector_count > 0",
             "l_expected_model_key <> l_model_key",
-            "vector_dimension(rec.embedding_vector)",
+            "vector_dimension_count(rec.embedding_vector) <> rec.dimensions",
+            "knowledge_embedding_activations_v",
+            "p_embedding_profile_id in number",
             "empty or whitespace-only chunk",
         ):
             self.assertIn(token, package_sql)
@@ -388,7 +370,7 @@ class KnowledgeSchemaTests(unittest.TestCase):
             .lower()
         )
         searchable_sql = (
-            (CORE_CODE_SCHEMA / "view" / "knowledge_searchable_chunks_v.sql")
+            (CORE_CODE_SCHEMA / "view" / "knowledge_searchable_chunk_content_v.sql")
             .read_text(encoding="utf-8")
             .lower()
         )

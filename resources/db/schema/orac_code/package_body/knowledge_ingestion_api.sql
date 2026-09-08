@@ -820,6 +820,42 @@ as
     return null;
   end try_claim_next_request;
 
+  procedure requeue_failed_request(
+    p_ingestion_request_id in number
+  )
+  is
+    l_updated_count number;
+  begin
+    update orac_api.knowledge_ingestion_requests_v
+       set status_code        = c_status_queued,
+           stage_code         = 'SUBMITTED',
+           attempts           = 0,
+           next_attempt_on    = systimestamp,
+           lease_owner        = null,
+           lease_token        = null,
+           lease_expires_on   = null,
+           completed_on       = null,
+           last_error_code    = null,
+           last_error_message = null
+     where ingestion_request_id = p_ingestion_request_id
+       and status_code = c_status_failed;
+
+    l_updated_count := sql%rowcount;
+    if l_updated_count <> 1
+    then
+      raise_application_error(
+        -20434,
+        'Only one failed knowledge ingestion request can be requeued.'
+      );
+    end if;
+
+    add_event(
+      p_ingestion_request_id,
+      'requeued',
+      'Failed Core knowledge ingestion requeued by an operator.'
+    );
+  end requeue_failed_request;
+
   procedure mark_stage(
     p_ingestion_request_id in number,
     p_owner_id             in varchar2,
@@ -1106,43 +1142,6 @@ as
     return l_embedding_model_id;
   end upsert_embedding_model;
 
-  function insert_chunk_embedding(
-    p_chunk_id              in number,
-    p_embedding_model_id    in number,
-    p_embedding_vector      in clob,
-    p_embedding_text_sha256 in varchar2
-  ) return number
-  is
-    l_chunk_embedding_id number;
-    l_embedding_sha      varchar2(64);
-  begin
-    l_embedding_sha := normalised_sha256(p_embedding_text_sha256, 'Embedding text SHA-256');
-    begin
-      insert into orac_api.knowledge_chunk_embeddings_v (
-        chunk_id,
-        embedding_model_id,
-        embedding_vector,
-        embedding_text_sha256
-      )
-      values (
-        p_chunk_id,
-        p_embedding_model_id,
-        p_embedding_vector,
-        l_embedding_sha
-      )
-      returning chunk_embedding_id into l_chunk_embedding_id;
-    exception
-      when dup_val_on_index then
-        select chunk_embedding_id
-          into l_chunk_embedding_id
-          from orac_api.knowledge_chunk_embeddings_v
-         where chunk_id = p_chunk_id
-           and embedding_model_id = p_embedding_model_id
-           and embedding_text_sha256 = l_embedding_sha;
-    end;
-    return l_chunk_embedding_id;
-  end insert_chunk_embedding;
-
   function worker_output_set_json(
     p_extraction_id in number
   ) return clob
@@ -1154,7 +1153,8 @@ as
   procedure complete_request(
     p_ingestion_request_id in number,
     p_owner_id             in varchar2,
-    p_lease_token          in varchar2
+    p_lease_token          in varchar2,
+    p_embedding_profile_id in number
   )
   is
     l_request_count          number;
@@ -1167,8 +1167,33 @@ as
     l_expected_model_key     varchar2(600);
     l_extraction_id          number;
     l_artefact_count         number;
+    l_profile_count          number;
   begin
     assert_lease(p_ingestion_request_id, p_owner_id, p_lease_token);
+
+    select count(*)
+      into l_profile_count
+      from orac_api.knowledge_embedding_activations_v activation
+      join orac_api.knowledge_embedding_profiles_v profile
+        on profile.embedding_profile_id = activation.embedding_profile_id
+       and profile.purpose_code = activation.purpose_code
+       and profile.semantic_yn = 'Y'
+       and profile.production_allowed_yn = 'Y'
+      join orac_api.knowledge_embedding_models_v model
+        on model.embedding_model_id = profile.embedding_model_id
+       and model.dimensions > 0
+       and profile.storage_layout_code =
+           'ORACLE_VECTOR_' || to_char(model.dimensions) || '_FLOAT32_V1'
+     where activation.purpose_code = 'KNOWLEDGE_CHUNK_RETRIEVAL'
+       and activation.embedding_profile_id = p_embedding_profile_id;
+
+    if l_profile_count <> 1
+    then
+      raise_application_error(
+        -20412,
+        'Cannot complete a knowledge request without the active production embedding profile.'
+      );
+    end if;
 
     select count(*)
       into l_request_count
@@ -1201,12 +1226,17 @@ as
     for rec in (
       select chn.chunk_id,
              chn.chunk_text,
-             emb.chunk_embedding_id,
-             emb.embedding_vector,
-             modl.provider_code,
-             modl.model_name,
-             modl.model_revision,
-             modl.dimensions
+             chn.content_sha256 chunk_content_sha256,
+             native_emb.chunk_vector_embedding_id chunk_embedding_id,
+             native_emb.embedding_vector,
+             native_emb.embedding_text_sha256,
+             model.provider_code,
+             model.model_name,
+             model.model_revision,
+             model.dimensions,
+             profile.profile_version,
+             profile.model_digest,
+             profile.storage_layout_code
         from orac_api.knowledge_ingestion_requests_v req
         join orac_api.knowledge_extractions_v ext
           on ext.document_version_id = req.document_version_id
@@ -1214,11 +1244,28 @@ as
           on chs.extraction_id = ext.extraction_id
         join orac_api.knowledge_chunks_v chn
           on chn.chunk_set_id = chs.chunk_set_id
-        left join orac_api.knowledge_chunk_embeddings_v emb
-          on emb.chunk_id = chn.chunk_id
-        left join orac_api.knowledge_embedding_models_v modl
-          on modl.embedding_model_id = emb.embedding_model_id
+        join orac_api.knowledge_embedding_activations_v activation
+          on activation.purpose_code = 'KNOWLEDGE_CHUNK_RETRIEVAL'
+         and activation.embedding_profile_id = p_embedding_profile_id
+        join orac_api.knowledge_embedding_profiles_v profile
+          on profile.embedding_profile_id = activation.embedding_profile_id
+         and profile.purpose_code = activation.purpose_code
+         and profile.semantic_yn = 'Y'
+         and profile.production_allowed_yn = 'Y'
+        join orac_api.knowledge_embedding_models_v model
+          on model.embedding_model_id = profile.embedding_model_id
+        left join orac_api.knowledge_chunk_vector_embeddings_v native_emb
+          on native_emb.chunk_id = chn.chunk_id
+         and native_emb.embedding_profile_id = p_embedding_profile_id
        where req.ingestion_request_id = p_ingestion_request_id
+         and not exists (
+           select 1
+             from orac_api.knowledge_chunk_sets_v newer
+            where newer.extraction_id = chs.extraction_id
+              and nvl(newer.source_artefact_id, -1) =
+                  nvl(chs.source_artefact_id, -1)
+              and newer.chunk_set_id > chs.chunk_set_id
+         )
        order by chn.chunk_id
     )
     loop
@@ -1245,8 +1292,15 @@ as
           l_bad_vector_count := l_bad_vector_count + 1;
         end if;
 
-        if rec.dimensions is null
-           or vector_dimension(rec.embedding_vector) <> rec.dimensions
+        if rec.embedding_text_sha256 <> rec.chunk_content_sha256
+        then
+          l_bad_vector_count := l_bad_vector_count + 1;
+        elsif rec.dimensions is null
+           or rec.dimensions <= 0
+           or rec.storage_layout_code <>
+              'ORACLE_VECTOR_' || to_char(rec.dimensions) || '_FLOAT32_V1'
+           or vector_dimension_count(rec.embedding_vector) <> rec.dimensions
+           or vector_dimension_format(rec.embedding_vector) <> 'FLOAT32'
         then
           l_bad_vector_count := l_bad_vector_count + 1;
         end if;

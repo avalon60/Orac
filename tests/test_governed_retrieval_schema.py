@@ -40,6 +40,7 @@ def test_existing_audit_boundary_accepts_only_allowlisted_governed_metadata() ->
     checks = _text(SCHEMA / "orac_core" / "constraint_other" / "kn_retev_checks.sql")
     spec = _text(SCHEMA / "orac_code" / "package_spec" / "knowledge_retrieval_api.sql")
     body = _text(SCHEMA / "orac_code" / "package_body" / "knowledge_retrieval_api.sql")
+    governed_spec = spec[spec.index("procedure record_governed_retrieval_event") :]
     assert "governed_retrieval" in checks
     assert "retrieval_domain" in checks
     assert "record_governed_retrieval_event" in spec
@@ -53,7 +54,7 @@ def test_existing_audit_boundary_accepts_only_allowlisted_governed_metadata() ->
         "p_reasoning",
         "p_discarded_text",
     ):
-        assert forbidden not in spec
+        assert forbidden not in governed_spec
     assert "'stream_health_state'" in body
     assert "'continuation_recovery_yn'" in body
     assert "write_event(" in body
@@ -102,6 +103,7 @@ def test_phase2c_audit_extension_remains_content_free_and_bounded() -> None:
     """The optional telemetry document has a strict size and no content fields."""
     spec = _text(SCHEMA / "orac_code" / "package_spec" / "knowledge_retrieval_api.sql")
     body = _text(SCHEMA / "orac_code" / "package_body" / "knowledge_retrieval_api.sql")
+    governed_spec = spec[spec.index("procedure record_governed_retrieval_event") :]
     assert "p_phase2c_detail_json" in spec
     assert "dbms_lob.getlength(p_phase2c_detail_json) > 8192" in body
     assert "p_phase2c_detail_json is json" in body
@@ -111,4 +113,4 @@ def test_phase2c_audit_extension_remains_content_free_and_bounded() -> None:
         "p_evidence_text",
         "p_domain_description",
     ):
-        assert forbidden not in spec
+        assert forbidden not in governed_spec

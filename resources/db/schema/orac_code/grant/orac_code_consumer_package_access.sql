@@ -79,3 +79,7 @@ grant execute on orac_code.knowledge_ingestion_api to orac;
 --changeset clive:grant_orac_code_knowledge_ingestion_api_to_orac_plugin_19 context:core labels:core stripComments:false runOnChange:true
 grant execute on orac_code.knowledge_ingestion_api to orac_plugin;
 --rollback revoke execute on orac_code.knowledge_ingestion_api from orac_plugin;
+
+--changeset clive:grant_orac_code_project_registry_api_to_orac_apx_pub_20 context:core labels:core stripComments:false runOnChange:true
+grant execute on orac_code.project_registry_api to orac_apx_pub;
+--rollback revoke execute on orac_code.project_registry_api from orac_apx_pub;

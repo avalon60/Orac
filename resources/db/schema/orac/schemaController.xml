@@ -10,4 +10,5 @@
   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
 
   <includeAll path="synonym" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>
+  <includeAll path="validation" relativeToChangelogFile="true" errorIfMissingOrEmpty="false"/>
 </databaseChangeLog>

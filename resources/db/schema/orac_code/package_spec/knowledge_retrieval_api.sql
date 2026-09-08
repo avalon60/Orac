@@ -17,28 +17,41 @@ as
     p_content_rows    out sys_refcursor
   );
 
-  procedure open_search_candidates(
-    p_retrieval_id               in  varchar2,
-    p_username                   in  varchar2,
-    p_scope_type                 in  varchar2,
-    p_scope_key                  in  varchar2,
-    p_embedding_model_identifier in  varchar2,
-    p_embedding_dimensions       in  number,
-    p_candidate_limit            in  number,
-    p_resolution_json            out clob,
-    p_content_rows               out sys_refcursor
+  function lexical_candidate_score(
+    p_lexical_tokens_json in clob,
+    p_lexical_phrase      in varchar2,
+    p_chunk_text          in clob,
+    p_source_name         in varchar2
+  ) return number;
+
+  procedure open_hybrid_search_candidates(
+    p_retrieval_id          in  varchar2,
+    p_username              in  varchar2,
+    p_scope_type            in  varchar2,
+    p_scope_key             in  varchar2,
+    p_embedding_profile_id  in  number,
+    p_query_vector_json     in  clob,
+    p_lexical_tokens_json   in  clob,
+    p_lexical_phrase        in  varchar2,
+    p_semantic_limit        in  number default 50,
+    p_lexical_limit         in  number default 50,
+    p_resolution_json       out clob,
+    p_content_rows          out sys_refcursor
   );
 
-  procedure open_plugin_search_candidates(
-    p_retrieval_id               in  varchar2,
-    p_username                   in  varchar2,
-    p_plugin_id                  in  varchar2,
-    p_embedding_model_identifier in  varchar2,
-    p_embedding_dimensions       in  number,
-    p_candidate_limit            in  number,
-    p_correlation_id             in  varchar2 default null,
-    p_resolution_json            out clob,
-    p_content_rows               out sys_refcursor
+  procedure open_plugin_hybrid_candidates(
+    p_retrieval_id          in  varchar2,
+    p_username              in  varchar2,
+    p_plugin_id             in  varchar2,
+    p_embedding_profile_id  in  number,
+    p_query_vector_json     in  clob,
+    p_lexical_tokens_json   in  clob,
+    p_lexical_phrase        in  varchar2,
+    p_semantic_limit        in  number default 50,
+    p_lexical_limit         in  number default 50,
+    p_correlation_id        in  varchar2 default null,
+    p_resolution_json       out clob,
+    p_content_rows          out sys_refcursor
   );
 
   procedure record_policy_decision(

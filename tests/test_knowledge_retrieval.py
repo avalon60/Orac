@@ -1,8 +1,10 @@
 """Tests for scope-bound Core knowledge retrieval."""
 
 # Author: Clive Bostock
-# Date: 18-Jul-2026
+# Date: 07-Sep-2026
 # Description: Verifies scoped lexical retrieval, vector compatibility, and safe limits.
+# Codex-assisted generated/modified.
+# Codex SDK reviewability guardrails followed.
 
 from __future__ import annotations
 
@@ -20,6 +22,7 @@ if str(SRC_ROOT) not in sys.path:
 from orac_core.knowledge import KnowledgeRetrievalError  # noqa: E402
 from orac_core.knowledge import KnowledgeRetrievalService  # noqa: E402
 from orac_core.knowledge import KnowledgeScope  # noqa: E402
+from orac_core.knowledge.embeddings import KnowledgeEmbeddingProfile  # noqa: E402
 from orac_core.knowledge.repository import (  # noqa: E402
     KnowledgeRetrievalRepository,
 )
@@ -28,20 +31,78 @@ FIXTURE_SENTENCE = "ORAC_INGESTION_FIXTURE_20260713_LUMEN_PATHWAY"
 
 
 class _Provider:
+    production_allowed = True
+    profile = KnowledgeEmbeddingProfile(
+        provider_code="ollama",
+        model_id="nomic-embed-text:latest",
+        model_digest="a" * 64,
+        dimensions=768,
+        profile_version="knowledge-v1",
+        document_input_prefix="search_document:",
+        query_input_prefix="search_query:",
+        retrieval_policy_version="knowledge-hybrid-v1",
+        semantic_threshold=0.60,
+    )
+
     @property
     def model_id(self) -> str:
-        return "hash-embedding-v1"
+        return self.profile.model_id
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         return [self._embed(text) for text in texts]
 
-    def embed_text(self, text: str) -> list[float]:
-        return self._embed(text)
+    def embed_query(self, text: str) -> list[float]:
+        return [1.0] + [0.0] * 767
 
     def _embed(self, text: str) -> list[float]:
-        if "lumen" in text.lower() or FIXTURE_SENTENCE in text:
-            return [1.0, 0.0]
-        return [0.0, 1.0]
+        return [1.0] + [0.0] * 767
+
+
+class _EmbeddingRepository:
+    def active_profile(self) -> dict:
+        return {
+            "embedding_profile_id": 17,
+            "profile_version": "knowledge-v1",
+            "model_digest": "a" * 64,
+            "dimensions": 768,
+            "storage_layout_code": "ORACLE_VECTOR_768_FLOAT32_V1",
+        }
+
+
+class _ThreeDimensionProvider(_Provider):
+    """Semantic fixture proving generic retrieval follows profile dimensions."""
+
+    profile = KnowledgeEmbeddingProfile(
+        provider_code="test-semantic",
+        model_id="test-semantic-3d",
+        model_digest="b" * 64,
+        dimensions=3,
+        profile_version="knowledge-test-3d",
+        document_input_prefix="search_document:",
+        query_input_prefix="search_query:",
+        retrieval_policy_version="knowledge-hybrid-test",
+        semantic_threshold=0.0,
+        storage_layout_code="ORACLE_VECTOR_3_FLOAT32_V1",
+    )
+
+    def embed_query(self, text: str) -> list[float]:
+        """Return a valid vector for the fixture's declared profile."""
+        del text
+        return [1.0, 0.0, 0.0]
+
+
+class _ThreeDimensionEmbeddingRepository:
+    """Return the active three-dimensional semantic test profile."""
+
+    def active_profile(self) -> dict:
+        """Return a profile matching the injected semantic provider."""
+        return {
+            "embedding_profile_id": 23,
+            "profile_version": "knowledge-test-3d",
+            "model_digest": "b" * 64,
+            "dimensions": 3,
+            "storage_layout_code": "ORACLE_VECTOR_3_FLOAT32_V1",
+        }
 
 
 class _Repository:
@@ -51,7 +112,7 @@ class _Repository:
 
         self.outcomes: list[dict] = []
 
-    def open_search_candidates(self, **kwargs):
+    def open_hybrid_search_candidates(self, **kwargs):
         self.calls.append(kwargs)
         return (
             kwargs["retrieval_id"],
@@ -59,7 +120,7 @@ class _Repository:
             self.rows,
         )
 
-    def open_plugin_search_candidates(self, **kwargs):
+    def open_plugin_hybrid_candidates(self, **kwargs):
         self.calls.append(kwargs)
         return (
             kwargs["retrieval_id"],
@@ -185,10 +246,14 @@ def _row(**overrides) -> dict:
         "chunk_no": 1,
         "target_scope_type": "PROJECT",
         "target_scope_key": "ORAC_CORE",
-        "embedding_model_identifier": "hash-embedding-v1",
-        "embedding_dimensions": 2,
+        "embedding_model_identifier": "nomic-embed-text:latest",
+        "embedding_dimensions": 768,
+        "embedding_profile_id": 17,
+        "semantic_score": 0.82,
+        "lexical_score": 0.75,
+        "semantic_rank": 1,
+        "lexical_rank": 1,
         "chunk_text": f"{FIXTURE_SENTENCE} confirms the lumen pathway retrieval.",
-        "embedding_vector": json.dumps([1.0, 0.0]),
     }
     row.update(overrides)
     return row
@@ -199,7 +264,9 @@ class KnowledgeRetrievalTests(unittest.TestCase):
 
     def test_requires_canonical_scope(self) -> None:
         service = KnowledgeRetrievalService(
-            repository=_Repository([_row()]), embedding_provider=_Provider()
+            repository=_Repository([_row()]),
+            embedding_repository=_EmbeddingRepository(),
+            embedding_provider=_Provider(),
         )
         with self.assertRaisesRegex(KnowledgeRetrievalError, "requires"):
             service.search(
@@ -207,12 +274,37 @@ class KnowledgeRetrievalTests(unittest.TestCase):
                 principal_username="clive",
             )
 
+    def test_query_dimensions_follow_the_active_profile_contract(self) -> None:
+        """Generic retrieval must not encode the current Nomic dimensions."""
+        service = KnowledgeRetrievalService(
+            repository=_Repository([
+                _row(
+                    embedding_model_identifier="test-semantic-3d",
+                    embedding_dimensions=3,
+                    embedding_profile_id=23,
+                )
+            ]),
+            embedding_repository=_ThreeDimensionEmbeddingRepository(),
+            embedding_provider=_ThreeDimensionProvider(),
+        )
+
+        results = service.search(
+            "lumen",
+            target_scope_type="PROJECT",
+            target_scope_key="ORAC_CORE",
+            principal_username="clive",
+        )
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].embedding_dimensions, 3)
+
     def test_plugin_retrieval_uses_narrow_repository_path_and_audits_chunks(self) -> None:
         repository = _Repository([
             _row(target_scope_type="PLUGIN", target_scope_key="weather")
         ])
         service = KnowledgeRetrievalService(
             repository=repository,
+            embedding_repository=_EmbeddingRepository(),
             embedding_provider=_Provider(),
         )
 
@@ -236,23 +328,22 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         session = _SearchSession()
         repository = KnowledgeRetrievalRepository(session_factory=lambda: session)
 
-        _, _, rows = repository.open_search_candidates(
+        _, _, rows = repository.open_hybrid_search_candidates(
             principal_username="clive",
             target_scope_type="PLUGIN",
             target_scope_key="drop_box",
-            embedding_model_identifier="hash-embedding-v1",
-            embedding_dimensions=32,
-            candidate_limit=10,
+            embedding_profile_id=17,
+            query_vector=[1.0, 0.0],
+            lexical_tokens=["stable"],
+            lexical_phrase="stable scanner evidence",
+            semantic_limit=10,
+            lexical_limit=10,
         )
 
         self.assertTrue(session.closed)
         self.assertEqual(rows[0]["embedding_vector"], "[1.0,0.0]")
         self.assertEqual(rows[0]["chunk_text"], "stable scanner evidence")
         self.assertEqual(rows[0]["classification_tags_json"], '["RAW_REFERENCE"]')
-        self.assertEqual(
-            rows[0]["embedding_model_identifier"], "hash-embedding-v1"
-        )
-        self.assertEqual(rows[0]["embedding_dimensions"], 32)
         self.assertEqual(rows[0]["chunk_metadata_json"], session.native_json)
         self.assertEqual(
             rows[0]["extractor_metadata_json"], session.extractor_metadata
@@ -279,13 +370,16 @@ class KnowledgeRetrievalTests(unittest.TestCase):
                 )
 
                 with self.assertRaisesRegex(TypeError, field_name):
-                    repository.open_search_candidates(
+                    repository.open_hybrid_search_candidates(
                         principal_username="clive",
                         target_scope_type="PLUGIN",
                         target_scope_key="drop_box",
-                        embedding_model_identifier="hash-embedding-v1",
-                        embedding_dimensions=32,
-                        candidate_limit=10,
+                        embedding_profile_id=17,
+                        query_vector=[1.0, 0.0],
+                        lexical_tokens=["stable"],
+                        lexical_phrase="stable scanner evidence",
+                        semantic_limit=10,
+                        lexical_limit=10,
                     )
 
                 self.assertTrue(session.closed)
@@ -304,13 +398,16 @@ class KnowledgeRetrievalTests(unittest.TestCase):
                 )
 
                 with self.assertRaisesRegex(TypeError, field_name):
-                    repository.open_search_candidates(
+                    repository.open_hybrid_search_candidates(
                         principal_username="clive",
                         target_scope_type="PLUGIN",
                         target_scope_key="drop_box",
-                        embedding_model_identifier="hash-embedding-v1",
-                        embedding_dimensions=32,
-                        candidate_limit=10,
+                        embedding_profile_id=17,
+                        query_vector=[1.0, 0.0],
+                        lexical_tokens=["stable"],
+                        lexical_phrase="stable scanner evidence",
+                        semantic_limit=10,
+                        lexical_limit=10,
                     )
 
                 self.assertTrue(session.closed)
@@ -318,7 +415,9 @@ class KnowledgeRetrievalTests(unittest.TestCase):
     def test_search_passes_scope_and_scores_compatible_vectors(self) -> None:
         repository = _Repository([_row()])
         service = KnowledgeRetrievalService(
-            repository=repository, embedding_provider=_Provider()
+            repository=repository,
+            embedding_repository=_EmbeddingRepository(),
+            embedding_provider=_Provider(),
         )
         results = service.search(
             "lumen pathway",
@@ -328,9 +427,48 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         )
         self.assertEqual(repository.calls[0]["target_scope_type"], "PROJECT")
         self.assertEqual(repository.calls[0]["target_scope_key"], "ORAC_CORE")
-        self.assertEqual(repository.calls[0]["candidate_limit"], 1000)
+        self.assertEqual(repository.calls[0]["semantic_limit"], 50)
+        self.assertEqual(repository.calls[0]["lexical_limit"], 50)
+        self.assertEqual(repository.calls[0]["embedding_profile_id"], 17)
         self.assertEqual(len(results), 1)
         self.assertGreaterEqual(results[0].score, 0.75)
+
+    def test_substantive_prose_precedes_pandoc_navigation_candidates(self) -> None:
+        repository = _Repository([
+            _row(
+                chunk_id=501,
+                semantic_rank=1,
+                lexical_rank=1,
+                chunk_text=(
+                    "TABLE OF CONTENTS\n"
+                    "The AI Operating System...............................59"
+                ),
+            ),
+            _row(
+                chunk_id=502,
+                semantic_rank=2,
+                lexical_rank=2,
+                chunk_text=(
+                    "An AI-OS is a folder containing workflows, code, data, "
+                    "logs, and instructions coordinated by AI."
+                ),
+            ),
+        ])
+        service = KnowledgeRetrievalService(
+            repository=repository,
+            embedding_repository=_EmbeddingRepository(),
+            embedding_provider=_Provider(),
+        )
+
+        outcome = service.retrieve(
+            "John Elder AI-OS",
+            principal_username="clive",
+            scope=KnowledgeScope("PROJECT", "ORAC_CORE"),
+            max_selected_chunks=1,
+        )
+
+        self.assertEqual(outcome.status, "grounded")
+        self.assertEqual(outcome.results[0].chunk_id, 502)
 
     def test_native_oracle_metadata_is_canonical_json_in_search_results(self) -> None:
         service = KnowledgeRetrievalService(
@@ -343,6 +481,7 @@ class KnowledgeRetrievalTests(unittest.TestCase):
                     chunk_metadata_json={"source_row_start": Decimal("3")},
                 )
             ]),
+            embedding_repository=_EmbeddingRepository(),
             embedding_provider=_Provider(),
         )
 
@@ -368,6 +507,7 @@ class KnowledgeRetrievalTests(unittest.TestCase):
                 _row(chunk_id=501, extractor_metadata_json=["not", "an", "object"]),
                 _row(chunk_id=502, extractor_metadata_json={"schema_version": 1}),
             ]),
+            embedding_repository=_EmbeddingRepository(),
             embedding_provider=_Provider(),
         )
 
@@ -383,7 +523,8 @@ class KnowledgeRetrievalTests(unittest.TestCase):
 
     def test_no_evidence_below_lexical_threshold(self) -> None:
         service = KnowledgeRetrievalService(
-            repository=_Repository([_row(chunk_text="Unrelated material")]),
+            repository=_Repository([]),
+            embedding_repository=_EmbeddingRepository(),
             embedding_provider=_Provider(),
         )
         outcome = service.retrieve(
@@ -395,18 +536,8 @@ class KnowledgeRetrievalTests(unittest.TestCase):
 
     def test_route_control_and_scope_words_do_not_create_false_evidence(self) -> None:
         service = KnowledgeRetrievalService(
-            repository=_Repository(
-                [
-                    _row(
-                        target_scope_type="PLUGIN",
-                        target_scope_key="drop_box",
-                        chunk_text=(
-                            "Use the Drop Box knowledge source to explain file "
-                            "processing and operational configuration."
-                        ),
-                    )
-                ]
-            ),
+            repository=_Repository([]),
+            embedding_repository=_EmbeddingRepository(),
             embedding_provider=_Provider(),
         )
 
@@ -425,6 +556,7 @@ class KnowledgeRetrievalTests(unittest.TestCase):
     def test_candidate_limit_fails_without_partial_results(self) -> None:
         service = KnowledgeRetrievalService(
             repository=_Repository([_row(chunk_id=index) for index in range(3)]),
+            embedding_repository=_EmbeddingRepository(),
             embedding_provider=_Provider(),
         )
         outcome = service.retrieve(
@@ -436,12 +568,13 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         self.assertEqual(outcome.status, "failed")
         self.assertEqual(outcome.reason_codes, ("candidate_limit_exceeded",))
 
-    def test_rejects_model_identifier_mismatch(self) -> None:
+    def test_rejects_embedding_profile_mismatch(self) -> None:
         service = KnowledgeRetrievalService(
-            repository=_Repository([_row(embedding_model_identifier="other-model")]),
+            repository=_Repository([_row(embedding_profile_id=18)]),
+            embedding_repository=_EmbeddingRepository(),
             embedding_provider=_Provider(),
         )
-        with self.assertRaisesRegex(KnowledgeRetrievalError, "model"):
+        with self.assertRaisesRegex(KnowledgeRetrievalError, "profile"):
             service.search(
                 "lumen", target_scope_type="PROJECT", target_scope_key="ORAC_CORE",
                 principal_username="clive",
@@ -450,6 +583,7 @@ class KnowledgeRetrievalTests(unittest.TestCase):
     def test_rejects_dimension_mismatch(self) -> None:
         service = KnowledgeRetrievalService(
             repository=_Repository([_row(embedding_dimensions=3)]),
+            embedding_repository=_EmbeddingRepository(),
             embedding_provider=_Provider(),
         )
         with self.assertRaisesRegex(KnowledgeRetrievalError, "dimension"):
@@ -458,16 +592,18 @@ class KnowledgeRetrievalTests(unittest.TestCase):
                 principal_username="clive",
             )
 
-    def test_rejects_malformed_vectors(self) -> None:
+    def test_semantic_candidates_do_not_transfer_stored_vectors(self) -> None:
         service = KnowledgeRetrievalService(
-            repository=_Repository([_row(embedding_vector='["nope", 1.0]')]),
+            repository=_Repository([_row()]),
+            embedding_repository=_EmbeddingRepository(),
             embedding_provider=_Provider(),
         )
-        with self.assertRaisesRegex(KnowledgeRetrievalError, "non_numeric"):
-            service.search(
-                "lumen", target_scope_type="PROJECT", target_scope_key="ORAC_CORE",
-                principal_username="clive",
-            )
+        results = service.search(
+            "lumen", target_scope_type="PROJECT", target_scope_key="ORAC_CORE",
+            principal_username="clive",
+        )
+        self.assertEqual(len(results), 1)
+        self.assertNotIn("embedding_vector", service._repository.rows[0])
 
 
 if __name__ == "__main__":

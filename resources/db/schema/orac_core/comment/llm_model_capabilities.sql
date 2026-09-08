@@ -26,7 +26,7 @@ comment on column orac_core.llm_model_capabilities.evidence_state_domain_code is
   'Fixed CAPABILITY_EVIDENCE_STATE reference domain.';
 
 comment on column orac_core.llm_model_capabilities.evidence_state_ref_value_code is
-  'Concrete-model metadata, bounded-probe, or rejected evidence maturity.';
+  'Evidence maturity. MODEL_METADATA_VERIFIED verifies only the exact provider declaration; demonstrated model behaviour requires BOUNDED_PROBE_VERIFIED.';
 
 comment on column orac_core.llm_model_capabilities.model_revision is
   'Immutable model revision or digest reviewed for the evidence.';

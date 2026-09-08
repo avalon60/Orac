@@ -33,7 +33,7 @@ prompt APPLICATION 1042 - Orac Administration
 -- Application Export:
 --   Application:     1042
 --   Name:            Orac Administration
---   Date and Time:   15:50 Sunday August 30, 2026
+--   Date and Time:   12:10 Monday August 31, 2026
 --   Exported By:     ORAC_APX_PUB
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -69,7 +69,7 @@ prompt APPLICATION 1042 - Orac Administration
 --       E-Mail:
 --     Supporting Objects:  Included
 --   Version:         24.2.0
---   Instance ID:     1052937516869959
+--   Instance ID:     1080976248909463
 --
 
 prompt --application/delete_application
@@ -15423,13 +15423,11 @@ wwv_flow_imp_page.create_worksheet_column(
 ,p_display_order=>1
 ,p_is_primary_key=>'Y'
 ,p_column_identifier=>'A'
-,p_column_label=>'<span class="u-VisuallyHidden">Edit</span>'
+,p_column_label=>'Edit'
 ,p_column_link=>'f?p=&APP_ID.:38:&APP_SESSION.::&DEBUG.:RP:P38_PROJECT_ID:#PROJECT_ID#'
 ,p_column_linktext=>'<span role="img" aria-label="Edit" class="fa fa-edit" title="Edit"></span>'
 ,p_column_type=>'NUMBER'
-,p_display_text_as=>'HIDDEN_ESCAPE_SC'
-,p_heading_alignment=>'RIGHT'
-,p_column_alignment=>'RIGHT'
+,p_column_alignment=>'CENTER'
 ,p_tz_dependent=>'N'
 ,p_use_as_row_header=>'N'
 );
@@ -15493,10 +15491,11 @@ wwv_flow_imp_page.create_page_button(
 ,p_button_plug_id=>wwv_flow_imp.id(14900100000000202)
 ,p_button_name=>'CREATE_PROJECT'
 ,p_button_action=>'REDIRECT_PAGE'
-,p_button_template_options=>'#DEFAULT#:t-Button--noUI'
+,p_button_template_options=>'#DEFAULT#'
 ,p_button_template_id=>2349107722467437027
+,p_button_is_hot=>'Y'
 ,p_button_image_alt=>'Create Project'
-,p_button_position=>'EDIT'
+,p_button_position=>'RIGHT_OF_IR_SEARCH_BAR'
 ,p_button_redirect_url=>'f?p=&APP_ID.:38:&APP_SESSION.::&DEBUG.:RP,38::'
 ,p_icon_css_classes=>'fa-plus'
 );

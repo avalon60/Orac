@@ -1425,7 +1425,8 @@ wwv_flow_imp_page.create_page_plug(
 '     , svc.last_error_message',
 '     , svc.row_version',
 '     , case',
-'         when app.visible_app_count = 1 then app.card_link',
+'         when app.visible_app_count = 1',
+'          and app.card_link is not null then app.card_link',
 '       end as plugin_app_link',
 '     , case',
 '         when svc.effective_policy <> ''auto'' then',
@@ -1493,9 +1494,9 @@ wwv_flow_imp_page.create_worksheet_column(
 ,p_is_primary_key=>'Y'
 ,p_column_identifier=>'A'
 ,p_column_label=>'Plugin'
-,p_column_link=>'#PLUGIN_APP_LINK#'
-,p_column_linktext=>'#PLUGIN_ID#'
+,p_column_html_expression=>'{if ?PLUGIN_APP_LINK/}<a href="#PLUGIN_APP_LINK!ATTR#">#PLUGIN_ID!HTML#</a>{else/}#PLUGIN_ID!HTML#{endif/}'
 ,p_column_type=>'STRING'
+,p_display_text_as=>'WITHOUT_MODIFICATION'
 ,p_heading_alignment=>'LEFT'
 ,p_tz_dependent=>'N'
 ,p_use_as_row_header=>'N'

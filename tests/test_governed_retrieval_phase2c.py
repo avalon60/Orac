@@ -24,6 +24,7 @@ from orac_core.conversation_memory import TrustedRetrievalContext  # noqa: E402
 from orac_core.governed_retrieval import AuthorisedDomainBinding  # noqa: E402
 from orac_core.governed_retrieval import AuthorisedKnowledgeDomain  # noqa: E402
 from orac_core.governed_retrieval import DomainDiscoveryService  # noqa: E402
+from orac_core.governed_retrieval.discovery import DomainDiscoveryTelemetry  # noqa: E402
 from orac_core.governed_retrieval import FederatedRetrievalExecutor  # noqa: E402
 from orac_core.governed_retrieval import FederatedRetrievalRequest  # noqa: E402
 from orac_core.governed_retrieval import FederatedEvidenceCandidate  # noqa: E402
@@ -32,14 +33,17 @@ from orac_core.governed_retrieval import GovernedRetrievalConfiguration  # noqa:
 from orac_core.governed_retrieval import GovernedRetrievalToolCoordinator  # noqa: E402
 from orac_core.governed_retrieval import KnowledgeDomainAdvertisement  # noqa: E402
 from orac_core.governed_retrieval import KnowledgeDomainOffer  # noqa: E402
+from orac_core.governed_retrieval import (  # noqa: E402
+    REQUIRED_RETRIEVAL_UNAVAILABLE_MESSAGE,
+)
 from orac_core.governed_retrieval import StructuredToolCall  # noqa: E402
 from orac_core.governed_retrieval import ToolDecisionMode  # noqa: E402
 from orac_core.governed_retrieval import ToolStreamEvent  # noqa: E402
 from orac_core.governed_retrieval import ToolStreamEventKind  # noqa: E402
 from orac_core.governed_retrieval import governed_retrieve_tool_schema  # noqa: E402
-from orac_core.governed_retrieval import (
+from orac_core.governed_retrieval import (  # noqa: E402
     domain_discovery_embedding_provider,
-)  # noqa: E402
+)
 from orac_core.governed_retrieval import federated_rank_candidates  # noqa: E402
 from orac_core.knowledge import KnowledgeScope  # noqa: E402
 from orac_core.governed_retrieval.audit import _phase2c_json  # noqa: E402
@@ -165,6 +169,32 @@ def test_alapin_discovers_only_authorised_relevant_synthetic_project() -> None:
     binding = offer.bindings[offer.advertisements[0].handle]
     assert binding.scope == KnowledgeScope("PROJECT", "SYN_CHESS")
     assert "SYN_CHESS" not in offer.render_instruction()
+    assert offer.telemetry.semantic_matches == 1
+    assert offer.telemetry.semantic_advertised_count == 1
+    assert offer.telemetry.conversation_advertised_count == 0
+    assert offer.telemetry.advertised_count == 1
+
+
+def test_advertised_total_separates_semantic_and_conversation_offers() -> None:
+    """One semantic match plus memory reports two distinct advertised handles."""
+    service, _ = _discovery(
+        [_row("SYN_CHESS", "Synthetic Chess", "Chess openings and tactics.")],
+        memory=True,
+    )
+    offer = service.discover(
+        query="What are the main attacking ideas in the Alapin Gambit?",
+        principal_username="alice",
+        conversation_eligible=True,
+    )
+
+    assert offer.telemetry.semantic_matches == 1
+    assert offer.telemetry.semantic_advertised_count == 1
+    assert offer.telemetry.conversation_advertised_count == 1
+    assert offer.telemetry.advertised_count == 2
+    assert [item.domain_type for item in offer.advertisements] == [
+        RetrievalDomain.CONVERSATION,
+        RetrievalDomain.PROJECT,
+    ]
 
 
 def test_cross_domain_question_advertises_two_relevant_synthetic_projects() -> None:
@@ -604,6 +634,74 @@ def test_forged_handle_executes_no_adapter_and_uses_normal_fallback() -> None:
     assert execution.result.retrieval_executed is False
 
 
+def test_required_forged_handle_retries_then_fails_closed() -> None:
+    """A model cannot replace required retrieval with fallback prose."""
+    binding = _binding("d_first", RetrievalDomain.PROJECT, 0, 1.0, "P1")
+    offer = KnowledgeDomainOffer(
+        (binding.advertisement,),
+        {binding.advertisement.handle: binding},
+        telemetry=DomainDiscoveryTelemetry(
+            semantic_matches=1,
+            semantic_advertised_count=1,
+            advertised_count=1,
+        ),
+    )
+
+    class _Executor:
+        calls = 0
+
+        def retrieve(self, request, *, offer, context):
+            self.calls += 1
+            raise AssertionError("forged input reached federation")
+
+    class _Connector:
+        def __init__(self):
+            self.calls = 0
+
+        def stream_tool_events(self, *, messages, tools, generation_options):
+            assert tools
+            self.calls += 1
+            yield ToolStreamEvent(
+                ToolStreamEventKind.TOOL_CALL_START,
+                call_id=f"call-{self.calls}",
+                tool_name="retrieve",
+            )
+            yield ToolStreamEvent(
+                ToolStreamEventKind.TOOL_CALL_ARGUMENT_DELTA,
+                call_id=f"call-{self.calls}",
+                tool_name="retrieve",
+                arguments_delta='{"query":"x","domains":["d_forged"]}',
+            )
+            yield ToolStreamEvent(
+                ToolStreamEventKind.TOOL_CALL_COMPLETED,
+                call_id=f"call-{self.calls}",
+                tool_name="retrieve",
+            )
+
+    executor = _Executor()
+    connector = _Connector()
+    coordinator = GovernedRetrievalToolCoordinator(
+        mediator=_Mediator(),
+        configuration=GovernedRetrievalConfiguration(enabled=True),
+        federated_executor=executor,
+    )
+    execution = coordinator.begin(
+        connector=connector,
+        messages=[{"role": "user", "content": "question"}],
+        mode=ToolDecisionMode.STREAMING,
+        allowed_domains=(),
+        context=TrustedRetrievalContext("alice", 100),
+        domain_offer=offer,
+        retrieval_required=True,
+        retrieval_requirement_reasons=("SEMANTIC_DOMAIN_MATCH",),
+    )
+
+    assert "".join(execution.stream()) == REQUIRED_RETRIEVAL_UNAVAILABLE_MESSAGE
+    assert connector.calls == 2
+    assert executor.calls == 0
+    assert execution.result.reason_codes == ["INVALID_TOOL_CALL_REJECTED"]
+
+
 def test_phase2c_schema_contains_only_query_and_invocation_handles() -> None:
     """Provider-native schema accepts no project, principal, or selector fields."""
     schema = governed_retrieve_tool_schema(
@@ -620,6 +718,106 @@ def test_phase2c_schema_contains_only_query_and_invocation_handles() -> None:
     assert set(parameters["properties"]) == {"query", "domains"}
 
 
+def test_required_phase2c_decision_uses_exact_offer_handle_and_compact_prompt() -> None:
+    """Required production framing excludes the flattened prompt from tool choice."""
+    binding = _binding("d_current", RetrievalDomain.PROJECT, 0, 1.0, "P1")
+    offer = KnowledgeDomainOffer(
+        (binding.advertisement,),
+        {binding.advertisement.handle: binding},
+        telemetry=DomainDiscoveryTelemetry(
+            semantic_matches=1,
+            semantic_advertised_count=1,
+            advertised_count=1,
+        ),
+    )
+
+    class _Executor:
+        def retrieve(self, request, *, offer, context):
+            assert request.domain_handles == ("d_current",)
+            assert offer.binding("d_current") is binding
+            return FederatedGovernedRetrievalResult(
+                status="no_evidence",
+                reason_codes=("no_evidence",),
+                evidence=(),
+                provenance={"domains": {}},
+                selected_handles=request.domain_handles,
+                successful_domain_types=("PROJECT",),
+            )
+
+    class _Connector:
+        def __init__(self):
+            self.calls = []
+
+        def stream_tool_events(self, *, messages, tools, generation_options):
+            self.calls.append((messages, tools, generation_options))
+            if tools:
+                yield ToolStreamEvent(
+                    ToolStreamEventKind.TOOL_CALL_START,
+                    call_id="call-1",
+                    tool_name="retrieve",
+                )
+                yield ToolStreamEvent(
+                    ToolStreamEventKind.TOOL_CALL_ARGUMENT_DELTA,
+                    call_id="call-1",
+                    tool_name="retrieve",
+                    arguments_delta=(
+                        '{"query":"What is the AI OS?",'
+                        '"domains":["d_current"]}'
+                    ),
+                )
+                yield ToolStreamEvent(
+                    ToolStreamEventKind.TOOL_CALL_COMPLETED,
+                    call_id="call-1",
+                    tool_name="retrieve",
+                )
+                yield ToolStreamEvent(
+                    ToolStreamEventKind.ASSISTANT_COMPLETION,
+                    finish_reason="tool_calls",
+                )
+                return
+            yield ToolStreamEvent(
+                ToolStreamEventKind.ASSISTANT_TEXT_DELTA,
+                text="No authorised evidence was found.",
+            )
+
+    connector = _Connector()
+    coordinator = GovernedRetrievalToolCoordinator(
+        mediator=_Mediator(),
+        configuration=GovernedRetrievalConfiguration(enabled=True),
+        federated_executor=_Executor(),
+    )
+    execution = coordinator.begin(
+        connector=connector,
+        messages=[{"role": "user", "content": "What is the AI OS?"}],
+        answer_messages=[
+            {"role": "system", "content": "ordinary policy"},
+            {"role": "user", "content": "COMPLETE FLATTENED PROMPT"},
+        ],
+        mode=ToolDecisionMode.STREAMING,
+        allowed_domains=(),
+        context=TrustedRetrievalContext("alice", 100),
+        domain_offer=offer,
+        retrieval_required=True,
+        retrieval_requirement_reasons=("SEMANTIC_DOMAIN_MATCH",),
+    )
+
+    assert "".join(execution.stream()) == (
+        "I couldn’t retrieve authorised local knowledge for this request, so I "
+        "can’t answer it reliably right now."
+    )
+    assert "COMPLETE FLATTENED PROMPT" not in str(connector.calls[0][0])
+    assert connector.calls[0][1][0]["function"]["parameters"]["properties"][
+        "domains"
+    ]["items"]["enum"] == ["d_current"]
+    assert len(connector.calls) == 1
+    assert execution.result.selected_domain_handles == ("d_current",)
+    assert execution.result.retrieval_status == "no_evidence"
+    assert execution.result.selected_evidence_count == 0
+    assert execution.result.continuation_suppressed is True
+    assert execution.result.host_safe_response is True
+    assert execution.result.final_continuation_id is None
+
+
 def test_audit_contract_rejects_query_or_evidence_content_fields() -> None:
     """Only the fixed content-free telemetry shape can reach durable audit."""
     valid = {
@@ -627,9 +825,17 @@ def test_audit_contract_rejects_query_or_evidence_content_fields() -> None:
         "discovery": {
             "authorised_catalogue_size": 2,
             "domains_scored": 2,
+            "semantic_matches": 1,
+            "semantic_advertised_count": 1,
+            "conversation_advertised_count": 1,
+            "advertised_count": 2,
             "advertised": [],
             "candidate_counts": {},
         },
+        "retrieval_required": True,
+        "retrieval_requirement_reasons": ["SEMANTIC_DOMAIN_MATCH"],
+        "decision_attempt_count": 1,
+        "discarded_decision_characters": 0,
         "selected_handles": [],
     }
     assert _phase2c_json(valid) is not None
@@ -642,6 +848,66 @@ def test_audit_contract_rejects_query_or_evidence_content_fields() -> None:
             pass
         else:
             raise AssertionError(f"audit accepted forbidden field {forbidden}")
+
+
+def test_required_retrieval_provider_failure_suppresses_continuation() -> None:
+    """A mandatory retrieval exception returns only the host safe response."""
+    binding = _binding("d_current", RetrievalDomain.PROJECT, 0, 1.0, "P1")
+    offer = KnowledgeDomainOffer(
+        (binding.advertisement,),
+        {binding.advertisement.handle: binding},
+    )
+
+    class _Executor:
+        def retrieve(self, request, *, offer, context):
+            raise RuntimeError("embedding provider unavailable")
+
+    class _Connector:
+        def __init__(self):
+            self.calls = 0
+
+        def stream_tool_events(self, *, messages, tools, generation_options):
+            self.calls += 1
+            if self.calls > 1:
+                raise AssertionError("final model continuation was invoked")
+            yield ToolStreamEvent(
+                ToolStreamEventKind.TOOL_CALL_START,
+                call_id="call-1",
+                tool_name="retrieve",
+            )
+            yield ToolStreamEvent(
+                ToolStreamEventKind.TOOL_CALL_ARGUMENT_DELTA,
+                call_id="call-1",
+                tool_name="retrieve",
+                arguments_delta='{"query":"x","domains":["d_current"]}',
+            )
+            yield ToolStreamEvent(
+                ToolStreamEventKind.TOOL_CALL_COMPLETED,
+                call_id="call-1",
+                tool_name="retrieve",
+            )
+
+    connector = _Connector()
+    execution = GovernedRetrievalToolCoordinator(
+        mediator=_Mediator(),
+        configuration=GovernedRetrievalConfiguration(enabled=True),
+        federated_executor=_Executor(),
+    ).begin(
+        connector=connector,
+        messages=[{"role": "user", "content": "question"}],
+        mode=ToolDecisionMode.STREAMING,
+        allowed_domains=(),
+        context=TrustedRetrievalContext("alice", 100),
+        domain_offer=offer,
+        retrieval_required=True,
+    )
+
+    assert "".join(execution.stream()) == REQUIRED_RETRIEVAL_UNAVAILABLE_MESSAGE
+    assert connector.calls == 1
+    assert execution.result.retrieval_status == "unavailable"
+    assert execution.result.continuation_suppressed is True
+    assert execution.result.host_safe_response is True
+    assert execution.result.final_continuation_id is None
 
 
 def test_final_context_guard_omits_lowest_ranked_federated_evidence() -> None:

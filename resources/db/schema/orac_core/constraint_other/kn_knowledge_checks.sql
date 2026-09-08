@@ -83,17 +83,3 @@ alter table orac_core.knowledge_chunks add constraint kn_chnk_hash_ck
 alter table orac_core.knowledge_embedding_models add constraint kn_embmod_shape_ck
   check (dimensions > 0 and active_yn in ('Y', 'N'));
 --rollback alter table orac_core.knowledge_embedding_models drop constraint kn_embmod_shape_ck;
-
---changeset clive:create_constraint_other_orac_core_kn_chnkemb_hash_ck context:core labels:core stripComments:false
---preconditions onFail:HALT onError:HALT
---precondition-sql-check expectedResult:0 select count(1) from all_constraints where owner = 'ORAC_CORE' and constraint_name = 'KN_CHNKEMB_HASH_CK';
-alter table orac_core.knowledge_chunk_embeddings add constraint kn_chnkemb_hash_ck
-  check (regexp_like(embedding_text_sha256, '^[0-9a-f]{64}$'));
---rollback alter table orac_core.knowledge_chunk_embeddings drop constraint kn_chnkemb_hash_ck;
-
---changeset clive:create_constraint_other_orac_core_kn_chnkemb_json_ck context:core labels:core stripComments:false
---preconditions onFail:HALT onError:HALT
---precondition-sql-check expectedResult:0 select count(1) from all_constraints where owner = 'ORAC_CORE' and constraint_name = 'KN_CHNKEMB_JSON_CK';
-alter table orac_core.knowledge_chunk_embeddings add constraint kn_chnkemb_json_ck
-  check (embedding_vector is json);
---rollback alter table orac_core.knowledge_chunk_embeddings drop constraint kn_chnkemb_json_ck;

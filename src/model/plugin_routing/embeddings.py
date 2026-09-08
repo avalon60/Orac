@@ -1,4 +1,4 @@
-"""Embedding provider interfaces and a deterministic local stub implementation."""
+"""Embedding interfaces and an explicitly non-semantic test provider."""
 # Author: Clive Bostock
 # Date: 2026-04-23
 # Description: Defines a narrow runtime embedding interface for plugin routing.
@@ -27,8 +27,11 @@ class EmbeddingProvider(ABC):
         return self.embed_texts([text])[0]
 
 
-class HashEmbeddingProvider(EmbeddingProvider):
-    """Generates deterministic local embeddings for development and tests."""
+class DeterministicHashTestEmbeddingProvider(EmbeddingProvider):
+    """Generate non-semantic deterministic vectors for tests and fixtures only."""
+
+    semantic = False
+    production_allowed = False
 
     def __init__(self, model_id: str = "hash-embedding-v1", dimensions: int = 32):
         if dimensions <= 0:

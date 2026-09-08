@@ -6,5 +6,10 @@
 
 from .models import DialogueRouteDecision
 from .service import DialogueRoutingService
+from .service import has_explicit_local_retrieval_intent
 
-__all__ = ["DialogueRouteDecision", "DialogueRoutingService"]
+__all__ = [
+    "DialogueRouteDecision",
+    "DialogueRoutingService",
+    "has_explicit_local_retrieval_intent",
+]

@@ -202,13 +202,6 @@
 <privilegesWithGrantOption>SELECT</privilegesWithGrantOption>
 <table>3DA4E1AA-AE42-7845-D19D-A8A266E8469D</table>
 </Permission>
-<Permission class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PermissionsOraclev10g" name="Permissions4" id="475EFD56-FEF2-40A7-A042-25154AA945E9">
-<createdBy>clive</createdBy>
-<createdTime>2026-07-20 08:05:59 UTC</createdTime>
-<ownerDesignName>orac3</ownerDesignName>
-<privilegesWithGrantOption>DELETE, INSERT, SELECT, UPDATE</privilegesWithGrantOption>
-<table>373E12DB-F4E3-0D76-21A3-9DD15748257C</table>
-</Permission>
 <Permission class="oracle.dbtools.crest.model.design.storage.oracle.v10g.PermissionsOraclev10g" name="Permissions5" id="26F42A8D-CED8-07A2-1B1E-C32978D6D286">
 <createdBy>clive</createdBy>
 <createdTime>2026-07-20 08:05:59 UTC</createdTime>

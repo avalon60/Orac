@@ -26,6 +26,14 @@ PAGE_ITEM_BLOCK_RE = re.compile(
     r"wwv_flow_imp_page\.create_page_item\((.*?)\);",
     re.IGNORECASE | re.DOTALL,
 )
+PAGE_BUTTON_BLOCK_RE = re.compile(
+    r"wwv_flow_imp_page\.create_page_button\((.*?)\);",
+    re.IGNORECASE | re.DOTALL,
+)
+WORKSHEET_COLUMN_BLOCK_RE = re.compile(
+    r"wwv_flow_imp_page\.create_worksheet_column\((.*?)\);",
+    re.IGNORECASE | re.DOTALL,
+)
 PAGE_DA_BLOCK_RE = re.compile(
     r"wwv_flow_imp_page\.create_page_da_(?:event|action)\((.*?)\);",
     re.IGNORECASE | re.DOTALL,
@@ -86,6 +94,17 @@ def _apex_page_sections(export_sql: str) -> dict[int, str]:
         int(match.group(1)): match.group(2)
         for match in PAGE_SECTION_RE.finditer(export_sql)
     }
+
+
+def _apex_component_block(
+    pattern: re.Pattern[str], page_sql: str, marker: str
+) -> str:
+    """Return the APEX component block containing the requested marker."""
+    for match in pattern.finditer(page_sql):
+        component_block = match.group(1)
+        if marker in component_block:
+            return component_block
+    raise AssertionError(f"APEX component marker not found: {marker}")
 
 
 def _apex_page_item_names(page_body: str, page_id: int) -> set[str]:
@@ -431,6 +450,50 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertNotIn("ui_icon_class", page_1)
         self.assertNotIn("ui_accent_class", page_1)
         self.assertNotIn("p_icon_class_column_name=>'icon'", page_1)
+
+    def test_f1043_service_plugin_link_requires_one_visible_app(self) -> None:
+        export_sql = (
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1043.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        page_one = _apex_page_sections(export_sql)[1]
+        plugin_column = _apex_component_block(
+            WORKSHEET_COLUMN_BLOCK_RE,
+            page_one,
+            "p_db_column_name=>'plugin_id'",
+        )
+        link_column = _apex_component_block(
+            WORKSHEET_COLUMN_BLOCK_RE,
+            page_one,
+            "p_db_column_name=>'plugin_app_link'",
+        )
+
+        self.assertIn(
+            "from orac_code.plugin_apex_app_menu_visible_v", page_one
+        )
+        self.assertIn("from orac_code.plugin_service_status_v", page_one)
+        self.assertIn("when app.visible_app_count = 1", page_one)
+        self.assertIn(
+            "and app.card_link is not null then app.card_link", page_one
+        )
+        self.assertIn("end as plugin_app_link", page_one)
+        self.assertIn("left join visible_apps app", page_one)
+        self.assertIn("and app.app_rank = 1", page_one)
+        self.assertNotIn("'orac_core'", page_one)
+
+        self.assertIn(
+            "p_column_html_expression=>'{if ?plugin_app_link/}"
+            '<a href="#plugin_app_link!attr#">#plugin_id!html#</a>'
+            "{else/}#plugin_id!html#{endif/}'",
+            plugin_column,
+        )
+        self.assertNotIn("p_column_link=>", plugin_column)
+        self.assertNotIn("p_column_linktext=>", plugin_column)
+        self.assertIn(
+            "p_display_text_as=>'without_modification'", plugin_column
+        )
+        self.assertIn("p_display_text_as=>'hidden_escape_sc'", link_column)
 
     def test_f1043_plugin_navigation_page_preserves_launcher_cards(self) -> None:
         export_sql = (
@@ -877,6 +940,42 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             "row_checksum",
         ):
             self.assertNotIn(f"p_db_column_name=>'{forbidden}'", page_37)
+
+    def test_f1042_projects_maintenance_actions_are_visible(self) -> None:
+        export_sql = (
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        page_37 = _apex_page_sections(export_sql)[37]
+        create_button = _apex_component_block(
+            PAGE_BUTTON_BLOCK_RE,
+            page_37,
+            "p_button_name=>'create_project'",
+        )
+        edit_column = _apex_component_block(
+            WORKSHEET_COLUMN_BLOCK_RE,
+            page_37,
+            "p_db_column_name=>'project_id'",
+        )
+
+        self.assertIn("p_button_image_alt=>'create project'", create_button)
+        self.assertIn(
+            "p_button_position=>'right_of_ir_search_bar'", create_button
+        )
+        self.assertIn("p_button_is_hot=>'y'", create_button)
+        self.assertIn(
+            "p_button_redirect_url=>'f?p=&app_id.:38:&app_session.::&debug.:rp,38::'",
+            create_button,
+        )
+        self.assertNotIn("t-button--noui", create_button)
+        self.assertNotIn("p38_project_id", create_button)
+
+        self.assertIn("p_column_label=>'edit'", edit_column)
+        self.assertIn("aria-label=\"edit\"", edit_column)
+        self.assertIn("p38_project_id:#project_id#", edit_column)
+        self.assertNotIn("hidden_escape_sc", edit_column)
+        self.assertIn("p_column_alignment=>'center'", edit_column)
 
     def test_f1042_project_form_uses_registry_api(self) -> None:
         export_sql = (
@@ -1431,7 +1530,8 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("toggle_location", export_sql)
         self.assertIn("p2_target_plugin_key", export_sql)
         self.assertIn("p2_target_project_key", export_sql)
-        self.assertIn("project target exists", export_sql)
+        self.assertIn("eligible project is selected", export_sql)
+        self.assertIn("eligible plugin is selected", export_sql)
         self.assertIn(
             "p_page_template_options=>'#default#:js-dialog-class-t-drawer--pulloutend'",
             export_sql,
@@ -1568,19 +1668,48 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         }
         self.assertLessEqual(load_process_page_two_refs, page_two_items)
 
-        project_start = page_two.index("p_name=>'p2_target_project_key'")
-        project_end = page_two.find(
-            "wwv_flow_imp_page.create_page_item", project_start + 1
+        scope_type_text = _apex_component_block(
+            PAGE_ITEM_BLOCK_RE,
+            page_two,
+            "p_name=>'p2_target_scope_type'",
         )
-        project_text = page_two[
-            project_start : project_end if project_end != -1 else len(page_two)
-        ]
-        self.assertIn("p_display_as=>'native_select_list'", project_text)
-        self.assertIn("orac_code.rag_usage_scope_lov_v", project_text)
-        self.assertIn("scope_type = ''project''", project_text)
-        self.assertIn("scope_key r", project_text)
-        self.assertNotIn("native_text_field", project_text)
-        self.assertNotIn("project metadata is not available yet", project_text)
+        project_text = _apex_component_block(
+            PAGE_ITEM_BLOCK_RE,
+            page_two,
+            "p_name=>'p2_target_project_key'",
+        )
+        plugin_text = _apex_component_block(
+            PAGE_ITEM_BLOCK_RE,
+            page_two,
+            "p_name=>'p2_target_plugin_key'",
+        )
+
+        self.assertIn("p_prompt=>'project'", project_text)
+        self.assertIn("scope.project_display_name d", project_text)
+        self.assertIn("scope.scope_key r", project_text)
+        self.assertIn("scope.scope_key = :p2_target_project_key", project_text)
+        self.assertIn("eligible.return_value = scope.knowledge_scope_id", project_text)
+        self.assertNotIn("display_value d", project_text)
+
+        self.assertIn("p_prompt=>'plugin'", plugin_text)
+        self.assertIn("scope.plugin_name d", plugin_text)
+        self.assertIn("scope.scope_key r", plugin_text)
+        self.assertIn("scope.scope_key = :p2_target_plugin_key", plugin_text)
+        self.assertIn("eligible.return_value = scope.knowledge_scope_id", plugin_text)
+        self.assertNotIn("display_value d", plugin_text)
+
+        for target_text in (project_text, plugin_text):
+            self.assertIn("p_display_as=>'native_select_list'", target_text)
+            self.assertIn("orac_code.knowledge_scope_registry_v", target_text)
+            self.assertIn("orac_code.rag_usage_scope_lov_v", target_text)
+            self.assertIn("p_lov_display_extra=>'no'", target_text)
+            self.assertIn("p_begin_on_new_line=>'n'", target_text)
+            self.assertIn("p_colspan=>6", target_text)
+            self.assertIn("p_grid_column=>7", target_text)
+            self.assertNotIn("native_text_field", target_text)
+
+        self.assertIn("p_lov_display_extra=>'no'", scope_type_text)
+        self.assertIn("p_colspan=>6", scope_type_text)
 
     def test_drop_box_page_two_submit_boundaries(self) -> None:
         export_sql = (
@@ -1620,9 +1749,21 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         )
         self.assertIn("p_process_when=>'save'", page_two)
         self.assertIn("p_process_when_type=>'request_in_condition'", page_two)
-        self.assertIn("p_validation_name=>'project target exists'", page_two)
+        self.assertIn(
+            "p_validation_name=>'eligible project is selected'", page_two
+        )
+        self.assertIn(
+            "p_validation_name=>'eligible plugin is selected'", page_two
+        )
         self.assertIn("from orac_code.rag_usage_scope_lov_v", page_two)
-        self.assertIn("choose a registered project target", page_two)
+        self.assertIn("select an eligible project", page_two)
+        self.assertIn("select an eligible plugin", page_two)
+        self.assertEqual(
+            page_two.count(
+                "p_when_button_pressed=>wwv_flow_imp.id(34600200000000302)"
+            ),
+            2,
+        )
         self.assertIn("p_process_name=>'delete drop location'", page_two)
         self.assertIn("p_process_when=>'delete'", page_two)
         self.assertIn("p_process_type=>'native_close_window'", page_two)
@@ -1642,7 +1783,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             r"\b(insert|update|delete|merge)\s+(into\s+)?orac_dropbox\.",
         )
 
-    def test_drop_box_page_two_toggles_plugin_target_by_scope(self) -> None:
+    def test_drop_box_page_two_shows_only_selected_target(self) -> None:
         export_sql = (
             (PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql")
             .read_text(encoding="utf-8")
@@ -1654,18 +1795,48 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             ) : export_sql.index("prompt --application/pages/page_00003")
         ]
 
-        self.assertIn("p_name=>'toggle plugin target'", page_two)
+        self.assertIn("p_name=>'scope target visibility'", page_two)
         self.assertIn("p_triggering_element=>'p2_target_scope_type'", page_two)
-        self.assertIn("p_execute_on_page_init=>'y'", page_two)
-        self.assertIn("p_action=>'native_javascript_code'", page_two)
-        self.assertIn("$v(''p2_target_scope_type'') === ''plugin''", page_two)
-        self.assertIn("apex.item(''p2_target_plugin_key'').enable()", page_two)
-        self.assertIn("apex.item(''p2_target_project_key'').disable()", page_two)
-        self.assertIn("$v(''p2_target_scope_type'') === ''project''", page_two)
-        self.assertIn("apex.item(''p2_target_plugin_key'').disable()", page_two)
-        self.assertIn("apex.item(''p2_target_project_key'').enable()", page_two)
-        self.assertNotIn("p2_target_project_key').setvalue", page_two)
-        self.assertNotIn("p2_target_plugin_key').setvalue", page_two)
+        visibility_start = page_two.index("p_name=>'scope target visibility'")
+        visibility_end = page_two.index("p_name=>'normalize case fields'")
+        visibility = page_two[visibility_start:visibility_end]
+
+        self.assertNotIn("p_action=>'native_javascript_code'", visibility)
+        self.assertEqual(visibility.count("p_action=>'native_hide'"), 2)
+        self.assertEqual(visibility.count("p_action=>'native_clear'"), 2)
+        self.assertEqual(visibility.count("p_action=>'native_show'"), 2)
+        self.assertIn("p_affected_elements=>'p2_target_project_key'", visibility)
+        self.assertIn("p_affected_elements=>'p2_target_plugin_key'", visibility)
+        self.assertIn("p_client_condition_expression=>'project'", visibility)
+        self.assertIn("p_client_condition_expression=>'plugin'", visibility)
+        self.assertEqual(visibility.count("p_execute_on_page_init=>'n'"), 2)
+        self.assertEqual(visibility.count("p_execute_on_page_init=>'y'"), 4)
+
+    def test_drop_box_target_views_show_type_and_descriptor_separately(self) -> None:
+        export_sql = (
+            (PROJECT_ROOT / "plugins/drop_box/apex/f10020.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        pages = _apex_page_sections(export_sql)
+        page_one = pages[1]
+        page_three = pages[3]
+
+        self.assertIn("target_display_name", page_one)
+        self.assertIn("scope.project_display_name", page_one)
+        self.assertIn("scope.plugin_name", page_one)
+        self.assertIn("p_db_column_name=>'target_scope_type'", page_one)
+        self.assertIn("p_column_label=>'target scope type'", page_one)
+        self.assertIn("p_db_column_name=>'target_display_name'", page_one)
+        self.assertIn("p_column_label=>'project / plugin'", page_one)
+        self.assertNotIn("p_db_column_name=>'target_scope_key'", page_one)
+        self.assertNotIn("target_scope_type || ':'", page_one)
+
+        self.assertIn("<dt>target scope type</dt>", page_three)
+        self.assertIn("scope.project_display_name", page_three)
+        self.assertIn("scope.plugin_name", page_three)
+        self.assertIn("target_display_name", page_three)
+        self.assertNotIn("target_scope_type || ':'", page_three)
 
     def test_drop_box_page_two_tag_lov_and_field_behaviour(self) -> None:
         export_sql = (

@@ -64,14 +64,6 @@ alter table orac_core.knowledge_embedding_models add constraint kn_embmod_pk
   using index orac_core.kn_embmod_pk;
 --rollback alter table orac_core.knowledge_embedding_models drop constraint kn_embmod_pk;
 
---changeset clive:create_constraint_pk_orac_core_kn_chnkemb_pk context:core labels:core stripComments:false
---preconditions onFail:HALT onError:HALT
---precondition-sql-check expectedResult:0 select count(1) from all_constraints where owner = 'ORAC_CORE' and constraint_name = 'KN_CHNKEMB_PK';
-alter table orac_core.knowledge_chunk_embeddings add constraint kn_chnkemb_pk
-  primary key (chunk_embedding_id)
-  using index orac_core.kn_chnkemb_pk;
---rollback alter table orac_core.knowledge_chunk_embeddings drop constraint kn_chnkemb_pk;
-
 --changeset clive:create_constraint_pk_orac_core_kn_inge_pk context:core labels:core stripComments:false
 --preconditions onFail:HALT onError:HALT
 --precondition-sql-check expectedResult:0 select count(1) from all_constraints where owner = 'ORAC_CORE' and constraint_name = 'KN_INGE_PK';

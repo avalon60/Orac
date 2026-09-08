@@ -28,6 +28,22 @@ _EXPLICIT_UNNAMED_KNOWLEDGE_SOURCE = re.compile(
     r"\b(?:use|search|query|consult)\s+(?:the\s+)?knowledge\s+" r"(?:base|source)\b",
     re.IGNORECASE,
 )
+_LOCAL_RETRIEVAL_SOURCE = (
+    r"(?:(?:(?:the|your|our|my)\s+)?"
+    r"(?:knowledge\s+(?:base|source)|local\s+knowledge|internal\s+knowledge|"
+    r"project\s+knowledge|documentation|docs))"
+)
+_EXPLICIT_LOCAL_RETRIEVAL_INTENT = re.compile(
+    rf"(?:"
+    rf"\b(?:check|search|query|consult|use)\s+{_LOCAL_RETRIEVAL_SOURCE}\b"
+    rf"|\bretrieve(?:\s+[^.!?\n]{{0,120}}?)?\s+from\s+"
+    rf"{_LOCAL_RETRIEVAL_SOURCE}\b"
+    rf"|\blook\s+[^.!?\n]{{1,120}}?\s+up\s+in\s+"
+    rf"{_LOCAL_RETRIEVAL_SOURCE}\b"
+    rf"|\b(?:according\s+to|based\s+on)\s+{_LOCAL_RETRIEVAL_SOURCE}\b"
+    rf")",
+    re.IGNORECASE,
+)
 _BROAD_DOCUMENT_INTENT = re.compile(
     r"\b(?P<purpose>summari[sz]e|review|extract|analy[sz]e|compare)\b",
     re.IGNORECASE,
@@ -44,6 +60,14 @@ _MATERIALISATION_PURPOSES = {
 
 _KNOWLEDGE_DENIED_MESSAGE = "I can’t use that knowledge source for this user."
 _KNOWLEDGE_UNAVAILABLE_MESSAGE = "That knowledge source is unavailable right now."
+
+
+def has_explicit_local_retrieval_intent(prompt: str) -> bool:
+    """Return whether the request explicitly asks Orac to consult local knowledge.
+
+    This scope-neutral signal does not resolve or authorise a knowledge source.
+    """
+    return _EXPLICIT_LOCAL_RETRIEVAL_INTENT.search(str(prompt or "")) is not None
 
 
 class DialogueRoutingService:
@@ -139,6 +163,15 @@ class DialogueRoutingService:
             prompt,
             authenticated_username=authenticated_username,
         )
+
+    @staticmethod
+    def has_explicit_local_retrieval_intent(prompt: str) -> bool:
+        """Return whether the request explicitly asks Orac to consult local knowledge.
+
+        This scope-neutral signal does not resolve or authorise a knowledge source.
+        Existing named-source routing retains its earlier precedence.
+        """
+        return has_explicit_local_retrieval_intent(prompt)
 
     def _terminal_mapping(self, reason_code: str) -> tuple[str, str]:
         """Map scope failures to safe terminal routes and user-facing text."""

@@ -8,11 +8,10 @@ from __future__ import annotations
 
 from typing import Any
 
-import requests  # type: ignore[import-untyped]  # compatibility patch seam
+import requests  # noqa: F401  # type: ignore[import-untyped]  # test patch seam
 
 from orac_core.embedding_providers import OllamaEmbeddingProvider
 from model.plugin_routing.embeddings import EmbeddingProvider
-from model.plugin_routing.embeddings import HashEmbeddingProvider
 
 
 class OllamaConversationEmbeddingProvider(OllamaEmbeddingProvider):
@@ -21,11 +20,13 @@ class OllamaConversationEmbeddingProvider(OllamaEmbeddingProvider):
 
 def conversation_embedding_provider(config_mgr: Any | None) -> EmbeddingProvider:
     """Build the configured conversational-memory embedding provider."""
-    provider_code = _config_value(config_mgr, "embedding_provider", "hash").lower()
-    model_id = _config_value(config_mgr, "embedding_model_id", "hash-embedding-v1")
-    dimensions = _config_int(config_mgr, "embedding_dimensions", 32)
-    if provider_code == "hash":
-        return HashEmbeddingProvider(model_id=model_id, dimensions=dimensions)
+    provider_code = _config_value(config_mgr, "embedding_provider", "ollama").lower()
+    model_id = _config_value(
+        config_mgr,
+        "embedding_model_id",
+        "nomic-embed-text:latest",
+    )
+    dimensions = _config_int(config_mgr, "embedding_dimensions", 768)
     if provider_code == "ollama":
         service_url = _config_value(config_mgr, "embedding_service_url", "")
         return OllamaConversationEmbeddingProvider(

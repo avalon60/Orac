@@ -342,7 +342,7 @@ class GovernedToolConnectorContractTests(unittest.TestCase):
 
     def test_probe_measures_framing_without_executing_retrieval(self):
         class _ProbeConnector:
-            def stream_tool_events(self, **kwargs):
+            def _events(self, **kwargs):
                 self.request = kwargs
                 yield ToolStreamEvent(
                     Kind.TOOL_CALL_START,
@@ -363,6 +363,12 @@ class GovernedToolConnectorContractTests(unittest.TestCase):
                     tool_name="retrieve",
                 )
                 yield ToolStreamEvent(Kind.ASSISTANT_COMPLETION, finish_reason="tool_calls")
+
+            def buffered_tool_events(self, **kwargs):
+                yield from self._events(**kwargs)
+
+            def stream_tool_events(self, **kwargs):
+                yield from self._events(**kwargs)
 
         connector = _ProbeConnector()
         report = StructuredToolCapabilityProbe().run(connector)

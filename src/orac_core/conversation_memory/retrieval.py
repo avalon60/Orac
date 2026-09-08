@@ -12,7 +12,6 @@ from typing import Any, Callable
 import uuid
 
 from model.plugin_routing.embeddings import EmbeddingProvider
-from model.plugin_routing.embeddings import HashEmbeddingProvider
 
 from .models import ConversationMemoryEvidence
 from .models import ConversationMemoryGroundingPack
@@ -36,7 +35,7 @@ class ConversationMemoryRetrievalService:
         self,
         *,
         repository: Any,
-        embedding_provider: EmbeddingProvider | None = None,
+        embedding_provider: EmbeddingProvider,
         token_estimator: Callable[[str], int] | None = None,
         max_checkpoint_candidates: int = 40,
         max_selected_checkpoints: int = 4,
@@ -46,7 +45,7 @@ class ConversationMemoryRetrievalService:
     ) -> None:
         """Initialise retrieval with bounded, injectable dependencies."""
         self._repository = repository
-        self._embedding_provider = embedding_provider or HashEmbeddingProvider()
+        self._embedding_provider = embedding_provider
         self._estimate_tokens = token_estimator or _estimate_tokens
         self._max_checkpoint_candidates = max(1, max_checkpoint_candidates)
         self._max_selected_checkpoints = max(1, max_selected_checkpoints)

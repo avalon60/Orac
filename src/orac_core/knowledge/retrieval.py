@@ -1,26 +1,29 @@
 """Scope-bound lexical retrieval over current Core knowledge chunks."""
 
 # Author: Clive Bostock
-# Date: 18-Jul-2026
-# Description: Ranks authorised searchable chunks with lexical relevance and bounded context.
+# Date: 07-Sep-2026
+# Description: Ranks authorised searchable chunks with hybrid relevance and bounded context.
+# Codex-assisted generated/modified.
+# Codex SDK reviewability guardrails followed.
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from decimal import Decimal
 import json
-import math
 import re
 from typing import Any
 import uuid
 
-from model.plugin_routing.embeddings import EmbeddingProvider, HashEmbeddingProvider
+from model.plugin_routing.embeddings import EmbeddingProvider
 
 from .models import KnowledgeRetrievalOutcome, KnowledgeSearchResult
 from .repository import KnowledgeRetrievalRepository
+from .repository import KnowledgeEmbeddingRepository
 from .scope import KnowledgeScope, KnowledgeScopeConfigurationError
 
 _LEXICAL_TOKEN = re.compile(r"[a-z0-9]+(?:[._-][a-z0-9]+)*", re.IGNORECASE)
+_DOTTED_LEADER = re.compile(r"\.{5,}\s*\d+\s*$")
 _STOP_WORDS = frozenset(
     {
         "a",
@@ -64,11 +67,19 @@ class KnowledgeRetrievalService:
         self,
         *,
         repository: KnowledgeRetrievalRepository | None = None,
+        embedding_repository: KnowledgeEmbeddingRepository | None = None,
         embedding_provider: EmbeddingProvider | None = None,
     ) -> None:
         """Initialise retrieval with injectable persistence and embeddings."""
         self._repository = repository or KnowledgeRetrievalRepository()
-        self._embedding_provider = embedding_provider or HashEmbeddingProvider()
+        self._embedding_repository = (
+            embedding_repository or KnowledgeEmbeddingRepository()
+        )
+        if embedding_provider is None:
+            raise ValueError(
+                "Production knowledge retrieval requires a semantic embedding provider."
+            )
+        self._embedding_provider = embedding_provider
 
     def search(
         self,
@@ -91,7 +102,7 @@ class KnowledgeRetrievalService:
             principal_username=principal_username,
             scope=scope,
             max_selected_chunks=top_k,
-            min_lexical_score=0.0,
+            min_lexical_score=0.25,
         )
         if outcome.status == "failed":
             raise KnowledgeRetrievalError(", ".join(outcome.reason_codes))
@@ -172,31 +183,70 @@ class KnowledgeRetrievalService:
         if not 0.0 <= min_lexical_score <= 1.0:
             raise ValueError("min_lexical_score must be between 0 and 1.")
 
+        active_profile = self._embedding_repository.active_profile()
+        if active_profile is None:
+            raise KnowledgeRetrievalError("knowledge_embedding_profile_inactive")
+        profile = getattr(self._embedding_provider, "profile", None)
+        if profile is None or not getattr(
+            self._embedding_provider,
+            "production_allowed",
+            False,
+        ):
+            raise KnowledgeRetrievalError("knowledge_embedding_provider_nonsemantic")
+        if (
+            str(active_profile.get("profile_version") or "")
+            != profile.profile_version
+            or str(active_profile.get("model_digest") or "").lower()
+            != profile.model_digest.lower()
+            or int(active_profile.get("dimensions") or 0) != profile.dimensions
+            or str(active_profile.get("storage_layout_code") or "")
+            != profile.storage_layout_code
+        ):
+            raise KnowledgeRetrievalError("knowledge_embedding_profile_mismatch")
         try:
-            query_vector = self._embedding_provider.embed_text(query)
+            embed_query = getattr(self._embedding_provider, "embed_query")
+            query_vector = embed_query(query)
         except Exception as exc:
             raise KnowledgeRetrievalError("query_embedding_failed") from exc
         dimensions = len(query_vector)
+        if dimensions != int(active_profile["dimensions"]):
+            raise KnowledgeRetrievalError("query_embedding_dimensions_invalid")
+        lexical_tokens = _lexical_query_tokens(query, scope)
+        lexical_phrase = " ".join(lexical_tokens)
         requested_retrieval_id = str(uuid.uuid4())
         if plugin_id is None:
-            retrieval_id, resolution, rows = self._repository.open_search_candidates(
-                principal_username=principal_username,
-                target_scope_type=scope.scope_type,
-                target_scope_key=scope.scope_key,
-                embedding_model_identifier=self._embedding_provider.model_id,
-                embedding_dimensions=dimensions,
-                candidate_limit=max_candidate_chunks,
-                retrieval_id=requested_retrieval_id,
+            retrieval_id, resolution, rows = (
+                self._repository.open_hybrid_search_candidates(
+                    principal_username=principal_username,
+                    target_scope_type=scope.scope_type,
+                    target_scope_key=scope.scope_key,
+                    embedding_profile_id=int(
+                        active_profile["embedding_profile_id"]
+                    ),
+                    query_vector=query_vector,
+                    lexical_tokens=lexical_tokens,
+                    lexical_phrase=lexical_phrase,
+                    semantic_limit=50,
+                    lexical_limit=50,
+                    retrieval_id=requested_retrieval_id,
+                )
             )
         else:
-            retrieval_id, resolution, rows = self._repository.open_plugin_search_candidates(
-                principal_username=principal_username,
-                plugin_id=plugin_id,
-                embedding_model_identifier=self._embedding_provider.model_id,
-                embedding_dimensions=dimensions,
-                candidate_limit=max_candidate_chunks,
-                retrieval_id=requested_retrieval_id,
-                correlation_id=correlation_id,
+            retrieval_id, resolution, rows = (
+                self._repository.open_plugin_hybrid_candidates(
+                    principal_username=principal_username,
+                    plugin_id=plugin_id,
+                    embedding_profile_id=int(
+                        active_profile["embedding_profile_id"]
+                    ),
+                    query_vector=query_vector,
+                    lexical_tokens=lexical_tokens,
+                    lexical_phrase=lexical_phrase,
+                    semantic_limit=50,
+                    lexical_limit=50,
+                    retrieval_id=requested_retrieval_id,
+                    correlation_id=correlation_id,
+                )
             )
         if retrieval_id != requested_retrieval_id:
             raise KnowledgeRetrievalError("retrieval_contract_invalid")
@@ -208,7 +258,8 @@ class KnowledgeRetrievalService:
                 embedding_model_identifier=self._embedding_provider.model_id,
                 retrieval_id=retrieval_id,
             )
-        if len(rows) > max_candidate_chunks:
+        bounded_candidate_limit = min(max_candidate_chunks, 100)
+        if len(rows) > bounded_candidate_limit:
             self._repository.record_outcome(
                 retrieval_id=retrieval_id,
                 outcome_code="FAILED",
@@ -229,24 +280,21 @@ class KnowledgeRetrievalService:
         failure_codes: list[str] = []
         for row in rows:
             try:
-                self._assert_compatible_row(row, dimensions)
+                self._assert_compatible_row(
+                    row,
+                    dimensions,
+                    int(active_profile["embedding_profile_id"]),
+                )
                 if (
                     str(row.get("target_scope_type") or "").upper() != scope.scope_type
                     or str(row.get("target_scope_key") or "") != scope.scope_key
                 ):
                     raise KnowledgeRetrievalError("scope_mismatch")
-                vector = _parse_vector(row["embedding_vector"], dimensions)
-                semantic_score = _cosine_similarity(query_vector, vector)
-                lexical_score = _lexical_score(
-                    query,
-                    str(row.get("chunk_text") or ""),
-                    source_name=str(
-                        row.get("original_filename")
-                        or row.get("parent_source_reference")
-                        or ""
-                    ),
-                    excluded_tokens=_scope_tokens(scope),
-                )
+                semantic_score = float(row.get("semantic_score") or 0.0)
+                lexical_score = float(row.get("lexical_score") or 0.0)
+                semantic_rank = _optional_int(row.get("semantic_rank"))
+                lexical_rank = _optional_int(row.get("lexical_rank"))
+                fused_score = _rrf_score(semantic_rank, lexical_rank)
                 extractor_metadata_json = _optional_json_object_text(
                     row.get("extractor_metadata_json"),
                     field_name="extractor_metadata_json",
@@ -258,8 +306,6 @@ class KnowledgeRetrievalService:
             except (KeyError, TypeError, ValueError, KnowledgeRetrievalError) as exc:
                 malformed_count += 1
                 failure_codes.append(_retrieval_failure_code(exc))
-                continue
-            if lexical_score < min_lexical_score:
                 continue
             scored.append(
                 KnowledgeSearchResult(
@@ -278,6 +324,7 @@ class KnowledgeRetrievalService:
                     embedding_model_identifier=str(row["embedding_model_identifier"]),
                     embedding_dimensions=int(row["embedding_dimensions"]),
                     chunk_text=str(row["chunk_text"]),
+                    fused_score=fused_score,
                     source_type=str(row.get("source_type") or ""),
                     document_title=_optional_string(row.get("document_title")),
                     original_filename=_optional_string(row.get("original_filename")),
@@ -357,11 +404,12 @@ class KnowledgeRetrievalService:
         ordered = sorted(
             scored,
             key=lambda result: (
-                result.lexical_score,
-                result.semantic_score or -1.0,
-                -result.chunk_no,
+                _is_navigation_heavy(result.chunk_text),
+                -result.fused_score,
+                -(result.semantic_score or -1.0),
+                -result.lexical_score,
+                result.chunk_id,
             ),
-            reverse=True,
         )
         selected = _select_bounded_results(
             ordered,
@@ -420,14 +468,18 @@ class KnowledgeRetrievalService:
             retrieval_id=retrieval_id,
         )
 
-    def _assert_compatible_row(self, row: dict[str, Any], dimensions: int) -> None:
-        """Reject rows stored with another embedding model or dimension."""
-        model_id = str(row.get("embedding_model_identifier") or "")
+    def _assert_compatible_row(
+        self,
+        row: dict[str, Any],
+        dimensions: int,
+        embedding_profile_id: int,
+    ) -> None:
+        """Reject rows returned from another active profile or dimension."""
         row_dimensions = int(row.get("embedding_dimensions") or 0)
-        if model_id != self._embedding_provider.model_id:
+        row_profile_id = int(row.get("embedding_profile_id") or 0)
+        if row_profile_id != embedding_profile_id:
             raise KnowledgeRetrievalError(
-                f"Stored vector model '{model_id}' does not match query model "
-                f"'{self._embedding_provider.model_id}'."
+                "Oracle returned a candidate from another embedding profile."
             )
         if row_dimensions != dimensions:
             raise KnowledgeRetrievalError(
@@ -436,33 +488,30 @@ class KnowledgeRetrievalService:
             )
 
 
-def _lexical_score(
-    query: str,
-    chunk_text: str,
-    *,
-    source_name: str,
-    excluded_tokens: frozenset[str] = frozenset(),
+def _lexical_query_tokens(query: str, scope: KnowledgeScope) -> list[str]:
+    """Return the bounded lexical descriptor sent to the Oracle branch."""
+    excluded = _scope_tokens(scope)
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for raw_token in _LEXICAL_TOKEN.findall(query):
+        token = raw_token.casefold()
+        if token in _STOP_WORDS or token in excluded or token in seen:
+            continue
+        seen.add(token)
+        tokens.append(token)
+        if len(tokens) == 64:
+            break
+    return tokens
+
+
+def _rrf_score(
+    semantic_rank: int | None,
+    lexical_rank: int | None,
 ) -> float:
-    """Score token coverage, phrases, identifiers, and source-name matches."""
-    query_tokens = [
-        token.casefold()
-        for token in _LEXICAL_TOKEN.findall(query)
-        if token.casefold() not in _STOP_WORDS
-        and token.casefold() not in excluded_tokens
-    ]
-    if not query_tokens:
-        return 0.0
-    text_lower = chunk_text.casefold()
-    source_lower = source_name.casefold()
-    haystack_tokens = set(_LEXICAL_TOKEN.findall(text_lower))
-    matched = {token for token in query_tokens if token in haystack_tokens}
-    coverage = len(matched) / len(set(query_tokens))
-    phrase = " ".join(query_tokens)
-    phrase_score = 0.15 if len(query_tokens) > 1 and phrase in text_lower else 0.0
-    identifiers = {token for token in query_tokens if any(c in token for c in "._-")}
-    identifier_score = 0.1 if identifiers & haystack_tokens else 0.0
-    source_score = 0.1 if any(token in source_lower for token in query_tokens) else 0.0
-    return min(1.0, coverage * 0.75 + phrase_score + identifier_score + source_score)
+    """Fuse independent Oracle branch ranks deterministically on the host."""
+    semantic = 0.65 / (60 + semantic_rank) if semantic_rank else 0.0
+    lexical = 0.35 / (60 + lexical_rank) if lexical_rank else 0.0
+    return 61.0 * (semantic + lexical)
 
 
 def _scope_tokens(scope: KnowledgeScope) -> frozenset[str]:
@@ -500,44 +549,22 @@ def _select_bounded_results(
     return selected
 
 
-def _parse_vector(raw_vector: Any, dimensions: int) -> list[float]:
-    """Parse one finite JSON numeric embedding with the expected dimension."""
-    try:
-        values = json.loads(str(raw_vector))
-    except json.JSONDecodeError as exc:
-        raise KnowledgeRetrievalError(
-            "Stored knowledge vector is malformed JSON."
-        ) from exc
-    if not isinstance(values, list) or len(values) != dimensions:
-        raise KnowledgeRetrievalError(
-            "Stored knowledge vector has the wrong dimensions."
-        )
-    vector: list[float] = []
-    for value in values:
-        if not isinstance(value, (int, float)):
-            raise KnowledgeRetrievalError(
-                "Stored knowledge vector contains a non-numeric value."
-            )
-        number = float(value)
-        if not math.isfinite(number):
-            raise KnowledgeRetrievalError(
-                "Stored knowledge vector contains a non-finite value."
-            )
-        vector.append(number)
-    return vector
+def _is_navigation_heavy(text: str) -> bool:
+    """Identify Markdown navigation/front-matter chunks without query-specific rules.
 
-
-def _cosine_similarity(left: list[float], right: list[float]) -> float:
-    """Return cosine similarity for equal-length finite vectors."""
-    left_norm = math.sqrt(sum(value * value for value in left))
-    right_norm = math.sqrt(sum(value * value for value in right))
-    if left_norm == 0.0 or right_norm == 0.0:
-        return 0.0
-    dot = sum(
-        left_value * right_value
-        for left_value, right_value in zip(left, right, strict=True)
-    )
-    return dot / (left_norm * right_norm)
+    Navigation remains stored, embedded, and searchable as lineage-bearing content,
+    but substantive prose is selected first when both kinds clear the unchanged
+    semantic/lexical gates. This prevents Pandoc contents pages from consuming the
+    complete bounded evidence pack merely because they repeat every section title.
+    """
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return True
+    upper_text = text.upper()
+    if "TABLE OF CONTENTS" in upper_text:
+        return True
+    dotted_lines = sum(bool(_DOTTED_LEADER.search(line)) for line in lines)
+    return dotted_lines >= 2 and dotted_lines * 2 >= len(lines)
 
 
 def _optional_string(value: Any) -> str | None:
@@ -618,12 +645,12 @@ def _classification_tags(value: Any) -> tuple[str, ...]:
 def _retrieval_failure_code(exc: Exception) -> str:
     """Map malformed row exceptions to safe diagnostic reason codes."""
     message = str(exc).casefold()
+    if "profile" in message:
+        return "embedding_profile_incompatible"
     if "model" in message:
         return "embedding_model_incompatible"
     if "dimension" in message:
         return "embedding_dimension_incompatible"
-    if "non-numeric" in message:
-        return "embedding_vector_non_numeric"
     if "scope" in message:
         return "retrieval_scope_mismatch"
     return "malformed_retrieval_row"

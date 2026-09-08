@@ -1,16 +1,19 @@
 """Deterministically split canonical Markdown into structure-aware chunks."""
 
 # Author: Clive Bostock
-# Date: 24-Jul-2026
-# Description: Implements the limited core_markdown_blocks version-one scanner.
+# Date: 07-Sep-2026
+# Description: Implements context-safe core Markdown chunking and provenance.
+# Codex-assisted generated/modified.
+# Codex SDK reviewability guardrails followed.
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 import json
 import re
+from typing import Callable
 
-_WORD = re.compile(r"\S+")
+from .token_accounting import ConservativeEmbeddingTokenCounter
 _ATX = re.compile(r" {0,3}#{1,6}(?:[ \t]+|$)")
 _SETEXT = re.compile(r" {0,3}(?:=+|-+)[ \t]*$")
 _FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
@@ -43,9 +46,9 @@ class _Block:
     text: str
     auxiliary: tuple[str, ...] = ()
 
-    @property
-    def words(self) -> int:
-        return len(_WORD.findall(self.text))
+    def tokens(self, counter: Callable[[str], int]) -> int:
+        """Return the configured conservative token estimate."""
+        return counter(self.text)
 
 
 def chunk_markdown(
@@ -53,40 +56,47 @@ def chunk_markdown(
     *,
     chunk_size_tokens: int,
     overlap_tokens: int,
+    token_counter: Callable[[str], int] | None = None,
+    max_content_tokens: int | None = None,
 ) -> list[MarkdownChunk]:
-    """Split Markdown with stable zero-based half-open code-point offsets."""
+    """Split Markdown with stable zero-based half-open code-point offsets.
+
+    ``chunk_size_tokens`` remains the desired target. ``max_content_tokens``
+    is the hard provider-aware content ceiling after prefix, special-token,
+    and safety-margin costs. Both use the supplied counter.
+    """
     if chunk_size_tokens <= 0:
         raise ValueError("chunk_size_tokens must be positive")
-    overlap_tokens = max(0, min(overlap_tokens, chunk_size_tokens - 1))
+    counter = token_counter or ConservativeEmbeddingTokenCounter().content_tokens
+    hard_limit = max_content_tokens or chunk_size_tokens
+    if hard_limit <= 0:
+        raise ValueError("max_content_tokens must be positive")
+    target = min(chunk_size_tokens, hard_limit)
+    overlap_tokens = max(0, min(overlap_tokens, target - 1))
     blocks = _scan_blocks(text)
     expanded: list[_Block] = []
     for block in blocks:
-        expanded.extend(_split_oversized(block, chunk_size_tokens))
+        expanded.extend(_split_oversized(block, target, counter))
     groups: list[list[_Block]] = []
     current: list[_Block] = []
-    current_words = 0
     for block in expanded:
-        if current and current_words + block.words > chunk_size_tokens:
+        candidate = current + [block]
+        if current and counter(_emit_group(candidate)) > target:
             groups.append(current)
             overlap: list[_Block] = []
-            overlap_words = 0
             for prior in reversed(current):
-                if overlap_words + prior.words > overlap_tokens:
+                overlap_candidate = [prior] + overlap
+                if counter(_emit_group(overlap_candidate)) > overlap_tokens:
                     break
-                overlap.insert(0, prior)
-                overlap_words += prior.words
+                overlap = overlap_candidate
             current = overlap
-            current_words = overlap_words
         current.append(block)
-        current_words += block.words
     if current:
         groups.append(current)
 
     chunks: list[MarkdownChunk] = []
     for chunk_no, group in enumerate(groups, start=1):
-        emitted = "\n\n".join(block.text.rstrip("\n") for block in group)
-        if group[-1].text.endswith("\n"):
-            emitted += "\n"
+        emitted = _emit_group(group)
         segments = [[block.start, block.end] for block in group]
         synthetic = [
             value
@@ -110,11 +120,19 @@ def chunk_markdown(
                 span_start=min(block.start for block in group),
                 span_end=max(block.end for block in group),
                 text=emitted,
-                token_count=len(_WORD.findall(emitted)),
+                token_count=counter(emitted),
                 metadata_json=metadata,
             )
         )
     return chunks
+
+
+def _emit_group(group: list[_Block]) -> str:
+    """Render one group exactly as it will be persisted and embedded."""
+    emitted = "\n\n".join(block.text.rstrip("\n") for block in group)
+    if group and group[-1].text.endswith("\n"):
+        emitted += "\n"
+    return emitted
 
 
 def _scan_blocks(text: str) -> list[_Block]:
@@ -216,24 +234,34 @@ def _block(kind: str, lines: list[re.Match[str]], start: int, end: int) -> _Bloc
     )
 
 
-def _split_oversized(block: _Block, budget: int) -> list[_Block]:
-    if block.words <= budget:
+def _split_oversized(
+    block: _Block,
+    budget: int,
+    counter: Callable[[str], int],
+) -> list[_Block]:
+    if block.tokens(counter) <= budget:
         return [block]
     if block.kind == "fenced_code":
-        return _split_fence(block, budget)
+        pieces = _split_fence(block, budget, counter)
+        return _ensure_fit(pieces, budget, counter)
     if block.kind == "table":
-        return _split_table(block, budget)
+        pieces = _split_table(block, budget, counter)
+        return _ensure_fit(pieces, budget, counter)
     if block.kind == "list":
         pieces = _split_lines(block, budget, boundary=_LIST)
-        if all(piece.words <= budget for piece in pieces):
+        if all(piece.tokens(counter) <= budget for piece in pieces):
             return pieces
-    return _word_windows(block, budget)
+    return _text_windows(block, budget, counter)
 
 
-def _split_fence(block: _Block, budget: int) -> list[_Block]:
+def _split_fence(
+    block: _Block,
+    budget: int,
+    counter: Callable[[str], int],
+) -> list[_Block]:
     lines = block.text.splitlines(keepends=True)
     if len(lines) < 2:
-        return _word_windows(block, budget)
+        return _text_windows(block, budget, counter)
     opener = lines[0].rstrip("\n")
     marker = _FENCE.match(opener)
     closer = marker.group(1) if marker else "```"
@@ -244,7 +272,7 @@ def _split_fence(block: _Block, budget: int) -> list[_Block]:
     selected_start = cursor
     for line in content:
         candidate = f"{opener}\n{''.join(selected)}{line}{closer}\n"
-        if selected and len(_WORD.findall(candidate)) > budget:
+        if selected and counter(candidate) > budget:
             emitted = f"{opener}\n{''.join(selected)}{closer}\n"
             pieces.append(
                 _Block(
@@ -269,20 +297,24 @@ def _split_fence(block: _Block, budget: int) -> list[_Block]:
                 ("recreated_fence_open", "recreated_fence_close"),
             )
         )
-    return pieces or _word_windows(block, budget)
+    return pieces or _text_windows(block, budget, counter)
 
 
-def _split_table(block: _Block, budget: int) -> list[_Block]:
+def _split_table(
+    block: _Block,
+    budget: int,
+    counter: Callable[[str], int],
+) -> list[_Block]:
     lines = block.text.splitlines(keepends=True)
     if len(lines) < 3:
-        return _word_windows(block, budget)
+        return _text_windows(block, budget, counter)
     header = "".join(lines[:2])
     offset = block.start + len(header)
     pieces: list[_Block] = []
     selected: list[str] = []
     selected_start = offset
     for row in lines[2:]:
-        if selected and len(_WORD.findall(header + "".join(selected) + row)) > budget:
+        if selected and counter(header + "".join(selected) + row) > budget:
             pieces.append(
                 _Block(
                     "table_fragment",
@@ -306,7 +338,7 @@ def _split_table(block: _Block, budget: int) -> list[_Block]:
                 ("repeated_table_header",),
             )
         )
-    return pieces or _word_windows(block, budget)
+    return pieces or _text_windows(block, budget, counter)
 
 
 def _split_lines(
@@ -333,19 +365,53 @@ def _split_lines(
     ]
 
 
-def _word_windows(block: _Block, budget: int) -> list[_Block]:
-    matches = list(_WORD.finditer(block.text))
+def _ensure_fit(
+    blocks: list[_Block],
+    budget: int,
+    counter: Callable[[str], int],
+) -> list[_Block]:
+    """Ensure structural fragments also obey the hard content ceiling."""
     pieces: list[_Block] = []
-    for index in range(0, len(matches), budget):
-        selected = matches[index:index + budget]
-        start = selected[0].start()
-        end = selected[-1].end()
+    for block in blocks:
+        if block.tokens(counter) <= budget:
+            pieces.append(block)
+        else:
+            pieces.extend(_text_windows(block, budget, counter))
+    return pieces
+
+
+def _text_windows(
+    block: _Block,
+    budget: int,
+    counter: Callable[[str], int],
+) -> list[_Block]:
+    """Split an oversized block without dropping whitespace or punctuation."""
+    pieces: list[_Block] = []
+    remaining = block.text
+    relative_start = 0
+    while remaining:
+        low = 1
+        high = len(remaining)
+        accepted = 0
+        while low <= high:
+            middle = (low + high) // 2
+            if counter(remaining[:middle]) <= budget:
+                accepted = middle
+                low = middle + 1
+            else:
+                high = middle - 1
+        if accepted == 0:
+            raise ValueError("token counter cannot fit one source code point")
+        emitted = remaining[:accepted]
+        relative_end = relative_start + accepted
         pieces.append(
             _Block(
                 f"{block.kind}_fragment",
-                block.start + start,
-                block.start + end,
-                block.text[start:end],
+                block.start + relative_start,
+                block.start + relative_end,
+                emitted,
             )
         )
+        remaining = remaining[accepted:]
+        relative_start = relative_end
     return pieces

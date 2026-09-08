@@ -1,8 +1,8 @@
-"""Validated configuration for Phase 2A governed retrieval."""
+"""Validated configuration for model-controlled governed retrieval."""
 
 # Author: Clive Bostock
 # Date: 2026-08-29
-# Description: Owns conservative bounded commit-gate and evidence settings.
+# Description: Owns active discovery, context-floor, and commit-gate settings.
 
 from __future__ import annotations
 
@@ -12,16 +12,17 @@ from typing import Any
 
 @dataclass(frozen=True, slots=True)
 class GovernedRetrievalConfiguration:
-    """Validated Phase 2A settings read only from host configuration."""
+    """Validated governed-retrieval settings read only from host configuration."""
 
-    enabled: bool = False
+    enabled: bool = True
     stream_commit_delay_ms: int = 350
     stream_commit_max_characters: int = 128
     max_evidence_tokens: int = 1200
     context_safety_tokens: int = 256
     project_scope: str | None = None
-    domain_discovery_enabled: bool = False
-    domain_discovery_shadow_mode: bool = True
+    domain_discovery_enabled: bool = True
+    domain_discovery_shadow_mode: bool = False
+    min_effective_context_tokens: int = 32768
     descriptor_embedding_profile: str = "domain_discovery"
     domain_descriptor_schema_version: str = "domain-descriptor-v1"
     domain_min_relevance_score: float = 0.50
@@ -69,6 +70,16 @@ class GovernedRetrievalConfiguration:
             self.MIN_CONTEXT_SAFETY_TOKENS,
             self.MAX_CONTEXT_SAFETY_TOKENS,
         )
+        self._validate_bound(
+            "min_effective_context_tokens",
+            self.min_effective_context_tokens,
+            1,
+            1048576,
+        )
+        if self.domain_discovery_enabled and self.domain_discovery_shadow_mode:
+            raise ValueError(
+                "governed_retrieval discovery cannot be enabled and shadowed"
+            )
         project_scope = str(self.project_scope or "").strip() or None
         if project_scope is not None and not project_scope.upper().startswith(
             "PROJECT:"
@@ -110,7 +121,7 @@ class GovernedRetrievalConfiguration:
         """Load Phase 2A configuration using established ConfigManager accessors."""
         section = "governed_retrieval"
         return cls(
-            enabled=config_mgr.bool_config_value(section, "enabled", default=False),
+            enabled=config_mgr.bool_config_value(section, "enabled", default=True),
             stream_commit_delay_ms=config_mgr.int_config_value(
                 section, "stream_commit_delay_ms", default=350
             ),
@@ -125,10 +136,13 @@ class GovernedRetrievalConfiguration:
             ),
             project_scope=config_mgr.config_value(section, "project_scope", default=""),
             domain_discovery_enabled=config_mgr.bool_config_value(
-                section, "domain_discovery_enabled", default=False
+                section, "domain_discovery_enabled", default=True
             ),
             domain_discovery_shadow_mode=config_mgr.bool_config_value(
-                section, "domain_discovery_shadow_mode", default=True
+                section, "domain_discovery_shadow_mode", default=False
+            ),
+            min_effective_context_tokens=config_mgr.int_config_value(
+                section, "min_effective_context_tokens", default=32768
             ),
             descriptor_embedding_profile=config_mgr.config_value(
                 section,

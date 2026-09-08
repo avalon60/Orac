@@ -22,7 +22,9 @@ for path in (SRC_ROOT, PLUGINS_ROOT):
         sys.path.insert(0, str(path))
 
 from model.plugin_database_deployment import PluginDatabaseDeploymentResult
-from model.plugin_routing.embeddings import HashEmbeddingProvider
+from model.plugin_routing.embeddings import (
+    DeterministicHashTestEmbeddingProvider as HashEmbeddingProvider,
+)
 from model.plugin_routing.manager import PluginManager
 from home_assistant.client import HomeAssistantClientConfig
 from home_assistant.control import AreaDevice

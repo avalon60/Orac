@@ -1303,8 +1303,14 @@ wwv_flow_imp_page.create_page_plug(
 '       loc.row_version,',
 '       loc.location_code,',
 '       loc.display_name,',
-'       loc.target_scope_type,',
-'       loc.target_scope_key,',
+'       initcap(loc.target_scope_type) target_scope_type,',
+'       coalesce(',
+'         case upper(loc.target_scope_type)',
+'           when ''PROJECT'' then scope.project_display_name',
+'           when ''PLUGIN'' then scope.plugin_name',
+'         end,',
+'         ''Unavailable target''',
+'       ) target_display_name,',
 '       loc.profile_code,',
 '       loc.enabled_label,',
 '       loc.path source_path,',
@@ -1324,6 +1330,9 @@ wwv_flow_imp_page.create_page_plug(
 '       loc.next_enabled_yn,',
 '       loc.toggle_label',
 '  from orac_dropbox.drop_location_summary_admin_v loc',
+'  left join orac_code.knowledge_scope_registry_v scope',
+'    on scope.scope_type = upper(loc.target_scope_type)',
+'   and scope.scope_key = loc.target_scope_key',
 '  left join job_rollup roll',
 '    on roll.drop_location_id = loc.drop_location_id',
 ' order by loc.location_code'))
@@ -1385,17 +1394,17 @@ wwv_flow_imp_page.create_worksheet_column(
 ,p_db_column_name=>'TARGET_SCOPE_TYPE'
 ,p_display_order=>4
 ,p_column_identifier=>'D'
-,p_column_label=>'Target Type'
+,p_column_label=>'Target Scope Type'
 ,p_column_type=>'STRING'
 ,p_heading_alignment=>'LEFT'
 ,p_use_as_row_header=>'N'
 );
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(34600100000000206)
-,p_db_column_name=>'TARGET_SCOPE_KEY'
+,p_db_column_name=>'TARGET_DISPLAY_NAME'
 ,p_display_order=>5
 ,p_column_identifier=>'E'
-,p_column_label=>'Target Key'
+,p_column_label=>'Project / Plugin'
 ,p_column_type=>'STRING'
 ,p_heading_alignment=>'LEFT'
 ,p_use_as_row_header=>'N'
@@ -1619,7 +1628,7 @@ wwv_flow_imp_page.create_worksheet_rpt(
 ,p_report_alias=>'346011'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'DROP_LOCATION_ID:LOCATION_CODE:DISPLAY_NAME:TARGET_SCOPE_TYPE:TARGET_SCOPE_KEY:PROFILE_CODE:ENABLED_LABEL:SOURCE_PATH:STABLE_SECONDS:TOTAL_JOB_COUNT:RECENT_JOB_COUNT:AWAITING_HANDOFF_COUNT:PREREQUISITE_DEFERRED_COUNT:CONVERSION_RETRY_COUNT:CORE_IN_PROGRESS_COUNT:SEARCHABLE_COUNT:FAILED_ATTENTION_COUNT:SKIPPED_COUNT:LATEST_ACTIVITY_ON:EXAMPLE_LABEL:TOGGLE_LABEL:VIEW_ACTIVITY_LOCATION_ID'
+,p_report_columns=>'DROP_LOCATION_ID:LOCATION_CODE:DISPLAY_NAME:TARGET_SCOPE_TYPE:TARGET_DISPLAY_NAME:PROFILE_CODE:ENABLED_LABEL:SOURCE_PATH:STABLE_SECONDS:TOTAL_JOB_COUNT:RECENT_JOB_COUNT:AWAITING_HANDOFF_COUNT:PREREQUISITE_DEFERRED_COUNT:CONVERSION_RETRY_COUNT:CORE_IN_PROGRESS_COUNT:SEARCHABLE_COUNT:FAILED_ATTENTION_COUNT:SKIPPED_COUNT:LATEST_ACTIVITY_ON:EXAMPLE_LABEL:TOGGLE_LABEL:VIEW_ACTIVITY_LOCATION_ID'
 ||':'
 ,p_sort_column_1=>'LOCATION_CODE'
 ,p_sort_direction_1=>'ASC'
@@ -1998,11 +2007,13 @@ wwv_flow_imp_page.create_page_item(
 'select ''Plugin'' d, ''plugin'' r from dual',
 'union all select ''Project'', ''project'' from dual'))
 ,p_lov_display_null=>'YES'
+,p_lov_null_text=>'- Select target scope type -'
 ,p_cHeight=>1
+,p_colspan=>6
 ,p_field_template=>1609122147107268652
 ,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
-,p_lov_display_extra=>'YES'
+,p_lov_display_extra=>'NO'
 ,p_inline_help_text=>'Choose plugin for installed plugin targets or project for a project code.'
 );
 wwv_flow_imp_page.create_page_item(
@@ -2010,22 +2021,33 @@ wwv_flow_imp_page.create_page_item(
 ,p_name=>'P2_TARGET_PLUGIN_KEY'
 ,p_item_sequence=>20
 ,p_item_plug_id=>wwv_flow_imp.id(34600200000000103)
-,p_prompt=>'Plugin Target'
+,p_prompt=>'Plugin'
 ,p_display_as=>'NATIVE_SELECT_LIST'
 ,p_lov=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select display_value d,',
-'       scope_key r',
-'  from orac_code.rag_usage_scope_lov_v',
-' where scope_type = ''PLUGIN''',
-' order by display_value'))
+'select scope.plugin_name d,',
+'       scope.scope_key r',
+'  from orac_code.knowledge_scope_registry_v scope',
+' where scope.scope_type = ''PLUGIN''',
+'   and (',
+'         scope.scope_key = :P2_TARGET_PLUGIN_KEY',
+'         or exists (',
+'              select 1',
+'                from orac_code.rag_usage_scope_lov_v eligible',
+'               where eligible.return_value = scope.knowledge_scope_id',
+'            )',
+'       )',
+' order by lower(scope.plugin_name), scope.scope_key'))
 ,p_lov_display_null=>'YES'
+,p_lov_null_text=>'- Select plugin -'
 ,p_cHeight=>1
 ,p_begin_on_new_line=>'N'
+,p_colspan=>6
+,p_grid_column=>7
 ,p_field_template=>1609121967514267634
 ,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
-,p_lov_display_extra=>'YES'
-,p_inline_help_text=>'Used when target scope type is Plugin.'
+,p_lov_display_extra=>'NO'
+,p_inline_help_text=>'Choose an enabled, installed, runtime-ready plugin.'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'page_action_on_selection', 'NONE')).to_clob
 );
@@ -2034,21 +2056,33 @@ wwv_flow_imp_page.create_page_item(
 ,p_name=>'P2_TARGET_PROJECT_KEY'
 ,p_item_sequence=>30
 ,p_item_plug_id=>wwv_flow_imp.id(34600200000000103)
-,p_prompt=>'Project Code'
+,p_prompt=>'Project'
 ,p_display_as=>'NATIVE_SELECT_LIST'
 ,p_lov=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select display_value d,',
-'       scope_key r',
-'  from orac_code.rag_usage_scope_lov_v',
-' where scope_type = ''PROJECT''',
-' order by display_value'))
+'select scope.project_display_name d,',
+'       scope.scope_key r',
+'  from orac_code.knowledge_scope_registry_v scope',
+' where scope.scope_type = ''PROJECT''',
+'   and (',
+'         scope.scope_key = :P2_TARGET_PROJECT_KEY',
+'         or exists (',
+'              select 1',
+'                from orac_code.rag_usage_scope_lov_v eligible',
+'               where eligible.return_value = scope.knowledge_scope_id',
+'            )',
+'       )',
+' order by lower(scope.project_display_name), scope.scope_key'))
 ,p_lov_display_null=>'YES'
+,p_lov_null_text=>'- Select project -'
 ,p_cHeight=>1
+,p_begin_on_new_line=>'N'
+,p_colspan=>6
+,p_grid_column=>7
 ,p_field_template=>1609121967514267634
 ,p_item_template_options=>'#DEFAULT#'
 ,p_is_persistent=>'N'
-,p_lov_display_extra=>'YES'
-,p_inline_help_text=>'Used when target scope type is Project.'
+,p_lov_display_extra=>'NO'
+,p_inline_help_text=>'Choose an active registered project.'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'page_action_on_selection', 'NONE')).to_clob
 );
@@ -2230,32 +2264,43 @@ wwv_flow_imp_page.create_page_item(
 );
 wwv_flow_imp_page.create_page_validation(
  p_id=>wwv_flow_imp.id(34600200000000420)
-,p_validation_name=>'Project Target Exists'
+,p_validation_name=>'Eligible Project Is Selected'
 ,p_validation_sequence=>10
 ,p_validation=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'if :P2_TARGET_SCOPE_TYPE <> ''project'' then',
-'  return true;',
-'end if;',
-'',
-'for target in (',
-'  select 1',
-'    from orac_code.rag_usage_scope_lov_v',
-'   where scope_type = ''PROJECT''',
-'     and scope_key = :P2_TARGET_PROJECT_KEY',
-') loop',
-'  return true;',
-'end loop;',
-'',
-'return false;'))
-,p_validation2=>'PLSQL'
-,p_validation_type=>'FUNC_BODY_RETURNING_BOOLEAN'
-,p_error_message=>'Choose a registered project target.'
+'select 1',
+'  from orac_code.rag_usage_scope_lov_v',
+' where scope_type = ''PROJECT''',
+'   and scope_key = :P2_TARGET_PROJECT_KEY'))
+,p_validation_type=>'EXISTS'
+,p_error_message=>'Select an eligible project.'
+,p_validation_condition=>'P2_TARGET_SCOPE_TYPE'
+,p_validation_condition2=>'project'
+,p_validation_condition_type=>'VAL_OF_ITEM_IN_COND_EQ_COND2'
+,p_when_button_pressed=>wwv_flow_imp.id(34600200000000302)
 ,p_associated_item=>wwv_flow_imp.id(34600200000000209)
+,p_error_display_location=>'INLINE_WITH_FIELD_AND_NOTIFICATION'
+);
+wwv_flow_imp_page.create_page_validation(
+ p_id=>wwv_flow_imp.id(34600200000000421)
+,p_validation_name=>'Eligible Plugin Is Selected'
+,p_validation_sequence=>20
+,p_validation=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select 1',
+'  from orac_code.rag_usage_scope_lov_v',
+' where scope_type = ''PLUGIN''',
+'   and scope_key = :P2_TARGET_PLUGIN_KEY'))
+,p_validation_type=>'EXISTS'
+,p_error_message=>'Select an eligible plugin.'
+,p_validation_condition=>'P2_TARGET_SCOPE_TYPE'
+,p_validation_condition2=>'plugin'
+,p_validation_condition_type=>'VAL_OF_ITEM_IN_COND_EQ_COND2'
+,p_when_button_pressed=>wwv_flow_imp.id(34600200000000302)
+,p_associated_item=>wwv_flow_imp.id(34600200000000208)
 ,p_error_display_location=>'INLINE_WITH_FIELD_AND_NOTIFICATION'
 );
 wwv_flow_imp_page.create_page_da_event(
  p_id=>wwv_flow_imp.id(34600200000000301)
-,p_name=>'Toggle Plugin Target'
+,p_name=>'Scope Target Visibility'
 ,p_event_sequence=>10
 ,p_triggering_element_type=>'ITEM'
 ,p_triggering_element=>'P2_TARGET_SCOPE_TYPE'
@@ -2269,19 +2314,73 @@ wwv_flow_imp_page.create_page_da_action(
 ,p_event_result=>'TRUE'
 ,p_action_sequence=>10
 ,p_execute_on_page_init=>'Y'
-,p_name=>'Enable Plugin Target For Plugin Scope'
-,p_action=>'NATIVE_JAVASCRIPT_CODE'
-,p_attribute_01=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'if ($v(''P2_TARGET_SCOPE_TYPE'') === ''plugin'') {',
-'  apex.item(''P2_TARGET_PLUGIN_KEY'').enable();',
-'  apex.item(''P2_TARGET_PROJECT_KEY'').disable();',
-'} else if ($v(''P2_TARGET_SCOPE_TYPE'') === ''project'') {',
-'  apex.item(''P2_TARGET_PLUGIN_KEY'').disable();',
-'  apex.item(''P2_TARGET_PROJECT_KEY'').enable();',
-'} else {',
-'  apex.item(''P2_TARGET_PLUGIN_KEY'').disable();',
-'  apex.item(''P2_TARGET_PROJECT_KEY'').disable();',
-'}'))
+,p_name=>'Hide Project Target'
+,p_action=>'NATIVE_HIDE'
+,p_affected_elements_type=>'ITEM'
+,p_affected_elements=>'P2_TARGET_PROJECT_KEY'
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(34600200000000303)
+,p_event_id=>wwv_flow_imp.id(34600200000000301)
+,p_event_result=>'TRUE'
+,p_action_sequence=>20
+,p_execute_on_page_init=>'Y'
+,p_name=>'Hide Plugin Target'
+,p_action=>'NATIVE_HIDE'
+,p_affected_elements_type=>'ITEM'
+,p_affected_elements=>'P2_TARGET_PLUGIN_KEY'
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(34600200000000304)
+,p_event_id=>wwv_flow_imp.id(34600200000000301)
+,p_event_result=>'TRUE'
+,p_action_sequence=>30
+,p_execute_on_page_init=>'N'
+,p_name=>'Clear Project Target'
+,p_action=>'NATIVE_CLEAR'
+,p_affected_elements_type=>'ITEM'
+,p_affected_elements=>'P2_TARGET_PROJECT_KEY'
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(34600200000000305)
+,p_event_id=>wwv_flow_imp.id(34600200000000301)
+,p_event_result=>'TRUE'
+,p_action_sequence=>40
+,p_execute_on_page_init=>'N'
+,p_name=>'Clear Plugin Target'
+,p_action=>'NATIVE_CLEAR'
+,p_affected_elements_type=>'ITEM'
+,p_affected_elements=>'P2_TARGET_PLUGIN_KEY'
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(34600200000000306)
+,p_event_id=>wwv_flow_imp.id(34600200000000301)
+,p_event_result=>'TRUE'
+,p_action_sequence=>50
+,p_execute_on_page_init=>'Y'
+,p_name=>'Show Project Target'
+,p_action=>'NATIVE_SHOW'
+,p_affected_elements_type=>'ITEM'
+,p_affected_elements=>'P2_TARGET_PROJECT_KEY'
+,p_client_condition_type=>'EQUALS'
+,p_client_condition_elem_type=>'ITEM'
+,p_client_condition_element=>'P2_TARGET_SCOPE_TYPE'
+,p_client_condition_expression=>'project'
+);
+wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(34600200000000312)
+,p_event_id=>wwv_flow_imp.id(34600200000000301)
+,p_event_result=>'TRUE'
+,p_action_sequence=>60
+,p_execute_on_page_init=>'Y'
+,p_name=>'Show Plugin Target'
+,p_action=>'NATIVE_SHOW'
+,p_affected_elements_type=>'ITEM'
+,p_affected_elements=>'P2_TARGET_PLUGIN_KEY'
+,p_client_condition_type=>'EQUALS'
+,p_client_condition_elem_type=>'ITEM'
+,p_client_condition_element=>'P2_TARGET_SCOPE_TYPE'
+,p_client_condition_expression=>'plugin'
 );
 wwv_flow_imp_page.create_page_da_event(
  p_id=>wwv_flow_imp.id(34600200000000307)
@@ -2520,11 +2619,28 @@ wwv_flow_imp_page.create_page_plug(
 'declare',
 '  l_html clob;',
 'begin',
-'  for loc in (select * from orac_dropbox.drop_location_admin_v where drop_location_id = to_number(:P3_DROP_LOCATION_ID)) loop',
+'  for loc in (',
+'    select loc.*,',
+'           initcap(loc.target_scope_type) target_scope_type_label,',
+'           initcap(loc.target_scope_type) target_label,',
+'           coalesce(',
+'             case upper(loc.target_scope_type)',
+'               when ''PROJECT'' then scope.project_display_name',
+'               when ''PLUGIN'' then scope.plugin_name',
+'             end,',
+'             ''Unavailable target''',
+'           ) target_display_name',
+'      from orac_dropbox.drop_location_admin_v loc',
+'      left join orac_code.knowledge_scope_registry_v scope',
+'        on scope.scope_type = upper(loc.target_scope_type)',
+'       and scope.scope_key = loc.target_scope_key',
+'     where loc.drop_location_id = to_number(:P3_DROP_LOCATION_ID)',
+'  ) loop',
 '    l_html := ''<dl class="t-AVPList t-AVPList--leftAligned">'' ||',
 '              ''<dt>Location</dt><dd>'' || apex_escape.html(loc.location_code || '' - '' || loc.display_name) || ''</dd>'' ||',
 '              ''<dt>Path</dt><dd>'' || apex_escape.html(loc.path) || ''</dd>'' ||',
-'              ''<dt>Target</dt><dd>'' || apex_escape.html(loc.target_scope_type || '':'' || loc.target_scope_key) || ''</dd>'' ||',
+'              ''<dt>Target Scope Type</dt><dd>'' || apex_escape.html(loc.target_scope_type_label) || ''</dd>'' ||',
+'              ''<dt>'' || apex_escape.html(loc.target_label) || ''</dt><dd>'' || apex_escape.html(loc.target_display_name) || ''</dd>'' ||',
 '              ''<dt>Profile</dt><dd>'' || apex_escape.html(loc.processing_profile) || ''</dd>'' ||',
 '              ''<dt>Enabled</dt><dd>'' || apex_escape.html(loc.enabled_yn) || ''</dd>'' ||',
 '              ''<dt>Stable Seconds</dt><dd>'' || apex_escape.html(to_char(loc.stability_seconds)) || ''</dd>'' ||',

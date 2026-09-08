@@ -2,8 +2,8 @@
 """Inspect, reconcile, and migrate Core knowledge managed storage."""
 
 # Author: Clive Bostock
-# Date: 14-Aug-2026
-# Description: Runs read-only knowledge inspection and bounded migration batches.
+# Date: 07-Sep-2026
+# Description: Runs knowledge inspection, reprocessing, and migration operations.
 # Codex-assisted generated/modified.
 # Codex SDK reviewability guardrails followed.
 
@@ -42,6 +42,10 @@ from orac_core.knowledge.reconciliation import (
 from orac_core.knowledge.reconciliation import KnowledgeReconciliationRepository
 from orac_core.knowledge.reconciliation import KnowledgeReconciliationService
 from orac_core.knowledge.reconciliation import ReconciliationLimits
+from orac_core.knowledge.embeddings import knowledge_embedding_provider
+from orac_core.knowledge.reembedding import KnowledgeReembeddingService
+from orac_core.knowledge.repository import KnowledgeEmbeddingRepository
+from orac_core.knowledge.repository import KnowledgeIngestionRepository
 
 DEFAULT_APPLY_LIMIT = 25
 
@@ -74,6 +78,31 @@ def build_parser() -> argparse.ArgumentParser:
             action="store_true",
             help="Apply the bounded batch; without this flag the command is read-only.",
         )
+    reembed = subparsers.add_parser(
+        "reembed",
+        help="Build native semantic embeddings from existing normalized chunks.",
+    )
+    reembed.add_argument("--run-id", type=int, default=None)
+    reembed.add_argument("--batch-size", type=int, default=16)
+    reembed.add_argument("--max-batches", type=int, default=1000)
+    reembed.add_argument(
+        "--activate",
+        action="store_true",
+        help="Atomically activate the profile after complete validation.",
+    )
+    reembed.add_argument("--json", action="store_true")
+    activate_profile = subparsers.add_parser(
+        "activate-profile",
+        help="Atomically activate a complete, current native profile for rollback.",
+    )
+    activate_profile.add_argument("embedding_profile_id", type=int)
+    activate_profile.add_argument("--json", action="store_true")
+    retry_ingestion = subparsers.add_parser(
+        "retry-ingestion",
+        help="Requeue one failed ingestion request without recapturing its source.",
+    )
+    retry_ingestion.add_argument("ingestion_request_id", type=int)
+    retry_ingestion.add_argument("--json", action="store_true")
     return parser
 
 
@@ -252,13 +281,56 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         config = _config()
-        if args.command == "reconcile":
+        if args.command == "activate-profile":
+            repository = KnowledgeEmbeddingRepository()
+            repository.activate_profile(args.embedding_profile_id)
+            report = {
+                "schema_version": 1,
+                "operation": "activate_native_knowledge_profile",
+                "embedding_profile_id": args.embedding_profile_id,
+                "status": "ACTIVE",
+            }
+        elif args.command == "retry-ingestion":
+            KnowledgeIngestionRepository().requeue_failed_request(
+                args.ingestion_request_id
+            )
+            report = {
+                "schema_version": 1,
+                "operation": "retry_knowledge_ingestion",
+                "ingestion_request_id": args.ingestion_request_id,
+                "status": "QUEUED",
+            }
+        elif args.command == "reembed":
+            result = KnowledgeReembeddingService(
+                repository=KnowledgeEmbeddingRepository(),
+                embedding_provider=knowledge_embedding_provider(config),
+            ).run(
+                reembedding_run_id=args.run_id,
+                batch_size=args.batch_size,
+                max_batches=args.max_batches,
+                activate=args.activate,
+            )
+            report = {
+                "schema_version": 1,
+                "operation": "native_knowledge_reembedding",
+                "reembedding_run_id": result.reembedding_run_id,
+                "embedding_profile_id": result.embedding_profile_id,
+                "batches_processed": result.batches_processed,
+                "chunks_processed": result.chunks_processed,
+                "status": result.status,
+            }
+        elif args.command == "reconcile":
             report = _reconciliation_service(config, args).reconcile().as_dict()
         else:
             service = _service(config)
         if args.command == "preflight":
             report = service.preflight(scan_limit=args.scan_limit).as_dict()
-        elif args.command != "reconcile":
+        elif args.command not in {
+            "reconcile",
+            "reembed",
+            "activate-profile",
+            "retry-ingestion",
+        }:
             preliminary = service.preflight(scan_limit=args.scan_limit)
             candidates = (
                 preliminary.backfill

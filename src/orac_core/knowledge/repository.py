@@ -1,8 +1,10 @@
 """Database repository for Core knowledge ingestion APIs."""
 
 # Author: Clive Bostock
-# Date: 12-Jul-2026
+# Date: 07-Sep-2026
 # Description: Calls ORAC_CODE knowledge APIs through an Orac-owned runtime database session.
+# Codex-assisted generated/modified.
+# Codex SDK reviewability guardrails followed.
 
 from __future__ import annotations
 
@@ -156,6 +158,13 @@ class KnowledgeIngestionRepository:
             return int(request_id) if request_id is not None else None
         finally:
             _close_quietly(session)
+
+    def requeue_failed_request(self, ingestion_request_id: int) -> None:
+        """Requeue one failed request without changing its source lineage."""
+        self.call_procedure(
+            "requeue_failed_request",
+            [int(ingestion_request_id)],
+        )
 
     def request_detail(self, ingestion_request_id: int) -> dict[str, Any]:
         """Load request and source-object detail for worker processing."""
@@ -388,39 +397,23 @@ class KnowledgeIngestionRepository:
         finally:
             _close_quietly(session)
 
-    def insert_embedding(
-        self,
-        *,
-        chunk_id: int,
-        embedding_model_id: int,
-        vector: list[float],
-        embedding_text_sha256: str,
-    ) -> int:
-        """Persist one chunk embedding through the package API."""
-        return int(
-            self.call_function(
-                "insert_chunk_embedding",
-                int,
-                [
-                    chunk_id,
-                    embedding_model_id,
-                    json.dumps(vector, separators=(",", ":")),
-                    embedding_text_sha256,
-                ],
-            )
-        )
-
     def complete_request(
         self,
         *,
         ingestion_request_id: int,
         owner_id: str,
         lease_token: str,
+        embedding_profile_id: int,
     ) -> None:
         """Mark a leased request complete."""
         self.call_procedure(
             "complete_request",
-            [ingestion_request_id, owner_id, lease_token],
+            [
+                ingestion_request_id,
+                owner_id,
+                lease_token,
+                embedding_profile_id,
+            ],
         )
 
     def fail_request(
@@ -445,6 +438,183 @@ class KnowledgeIngestionRepository:
                 "Y" if retryable else "N",
             ],
         )
+
+
+class KnowledgeEmbeddingRepository:
+    """Persist and activate native knowledge embeddings through ORAC_CODE."""
+
+    _PACKAGE = "orac_code.knowledge_embedding_api"
+
+    def __init__(
+        self,
+        *,
+        session_factory: Callable[[], Any] | None = None,
+    ) -> None:
+        """Initialise native embedding access with an injectable session."""
+        self._session_factory = session_factory or default_orac_session
+
+    def ensure_profile(self, profile: Any) -> int:
+        """Register one immutable semantic profile and return its identity."""
+        return int(
+            self._call_function(
+                "ensure_profile",
+                int,
+                [
+                    profile.profile_version,
+                    profile.provider_code,
+                    profile.model_id,
+                    profile.model_digest,
+                    profile.document_input_prefix,
+                    profile.query_input_prefix,
+                    profile.retrieval_policy_version,
+                    profile.semantic_threshold,
+                ],
+            )
+        )
+
+    def active_profile(self) -> dict[str, Any] | None:
+        """Return the currently active production knowledge profile."""
+        raw = self._call_function("active_profile_json", oracledb.DB_TYPE_CLOB, [])
+        text = _optional_oracle_text(raw, field_name="active_profile_json")
+        if text is None:
+            return None
+        parsed = json.loads(text)
+        if not isinstance(parsed, dict):
+            raise TypeError("Active knowledge profile must be a JSON object.")
+        return parsed
+
+    def begin_run(self, embedding_profile_id: int) -> int:
+        """Create one resumable native re-embedding run."""
+        return int(
+            self._call_function(
+                "begin_reembedding_run",
+                int,
+                [int(embedding_profile_id)],
+            )
+        )
+
+    def open_run_chunks(
+        self,
+        *,
+        reembedding_run_id: int,
+        chunk_limit: int,
+    ) -> list[dict[str, Any]]:
+        """Load a bounded batch of normalized chunks missing native vectors."""
+        session = self._session_factory()
+        try:
+            with session.cursor() as cursor:
+                result_cursor = session.cursor()
+                try:
+                    cursor.callproc(
+                        f"{self._PACKAGE}.open_reembedding_chunks",
+                        [int(reembedding_run_id), int(chunk_limit), result_cursor],
+                    )
+                    columns = [item[0].lower() for item in result_cursor.description]
+                    rows = []
+                    for row in result_cursor.fetchall():
+                        materialized = {
+                            column: (
+                                _optional_oracle_text(value, field_name=column)
+                                if column == "chunk_text"
+                                else _materialize_query_value(value)
+                            )
+                            for column, value in zip(columns, row, strict=True)
+                        }
+                        rows.append(materialized)
+                    return rows
+                finally:
+                    result_cursor.close()
+        finally:
+            _close_quietly(session)
+
+    def store_native_embedding(
+        self,
+        *,
+        embedding_profile_id: int,
+        chunk_id: int,
+        embedding_text_sha256: str,
+        vector: list[float],
+        reembedding_run_id: int | None = None,
+    ) -> int:
+        """Store one vector natively; JSON is transient package input only."""
+        return int(
+            self._call_function(
+                "store_native_embedding",
+                int,
+                [
+                    int(embedding_profile_id),
+                    int(chunk_id),
+                    embedding_text_sha256,
+                    json.dumps(vector, separators=(",", ":"), allow_nan=False),
+                    reembedding_run_id,
+                ],
+            )
+        )
+
+    def validate_run(self, reembedding_run_id: int) -> None:
+        """Validate native coverage without promoting the profile."""
+        self._call_procedure(
+            "validate_reembedding_run",
+            [int(reembedding_run_id)],
+        )
+
+    def activate_run(self, reembedding_run_id: int) -> None:
+        """Atomically activate a validated native embedding run."""
+        self._call_procedure(
+            "activate_reembedding_run",
+            [int(reembedding_run_id)],
+        )
+
+    def activate_profile(self, embedding_profile_id: int) -> None:
+        """Atomically return to a previously validated, still-current profile."""
+        self._call_procedure(
+            "activate_profile",
+            [int(embedding_profile_id)],
+        )
+
+    def run_status(self, reembedding_run_id: int) -> dict[str, Any]:
+        """Return safe progress counters for one re-embedding run."""
+        raw = self._call_function(
+            "reembedding_run_status_json",
+            oracledb.DB_TYPE_CLOB,
+            [int(reembedding_run_id)],
+        )
+        text = _optional_oracle_text(raw, field_name="reembedding_run_status_json")
+        parsed = json.loads(text or "{}")
+        if not isinstance(parsed, dict):
+            raise TypeError("Re-embedding status must be a JSON object.")
+        return parsed
+
+    def _call_function(
+        self,
+        name: str,
+        return_type: Any,
+        parameters: list[Any],
+    ) -> Any:
+        """Call a lifecycle function and commit its transaction."""
+        session = self._session_factory()
+        try:
+            with session.cursor() as cursor:
+                result = cursor.callfunc(
+                    f"{self._PACKAGE}.{name}",
+                    return_type,
+                    parameters,
+                )
+                materialized = _materialize_query_value(result)
+            session.commit()
+            return materialized
+        finally:
+            _close_quietly(session)
+
+    def _call_procedure(self, name: str, parameters: list[Any]) -> None:
+        """Call a lifecycle procedure and commit its transaction."""
+        session = self._session_factory()
+        try:
+            with session.cursor() as cursor:
+                cursor.callproc(f"{self._PACKAGE}.{name}", parameters)
+            session.commit()
+        finally:
+            _close_quietly(session)
 
 
 def _optional_oracle_text(value: Any, *, field_name: str) -> str | None:
@@ -502,62 +672,66 @@ class KnowledgeRetrievalRepository:
         """Initialise authorised retrieval access with an injectable session."""
         self._session_factory = session_factory or default_orac_session
 
-    def open_search_candidates(
+    def open_hybrid_search_candidates(
         self,
         *,
         principal_username: str,
         target_scope_type: str,
         target_scope_key: str,
-        embedding_model_identifier: str,
-        embedding_dimensions: int,
-        candidate_limit: int,
+        embedding_profile_id: int,
+        query_vector: list[float],
+        lexical_tokens: list[str],
+        lexical_phrase: str,
+        semantic_limit: int = 50,
+        lexical_limit: int = 50,
         retrieval_id: str | None = None,
     ) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
-        """Authorise and load bounded searchable chunks in one package call."""
+        """Return the bounded Oracle semantic/lexical candidate union."""
         return self._call_with_cursor(
-            "open_search_candidates",
+            "open_hybrid_search_candidates",
             [
                 retrieval_id or str(uuid.uuid4()),
                 principal_username,
                 target_scope_type,
                 target_scope_key,
-                embedding_model_identifier,
-                int(embedding_dimensions),
-                int(candidate_limit),
+                int(embedding_profile_id),
+                json.dumps(query_vector, separators=(",", ":"), allow_nan=False),
+                json.dumps(lexical_tokens, separators=(",", ":")),
+                lexical_phrase,
+                int(semantic_limit),
+                int(lexical_limit),
             ],
-            row_defaults={
-                "embedding_model_identifier": embedding_model_identifier,
-                "embedding_dimensions": int(embedding_dimensions),
-            },
         )
 
-    def open_plugin_search_candidates(
+    def open_plugin_hybrid_candidates(
         self,
         *,
         principal_username: str,
         plugin_id: str,
-        embedding_model_identifier: str,
-        embedding_dimensions: int,
-        candidate_limit: int,
+        embedding_profile_id: int,
+        query_vector: list[float],
+        lexical_tokens: list[str],
+        lexical_phrase: str,
+        semantic_limit: int = 50,
+        lexical_limit: int = 50,
         retrieval_id: str | None = None,
         correlation_id: str | None = None,
     ) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
-        """Load candidates through the host-only, self-scoped plugin entry point."""
+        """Return plugin-scoped native hybrid candidates through the host bridge."""
         return self._call_with_cursor(
-            "open_plugin_search_candidates",
+            "open_plugin_hybrid_candidates",
             [
                 retrieval_id or str(uuid.uuid4()),
                 principal_username,
                 plugin_id,
-                embedding_model_identifier,
-                int(embedding_dimensions),
-                int(candidate_limit),
+                int(embedding_profile_id),
+                json.dumps(query_vector, separators=(",", ":"), allow_nan=False),
+                json.dumps(lexical_tokens, separators=(",", ":")),
+                lexical_phrase,
+                int(semantic_limit),
+                int(lexical_limit),
                 correlation_id,
             ],
-            row_defaults={
-                "embedding_model_identifier": embedding_model_identifier,
-                "embedding_dimensions": int(embedding_dimensions),
-            },
         )
 
     def resolve_request(

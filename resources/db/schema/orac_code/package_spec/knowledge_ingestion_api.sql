@@ -36,6 +36,10 @@ as
     p_lease_seconds in number default 300
   ) return number;
 
+  procedure requeue_failed_request(
+    p_ingestion_request_id in number
+  );
+
   procedure mark_stage(
     p_ingestion_request_id in number,
     p_owner_id             in varchar2,
@@ -89,13 +93,6 @@ as
     p_normalisation    in varchar2 default 'UNIT'
   ) return number;
 
-  function insert_chunk_embedding(
-    p_chunk_id              in number,
-    p_embedding_model_id    in number,
-    p_embedding_vector      in clob,
-    p_embedding_text_sha256 in varchar2
-  ) return number;
-
   function worker_output_set_json(
     p_extraction_id in number
   ) return clob;
@@ -103,7 +100,8 @@ as
   procedure complete_request(
     p_ingestion_request_id in number,
     p_owner_id             in varchar2,
-    p_lease_token          in varchar2
+    p_lease_token          in varchar2,
+    p_embedding_profile_id in number
   );
 
   procedure fail_request(

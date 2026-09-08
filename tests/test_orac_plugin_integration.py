@@ -604,7 +604,11 @@ class OracPluginIntegrationTests(unittest.TestCase):
         orchestrator._plugin_routing_bootstrap_on_startup = False
 
         with (
-            patch.object(orac_module, "HashEmbeddingProvider", _FakeEmbeddingProvider),
+            patch.object(
+                orac_module,
+                "DeterministicHashTestEmbeddingProvider",
+                _FakeEmbeddingProvider,
+            ),
             patch.object(orac_module, "PluginManager", _FakePluginManager),
             patch.object(orac_module, "PluginRouter", _FakePluginRouter),
             patch.object(orac_module, "PluginServiceManager", _FakePluginServiceManager),

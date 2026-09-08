@@ -10,20 +10,63 @@ with event_rollup as (
     from orac_api.knowledge_ingestion_events_v
    group by ingestion_request_id
 ),
+active_profile as (
+  select profile.embedding_profile_id,
+         profile.profile_version,
+         profile.model_digest,
+         profile.storage_layout_code,
+         model.provider_code,
+         model.model_name,
+         model.model_revision,
+         model.dimensions
+    from orac_api.knowledge_embedding_activations_v activation
+    join orac_api.knowledge_embedding_profiles_v profile
+      on profile.embedding_profile_id = activation.embedding_profile_id
+     and profile.purpose_code = activation.purpose_code
+     and profile.semantic_yn = 'Y'
+     and profile.production_allowed_yn = 'Y'
+    join orac_api.knowledge_embedding_models_v model
+      on model.embedding_model_id = profile.embedding_model_id
+     and model.dimensions > 0
+     and profile.storage_layout_code =
+         'ORACLE_VECTOR_' || to_char(model.dimensions) || '_FLOAT32_V1'
+   where activation.purpose_code = 'KNOWLEDGE_CHUNK_RETRIEVAL'
+),
+current_chunk_sets as (
+  select chs.*
+    from orac_api.knowledge_chunk_sets_v chs
+   where not exists (
+     select 1
+       from orac_api.knowledge_chunk_sets_v newer
+      where newer.extraction_id = chs.extraction_id
+        and nvl(newer.source_artefact_id, -1) =
+            nvl(chs.source_artefact_id, -1)
+        and newer.chunk_set_id > chs.chunk_set_id
+   )
+),
 artifact_rollup as (
   select req.ingestion_request_id,
          count(distinct ext.extraction_id) as extraction_count,
          count(distinct artf.artefact_id) as artefact_count,
          min(artset.complete_yn) as artefact_set_complete_yn,
          count(distinct chn.chunk_id) as chunk_count,
-         count(distinct emb.chunk_embedding_id) as embedded_chunk_count,
-         count(distinct modl.model_name || ':' || to_char(modl.dimensions)) as embedding_model_shape_count,
-         min(modl.model_name) as embedding_model_identifier,
-         min(modl.dimensions) as embedding_dimensions
+         count(distinct emb.chunk_vector_embedding_id) as embedded_chunk_count,
+         count(distinct case
+           when emb.chunk_vector_embedding_id is not null
+           then to_char(active.embedding_profile_id)
+         end) as embedding_model_shape_count,
+         min(case
+           when emb.chunk_vector_embedding_id is not null
+           then active.model_name
+         end) as embedding_model_identifier,
+         min(case
+           when emb.chunk_vector_embedding_id is not null
+           then active.dimensions
+         end) as embedding_dimensions
     from orac_api.knowledge_ingestion_requests_v req
     left join orac_api.knowledge_extractions_v ext
       on ext.document_version_id = req.document_version_id
-    left join orac_api.knowledge_chunk_sets_v chs
+    left join current_chunk_sets chs
       on chs.extraction_id = ext.extraction_id
     left join orac_api.knowledge_artefacts_v artf
       on artf.extraction_id = ext.extraction_id
@@ -31,10 +74,14 @@ artifact_rollup as (
       on artset.extraction_id = ext.extraction_id
     left join orac_api.knowledge_chunks_v chn
       on chn.chunk_set_id = chs.chunk_set_id
-    left join orac_api.knowledge_chunk_embeddings_v emb
+    left join active_profile active
+      on 1 = 1
+    left join orac_api.knowledge_chunk_vector_embeddings_v emb
       on emb.chunk_id = chn.chunk_id
-    left join orac_api.knowledge_embedding_models_v modl
-      on modl.embedding_model_id = emb.embedding_model_id
+     and emb.embedding_profile_id = active.embedding_profile_id
+     and emb.embedding_text_sha256 = chn.content_sha256
+     and vector_dimension_count(emb.embedding_vector) = active.dimensions
+     and vector_dimension_format(emb.embedding_vector) = 'FLOAT32'
    group by req.ingestion_request_id
 )
 select req.ingestion_request_id,

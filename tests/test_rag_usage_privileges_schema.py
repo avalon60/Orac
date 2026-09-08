@@ -166,7 +166,9 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
         document_view = _read(
             SCHEMA_ROOT / "orac_api" / "view" / "knowledge_documents_v.sql"
         )
-        searchable = _read(CODE_ROOT / "view" / "knowledge_searchable_chunks_v.sql")
+        searchable = _read(
+            CODE_ROOT / "view" / "knowledge_searchable_chunk_content_v.sql"
+        )
 
         self.assertIn("knowledge_scope_id", source_view)
         self.assertNotIn("target_scope_type", source_view)

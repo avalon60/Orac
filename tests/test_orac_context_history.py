@@ -12,6 +12,7 @@ from decimal import Decimal
 import json
 import os
 import re
+import tempfile
 from pathlib import Path
 import sys
 from datetime import datetime, timedelta, timezone
@@ -4337,6 +4338,33 @@ class OracContextManagerLoadTests(unittest.TestCase):
         self.assertEqual(result["conversation_id"], 99)
         self.assertEqual(result["session_id"], "clive#existing")
         self.assertLess(result["age_seconds"], 3600)
+
+
+class PromptDumpControlTests(unittest.TestCase):
+    """Verify one-shot prompt dumping overrides and consumes persistent state."""
+
+    def test_one_shot_dump_overrides_disabled_persistent_setting(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            orchestrator = Orac.__new__(Orac)
+            orchestrator.enable_prompt_dump = False
+            orchestrator._force_prompt_dump = False
+            orchestrator._dump_context_flag = Path(directory) / "dump-context.once"
+            orchestrator._dump_context_flag.touch()
+
+            self.assertTrue(orchestrator._should_dump_prompt())
+            self.assertFalse(orchestrator._dump_context_flag.exists())
+            self.assertFalse(orchestrator._should_dump_prompt())
+
+    def test_persistent_dumping_still_consumes_one_shot_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            orchestrator = Orac.__new__(Orac)
+            orchestrator.enable_prompt_dump = True
+            orchestrator._force_prompt_dump = False
+            orchestrator._dump_context_flag = Path(directory) / "dump-context.once"
+            orchestrator._dump_context_flag.touch()
+
+            self.assertTrue(orchestrator._should_dump_prompt())
+            self.assertFalse(orchestrator._dump_context_flag.exists())
 
 
 if __name__ == "__main__":

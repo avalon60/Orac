@@ -24,6 +24,28 @@ from orac_core.knowledge.managed_store import (  # noqa: E402
 )
 from orac_core.knowledge.managed_store import ManagedStoreError  # noqa: E402
 from orac_core.knowledge.worker import managed_store_failure  # noqa: E402
+from orac_core.knowledge.embeddings import KnowledgeEmbeddingProfile  # noqa: E402
+from model.plugin_routing.embeddings import (  # noqa: E402
+    DeterministicHashTestEmbeddingProvider,
+)
+
+
+def _test_embedding_provider() -> DeterministicHashTestEmbeddingProvider:
+    """Return the explicitly test-only deterministic embedding provider."""
+    provider = DeterministicHashTestEmbeddingProvider(dimensions=32)
+    provider.profile = KnowledgeEmbeddingProfile(  # type: ignore[attr-defined]
+        provider_code="test-fixture",
+        model_id=provider.model_id,
+        model_digest="a" * 64,
+        dimensions=32,
+        profile_version="knowledge-test-v1",
+        document_input_prefix="test-document:",
+        query_input_prefix="test-query:",
+        retrieval_policy_version="test-only",
+        semantic_threshold=0.0,
+        storage_layout_code="TEST_VECTOR_32_FLOAT_V1",
+    )
+    return provider
 
 
 class _Config:
@@ -75,6 +97,7 @@ class _Repository:
         self.inserted_chunk_metadata: list[str | None] = []
         self.chunk_sets: list[dict] = []
         self.output_sets: dict[int, dict] = {}
+        self.active_embedding_profile: dict | None = None
 
     def add_payload(self, request_id: int, text: str) -> None:
         payload = text.encode("utf-8")
@@ -225,27 +248,31 @@ class _Repository:
         )
         return chunk_no
 
-    def upsert_embedding_model(
-        self,
-        *,
-        provider_code: str,
-        model_name: str,
-        model_revision: str,
-        dimensions: int,
-    ) -> int:
-        del provider_code, model_name, model_revision, dimensions
+    def ensure_profile(self, profile: KnowledgeEmbeddingProfile) -> int:
+        """Register the isolated test profile."""
+        del profile
         return 77
 
-    def insert_embedding(
+    def store_native_embedding(
         self,
         *,
+        embedding_profile_id: int,
         chunk_id: int,
-        embedding_model_id: int,
         vector: list[float],
         embedding_text_sha256: str,
     ) -> None:
-        del embedding_model_id, vector, embedding_text_sha256
+        del embedding_profile_id, vector, embedding_text_sha256
         self.embeddings.append(chunk_id)
+
+    def active_profile(self) -> dict | None:
+        """Return the activated isolated test profile."""
+        return self.active_embedding_profile
+
+    def activate_profile(self, embedding_profile_id: int) -> None:
+        """Activate the isolated test profile."""
+        self.active_embedding_profile = {
+            "embedding_profile_id": embedding_profile_id,
+        }
 
     def complete_request(
         self,
@@ -253,8 +280,9 @@ class _Repository:
         ingestion_request_id: int,
         owner_id: str,
         lease_token: str,
+        embedding_profile_id: int,
     ) -> None:
-        del owner_id, lease_token
+        del owner_id, lease_token, embedding_profile_id
         self.completed.append(ingestion_request_id)
 
     def fail_request(
@@ -285,6 +313,7 @@ class KnowledgeIngestionWorkerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             service = KnowledgeIngestionService(
                 repository=_IdleRepository(),
+                embedding_provider=_test_embedding_provider(),
                 managed_root=Path(temp),
             )
             service.last_error = "previous package error"
@@ -310,6 +339,8 @@ class KnowledgeIngestionWorkerTests(unittest.TestCase):
             service = KnowledgeIngestionService(
                 config_mgr=_Config({"batch_size": 3}),
                 repository=repository,
+                embedding_repository=repository,
+                embedding_provider=_test_embedding_provider(),
                 managed_root=managed_root,
             )
 
@@ -336,6 +367,8 @@ class KnowledgeIngestionWorkerTests(unittest.TestCase):
             service = KnowledgeIngestionService(
                 config_mgr=_Config({"batch_size": 2}),
                 repository=repository,
+                embedding_repository=repository,
+                embedding_provider=_test_embedding_provider(),
                 managed_root=managed_root,
             )
 
@@ -351,6 +384,8 @@ class KnowledgeIngestionWorkerTests(unittest.TestCase):
             repository.add_payload(1, " \n\t ")
             service = KnowledgeIngestionService(
                 repository=repository,
+                embedding_repository=repository,
+                embedding_provider=_test_embedding_provider(),
                 managed_root=managed_root,
             )
 
@@ -375,6 +410,8 @@ class KnowledgeIngestionWorkerTests(unittest.TestCase):
             )
             service = KnowledgeIngestionService(
                 repository=repository,
+                embedding_repository=repository,
+                embedding_provider=_test_embedding_provider(),
                 managed_root=managed_root,
             )
 
@@ -417,6 +454,8 @@ class KnowledgeIngestionWorkerTests(unittest.TestCase):
 
             KnowledgeIngestionService(
                 repository=repository,
+                embedding_repository=repository,
+                embedding_provider=_test_embedding_provider(),
                 managed_root=managed_root,
             ).tick(object())
 
@@ -474,6 +513,8 @@ class KnowledgeIngestionWorkerTests(unittest.TestCase):
             KnowledgeIngestionService(
                 config_mgr=_Config({"chunk_size_tokens": 5}),
                 repository=repository,
+                embedding_repository=repository,
+                embedding_provider=_test_embedding_provider(),
                 managed_root=managed_root,
             ).tick(object())
 

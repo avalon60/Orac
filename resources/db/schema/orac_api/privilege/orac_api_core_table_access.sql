@@ -124,10 +124,6 @@ grant select, insert, update, delete on orac_core.knowledge_chunks to orac_api w
 grant select, insert, update, delete on orac_core.knowledge_embedding_models to orac_api with grant option;
 --rollback revoke select, insert, update, delete on orac_core.knowledge_embedding_models from orac_api;
 
---changeset clive:grant_orac_core_knowledge_chunk_embeddings_to_orac_api_32 context:core labels:core stripComments:false runOnChange:true
-grant select, insert, update, delete on orac_core.knowledge_chunk_embeddings to orac_api with grant option;
---rollback revoke select, insert, update, delete on orac_core.knowledge_chunk_embeddings from orac_api;
-
 --changeset clive:grant_orac_core_knowledge_ingestion_events_to_orac_api_33 context:core labels:core stripComments:false runOnChange:true
 grant select, insert, update, delete on orac_core.knowledge_ingestion_events to orac_api with grant option;
 --rollback revoke select, insert, update, delete on orac_core.knowledge_ingestion_events from orac_api;

@@ -1,23 +1,29 @@
 --liquibase formatted sql
+-- Author: Clive Bostock
+-- Date: 07-Sep-2026
+-- Description: Projects only the current chunk lineage without embedding storage.
+-- Codex-assisted generated/modified.
+-- Codex SDK reviewability guardrails followed.
 
---changeset clive:create_view_orac_code_knowledge_searchable_chunks_v context:core labels:core stripComments:false runOnChange:true
-create or replace force view orac_code.knowledge_searchable_chunks_v as
+--changeset clive:create_view_orac_code_knowledge_searchable_chunk_content_v context:core labels:core stripComments:false runOnChange:true
+create or replace force view orac_code.knowledge_searchable_chunk_content_v as
 select req.ingestion_request_id,
        src.source_object_id,
        src.source_type,
        src.source_reference,
        src.parent_source_reference,
        doc.document_id,
+       scope.knowledge_scope_id,
        scope.scope_type target_scope_type,
        coalesce(project.project_code, plugin.plugin_id) target_scope_key,
        doc.title,
        ver.document_version_id,
-       ver.content_sha256 as revision_content_sha256,
+       ver.content_sha256 revision_content_sha256,
        ver.mime_type,
        ver.source_format_code,
        ver.original_filename,
        ext.extraction_id,
-       ext.text_sha256 as normalised_text_sha256,
+       ext.text_sha256 normalised_text_sha256,
        ext.output_mime_type,
        ext.extractor_code,
        ext.extractor_version,
@@ -42,7 +48,7 @@ select req.ingestion_request_id,
        chn.span_start,
        chn.span_end,
        chn.token_count,
-       chn.content_sha256 as chunk_content_sha256,
+       chn.content_sha256 chunk_content_sha256,
        chn.chunk_text,
        chn.chunk_metadata_json,
        (
@@ -55,16 +61,7 @@ select req.ingestion_request_id,
           where link.document_version_id = ver.document_version_id
             and link.doc_class_domain_code = 'DOC_CLASS'
        ) classification_tags_json,
-       emb.chunk_embedding_id,
-       emb.embedding_vector,
-       emb.embedding_text_sha256,
-       modl.embedding_model_id,
-       modl.provider_code,
-       modl.model_name as embedding_model_identifier,
-       modl.model_revision,
-       modl.dimensions as embedding_dimensions,
-       modl.distance_metric,
-       modl.normalisation,
+       req.processing_profile_code,
        req.completed_on,
        chn.created_on
   from orac_api.knowledge_ingestion_requests_v req
@@ -92,12 +89,16 @@ select req.ingestion_request_id,
     on artset.extraction_id = ext.extraction_id
   join orac_api.knowledge_chunks_v chn
     on chn.chunk_set_id = chs.chunk_set_id
-  join orac_api.knowledge_chunk_embeddings_v emb
-    on emb.chunk_id = chn.chunk_id
-  join orac_api.knowledge_embedding_models_v modl
-    on modl.embedding_model_id = emb.embedding_model_id
  where req.status_code = 'COMPLETED'
    and req.stage_code = 'COMPLETED'
+   and not exists (
+     select 1
+       from orac_api.knowledge_chunk_sets_v newer
+      where newer.extraction_id = chs.extraction_id
+        and nvl(newer.source_artefact_id, -1) =
+            nvl(chs.source_artefact_id, -1)
+        and newer.chunk_set_id > chs.chunk_set_id
+   )
    and (
      (chs.source_artefact_id is null
       and not exists (
@@ -111,4 +112,4 @@ select req.ingestion_request_id,
       and artset.complete_yn = 'Y')
    )
    and dbms_lob.getlength(chn.chunk_text) > 0;
---rollback drop view orac_code.knowledge_searchable_chunks_v;
+--rollback drop view orac_code.knowledge_searchable_chunk_content_v;

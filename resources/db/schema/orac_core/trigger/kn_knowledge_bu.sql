@@ -199,20 +199,3 @@ begin
 end;
 /
 --rollback drop trigger orac_core.kn_embmod_bu;
-
---changeset clive:create_trigger_orac_core_kn_chnkemb_bu context:core labels:core stripComments:false splitStatements:false endDelimiter:/ runOnChange:true
-create or replace trigger orac_core.kn_chnkemb_bu
-before update on orac_core.knowledge_chunk_embeddings
-for each row
-begin
-  :new.updated_on := systimestamp;
-  :new.updated_by := coalesce(
-                       sys_context('apex$session', 'app_user'),
-                       sys_context('userenv', 'proxy_user'),
-                       sys_context('userenv', 'session_user'),
-                       user
-                     );
-  :new.row_version := nvl(:old.row_version, 1) + 1;
-end;
-/
---rollback drop trigger orac_core.kn_chnkemb_bu;

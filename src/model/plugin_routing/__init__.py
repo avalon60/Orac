@@ -5,7 +5,8 @@
 
 from typing import Any
 
-from model.plugin_routing.embeddings import EmbeddingProvider, HashEmbeddingProvider
+from model.plugin_routing.embeddings import DeterministicHashTestEmbeddingProvider
+from model.plugin_routing.embeddings import EmbeddingProvider
 from model.plugin_routing.handoff import PluginRoutingHandoff, render_plugin_routing_hints
 from model.plugin_routing.models import (
     PluginCandidate,
@@ -40,7 +41,7 @@ def __getattr__(name: str) -> Any:
 
 __all__ = [
     "EmbeddingProvider",
-    "HashEmbeddingProvider",
+    "DeterministicHashTestEmbeddingProvider",
     "PluginApexApp",
     "PluginApexSurfaceMetadata",
     "PluginCandidate",

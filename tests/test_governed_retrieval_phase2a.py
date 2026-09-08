@@ -25,6 +25,9 @@ from orac_core.governed_retrieval import EffectiveToolModeResolver  # noqa: E402
 from orac_core.governed_retrieval import GovernedRetrievalConfiguration  # noqa: E402
 from orac_core.governed_retrieval import GovernedRetrievalToolCoordinator  # noqa: E402
 from orac_core.governed_retrieval import ModelToolCapabilityEvidence  # noqa: E402
+from orac_core.governed_retrieval import (  # noqa: E402
+    REQUIRED_RETRIEVAL_UNAVAILABLE_MESSAGE,
+)
 from orac_core.governed_retrieval import StreamingHealthKey  # noqa: E402
 from orac_core.governed_retrieval import StreamingToolHealthTracker  # noqa: E402
 from orac_core.governed_retrieval import ToolDecisionMode  # noqa: E402
@@ -79,6 +82,28 @@ class _Connector:
         yield from self.initial
 
 
+class _SequenceConnector:
+    """Return distinct required-decision attempts and one final continuation."""
+
+    def __init__(self, attempts, final=()) -> None:
+        self.attempts = [list(events) for events in attempts]
+        self.final = list(final)
+        self.invocations = []
+
+    def stream_tool_events(self, *, messages, tools, generation_options):
+        """Yield the next decision attempt or the grounded continuation."""
+        self.invocations.append((messages, tools, generation_options, "stream"))
+        if tools:
+            yield from self.attempts.pop(0)
+        else:
+            yield from self.final
+
+    def buffered_tool_events(self, *, messages, tools, generation_options):
+        """Yield the next decision attempt in buffered mode."""
+        self.invocations.append((messages, tools, generation_options, "buffered"))
+        yield from self.attempts.pop(0)
+
+
 class _Config:
     """ConfigManager-compatible fixture."""
 
@@ -128,12 +153,21 @@ class GovernedRetrievalConfigurationTests(unittest.TestCase):
 
     def test_defaults_load_and_invalid_bounds_fail(self):
         config = GovernedRetrievalConfiguration.from_config(_Config())
+        self.assertTrue(config.enabled)
+        self.assertTrue(config.domain_discovery_enabled)
+        self.assertFalse(config.domain_discovery_shadow_mode)
+        self.assertEqual(config.min_effective_context_tokens, 32768)
         self.assertEqual(config.stream_commit_delay_ms, 350)
         self.assertEqual(config.stream_commit_max_characters, 128)
         with self.assertRaises(ValueError):
             GovernedRetrievalConfiguration(stream_commit_delay_ms=99)
         with self.assertRaises(ValueError):
             GovernedRetrievalConfiguration(stream_commit_max_characters=513)
+        with self.assertRaises(ValueError):
+            GovernedRetrievalConfiguration(
+                domain_discovery_enabled=True,
+                domain_discovery_shadow_mode=True,
+            )
 
 
 class GovernedRetrievalCoordinatorTests(unittest.TestCase):
@@ -220,6 +254,135 @@ class GovernedRetrievalCoordinatorTests(unittest.TestCase):
         self.assertTrue(result.retrieval_executed)
         self.assertEqual(result.tool_call_timing, "EARLY")
         self.assertEqual(connector.invocations[1][1], [])
+
+    def test_required_retrieval_uses_compact_decision_then_full_grounded_context(
+        self,
+    ) -> None:
+        connector = _SequenceConnector(
+            [
+                [
+                    ToolStreamEvent(
+                        Kind.ASSISTANT_TEXT_DELTA,
+                        text="I can answer without checking.",
+                    ),
+                    ToolStreamEvent(Kind.ASSISTANT_COMPLETION, finish_reason="stop"),
+                ],
+                _tool_events(),
+            ],
+            [
+                ToolStreamEvent(
+                    Kind.ASSISTANT_TEXT_DELTA,
+                    text="Grounded from authorised evidence.",
+                ),
+                ToolStreamEvent(Kind.ASSISTANT_COMPLETION, finish_reason="stop"),
+            ],
+        )
+        execution = self.coordinator.begin(
+            connector=connector,
+            messages=[{"role": "user", "content": "What is the AI OS?"}],
+            answer_messages=[
+                {"role": "system", "content": "ordinary policy"},
+                {"role": "user", "content": "COMPLETE FLATTENED PROMPT"},
+            ],
+            mode=ToolDecisionMode.STREAMING,
+            allowed_domains=(RetrievalDomain.CONVERSATION,),
+            context=_context(),
+            retrieval_required=True,
+            retrieval_requirement_reasons=("SEMANTIC_DOMAIN_MATCH",),
+        )
+
+        self.assertEqual(
+            "".join(execution.stream()),
+            "Grounded from authorised evidence.",
+        )
+        self.assertEqual(len(connector.invocations), 3)
+        self.assertEqual(
+            connector.invocations[0][0][-1]["content"],
+            "What is the AI OS?",
+        )
+        self.assertNotIn(
+            "COMPLETE FLATTENED PROMPT",
+            str(connector.invocations[0][0]),
+        )
+        self.assertIn(
+            "host has determined that retrieval is required",
+            str(connector.invocations[0][0]).lower(),
+        )
+        self.assertIn(
+            "retrieval remains required",
+            str(connector.invocations[1][0]).lower(),
+        )
+        self.assertIn(
+            "COMPLETE FLATTENED PROMPT",
+            str(connector.invocations[-1][0]),
+        )
+        self.assertEqual(connector.invocations[-1][1], [])
+        self.assertTrue(execution.result.retrieval_executed)
+        self.assertEqual(execution.result.decision_attempt_count, 2)
+        self.assertEqual(
+            execution.result.discarded_decision_characters,
+            len("I can answer without checking."),
+        )
+        self.assertEqual(execution.result.characters_before_commit, 0)
+
+    def test_required_retrieval_never_commits_prose_after_two_no_tool_attempts(
+        self,
+    ) -> None:
+        connector = _SequenceConnector(
+            [
+                [ToolStreamEvent(Kind.ASSISTANT_TEXT_DELTA, text="First answer.")],
+                [ToolStreamEvent(Kind.ASSISTANT_TEXT_DELTA, text="Second answer.")],
+            ]
+        )
+        execution = self.coordinator.begin(
+            connector=connector,
+            messages=[{"role": "user", "content": "Check your knowledge base."}],
+            mode=ToolDecisionMode.STREAMING,
+            allowed_domains=(RetrievalDomain.CONVERSATION,),
+            context=_context(),
+            retrieval_required=True,
+            retrieval_requirement_reasons=("EXPLICIT_LOCAL_RETRIEVAL_INTENT",),
+        )
+
+        self.assertEqual(
+            "".join(execution.stream()),
+            REQUIRED_RETRIEVAL_UNAVAILABLE_MESSAGE,
+        )
+        self.assertEqual(len(connector.invocations), 2)
+        self.assertFalse(execution.result.retrieval_executed)
+        self.assertEqual(execution.result.decision_attempt_count, 2)
+        self.assertEqual(execution.result.characters_before_commit, 0)
+        self.assertEqual(
+            execution.result.discarded_decision_characters,
+            len("First answer.Second answer."),
+        )
+        self.assertIn(
+            "REQUIRED_TOOL_CALL_NOT_EMITTED",
+            execution.result.reason_codes,
+        )
+
+    def test_required_retrieval_discards_prose_before_a_valid_call(self) -> None:
+        connector = _SequenceConnector(
+            [[ToolStreamEvent(Kind.ASSISTANT_TEXT_DELTA, text="Let me guess. ")] + _tool_events()],
+            [ToolStreamEvent(Kind.ASSISTANT_TEXT_DELTA, text="Grounded answer.")],
+        )
+        execution = self.coordinator.begin(
+            connector=connector,
+            messages=[{"role": "user", "content": "question"}],
+            mode=ToolDecisionMode.STREAMING,
+            allowed_domains=(RetrievalDomain.CONVERSATION,),
+            context=_context(),
+            retrieval_required=True,
+            retrieval_requirement_reasons=("SEMANTIC_DOMAIN_MATCH",),
+        )
+
+        self.assertEqual("".join(execution.stream()), "Grounded answer.")
+        self.assertEqual(execution.result.decision_attempt_count, 1)
+        self.assertEqual(
+            execution.result.discarded_decision_characters,
+            len("Let me guess. "),
+        )
+        self.assertEqual(execution.result.characters_before_commit, 0)
 
     def test_late_tool_is_ignored_when_provider_continues(self):
         connector = _Connector(
@@ -333,6 +496,19 @@ class GovernedRetrievalCoordinatorTests(unittest.TestCase):
                 decoded = json.loads(payload)
                 self.assertEqual(decoded["domain"], domain.value)
                 self.assertEqual(len(decoded["evidence"][0]["text"]), 128)
+                self.assertIn(
+                    "Fresh authorised retrieved evidence supersedes conflicting "
+                    "previous assistant statements.",
+                    decoded["instruction"],
+                )
+                self.assertIn(
+                    "using only the retrieved evidence",
+                    decoded["instruction"],
+                )
+                self.assertIn(
+                    "do not fill gaps from prior knowledge",
+                    decoded["instruction"],
+                )
 
 
 class GovernedRetrievalCapabilityHealthTests(unittest.TestCase):

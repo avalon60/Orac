@@ -37,7 +37,9 @@ from model.plugin_database_deployment import validate_plugin_bridge_api_catalog
 from model.plugin_database_deployment import validate_plugin_liquibase_changelog
 from model.plugin_database_deployment import validate_schema_payload
 from model.plugin_routing.discovery import PluginDiscovery
-from model.plugin_routing.embeddings import HashEmbeddingProvider
+from model.plugin_routing.embeddings import (
+    DeterministicHashTestEmbeddingProvider as HashEmbeddingProvider,
+)
 from model.plugin_routing.manager import PluginManager
 
 
