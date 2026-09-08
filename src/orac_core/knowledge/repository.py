@@ -639,9 +639,7 @@ def _optional_oracle_text(value: Any, *, field_name: str) -> str | None:
         raise TypeError(f"Core knowledge {field_name} must be text or an Oracle LOB.")
     payload = read_value()
     if not isinstance(payload, str):
-        raise TypeError(
-            f"Core knowledge {field_name} Oracle LOB must contain text."
-        )
+        raise TypeError(f"Core knowledge {field_name} Oracle LOB must contain text.")
     return payload
 
 
@@ -732,6 +730,35 @@ class KnowledgeRetrievalRepository:
                 int(lexical_limit),
                 correlation_id,
             ],
+        )
+
+    def open_authorised_project_candidates(
+        self,
+        *,
+        principal_username: str,
+        embedding_profile_id: int,
+        query_vector: list[float],
+        lexical_tokens: list[str],
+        lexical_phrase: str,
+        semantic_limit: int = 50,
+        lexical_limit: int = 50,
+        retrieval_id: str | None = None,
+        timeout_seconds: float = 10.0,
+    ) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
+        """Return a global candidate union from every authorised project."""
+        return self._call_with_cursor(
+            "open_authorised_project_candidates",
+            [
+                retrieval_id or str(uuid.uuid4()),
+                principal_username,
+                int(embedding_profile_id),
+                json.dumps(query_vector, separators=(",", ":"), allow_nan=False),
+                json.dumps(lexical_tokens, separators=(",", ":")),
+                lexical_phrase,
+                int(semantic_limit),
+                int(lexical_limit),
+            ],
+            timeout_ms=max(1, int(timeout_seconds * 1000)),
         )
 
     def resolve_request(
@@ -914,11 +941,14 @@ class KnowledgeRetrievalRepository:
         inputs: list[Any],
         *,
         row_defaults: dict[str, Any] | None = None,
+        timeout_ms: int | None = None,
     ) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
         """Materialise package CLOB/cursor outputs before closing the session."""
         session = self._session_factory()
         retrieval_id = str(inputs[0])
         try:
+            if timeout_ms is not None:
+                session.call_timeout = timeout_ms
             with session.cursor() as cursor:
                 resolution_var = cursor.var(oracledb.DB_TYPE_CLOB)
                 result_cursor = session.cursor()

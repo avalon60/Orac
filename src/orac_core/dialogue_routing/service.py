@@ -13,11 +13,6 @@ from orac_core.retrieval import detect_explicit_search_directive
 
 from .models import DialogueRouteDecision
 
-_KNOWLEDGE_QUESTION = re.compile(
-    r"\b(?:how|what|where|why|when|which|configure|configuration|document|"
-    r"documentation|guardrail|decision|decided|processing profile)\b",
-    re.IGNORECASE,
-)
 _EXPLICIT_NAMED_KNOWLEDGE_SOURCE = re.compile(
     r"\b(?:use|search|query|consult)\s+(?:the\s+)?"
     r"(?P<name>[a-z0-9][a-z0-9 ._:-]{0,80}?)\s+knowledge\s+"
@@ -88,6 +83,14 @@ class DialogueRoutingService:
             external_search_request=request,
         )
 
+    @staticmethod
+    def materialisation_purpose(prompt: str) -> str | None:
+        """Return the broad-document purpose expressed by a prompt, if any."""
+        intent = _BROAD_DOCUMENT_INTENT.search(prompt)
+        if intent is None:
+            return None
+        return _MATERIALISATION_PURPOSES[intent.group("purpose").casefold()]
+
     def knowledge_route(
         self,
         prompt: str,
@@ -95,7 +98,6 @@ class DialogueRoutingService:
         authenticated_username: str,
     ) -> DialogueRouteDecision | None:
         """Resolve an explicit or aliased knowledge source without fallthrough."""
-        lowered = prompt.casefold()
         unnamed_match = _EXPLICIT_UNNAMED_KNOWLEDGE_SOURCE.search(prompt)
         named_match = (
             None
@@ -107,17 +109,15 @@ class DialogueRoutingService:
         if named_match is not None:
             requested = (named_match.group("name").strip(),)
         elif unnamed_match is not None:
-            explicit_knowledge_request = True
-            requested = ()
-        elif _KNOWLEDGE_QUESTION.search(prompt) is not None:
-            requested = tuple(
-                alias
-                for alias in sorted(
-                    self._scope_authorizer.aliases,
-                    key=len,
-                    reverse=True,
-                )
-                if re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", lowered)
+            intent = _BROAD_DOCUMENT_INTENT.search(prompt)
+            return DialogueRouteDecision(
+                route_type="knowledge_auto",
+                reason_codes=("authorised_project_search_requested",),
+                materialisation_purpose=(
+                    _MATERIALISATION_PURPOSES[intent.group("purpose").casefold()]
+                    if intent is not None
+                    else None
+                ),
             )
         else:
             requested = ()

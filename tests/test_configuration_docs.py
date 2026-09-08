@@ -67,6 +67,8 @@ CONVERSATION_GUIDE_SHIPPED_SETTINGS = (
     ("governed_retrieval", "domain_discovery_shadow_mode"),
     ("knowledge", "enabled"),
     ("knowledge.dialogue", "enabled"),
+    ("knowledge.dialogue", "automatic_project_search_enabled"),
+    ("knowledge.dialogue", "automatic_project_search_timeout_seconds"),
     ("knowledge.retrieval", "enabled"),
     ("knowledge.materialisation", "enabled"),
     ("knowledge.model_evidence", "enabled"),
@@ -132,10 +134,7 @@ def test_shipped_profiles_use_explicit_dsn_credential_entry_keys() -> None:
         parser.read(config_path, encoding="utf-8")
 
         assert parser.get("database", "dsn_credential_entry") == "orac-service"
-        assert (
-            parser.get("database", "plugin_dsn_credential_entry")
-            == "orac-plugin"
-        )
+        assert parser.get("database", "plugin_dsn_credential_entry") == "orac-plugin"
         assert not parser.has_option("database", "connection_name")
         assert not parser.has_option("database", "plugin_connection_name")
 
@@ -163,10 +162,7 @@ def test_dsn_credential_entry_environment_overrides(
 
     config = ConfigManager(config_file_path=config_path)
 
-    assert (
-        config.config_value("database", "dsn_credential_entry")
-        == "environment-core"
-    )
+    assert config.config_value("database", "dsn_credential_entry") == "environment-core"
     assert (
         config.config_value("database", "plugin_dsn_credential_entry")
         == "environment-plugin"

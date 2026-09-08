@@ -1738,10 +1738,12 @@ principal and canonical scope.
 | Key | Shipped value | Contract |
 |---|---|---|
 | `enabled` | `true` | Enables dialogue retrieval; ingestion remains controlled by `[knowledge].enabled`. |
+| `automatic_project_search_enabled` | `true` | Searches content in every currently authorised active PROJECT scope before ordinary answer generation. |
+| `automatic_project_search_timeout_seconds` | `10` | Total automatic-search deadline; the Oracle call is cancelled when the deadline expires. |
 | `scope_aliases_json` | `{"orac":"PROJECT:ORAC_CORE","orac core":"PROJECT:ORAC_CORE","drop box":"PLUGIN:drop_box"}` | JSON object mapping case-insensitive dialogue aliases to canonical scopes. Unknown or ambiguous aliases do not retrieve. |
 | `registry_cache_ttl_seconds` | `30` | Positive lifetime for active-scope registry snapshots. An expired refresh failure denies retrieval rather than serving stale eligibility. |
 | `max_scopes_per_request` | `3` | Maximum requested canonical scopes. The first vertical slice routes one explicit scope. |
-| `max_candidate_chunks_per_scope` | `100` | Hard cap on the bounded union of up to 50 semantic and 50 lexical candidates. |
+| `max_candidate_chunks_per_scope` | `100` | Compatibility-named hard cap on the global automatic union of up to 50 semantic and 50 lexical candidates; scoped retrieval uses the same cap. |
 | `max_selected_chunks` | `6` | Maximum chunks injected into one prompt. |
 | `max_context_chars` | `12000` | Total local evidence character budget. |
 | `max_chunk_chars` | `2200` | Per-chunk evidence character budget. |
@@ -1752,6 +1754,18 @@ principal and canonical scope.
 Boolean master switch for local-knowledge dialogue retrieval. The shipped value
 is `true`; the runtime fallback remains `false` when the setting is absent.
 Set it explicitly to `false` to disable dialogue retrieval.
+
+### `automatic_project_search_enabled`
+
+Boolean switch for host-controlled search across all active PROJECT scopes the
+authenticated principal may currently use. Shipped value: `true`. Project
+descriptions, display names, aliases, and Drop Box locations are not relevance
+gates. Explicitly setting this to `false` restores the prior application path.
+
+### `automatic_project_search_timeout_seconds`
+
+Positive total deadline in seconds for an automatic project search. Shipped
+value: `10`. The database driver receives the same cancellation deadline.
 
 ### `scope_aliases_json`
 
@@ -1771,7 +1785,8 @@ Positive cap on canonical scopes requested in one turn. Shipped value: `3`.
 
 ### `max_candidate_chunks_per_scope`
 
-Hard candidate-union cap per scope. Shipped value: `100`.
+Hard candidate-union cap. Shipped value: `100`. Automatic project search
+applies it globally across authorised projects rather than once per project.
 
 ### `max_selected_chunks`
 

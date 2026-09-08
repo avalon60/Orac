@@ -128,6 +128,14 @@ class _Repository:
             self.rows,
         )
 
+    def open_authorised_project_candidates(self, **kwargs):
+        self.calls.append(kwargs)
+        return (
+            kwargs["retrieval_id"],
+            {"status": "APPROVED", "reason_code": "RETRIEVAL_APPROVED"},
+            self.rows,
+        )
+
     def record_outcome(self, **kwargs) -> None:
         self.outcomes.append(kwargs)
 
@@ -153,14 +161,16 @@ class _ResultCursor:
         ]
 
     def fetchall(self):
-        return [(
-            self._session.vector,
-            self._session.chunk_text,
-            self._session.classification,
-            self._session.native_json,
-            self._session.extractor_metadata,
-            self._session.artefact_metadata,
-        )]
+        return [
+            (
+                self._session.vector,
+                self._session.chunk_text,
+                self._session.classification,
+                self._session.native_json,
+                self._session.extractor_metadata,
+                self._session.artefact_metadata,
+            )
+        ]
 
     def close(self) -> None:
         return None
@@ -270,20 +280,24 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(KnowledgeRetrievalError, "requires"):
             service.search(
-                "lumen", target_scope_type="", target_scope_key="",
+                "lumen",
+                target_scope_type="",
+                target_scope_key="",
                 principal_username="clive",
             )
 
     def test_query_dimensions_follow_the_active_profile_contract(self) -> None:
         """Generic retrieval must not encode the current Nomic dimensions."""
         service = KnowledgeRetrievalService(
-            repository=_Repository([
-                _row(
-                    embedding_model_identifier="test-semantic-3d",
-                    embedding_dimensions=3,
-                    embedding_profile_id=23,
-                )
-            ]),
+            repository=_Repository(
+                [
+                    _row(
+                        embedding_model_identifier="test-semantic-3d",
+                        embedding_dimensions=3,
+                        embedding_profile_id=23,
+                    )
+                ]
+            ),
             embedding_repository=_ThreeDimensionEmbeddingRepository(),
             embedding_provider=_ThreeDimensionProvider(),
         )
@@ -298,10 +312,12 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].embedding_dimensions, 3)
 
-    def test_plugin_retrieval_uses_narrow_repository_path_and_audits_chunks(self) -> None:
-        repository = _Repository([
-            _row(target_scope_type="PLUGIN", target_scope_key="weather")
-        ])
+    def test_plugin_retrieval_uses_narrow_repository_path_and_audits_chunks(
+        self,
+    ) -> None:
+        repository = _Repository(
+            [_row(target_scope_type="PLUGIN", target_scope_key="weather")]
+        )
         service = KnowledgeRetrievalService(
             repository=repository,
             embedding_repository=_EmbeddingRepository(),
@@ -345,12 +361,8 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         self.assertEqual(rows[0]["chunk_text"], "stable scanner evidence")
         self.assertEqual(rows[0]["classification_tags_json"], '["RAW_REFERENCE"]')
         self.assertEqual(rows[0]["chunk_metadata_json"], session.native_json)
-        self.assertEqual(
-            rows[0]["extractor_metadata_json"], session.extractor_metadata
-        )
-        self.assertEqual(
-            rows[0]["artefact_metadata_json"], session.artefact_metadata
-        )
+        self.assertEqual(rows[0]["extractor_metadata_json"], session.extractor_metadata)
+        self.assertEqual(rows[0]["artefact_metadata_json"], session.artefact_metadata)
         self.assertEqual(session.vector.read_count, 1)
         self.assertEqual(session.chunk_text.read_count, 1)
         self.assertEqual(session.classification.read_count, 1)
@@ -433,27 +445,115 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertGreaterEqual(results[0].score, 0.75)
 
+    def test_authorised_project_search_ranks_globally_without_descriptor_input(
+        self,
+    ) -> None:
+        repository = _Repository(
+            [
+                _row(
+                    chunk_id=501,
+                    target_scope_key="GENERAL_DOCS",
+                    semantic_rank=2,
+                    lexical_rank=2,
+                ),
+                _row(
+                    chunk_id=502,
+                    target_scope_key="AI_DOCS",
+                    semantic_rank=1,
+                    lexical_rank=1,
+                    original_filename="AI-OS-Book.docx",
+                ),
+            ]
+        )
+        service = KnowledgeRetrievalService(
+            repository=repository,
+            embedding_repository=_EmbeddingRepository(),
+            embedding_provider=_Provider(),
+        )
+
+        outcome = service.retrieve_authorised_projects(
+            "Please summarise John Elder's AI-OS.",
+            principal_username="clive",
+            max_selected_chunks=2,
+            timeout_seconds=10,
+        )
+
+        self.assertEqual(outcome.status, "grounded")
+        self.assertIsNone(outcome.scope)
+        self.assertEqual(
+            tuple(scope.canonical_name for scope in outcome.scopes),
+            ("PROJECT:AI_DOCS", "PROJECT:GENERAL_DOCS"),
+        )
+        self.assertEqual(outcome.results[0].chunk_id, 502)
+        self.assertEqual(repository.calls[0]["timeout_seconds"], 10)
+        self.assertNotIn("target_scope_key", repository.calls[0])
+
+    def test_authorised_project_search_can_focus_lexical_follow_up_terms(
+        self,
+    ) -> None:
+        """Contextual semantics and current-turn lexical intent remain separate."""
+        repository = _Repository([_row()])
+        service = KnowledgeRetrievalService(
+            repository=repository,
+            embedding_repository=_EmbeddingRepository(),
+            embedding_provider=_Provider(),
+        )
+
+        service.retrieve_authorised_projects(
+            "Earlier subject. Does it require a command line?",
+            lexical_query="terminal application setup",
+            principal_username="clive",
+        )
+
+        self.assertEqual(
+            repository.calls[0]["lexical_tokens"],
+            ["terminal", "application", "setup"],
+        )
+        self.assertEqual(
+            repository.calls[0]["lexical_phrase"],
+            "terminal application setup",
+        )
+
+    def test_authorised_project_search_rejects_non_project_rows(self) -> None:
+        service = KnowledgeRetrievalService(
+            repository=_Repository(
+                [_row(target_scope_type="PLUGIN", target_scope_key="drop_box")]
+            ),
+            embedding_repository=_EmbeddingRepository(),
+            embedding_provider=_Provider(),
+        )
+
+        outcome = service.retrieve_authorised_projects(
+            "lumen",
+            principal_username="clive",
+        )
+
+        self.assertEqual(outcome.status, "failed")
+        self.assertEqual(outcome.malformed_count, 1)
+
     def test_substantive_prose_precedes_pandoc_navigation_candidates(self) -> None:
-        repository = _Repository([
-            _row(
-                chunk_id=501,
-                semantic_rank=1,
-                lexical_rank=1,
-                chunk_text=(
-                    "TABLE OF CONTENTS\n"
-                    "The AI Operating System...............................59"
+        repository = _Repository(
+            [
+                _row(
+                    chunk_id=501,
+                    semantic_rank=1,
+                    lexical_rank=1,
+                    chunk_text=(
+                        "TABLE OF CONTENTS\n"
+                        "The AI Operating System...............................59"
+                    ),
                 ),
-            ),
-            _row(
-                chunk_id=502,
-                semantic_rank=2,
-                lexical_rank=2,
-                chunk_text=(
-                    "An AI-OS is a folder containing workflows, code, data, "
-                    "logs, and instructions coordinated by AI."
+                _row(
+                    chunk_id=502,
+                    semantic_rank=2,
+                    lexical_rank=2,
+                    chunk_text=(
+                        "An AI-OS is a folder containing workflows, code, data, "
+                        "logs, and instructions coordinated by AI."
+                    ),
                 ),
-            ),
-        ])
+            ]
+        )
         service = KnowledgeRetrievalService(
             repository=repository,
             embedding_repository=_EmbeddingRepository(),
@@ -470,17 +570,93 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         self.assertEqual(outcome.status, "grounded")
         self.assertEqual(outcome.results[0].chunk_id, 502)
 
+    def test_selected_continuation_promotes_available_predecessor(self) -> None:
+        """A split sentence includes its preceding authorised candidate."""
+        repository = _Repository(
+            [
+                _row(
+                    chunk_id=502,
+                    chunk_no=2,
+                    semantic_rank=1,
+                    lexical_rank=1,
+                    chunk_text="8 continues the setup explanation.",
+                ),
+                _row(
+                    chunk_id=501,
+                    chunk_no=1,
+                    semantic_rank=20,
+                    lexical_rank=20,
+                    chunk_text="The setup names the supported applications and",
+                ),
+            ]
+        )
+        service = KnowledgeRetrievalService(
+            repository=repository,
+            embedding_repository=_EmbeddingRepository(),
+            embedding_provider=_Provider(),
+        )
+
+        outcome = service.retrieve_authorised_projects(
+            "setup applications",
+            principal_username="clive",
+            max_selected_chunks=2,
+        )
+
+        self.assertEqual(
+            [result.chunk_id for result in outcome.results],
+            [501, 502],
+        )
+
+    def test_selected_split_end_promotes_available_successor(self) -> None:
+        """A selected chunk ending mid-sentence includes its continuation."""
+        repository = _Repository(
+            [
+                _row(
+                    chunk_id=501,
+                    chunk_no=1,
+                    semantic_rank=1,
+                    lexical_rank=1,
+                    chunk_text="The setup continues in the next chunk",
+                ),
+                _row(
+                    chunk_id=502,
+                    chunk_no=2,
+                    semantic_rank=20,
+                    lexical_rank=20,
+                    chunk_text="with the decisive terminal requirement.",
+                ),
+            ]
+        )
+        service = KnowledgeRetrievalService(
+            repository=repository,
+            embedding_repository=_EmbeddingRepository(),
+            embedding_provider=_Provider(),
+        )
+
+        outcome = service.retrieve_authorised_projects(
+            "setup terminal",
+            principal_username="clive",
+            max_selected_chunks=2,
+        )
+
+        self.assertEqual(
+            [result.chunk_id for result in outcome.results],
+            [501, 502],
+        )
+
     def test_native_oracle_metadata_is_canonical_json_in_search_results(self) -> None:
         service = KnowledgeRetrievalService(
-            repository=_Repository([
-                _row(
-                    extractor_metadata_json={
-                        "zeta": Decimal("2"),
-                        "alpha": Decimal("1.25"),
-                    },
-                    chunk_metadata_json={"source_row_start": Decimal("3")},
-                )
-            ]),
+            repository=_Repository(
+                [
+                    _row(
+                        extractor_metadata_json={
+                            "zeta": Decimal("2"),
+                            "alpha": Decimal("1.25"),
+                        },
+                        chunk_metadata_json={"source_row_start": Decimal("3")},
+                    )
+                ]
+            ),
             embedding_repository=_EmbeddingRepository(),
             embedding_provider=_Provider(),
         )
@@ -503,10 +679,12 @@ class KnowledgeRetrievalTests(unittest.TestCase):
 
     def test_malformed_metadata_rejects_only_the_affected_row(self) -> None:
         service = KnowledgeRetrievalService(
-            repository=_Repository([
-                _row(chunk_id=501, extractor_metadata_json=["not", "an", "object"]),
-                _row(chunk_id=502, extractor_metadata_json={"schema_version": 1}),
-            ]),
+            repository=_Repository(
+                [
+                    _row(chunk_id=501, extractor_metadata_json=["not", "an", "object"]),
+                    _row(chunk_id=502, extractor_metadata_json={"schema_version": 1}),
+                ]
+            ),
             embedding_repository=_EmbeddingRepository(),
             embedding_provider=_Provider(),
         )
@@ -528,8 +706,9 @@ class KnowledgeRetrievalTests(unittest.TestCase):
             embedding_provider=_Provider(),
         )
         outcome = service.retrieve(
-            "lumen pathway", principal_username="clive",
-            scope=KnowledgeScope("PROJECT", "ORAC_CORE")
+            "lumen pathway",
+            principal_username="clive",
+            scope=KnowledgeScope("PROJECT", "ORAC_CORE"),
         )
         self.assertEqual(outcome.status, "no_evidence")
         self.assertEqual(outcome.reason_codes, ("no_evidence_above_threshold",))
@@ -576,7 +755,9 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(KnowledgeRetrievalError, "profile"):
             service.search(
-                "lumen", target_scope_type="PROJECT", target_scope_key="ORAC_CORE",
+                "lumen",
+                target_scope_type="PROJECT",
+                target_scope_key="ORAC_CORE",
                 principal_username="clive",
             )
 
@@ -588,7 +769,9 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(KnowledgeRetrievalError, "dimension"):
             service.search(
-                "lumen", target_scope_type="PROJECT", target_scope_key="ORAC_CORE",
+                "lumen",
+                target_scope_type="PROJECT",
+                target_scope_key="ORAC_CORE",
                 principal_username="clive",
             )
 
@@ -599,7 +782,9 @@ class KnowledgeRetrievalTests(unittest.TestCase):
             embedding_provider=_Provider(),
         )
         results = service.search(
-            "lumen", target_scope_type="PROJECT", target_scope_key="ORAC_CORE",
+            "lumen",
+            target_scope_type="PROJECT",
+            target_scope_key="ORAC_CORE",
             principal_username="clive",
         )
         self.assertEqual(len(results), 1)

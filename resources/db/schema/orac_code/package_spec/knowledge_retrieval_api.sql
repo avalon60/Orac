@@ -39,6 +39,19 @@ as
     p_content_rows          out sys_refcursor
   );
 
+  procedure open_authorised_project_candidates(
+    p_retrieval_id          in  varchar2,
+    p_username              in  varchar2,
+    p_embedding_profile_id  in  number,
+    p_query_vector_json     in  clob,
+    p_lexical_tokens_json   in  clob,
+    p_lexical_phrase        in  varchar2,
+    p_semantic_limit        in  number default 50,
+    p_lexical_limit         in  number default 50,
+    p_resolution_json       out clob,
+    p_content_rows          out sys_refcursor
+  );
+
   procedure open_plugin_hybrid_candidates(
     p_retrieval_id          in  varchar2,
     p_username              in  varchar2,

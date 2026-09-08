@@ -22,7 +22,9 @@ def test_retrieval_package_requires_principal_scope_and_audit():
     assert "rag_usage_authorization_api.authorization_result" in body
     assert "write_event(" in body
     assert "pragma autonomous_transaction" in body
-    assert body.index("write_event(", body.index("if l_authorized <>")) < body.index("open p_content_rows")
+    assert body.index("write_event(", body.index("if l_authorized <>")) < body.index(
+        "open p_content_rows"
+    )
 
 
 def test_retrieval_audit_is_append_only_and_content_free():
@@ -52,9 +54,7 @@ def test_plugin_bridge_has_no_direct_ingestion_or_retrieval_package_access():
 
 
 def test_native_searchable_view_does_not_project_raw_locator():
-    view = _text(
-        SCHEMA / "orac_code/view/knowledge_native_searchable_chunks_v.sql"
-    )
+    view = _text(SCHEMA / "orac_code/view/knowledge_native_searchable_chunks_v.sql")
     assert "ver.content_uri" not in view
 
 
@@ -128,8 +128,9 @@ def test_p1_08_model_submission_reuses_authorised_append_only_lifecycle():
 def test_p1_08_submission_audit_arguments_exclude_content_and_locators():
     spec = _text(SCHEMA / "orac_code/package_spec/knowledge_retrieval_api.sql")
     procedure = spec[
-        spec.index("procedure record_model_submission_decision") :
-        spec.index("procedure record_outcome")
+        spec.index("procedure record_model_submission_decision") : spec.index(
+            "procedure record_outcome"
+        )
     ]
 
     for forbidden in (
@@ -150,12 +151,14 @@ def test_plugin_hybrid_entry_point_is_structurally_self_scoped():
     spec = _text(SCHEMA / "orac_code/package_spec/knowledge_retrieval_api.sql")
     body = _text(SCHEMA / "orac_code/package_body/knowledge_retrieval_api.sql")
     plugin_spec = spec[
-        spec.index("procedure open_plugin_hybrid_candidates") :
-        spec.index("procedure record_policy_decision")
+        spec.index("procedure open_plugin_hybrid_candidates") : spec.index(
+            "procedure record_policy_decision"
+        )
     ]
     plugin_body = body[
-        body.index("procedure open_plugin_hybrid_candidates") :
-        body.index("procedure record_policy_decision")
+        body.index("procedure open_plugin_hybrid_candidates") : body.index(
+            "procedure record_policy_decision"
+        )
     ]
 
     assert "p_plugin_id" in plugin_spec
@@ -164,9 +167,7 @@ def test_plugin_hybrid_entry_point_is_structurally_self_scoped():
     assert "p_scope_key" not in plugin_spec
     assert "knowledge_scope_id" not in plugin_spec
     assert "open_hybrid_candidates_internal(" in plugin_body
-    assert "p_username, 'plugin', trim(p_plugin_id)" in " ".join(
-        plugin_body.split()
-    )
+    assert "p_username, 'plugin', trim(p_plugin_id)" in " ".join(plugin_body.split())
     assert "rag_usage_authorization_api.authorization_result" in body
 
 
@@ -178,7 +179,10 @@ def test_plugin_search_audit_provenance_is_bounded_and_scope_validated():
     assert "p_selected_chunk_ids_json is not json" in body
     assert "l_selected_count > 64" in body
     assert "l_selected_count <> l_distinct_count" in body
-    assert "source_object.knowledge_scope_id = l_decision.knowledge_scope_id" in body
+    assert (
+        "source_object.knowledge_scope_id = l_decision.knowledge_scope_id"
+        in " ".join(body.split())
+    )
     assert "'executing_plugin_id'" in body
     assert "'correlation_id'" in body
     assert "'document_version_id'" in body
@@ -201,3 +205,31 @@ def test_plugin_and_apex_principals_receive_no_core_retrieval_grants():
             continue
         assert " to orac_plugin" not in line
         assert " to orac_apx" not in line
+
+
+def test_cross_project_search_derives_current_authority_before_global_ranking():
+    """Automatic retrieval must not accept project identity from the caller."""
+    spec = _text(SCHEMA / "orac_code/package_spec/knowledge_retrieval_api.sql")
+    body = _text(SCHEMA / "orac_code/package_body/knowledge_retrieval_api.sql")
+    checks = _text(SCHEMA / "orac_core/constraint_other/kn_retev_checks.sql")
+    procedure_spec = spec[
+        spec.index("procedure open_authorised_project_candidates") : spec.index(
+            "procedure open_plugin_hybrid_candidates"
+        )
+    ]
+    procedure_body = body[
+        body.index("procedure open_authorised_project_candidates") : body.index(
+            "procedure open_plugin_hybrid_candidates"
+        )
+    ]
+
+    assert "p_username" in procedure_spec
+    assert "p_scope_type" not in procedure_spec
+    assert "p_scope_key" not in procedure_spec
+    assert "rag_usage_privileges_v" in procedure_body
+    assert "privilege.expires_on > systimestamp" in procedure_body
+    assert "project.active_yn = 'y'" in procedure_body
+    assert "knowledge_scope.scope_type = 'project'" in procedure_body
+    assert "fetch exact first l_semantic_limit rows only" in procedure_body
+    assert "fetch first l_lexical_limit rows only" in procedure_body
+    assert "authorised_project_search" in checks

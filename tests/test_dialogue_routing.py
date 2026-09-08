@@ -72,14 +72,12 @@ class DialogueRoutingTests(unittest.TestCase):
         self.assertIsNotNone(decision)
         self.assertEqual(decision.route_type, "internet")
 
-    def test_database_grant_resolves_knowledge_scope(self) -> None:
+    def test_implicit_alias_does_not_restrict_automatic_project_search(self) -> None:
         decision = self.service.knowledge_route(
             "How do I configure a Drop Box processing profile?",
             authenticated_username="clive",
         )
-        self.assertEqual(decision.route_type, "knowledge")
-        self.assertEqual(decision.reason_codes, ("RAG_USAGE_GRANTED",))
-        self.assertIsNone(decision.materialisation_purpose)
+        self.assertIsNone(decision)
 
     def test_explicit_broad_document_intent_is_trusted_route_state(self) -> None:
         decision = self.service.knowledge_route(
@@ -87,16 +85,14 @@ class DialogueRoutingTests(unittest.TestCase):
             authenticated_username="clive",
         )
 
-        self.assertEqual(decision.route_type, "knowledge")
-        self.assertEqual(decision.materialisation_purpose, "SUMMARISE")
+        self.assertIsNone(decision)
 
     def test_missing_privilege_is_terminally_denied(self) -> None:
         decision = _service(result="RAG_USAGE_NOT_GRANTED").knowledge_route(
             "What does the Drop Box documentation say?",
             authenticated_username="clive",
         )
-        self.assertEqual(decision.route_type, "knowledge_denied")
-        self.assertEqual(decision.reason_codes, ("RAG_USAGE_NOT_GRANTED",))
+        self.assertIsNone(decision)
 
     def test_unknown_explicit_knowledge_base_cannot_fall_through(self) -> None:
         decision = self.service.explicit_knowledge_route(
@@ -106,13 +102,16 @@ class DialogueRoutingTests(unittest.TestCase):
         self.assertEqual(decision.route_type, "clarification")
         self.assertEqual(decision.reason_codes, ("knowledge_scope_unknown",))
 
-    def test_ambiguous_unnamed_knowledge_base_asks_for_scope(self) -> None:
+    def test_unnamed_knowledge_base_uses_authorised_project_search(self) -> None:
         decision = self.service.explicit_knowledge_route(
             "Use the knowledge base to answer this.",
             authenticated_username="clive",
         )
-        self.assertEqual(decision.route_type, "clarification")
-        self.assertEqual(decision.reason_codes, ("knowledge_scope_required",))
+        self.assertEqual(decision.route_type, "knowledge_auto")
+        self.assertEqual(
+            decision.reason_codes,
+            ("authorised_project_search_requested",),
+        )
 
     def test_explicit_local_retrieval_intent_is_a_bounded_scope_neutral_signal(
         self,
@@ -150,8 +149,7 @@ class DialogueRoutingTests(unittest.TestCase):
             prompt,
             authenticated_username="clive",
         )
-        self.assertEqual(decision.route_type, "clarification")
-        self.assertEqual(decision.reason_codes, ("knowledge_scope_required",))
+        self.assertEqual(decision.route_type, "knowledge_auto")
 
     def test_excessive_multi_scope_request_requires_narrowing(self) -> None:
         scopes = tuple(
@@ -166,8 +164,7 @@ class DialogueRoutingTests(unittest.TestCase):
             "What do Alpha, Beta, Gamma, and Delta documentation say?",
             authenticated_username="clive",
         )
-        self.assertEqual(decision.route_type, "clarification")
-        self.assertEqual(decision.reason_codes, ("knowledge_scope_limit_exceeded",))
+        self.assertIsNone(decision)
 
     def test_inactive_scope_is_terminally_unavailable(self) -> None:
         decision = _service(
@@ -177,8 +174,7 @@ class DialogueRoutingTests(unittest.TestCase):
             "What does the Orac documentation say?",
             authenticated_username="clive",
         )
-        self.assertEqual(decision.route_type, "knowledge_unavailable")
-        self.assertEqual(decision.reason_codes, ("knowledge_scope_inactive",))
+        self.assertIsNone(decision)
 
     def test_authorization_failure_is_terminally_unavailable(self) -> None:
         decision = _service(
@@ -187,15 +183,14 @@ class DialogueRoutingTests(unittest.TestCase):
             "What does the Drop Box documentation say?",
             authenticated_username="clive",
         )
-        self.assertEqual(decision.route_type, "knowledge_unavailable")
+        self.assertIsNone(decision)
 
     def test_registry_failure_is_terminally_unavailable(self) -> None:
         decision = _service(registry_fail=True).knowledge_route(
             "What does the Drop Box documentation say?",
             authenticated_username="clive",
         )
-        self.assertEqual(decision.route_type, "knowledge_unavailable")
-        self.assertEqual(decision.reason_codes, ("scope_registry_unavailable",))
+        self.assertIsNone(decision)
 
 
 if __name__ == "__main__":

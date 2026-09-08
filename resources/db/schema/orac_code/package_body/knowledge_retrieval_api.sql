@@ -1055,6 +1055,304 @@ as
     );
   end open_hybrid_search_candidates;
 
+  procedure open_authorised_project_candidates(
+    p_retrieval_id          in  varchar2,
+    p_username              in  varchar2,
+    p_embedding_profile_id  in  number,
+    p_query_vector_json     in  clob,
+    p_lexical_tokens_json   in  clob,
+    p_lexical_phrase        in  varchar2,
+    p_semantic_limit        in  number default 50,
+    p_lexical_limit         in  number default 50,
+    p_resolution_json       out clob,
+    p_content_rows          out sys_refcursor
+  )
+  is
+    l_user_id         number;
+    l_scope_count     pls_integer;
+    l_query_vector    vector(768, float32);
+    l_semantic_limit  pls_integer;
+    l_lexical_limit   pls_integer;
+    l_detail_json     json;
+  begin
+    if not regexp_like(
+         lower(trim(p_retrieval_id)),
+         '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+       )
+       or p_embedding_profile_id <= 0
+       or p_semantic_limit not between 1 and 50
+       or p_lexical_limit not between 1 and 50
+       or p_query_vector_json is null
+       or p_query_vector_json is not json
+       or p_lexical_tokens_json is null
+       or p_lexical_tokens_json is not json
+       or length(p_lexical_phrase) > 2000
+    then
+      raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
+    end if;
+
+    begin
+      select user_id
+        into l_user_id
+        from orac_api.users_v
+       where lower(username) = lower(trim(p_username))
+         and is_active = 'Y';
+    exception
+      when no_data_found then
+        write_event(
+          p_retrieval_id, 'DECISION', p_username, null, null,
+          'AUTHORISED_PROJECT_SEARCH', null, null, 'REJECTED',
+          'RAG_USAGE_PRINCIPAL_UNKNOWN'
+        );
+        p_resolution_json := resolution_json(
+          p_retrieval_id,
+          'REJECTED',
+          'RAG_USAGE_PRINCIPAL_UNKNOWN',
+          'AUTHORISED_PROJECT_SEARCH'
+        );
+        empty_cursor(p_content_rows);
+        return;
+    end;
+
+    select count(distinct knowledge_scope.knowledge_scope_id)
+      into l_scope_count
+      from orac_api.rag_usage_privileges_v privilege
+      join orac_api.knowledge_scopes_v knowledge_scope
+        on knowledge_scope.knowledge_scope_id = privilege.knowledge_scope_id
+       and knowledge_scope.scope_type = 'PROJECT'
+      join orac_api.project_registry_v project
+        on project.project_id = knowledge_scope.project_id
+       and project.active_yn = 'Y'
+     where privilege.user_id = l_user_id
+       and privilege.privilege_code = 'USE'
+       and privilege.active_yn = 'Y'
+       and privilege.effective_on <= systimestamp
+       and (
+             privilege.expires_on is null
+             or privilege.expires_on > systimestamp
+           );
+    if l_scope_count = 0
+    then
+      write_event(
+        p_retrieval_id, 'DECISION', p_username, l_user_id, null,
+        'AUTHORISED_PROJECT_SEARCH', null, null, 'REJECTED',
+        'RAG_USAGE_NOT_GRANTED'
+      );
+      p_resolution_json := resolution_json(
+        p_retrieval_id,
+        'REJECTED',
+        'RAG_USAGE_NOT_GRANTED',
+        'AUTHORISED_PROJECT_SEARCH'
+      );
+      empty_cursor(p_content_rows);
+      return;
+    end if;
+
+    select least(p_semantic_limit, profile.semantic_candidate_limit),
+           least(p_lexical_limit, profile.lexical_candidate_limit)
+      into l_semantic_limit, l_lexical_limit
+      from orac_api.knowledge_embedding_activations_v activation
+      join orac_api.knowledge_embedding_profiles_v profile
+        on profile.embedding_profile_id = activation.embedding_profile_id
+       and profile.embedding_profile_id = p_embedding_profile_id
+       and profile.purpose_code = 'KNOWLEDGE_CHUNK_RETRIEVAL'
+       and profile.storage_layout_code = 'ORACLE_VECTOR_768_FLOAT32_V1'
+       and profile.semantic_yn = 'Y'
+       and profile.production_allowed_yn = 'Y'
+      join orac_api.knowledge_embedding_models_v model
+        on model.embedding_model_id = profile.embedding_model_id
+       and model.dimensions = 768
+       and model.distance_metric = 'COSINE'
+     where activation.purpose_code = 'KNOWLEDGE_CHUNK_RETRIEVAL';
+
+    l_query_vector := to_vector(p_query_vector_json, 768, float32);
+    if vector_dimension_count(l_query_vector) <> 768
+       or vector_dimension_format(l_query_vector) <> 'FLOAT32'
+       or vector_norm(l_query_vector) not between 0.99 and 1.01
+    then
+      raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
+    end if;
+
+    select json_object(
+             'schema_version' value 1,
+             'embedding_profile_id' value p_embedding_profile_id,
+             'authorised_project_count' value l_scope_count
+             returning json
+           )
+      into l_detail_json
+      from dual;
+    write_event(
+      p_retrieval_id, 'DECISION', p_username, l_user_id, null,
+      'AUTHORISED_PROJECT_SEARCH', null, null, 'APPROVED',
+      'RETRIEVAL_APPROVED', p_detail_json => l_detail_json
+    );
+    p_resolution_json := resolution_json(
+      p_retrieval_id,
+      'APPROVED',
+      'RETRIEVAL_APPROVED',
+      'AUTHORISED_PROJECT_SEARCH'
+    );
+
+    open p_content_rows for
+      with authorised_scopes as (
+        select distinct knowledge_scope.knowledge_scope_id
+          from orac_api.rag_usage_privileges_v privilege
+          join orac_api.knowledge_scopes_v knowledge_scope
+            on knowledge_scope.knowledge_scope_id = privilege.knowledge_scope_id
+           and knowledge_scope.scope_type = 'PROJECT'
+          join orac_api.project_registry_v project
+            on project.project_id = knowledge_scope.project_id
+           and project.active_yn = 'Y'
+         where privilege.user_id = l_user_id
+           and privilege.privilege_code = 'USE'
+           and privilege.active_yn = 'Y'
+           and privilege.effective_on <= systimestamp
+           and (
+                 privilege.expires_on is null
+                 or privilege.expires_on > systimestamp
+               )
+      ),
+      project_chunks as (
+        select chunk.*
+          from orac_code.knowledge_native_searchable_chunks_v chunk
+          join authorised_scopes authorised
+            on authorised.knowledge_scope_id = chunk.knowledge_scope_id
+         where chunk.embedding_profile_id = p_embedding_profile_id
+           and chunk.target_scope_type = 'PROJECT'
+      ),
+      semantic_ranked as (
+        select chunk.chunk_id,
+               1 - vector_distance(
+                     chunk.embedding_vector,
+                     l_query_vector,
+                     cosine
+                   ) semantic_score,
+               row_number() over (
+                 order by vector_distance(
+                            chunk.embedding_vector,
+                            l_query_vector,
+                            cosine
+                          ),
+                          chunk.chunk_id
+               ) semantic_rank
+          from project_chunks chunk
+         order by vector_distance(
+                    chunk.embedding_vector,
+                    l_query_vector,
+                    cosine
+                  ),
+                  chunk.chunk_id
+         fetch exact first l_semantic_limit rows only
+      ),
+      semantic_candidates as (
+        select ranked.chunk_id,
+               ranked.semantic_score,
+               ranked.semantic_rank
+          from semantic_ranked ranked
+          join project_chunks chunk
+            on chunk.chunk_id = ranked.chunk_id
+         where ranked.semantic_score >= chunk.semantic_threshold
+      ),
+      lexical_scored as (
+        select chunk.chunk_id,
+               orac_code.knowledge_retrieval_api.lexical_candidate_score(
+                 p_lexical_tokens_json,
+                 p_lexical_phrase,
+                 chunk.chunk_text,
+                 coalesce(chunk.original_filename, chunk.parent_source_reference)
+               ) lexical_score
+          from project_chunks chunk
+      ),
+      lexical_ranked as (
+        select lexical_scored.*,
+               row_number() over (
+                 order by lexical_score desc, chunk_id
+               ) lexical_rank
+          from lexical_scored
+         order by lexical_score desc, chunk_id
+         fetch first l_lexical_limit rows only
+      ),
+      lexical_candidates as (
+        select chunk_id, lexical_score, lexical_rank
+          from lexical_ranked
+         where lexical_score >= 0.25
+      ),
+      candidate_keys as (
+        select chunk_id from semantic_candidates
+        union
+        select chunk_id from lexical_candidates
+      )
+      select chunk.ingestion_request_id,
+             chunk.source_object_id,
+             chunk.source_type,
+             chunk.source_reference,
+             chunk.parent_source_reference,
+             chunk.document_id,
+             chunk.title document_title,
+             chunk.document_version_id,
+             chunk.original_filename,
+             chunk.target_scope_type,
+             chunk.target_scope_key,
+             chunk.chunk_set_id,
+             chunk.chunk_id,
+             chunk.chunk_no,
+             chunk.span_start,
+             chunk.span_end,
+             chunk.chunk_content_sha256,
+             chunk.chunk_text,
+             chunk.chunk_metadata_json,
+             chunk.source_artefact_id,
+             chunk.source_artefact_role_code,
+             chunk.source_artefact_logical_name,
+             chunk.source_artefact_media_type,
+             chunk.source_artefact_sha256,
+             chunk.source_artefact_ordinal,
+             chunk.source_sheet_name,
+             chunk.source_table_name,
+             chunk.source_member_cell_range,
+             chunk.source_header_rows_json,
+             chunk.source_hidden_sheet,
+             chunk.source_row_start,
+             chunk.source_row_end,
+             chunk.source_chunk_cell_range,
+             chunk.source_format_code,
+             chunk.normalised_text_sha256,
+             chunk.output_mime_type,
+             chunk.extractor_code,
+             chunk.extractor_version,
+             chunk.extractor_metadata_json,
+             chunk.classification_tags_json,
+             chunk.provider_code embedding_provider_code,
+             chunk.embedding_model_revision,
+             chunk.embedding_model_identifier,
+             chunk.embedding_dimensions,
+             chunk.embedding_profile_id,
+             chunk.profile_version embedding_profile_version,
+             chunk.retrieval_policy_version,
+             semantic.semantic_score,
+             coalesce(lexical.lexical_score, 0) lexical_score,
+             semantic.semantic_rank,
+             lexical.lexical_rank,
+             chunk.processing_profile_code
+        from candidate_keys candidate
+        join project_chunks chunk
+          on chunk.chunk_id = candidate.chunk_id
+        left join semantic_candidates semantic
+          on semantic.chunk_id = candidate.chunk_id
+        left join lexical_candidates lexical
+          on lexical.chunk_id = candidate.chunk_id
+       order by chunk.chunk_id;
+  exception
+    when no_data_found or too_many_rows then
+      raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
+    when others then
+      if sqlcode in (-20631, -20632)
+      then
+        raise;
+      end if;
+      raise_application_error(-20633, 'RETRIEVAL_AUTHORIZATION_UNAVAILABLE');
+  end open_authorised_project_candidates;
+
   procedure open_plugin_hybrid_candidates(
     p_retrieval_id          in  varchar2,
     p_username              in  varchar2,
@@ -1498,7 +1796,37 @@ as
               on chunk.chunk_id = selected.chunk_id
             join orac_api.knowledge_source_objects_v source_object
               on source_object.source_object_id = chunk.source_object_id
-             and source_object.knowledge_scope_id = l_decision.knowledge_scope_id
+             and (
+                   (
+                     l_decision.operation_code = 'AUTHORISED_PROJECT_SEARCH'
+                     and exists (
+                       select 1
+                         from orac_api.rag_usage_privileges_v privilege
+                         join orac_api.knowledge_scopes_v knowledge_scope
+                           on knowledge_scope.knowledge_scope_id =
+                              privilege.knowledge_scope_id
+                          and knowledge_scope.scope_type = 'PROJECT'
+                         join orac_api.project_registry_v project
+                           on project.project_id = knowledge_scope.project_id
+                          and project.active_yn = 'Y'
+                        where privilege.user_id = l_decision.user_id
+                          and privilege.knowledge_scope_id =
+                              source_object.knowledge_scope_id
+                          and privilege.privilege_code = 'USE'
+                          and privilege.active_yn = 'Y'
+                          and privilege.effective_on <= systimestamp
+                          and (
+                                privilege.expires_on is null
+                                or privilege.expires_on > systimestamp
+                              )
+                     )
+                   )
+                   or (
+                     l_decision.operation_code <> 'AUTHORISED_PROJECT_SEARCH'
+                     and source_object.knowledge_scope_id =
+                         l_decision.knowledge_scope_id
+                   )
+                 )
            where selected.chunk_id > 0
         );
       if l_scope_count <> l_selected_count
@@ -1539,7 +1867,40 @@ as
                          on chunk.chunk_id = selected.chunk_id
                        join orac_api.knowledge_source_objects_v source_object
                          on source_object.source_object_id = chunk.source_object_id
-                        and source_object.knowledge_scope_id = l_decision.knowledge_scope_id
+                        and (
+                              (
+                                l_decision.operation_code =
+                                  'AUTHORISED_PROJECT_SEARCH'
+                                and exists (
+                                  select 1
+                                    from orac_api.rag_usage_privileges_v privilege
+                                    join orac_api.knowledge_scopes_v knowledge_scope
+                                      on knowledge_scope.knowledge_scope_id =
+                                         privilege.knowledge_scope_id
+                                     and knowledge_scope.scope_type = 'PROJECT'
+                                    join orac_api.project_registry_v project
+                                      on project.project_id =
+                                         knowledge_scope.project_id
+                                     and project.active_yn = 'Y'
+                                   where privilege.user_id = l_decision.user_id
+                                     and privilege.knowledge_scope_id =
+                                         source_object.knowledge_scope_id
+                                     and privilege.privilege_code = 'USE'
+                                     and privilege.active_yn = 'Y'
+                                     and privilege.effective_on <= systimestamp
+                                     and (
+                                           privilege.expires_on is null
+                                           or privilege.expires_on > systimestamp
+                                         )
+                                )
+                              )
+                              or (
+                                l_decision.operation_code <>
+                                  'AUTHORISED_PROJECT_SEARCH'
+                                and source_object.knowledge_scope_id =
+                                    l_decision.knowledge_scope_id
+                              )
+                            )
                    ) provenance
                ), to_clob('[]')) format json
                absent on null

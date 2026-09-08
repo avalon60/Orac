@@ -42,7 +42,9 @@ principal can use the feature.
 | Phase 2C shadow observation | `[governed_retrieval].domain_discovery_shadow_mode = false` | Shadow is available only as an explicitly selected diagnostic state. |
 | Governed-tool context floor | `[governed_retrieval].min_effective_context_tokens = 32768` | Smaller models skip automatic Phase 2C/tool retrieval while explicit bounded knowledge retrieval remains available. |
 | Knowledge ingestion | `[knowledge].enabled = true` | The Core worker can ingest, chunk, and embed accepted documents. |
-| Dialogue knowledge retrieval | `[knowledge.dialogue].enabled = true` | Deterministic, authorised single-scope PROJECT or PLUGIN grounding is active. |
+| Dialogue knowledge retrieval | `[knowledge.dialogue].enabled = true` | Authorised scoped retrieval and ordinary host-controlled PROJECT grounding are active. |
+| Automatic project search | `[knowledge.dialogue].automatic_project_search_enabled = true` | Ordinary authenticated questions search content across all currently authorised active PROJECT scopes without model tools. |
+| Automatic project search deadline | `[knowledge.dialogue].automatic_project_search_timeout_seconds = 10` | The host and Oracle driver bound each automatic search to ten seconds. |
 | Whole-content retrieval | `[knowledge.retrieval].enabled = true` | P1-06 authorised normalised-content materialisation is available within its hard limits. |
 | Progressive materialisation | `[knowledge.materialisation].enabled = true` | P1-07 can select the narrowest approved representation for an explicit document task. |
 | Model evidence submission | `[knowledge.model_evidence].enabled = true` | P1-08 can submit approved normalised text for an eligible exact local model. |
@@ -65,8 +67,8 @@ Orac uses the following high-level flow:
 
 1. Persist the real user message in the authoritative conversation.
 2. Apply core route precedence: explicit internet selection, explicit
-   knowledge syntax, deterministic plugin interception, implicit configured
-   knowledge routing, internet policy, then ordinary dialogue.
+   knowledge syntax, deterministic plugin interception, internet policy, then
+   automatic authorised PROJECT search before ordinary dialogue.
 3. Retrieve any selected web or authorised local-knowledge evidence.
 4. For an explicit single-document summary, review, extraction, analysis, or
    comparison, use P1-06/P1-07/P1-08 only when the selected model passes the
@@ -78,8 +80,9 @@ Orac uses the following high-level flow:
    Independent retrieval ceilings and final prompt-safety checks still apply.
 7. For an otherwise ordinary eligible turn with no web, local-knowledge, or
    explicit-memory evidence pack already selected, discover and advertise the
-   governed retrieval domains. Bounded explicit local intent or an authorised
-   above-threshold semantic match makes retrieval host-required.
+   remaining conversation and plugin governed-retrieval domains. PROJECT
+   descriptor discovery is skipped because the host has already searched
+   authorised project content.
 8. Required turns use a compact tool-decision request. After a valid call, the
    existing full-context prompt is used for the grounded, tools-disabled answer;
    decision prose can never override the host requirement.
@@ -99,6 +102,21 @@ route selection.
 Ask a normal follow-up. Recent selected exchanges remain available through the
 live prompt projection while they fit the active history policy. Older omitted
 messages remain persisted.
+
+When an ordinary follow-up refers to an earlier subject with wording such as
+`it`, `this`, or `that`, automatic PROJECT retrieval includes the nearest
+preceding self-contained user question in its search query. Intermediate
+referential questions, assistant answers, and prior
+evidence are excluded from that query, and the host performs a fresh
+authorisation check for the new turn.
+The host creates one embedding from this contextual query while lexical
+matching remains focused on the current question. A bounded deterministic
+expansion helps terse questions about tooling, command-line use, and model
+interfaces retrieve passages that state concrete setup capabilities.
+When local evidence grounds the answer, the model prompt retains preceding
+user questions but excludes prior assistant answers. This prevents an earlier
+unsupported model claim from becoming apparent evidence on later grounded
+turns.
 
 ### Recall an Earlier Conversation
 
@@ -125,16 +143,16 @@ Query the PLUGIN:drop_box knowledge base for classification tag guidance.
 What does the Orac documentation say about plugin installation?
 ```
 
-The first two examples select an exact source. The third relies on the shipped
-`orac` alias and deterministic implicit-routing grammar. The authenticated
-principal still needs a current Oracle `USE` privilege, and the target scope
-must be active and runtime eligible.
+The first two examples select an exact source. The third and ordinary questions
+use automatic content search across all authorised projects. The authenticated
+principal still needs a current Oracle `USE` privilege, and each contributing
+scope must be active.
 
 Use explicit scope syntax when one exact source is mandatory. Scope-neutral
-requests such as `Check your knowledge base for ...` also require governed
-retrieval without granting or selecting a scope. Natural PROJECT or PLUGIN
-retrieval depends on model eligibility and the domains that the host can safely
-advertise; an above-threshold semantic match is then enforced by the host.
+requests such as `Check your knowledge base for ...` search all authorised
+PROJECT scopes and require documentary evidence. Automatic PROJECT retrieval
+does not depend on model eligibility or tool-calling support. PLUGIN retrieval
+retains its existing plugin-private boundary.
 
 ## Prerequisites
 

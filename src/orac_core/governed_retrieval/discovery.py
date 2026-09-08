@@ -576,6 +576,7 @@ class DomainDiscoveryService:
         principal_username: str,
         conversation_eligible: bool,
         plugin_domain: AuthorisedKnowledgeDomain | None = None,
+        include_projects: bool = True,
     ) -> KnowledgeDomainOffer:
         """Build an invocation offer from only currently authorised domains."""
         started = self._clock()
@@ -585,7 +586,7 @@ class DomainDiscoveryService:
                 principal_username,
                 self._catalogue_hard_limit + 1,
             )
-            if self._project_discovery_enabled
+            if self._project_discovery_enabled and include_projects
             else []
         )
         catalogue_size = (
@@ -607,11 +608,11 @@ class DomainDiscoveryService:
 
         fallback_mode = "NONE"
         semantic_domains: list[AuthorisedKnowledgeDomain] = []
-        if not self._project_discovery_enabled:
+        if include_projects and not self._project_discovery_enabled:
             fallback_mode = "PROJECT_AUTHORITY_UNAVAILABLE"
         elif catalogue_size > self._catalogue_hard_limit:
             fallback_mode = "CATALOGUE_HARD_LIMIT"
-        else:
+        elif include_projects:
             semantic_domains.extend(self._project_domain(row) for row in rows)
         if plugin_domain is not None:
             semantic_domains.append(

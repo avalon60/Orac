@@ -127,13 +127,25 @@ class KnowledgeRetrievalOutcome:
 
     status: str
     reason_codes: tuple[str, ...]
-    scope: KnowledgeScope
+    scope: KnowledgeScope | None
     considered_count: int = 0
     threshold_count: int = 0
     malformed_count: int = 0
     embedding_model_identifier: str | None = None
     results: tuple[KnowledgeSearchResult, ...] = ()
     retrieval_id: str | None = None
+
+    @property
+    def scopes(self) -> tuple[KnowledgeScope, ...]:
+        """Return the distinct result scopes in deterministic order."""
+        if self.results:
+            return tuple(
+                sorted(
+                    {result.scope for result in self.results},
+                    key=lambda item: item.canonical_name,
+                )
+            )
+        return (self.scope,) if self.scope is not None else ()
 
 
 @dataclass(frozen=True)

@@ -94,7 +94,7 @@ class KnowledgeGroundingPackBuilder:
                 "route_type": "knowledge",
                 "outcome": outcome.status,
                 "reason_codes": outcome.reason_codes,
-                "scopes": (outcome.scope.canonical_name,),
+                "scopes": tuple(scope.canonical_name for scope in outcome.scopes),
                 "sources": tuple(source_provenance),
             }
         )

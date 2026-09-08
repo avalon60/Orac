@@ -68,3 +68,12 @@ alter table orac_core.knowledge_retrieval_events add constraint kn_retev_target_
 --rollback alter table orac_core.knowledge_retrieval_events add constraint kn_retev_target_ck check (target_type_code is null or target_type_code in ('DOCUMENT', 'DOCUMENT_VERSION', 'EXTRACTION', 'ARTEFACT', 'CHUNK_SET'));
 --rollback alter table orac_core.knowledge_retrieval_events drop constraint kn_retev_operation_ck;
 --rollback alter table orac_core.knowledge_retrieval_events add constraint kn_retev_operation_ck check (operation_code in ('METADATA', 'CONTENT', 'CHUNK_SEARCH', 'MATERIALISATION_POLICY', 'MODEL_SUBMISSION'));
+
+--changeset clive:extend_kn_retev_operation_authorised_project_search context:core labels:core stripComments:false
+--preconditions onFail:HALT onError:HALT
+--precondition-sql-check expectedResult:1 select count(1) from all_constraints where owner = 'ORAC_CORE' and constraint_name = 'KN_RETEV_OPERATION_CK' and constraint_type = 'C';
+alter table orac_core.knowledge_retrieval_events drop constraint kn_retev_operation_ck;
+alter table orac_core.knowledge_retrieval_events add constraint kn_retev_operation_ck
+  check (operation_code in ('METADATA', 'CONTENT', 'CHUNK_SEARCH', 'MATERIALISATION_POLICY', 'MODEL_SUBMISSION', 'GOVERNED_RETRIEVAL', 'AUTHORISED_PROJECT_SEARCH'));
+--rollback alter table orac_core.knowledge_retrieval_events drop constraint kn_retev_operation_ck;
+--rollback alter table orac_core.knowledge_retrieval_events add constraint kn_retev_operation_ck check (operation_code in ('METADATA', 'CONTENT', 'CHUNK_SEARCH', 'MATERIALISATION_POLICY', 'MODEL_SUBMISSION', 'GOVERNED_RETRIEVAL'));

@@ -12,9 +12,9 @@ not bypass plugin policy, retrieval policy, persistence, or prompt boundaries.
 3. Scope-neutral explicit local-retrieval intent, which reserves the governed
    retrieval path without selecting or granting a scope.
 4. Deterministic plugin interception from validated plugin metadata.
-5. Authenticated, authorised, configured-alias local-knowledge retrieval.
-6. Existing internet-retrieval policy and SearXNG routing.
-7. Semantic plugin hints retained for compatibility.
+5. Existing internet-retrieval policy and SearXNG routing.
+6. Semantic plugin hints retained for compatibility.
+7. Automatic content search across every authorised active PROJECT scope.
 8. Ordinary LLM response.
 
 This deterministic routing sequence is separate from model-governed retrieval.
@@ -38,13 +38,11 @@ by the first local-knowledge release.
 
 ## Local Knowledge Turn Triggers
 
-Local knowledge routing is deterministic. Orac does not use an LLM or semantic
-similarity to decide whether a turn requests a local knowledge source. A turn
-must match either the explicit grammar or the implicit alias-and-question
-rules below. Matching is case-insensitive and may occur within a longer turn.
-This route-selection grammar is distinct from the later Phase 2C semantic
-domain match, which can require governed retrieval for an otherwise ordinary
-question without selecting or granting a scope.
+Explicit local knowledge routing is deterministic. Ordinary authenticated
+questions also receive a host-controlled content search across all active
+PROJECT scopes for which the user currently has `USE` permission. This search
+runs before answer generation and does not depend on model tool support,
+project names, descriptions, aliases, or Drop Box location metadata.
 
 ### Explicit Named Source
 
@@ -83,13 +81,12 @@ The unnamed form is also recognised:
 <verb> [the] knowledge <kind>
 ```
 
-For example, `Search the knowledge base for plugin installation` asks the user
-which authorised scope to use because the turn does not name one.
+For example, `Search the knowledge base for plugin installation` searches all
+authorised active PROJECT scopes without asking for a project.
 
-Drop Box location codes and display names are not automatically dialogue
-aliases. For example, `ORAC_DOCS` is usable as `<source-name>` only when it has
-been added to `scope_aliases_json`; the location's configured target scope does
-not create an alias by itself.
+Drop Box location codes and display names remain source provenance. They do not
+control whether ordinary project content is searched. A location alias can
+still be configured when a user must explicitly select one exact scope.
 
 ### Scope-Neutral Local Retrieval Intent
 
@@ -114,55 +111,41 @@ These examples are deliberately fictional because this operator guide may be
 ingested as `ORAC_DOCS`; production regression wording belongs in executable
 tests, not in a searchable evidence source.
 
-This signal cannot select a scope, create authority, or override an explicit
-internet route. When it reaches governed retrieval, Orac requires a valid tool
-call or returns retrieval as unavailable; model prose cannot satisfy the
-requirement.
+This signal cannot create authority or override an explicit internet route. It
+uses the host-controlled authorised-project search and therefore works with a
+model that has no tool-calling support.
 
-### Implicit Alias And Question
+### Ordinary Questions
 
-Without explicit knowledge-source syntax, a turn must contain both:
+For a registered user, ordinary questions search document content across all
+currently authorised active PROJECT scopes before the model answers. An
+implicit project alias does not narrow that search. Relevant evidence is added
+with document and project provenance; an above-threshold result therefore
+grounds the answer even when the question names no project.
 
-1. A configured scope alias as a complete phrase.
-2. At least one of the following expressions:
+A successful search with no relevant evidence allows an ordinary general
+answer without claiming documentary support. An explicit local-document
+request instead reports that no matching evidence was found. If automatic
+retrieval fails, an ordinary answer is prefixed with a host-authored notice;
+an explicit document request terminates as unavailable. Plugin-private scopes
+remain behind their existing plugin route and are not included.
 
-```text
-how | what | where | why | when | which
-configure | configuration
-document | documentation
-guardrail
-decision | decided
-processing profile
-```
-
-Aliases are matched case-insensitively, longest first, and on whole phrase
-boundaries. With the shipped aliases, these turns match:
-
-```text
-How do I configure a Drop Box processing profile?
-What does the Orac documentation say about plugin installation?
-```
-
-`processing profile` remains an implicit-routing compatibility phrase for
-historical dialogue. Current Drop Box administration uses Core-owned
-classification tags and provenance-only ingestion notes; profiles do not
-execute conversion or chunking behaviour.
-
-These turns do not match implicit local knowledge routing:
-
-```text
-Tell me about Drop Box.       # alias present, no recognised expression
-How are plugins installed?    # recognised expression, no scope alias
-Give me an overview of Orac.  # alias present, no recognised expression
-```
-
-The current retrieval execution path requires one resolved scope. Name one
-alias or canonical identity in a turn rather than relying on a multi-scope
-request.
+For a referential follow-up such as `What tools does it rely on?`, the host
+adds the nearest preceding self-contained user subject to the retrieval query. It
+does not reuse assistant prose or previously retrieved evidence. Authority is
+revalidated when the new search runs and again before materialisation.
+The single semantic embedding uses that contextual query. Lexical matching
+keeps the current question's intent and applies a small deterministic expansion
+for tooling, command-line, and model-interface questions. The same recognised
+intents add neutral focus terms to the single semantic query so concrete
+setup passages can outrank broad definitions.
+For a grounded local-document turn, recent user questions remain in model
+context, while prior assistant answers are omitted so unsupported model prose
+cannot override the newly retrieved evidence.
 
 ### Broad Document Intents
 
-Within an authorised single-scope knowledge route, the explicit verbs
+When retrieved chunks resolve to one document, the explicit verbs
 `summarise`, `summarize`, `review`, `extract`, `analyse`, `analyze`, and
 `compare` mark a trusted P1-08 materialisation purpose. They do not themselves
 authorise content. Existing RAG must resolve exactly one document version, and
@@ -183,13 +166,12 @@ retrieval request.
 
 ### Triggering Versus Grounding
 
-Matching either trigger selects a local knowledge route; it does not guarantee
-that evidence will be returned. Orac then asks Oracle for the authenticated
-user's RAG usage privilege and independently validates that the canonical
-project or plugin scope is active,
-and applies the lexical relevance threshold. A valid route with no qualifying
-chunks terminates as `no_evidence` rather than falling through to general model
-knowledge.
+Matching explicit syntax selects a required local-knowledge route; it does not
+guarantee evidence. Oracle derives eligible projects from current permissions,
+validates active scope state, and applies semantic and lexical thresholds. A
+required route with no qualifying chunks terminates as `no_evidence`. An
+ordinary automatic search with no qualifying chunks may continue to general
+model knowledge.
 
 ## Knowledge Scope
 
@@ -251,8 +233,9 @@ Inactive/ineligible scopes and authorization service failures map to
 These routes are terminal: no corpus query, grounding prompt, response LLM,
 web retrieval, plugin fallback, or ordinary generation occurs.
 
-Configured scope data is checked at startup and revalidated per request through
-a short-expiry cache. An expired cache is never served after a failed refresh.
+Configured scope data is checked at startup. The automatic database API does
+not cache authority or evidence across turns: it derives permissions and active
+projects for every search, and materialisation revalidates authority again.
 Startup registry errors disable retrieval execution but keep routing active, so
 explicit knowledge requests terminate as unavailable without plugin or LLM
 execution and without exposing whether a requested corpus exists.
@@ -260,12 +243,12 @@ execution and without exposing whether a requested corpus exists.
 ## Retrieval
 
 The runtime reads current, completed chunks only through the definer-rights
-`orac_code.knowledge_retrieval_api`. That package revalidates the authenticated
-username, scope status, and current `USE` privilege before opening the bounded
-cursor. The runtime has no direct searchable-view grant or synonym and never
-loads stored vectors into Python. The package accepts one transient, validated
-query vector for the active immutable profile and runs two independent,
-scope-authorised branches:
+`orac_code.knowledge_retrieval_api`. Its automatic entry point derives every
+eligible active PROJECT scope inside Oracle from the authenticated user's
+current `USE` permissions before opening the bounded cursor. The runtime has no
+direct searchable-view grant or synonym and never loads stored vectors into
+Python. The package accepts one transient, validated query vector for the
+active immutable profile and runs two globally bounded branches:
 
 - Oracle cosine-distance ranking over native `VECTOR(768,FLOAT32)`, admitted by
   the active profile's semantic threshold and `FETCH EXACT` candidate limit;
@@ -275,8 +258,9 @@ scope-authorised branches:
 The lexical threshold is not a universal hard gate. A strong paraphrase may
 enter through the semantic branch with no lexical match, while exact names,
 filenames, configuration properties, database objects, and versions remain
-strong lexical candidates. Oracle returns only the union of at most 50 rows
-from each branch, with raw semantic/lexical scores and deterministic ranks.
+strong lexical candidates. Oracle returns only the global union of at most 50
+rows from each branch, with project, document, version, chunk, and source
+provenance plus raw semantic/lexical scores and deterministic ranks.
 The host applies weighted reciprocal-rank fusion (`0.65` semantic, `0.35`
 lexical, rank constant `60`) and then enforces selected-chunk, per-chunk,
 total-context, and deduplication limits.

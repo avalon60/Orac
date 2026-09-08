@@ -6,9 +6,10 @@ raw binary attachment route.
 
 ## Security boundary
 
-The trusted Core host supplies the authenticated username, canonical scope,
-and a caller-generated retrieval UUID. Oracle revalidates the active principal,
-active and eligible scope, and current `USE` privilege inside
+The trusted Core host supplies the authenticated username and a caller-generated
+retrieval UUID. Scoped operations also supply a canonical scope. Automatic
+project search supplies no scope selector: Oracle derives all eligible active
+PROJECT scopes from current `USE` privileges inside
 `orac_code.knowledge_retrieval_api` before resolving any target identity.
 Unknown, inactive, expired, and ungranted cases all return the public
 `RETRIEVAL_NOT_AUTHORISED` code, preventing target-existence probing.
@@ -43,6 +44,25 @@ Plugin query text is content only. A query mentioning `PROJECT:foo`, another
 plugin, or a scope identifier is searched inside the bound plugin corpus and
 does not select a different scope. There is no Project, multi-scope, arbitrary
 scope, or background-service plugin API.
+
+### Automatic authorised-project search
+
+Before an ordinary authenticated answer, the host creates one query embedding
+with the active knowledge profile and calls
+`open_authorised_project_candidates`. Oracle joins current, effective `USE`
+privileges to active PROJECT scopes, then returns a global union of at most 50
+semantic and 50 lexical candidates. Ranking never reads project descriptions,
+display names, aliases, or Drop Box location metadata. Existing stored chunk
+vectors are reused, so enabling this path requires no re-ingestion or vector
+rebuild.
+
+The host selects at most six chunks within the existing 12,000-character
+evidence budget across all projects. Every result retains project, document,
+version, chunk, and source provenance. The terminal outcome revalidates each
+selected chunk against current permission and active project state, covering a
+revocation between search and evidence submission. A one-document result may
+enter the existing materialisation policy, which performs its own current
+authorisation checks.
 
 ## Supported retrievals
 
@@ -123,6 +143,8 @@ mismatches, or identities outside the resolved scope fail closed.
 Audit data excludes retrieved content, prompts, queries, filenames, worksheet
 and table labels, metadata JSON, `content_uri`, storage keys, and physical paths.
 Safe application logs correlate through retrieval UUID and reason code only.
+Automatic search logs content-free status, candidate and selected counts,
+duration, and failure reason; it does not log the query or evidence.
 Plugin audit extensions likewise exclude query text, chunk text, filenames, and
 source locators.
 

@@ -132,6 +132,40 @@ class KnowledgeRetrievalService:
             max_context_chars=max_context_chars,
             plugin_id=None,
             correlation_id=None,
+            automatic_projects=False,
+            timeout_seconds=None,
+        )
+
+    def retrieve_authorised_projects(
+        self,
+        query: str,
+        *,
+        principal_username: str,
+        lexical_query: str | None = None,
+        max_candidate_chunks: int = 100,
+        max_selected_chunks: int = 6,
+        min_lexical_score: float = 0.25,
+        max_chunk_chars: int = 2200,
+        max_context_chars: int = 12000,
+        timeout_seconds: float = 10.0,
+    ) -> KnowledgeRetrievalOutcome:
+        """Search content across all projects currently authorised for a user."""
+        if timeout_seconds <= 0:
+            raise ValueError("Knowledge retrieval timeout must be positive.")
+        return self._retrieve(
+            query,
+            principal_username=principal_username,
+            scope=None,
+            max_candidate_chunks=max_candidate_chunks,
+            max_selected_chunks=max_selected_chunks,
+            min_lexical_score=min_lexical_score,
+            max_chunk_chars=max_chunk_chars,
+            max_context_chars=max_context_chars,
+            plugin_id=None,
+            correlation_id=None,
+            automatic_projects=True,
+            timeout_seconds=timeout_seconds,
+            lexical_query=lexical_query,
         )
 
     def retrieve_for_plugin(
@@ -159,6 +193,8 @@ class KnowledgeRetrievalService:
             max_context_chars=12000,
             plugin_id=plugin_id,
             correlation_id=correlation_id,
+            automatic_projects=False,
+            timeout_seconds=None,
         )
 
     def _retrieve(
@@ -166,7 +202,7 @@ class KnowledgeRetrievalService:
         query: str,
         *,
         principal_username: str,
-        scope: KnowledgeScope,
+        scope: KnowledgeScope | None,
         max_candidate_chunks: int,
         max_selected_chunks: int,
         min_lexical_score: float,
@@ -174,6 +210,9 @@ class KnowledgeRetrievalService:
         max_context_chars: int,
         plugin_id: str | None,
         correlation_id: str | None,
+        automatic_projects: bool,
+        timeout_seconds: float | None,
+        lexical_query: str | None = None,
     ) -> KnowledgeRetrievalOutcome:
         """Run the shared authorised retrieval and ranking implementation."""
         if not query.strip():
@@ -194,8 +233,7 @@ class KnowledgeRetrievalService:
         ):
             raise KnowledgeRetrievalError("knowledge_embedding_provider_nonsemantic")
         if (
-            str(active_profile.get("profile_version") or "")
-            != profile.profile_version
+            str(active_profile.get("profile_version") or "") != profile.profile_version
             or str(active_profile.get("model_digest") or "").lower()
             != profile.model_digest.lower()
             or int(active_profile.get("dimensions") or 0) != profile.dimensions
@@ -211,18 +249,32 @@ class KnowledgeRetrievalService:
         dimensions = len(query_vector)
         if dimensions != int(active_profile["dimensions"]):
             raise KnowledgeRetrievalError("query_embedding_dimensions_invalid")
-        lexical_tokens = _lexical_query_tokens(query, scope)
+        lexical_tokens = _lexical_query_tokens(lexical_query or query, scope)
         lexical_phrase = " ".join(lexical_tokens)
         requested_retrieval_id = str(uuid.uuid4())
-        if plugin_id is None:
+        if automatic_projects:
+            retrieval_id, resolution, rows = (
+                self._repository.open_authorised_project_candidates(
+                    principal_username=principal_username,
+                    embedding_profile_id=int(active_profile["embedding_profile_id"]),
+                    query_vector=query_vector,
+                    lexical_tokens=lexical_tokens,
+                    lexical_phrase=lexical_phrase,
+                    semantic_limit=50,
+                    lexical_limit=50,
+                    retrieval_id=requested_retrieval_id,
+                    timeout_seconds=float(timeout_seconds or 10.0),
+                )
+            )
+        elif plugin_id is None:
+            if scope is None:
+                raise KnowledgeRetrievalError("knowledge_scope_required")
             retrieval_id, resolution, rows = (
                 self._repository.open_hybrid_search_candidates(
                     principal_username=principal_username,
                     target_scope_type=scope.scope_type,
                     target_scope_key=scope.scope_key,
-                    embedding_profile_id=int(
-                        active_profile["embedding_profile_id"]
-                    ),
+                    embedding_profile_id=int(active_profile["embedding_profile_id"]),
                     query_vector=query_vector,
                     lexical_tokens=lexical_tokens,
                     lexical_phrase=lexical_phrase,
@@ -232,13 +284,13 @@ class KnowledgeRetrievalService:
                 )
             )
         else:
+            if scope is None:
+                raise KnowledgeRetrievalError("plugin_scope_invalid")
             retrieval_id, resolution, rows = (
                 self._repository.open_plugin_hybrid_candidates(
                     principal_username=principal_username,
                     plugin_id=plugin_id,
-                    embedding_profile_id=int(
-                        active_profile["embedding_profile_id"]
-                    ),
+                    embedding_profile_id=int(active_profile["embedding_profile_id"]),
                     query_vector=query_vector,
                     lexical_tokens=lexical_tokens,
                     lexical_phrase=lexical_phrase,
@@ -253,7 +305,9 @@ class KnowledgeRetrievalService:
         if resolution.get("status") != "APPROVED":
             return KnowledgeRetrievalOutcome(
                 status="failed",
-                reason_codes=(str(resolution.get("reason_code") or "RETRIEVAL_NOT_AUTHORISED"),),
+                reason_codes=(
+                    str(resolution.get("reason_code") or "RETRIEVAL_NOT_AUTHORISED"),
+                ),
                 scope=scope,
                 embedding_model_identifier=self._embedding_provider.model_id,
                 retrieval_id=retrieval_id,
@@ -285,10 +339,13 @@ class KnowledgeRetrievalService:
                     dimensions,
                     int(active_profile["embedding_profile_id"]),
                 )
-                if (
-                    str(row.get("target_scope_type") or "").upper() != scope.scope_type
-                    or str(row.get("target_scope_key") or "") != scope.scope_key
-                ):
+                row_scope = KnowledgeScope(
+                    str(row.get("target_scope_type") or ""),
+                    str(row.get("target_scope_key") or ""),
+                )
+                if automatic_projects and row_scope.scope_type != "PROJECT":
+                    raise KnowledgeRetrievalError("scope_mismatch")
+                if not automatic_projects and row_scope != scope:
                     raise KnowledgeRetrievalError("scope_mismatch")
                 semantic_score = float(row.get("semantic_score") or 0.0)
                 lexical_score = float(row.get("lexical_score") or 0.0)
@@ -345,22 +402,16 @@ class KnowledgeRetrievalService:
                     classification_tags=_classification_tags(
                         row.get("classification_tags_json")
                     ),
-                    source_format_code=_optional_string(
-                        row.get("source_format_code")
-                    ),
+                    source_format_code=_optional_string(row.get("source_format_code")),
                     normalised_text_sha256=_optional_string(
                         row.get("normalised_text_sha256")
                     ),
                     output_mime_type=_optional_string(row.get("output_mime_type")),
                     extractor_code=_optional_string(row.get("extractor_code")),
-                    extractor_version=_optional_string(
-                        row.get("extractor_version")
-                    ),
+                    extractor_version=_optional_string(row.get("extractor_version")),
                     extractor_metadata_json=extractor_metadata_json,
                     chunk_metadata_json=chunk_metadata_json,
-                    source_artefact_id=_optional_int(
-                        row.get("source_artefact_id")
-                    ),
+                    source_artefact_id=_optional_int(row.get("source_artefact_id")),
                     source_artefact_role_code=_optional_string(
                         row.get("source_artefact_role_code")
                     ),
@@ -376,12 +427,8 @@ class KnowledgeRetrievalService:
                     source_artefact_ordinal=_optional_int(
                         row.get("source_artefact_ordinal")
                     ),
-                    source_sheet_name=_optional_string(
-                        row.get("source_sheet_name")
-                    ),
-                    source_table_name=_optional_string(
-                        row.get("source_table_name")
-                    ),
+                    source_sheet_name=_optional_string(row.get("source_sheet_name")),
+                    source_table_name=_optional_string(row.get("source_table_name")),
                     source_member_cell_range=_optional_string(
                         row.get("source_member_cell_range")
                     ),
@@ -410,6 +457,10 @@ class KnowledgeRetrievalService:
                 -result.lexical_score,
                 result.chunk_id,
             ),
+        )
+        ordered = _promote_continuation_neighbors(
+            ordered,
+            selection_window=max_selected_chunks,
         )
         selected = _select_bounded_results(
             ordered,
@@ -488,9 +539,12 @@ class KnowledgeRetrievalService:
             )
 
 
-def _lexical_query_tokens(query: str, scope: KnowledgeScope) -> list[str]:
+def _lexical_query_tokens(
+    query: str,
+    scope: KnowledgeScope | None,
+) -> list[str]:
     """Return the bounded lexical descriptor sent to the Oracle branch."""
-    excluded = _scope_tokens(scope)
+    excluded = _scope_tokens(scope) if scope is not None else frozenset()
     tokens: list[str] = []
     seen: set[str] = set()
     for raw_token in _LEXICAL_TOKEN.findall(query):
@@ -549,6 +603,53 @@ def _select_bounded_results(
     return selected
 
 
+def _promote_continuation_neighbors(
+    results: list[KnowledgeSearchResult],
+    *,
+    selection_window: int,
+) -> list[KnowledgeSearchResult]:
+    """Promote relevant neighbours when top chunks split a sentence."""
+    by_position = {
+        (result.document_version_id, result.chunk_no): result for result in results
+    }
+    promoted: list[KnowledgeSearchResult] = []
+    promoted_ids: set[int] = set()
+    for result in results[:selection_window]:
+        stripped = result.chunk_text.lstrip()
+        page_number_continuation = bool(re.match(r"\d+\s+[a-z]", stripped))
+        starts_mid_sentence = stripped[:1].islower() or page_number_continuation
+        if starts_mid_sentence and result.chunk_no > 1:
+            predecessor = by_position.get(
+                (result.document_version_id, result.chunk_no - 1)
+            )
+            if (
+                predecessor is not None
+                and predecessor.fused_score
+                >= (0.5 if page_number_continuation else 0.65)
+                and predecessor.chunk_id not in promoted_ids
+            ):
+                promoted.append(predecessor)
+                promoted_ids.add(predecessor.chunk_id)
+        if result.chunk_id not in promoted_ids:
+            promoted.append(result)
+            promoted_ids.add(result.chunk_id)
+        if stripped and stripped[-1] not in ".!?" and result.chunk_no > 0:
+            successor = by_position.get(
+                (result.document_version_id, result.chunk_no + 1)
+            )
+            if (
+                successor is not None
+                and successor.fused_score >= 0.5
+                and successor.chunk_id not in promoted_ids
+            ):
+                promoted.append(successor)
+                promoted_ids.add(successor.chunk_id)
+    promoted.extend(
+        result for result in results if result.chunk_id not in promoted_ids
+    )
+    return promoted
+
+
 def _is_navigation_heavy(text: str) -> bool:
     """Identify Markdown navigation/front-matter chunks without query-specific rules.
 
@@ -601,9 +702,7 @@ def _optional_json_object_text(value: Any, *, field_name: str) -> str | None:
             sort_keys=True,
         )
     except (json.JSONDecodeError, TypeError, ValueError) as exc:
-        raise KnowledgeRetrievalError(
-            f"{field_name} projection is malformed."
-        ) from exc
+        raise KnowledgeRetrievalError(f"{field_name} projection is malformed.") from exc
 
 
 def _json_metadata_scalar(value: Any) -> int | float:
