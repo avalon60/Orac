@@ -39,7 +39,10 @@ orac_core,knowledge_artefacts,kn_artf
 orac_core,knowledge_chunk_sets,kn_chset
 orac_core,knowledge_chunks,kn_chnk
 orac_core,knowledge_embedding_models,kn_embmod
-orac_core,knowledge_chunk_embeddings,kn_chnkemb
+orac_core,knowledge_embedding_profiles,kn_embprf
+orac_core,knowledge_embedding_activations,kn_embact
+orac_core,knowledge_reembedding_runs,kn_reembr
+orac_core,knowledge_chunk_vector_embeddings,kn_chnkve
 orac_core,knowledge_ingestion_events,kn_inge
 orac_core,knowledge_scopes,kn_scope
 orac_core,knowledge_document_version_tags,kn_docvtag

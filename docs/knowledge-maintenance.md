@@ -6,6 +6,62 @@ extraction text into managed artefacts, and migrate proven legacy raw locators.
 These are operator actions; normal Liquibase deployment installs supporting
 APIs but never migrates, repairs, quarantines, or deletes content automatically.
 
+## Native semantic re-embedding
+
+Fresh ingestion writes production knowledge vectors directly to Oracle as
+`VECTOR(768,FLOAT32)`. On an empty database the first complete semantic profile
+is activated safely before its first request becomes searchable. The legacy
+JSON CLOB/hash representation is not a production fallback or fresh default.
+
+For an existing corpus or a later immutable profile upgrade, rebuild from the
+stored normalized chunk text without parsing documents again:
+
+```bash
+bin/orac-knowledge.sh reembed --batch-size 16 --max-batches 1000 --json
+bin/orac-knowledge.sh reembed --run-id 42 --batch-size 16 --max-batches 1000 --activate --json
+```
+
+The workflow records the resolved provider/model digest, Nomic document/query
+prefixes, fixed dimensions, `truncate=false`, profile version, storage layout,
+policy version, and the profile-specific semantic threshold. It is idempotent:
+the unique chunk/profile/content-hash identity skips current vectors, commits
+bounded progress, and resumes after interruption. Validation requires complete
+coverage and no stale content hashes before the activation pointer changes in
+one transaction. The old profile and vectors remain isolated during the
+rollback window and are never mixed in one distance calculation.
+
+The destructive purge removes the legacy JSON/CLOB embedding table, API view,
+searchable view, grants, synonyms, callable retrieval procedures, and runtime
+fallbacks. A final installed-state validation queries the Oracle dictionary and
+halts both fresh and upgrade installation if any production object or dependency
+still names those superseded objects. Rollback is therefore an explicit release
+operation, never an automatic production compatibility path.
+
+To roll back to a previously validated native profile whose vectors are still
+complete for the current chunks:
+
+```bash
+bin/orac-knowledge.sh activate-profile 17 --json
+```
+
+Changing an Ollama digest, input prefix, dimensions, truncation behaviour, or
+retrieval policy requires a new logical `profile_version`. The shipped `0.60`
+semantic threshold belongs only to the pinned `knowledge-v1` Nomic digest and
+input transform; it must be recalibrated for a different profile. A changed
+model behind the configured tag fails closed when its resolved digest differs.
+
+Status and startup diagnostics expose only profile/provider/model identity,
+dimensions/version, current/missing/stale counts, and bounded run progress.
+They do not log document text, vector values, filenames, or unrestricted
+metadata.
+
+Operational health must distinguish extraction, chunk creation, active-profile
+embedding coverage, and searchability. A chunked request with `0/N` current
+vectors is failed or incomplete, never healthy. The provider preflight checks
+the Ollama catalogue digest, `/api/show` embedding capability, 768 dimensions,
+the 2048-token model context, and configured safety margin; it never silently
+substitutes the legacy hash provider.
+
 ## Read-only preflight
 
 Run a fresh preflight in every target environment before applying migration:

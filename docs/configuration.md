@@ -321,6 +321,9 @@ conversation deletion remains a separate lifecycle operation.
 - **Status:** active
 
 Writes assembled prompts to debug logs; enable only for local diagnostics.
+The operator command `bin/orac-ctl.sh dump-context` independently arms a
+one-shot dump for the next eligible request even when this setting is `false`.
+The marker is consumed once; persistent dumping does not leave it armed.
 
 **Example:** `enable_prompt_dump = false`
 
@@ -613,11 +616,11 @@ Pinned Phase 1 embedding profile for summaries and source messages.
 
 - **Type:** string
 - **Shipped value:** `ollama`
-- **Allowed values:** `ollama`, `hash`
+- **Allowed values:** `ollama`
 
 Provider used only for conversational-memory summary and source-message
-embeddings. `hash` remains a deterministic development/test option and is not
-semantic retrieval.
+embeddings. Deterministic fixtures must inject a test provider directly and
+cannot be selected through production configuration.
 
 ### `embedding_service_url`
 
@@ -777,26 +780,41 @@ The effective rollout states are:
 | `domain_discovery_enabled` | `domain_discovery_shadow_mode` | Behaviour |
 | --- | --- | --- |
 | `false` | `false` | Phase 2C discovery is off. |
-| `false` | `true` | Discovery is evaluated for bounded telemetry while Phase 2A remains model-facing. This is the shipped state. |
-| `true` | `false` | Phase 2C handle-enumerated domain offers are model-facing. |
-| `true` | `true` | Enabled behavior takes runtime precedence; avoid this ambiguous operator configuration. |
+| `false` | `true` | Explicit diagnostic/development shadow state; Phase 2A remains model-facing. |
+| `true` | `false` | Shipped active state; Phase 2C handle-enumerated domain offers are model-facing. |
+| `true` | `true` | Invalid configuration; startup rejects the ambiguous state. |
 
 ### `domain_discovery_enabled`
 
 - **Type:** boolean
-- **Shipped value:** `false`
+- **Shipped value:** `true`
 
 Enables invocation-scoped semantic domain offers instead of the legacy binding.
-When true, this model-facing behaviour takes precedence over the shadow flag.
 
 ### `domain_discovery_shadow_mode`
 
 - **Type:** boolean
-- **Shipped value:** `true`
+- **Shipped value:** `false`
 
-When discovery is not enabled, evaluates the current authorised catalogue while
-preserving Phase 2A output. Set this false as part of an approved Phase 2C
-activation.
+When explicitly enabled while discovery is off, evaluates the current
+authorised catalogue while preserving Phase 2A output. This is diagnostic and
+must not be combined with enabled discovery.
+
+### `min_effective_context_tokens`
+
+- **Type:** integer
+- **Shipped value:** `32768`
+
+Minimum effective context for model-controlled governed-tool and Phase 2C
+discovery. This does not gate explicit host-mediated bounded knowledge-source
+retrieval, which retains its own context checks.
+
+This floor is not the only suppression control. Setting `enabled = false`
+disables the governed tool path for every model, and setting
+`domain_discovery_enabled = false` disables active Phase 2C discovery even for
+a qualifying model. The shipped values are both `true`; shadow remains an
+explicit diagnostic/development selection rather than an automatic rollout
+state.
 
 ### `descriptor_embedding_profile`
 
@@ -1457,54 +1475,132 @@ request is claimed and processed under its own transaction and error boundary.
 ### `chunk_size_tokens`
 
 - **Type:** integer
-- **Shipped value:** `384`
-- **Runtime fallback:** `384`
+- **Shipped value:** `1536`
+- **Runtime fallback:** `1536`
 - **Required:** No; supplied by the shipped configuration
 - **Allowed values:** Positive integer token estimate
 - **Status:** active
 
-Target word-window size used when chunking extracted knowledge text.
+Target conservative input-accounting size used when chunking extracted
+knowledge text. The production counter uses UTF-8 bytes as a safe upper bound
+for BERT-family non-special tokens; `1536` bytes is approximately the former
+384-token prose target while remaining safe for punctuation-heavy and
+low-whitespace input.
 
-**Example:** `chunk_size_tokens = 384`
+**Example:** `chunk_size_tokens = 1536`
 
 ### `chunk_overlap_tokens`
 
 - **Type:** integer
-- **Shipped value:** `48`
-- **Runtime fallback:** `48`
+- **Shipped value:** `192`
+- **Runtime fallback:** `192`
 - **Required:** No; supplied by the shipped configuration
 - **Allowed values:** Non-negative integer smaller than `chunk_size_tokens`
 - **Status:** active
 
 Overlap retained between adjacent knowledge chunks.
 
-**Example:** `chunk_overlap_tokens = 48`
+**Example:** `chunk_overlap_tokens = 192`
 
-### `embedding_model_id`
+Knowledge embedding identity is not configured in this ingestion section.
+Production ingestion and retrieval use the dedicated immutable
+`[embedding.knowledge]` profile below. There is no profile-less or hash-backed
+production knowledge path.
 
-- **Type:** string
-- **Shipped value:** `hash-embedding-v1`
-- **Runtime fallback:** `hash-embedding-v1`
-- **Required:** No; supplied by the shipped configuration
-- **Allowed values:** Any registered embedding model identifier
-- **Status:** active
+## `[embedding.knowledge]`
 
-Embedding model identifier used by the default local knowledge worker.
+Purpose-isolated production profile for knowledge chunk embeddings. The shipped
+profile uses local Ollama Nomic embeddings, Nomic's retrieval prefixes,
+`truncate=false`, and native Oracle `VECTOR(768,FLOAT32)` storage. It does not
+share activation or cache lifecycle with `[embedding.domain_discovery]`.
 
-**Example:** `embedding_model_id = hash-embedding-v1`
+| Key | Shipped value | Contract |
+|---|---|---|
+| `provider` | `ollama` | Production semantic provider; deterministic hash providers are rejected. |
+| `service_url` | `http://127.0.0.1:11434` | Trusted local Ollama endpoint. |
+| `model_id` | `nomic-embed-text:latest` | Callable local model tag. |
+| `model_digest` | `0a109f...e59f` | Full resolved immutable digest; a mismatch fails closed. |
+| `dimensions` | `768` | Must match the fixed native vector column. |
+| `profile_version` | `knowledge-v1` | Immutable logical identity; change it for any digest, transform, or policy change. |
+| `document_input_prefix` | `search_document:` | Nomic document-mode transform. |
+| `query_input_prefix` | `search_query:` | Nomic query-mode transform. |
+| `truncate` | `false` | Oversized inputs fail rather than silently changing their semantic content. |
+| `request_batch_size` | `2` | Operational Ollama request split; does not change vector identity. |
+| `model_context_tokens` | `2048` | Must exactly match the context reported by the resolved local model. |
+| `context_safety_margin_tokens` | `64` | Reserved from the model maximum before prefix and content accounting. |
+| `retrieval_policy_version` | `knowledge-hybrid-v1` | Deterministic hybrid policy identity. |
+| `semantic_threshold` | `0.60` | Initial calibration only for this pinned digest and input transform; not a universal embedding threshold. |
 
-### `embedding_dimensions`
+The resolved digest, purpose, model, dimensions, prefixes, truncation policy,
+profile version, and retrieval policy are persisted as one immutable database
+profile. Changing the model behind `latest` without updating the configured
+digest fails before retrieval. A real profile change requires a new
+`profile_version`, native re-embedding, validation, and atomic activation.
 
-- **Type:** integer
-- **Shipped value:** `32`
-- **Runtime fallback:** `32`
-- **Required:** No; supplied by the shipped configuration
-- **Allowed values:** Positive integer dimension count
-- **Status:** active
+### `provider`
 
-Vector dimension count for the default local embedding provider.
+Production provider code. Shipped and supported value: `ollama`.
 
-**Example:** `embedding_dimensions = 32`
+### `service_url`
+
+Trusted local Ollama base URL. Shipped value: `http://127.0.0.1:11434`.
+
+### `model_id`
+
+Callable model tag. Shipped value: `nomic-embed-text:latest`.
+
+### `model_digest`
+
+Full immutable digest resolved from the local Ollama catalogue. A mismatch
+fails closed; updating it requires a new profile version and rebuild.
+
+### `dimensions`
+
+Fixed vector dimension count. Shipped and supported value: `768`.
+
+### `profile_version`
+
+Immutable purpose-specific lifecycle identity. Shipped value: `knowledge-v1`.
+
+### `document_input_prefix`
+
+Nomic document-mode prefix. Shipped value: `search_document:`.
+
+### `query_input_prefix`
+
+Nomic query-mode prefix. Shipped value: `search_query:`.
+
+### `truncate`
+
+Must remain `false`; oversized text fails visibly instead of being truncated.
+
+### `request_batch_size`
+
+Maximum inputs per local Ollama request. Shipped value: `2`; larger ingestion
+batches are split without changing profile or vector identity.
+
+### `model_context_tokens`
+
+Configured model maximum. The shipped Nomic model reports `2048` through
+Ollama `/api/show`; startup fails if the configured and resolved values differ.
+
+### `context_safety_margin_tokens`
+
+Reserved input headroom. The shipped value is `64`, leaving a usable ceiling
+of `1984` before the `search_document:` or `search_query:` prefix, model
+special tokens, and content are charged. The local provider rejects an input
+with `EMBEDDING_INPUT_CONTEXT_EXCEEDED` before calling `/api/embed` when its
+conservative estimate exceeds that ceiling. `truncate` remains `false`.
+
+### `retrieval_policy_version`
+
+Immutable host/database ranking contract. Shipped value:
+`knowledge-hybrid-v1`.
+
+### `semantic_threshold`
+
+Shipped value: `0.60`. This is profile-specific calibration for the exact
+Nomic digest and input transform, not a universal semantic threshold.
 
 ## `[knowledge.reconciliation]`
 
@@ -1645,11 +1741,11 @@ principal and canonical scope.
 | `scope_aliases_json` | `{"orac":"PROJECT:ORAC_CORE","orac core":"PROJECT:ORAC_CORE","drop box":"PLUGIN:drop_box"}` | JSON object mapping case-insensitive dialogue aliases to canonical scopes. Unknown or ambiguous aliases do not retrieve. |
 | `registry_cache_ttl_seconds` | `30` | Positive lifetime for active-scope registry snapshots. An expired refresh failure denies retrieval rather than serving stale eligibility. |
 | `max_scopes_per_request` | `3` | Maximum requested canonical scopes. The first vertical slice routes one explicit scope. |
-| `max_candidate_chunks_per_scope` | `1000` | Hard candidate cap. More rows fail the retrieval rather than returning a partial ranking. |
+| `max_candidate_chunks_per_scope` | `100` | Hard cap on the bounded union of up to 50 semantic and 50 lexical candidates. |
 | `max_selected_chunks` | `6` | Maximum chunks injected into one prompt. |
 | `max_context_chars` | `12000` | Total local evidence character budget. |
 | `max_chunk_chars` | `2200` | Per-chunk evidence character budget. |
-| `min_lexical_score` | `0.25` | Inclusive relevance threshold from `0.0` to `1.0`. |
+| `min_lexical_score` | `0.25` | Compatibility setting for the independent lexical branch; it is not a semantic hard gate. |
 
 ### `enabled`
 
@@ -1675,7 +1771,7 @@ Positive cap on canonical scopes requested in one turn. Shipped value: `3`.
 
 ### `max_candidate_chunks_per_scope`
 
-Hard candidate-row cap per scope. Shipped value: `1000`.
+Hard candidate-union cap per scope. Shipped value: `100`.
 
 ### `max_selected_chunks`
 
@@ -1691,10 +1787,10 @@ Per-chunk evidence character budget. Shipped value: `2200`.
 
 ### `min_lexical_score`
 
-Inclusive lexical relevance threshold from `0.0` to `1.0`. Shipped value:
-`0.25`. Generic route-selection words and canonical scope-name words are not
-counted as topical matches, so an explicit knowledge directive cannot satisfy
-the threshold without substantive query evidence.
+Inclusive lexical-branch relevance threshold from `0.0` to `1.0`. Shipped
+value: `0.25`. It never excludes an independently admitted semantic candidate.
+Generic route-selection words and canonical scope-name words are not counted
+as topical lexical matches.
 
 Environment overrides use the existing form, for example
 `ORAC__KNOWLEDGE.DIALOGUE__ENABLED=false`. Malformed JSON, duplicate object keys,

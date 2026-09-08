@@ -64,9 +64,9 @@ some advertised capabilities remain intentionally constrained:
   protected by per-principal Oracle usage grants. Document ingestion supports
   native UTF-8 text/Markdown and optional Pandoc-backed
   DOCX, HTML, ODT, RTF, and EPUB conversion. PDF/OCR, spreadsheets, and
-  presentations are not supported. The shipped hash embedding is
-  development/test infrastructure, lexical relevance is the current evidence
-  gate, and native Oracle vector search is not yet part of the runtime.
+  presentations are not supported. Hash embeddings are test-only;
+  production knowledge uses pinned Nomic embeddings, hybrid retrieval, and
+  native Oracle `VECTOR(768,FLOAT32)` storage.
 - Conversation memory and governed read-only retrieval are enabled in the
   shipped configuration, subject to principal ownership, scope grants, exact
   model capability evidence, provider support, and safe context headroom.
@@ -105,7 +105,7 @@ implemented runtime capabilities:
 |---|---|---|
 | Orac AI engine | Conversation orchestration, plugins, context, retrieval | Yes |
 | Oracle Database + ORDS/APEX | Persistence, core administration, and framework-managed plugin APEX applications | Yes for the supported local stack |
-| Local LLM service | Model inference, normally Ollama | Yes |
+| Local LLM service | Chat inference plus the separate knowledge embedding API/model, normally Ollama | Yes |
 | SearXNG | Local/private search provider | When internet retrieval is enabled |
 | Faster Whisper | Local speech-to-text | For voice operation |
 | Kokoro or Piper | Local text-to-speech | For spoken responses |
@@ -133,10 +133,16 @@ pip install -e .
 Then:
 
 1. Review `resources/config/orac.env` and `resources/config/orac.ini`.
-2. Create the installer database credential with `bin/dbconn-mgr.sh -c orac`.
-3. Deploy the local database with `bin/orac-db-deploy.sh`.
-4. Start the complete stack with `bin/orac-ctl.sh start`.
-5. Confirm status with `bin/orac-ctl.sh status`.
+2. Ensure Ollama provides `POST /api/embed` and install the separate default
+   knowledge embedding model with `ollama pull nomic-embed-text:latest`.
+3. Create the installer database credential with `bin/dbconn-mgr.sh -c orac`.
+4. Deploy the local database with `bin/orac-db-deploy.sh`.
+5. Start the complete stack with `bin/orac-ctl.sh start`.
+6. Confirm status with `bin/orac-ctl.sh status`.
+
+The chat/reasoning LLM and `nomic-embed-text:latest` knowledge embedding model
+are separate runtime prerequisites; availability of one does not imply the
+other is installed or ready.
 
 Read [Installation](docs/installation.md) before deploying a new host. The
 deployment script currently supports only `TOPOLOGY=db-local`.

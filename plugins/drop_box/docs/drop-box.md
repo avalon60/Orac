@@ -196,12 +196,15 @@ runtime.
 | Field | Guidance |
 | --- | --- |
 | Target Scope Type | Choose `Project` for a registered project or `Plugin` for an installed eligible plugin. |
-| Project Code | Select an active project created in App 1042 Pages 37/38. |
-| Plugin Target | Select an enabled, installed, runtime-ready plugin scope. |
+| Project | Select an active project by its display name. Projects are maintained in App 1042 Pages 37/38. |
+| Plugin | Select an enabled, installed, runtime-ready plugin by its display name. |
 | Classification Tags | Choose one to ten active Core-owned descriptive tags. |
 
 Target lists come from the canonical Core scope registry. A location does not
-create its own project or plugin scope.
+create its own project or plugin scope. App 10020 displays readable registry
+names in selectors, reports, and location details; stable project and plugin
+codes remain internal routing identifiers. Only the Project or Plugin field
+that matches the selected target scope type is shown.
 
 Classification tags are provenance. They do not select a converter, alter
 chunking or embeddings, influence ranking or authorisation, enter privileged
@@ -341,7 +344,7 @@ Display Name: Local Scanner Test
 Source Path: /tmp/orac-dropbox-test/inbox
 Enabled: No
 Target Scope Type: Project
-Project Code: ORAC_CORE
+Project: Orac Core
 Classification Tags: RAW_REFERENCE
 Allowed Extensions: md,txt
 Recursive Scan: No

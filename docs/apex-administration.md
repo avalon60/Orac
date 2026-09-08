@@ -86,6 +86,10 @@ access. A future download UI requires a separate reviewed design.
 The Core `orac_core` / `knowledge_ingestion` worker appears in managed service
 status only when `[knowledge].enabled` permits registration. App 1043 does not
 edit Core chunking, embedding, managed-storage, or dialogue-retrieval settings.
+`orac_core` is a synthetic Core-owned service manifest rather than an installed
+plugin, so its service rows display the identifier as plain text. Service-owner
+identifiers link to a plugin application only when exactly one authorised,
+enabled, installed application supplies a launch destination.
 
 See [Document Ingestion](document-ingestion.md) for the complete Core
 configuration and ownership model and the

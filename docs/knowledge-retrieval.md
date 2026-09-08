@@ -16,21 +16,22 @@ Unknown, inactive, expired, and ungranted cases all return the public
 Callers identify content only by document, document-version, extraction,
 artefact, chunk-set, and chunk identities. Filesystem paths, Oracle directory
 objects, `content_uri`, and managed-store keys are not accepted. The runtime
-schema cannot read `knowledge_searchable_chunks_v` directly and cannot execute
-the artefact registration package. Plugins, `ORAC_PLUGIN`, APEX, and
-`ORAC_APX_PUB` receive no direct retrieval access. The trusted `ORAC` host may
-use the narrow `open_plugin_search_candidates` procedure for request-bound
-plugin self-knowledge retrieval; this is a host capability, not a database
-grant to plugin code or schemas.
+schema cannot read native searchable content directly and cannot execute the
+artefact registration package. Plugins, `ORAC_PLUGIN`, APEX, and `ORAC_APX_PUB`
+receive no direct retrieval access. The trusted `ORAC` host may use the narrow
+`open_plugin_hybrid_candidates` procedure for request-bound plugin
+self-knowledge retrieval; this is a host capability, not a database grant to
+plugin code or schemas.
 
 ### Plugin self-scope bridge
 
 `PLUGIN` scopes associate knowledge with one active Core plugin registration.
 For plugin runtime retrieval, the host captures the trusted manifest plugin ID,
 authenticated username, and request correlation context. Oracle's narrow
-plugin entry point accepts that plugin ID but no arbitrary scope type, scope
-key, or scope ID; it hardcodes `PLUGIN`, resolves the registered scope, and
-reuses the same authorised candidate implementation as generic retrieval.
+plugin entry point accepts that plugin ID and the active native embedding
+profile but no arbitrary scope type, scope key, or scope ID; it hardcodes
+`PLUGIN`, resolves the registered scope, and reuses the same authorised hybrid
+candidate implementation as generic retrieval.
 
 The authenticated user remains the authorisation subject. Existing scope
 eligibility/readiness checks and the active user-to-scope `USE` privilege are

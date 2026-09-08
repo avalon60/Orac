@@ -9,11 +9,13 @@ not bypass plugin policy, retrieval policy, persistence, or prompt boundaries.
    such as `Search the web for ...`.
 2. Explicit knowledge-source syntax, including unknown names, which terminates
    as authorised retrieval, safe denial/unavailability, or clarification.
-3. Deterministic plugin interception from validated plugin metadata.
-4. Authenticated, authorised, configured-alias local-knowledge retrieval.
-5. Existing internet-retrieval policy and SearXNG routing.
-6. Semantic plugin hints retained for compatibility.
-7. Ordinary LLM response.
+3. Scope-neutral explicit local-retrieval intent, which reserves the governed
+   retrieval path without selecting or granting a scope.
+4. Deterministic plugin interception from validated plugin metadata.
+5. Authenticated, authorised, configured-alias local-knowledge retrieval.
+6. Existing internet-retrieval policy and SearXNG routing.
+7. Semantic plugin hints retained for compatibility.
+8. Ordinary LLM response.
 
 This deterministic routing sequence is separate from model-governed retrieval.
 A selected local-knowledge route, including a terminal denial, unavailability,
@@ -40,6 +42,9 @@ Local knowledge routing is deterministic. Orac does not use an LLM or semantic
 similarity to decide whether a turn requests a local knowledge source. A turn
 must match either the explicit grammar or the implicit alias-and-question
 rules below. Matching is case-insensitive and may occur within a longer turn.
+This route-selection grammar is distinct from the later Phase 2C semantic
+domain match, which can require governed retrieval for an otherwise ordinary
+question without selecting or granting a scope.
 
 ### Explicit Named Source
 
@@ -85,6 +90,34 @@ Drop Box location codes and display names are not automatically dialogue
 aliases. For example, `ORAC_DOCS` is usable as `<source-name>` only when it has
 been added to `scope_aliases_json`; the location's configured target scope does
 not create an alias by itself.
+
+### Scope-Neutral Local Retrieval Intent
+
+Requests that explicitly ask Orac to consult local knowledge also produce a
+scope-neutral required-retrieval signal when they are not already resolved by
+the earlier source-selection route. The bounded family recognises actions such
+as `check`, `search`, `query`, `consult`, `use`, `retrieve ... from`, and
+`look ... up in` when paired with a local source phrase such as `knowledge
+base`, `knowledge source`, `local knowledge`, `internal knowledge`, `project
+knowledge`, `documentation`, or `docs`. Determiners and possessives such as
+`the`, `your`, `our`, and `my` are accepted.
+
+For example:
+
+```text
+Check your knowledge base for the fictional Project Lantern release procedure.
+Look the fictional Atlas Finch decision up in the documentation.
+According to your knowledge source, how does the fictional Zephyr lattice work?
+```
+
+These examples are deliberately fictional because this operator guide may be
+ingested as `ORAC_DOCS`; production regression wording belongs in executable
+tests, not in a searchable evidence source.
+
+This signal cannot select a scope, create authority, or override an explicit
+internet route. When it reaches governed retrieval, Orac requires a valid tool
+call or returns retrieval as unavailable; model prose cannot satisfy the
+requirement.
 
 ### Implicit Alias And Question
 
@@ -229,23 +262,37 @@ execution and without exposing whether a requested corpus exists.
 The runtime reads current, completed chunks only through the definer-rights
 `orac_code.knowledge_retrieval_api`. That package revalidates the authenticated
 username, scope status, and current `USE` privilege before opening the bounded
-cursor. The runtime has no direct searchable-view grant or synonym. It requires the configured
-embedding model identifier and dimensions to match stored chunks. The current
-`hash-embedding-v1` provider is deterministic development/test infrastructure;
-its cosine value is diagnostic, not a meaningful semantic relevance signal.
+cursor. The runtime has no direct searchable-view grant or synonym and never
+loads stored vectors into Python. The package accepts one transient, validated
+query vector for the active immutable profile and runs two independent,
+scope-authorised branches:
 
-Lexical coverage is the first-release relevance gate. It recognises ordinary
-tokens and exact technical identifiers containing `.`, `_`, or `-`, with small
-phrase and source-name boosts. Generic route-control words and words already
-represented by the resolved canonical scope are excluded from the query score;
-they cannot turn an unrelated question into evidence. Rows below
-`min_lexical_score` are excluded. Returning rows is not sufficient evidence by
-itself. Retrieval also enforces a candidate cap, selected-chunk cap, per-chunk
-character cap, total evidence cap, and content deduplication.
+- Oracle cosine-distance ranking over native `VECTOR(768,FLOAT32)`, admitted by
+  the active profile's semantic threshold and `FETCH EXACT` candidate limit;
+- lexical coverage for ordinary terms, exact identifiers containing `.`, `_`,
+  or `-`, phrases, and source names, admitted independently at `0.25`.
 
-No native Oracle vector migration is part of this release. A production
-embedding model and any native-vector change require a separate compatibility
-and migration decision.
+The lexical threshold is not a universal hard gate. A strong paraphrase may
+enter through the semantic branch with no lexical match, while exact names,
+filenames, configuration properties, database objects, and versions remain
+strong lexical candidates. Oracle returns only the union of at most 50 rows
+from each branch, with raw semantic/lexical scores and deterministic ranks.
+The host applies weighted reciprocal-rank fusion (`0.65` semantic, `0.35`
+lexical, rank constant `60`) and then enforces selected-chunk, per-chunk,
+total-context, and deduplication limits.
+
+The initial `0.60` semantic threshold is calibrated specifically for the
+pinned `knowledge-v1` Nomic digest, `search_document:`/`search_query:` input
+transforms, and `truncate=false`. It is not a generic threshold for other
+models, revisions, dimensions, or transforms.
+
+No vector index is created for the initial small corpus. Oracle performs an
+exact cosine scan inside the already-authorised scope and applies `FETCH EXACT`
+before returning the bounded union. Introduce an Oracle cosine vector index
+only after representative corpus growth makes measured authorised-query p95
+latency miss its budget; that change must compare exact versus approximate
+recall on the behavioural suite, preserve active-profile filtering, and be a
+separately reversible Liquibase change.
 
 ## Prompt Boundary
 
@@ -286,9 +333,8 @@ Acceptance uses an enabled `DROP_BOX_ACCEPTANCE` location pointed at a
 controlled inbox and leaves it enabled after the Core worker completes. The
 retained location and corpus make the test reproducible. Verify the current
 file SHA-256, non-test parent reference, canonical scope, completed request,
-current document version, chunks, embeddings, model shape, processing profile,
-classification tags, and provenance through published views. The compatibility
-processing profile has no behavioural authority. The deterministic
-`hash-embedding-v1`
-values prove shape and lifecycle only; lexical relevance is the actual
-first-release selection gate.
+current document version, chunks, native vectors, immutable profile/digest,
+model shape, processing profile, classification tags, and provenance through
+published views. The compatibility processing profile has no behavioural
+authority. `hash-embedding-v1` is deterministic test-only legacy scaffolding
+and is not accepted as production semantic knowledge retrieval.

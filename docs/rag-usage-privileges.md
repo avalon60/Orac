@@ -89,7 +89,7 @@ ordinary child rows have been removed.
 | `knowledge_document_versions` | `knowledge_extractions`, `knowledge_ingestion_requests` | `document_version_id` | Existing `KN_EXT_KN_DOCVER_FK1`, `KN_INGREQ_KN_DOCVER_FK1` | Preserved | Delete rejected while extraction/request history exists | History remains | No row rewrite |
 | `knowledge_extractions` | `knowledge_chunk_sets` | `extraction_id` | Existing `KN_CHSET_KN_EXT_FK1` | Preserved | Delete rejected while chunk sets exist | History remains | No row rewrite |
 | `knowledge_chunk_sets` | `knowledge_chunks` | `chunk_set_id` | Existing `KN_CHNK_KN_CHSET_FK1` | Preserved | Delete rejected while chunks exist | History remains | No row rewrite |
-| `knowledge_chunks` | `knowledge_chunk_embeddings` | `knowledge_chunk_id` | Existing `KN_CHNKEMB_KN_CHNK_FK1` | Preserved | Delete rejected while embeddings exist | History remains | No row rewrite |
+| `knowledge_chunks` | `knowledge_chunk_vector_embeddings` | `chunk_id` plus immutable `embedding_profile_id` | Native vector FK and profile identity | Preserved as the sole production embedding relationship | Delete rejected while native embeddings exist | Profile-specific vectors remain isolated | Legacy JSON/CLOB embeddings are destructively purged |
 | `knowledge_ingestion_requests` | `knowledge_ingestion_events` | `ingestion_request_id` | Existing `KN_INGE_KN_INGREQ_FK1` | Preserved | Request delete rejected while events exist | History remains | Scope compatibility fields derive from the source scope |
 | `plugin_invocations` | `plugin_audit_events` | `plugin_invocation_id` | Existing `PLG_AUDEVT_PLG_INV_FK1` | Preserved | Invocation delete rejected while audit events exist | Audit history remains | No rewrite |
 | `orac_dropbox.drop_processing_profile` | `drop_location` | `processing_profile_id` | Existing `DRP_LOC_PROFILE_FK` | Preserved | Profile delete rejected while locations exist | Configuration remains | No rewrite |
@@ -100,7 +100,7 @@ ordinary child rows have been removed.
 ## Security and audit
 
 The runtime schema executes the authorisation package and the definer-rights
-`orac_code.knowledge_retrieval_api`; it cannot read the searchable chunk view
+`orac_code.knowledge_retrieval_api`; it cannot read the native searchable views
 or execute the artefact registration package directly. APEX can execute the
 administrative package and read reporting/LOV views, but receives no content
 surface or direct Core table access. Retrieval audits contain principal,

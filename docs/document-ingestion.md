@@ -47,15 +47,24 @@ and the model-facing context boundary.
    ingestion request.
 8. The Core `knowledge_ingestion` worker claims the request, verifies every
    chunkable managed member, creates one artefact-owned chunk set per PRIMARY,
-   MANIFEST, or TABLE member, embeds every searchable chunk, and marks the
+   MANIFEST, or TABLE member, embeds every searchable chunk with the immutable
+   knowledge profile, stores it as native `VECTOR(768,FLOAT32)`, and marks the
    request complete only when output-set and embedding invariants pass. Legacy
-   extractions without artefacts retain their CLOB-backed chunk path.
+   extraction CLOBs may remain content sources; legacy JSON/hash vectors are
+   not production semantic storage.
 9. Scope-authorised dialogue retrieval may use the completed current chunks
    when `[knowledge.dialogue].enabled` is enabled.
 
 Ingestion and dialogue retrieval are separate controls. A document can be
 ingested while dialogue retrieval is explicitly disabled, and a RAG usage
 grant does not authorise document submission.
+
+The version-two Markdown chunker accounts with a conservative UTF-8-byte upper
+bound rather than whitespace words. It derives a hard content ceiling from the
+resolved embedding model context, the configured safety margin, Nomic's
+document prefix, and special-token allowance. Long table-of-contents lines,
+URLs, paths, punctuation-heavy text, and low-whitespace content are therefore
+split before embedding. Ollama truncation stays disabled.
 
 ## Source Identity and Revisions
 
@@ -144,7 +153,8 @@ knowledge scope
   -> normalised artefact
   -> artefact-owned chunk set
   -> chunk
-  -> chunk embedding
+  -> immutable embedding profile
+  -> native chunk vector embedding
 ```
 
 The ingestion request and its events record the asynchronous lifecycle. Core
@@ -212,6 +222,12 @@ and `FAILED`.
   `FAILED`.
 - Completion is rejected unless the request has searchable chunks and every
   searchable chunk has an embedding.
+- Only the newest chunk-set generation for each extraction/source artefact is
+  current. Historical chunk sets and vectors remain durable lineage but are
+  excluded from completion coverage and searchable projections.
+- `EMBEDDING_INPUT_CONTEXT_EXCEEDED` is a permanent, content-free diagnostic
+  containing only chunk position, conservative estimate, limits, and profile
+  identity; document text is never included.
 - A malformed or unsafe key, symlink, non-regular file, missing object,
   permission defect, or hash/size mismatch is a permanent request failure.
 - A genuinely transient store I/O error maps to `MANAGED_STORE_UNAVAILABLE`
@@ -284,8 +300,11 @@ The full key-by-key reference is in
 | `batch_size` | Maximum requests handled during one worker tick. |
 | `chunk_size_tokens` | Target word-window size for structure-aware Markdown chunks. |
 | `chunk_overlap_tokens` | Bounded overlap between adjacent chunks. |
-| `embedding_model_id` | Required model identity written with each embedding. |
-| `embedding_dimensions` | Required vector dimension count. |
+
+Production embedding settings live under `[embedding.knowledge]`: provider,
+endpoint, model tag and digest, fixed 768 dimensions, immutable profile and
+policy versions, Nomic document/query prefixes, `truncate=false`, and the
+profile-specific semantic threshold.
 
 The built-in worker runs on start and then every 30 seconds with bounded jitter.
 Setting `enabled = false` prevents service registration after the next runtime
@@ -295,9 +314,9 @@ refresh or restart; it does not delete existing knowledge records.
 
 This section controls dialogue retrieval, not ingestion. The shipped
 configuration enables it; an explicit `enabled = false` disables it. Other
-settings include canonical scope aliases, registry cache lifetime, candidate
-and selected-chunk limits, context budgets, and the lexical relevance
-threshold.
+settings include canonical scope aliases, registry cache lifetime, the bounded
+semantic/lexical candidate union, selected-chunk limits, context budgets, and
+the lexical-branch threshold.
 
 Every retrieval requires a current Oracle `USE` privilege. The former
 `allow_all_scopes` bypass is retired and rejected at startup if configured.
@@ -414,11 +433,12 @@ The current ingestion path does not provide:
 - spreadsheet or presentation conversion;
 - remote acquisition, email ingestion, or embedded-media extraction;
 - model-generated document transformation;
-- automatic reindexing of previously completed document versions;
+- automatic activation of a changed profile without complete native-vector
+  validation;
 - file movement, deletion, or quarantine after processing;
 - an unreviewed manual terminal-job requeue action;
-- production semantic vector search. The shipped `hash-embedding-v1` provider
-  proves lifecycle and shape; lexical relevance is the current evidence gate.
+- an Oracle vector index for the initial small corpus. Exact native vector
+  distance is used until measured corpus/latency growth justifies an index.
 
 Phase 2 raw-binary submission and model-capability routing are also deferred.
 The current model path accepts only authorised, bounded normalised text

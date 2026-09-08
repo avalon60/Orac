@@ -25,21 +25,22 @@ model context.
 
 ## What Ships Now
 
-The shipped file is `resources/config/orac.ini`. Environment overrides and
-database capability records can still change the effective runtime, so a
-configured switch is not proof that every model or principal can use the
-feature.
+The shipped file is `resources/config/orac.ini`. An environment override takes precedence at runtime,
+and database capability records can still change the
+effective runtime, so a configured switch is not proof that every model or
+principal can use the feature.
 
 | Capability | Shipped setting | Effective shipped behaviour |
 | --- | --- | --- |
 | Recent conversation history | `[context].enable_context_history = true` | Recent dialogue is selected non-destructively for the ordinary prompt. |
 | Unified context planning | `[context_budget].enabled = true` | The planner runs for primary dialogue. |
-| Context enforcement | `[context_budget].shadow_mode = true` | Decisions and telemetry are recorded, but the legacy prompt projection is sent. |
+| Context enforcement | `[context_budget].shadow_mode = false` | The unified plan is enforced for primary dialogue and remains independent of governed-domain discovery and tool injection. |
 | Conversational memory | `[conversation_memory].enabled = true` | Checkpoint materialisation and explicit host-policy recall are active when their dependencies are healthy. |
 | Governed model retrieval | `[governed_retrieval].enabled = true` | The retrieval tool is available only to exact models with verified capability evidence and safe runtime health. |
 | Phase 2A PROJECT binding | `[governed_retrieval].project_scope = PROJECT:ORAC_CORE` | The host may offer this exact authorised project; the model cannot replace its scope key. |
-| Phase 2C discovery | `[governed_retrieval].domain_discovery_enabled = false` | Ranked domain offers do not replace the Phase 2A model-facing contract. |
-| Phase 2C shadow observation | `[governed_retrieval].domain_discovery_shadow_mode = true` | Authorised descriptors are evaluated for telemetry while Phase 2A remains on the wire. |
+| Phase 2C discovery | `[governed_retrieval].domain_discovery_enabled = true` | Ranked authorised domain offers are model-facing for eligible models. |
+| Phase 2C shadow observation | `[governed_retrieval].domain_discovery_shadow_mode = false` | Shadow is available only as an explicitly selected diagnostic state. |
+| Governed-tool context floor | `[governed_retrieval].min_effective_context_tokens = 32768` | Smaller models skip automatic Phase 2C/tool retrieval while explicit bounded knowledge retrieval remains available. |
 | Knowledge ingestion | `[knowledge].enabled = true` | The Core worker can ingest, chunk, and embed accepted documents. |
 | Dialogue knowledge retrieval | `[knowledge.dialogue].enabled = true` | Deterministic, authorised single-scope PROJECT or PLUGIN grounding is active. |
 | Whole-content retrieval | `[knowledge.retrieval].enabled = true` | P1-06 authorised normalised-content materialisation is available within its hard limits. |
@@ -73,12 +74,16 @@ Orac uses the following high-level flow:
 5. If explicit recall wording matches, retrieve principal-owned source-message
    evidence from compatible conversational-memory checkpoints.
 6. Assemble the live prompt and run the unified context plan. In the shipped
-   shadow mode, Orac records the plan but sends the existing prompt projection.
+   enforced mode, Orac applies the plan to the provider-bound prompt.
    Independent retrieval ceilings and final prompt-safety checks still apply.
 7. For an otherwise ordinary eligible turn with no web, local-knowledge, or
-   explicit-memory evidence pack already selected, advertise the governed
-   retrieval tool to an eligible model.
-8. Persist only the authoritative final assistant answer and safe provenance.
+   explicit-memory evidence pack already selected, discover and advertise the
+   governed retrieval domains. Bounded explicit local intent or an authorised
+   above-threshold semantic match makes retrieval host-required.
+8. Required turns use a compact tool-decision request. After a valid call, the
+   existing full-context prompt is used for the grounded, tools-disabled answer;
+   decision prose can never override the host requirement.
+9. Persist only the authoritative final assistant answer and safe provenance.
    Ephemeral tool-call and tool-result messages are not conversation turns.
 
 An explicit or implicit local-knowledge route is deterministic and terminal.
@@ -125,9 +130,11 @@ The first two examples select an exact source. The third relies on the shipped
 principal still needs a current Oracle `USE` privilege, and the target scope
 must be active and runtime eligible.
 
-Use explicit scope syntax when a grounded source is mandatory. Natural
-model-selected PROJECT or PLUGIN retrieval depends on model eligibility and
-the domains that the host can safely advertise for that turn.
+Use explicit scope syntax when one exact source is mandatory. Scope-neutral
+requests such as `Check your knowledge base for ...` also require governed
+retrieval without granting or selecting a scope. Natural PROJECT or PLUGIN
+retrieval depends on model eligibility and the domains that the host can safely
+advertise; an above-threshold semantic match is then enforced by the host.
 
 ## Prerequisites
 
@@ -139,7 +146,7 @@ the domains that the host can safely advertise for that turn.
 | PLUGIN knowledge | Eligible installed plugin scope, searchable content, current `USE` privilege, and any required trusted runtime bridge. |
 | Materialised model evidence | Exact local text model, positive governed context ceiling, effective context of at least 32,768 tokens, one authorised document version, and enabled dialogue/P1-06/P1-07/P1-08 switches. |
 | Governed model retrieval | Enabled coordinator, available mediator, positive registered context limit, exact verified tool capability evidence, provider support, and acceptable health. |
-| Phase 2C discovery | Valid discovery embedding profile and authorised catalogue; shipped mode observes only. |
+| Phase 2C discovery | Valid discovery embedding profile and authorised catalogue; shipped mode advertises qualifying authorised domains. |
 
 Scope names, principals, conversation IDs, checkpoint IDs, plugin identities,
 and database selectors are host-derived. A model query cannot nominate or
@@ -172,9 +179,10 @@ At startup and request time, an unknown runtime limit records
 below the floor records `MAT_SUB_MODEL_CONTEXT_BELOW_MINIMUM`; these warnings
 contain safe identifiers and accounting values, not prompt or evidence text.
 
-During shadow discovery, eligible turns may also record bounded
-`Governed domain discovery` telemetry. That log does not mean the Phase 2C
-handle-enumerated schema was exposed to the model.
+When diagnostic shadow discovery is explicitly selected, eligible turns may
+record bounded `Governed domain discovery` telemetry without exposing the
+Phase 2C handle-enumerated schema to the model. In the shipped active state,
+advertised qualifying domains are model-facing.
 
 Successful assistant provenance can identify the route, retrieval outcome,
 safe reason codes, controlled scope or conversation identities, selected
@@ -189,11 +197,11 @@ arguments in the governed-retrieval audit.
 | A recent fact is missing | Confirm context history is enabled and inspect whether the exchange was outside the current prompt projection. |
 | Explicit recall returns no evidence | Confirm the principal owns retained messages, compatible checkpoints completed, embeddings are available, and recent prompt messages were correctly excluded from duplicate recall. |
 | A knowledge request is denied | Confirm the authenticated username, active scope, and current Oracle `USE` privilege. Do not repair this with direct table DML. |
-| A knowledge request has no evidence | Confirm ingestion completed with searchable chunks and that substantive query terms pass the lexical threshold. |
+| A knowledge request has no evidence | Confirm ingestion completed, the active immutable knowledge profile has current native vectors, and either the semantic or lexical branch admitted relevant chunks. |
 | An explicit whole-document task uses bounded RAG | Confirm the exact local text model's lower registry/runtime context ceiling is at least 32,768 tokens and inspect the safe model-evidence readiness reason. |
 | The model never receives a retrieval tool | Confirm the exact model has verified structured-tool evidence, a positive context limit, provider support, and an available authorised domain. |
 | Governed retrieval falls back to buffered mode | Inspect streamed framing health and capability evidence; operational suppression does not rewrite the governed model record. |
-| Context decisions appear in metadata but prompts are unchanged | This is expected while `[context_budget].shadow_mode = true`. |
+| Context decisions appear in metadata but prompts are unchanged | Confirm whether an environment override has selected `[context_budget].shadow_mode = true`; the shipped setting is enforced mode. |
 | Discovery telemetry appears but advertised domains do not change | This is expected while discovery is shadowed and `domain_discovery_enabled` remains false. |
 
 ## Security and Retention Boundaries
@@ -221,39 +229,34 @@ Disable `[knowledge.model_evidence]`, `[knowledge.materialisation]`, or
 `[knowledge.retrieval]` independently when a narrower rollback is required;
 ordinary authorised RAG remains available.
 
-### Enforce Unified Context Budgeting
+### Operate Unified Context Budgeting
 
-Keep `enabled = true` and `shadow_mode = true` until representative ordinary,
-knowledge-backed, memory-backed, governed-tool, streaming, and output-retry
-turns show no unsafe undercount pattern, mandatory overflow, or stale runtime
-capacity problem. Review estimate-to-actual deltas for every supported
-provider/runtime/model combination. Promotion is an explicit configuration
-change to `shadow_mode = false` followed by an Orac restart; telemetry never
-changes the setting automatically.
+The shipped profile has `enabled = true` and `shadow_mode = false`. Continue to
+review estimate-to-actual deltas for representative ordinary, knowledge-backed,
+memory-backed, governed-tool, streaming, and output-retry turns across every
+supported provider/runtime/model combination. A diagnostic rollback to
+`shadow_mode = true`, or restoration to enforced mode, is an explicit
+configuration change followed by an Orac restart; telemetry never changes the
+setting automatically.
 
-### Activate Phase 2C Domain Discovery
+### Diagnose Phase 2C Domain Discovery
 
-The shipped discovery state is observation-only:
-
-```ini
-domain_discovery_enabled = false
-domain_discovery_shadow_mode = true
-```
-
-Review authorised catalogue size, score distribution, advertised-count
-simulation, cache behaviour, embedding batches, fallback frequency, latency,
-and evidence omission without recording queries or inaccessible domains. After
-model framing, scope reauthorisation, opaque-handle rejection, bounded merge,
-and context-accounting acceptance pass, promote explicitly with:
+The shipped discovery state is active:
 
 ```ini
 domain_discovery_enabled = true
 domain_discovery_shadow_mode = false
 ```
 
-Restart Orac after the reviewed change. `domain_discovery_enabled = true`
-takes precedence at runtime, so do not leave the configuration in an ambiguous
-enabled-and-shadow state.
+For diagnostic/development observation without model-facing offers, select:
+
+```ini
+domain_discovery_enabled = false
+domain_discovery_shadow_mode = true
+```
+
+Restart Orac after a configuration change. The ambiguous true/true pair is
+rejected.
 
 ## Detailed Contracts
 

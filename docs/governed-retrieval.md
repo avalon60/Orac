@@ -1,6 +1,6 @@
 # Governed Semantic Retrieval
 
-Phase 2A gives eligible local model runtimes one read-only `retrieve` tool over
+Eligible local model runtimes receive one read-only `retrieve` tool over
 logical `CONVERSATION`, `PROJECT`, and `PLUGIN` domains. Orac remains the
 security boundary. A model can provide only the retrieval query and one domain
 from the exact schema advertised for that turn.
@@ -16,11 +16,34 @@ but it does not make every model eligible. Exact governed capability evidence,
 provider support, a positive model context limit, authorised domains, and
 acceptable runtime health still resolve the effective mode.
 
-Phase 2C discovery currently runs in observation-only mode because
-`domain_discovery_enabled = false` and `domain_discovery_shadow_mode = true`.
-It may calculate bounded authorised offers and telemetry, but the model-facing
-contract remains Phase 2A. Activation is a separate reviewed configuration
-change.
+Phase 2C discovery is active by default with
+`domain_discovery_enabled = true` and `domain_discovery_shadow_mode = false`.
+Shadow mode remains available only as an explicitly selected diagnostic or
+development state.
+
+Model-facing domain names and descriptions are routing metadata only. They are
+not document evidence. Orac marks retrieval as required when the current turn
+has bounded explicit local-retrieval intent or when discovery records at least
+one authorised semantic domain above the configured threshold. The latter
+covers ordinary questions such as `How does the fictional Atlas Finch scheduler
+allocate work?` without query-specific keywords. Conversation availability
+alone does not trigger required retrieval.
+
+Required retrieval is a host decision, not an instruction the model may
+override with prose. The tool decision receives compact governed policy, the
+safe domain offer, and the current request. The complete ordinary prompt is
+used only for the tools-disabled grounded answer after successful retrieval.
+If the model omits a valid call, Orac retries once with stricter framing and
+then reports retrieval as unavailable rather than committing an unsupported
+answer.
+
+The 32,768-token effective-context floor applies only to this advanced
+model-controlled tool/discovery path. It does not disable the earlier explicit
+host-mediated bounded knowledge route. Independent host switches can still
+suppress an otherwise qualifying model: `enabled = false` disables governed
+tools, while `domain_discovery_enabled = false` disables active Phase 2C
+discovery. The shipped configuration keeps both active; an operator-selected
+override is explicit in configuration and startup telemetry.
 
 ## Authority
 
@@ -39,24 +62,29 @@ does not replace their authorization contracts or storage.
 
 Effective mode resolution is capability based:
 
-1. Without verified `structured_tool_calling` evidence, the mode is `NONE`.
-2. With structured evidence but without verified streamed evidence, the mode
+1. Provider-declared tools metadata is provisional and leaves the mode `NONE`.
+2. Without bounded-probe-demonstrated `structured_tool_calling`, the mode is
+   `NONE`.
+3. With demonstrated structured evidence but without demonstrated streamed evidence, the mode
    is `BUFFERED`.
-3. With bounded-probe-verified streamed capability evidence and compatible
+4. With bounded-probe-verified streamed capability evidence and compatible
    provider framing, the mode is
    `STREAMING` while operational streaming health remains acceptable.
-4. Temporary framing-health suppression selects `BUFFERED` without changing
+5. Temporary framing-health suppression selects `BUFFERED` without changing
    authoritative model capability evidence.
 
-Capability definitions are installed by Liquibase. Exact model evidence
-remains an explicit administrative record; runtime telemetry never creates,
-rewrites, or revokes it and no model-name allowlist is used.
+`MODEL_METADATA_VERIFIED` verifies the provider's capability declaration for
+the exact model revision; it does not claim demonstrated model behaviour.
+Startup reconciliation records that provisional state, and only the fixed
+bounded probes can promote it to `BOUNDED_PROBE_VERIFIED`. No model-name
+allowlist is used.
 
-The bounded host probe uses only a fixed fixture query, never executes the
-requested retrieval, and reports framing validity, completion, malformed or
-incomplete calls, time from first visible output to tool start, and visible
-characters before tool start. Its report is review input; it does not mutate
-capability evidence automatically.
+The bounded host probes use only fixed fixture queries and never execute the
+requested retrieval. Buffered structured behaviour is tested before streamed
+behaviour. Transient provider or infrastructure failures retry at 10 and 30
+seconds, for three attempts total per process and exact model revision. A
+provider-completed invalid result is a genuine model rejection and is not
+retried automatically.
 
 Run the fixed probe against the configured local provider and model with:
 
@@ -64,16 +92,46 @@ Run the fixed probe against the configured local provider and model with:
 .venv/bin/python scripts/probe_governed_retrieval.py --pretty
 ```
 
-A successful report is necessary review input, not an authorization to insert
-evidence by itself.
+A successful startup probe is persisted through the narrow ORAC_CODE evidence
+API. Transient failures never create evidence rows.
+
+## ORAC_CORE Descriptor Validation
+
+The former descriptor described only repository administration and did not
+truthfully cover the authorised AI material ingested into `PROJECT:ORAC_CORE`.
+The replacement is a general domain description, not query-specific wording.
+Its canonical text is maintained in the
+[descriptor seed](../resources/db/schema/orac_core/seed_data/zz_orac_core_project_descriptor.sql)
+rather than duplicated here.
+
+Using the shipped `domain_discovery` embedding profile, the replacement scored
+the four positive fixtures at `0.629`, `0.679`, `0.678`, and `0.696`; the four
+unrelated negative fixtures scored `0.283`, `0.339`, `0.322`, and `0.327`.
+The positive set covered four representative in-domain architecture and
+operations topics. The negative set covered four unrelated everyday topics.
+All positives cleared the unchanged `0.50` threshold and no negative did.
+
+Examples in this guide are deliberately fictional. `ORAC_DOCS` material can be
+ingested into the same governed knowledge domain as user material, so repeating
+real production regression questions here would make routing documentation a
+competing evidence source. Executable tests retain the real regression wording
+outside the searchable documentation corpus.
 
 ## Streaming Semantics
 
-In `STREAMING` mode, a bounded commit gate briefly retains visible assistant
-text. An early valid call discards that buffered text, performs one governed
-retrieval, and streams a tools-disabled final continuation. A direct answer is
-committed when either configured character or delay threshold is reached and
-then continues through the ordinary streaming path.
+For a required turn, Orac never commits text from the tool-decision invocation.
+It discards decision prose, accepts one valid call, and retries the compact
+decision once if the model omits or malforms the call. A second failure returns
+a host-authored retrieval-unavailable response. A valid call performs governed
+retrieval and streams the existing full-context, tools-disabled grounded
+continuation.
+
+For an optional turn in `STREAMING` mode, the existing bounded commit gate
+briefly retains visible assistant text. An early valid call discards that
+buffered text, performs one governed retrieval, and streams a tools-disabled
+final continuation. A direct answer is committed when either configured
+character or delay threshold is reached and then continues through the
+ordinary streaming path.
 
 Once visible text is committed, retrieval authority closes for the turn. A
 late call is ignored and ordinary provider text continues. Orac makes one
@@ -97,6 +155,9 @@ final assistant answer, and safe provenance. Retrieval is read-only: models
 cannot delete or mutate memory, promote statements into facts, or change
 authorization scope.
 
+The broader review of flattened ordinary provider messages is tracked in
+[Governed Retrieval Provider-Message Composition Follow-up](pending_work/governed-retrieval-prompt-composition-follow-up.md).
+
 ## Audit and Operations
 
 The append-only retrieval audit stores allowlisted metadata such as effective
@@ -115,7 +176,7 @@ these Orac-owned retrieval services and authority decisions. Phase 2B now
 accounts for the advertised schema and the final ephemeral tool exchange under
 the shared effective context limit without changing Phase 2A authorization.
 
-## Phase 2C: Authorised Domain Discovery (Shadowed in the Shipped Configuration)
+## Phase 2C: Authorised Domain Discovery
 
 Phase 2C extends the existing coordinator and mediator. On each eligible turn,
 Orac reads the principal's current authorised PROJECT catalogue through
@@ -168,7 +229,10 @@ applied; no separate allocator is introduced.
 Catalogue enumeration occurs per turn, so grants take effect without a new
 conversation. Retrieval reauthorisation handles mid-turn revocation. Bounded
 content-free telemetry records catalogue size, cache warmth and batches,
-domains scored/advertised/selected, opaque handles and type/score/weight,
-fallback mode, latency, candidate counts, unavailable-domain count, and final
-evidence omission. It does not record queries, descriptors, prompts, evidence
-text, or inaccessible domains.
+semantic matches, semantic advertisements, conversation-memory advertisements,
+total advertised handles, required-retrieval reasons, decision attempts,
+discarded decision character counts, selected opaque handles and
+type/score/weight, fallback mode, latency, candidate counts,
+unavailable-domain count, and final evidence omission. It does not record
+queries, descriptors, prompts, discarded prose, evidence text, or inaccessible
+domains.

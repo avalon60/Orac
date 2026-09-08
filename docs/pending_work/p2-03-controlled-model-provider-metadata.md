@@ -114,6 +114,10 @@ Concrete-model evidence accepts only:
 - `BOUNDED_PROBE_VERIFIED`;
 - `REJECTED`.
 
+`MODEL_METADATA_VERIFIED` verifies the exact provider capability declaration,
+not demonstrated model behaviour. Runtime eligibility for structured tools
+requires `BOUNDED_PROBE_VERIFIED` evidence from the fixed behavioural probe.
+
 Concrete evidence requires the exact `llm_id`, provider, model identity,
 immutable revision/digest, source, checked date, effective period, reviewer, and
 provenance. A trigger verifies provider/model equality with the registry row.
