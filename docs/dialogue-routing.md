@@ -3,6 +3,16 @@
 Normal Orac dialogue uses one core-owned routing sequence. Route selection does
 not bypass plugin policy, retrieval policy, persistence, or prompt boundaries.
 
+All transports enter this sequence through the canonical communications
+processor. NDJSON and OpenAI-compatible adapters translate wire shapes only;
+they cannot grant plugin capabilities, knowledge scopes, confirmation, or
+identity. Candidate enablement, declaration, and side-effect-free policy
+eligibility are checked before deterministic arbitration. When explicitly
+enabled, the bounded [LLM routing adviser](llm-routing-arbitration.md) may judge
+only an unresolved set of already-permitted plugin candidates. Final policy and
+any single-use confirmation are evaluated only for the revalidated selected
+candidate.
+
 ## Precedence
 
 1. Explicit user route-selection controls, currently direct internet commands
@@ -13,11 +23,15 @@ not bypass plugin policy, retrieval policy, persistence, or prompt boundaries.
    retrieval path without selecting or granting a scope.
 4. Deterministic plugin interception from validated plugin metadata.
 5. Existing internet-retrieval policy and SearXNG routing.
-6. Semantic plugin hints retained for compatibility.
+6. Semantic plugin hints retained for compatibility, with optional LLM advice
+   when deterministic matching remains unresolved or ambiguous.
 7. Automatic content search across every authorised active PROJECT scope.
 8. Ordinary LLM response.
 
-This deterministic routing sequence is separate from model-governed retrieval.
+The deterministic route gates and precedence remain separate from
+model-governed retrieval. The optional adviser cannot select a late retrieval
+or web-search route; those authorised routes have already run at their existing
+positions in the sequence.
 A selected local-knowledge route, including a terminal denial, unavailability,
 or no-evidence result, is resolved before an ordinary model can receive the
 governed retrieval tool. See
@@ -263,7 +277,23 @@ rows from each branch, with project, document, version, chunk, and source
 provenance plus raw semantic/lexical scores and deterministic ranks.
 The host applies weighted reciprocal-rank fusion (`0.65` semantic, `0.35`
 lexical, rank constant `60`) and then enforces selected-chunk, per-chunk,
-total-context, and deduplication limits.
+total-context, and deduplication limits. Ordinary navigation demotion and RRF
+ordering remain unchanged. A separate deterministic constraint-coverage stage
+may reserve at most half of the selected slots for suitable quoted literals,
+names, filenames, identifiers, acronyms, and versions from the current query.
+An occurrence is not sufficient by itself: an anchor must also clear the
+semantic threshold or occur in the leading evidence document with independent
+topical overlap. Anchor excerpts are centred on the actual match so coverage is
+measured against the text sent to the model, not the untruncated chunk.
+
+When a high-confidence literal has no suitable candidate in the initial union,
+the host may make one bounded literal-recovery call through the same authorised
+database boundary. It reuses the query vector and all scope, principal, plugin,
+searchability, and active-profile checks, returns at most
+`min(16, max_selected_chunks * 2)` candidates, and has its own retrieval ID and
+terminal audit outcome. No second embedding or model call is made. The runtime
+uses additive `*_v2` package entry points because positional Oracle cursor
+outputs must remain last; the original three entry points remain compatible.
 
 The initial `0.60` semantic threshold is calibrated specifically for the
 pinned `knowledge-v1` Nomic digest, `search_document:`/`search_query:` input
@@ -283,7 +313,12 @@ separately reversible Liquibase change.
 Selected local chunks are JSON-encoded beneath `LOCAL KNOWLEDGE EVIDENCE
 (UNTRUSTED DATA)`. They are reference data, never system instructions. The
 prompt tells the model to ignore commands, role changes, secret requests, and
-other prompt injection found inside documents. Existing system policy,
+other prompt injection found inside documents. It also states that bounded
+excerpts are non-exhaustive, that omission from them is not evidence of absence
+from a document or corpus, and that mention is not attribution. For bounded
+local-knowledge answers, a deterministic response policy rewrites only
+categorical unsupported collection-absence claims before streaming,
+persistence, response envelopes, or TTS. Existing system policy,
 personality, generation presets, history budgeting, reasoning-tag handling,
 streaming, and response persistence remain in place.
 

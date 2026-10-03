@@ -19,6 +19,9 @@ default_num_predict = 2048
 # Percentage increase applied to num_predict after a truncated response.
 num_predict_incr_pct = 100
 
+[arbitrator]
+enabled = false
+
 [database]
 # Credential-store lookup keys, not tnsnames.ora aliases. Each selected entry's
 # resource_id contains the Oracle DSN, which may itself be a TNS alias.
@@ -101,13 +104,6 @@ log_level = DEBUG
 # Optional custom colours for log levels (if you use them)
 supplementary = light-green
 feature = cyan
-
-[openai_gateway]
-enabled = false
-host = 127.0.0.1
-port = 11435
-require_api_key = true
-api_key_env = ORAC_OPENAI_GATEWAY_API_KEY
 
 [display]
 enabled = true

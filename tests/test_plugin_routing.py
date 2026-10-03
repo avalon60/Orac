@@ -1432,10 +1432,10 @@ class PluginRoutingTests(unittest.TestCase):
 
         self.assertEqual(report["embedding_model_id"], provider.model_id)
         self.assertEqual(report["intent_text_version"], INTENT_TEXT_VERSION)
-        self.assertEqual(report["discovered"], 4)
-        self.assertEqual(report["valid"], 4)
+        self.assertEqual(report["discovered"], 5)
+        self.assertEqual(report["valid"], 5)
         self.assertEqual(report["invalid"], 0)
-        self.assertEqual(report["enabled"], 4)
+        self.assertEqual(report["enabled"], 5)
         self.assertEqual(report["disabled"], 0)
         self.assertEqual(report["dependency_disabled"], 0)
         self.assertEqual(report["indexed_plugin_count"], 11)

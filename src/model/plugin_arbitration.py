@@ -1,4 +1,5 @@
 """Core-owned arbitration for plugin route candidates."""
+
 # Author: Clive Bostock
 # Date: 19-Jun-2026
 # Description: Decides whether plugin route candidates own a user turn.
@@ -16,7 +17,7 @@ from model.plugin_routing.models import (
     PluginRouteCandidate,
 )
 from model.plugin_routing.interception import freeze_mapping
-
+from model.llm_routing_adviser import LLMRoutingAdviser
 
 HIGH_CONFIDENCE_THRESHOLD = 0.85
 PLAUSIBLE_CONFIDENCE_THRESHOLD = 0.60
@@ -141,6 +142,7 @@ class PluginArbiter:
         high_confidence_threshold: float = HIGH_CONFIDENCE_THRESHOLD,
         plausible_confidence_threshold: float = PLAUSIBLE_CONFIDENCE_THRESHOLD,
         close_tie_delta: float = CLOSE_TIE_DELTA,
+        routing_adviser: LLMRoutingAdviser | None = None,
     ) -> None:
         """Initialise the arbiter.
 
@@ -151,12 +153,19 @@ class PluginArbiter:
             high_confidence_threshold: Score required for direct ownership.
             plausible_confidence_threshold: Score required for clarification.
             close_tie_delta: Maximum score gap treated as an ambiguous tie.
+            routing_adviser: Optional bounded LLM routing adviser.
         """
         self._plugin_manager = plugin_manager
         self._logger = logger
         self._high = high_confidence_threshold
         self._plausible = plausible_confidence_threshold
         self._tie_delta = close_tie_delta
+        self._routing_adviser = routing_adviser
+
+    @property
+    def adviser_enabled(self) -> bool:
+        """Return whether this arbiter can invoke LLM-assisted arbitration."""
+        return self._routing_adviser is not None
 
     def arbitrate(
         self,
@@ -164,9 +173,12 @@ class PluginArbiter:
         utterance: str,
         candidates: tuple[PluginRouteCandidate | PluginCandidate, ...],
         pending_context: dict[str, Any] | None = None,
+        adviser_allowed: bool = True,
     ) -> ArbitrationDecision:
         """Return the core-owned routing decision for one user utterance."""
-        route_candidates = tuple(self._coerce_candidate(candidate) for candidate in candidates)
+        route_candidates = tuple(
+            self._coerce_candidate(candidate) for candidate in candidates
+        )
         if _is_core_reserved_command(utterance):
             return self._decision(
                 "core_command",
@@ -185,8 +197,8 @@ class PluginArbiter:
         if pending_decision is not None:
             return pending_decision
 
-        addressed_plugin_ids, addressed_text, ambiguous_name = self._explicit_plugin_address(
-            utterance
+        addressed_plugin_ids, addressed_text, ambiguous_name = (
+            self._explicit_plugin_address(utterance)
         )
         if ambiguous_name:
             return self._decision(
@@ -208,10 +220,12 @@ class PluginArbiter:
                 route_candidates = tuple(
                     replace(
                         candidate,
-                        extracted_params=freeze_mapping({
-                            **(candidate.extracted_params or {}),
-                            "routed_prompt": addressed_text,
-                        }),
+                        extracted_params=freeze_mapping(
+                            {
+                                **(candidate.extracted_params or {}),
+                                "routed_prompt": addressed_text,
+                            }
+                        ),
                         match_reasons=(
                             *candidate.match_reasons,
                             "explicit_plugin_addressing",
@@ -233,12 +247,14 @@ class PluginArbiter:
                 utterance=addressed_text or utterance,
                 candidates=route_candidates,
                 explicit=True,
+                adviser_allowed=False,
             )
 
         return self._arbitrate_candidates(
             utterance=utterance,
             candidates=route_candidates,
             explicit=False,
+            adviser_allowed=adviser_allowed,
         )
 
     def _arbitrate_candidates(
@@ -247,6 +263,7 @@ class PluginArbiter:
         utterance: str,
         candidates: tuple[PluginRouteCandidate, ...],
         explicit: bool,
+        adviser_allowed: bool,
     ) -> ArbitrationDecision:
         """Apply confidence, directive, and ambiguity rules."""
         if not candidates:
@@ -290,13 +307,29 @@ class PluginArbiter:
         )
 
         if len(high) == 1 and not self._has_close_tie(high[0], ordered[1:]):
-            return self._selected_decision(
-                high[0],
-                ordered,
-                "clear_high_confidence_candidate",
-                utterance,
+            if (
+                explicit
+                or "dialog_intercept" in high[0].match_reasons
+                or not self._can_advise(adviser_allowed)
+            ):
+                return self._selected_decision(
+                    high[0],
+                    ordered,
+                    "clear_high_confidence_candidate",
+                    utterance,
+                )
+            return self._advised_decision(
+                utterance=utterance,
+                candidates=ordered,
+                invocation_reason="embedding_only_high_confidence",
             )
         if len(high) > 1:
+            if self._can_advise(adviser_allowed) and not explicit:
+                return self._advised_decision(
+                    utterance=utterance,
+                    candidates=ordered,
+                    invocation_reason="multiple_high_confidence_candidates",
+                )
             return self._decision(
                 "clarify",
                 None,
@@ -313,6 +346,12 @@ class PluginArbiter:
                 utterance,
             )
         if plausible:
+            if self._can_advise(adviser_allowed) and not explicit:
+                return self._advised_decision(
+                    utterance=utterance,
+                    candidates=ordered,
+                    invocation_reason="weak_or_ambiguous_plugin_candidates",
+                )
             return self._decision(
                 "clarify",
                 None,
@@ -321,11 +360,61 @@ class PluginArbiter:
                 self._clarification_for(plausible),
                 utterance,
             )
+        if self._can_advise(adviser_allowed):
+            return self._advised_decision(
+                utterance=utterance,
+                candidates=ordered,
+                invocation_reason="plugin_candidates_below_threshold",
+            )
         return self._decision(
             "llm_fallback",
             None,
             ordered,
             "plugin_candidates_below_threshold",
+            None,
+            utterance,
+        )
+
+    def _can_advise(self, adviser_allowed: bool) -> bool:
+        """Return whether the optional adviser may run for this attempt."""
+        return adviser_allowed and self._routing_adviser is not None
+
+    def _advised_decision(
+        self,
+        *,
+        utterance: str,
+        candidates: tuple[PluginRouteCandidate, ...],
+        invocation_reason: str,
+    ) -> ArbitrationDecision:
+        """Convert bounded, untrusted advice into an existing core decision."""
+        adviser = self._routing_adviser
+        if adviser is None:
+            return self._decision(
+                "llm_fallback",
+                None,
+                candidates,
+                "llm_adviser_unavailable",
+                None,
+                utterance,
+            )
+        advice = adviser.advise(
+            request_text=utterance,
+            permitted_candidates=candidates,
+            invocation_reason=invocation_reason,
+        )
+        if advice.selected_route == "plugin" and advice.selected_candidate is not None:
+            return self._selected_decision(
+                advice.selected_candidate,
+                candidates,
+                "llm_adviser_selected_plugin",
+                utterance,
+            )
+        suffix = advice.fallback_code or advice.selected_route
+        return self._decision(
+            "llm_fallback",
+            None,
+            candidates,
+            f"llm_adviser_{suffix}",
             None,
             utterance,
         )
@@ -362,7 +451,8 @@ class PluginArbiter:
             return None
         fallback = PluginRouteCandidate(
             plugin_id=plugin_id,
-            capability_id=capability_id or (manifest.capabilities[0] if manifest.capabilities else ""),
+            capability_id=capability_id
+            or (manifest.capabilities[0] if manifest.capabilities else ""),
             intent_name=intent_name or "pending_context",
             confidence=1.0,
             match_reasons=("pending_plugin_context",),
@@ -378,7 +468,9 @@ class PluginArbiter:
                 else "informational_read_only"
             ),
         )
-        return self._selected_decision(fallback, (fallback,), "pending_plugin_context", utterance)
+        return self._selected_decision(
+            fallback, (fallback,), "pending_plugin_context", utterance
+        )
 
     def _explicit_plugin_address(
         self,
@@ -420,7 +512,9 @@ class PluginArbiter:
             return ()
         route_records = getattr(manager, "route_records", None)
         if callable(route_records):
-            return tuple({record[0].plugin_id: record[0] for record in route_records()}.values())
+            return tuple(
+                {record[0].plugin_id: record[0] for record in route_records()}.values()
+            )
         manifests = getattr(manager, "_manifests", {})
         if isinstance(manifests, dict):
             return tuple(manifests.values())
@@ -442,8 +536,12 @@ class PluginArbiter:
         reason: str,
         utterance: str,
     ) -> ArbitrationDecision:
-        decision_type = "confirm" if candidate.requires_confirmation else "execute_plugin"
-        return self._decision(decision_type, candidate, candidates, reason, None, utterance)
+        decision_type = (
+            "confirm" if candidate.requires_confirmation else "execute_plugin"
+        )
+        return self._decision(
+            decision_type, candidate, candidates, reason, None, utterance
+        )
 
     def _decision(
         self,
@@ -537,7 +635,9 @@ def _is_core_reserved_command(utterance: str) -> bool:
     tokens = tuple(token for token in _tokens(utterance) if token not in _POLITE_TOKENS)
     if tokens in _CORE_COMMAND_PHRASES:
         return True
-    if len(tokens) <= 3 and tokens[:1] in {(phrase[0],) for phrase in _CORE_COMMAND_PHRASES}:
+    if len(tokens) <= 3 and tokens[:1] in {
+        (phrase[0],) for phrase in _CORE_COMMAND_PHRASES
+    }:
         return tokens in _CORE_COMMAND_PHRASES
     return False
 
@@ -560,7 +660,9 @@ def _looks_like_quoted_or_discussion_context(utterance: str) -> bool:
     if tokens.intersection(_DISCUSSION_TERMS):
         if re.search(r"['\"].+['\"]", utterance):
             return True
-        if {"example", "problem", "design", "document", "documentation"}.intersection(tokens):
+        if {"example", "problem", "design", "document", "documentation"}.intersection(
+            tokens
+        ):
             return True
     if re.match(r"^(document|write|quote|record)\b", lowered):
         return True
@@ -594,7 +696,9 @@ def _redact_sensitive_text(text: str) -> str:
     value = str(text or "")
     patterns = (
         re.compile(r"(?i)\b(bearer)\s+[a-z0-9._~+/=-]{8,}"),
-        re.compile(r"(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|password|passwd|secret)\s*[:=]\s*['\"]?[^'\"\s,;]+"),
+        re.compile(
+            r"(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|password|passwd|secret)\s*[:=]\s*['\"]?[^'\"\s,;]+"
+        ),
     )
     redacted = value
     for pattern in patterns:

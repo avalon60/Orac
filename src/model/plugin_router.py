@@ -1,8 +1,11 @@
 """Plugin execution orchestration for candidate plugins."""
+
 # Author: Clive Bostock
 # Date: 2026-04-30
 # Description: Tries routed plugin candidates in order and returns the first
 #   handled result.
+# Codex-assisted generated/modified.
+# Codex SDK reviewability guardrails followed.
 
 from __future__ import annotations
 
@@ -18,6 +21,8 @@ from model.plugin_audit_adapter import PluginAuditAdapter
 from model.plugin_audit_adapter import PluginAuditSession
 from model.plugin_execution_policy import (
     evaluate_plugin_policy,
+    inspect_plugin_policy_eligibility,
+    PluginPolicyEligibility,
     plugin_policy_message,
 )
 from model.plugin_config import PluginConfigManager
@@ -37,7 +42,6 @@ from model.plugin_runtime import (
 )
 from model.plugin_database_session import OracPluginDatabaseSessionFactory
 from model.plugin_secret_vault import PluginSecretVault
-
 
 _STOPWORDS = {
     "about",
@@ -227,6 +231,28 @@ class PluginRouter:
                     f"Plugin execution skipped for '{candidate.plugin_id}' because no entry_point is defined."
                 )
                 continue
+            capability_id = str(getattr(candidate, "capability_id", "") or "")
+            declared_capabilities = {
+                capability.capability_id for capability in manifest.route_capabilities
+            }
+            if capability_id and capability_id not in declared_capabilities:
+                self._logger.log_warning(
+                    "Plugin execution rejected because the selected capability "
+                    f"'{capability_id}' is no longer declared by "
+                    f"'{candidate.plugin_id}'."
+                )
+                return PluginExecutionResult(
+                    plugin_id="orac_core",
+                    content="The selected plugin capability is no longer available.",
+                    handled=True,
+                    provenance={
+                        "source": "plugin_execution",
+                        "plugin_id": candidate.plugin_id,
+                        "capability_id": capability_id,
+                        "status": "denied",
+                        "reason": "capability_not_declared",
+                    },
+                )
 
             policy_decision = evaluate_plugin_policy(
                 manifest,
@@ -234,7 +260,9 @@ class PluginRouter:
                 confirmation_broker=self._confirmation_broker,
             )
             if not policy_decision.allowed:
-                denial_skip_reason = self._denied_candidate_skip_reason(manifest, candidate_prompt)
+                denial_skip_reason = self._denied_candidate_skip_reason(
+                    manifest, candidate_prompt
+                )
                 if denial_skip_reason is not None:
                     self._logger.log_debug(denial_skip_reason)
                     continue
@@ -343,7 +371,10 @@ class PluginRouter:
                         failure_message=f"Plugin execution failed during {exc.stage}.",
                         provenance_json=policy_decision.provenance,
                     )
-                if exc.stage not in {"can_handle", "execute"} and not self._candidate_matches_prompt(manifest, candidate_prompt):
+                if exc.stage not in {
+                    "can_handle",
+                    "execute",
+                } and not self._candidate_matches_prompt(manifest, candidate_prompt):
                     continue
                 return self._failure_result(
                     manifest=manifest,
@@ -372,7 +403,9 @@ class PluginRouter:
                 )
 
             if result is not None and result.handled:
-                self._logger.log_info(f"Plugin '{candidate.plugin_id}' handled request directly.")
+                self._logger.log_info(
+                    f"Plugin '{candidate.plugin_id}' handled request directly."
+                )
                 return replace(
                     result,
                     provenance={
@@ -387,8 +420,41 @@ class PluginRouter:
 
             return None
 
-        self._logger.log_debug("No plugin candidate handled the request directly; falling back to conversational flow.")
+        self._logger.log_debug(
+            "No plugin candidate handled the request directly; falling back to conversational flow."
+        )
         return None
+
+    def candidate_eligibility(
+        self,
+        candidate: Any,
+        *,
+        meta: dict[str, Any] | None = None,
+    ) -> PluginPolicyEligibility:
+        """Return host-owned eligibility without policy side effects."""
+        if self._plugin_manager is None:
+            return PluginPolicyEligibility(
+                False, "denied", "Plugin registry unavailable."
+            )
+        manifest = self._plugin_manager.get_manifest(candidate.plugin_id)
+        if manifest is None or not manifest.enabled or not manifest.entry_point:
+            return PluginPolicyEligibility(False, "denied", "Plugin is not enabled.")
+        capability_id = str(getattr(candidate, "capability_id", "") or "")
+        if capability_id:
+            declared = {
+                capability.capability_id for capability in manifest.route_capabilities
+            }
+            if capability_id not in declared:
+                return PluginPolicyEligibility(
+                    False,
+                    "denied",
+                    "Capability is not declared by the plugin.",
+                )
+        return inspect_plugin_policy_eligibility(
+            manifest,
+            meta=meta,
+            confirmation_broker=self._confirmation_broker,
+        )
 
     def _invoke_plugin_candidate(
         self,
@@ -439,9 +505,20 @@ class PluginRouter:
                     principal_username=auth_user,
                     retrieval_service=self._knowledge_retrieval_service,
                     correlation_id=_retrieval_correlation_id(request_context),
-                    entitled=_has_self_scope_retrieval_entitlement(manifest),
+                    entitled=(
+                        _has_self_scope_retrieval_entitlement(manifest)
+                        and _plugin_knowledge_restriction_allows(
+                            manifest.plugin_id,
+                            request_context,
+                        )
+                    ),
                     logger=self._logger,
                 ),
+            )
+            object.__setattr__(
+                runtime_context,
+                "_policy_provenance",
+                dict(getattr(policy_decision, "provenance", {}) or {}),
             )
             plugin_instance = instantiate_plugin(
                 plugin_class,
@@ -467,7 +544,9 @@ class PluginRouter:
                     failure_type="can_handle_declined",
                     failure_message="Plugin declined prompt during can_handle.",
                     provenance_json=(
-                        policy_decision.provenance if policy_decision is not None else None
+                        policy_decision.provenance
+                        if policy_decision is not None
+                        else None
                     ),
                 )
                 return _DECLINED
@@ -479,7 +558,9 @@ class PluginRouter:
             event_type="execution_started",
             execution_status="execution_started",
             timeout_seconds=self._execution_timeout_seconds,
-            provenance_json=policy_decision.provenance if policy_decision is not None else None,
+            provenance_json=(
+                policy_decision.provenance if policy_decision is not None else None
+            ),
         )
 
         try:
@@ -495,7 +576,9 @@ class PluginRouter:
                 timeout_seconds=self._execution_timeout_seconds,
                 failure_type=type(exc).__name__,
                 failure_message="Plugin execution failed during execute.",
-                provenance_json=policy_decision.provenance if policy_decision is not None else None,
+                provenance_json=(
+                    policy_decision.provenance if policy_decision is not None else None
+                ),
             )
             raise _PluginInvocationError("execute", exc) from exc
 
@@ -505,7 +588,9 @@ class PluginRouter:
                 event_type="execution_completed",
                 execution_status="completed",
                 timeout_seconds=self._execution_timeout_seconds,
-                provenance_json=policy_decision.provenance if policy_decision is not None else None,
+                provenance_json=(
+                    policy_decision.provenance if policy_decision is not None else None
+                ),
             )
         return result
 
@@ -645,16 +730,25 @@ class PluginRouter:
                 confirmation_status = status
             audit_session.record_confirmation_event(
                 event_type=event_type,
-                confirmation_id=str(confirmation.get("confirmation_id") or "").strip() or None,
+                confirmation_id=str(confirmation.get("confirmation_id") or "").strip()
+                or None,
                 confirmation_status=confirmation_status,
-                event_message=str(confirmation.get("reason") or policy_decision.reason or "").strip() or None,
+                event_message=str(
+                    confirmation.get("reason") or policy_decision.reason or ""
+                ).strip()
+                or None,
                 event_payload_json=policy_decision.provenance,
             )
         confirmation_request = policy_decision.provenance.get("confirmation_request")
-        if isinstance(confirmation_request, dict) and confirmation_request.get("confirmation_id"):
+        if isinstance(confirmation_request, dict) and confirmation_request.get(
+            "confirmation_id"
+        ):
             audit_session.record_confirmation_event(
                 event_type="confirmation_issued",
-                confirmation_id=str(confirmation_request.get("confirmation_id") or "").strip() or None,
+                confirmation_id=str(
+                    confirmation_request.get("confirmation_id") or ""
+                ).strip()
+                or None,
                 confirmation_status="issued",
                 event_message=policy_decision.reason,
                 event_payload_json=confirmation_request,
@@ -694,7 +788,14 @@ class PluginRouter:
         context = dict(request_context or {})
         context.setdefault("plugin_id", manifest.plugin_id)
         context.setdefault("plugin_name", manifest.name)
-        context.setdefault("action_type", manifest.execution_policy.action_type if manifest.execution_policy else None)
+        context.setdefault(
+            "action_type",
+            (
+                manifest.execution_policy.action_type
+                if manifest.execution_policy
+                else None
+            ),
+        )
         context.setdefault("user_id", context.get("user_id"))
         if not context.get("request_id") and context.get("req_id"):
             context["request_id"] = context.get("req_id")
@@ -744,7 +845,9 @@ class PluginRouter:
         return bool(prompt_tokens.intersection(_significant_tokens(manifest_text)))
 
     @staticmethod
-    def _denied_candidate_skip_reason(manifest: PluginManifest, prompt: str) -> str | None:
+    def _denied_candidate_skip_reason(
+        manifest: PluginManifest, prompt: str
+    ) -> str | None:
         """Return the reason a denied candidate should not be user-visible."""
         if not PluginRouter._candidate_matches_prompt(manifest, prompt):
             return (
@@ -758,7 +861,9 @@ class PluginRouter:
             if manifest.execution_policy is not None
             else None
         )
-        if action_type in _ACTION_INTENT_REQUIRED_TYPES and not _has_action_intent(prompt):
+        if action_type in _ACTION_INTENT_REQUIRED_TYPES and not _has_action_intent(
+            prompt
+        ):
             return (
                 "Plugin execution denial skipped for "
                 f"'{manifest.plugin_id}' because the prompt matched manifest terms "
@@ -868,6 +973,20 @@ def _has_self_scope_retrieval_entitlement(manifest: PluginManifest) -> bool:
         and policy is not None
         and SELF_SCOPE_RETRIEVAL_ENTITLEMENT in policy.entitlements
     )
+
+
+def _plugin_knowledge_restriction_allows(
+    plugin_id: str,
+    request_context: dict[str, Any] | None,
+) -> bool:
+    """Apply an optional caller bound without replacing Core grant checks."""
+    context = request_context or {}
+    if "knowledge_scope_restrictions" not in context:
+        return True
+    allowed = context.get("knowledge_scope_restrictions")
+    if not isinstance(allowed, (tuple, list, set, frozenset)):
+        return False
+    return f"PLUGIN:{plugin_id}" in {str(value) for value in allowed}
 
 
 def _retrieval_correlation_id(
