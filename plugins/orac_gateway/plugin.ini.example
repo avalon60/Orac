@@ -1,0 +1,8 @@
+[gateway]
+listen_host = 127.0.0.1
+listen_port = 11435
+authentication_mode = trusted_loopback
+principal = orac_gateway
+allowed_models =
+max_request_bytes = 1048576
+

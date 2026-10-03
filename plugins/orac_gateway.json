@@ -1,0 +1,106 @@
+{
+  "schema_version": 2,
+  "plugin_id": "orac_gateway",
+  "name": "Orac Gateway",
+  "description": "Exposes governed Orac inference through OpenAI-compatible and Ollama-native HTTP APIs.",
+  "version": "0.1.0",
+  "enabled": true,
+  "capabilities": [
+    "orac_gateway.inference"
+  ],
+  "entitlements": [
+    "network.local_http",
+    "core.communications.gateway"
+  ],
+  "entities": [
+    "model",
+    "inference request",
+    "embedding"
+  ],
+  "examples": [],
+  "entry_point": "plugin:OracGatewayPlugin",
+  "execution": {
+    "action_type": "external_read",
+    "requires_confirmation": false,
+    "allowed_by_default": true,
+    "capabilities": [
+      "orac_gateway.inference"
+    ],
+    "entitlements": [
+      "network.local_http",
+      "core.communications.gateway"
+    ],
+    "scaffold": false,
+    "notes": "The service is a transport adapter. Core retains principal, retrieval, model-routing, evidence and persistence authority."
+  },
+  "runtime": {
+    "mode": "service",
+    "service": {
+      "entry_point": "service:OracGatewayService",
+      "execution_model": "long_running",
+      "start_policy": "auto",
+      "restart_policy": "on_failure",
+      "shutdown_timeout_seconds": 10,
+      "health_check": {
+        "enabled": true,
+        "method": "health",
+        "interval_seconds": 30,
+        "timeout_seconds": 5,
+        "failure_threshold": 3
+      }
+    }
+  },
+  "configuration": {
+    "required": [],
+    "optional": [
+      {
+        "section": "gateway",
+        "key": "listen_host",
+        "type": "string",
+        "description": "HTTP listener address."
+      },
+      {
+        "section": "gateway",
+        "key": "listen_port",
+        "type": "int",
+        "description": "HTTP listener port."
+      },
+      {
+        "section": "gateway",
+        "key": "authentication_mode",
+        "type": "string",
+        "description": "Either trusted_loopback or bearer."
+      },
+      {
+        "section": "gateway",
+        "key": "principal",
+        "type": "string",
+        "description": "Existing Orac principal bound to accepted requests."
+      },
+      {
+        "section": "gateway",
+        "key": "allowed_models",
+        "type": "list",
+        "description": "Optional comma-separated model allowlist."
+      }
+    ]
+  },
+  "secrets": {
+    "vault": "pat_vault",
+    "default_key": "api_key",
+    "allow_custom_keys": false,
+    "keys": {
+      "api_key": {
+        "required": false,
+        "description": "Bearer credential accepted by Orac Gateway.",
+        "setup_hint": "Store the gateway bearer credential with plugin-pat-mgr.sh before selecting bearer mode.",
+        "rotation_supported": true
+      }
+    }
+  },
+  "database": {
+    "required": false,
+    "on_missing": "warn_disable",
+    "schemas": []
+  }
+}
