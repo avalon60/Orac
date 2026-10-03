@@ -5,15 +5,10 @@
 
 from __future__ import annotations
 
-import base64
 from dataclasses import dataclass
-import hashlib
 import json
-import os
 import re
-import socket
 import ssl
-import struct
 from typing import Any
 
 import requests
@@ -49,6 +44,7 @@ class HomeAssistantClient:
         *,
         session: Any | None = None,
         websocket_session: Any | None = None,
+        websocket_app_factory: Any | None = None,
     ) -> None:
         """Initialise the client.
 
@@ -56,10 +52,13 @@ class HomeAssistantClient:
             config: Home Assistant connection settings.
             session: Optional requests-compatible session for tests.
             websocket_session: Optional WebSocket-command session for tests.
+            websocket_app_factory: Optional websocket-client app factory for tests.
         """
         self._config = config
         self._session = session or requests.Session()
         self._websocket_session = websocket_session
+        self._websocket_app_factory = websocket_app_factory
+        self._event_app: Any | None = None
         self.base_url = _base_url(config.protocol, config.host, config.port)
         self._session.headers.update(
             {
@@ -91,11 +90,31 @@ class HomeAssistantClient:
         """Fetch current Home Assistant entity states."""
         return self._get_list("/api/states")
 
+    def fetch_services(self) -> dict[str, dict[str, dict[str, Any]]]:
+        """Fetch Home Assistant action descriptions keyed by domain and name."""
+        payload = self._websocket_command("get_services")
+        if not isinstance(payload, dict):
+            raise HomeAssistantClientError(
+                "Home Assistant service discovery returned unexpected payload."
+            )
+        return payload
+
+    def fetch_services_for_entity(self, entity_id: str) -> tuple[str, ...]:
+        """Fetch action identifiers Home Assistant considers applicable."""
+        safe_entity_id = _entity_id(entity_id)
+        payload = self._websocket_command(
+            "get_services_for_target",
+            {"target": {"entity_id": [safe_entity_id]}, "expand_group": False},
+        )
+        if not isinstance(payload, list) or any(not isinstance(item, str) for item in payload):
+            raise HomeAssistantClientError(
+                "Home Assistant target service discovery returned unexpected payload."
+            )
+        return tuple(sorted(set(payload)))
+
     def fetch_state(self, entity_id: str) -> dict[str, Any]:
         """Fetch current state for one resolved Home Assistant entity."""
-        safe_entity_id = str(entity_id or "").strip().lower()
-        if not re.fullmatch(r"[a-z0-9_]+\.[a-z0-9_]+", safe_entity_id):
-            raise HomeAssistantClientError("Invalid Home Assistant entity ID.")
+        safe_entity_id = _entity_id(entity_id)
         payload = self._get_json(f"/api/states/{safe_entity_id}")
         if not isinstance(payload, dict):
             raise HomeAssistantClientError(
@@ -163,6 +182,85 @@ class HomeAssistantClient:
             )
         return payload
 
+    def listen_events(
+        self,
+        callback: Any,
+        *,
+        reconnect_seconds: float = 10.0,
+        ping_interval_seconds: float = 30.0,
+        ping_timeout_seconds: float = 10.0,
+    ) -> None:
+        """Listen for HA events with library-owned framing and reconnects.
+
+        Home Assistant authentication, subscription commands, and event
+        envelopes remain protocol semantics owned by this client.
+        """
+        try:
+            import websocket
+        except ImportError as exc:
+            raise HomeAssistantClientError(
+                "The websocket-client dependency is required for Home Assistant."
+            ) from exc
+
+        factory = self._websocket_app_factory or websocket.WebSocketApp
+        url = _websocket_url(self._config)
+        subscription_id = 1
+        authenticated = False
+
+        def on_message(app: Any, raw_message: str) -> None:
+            nonlocal authenticated
+            try:
+                message = json.loads(raw_message)
+            except (TypeError, ValueError):
+                return
+            if not isinstance(message, dict):
+                return
+            message_type = message.get("type")
+            if message_type == "auth_required":
+                app.send(
+                    json.dumps(
+                        {"type": "auth", "access_token": self._config.token},
+                        separators=(",", ":"),
+                    )
+                )
+            elif message_type == "auth_ok":
+                authenticated = True
+                app.send(
+                    json.dumps(
+                        {"id": subscription_id, "type": "subscribe_events"},
+                        separators=(",", ":"),
+                    )
+                )
+            elif message_type == "auth_invalid":
+                authenticated = False
+                app.close()
+            elif authenticated and message_type == "event" and message.get("id") == subscription_id:
+                event = message.get("event")
+                if isinstance(event, dict):
+                    callback(event)
+
+        def on_close(_app: Any, _status: Any, _message: Any) -> None:
+            nonlocal authenticated
+            authenticated = False
+
+        app = factory(url, on_message=on_message, on_close=on_close)
+        self._event_app = app
+        ssl_options = (
+            {"cert_reqs": ssl.CERT_NONE, "check_hostname": False}
+            if self._config.protocol == "https" and not self._config.verify_ssl
+            else {}
+        )
+        try:
+            app.run_forever(
+                sslopt=ssl_options,
+                ping_interval=ping_interval_seconds,
+                ping_timeout=ping_timeout_seconds,
+                reconnect=max(0, int(reconnect_seconds)),
+            )
+        finally:
+            if self._event_app is app:
+                self._event_app = None
+
     def close(self) -> None:
         """Close the underlying HTTP session when supported."""
         close = getattr(self._session, "close", None)
@@ -172,6 +270,13 @@ class HomeAssistantClient:
             websocket_close = getattr(self._websocket_session, "close", None)
             if callable(websocket_close):
                 websocket_close()
+        event_app = self._event_app
+        self._event_app = None
+        if event_app is not None:
+            try:
+                event_app.close()
+            except Exception:
+                pass
 
     def _get_list(self, path: str) -> list[dict[str, Any]]:
         """Fetch a JSON list and reject unexpected payload shapes."""
@@ -221,13 +326,19 @@ class HomeAssistantClient:
                 )
         return payload
 
-    def _websocket_command(self, command: str) -> Any:
+    def _websocket_command(
+        self,
+        command: str,
+        fields: dict[str, Any] | None = None,
+    ) -> Any:
         """Run one command through Home Assistant's WebSocket API."""
         session = self._websocket_session
         if session is None:
             session = _HomeAssistantWebSocketSession(self._config)
             self._websocket_session = session
         try:
+            if fields:
+                return session.command(command, fields)
             return session.command(command)
         except HomeAssistantClientError:
             raise
@@ -248,28 +359,43 @@ def _base_url(protocol: str, host: str, port: int) -> str:
     return f"{safe_protocol}://{safe_host}:{int(port)}"
 
 
+def _websocket_url(config: HomeAssistantClientConfig) -> str:
+    """Return the configured Home Assistant WebSocket URL."""
+    scheme = "wss" if config.protocol == "https" else "ws"
+    path = config.websocket_path or "/api/websocket"
+    if not path.startswith("/"):
+        path = "/" + path
+    return f"{scheme}://{config.host}:{config.port}{path}"
+
+
+def _entity_id(value: str) -> str:
+    """Return a validated canonical Home Assistant entity identifier."""
+    entity_id = str(value or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9_]+\.[a-z0-9_]+", entity_id):
+        raise HomeAssistantClientError("Invalid Home Assistant entity ID.")
+    return entity_id
+
+
 class _HomeAssistantWebSocketSession:
-    """Minimal Home Assistant WebSocket command session.
-
-    This intentionally implements only the small subset needed for registry
-    list commands, avoiding a runtime dependency for the plugin service.
-    """
-
-    _GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+    """Home Assistant protocol session over ``websocket-client`` transport."""
 
     def __init__(self, config: HomeAssistantClientConfig) -> None:
         """Create a lazy WebSocket session for Home Assistant commands."""
         self._config = config
-        self._socket: socket.socket | ssl.SSLSocket | None = None
+        self._socket: Any | None = None
         self._next_id = 1
         self._authenticated = False
 
-    def command(self, command_type: str) -> Any:
+    def command(
+        self,
+        command_type: str,
+        fields: dict[str, Any] | None = None,
+    ) -> Any:
         """Send one Home Assistant WebSocket command and return its result."""
         self._ensure_authenticated()
         command_id = self._next_id
         self._next_id += 1
-        self._send_json({"id": command_id, "type": command_type})
+        self._send_json({"id": command_id, "type": command_type, **(fields or {})})
         while True:
             message = self._receive_json()
             if message.get("id") != command_id:
@@ -295,12 +421,8 @@ class _HomeAssistantWebSocketSession:
         if sock is None:
             return
         try:
-            self._send_frame(sock, 0x8, b"")
-        except OSError:
-            pass
-        try:
             sock.close()
-        except OSError:
+        except Exception:
             pass
 
     def _ensure_authenticated(self) -> None:
@@ -320,137 +442,61 @@ class _HomeAssistantWebSocketSession:
             raise HomeAssistantClientError("Home Assistant WebSocket authentication failed.")
         self._authenticated = True
 
-    def _connect(self) -> socket.socket | ssl.SSLSocket:
-        """Open and upgrade a socket to the Home Assistant WebSocket API."""
-        raw_socket = socket.create_connection(
-            (self._config.host, self._config.port),
-            timeout=self._config.timeout_seconds,
-        )
-        if self._config.protocol == "https":
-            context = ssl.create_default_context()
-            if not self._config.verify_ssl:
-                context.check_hostname = False
-                context.verify_mode = ssl.CERT_NONE
-            sock: socket.socket | ssl.SSLSocket = context.wrap_socket(
-                raw_socket,
-                server_hostname=self._config.host,
-            )
-        else:
-            sock = raw_socket
-        sock.settimeout(self._config.timeout_seconds)
+    def _connect(self) -> Any:
+        """Create a maintained-library WebSocket transport."""
+        try:
+            import websocket
+        except ImportError as exc:
+            raise HomeAssistantClientError(
+                "The websocket-client dependency is required for Home Assistant."
+            ) from exc
 
-        path = self._config.websocket_path or "/api/websocket"
-        if not path.startswith("/"):
-            path = "/" + path
-        key = base64.b64encode(os.urandom(16)).decode("ascii")
-        host_header = f"{self._config.host}:{self._config.port}"
-        request = (
-            f"GET {path} HTTP/1.1\r\n"
-            f"Host: {host_header}\r\n"
-            "Upgrade: websocket\r\n"
-            "Connection: Upgrade\r\n"
-            f"Sec-WebSocket-Key: {key}\r\n"
-            "Sec-WebSocket-Version: 13\r\n"
-            "\r\n"
+        scheme = "wss" if self._config.protocol == "https" else "ws"
+        ssl_options = (
+            {"cert_reqs": 0, "check_hostname": False}
+            if scheme == "wss" and not self._config.verify_ssl
+            else {}
         )
-        sock.sendall(request.encode("ascii"))
-        response = _read_http_headers(sock)
-        if not response.startswith("HTTP/1.1 101"):
-            sock.close()
-            raise HomeAssistantClientError("Home Assistant WebSocket upgrade failed.")
-        expected_accept = base64.b64encode(
-            hashlib.sha1((key + self._GUID).encode("ascii")).digest()
-        ).decode("ascii")
-        if expected_accept not in response:
-            sock.close()
-            raise HomeAssistantClientError("Home Assistant WebSocket upgrade was invalid.")
-        return sock
+        try:
+            return websocket.create_connection(
+                _websocket_url(self._config),
+                timeout=self._config.timeout_seconds,
+                sslopt=ssl_options,
+            )
+        except Exception as exc:
+            raise HomeAssistantClientError(
+                "Home Assistant WebSocket connection failed."
+            ) from exc
 
     def _send_json(self, payload: dict[str, Any]) -> None:
         """Send one JSON message."""
         if self._socket is None:
             raise HomeAssistantClientError("Home Assistant WebSocket is not connected.")
-        data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        self._send_frame(self._socket, 0x1, data)
+        try:
+            self._socket.send(json.dumps(payload, separators=(",", ":")))
+        except Exception as exc:
+            raise HomeAssistantClientError(
+                "Home Assistant WebSocket send failed."
+            ) from exc
 
     def _receive_json(self) -> dict[str, Any]:
         """Read the next text JSON message."""
         if self._socket is None:
             raise HomeAssistantClientError("Home Assistant WebSocket is not connected.")
-        while True:
-            opcode, payload = self._read_frame(self._socket)
-            if opcode == 0x1:
-                try:
-                    message = json.loads(payload.decode("utf-8"))
-                except ValueError as exc:
-                    raise HomeAssistantClientError(
-                        "Home Assistant WebSocket returned invalid JSON."
-                    ) from exc
-                if not isinstance(message, dict):
-                    raise HomeAssistantClientError(
-                        "Home Assistant WebSocket returned unexpected payload."
-                    )
-                return message
-            if opcode == 0x8:
-                raise HomeAssistantClientError("Home Assistant WebSocket closed.")
-            if opcode == 0x9:
-                self._send_frame(self._socket, 0xA, payload)
-
-    @staticmethod
-    def _send_frame(sock: socket.socket | ssl.SSLSocket, opcode: int, payload: bytes) -> None:
-        """Send one masked client WebSocket frame."""
-        length = len(payload)
-        header = bytearray([0x80 | opcode])
-        if length < 126:
-            header.append(0x80 | length)
-        elif length <= 0xFFFF:
-            header.append(0x80 | 126)
-            header.extend(struct.pack("!H", length))
-        else:
-            header.append(0x80 | 127)
-            header.extend(struct.pack("!Q", length))
-        mask = os.urandom(4)
-        masked_payload = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
-        sock.sendall(bytes(header) + mask + masked_payload)
-
-    @staticmethod
-    def _read_frame(sock: socket.socket | ssl.SSLSocket) -> tuple[int, bytes]:
-        """Read one WebSocket frame from the server."""
-        first_two = _recv_exact(sock, 2)
-        first, second = first_two[0], first_two[1]
-        opcode = first & 0x0F
-        length = second & 0x7F
-        masked = bool(second & 0x80)
-        if length == 126:
-            length = struct.unpack("!H", _recv_exact(sock, 2))[0]
-        elif length == 127:
-            length = struct.unpack("!Q", _recv_exact(sock, 8))[0]
-        mask = _recv_exact(sock, 4) if masked else b""
-        payload = _recv_exact(sock, length)
-        if masked:
-            payload = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
-        return opcode, payload
-
-
-def _read_http_headers(sock: socket.socket | ssl.SSLSocket) -> str:
-    """Read an HTTP response header block from a socket."""
-    data = bytearray()
-    while b"\r\n\r\n" not in data:
-        chunk = sock.recv(4096)
-        if not chunk:
-            break
-        data.extend(chunk)
-        if len(data) > 65536:
-            raise HomeAssistantClientError("Home Assistant WebSocket response was too large.")
-    return data.decode("iso-8859-1", errors="replace")
-
-
-def _recv_exact(sock: socket.socket | ssl.SSLSocket, byte_count: int) -> bytes:
-    """Receive exactly ``byte_count`` bytes or raise."""
-    data = bytearray()
-    while len(data) < byte_count:
-        chunk = sock.recv(byte_count - len(data))
-        if not chunk:
-            raise HomeAssistantClientError("Home Assistant WebSocket connection closed.")
-        data.extend(chunk)
-    return bytes(data)
+        try:
+            raw_message = self._socket.recv()
+        except Exception as exc:
+            raise HomeAssistantClientError(
+                "Home Assistant WebSocket receive failed or timed out."
+            ) from exc
+        try:
+            message = json.loads(raw_message)
+        except (TypeError, ValueError) as exc:
+            raise HomeAssistantClientError(
+                "Home Assistant WebSocket returned invalid JSON."
+            ) from exc
+        if not isinstance(message, dict):
+            raise HomeAssistantClientError(
+                "Home Assistant WebSocket returned unexpected payload."
+            )
+        return message

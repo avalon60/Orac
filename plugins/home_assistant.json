@@ -3,9 +3,10 @@
   "plugin_id": "home_assistant",
   "name": "Home Assistant",
   "description": "Controls Home Assistant devices, scenes, and state queries for the user's smart home.",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "python_dependencies": [
-    "requests>=2.32,<3"
+    "requests>=2.32,<3",
+    "websocket-client>=1.9,<2"
   ],
   "enabled": true,
   "capabilities": [
@@ -17,7 +18,9 @@
     "home_assistant.light_state_query",
     "home_assistant.scene_activation",
     "home_assistant.event_listener",
-    "home_assistant.health_status"
+    "home_assistant.health_status",
+    "home_assistant.capability_inventory",
+    "home_assistant.generic_control"
   ],
   "entitlements": [
     "network.local_http",
@@ -219,7 +222,9 @@
       "home_assistant.light_state_query",
       "home_assistant.scene_activation",
       "home_assistant.event_listener",
-      "home_assistant.health_status"
+      "home_assistant.health_status",
+      "home_assistant.capability_inventory",
+      "home_assistant.generic_control"
     ],
     "entitlements": [
       "network.local_http",
@@ -227,7 +232,7 @@
       "user_preferences.home_location"
     ],
     "scaffold": false,
-    "notes": "On-demand execution supports resync, deterministic low-risk light/switch/scene control, live light read-back, and read-only area and temperature/humidity sensor queries through the managed Home Assistant service."
+    "notes": "Entity-first discovery derives bounded semantic capabilities from Home Assistant metadata. Existing light/switch/scene routes and host-authorised generic capability tools execute only derived actions."
   },
   "runtime": {
     "mode": "hybrid",
@@ -276,9 +281,105 @@
       },
       {
         "section": "home_assistant",
+        "key": "ws_reconnect_seconds",
+        "type": "float",
+        "description": "Delay used by the WebSocket library when reconnecting."
+      },
+      {
+        "section": "home_assistant",
+        "key": "ws_ping_interval_seconds",
+        "type": "float",
+        "description": "WebSocket transport ping interval."
+      },
+      {
+        "section": "home_assistant",
+        "key": "ws_ping_timeout_seconds",
+        "type": "float",
+        "description": "WebSocket transport ping timeout."
+      },
+      {
+        "section": "home_assistant",
         "key": "sensor_stale_hours",
         "type": "float",
         "description": "Age in hours after which a sensor reading is reported as stale."
+      },
+      {
+        "section": "home_assistant",
+        "key": "capability_page_size",
+        "type": "int",
+        "description": "Default number of semantic capability entities returned per page."
+      },
+      {
+        "section": "home_assistant",
+        "key": "capability_max_page_size",
+        "type": "int",
+        "description": "Maximum semantic capability entities returned in one call."
+      },
+      {
+        "section": "home_assistant",
+        "key": "max_entities_per_operation",
+        "type": "int",
+        "description": "Maximum entities that one composed capability operation may address."
+      },
+      {
+        "section": "home_assistant",
+        "key": "target_service_discovery_limit",
+        "type": "int",
+        "description": "Maximum per-entity Home Assistant action applicability probes per refresh."
+      },
+      {
+        "section": "home_assistant",
+        "key": "visible_entity_patterns",
+        "type": "string",
+        "description": "Host allow-list patterns for entities visible to semantic inventory and execution."
+      },
+      {
+        "section": "home_assistant",
+        "key": "readable_entity_patterns",
+        "type": "string",
+        "description": "Host allow-list patterns for readable entities."
+      },
+      {
+        "section": "home_assistant",
+        "key": "controllable_entity_patterns",
+        "type": "string",
+        "description": "Host allow-list patterns for controllable entities."
+      },
+      {
+        "section": "home_assistant",
+        "key": "denied_entity_patterns",
+        "type": "string",
+        "description": "Host deny-list patterns applied before all Home Assistant operations."
+      },
+      {
+        "section": "home_assistant",
+        "key": "confirmation_required_capabilities",
+        "type": "string",
+        "description": "Canonical primitive capabilities requiring broker-trusted confirmation."
+      },
+      {
+        "section": "home_assistant",
+        "key": "control_timeout_seconds",
+        "type": "float",
+        "description": "Timeout for ordinary Home Assistant control calls."
+      },
+      {
+        "section": "home_assistant",
+        "key": "light_control_timeout_seconds",
+        "type": "float",
+        "description": "Timeout for rich light control calls."
+      },
+      {
+        "section": "home_assistant",
+        "key": "light_state_query_timeout_seconds",
+        "type": "float",
+        "description": "Timeout for live light state reads."
+      },
+      {
+        "section": "home_assistant",
+        "key": "sensor_query_timeout_seconds",
+        "type": "float",
+        "description": "Timeout for live sensor state reads."
       }
     ]
   },

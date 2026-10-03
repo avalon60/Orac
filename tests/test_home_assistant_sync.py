@@ -61,6 +61,15 @@ class _FakeRepository:
     def fail_sync_run(self, sync_run_id: str, *, error_message: str) -> None:
         self.calls.append(("fail", sync_run_id, error_message))
 
+    def record_failed_sync_run(
+        self,
+        sync_run_id: str,
+        *,
+        sync_type: str,
+        error_message: str,
+    ) -> None:
+        self.calls.append(("record_failed", sync_run_id, sync_type, error_message))
+
     def merge_area(self, payload: dict) -> None:
         self.calls.append(("area", payload))
 
@@ -104,11 +113,30 @@ class HomeAssistantSyncTests(unittest.TestCase):
                 ("device", {"id": "device-1"}),
                 ("entity", {"entity_id": "light.kitchen"}),
                 ("complete", "structural-run", 3, None),
-                ("commit",),
                 ("begin", "state"),
                 ("state", {"entity_id": "light.kitchen", "state": "on"}),
                 ("complete", "state-run", 1, None),
                 ("commit",),
+            ],
+        )
+
+    def test_initial_state_failure_rolls_back_entire_candidate_snapshot(self) -> None:
+        repository = _FakeRepository()
+        coordinator = HomeAssistantSyncCoordinator(
+            client=_FakeClient(fail_states=True),
+            repository=repository,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "state failure"):
+            coordinator.run_initial_sync()
+
+        self.assertNotIn(("commit",), repository.calls)
+        self.assertIsNone(coordinator.capability_snapshot)
+        self.assertEqual(
+            repository.calls[-2:],
+            [
+                ("rollback",),
+                ("record_failed", "state-run", "state", "state failure"),
             ],
         )
 
@@ -123,8 +151,13 @@ class HomeAssistantSyncTests(unittest.TestCase):
             coordinator.run_structural_sync()
 
         self.assertIn(("begin", "structural"), repository.calls)
-        self.assertIn(("fail", "structural-run", "entity failure"), repository.calls)
-        self.assertEqual(repository.calls[-1], ("commit",))
+        self.assertEqual(
+            repository.calls[-2:],
+            [
+                ("rollback",),
+                ("record_failed", "structural-run", "structural", "entity failure"),
+            ],
+        )
 
     def test_state_failure_after_begin_records_failed_run(self) -> None:
         repository = _FakeRepository()
@@ -137,8 +170,13 @@ class HomeAssistantSyncTests(unittest.TestCase):
             coordinator.run_state_sync()
 
         self.assertIn(("begin", "state"), repository.calls)
-        self.assertIn(("fail", "state-run", "state failure"), repository.calls)
-        self.assertEqual(repository.calls[-1], ("commit",))
+        self.assertEqual(
+            repository.calls[-2:],
+            [
+                ("rollback",),
+                ("record_failed", "state-run", "state", "state failure"),
+            ],
+        )
 
     def test_python_runtime_contains_no_raw_orac_ha_table_dml(self) -> None:
         runtime_files = [

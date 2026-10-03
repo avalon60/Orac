@@ -1,0 +1,36 @@
+{
+  "entities": [
+    {"entity_id": "cover.unknown_blind", "device_id": "device-window", "platform": "future_vendor"},
+    {"entity_id": "sensor.unknown_battery", "device_id": "device-window", "platform": "future_vendor"},
+    {"entity_id": "climate.heat_pump", "device_id": "device-climate"},
+    {"entity_id": "lock.front_door", "device_id": "device-door"},
+    {"entity_id": "media_player.receiver", "device_id": "device-media"},
+    {"entity_id": "number.charge_limit", "device_id": "device-car"},
+    {"entity_id": "select.operating_mode", "device_id": "device-car"}
+  ],
+  "states": [
+    {"entity_id": "cover.unknown_blind", "state": "closed", "attributes": {"supported_features": 15}},
+    {"entity_id": "sensor.unknown_battery", "state": "87", "attributes": {"device_class": "battery", "unit_of_measurement": "%"}},
+    {"entity_id": "climate.heat_pump", "state": "heat", "attributes": {"min_temp": 7, "max_temp": 30, "target_temp_step": 0.5}},
+    {"entity_id": "lock.front_door", "state": "locked", "attributes": {}},
+    {"entity_id": "media_player.receiver", "state": "paused", "attributes": {"supported_features": 16389}},
+    {"entity_id": "number.charge_limit", "state": "80", "attributes": {"min": 40, "max": 100, "step": 5}},
+    {"entity_id": "select.operating_mode", "state": "eco", "attributes": {"options": ["eco", "normal", "boost"]}}
+  ],
+  "services": {
+    "cover": {"open_cover": {}, "close_cover": {}, "stop_cover": {}, "set_cover_position": {}},
+    "climate": {"set_temperature": {}},
+    "lock": {"lock": {}, "unlock": {}},
+    "media_player": {"media_play": {}, "media_pause": {}, "volume_set": {}},
+    "number": {"set_value": {}},
+    "select": {"select_option": {}}
+  },
+  "services_by_entity": {
+    "cover.unknown_blind": ["cover.open_cover", "cover.close_cover", "cover.stop_cover", "cover.set_cover_position"],
+    "climate.heat_pump": ["climate.set_temperature"],
+    "lock.front_door": ["lock.lock", "lock.unlock"],
+    "media_player.receiver": ["media_player.media_play", "media_player.media_pause", "media_player.volume_set"],
+    "number.charge_limit": ["number.set_value"],
+    "select.operating_mode": ["select.select_option"]
+  }
+}

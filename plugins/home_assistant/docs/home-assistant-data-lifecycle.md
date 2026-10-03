@@ -42,22 +42,33 @@ synced inventory.
 
 ## Synchronisation Model
 
-The implemented service performs an initial pull refresh:
+The implemented service performs an atomic initial pull refresh:
 
 1. Validate plugin configuration and retrieve the access token from the PAT
    vault.
 2. Fetch Home Assistant areas, devices, entities, and current states.
-3. Replace structural cache rows through the approved sync package.
-4. Replace current-state cache rows.
-5. Record structural and state sync completion metadata.
+3. Fetch the Home Assistant action catalogue and target applicability where the
+   connected release supports it.
+4. Replace structural and current-state rows in one candidate transaction.
+5. Derive the immutable entity/action/capability/device generation.
+6. Commit the database rows once, then publish the in-memory generation.
+
+If any state fetch, merge, or capability derivation fails, the structural work
+is rolled back with it. The failure row is recorded independently after the
+rollback. A failed refresh cannot publish an empty or mixed generation.
 
 The same path is available through `Sync devices`, `Sync Home Assistant
 devices`, `Resync devices`, `Resync Home Assistant`, `Resync Home Assistant
 devices`, US and British English `Synchronize`/`Synchronise` variants, and the
 narrow ASR fallback `Sink devices`.
 
-Websocket state updates and periodic reconciliation remain future work. Until
-they are implemented, cached state reflects the last successful state sync.
+When websocket listening is enabled, the service subscribes to Home Assistant
+events after the initial generation is published. A `state_changed` event is
+validated into a candidate capability generation, persisted, committed, and
+then published in memory. Area, device, entity, and service registry events
+request a new full atomic refresh. A configurable periodic structural refresh
+also reconciles missed events. The maintained transport owns reconnect and
+ping mechanics. A state-only polling fallback remains future work.
 
 ## Read Paths
 
@@ -87,18 +98,20 @@ implemented and must retain the same explicit freshness model when added.
 
 ## Control Path
 
-Low-risk control follows this path:
+Established low-risk control follows this path:
 
 1. Parse an allowlisted deterministic command.
 2. Resolve enabled aliases, then exact entity/device names, then exact areas.
 3. Reject whole-home, blocked-domain, unsupported, unknown, or ambiguous
    requests.
-4. Map the request only to approved `light`, `switch`, or `scene` services.
-5. Create an isolated Home Assistant REST client with a timeout shorter than
+4. Require a dynamically discovered primitive binding for the resolved entity.
+5. Map the established route only to approved `light`, `switch`, or `scene`
+   actions advertised by Home Assistant.
+6. Create an isolated Home Assistant REST client with a timeout shorter than
    the core plugin execution timeout.
-6. POST to `/api/services/{domain}/{service}` with explicit entity IDs.
-7. Return success only when Home Assistant confirms all requested entity IDs.
-8. Close the ephemeral client and repository session.
+7. POST to `/api/services/{domain}/{service}` with explicit entity IDs.
+8. Return success only when Home Assistant confirms all requested entity IDs.
+9. Close the ephemeral client and repository session.
 
 The control path does not update `ha_states_current` optimistically. The next
 state sync remains responsible for refreshing the cached state.
@@ -136,10 +149,11 @@ checksum can be deployed over an installed schema without dropping tables or
 alias data. This is payload-local compatibility work. A general versioned and
 idempotent plugin database migration mechanism remains a follow-up task.
 
-## Future Work
+## Later Delivery Phases
 
-- websocket state-change subscription
-- periodic reconciliation and explicit stale-state metadata
+- state-only polling fallback and explicit stale-state metadata
+- optional reviewed mappings for opaque custom-integration actions whose names
+  and schemas do not support safe canonical discovery
 - deterministic read-only state questions beyond temperature and humidity
 - deployment-managed alias seed data or an approved alias administration UI
 - general versioned plugin database migrations

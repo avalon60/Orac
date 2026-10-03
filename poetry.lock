@@ -3113,6 +3113,23 @@ files = [
 ]
 
 [[package]]
+name = "websocket-client"
+version = "1.9.2"
+description = "WebSocket client for Python with low level API options"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "websocket_client-1.9.2-py3-none-any.whl", hash = "sha256:e1a673830a9c7bfa47b1cd3d5e4178f4c9651d80a4eab02c9c23a1c3ec6250ce"},
+    {file = "websocket_client-1.9.2.tar.gz", hash = "sha256:0fcb57545848be86992e128218fd96dd87a6769ffdb1a968dff79632b85604d0"},
+]
+
+[package.extras]
+docs = ["Sphinx (>=6.0)", "myst-parser (>=2.0.0)", "sphinx_rtd_theme (>=1.1.0)"]
+optional = ["python-socks", "wsaccel"]
+test = ["pytest", "websockets"]
+
+[[package]]
 name = "win32-setctime"
 version = "1.2.0"
 description = "A small Python utility to set file creation time on Windows"
@@ -3446,4 +3463,4 @@ voice-wake-porcupine = ["pvporcupine", "pvrecorder"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<4.0"
-content-hash = "0940b6dd53278d96b3c6f1a0b2ad49ae2c8f4e71b8662435c221c09475a3efdf"
+content-hash = "d1fca338ae125592ca7c5d301aea2a24bc7a2bf37832ac35966bc27e3a690fb1"

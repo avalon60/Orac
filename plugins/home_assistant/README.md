@@ -4,6 +4,8 @@ User and operator documentation is in
 [`docs/home-assistant.md`](docs/home-assistant.md). The data ownership and
 freshness contract is in
 [`docs/home-assistant-data-lifecycle.md`](docs/home-assistant-data-lifecycle.md).
+The entity-first design and transport boundary are in
+[`docs/home-assistant-architecture.md`](docs/home-assistant-architecture.md).
 
 This source directory contains the implementation, plugin-local configuration
 template, and plugin-owned database assets for `home_assistant`. The normal Orac

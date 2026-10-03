@@ -90,6 +90,19 @@ class HomeAssistantRepository:
             [sync_run_id, _safe_error_message(error_message)],
         )
 
+    def record_failed_sync_run(
+        self,
+        sync_run_id: str,
+        *,
+        sync_type: str,
+        error_message: str,
+    ) -> None:
+        """Record failure independently after rolling back cache replacement."""
+        self._db_session.call_procedure(
+            f"{self._PACKAGE}.record_failed_sync_run",
+            [sync_run_id, sync_type, _safe_error_message(error_message)],
+        )
+
     def merge_area(self, area: Mapping[str, Any]) -> None:
         """Merge one Home Assistant area payload."""
         self._call_json_payload("merge_area", area)
@@ -206,9 +219,11 @@ class HomeAssistantRepository:
                    entity_name,
                    original_name,
                    disabled_by,
+                   hidden_by,
                    friendly_name,
                    device_class,
                    unit_of_measurement,
+                   device_id,
                    device_name,
                    area_name,
                    area_aliases,

@@ -895,10 +895,10 @@ wwv_flow_imp_shared.create_security_scheme(
  p_id=>wwv_flow_imp.id(24538832508386634)
 ,p_name=>'Administration Rights'
 ,p_scheme_type=>'NATIVE_FUNCTION_BODY'
-,p_attribute_01=>'return orac_code.plugin_apex_app_auth_api.has_required_role(''ORAC_ADMIN'') = 1;'
+,p_attribute_01=>'return orac_code.plugin_apex_app_auth_api.plugin_is_available(''home_assistant'', :APP_ID) = 1 and orac_code.plugin_apex_app_auth_api.has_required_role(''ORAC_ADMIN'') = 1;'
 ,p_error_message=>'Insufficient privileges, user is not an Administrator'
 ,p_version_scn=>2391663
-,p_caching=>'BY_USER_BY_PAGE_VIEW'
+,p_caching=>'NOCACHE'
 );
 end;
 /
@@ -909,7 +909,14 @@ end;
 /
 prompt --application/shared_components/logic/application_settings
 begin
-null;
+wwv_flow_imp_shared.create_app_setting(
+ p_id=>wwv_flow_imp.id(24599000000000001)
+,p_name=>'ORAC_INSTALL_RECEIPT'
+,p_value=>'UNATTESTED'
+,p_is_required=>'Y'
+,p_on_upgrade_keep_value=>false
+,p_comments=>'Host-owned installation receipt marker. Managed by the Orac installer.'
+);
 end;
 /
 prompt --application/shared_components/navigation/tabs/standard

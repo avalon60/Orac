@@ -23,6 +23,12 @@ create or replace package orac_ha.ha_sync_api as
     p_error_message in orac_ha.ha_sync_runs.error_message%type
   );
 
+  procedure record_failed_sync_run(
+    p_sync_run_id   in orac_ha.ha_sync_runs.sync_run_id%type,
+    p_sync_type     in orac_ha.ha_sync_runs.sync_type%type,
+    p_error_message in orac_ha.ha_sync_runs.error_message%type
+  );
+
   procedure merge_area(
     p_payload in clob
   );

@@ -2,8 +2,8 @@
 
 --changeset cbostock:home_assistant_view_ha_control_resolution_v context:plugin,prod labels:plugin,home_assistant stripComments:false runOnChange:true
 -- orac-expected-columns: alias_name, entity_id, domain, object_id, entity_name
--- orac-expected-columns: original_name, disabled_by, friendly_name, device_class
--- orac-expected-columns: unit_of_measurement, device_name, effective_area_id
+-- orac-expected-columns: original_name, disabled_by, hidden_by, friendly_name, device_class
+-- orac-expected-columns: unit_of_measurement, device_id, device_name, effective_area_id
 -- orac-expected-columns: area_name, area_aliases, current_state, last_changed, last_updated
 create or replace view orac_ha.ha_control_resolution_v as
 select dal.alias_name,
@@ -13,9 +13,11 @@ select dal.alias_name,
        ent.name entity_name,
        ent.original_name,
        ent.disabled_by,
+       ent.hidden_by,
        json_value(sta.attributes, '$.friendly_name') friendly_name,
        json_value(sta.attributes, '$.device_class') device_class,
        json_value(sta.attributes, '$.unit_of_measurement') unit_of_measurement,
+       dev.device_id,
        coalesce(dev.name_by_user, dev.name) device_name,
        coalesce(ent.area_id, dev.area_id) effective_area_id,
        area.name area_name,

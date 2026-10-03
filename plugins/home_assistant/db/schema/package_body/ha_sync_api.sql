@@ -108,6 +108,47 @@ create or replace package body orac_ha.ha_sync_api as
     end if;
   end fail_sync_run;
 
+  procedure record_failed_sync_run(
+    p_sync_run_id   in orac_ha.ha_sync_runs.sync_run_id%type,
+    p_sync_type     in orac_ha.ha_sync_runs.sync_type%type,
+    p_error_message in orac_ha.ha_sync_runs.error_message%type
+  )
+  is
+    pragma autonomous_transaction;
+  begin
+    if p_sync_type not in ('structural', 'state')
+    then
+      raise_application_error(-20004, 'Unsupported Home Assistant sync type.');
+    end if;
+
+    insert into orac_ha.ha_sync_runs
+    (
+      sync_run_id,
+      sync_type,
+      status,
+      rows_processed,
+      error_message,
+      started_on,
+      completed_on
+    )
+    values
+    (
+      p_sync_run_id,
+      p_sync_type,
+      'failed',
+      0,
+      substr(p_error_message, 1, 4000),
+      systimestamp,
+      systimestamp
+    );
+
+    commit;
+  exception
+    when others then
+      rollback;
+      raise;
+  end record_failed_sync_run;
+
   procedure merge_area(
     p_payload in clob
   )

@@ -97,12 +97,14 @@ class HomeAssistantControlTests(unittest.TestCase):
         rows = [
             _row(
                 "switch.desk_lamp",
+                device_id="device-desk-lamp",
                 device_name="Desk Lamp",
                 area_name="Office",
                 area_aliases='["Study"]',
             ),
             _row(
                 "sensor.desk_lamp_power",
+                device_id="device-desk-lamp",
                 device_name="Desk Lamp",
                 area_name="Office",
                 area_aliases='["Study"]',
@@ -245,6 +247,15 @@ class HomeAssistantControlTests(unittest.TestCase):
         with self.assertRaisesRegex(HomeAssistantControlError, "not found"):
             resolve_control_target(request, rows)
 
+    def test_hidden_entities_are_not_visible_to_resolution(self) -> None:
+        request = parse_control_command("Turn on office lamp")
+
+        with self.assertRaisesRegex(HomeAssistantControlError, "not found"):
+            resolve_control_target(
+                request,
+                [_row("light.office", friendly_name="Office Lamp", hidden_by="user")],
+            )
+
     def test_exact_entity_id_object_id_and_names_resolve(self) -> None:
         row = _row(
             "light.office_lamp",
@@ -275,6 +286,26 @@ class HomeAssistantControlTests(unittest.TestCase):
 
         with self.assertRaisesRegex(HomeAssistantControlError, "ambiguous"):
             resolve_control_target(request, rows)
+
+    def test_exact_device_name_composes_action_capable_member_entities(self) -> None:
+        request = parse_control_command("Turn on desk station")
+        rows = [
+            _row(
+                "switch.desk_station",
+                device_id="device-desk",
+                device_name="Desk Station",
+            ),
+            _row(
+                "sensor.desk_station_power",
+                device_id="device-desk",
+                device_name="Desk Station",
+            ),
+        ]
+
+        resolved = resolve_control_target(request, rows)
+
+        self.assertEqual(resolved.resolution, "device")
+        self.assertEqual(resolved.entity_ids, ("switch.desk_station",))
 
     def test_named_area_and_area_alias_resolve_groups(self) -> None:
         rows = [

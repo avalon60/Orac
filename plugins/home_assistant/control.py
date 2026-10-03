@@ -171,6 +171,7 @@ class AreaDevice:
     name: str
     entity_ids: tuple[str, ...]
     domains: tuple[str, ...]
+    device_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -327,7 +328,7 @@ def list_area_devices(
             if _domain_matches(row, request.requested_domain)
         ]
 
-    grouped: dict[str, dict[str, set[str]]] = {}
+    grouped: dict[str, dict[str, Any]] = {}
     for row in area_matches:
         name = (
             row["device_name"]
@@ -335,8 +336,16 @@ def list_area_devices(
             or row["entity_name"]
             or row["object_id"].replace("_", " ")
         )
-        key = _normalise(name)
-        item = grouped.setdefault(key, {"entity_ids": set(), "domains": set()})
+        key = row["device_id"] or row["entity_id"]
+        item = grouped.setdefault(
+            key,
+            {
+                "name": name,
+                "device_id": row["device_id"] or None,
+                "entity_ids": set(),
+                "domains": set(),
+            },
+        )
         item["entity_ids"].add(row["entity_id"])
         item["domains"].add(row["domain"])
 
@@ -344,11 +353,15 @@ def list_area_devices(
         area_name=next(iter(matched_areas)),
         devices=tuple(
             AreaDevice(
-                name=name,
+                name=values["name"],
                 entity_ids=tuple(sorted(values["entity_ids"])),
                 domains=tuple(sorted(values["domains"])),
+                device_id=values["device_id"],
             )
-            for name, values in sorted(grouped.items())
+            for _row_key, values in sorted(
+                grouped.items(),
+                key=lambda item: (item[1]["name"], item[0]),
+            )
         ),
         requested_domain=request.requested_domain,
     )
@@ -396,6 +409,11 @@ def resolve_control_target(
     eligible_exact_matches = [
         row for row in exact_matches if _domain_matches(row, request.requested_domain)
     ]
+    exact_device_ids = {row["device_id"] for row in exact_matches if row["device_id"]}
+    if len(exact_matches) > 1 and len(exact_device_ids) == 1 and all(
+        row["device_id"] in exact_device_ids for row in exact_matches
+    ):
+        return _build_resolution(request, exact_matches, "device")
     if len(eligible_exact_matches) > 1:
         preferred_exact_matches = _preferred_identifier_matches(
             eligible_exact_matches,
@@ -403,6 +421,13 @@ def resolve_control_target(
         )
         if len(preferred_exact_matches) == 1:
             return _build_resolution(request, preferred_exact_matches, "entity")
+        device_ids = {
+            row["device_id"] for row in eligible_exact_matches if row["device_id"]
+        }
+        if len(device_ids) == 1 and all(
+            row["device_id"] in device_ids for row in eligible_exact_matches
+        ):
+            return _build_resolution(request, eligible_exact_matches, "device")
         raise HomeAssistantControlError(
             "ambiguous_target",
             f"Home Assistant target '{request.target}' is ambiguous.",
@@ -429,12 +454,13 @@ def _build_resolution(
     resolution: str,
 ) -> ResolvedControl:
     """Validate matched rows and build allowlisted service calls."""
-    blocked = sorted({row["domain"] for row in rows} & BLOCKED_DOMAINS)
-    if blocked:
-        raise HomeAssistantControlError(
-            "blocked_domain",
-            f"Home Assistant domain '{blocked[0]}' is not allowed.",
-        )
+    if resolution == "alias":
+        blocked = sorted({row["domain"] for row in rows} & BLOCKED_DOMAINS)
+        if blocked:
+            raise HomeAssistantControlError(
+                "blocked_domain",
+                f"Home Assistant domain '{blocked[0]}' is not allowed.",
+            )
     if resolution == "alias" and any(
         not _domain_matches(row, request.requested_domain) for row in rows
     ):
@@ -442,8 +468,20 @@ def _build_resolution(
             "unsupported_combination",
             "The Home Assistant alias contains incompatible entity types.",
         )
-    eligible = [row for row in rows if _domain_matches(row, request.requested_domain)]
+    domain_matches = [
+        row for row in rows if _domain_matches(row, request.requested_domain)
+    ]
+    eligible = [
+        row for row in domain_matches
+        if _service_for(row["domain"], request.action) is not None
+    ]
     if not eligible:
+        blocked = sorted({row["domain"] for row in domain_matches} & BLOCKED_DOMAINS)
+        if blocked:
+            raise HomeAssistantControlError(
+                "blocked_domain",
+                f"Home Assistant domain '{blocked[0]}' is not allowed.",
+            )
         raise HomeAssistantControlError(
             "unsupported_combination",
             "That action is not supported for the requested Home Assistant target.",
@@ -493,6 +531,8 @@ def _normalise_rows(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
         entity_id = _normalise(row.get("entity_id"))
         if not entity_id or "." not in entity_id:
             continue
+        if _normalise(row.get("disabled_by")) or _normalise(row.get("hidden_by")):
+            continue
         domain, object_id = entity_id.split(".", 1)
         normalised.append(
             {
@@ -504,6 +544,7 @@ def _normalise_rows(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
                 "original_name": _normalise(row.get("original_name")),
                 "friendly_name": _normalise(row.get("friendly_name")),
                 "device_name": _normalise(row.get("device_name")),
+                "device_id": _normalise(row.get("device_id")),
                 "area_name": _normalise(row.get("area_name")),
                 "area_aliases": _json_names(row.get("area_aliases")),
             }

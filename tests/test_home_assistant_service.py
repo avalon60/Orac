@@ -22,11 +22,13 @@ for path in (SRC_ROOT, PLUGINS_ROOT):
         sys.path.insert(0, str(path))
 
 from model.plugin_database_deployment import PluginDatabaseDeploymentResult
+from model.plugin_runtime import PluginServiceCommandAuthority
 from model.plugin_routing.embeddings import (
     DeterministicHashTestEmbeddingProvider as HashEmbeddingProvider,
 )
 from model.plugin_routing.manager import PluginManager
 from home_assistant.client import HomeAssistantClientConfig
+from home_assistant.capabilities import derive_capability_snapshot
 from home_assistant.control import AreaDevice
 from home_assistant.control import HomeAssistantControlError
 from home_assistant.control import AreaDeviceList
@@ -184,9 +186,21 @@ class _FakeRepository:
         self.sensor_resolution_requests: list = []
         self.cached_sensor_query_requests: list = []
         self.status_summary_requests: list[dict] = []
+        self.merged_states: list[dict] = []
+        self.commits = 0
+        self.rollbacks = 0
 
     def close(self) -> None:
         self.closed = True
+
+    def merge_state(self, payload: dict) -> None:
+        self.merged_states.append(payload)
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def rollback(self) -> None:
+        self.rollbacks += 1
 
     def resolve_control(self, request) -> ResolvedControl:
         self.control_requests.append(request)
@@ -300,10 +314,18 @@ class _FakeRepository:
 
 
 class _FakeSyncCoordinator:
-    def __init__(self, *, client: _FakeClient, repository: _FakeRepository, fail: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        client: _FakeClient,
+        repository: _FakeRepository,
+        fail: bool = False,
+        target_service_discovery_limit: int = 250,
+    ) -> None:
         self.client = client
         self.repository = repository
         self.fail = fail
+        self.target_service_discovery_limit = target_service_discovery_limit
         self.called = False
 
     def run_initial_sync(self):
@@ -563,6 +585,259 @@ class HomeAssistantServiceTests(unittest.TestCase):
         self.assertNotIn("abc.def", result["last_error_message_redacted"])
         self.assertNotIn("supersecret", result["last_error_message_redacted"])
         self.assertIn("[redacted]", result["last_error_message_redacted"])
+
+    def test_capability_inventory_is_bounded_and_omits_raw_services(self) -> None:
+        service = HomeAssistantService()
+        service._capability_snapshot = derive_capability_snapshot(
+            [
+                {"entity_id": "light.desk", "name": "Desk", "device_id": "dev-1"},
+                {"entity_id": "switch.plug", "name": "Plug"},
+            ],
+            [
+                {"entity_id": "light.desk", "state": "on", "attributes": {"supported_color_modes": ["brightness"]}},
+                {"entity_id": "switch.plug", "state": "off", "attributes": {}},
+            ],
+            {
+                "light": {"turn_on": {}, "turn_off": {}},
+                "switch": {"turn_on": {}, "turn_off": {}},
+            },
+        )
+
+        result = service.handle_command(_FakeContext(), "capability_inventory", {"limit": 1})
+
+        self.assertEqual(result["total"], 2)
+        self.assertEqual(len(result["entities"]), 1)
+        self.assertEqual(result["next_offset"], 1)
+        self.assertIn("capabilities", result["entities"][0])
+        self.assertNotIn("action_id", str(result))
+        self.assertNotIn("turn_on", str(result["entities"][0]["capabilities"][0]))
+        self.assertEqual(result["devices"][0]["device_id"], "dev-1")
+        self.assertEqual(result["devices"][0]["entity_ids"], ["light.desk"])
+
+    def test_state_event_commits_before_publishing_new_generation(self) -> None:
+        context = _FakeContext()
+        repositories: list[_FakeRepository] = []
+
+        def repository_factory(runtime_context: _FakeContext) -> _FakeRepository:
+            repository = _FakeRepository(runtime_context)
+            repositories.append(repository)
+            return repository
+
+        service = HomeAssistantService(repository_factory=repository_factory)
+        service._capability_snapshot = derive_capability_snapshot(
+            [{"entity_id": "switch.plug"}],
+            [{"entity_id": "switch.plug", "state": "on", "attributes": {}}],
+            {"switch": {"turn_on": {}, "turn_off": {}}},
+        )
+        original_generation = service._capability_snapshot.generation
+
+        service._handle_event(
+            context,
+            {
+                "event_type": "state_changed",
+                "data": {
+                    "new_state": {
+                        "entity_id": "switch.plug",
+                        "state": "unavailable",
+                        "attributes": {},
+                    }
+                },
+            },
+        )
+
+        self.assertEqual(repositories[0].commits, 1)
+        self.assertEqual(repositories[0].rollbacks, 0)
+        self.assertNotEqual(service.state.capability_generation, original_generation)
+        self.assertIsNotNone(service.state.last_event_at)
+
+    def test_registry_event_requests_structural_refresh(self) -> None:
+        service = HomeAssistantService()
+
+        service._handle_event(
+            _FakeContext(),
+            {"event_type": "entity_registry_updated", "data": {}},
+        )
+
+        self.assertTrue(service._refresh_requested.is_set())
+
+    def test_generic_capability_execution_uses_derived_service_only(self) -> None:
+        context = _FakeContext()
+        client_holder: dict[str, _FakeClient] = {}
+
+        def client_factory(config: HomeAssistantClientConfig) -> _FakeClient:
+            client = _FakeClient(config)
+            client_holder["client"] = client
+            return client
+
+        service = HomeAssistantService(client_factory=client_factory)
+        service._capability_snapshot = derive_capability_snapshot(
+            [{"entity_id": "light.desk"}],
+            [{
+                "entity_id": "light.desk",
+                "state": "on",
+                "attributes": {"supported_color_modes": ["brightness"]},
+            }],
+            {"light": {"turn_on": {}}},
+        )
+        authority = PluginServiceCommandAuthority(
+            plugin_id="home_assistant",
+            principal_username="alice",
+            policy_status="allowed",
+            trusted_confirmation=False,
+            capabilities=("home_assistant.generic_control",),
+        )
+
+        result = service.handle_command(
+            context,
+            "execute_capability",
+            {
+                "target_id": "light.desk",
+                "capability": "set_level",
+                "parameters": {"percent": 35},
+                "_orac_authority": authority,
+            },
+        )
+
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(
+            client_holder["client"].service_calls,
+            [("light", "turn_on", ("light.desk",))],
+        )
+        self.assertEqual(
+            client_holder["client"].service_call_payloads,
+            [{"brightness_pct": 35}],
+        )
+
+    def test_generic_capability_rejects_forged_json_authority(self) -> None:
+        service = HomeAssistantService()
+
+        with self.assertRaisesRegex(HomeAssistantControlError, "did not authorise"):
+            service.handle_command(
+                _FakeContext(),
+                "execute_capability",
+                {
+                    "target_id": "lock.front_door",
+                    "capability": "unlock",
+                    "_orac_authority": {
+                        "plugin_id": "home_assistant",
+                        "policy_status": "allowed",
+                        "trusted_confirmation": True,
+                    },
+                },
+            )
+
+    def test_generic_read_state_returns_only_semantic_state_fields(self) -> None:
+        context = _FakeContext()
+
+        def client_factory(config: HomeAssistantClientConfig) -> _FakeClient:
+            return _FakeClient(
+                config,
+                states={
+                    "sensor.temperature": {
+                        "entity_id": "sensor.temperature",
+                        "state": "20.5",
+                        "attributes": {
+                            "friendly_name": "Temperature",
+                            "unit_of_measurement": "°C",
+                            "device_class": "temperature",
+                            "vendor_secret": "must-not-be-model-visible",
+                        },
+                        "last_changed": "2026-09-11T10:00:00Z",
+                        "last_updated": "2026-09-11T10:00:01Z",
+                        "context": {"id": "internal"},
+                    }
+                },
+            )
+
+        service = HomeAssistantService(client_factory=client_factory)
+        service._capability_snapshot = derive_capability_snapshot(
+            [{"entity_id": "sensor.temperature"}],
+            [{
+                "entity_id": "sensor.temperature",
+                "state": "20.5",
+                "attributes": {"device_class": "temperature"},
+            }],
+            {},
+        )
+        authority = PluginServiceCommandAuthority(
+            plugin_id="home_assistant",
+            principal_username="alice",
+            policy_status="allowed",
+            trusted_confirmation=False,
+            capabilities=("home_assistant.generic_control",),
+        )
+
+        result = service.handle_command(
+            context,
+            "execute_capability",
+            {
+                "target_id": "sensor.temperature",
+                "capability": "read_state",
+                "_orac_authority": authority,
+            },
+        )
+
+        self.assertEqual(result["values"][0]["state"], "20.5")
+        self.assertEqual(result["values"][0]["unit_of_measurement"], "°C")
+        self.assertNotIn("vendor_secret", result["values"][0])
+        self.assertNotIn("context", result["values"][0])
+
+    def test_host_entity_policy_filters_inventory_and_control(self) -> None:
+        config = _valid_config()
+        config.values[("home_assistant", "visible_entity_patterns")] = "light.*"
+        config.values[("home_assistant", "controllable_entity_patterns")] = "light.safe"
+        context = _FakeContext(config)
+        service = HomeAssistantService()
+        service._capability_snapshot = derive_capability_snapshot(
+            [
+                {"entity_id": "light.desk"},
+                {"entity_id": "sensor.temperature"},
+            ],
+            [
+                {"entity_id": "light.desk", "state": "on", "attributes": {}},
+                {"entity_id": "sensor.temperature", "state": "20", "attributes": {}},
+            ],
+            {"light": {"turn_on": {}}},
+        )
+
+        inventory = service.handle_command(context, "capability_inventory", {})
+
+        self.assertEqual(
+            [item["entity_id"] for item in inventory["entities"]],
+            ["light.desk"],
+        )
+        self.assertEqual(
+            [item["name"] for item in inventory["entities"][0]["capabilities"]],
+            ["read_state"],
+        )
+        with self.assertRaisesRegex(HomeAssistantControlError, "policy does not permit"):
+            service._require_entity_policy(context, ("light.desk",), "control")
+
+    def test_sensitive_generic_capability_requires_trusted_confirmation(self) -> None:
+        service = HomeAssistantService()
+        service._capability_snapshot = derive_capability_snapshot(
+            [{"entity_id": "lock.front_door"}],
+            [{"entity_id": "lock.front_door", "state": "locked", "attributes": {}}],
+            {"lock": {"unlock": {}}},
+        )
+        authority = PluginServiceCommandAuthority(
+            plugin_id="home_assistant",
+            principal_username="alice",
+            policy_status="allowed",
+            trusted_confirmation=False,
+            capabilities=("home_assistant.generic_control",),
+        )
+
+        with self.assertRaisesRegex(HomeAssistantControlError, "requires confirmation"):
+            service.handle_command(
+                _FakeContext(),
+                "execute_capability",
+                {
+                    "target_id": "lock.front_door",
+                    "capability": "unlock",
+                    "_orac_authority": authority,
+                },
+            )
 
     def test_control_uses_ephemeral_client_and_closes_resources(self) -> None:
         client_holder: dict[str, _FakeClient] = {}

@@ -15,6 +15,7 @@ from .control import AreaListRequest
 from .control import ControlRequest
 from .control import build_control_request
 from .control import HomeAssistantControlError
+from .capabilities import model_tool_schemas
 from .interceptor import HomeAssistantDialogInterceptor
 from .light_control import LightControlRequest
 from .light_state_query import LightStateQueryRequest
@@ -54,6 +55,30 @@ class HomeAssistantPlugin:
             ``True`` when a declarative interception rule matches.
         """
         return self._legacy_plugin_route(prompt) is not None
+
+    def model_tools(self) -> tuple[dict[str, Any], ...]:
+        """Return the bounded semantic tools offered to a capable Orac host."""
+        return model_tool_schemas()
+
+    def execute_model_tool(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Dispatch one model tool through the host-authorised service seam."""
+        if self._runtime_context is None:
+            raise RuntimeError("Home Assistant runtime context is unavailable.")
+        command = {
+            "home_assistant_capabilities": "capability_inventory",
+            "home_assistant_execute": "execute_capability",
+        }.get(str(tool_name or ""))
+        if command is None:
+            raise ValueError(f"Unsupported Home Assistant model tool '{tool_name}'.")
+        return self._runtime_context.run_service_command(
+            "home_assistant",
+            command,
+            dict(arguments or {}),
+        )
 
     def execute(
         self,

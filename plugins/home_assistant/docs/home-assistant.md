@@ -2,8 +2,9 @@
 
 The Home Assistant plugin is a hybrid integration that synchronises Home
 Assistant inventory and current state into the plugin-owned `ORAC_HA` schema.
-It provides deterministic light, switch, and scene control, read-only area
-listings, and on-demand resynchronisation through Orac's managed plugin path.
+It derives generic semantic capabilities from Home Assistant metadata while
+preserving deterministic light, switch, and scene routes, read-only area
+listings, and managed resynchronisation.
 
 General plugin installation, policy, and lifecycle rules are documented in
 [Plugins](../../../docs/plugins.md). The cache ownership and freshness contract
@@ -15,6 +16,10 @@ is documented in
 Supported now:
 
 - startup synchronisation of areas, devices, entities, and current states
+- atomic capability generations derived from domains, states, supported
+  features, service descriptions, and target applicability
+- event-driven state refresh, registry-triggered refresh, and configurable
+  periodic structural reconciliation
 - on-demand structural and state resynchronisation
 - `turn_on`, `turn_off`, and `toggle` for `light` and `switch` entities
 - brightness, colour, and colour-temperature control for supported `light`
@@ -29,14 +34,17 @@ Supported now:
 - switch entities described as lamps or lights when light terminology is used
 - explicit failure for ambiguous, unknown, unsupported, or unsafe requests
 - plugin-router audit persistence and fail-closed mutation routing
+- bounded model-tool contracts that omit raw Home Assistant service selectors
+- composed multi-entity device targets using Home Assistant device names and areas
 
 Not currently implemented:
 
 - general non-climate state questions such as `Is the desk lamp on?`
 - arbitrary Home Assistant service calls
 - alias creation or management through voice commands
-- control of locks, doors, alarms, climate, covers, fans, scripts,
-  automations, or other blocked domains
+- deterministic natural-language routes for locks, doors, climate, covers,
+  fans, media players, and helper entities; their generic primitives are
+  derived but require an authorised model-tool host and configured policy
 - whole-home commands such as `Turn off all lights`
 
 ## Command Reference
@@ -368,6 +376,14 @@ entity IDs; otherwise the result is explicitly unconfirmed or failed.
 Edit `plugins/home_assistant/plugin.ini` for non-secret values such as protocol,
 host, port, TLS verification, and sync behaviour. Do not place the token there.
 
+The same file contains host policy defaults for visible, readable,
+controllable, and denied entity-ID patterns. `*` is the default allow pattern;
+an empty allow value denies that operation class. Deny patterns take
+precedence. `confirmation_required_capabilities` controls which generic
+primitive mutations require broker-trusted confirmation. Page sizes, action
+discovery probes, entity-group limits, request timeouts, websocket reconnects,
+and refresh intervals are configurable defaults.
+
 The plugin manifest defines required settings and secret keys. Unresolved
 template placeholders keep the plugin disabled.
 
@@ -420,6 +436,9 @@ The status summary combines:
 - current shadow-table counts for areas, devices, entities, and states
 - last redacted sync/runtime error
 - runtime service-running and Home Assistant API reachability when available
+- capability generation, entity/binding/action counts, quarantined custom
+  action count, websocket status, and event error count through the managed
+  service status command
 
 The APEX-facing source is the read-only
 `orac_ha.ha_status_summary_v` view. The Home Assistant service also exposes a
