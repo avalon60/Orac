@@ -1,0 +1,10 @@
+--liquibase formatted sql
+-- Author: clive
+-- Date: 12-Sep-2026
+-- Description: Enforces plugin removal and dedicated schema ownership invariants.
+
+--changeset clive:create_plg_remov_fidx1 context:core labels:core stripComments:false
+--preconditions onFail:HALT onError:HALT
+--precondition-sql-check expectedResult:0 select count(*) from all_indexes where owner = 'ORAC_CORE' and index_name = 'PLG_REMOV_FIDX1';
+create unique index orac_core.plg_remov_fidx1 on orac_core.plugin_removals (case when completed_on is null then plugin_id end);
+--rollback drop index orac_core.plg_remov_fidx1;
