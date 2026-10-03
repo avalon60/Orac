@@ -23,6 +23,7 @@ from model.plugin_knowledge_retrieval import (  # noqa: E402
 )
 from model.plugin_routing.discovery import PluginDiscovery  # noqa: E402
 from model.plugin_router import _has_self_scope_retrieval_entitlement  # noqa: E402
+from model.plugin_router import _plugin_knowledge_restriction_allows  # noqa: E402
 from model.plugin_runtime import PluginRuntimeContext  # noqa: E402
 from orac_core.knowledge import KnowledgeRetrievalOutcome  # noqa: E402
 from orac_core.knowledge import KnowledgeScope  # noqa: E402
@@ -187,6 +188,28 @@ class PluginKnowledgeRetrievalTests(unittest.TestCase):
         )
         self.assertFalse(
             _has_self_scope_retrieval_entitlement(_manifest(effective=False))
+        )
+
+    def test_caller_scope_restriction_can_disable_plugin_knowledge(self) -> None:
+        """A plugin entitlement must not override a narrower caller scope."""
+        self.assertTrue(_plugin_knowledge_restriction_allows("weather", None))
+        self.assertTrue(
+            _plugin_knowledge_restriction_allows(
+                "weather",
+                {"knowledge_scope_restrictions": ("PLUGIN:weather",)},
+            )
+        )
+        self.assertFalse(
+            _plugin_knowledge_restriction_allows(
+                "weather",
+                {"knowledge_scope_restrictions": ()},
+            )
+        )
+        self.assertFalse(
+            _plugin_knowledge_restriction_allows(
+                "weather",
+                {"knowledge_scope_restrictions": ("PROJECT:alpha",)},
+            )
         )
 
     def test_core_denials_are_controlled_for_missing_use_or_ineligibility(self) -> None:

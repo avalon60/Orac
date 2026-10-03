@@ -197,7 +197,8 @@ def test_native_oracle_storage_and_exact_candidate_sql_are_mandatory() -> None:
     assert "vector_distance(" in retrieval_sql
     assert "fetch exact first l_semantic_limit rows only" in retrieval_sql
     assert "semantic_score >= l_semantic_threshold" in retrieval_sql
-    assert "lexical_score >= 0.25" in retrieval_sql
+    assert "lexical_score >= p_min_lexical_score" in retrieval_sql
+    assert "p_min_lexical_score     in  number default 0.25" in retrieval_sql
     assert "candidate_keys as" in retrieval_sql
     assert "embedding_text_sha256 = chunk.chunk_content_sha256" in native_view
 

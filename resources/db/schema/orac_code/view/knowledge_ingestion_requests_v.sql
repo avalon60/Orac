@@ -114,7 +114,7 @@ select req.ingestion_request_id,
        src.source_reference,
        src.parent_source_reference,
        scope.scope_type target_scope_type,
-       coalesce(project.project_code, plugin.plugin_id) target_scope_key,
+       coalesce(project.project_code, scope.plugin_id) target_scope_key,
        doc.document_id,
        doc.title,
        ver.document_version_id,
@@ -159,7 +159,7 @@ select req.ingestion_request_id,
   left join orac_api.project_registry_v project
     on project.project_id = scope.project_id
   left join orac_api.plugin_registry_v plugin
-    on plugin.plugin_registry_id = scope.plugin_registry_id
+    on plugin.knowledge_scope_id = scope.knowledge_scope_id
   join orac_api.knowledge_document_versions_v ver
     on ver.document_version_id = req.document_version_id
   left join event_rollup evt

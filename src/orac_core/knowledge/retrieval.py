@@ -9,15 +9,22 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from decimal import Decimal
 import json
 import re
+import time
 from typing import Any
 import uuid
 
 from model.plugin_routing.embeddings import EmbeddingProvider
 
 from .models import KnowledgeRetrievalOutcome, KnowledgeSearchResult
+from .constraints import LiteralConstraint
+from .constraints import extract_literal_constraints
+from .constraints import general_lexical_terms
+from .constraints import literal_match_span
+from .constraints import matched_literal_constraints
 from .repository import KnowledgeRetrievalRepository
 from .repository import KnowledgeEmbeddingRepository
 from .scope import KnowledgeScope, KnowledgeScopeConfigurationError
@@ -29,9 +36,11 @@ _STOP_WORDS = frozenset(
         "a",
         "an",
         "and",
+        "about",
         "are",
         "base",
         "consult",
+        "can",
         "do",
         "does",
         "explain",
@@ -42,16 +51,20 @@ _STOP_WORDS = frozenset(
         "is",
         "it",
         "knowledge",
+        "me",
         "of",
         "on",
         "query",
         "search",
+        "s",
         "source",
+        "tell",
         "the",
         "to",
         "use",
         "using",
         "what",
+        "you",
     }
 )
 
@@ -251,6 +264,8 @@ class KnowledgeRetrievalService:
             raise KnowledgeRetrievalError("query_embedding_dimensions_invalid")
         lexical_tokens = _lexical_query_tokens(lexical_query or query, scope)
         lexical_phrase = " ".join(lexical_tokens)
+        constraints = extract_literal_constraints(lexical_query or query)
+        retrieval_deadline = time.monotonic() + float(timeout_seconds or 10.0)
         requested_retrieval_id = str(uuid.uuid4())
         if automatic_projects:
             retrieval_id, resolution, rows = (
@@ -263,6 +278,7 @@ class KnowledgeRetrievalService:
                     semantic_limit=50,
                     lexical_limit=50,
                     retrieval_id=requested_retrieval_id,
+                    min_lexical_score=min_lexical_score,
                     timeout_seconds=float(timeout_seconds or 10.0),
                 )
             )
@@ -281,6 +297,8 @@ class KnowledgeRetrievalService:
                     semantic_limit=50,
                     lexical_limit=50,
                     retrieval_id=requested_retrieval_id,
+                    min_lexical_score=min_lexical_score,
+                    timeout_seconds=max(0.001, retrieval_deadline - time.monotonic()),
                 )
             )
         else:
@@ -298,6 +316,8 @@ class KnowledgeRetrievalService:
                     lexical_limit=50,
                     retrieval_id=requested_retrieval_id,
                     correlation_id=correlation_id,
+                    min_lexical_score=min_lexical_score,
+                    timeout_seconds=max(0.001, retrieval_deadline - time.monotonic()),
                 )
             )
         if retrieval_id != requested_retrieval_id:
@@ -328,6 +348,170 @@ class KnowledgeRetrievalService:
                 embedding_model_identifier=self._embedding_provider.model_id,
                 retrieval_id=retrieval_id,
             )
+
+        recovery_retrieval_id: str | None = None
+        recovery_candidate_count = 0
+        recovery_duration_ms: int | None = None
+        initial_order = sorted(
+            rows,
+            key=lambda row: (
+                _is_navigation_heavy(str(row.get("chunk_text") or "")),
+                -_rrf_score(
+                    _optional_int(row.get("semantic_rank")),
+                    _optional_int(row.get("lexical_rank")),
+                ),
+                int(row.get("chunk_id") or 0),
+            ),
+        )
+        lead_document_version_id = (
+            int(initial_order[0].get("document_version_id") or 0)
+            if initial_order
+            else 0
+        )
+        recovery_topical_terms = general_lexical_terms(lexical_query or query).difference(
+            term
+            for item in constraints
+            if item.kind in {"possessive_name", "multiword_name"}
+            for term in general_lexical_terms(item.normalized)
+        )
+        recovery_constraints = tuple(
+            constraint.normalized
+            for constraint in constraints
+            if constraint.high_confidence
+            and not any(
+                literal_match_span(str(row.get("chunk_text") or ""), constraint)
+                is not None
+                and (
+                    float(row.get("semantic_score") or 0.0)
+                    >= float(active_profile.get("semantic_threshold") or 0.0)
+                    or (
+                        int(row.get("document_version_id") or 0)
+                        == lead_document_version_id
+                        and bool(
+                            recovery_topical_terms.intersection(
+                                general_lexical_terms(
+                                    str(row.get("chunk_text") or "")
+                                )
+                            )
+                        )
+                    )
+                )
+                for row in rows
+            )
+        )
+        if recovery_constraints:
+            recovery_retrieval_id = str(uuid.uuid4())
+            recovery_started_at = time.monotonic()
+            recovery_rows: list[dict[str, Any]] = []
+            recovery_reason = "LITERAL_RECOVERY_EMPTY"
+            try:
+                recovery_limit = min(16, max_selected_chunks * 2)
+                if automatic_projects:
+                    _, recovery_resolution, recovery_rows = (
+                        self._repository.open_authorised_project_candidates(
+                            principal_username=principal_username,
+                            embedding_profile_id=int(
+                                active_profile["embedding_profile_id"]
+                            ),
+                            query_vector=query_vector,
+                            lexical_tokens=lexical_tokens,
+                            lexical_phrase=lexical_phrase,
+                            semantic_limit=1,
+                            lexical_limit=recovery_limit,
+                            retrieval_id=recovery_retrieval_id,
+                            constraints=recovery_constraints,
+                            min_lexical_score=min_lexical_score,
+                            parent_retrieval_id=retrieval_id,
+                            timeout_seconds=max(
+                                0.001, retrieval_deadline - time.monotonic()
+                            ),
+                        )
+                    )
+                elif plugin_id is None:
+                    assert scope is not None
+                    _, recovery_resolution, recovery_rows = (
+                        self._repository.open_hybrid_search_candidates(
+                            principal_username=principal_username,
+                            target_scope_type=scope.scope_type,
+                            target_scope_key=scope.scope_key,
+                            embedding_profile_id=int(
+                                active_profile["embedding_profile_id"]
+                            ),
+                            query_vector=query_vector,
+                            lexical_tokens=lexical_tokens,
+                            lexical_phrase=lexical_phrase,
+                            semantic_limit=1,
+                            lexical_limit=recovery_limit,
+                            retrieval_id=recovery_retrieval_id,
+                            constraints=recovery_constraints,
+                            min_lexical_score=min_lexical_score,
+                            parent_retrieval_id=retrieval_id,
+                            timeout_seconds=max(
+                                0.001, retrieval_deadline - time.monotonic()
+                            ),
+                        )
+                    )
+                else:
+                    _, recovery_resolution, recovery_rows = (
+                        self._repository.open_plugin_hybrid_candidates(
+                            principal_username=principal_username,
+                            plugin_id=plugin_id,
+                            embedding_profile_id=int(
+                                active_profile["embedding_profile_id"]
+                            ),
+                            query_vector=query_vector,
+                            lexical_tokens=lexical_tokens,
+                            lexical_phrase=lexical_phrase,
+                            semantic_limit=1,
+                            lexical_limit=recovery_limit,
+                            retrieval_id=recovery_retrieval_id,
+                            correlation_id=correlation_id,
+                            constraints=recovery_constraints,
+                            min_lexical_score=min_lexical_score,
+                            parent_retrieval_id=retrieval_id,
+                            timeout_seconds=max(
+                                0.001, retrieval_deadline - time.monotonic()
+                            ),
+                        )
+                    )
+                if recovery_resolution.get("status") == "APPROVED":
+                    recovery_rows = recovery_rows[:recovery_limit]
+                    recovery_candidate_count = len(recovery_rows)
+                    recovery_reason = (
+                        "LITERAL_RECOVERY_RETURNED"
+                        if recovery_rows
+                        else "LITERAL_RECOVERY_EMPTY"
+                    )
+                    initial_ids = {int(row["chunk_id"]) for row in rows}
+                    rows.extend(
+                        row
+                        for row in recovery_rows
+                        if int(row["chunk_id"]) not in initial_ids
+                    )
+                else:
+                    recovery_reason = "LITERAL_RECOVERY_REJECTED"
+            except Exception as exc:
+                recovery_reason = (
+                    "LITERAL_RECOVERY_TIMEOUT"
+                    if isinstance(exc, TimeoutError)
+                    or "timeout" in type(exc).__name__.casefold()
+                    else "LITERAL_RECOVERY_FAILED"
+                )
+            finally:
+                recovery_duration_ms = max(
+                    0, int((time.monotonic() - recovery_started_at) * 1000)
+                )
+                try:
+                    self._repository.record_outcome(
+                        retrieval_id=recovery_retrieval_id,
+                        outcome_code="COMPLETED",
+                        reason_code=recovery_reason,
+                        chunk_count=recovery_candidate_count,
+                        duration_ms=recovery_duration_ms,
+                        selected_chunk_ids=(),
+                    )
+                except Exception:
+                    pass
 
         scored: list[KnowledgeSearchResult] = []
         malformed_count = 0
@@ -445,6 +629,15 @@ class KnowledgeRetrievalService:
                     ),
                     extraction_id=_optional_int(row.get("extraction_id")),
                     chunk_set_id=_optional_int(row.get("chunk_set_id")),
+                    semantic_rank=semantic_rank,
+                    lexical_rank=lexical_rank,
+                    navigation=_navigation_classification(str(row["chunk_text"])),
+                    literal_constraints=tuple(
+                        constraint.normalized for constraint in constraints
+                    ),
+                    covered_constraints=matched_literal_constraints(
+                        str(row["chunk_text"]), constraints
+                    ),
                 )
             )
 
@@ -458,12 +651,15 @@ class KnowledgeRetrievalService:
                 result.chunk_id,
             ),
         )
-        ordered = _promote_continuation_neighbors(
+        ordered = [
+            replace(result, preselection_rank=rank)
+            for rank, result in enumerate(ordered, start=1)
+        ]
+        selected = _select_constraint_aware_results(
             ordered,
-            selection_window=max_selected_chunks,
-        )
-        selected = _select_bounded_results(
-            ordered,
+            query=lexical_query or query,
+            constraints=constraints,
+            semantic_threshold=float(active_profile.get("semantic_threshold") or 0.0),
             max_selected_chunks=max_selected_chunks,
             max_chunk_chars=max_chunk_chars,
             max_context_chars=max_context_chars,
@@ -496,7 +692,25 @@ class KnowledgeRetrievalService:
                 malformed_count=malformed_count,
                 embedding_model_identifier=self._embedding_provider.model_id,
                 retrieval_id=retrieval_id,
+                literal_constraints=tuple(item.normalized for item in constraints),
+                uncovered_constraints=tuple(item.normalized for item in constraints),
+                recovery_retrieval_id=recovery_retrieval_id,
+                recovery_candidate_count=recovery_candidate_count,
+                recovery_duration_ms=recovery_duration_ms,
             )
+        covered_constraints = tuple(
+            constraint.normalized
+            for constraint in constraints
+            if any(
+                constraint.normalized in result.covered_constraints
+                for result in selected
+            )
+        )
+        uncovered_constraints = tuple(
+            constraint.normalized
+            for constraint in constraints
+            if constraint.normalized not in covered_constraints
+        )
         self._repository.record_outcome(
             retrieval_id=retrieval_id,
             outcome_code="COMPLETED",
@@ -517,6 +731,23 @@ class KnowledgeRetrievalService:
             embedding_model_identifier=self._embedding_provider.model_id,
             results=tuple(selected),
             retrieval_id=retrieval_id,
+            literal_constraints=tuple(item.normalized for item in constraints),
+            covered_constraints=covered_constraints,
+            uncovered_constraints=uncovered_constraints,
+            method=(
+                "bounded_hybrid_plus_literal_recovery"
+                if recovery_retrieval_id is not None
+                else "bounded_hybrid"
+            ),
+            recovery_retrieval_id=recovery_retrieval_id,
+            recovery_candidate_count=recovery_candidate_count,
+            recovery_duration_ms=recovery_duration_ms,
+            diagnostics={
+                "selected_chunk_ids": tuple(item.chunk_id for item in selected),
+                "selected_ordinals": tuple(
+                    item.final_rank or 0 for item in selected
+                ),
+            },
         )
 
     def _assert_compatible_row(
@@ -603,6 +834,169 @@ def _select_bounded_results(
     return selected
 
 
+def _select_constraint_aware_results(
+    results: list[KnowledgeSearchResult],
+    *,
+    query: str,
+    constraints: tuple[LiteralConstraint, ...],
+    semantic_threshold: float,
+    max_selected_chunks: int,
+    max_chunk_chars: int,
+    max_context_chars: int,
+) -> list[KnowledgeSearchResult]:
+    """Select relevance slots plus bounded literal anchors deterministically."""
+    if not constraints:
+        promoted = _promote_continuation_neighbors(
+            results,
+            selection_window=max_selected_chunks,
+        )
+        selected = _select_bounded_results(
+            promoted,
+            max_selected_chunks=max_selected_chunks,
+            max_chunk_chars=max_chunk_chars,
+            max_context_chars=max_context_chars,
+        )
+        return [
+            replace(
+                item,
+                final_rank=rank,
+                emitted_excerpt=item.chunk_text[:max_chunk_chars],
+                emitted_offset=0,
+            )
+            for rank, item in enumerate(selected, start=1)
+        ]
+
+    lead = next((item for item in results if not _is_navigation_heavy(item.chunk_text)), None)
+    lead_document_id = lead.document_version_id if lead is not None else None
+    topical_terms = general_lexical_terms(query).difference(
+        term
+        for constraint in constraints
+        if constraint.kind in {"possessive_name", "multiword_name"}
+        for term in general_lexical_terms(constraint.normalized)
+    )
+    anchor_candidates: list[KnowledgeSearchResult] = []
+    for result in results:
+        covered = matched_literal_constraints(result.chunk_text, constraints)
+        if not covered:
+            continue
+        chunk_terms = general_lexical_terms(result.chunk_text)
+        semantic_suitable = (
+            result.semantic_score is not None
+            and result.semantic_score >= semantic_threshold
+        )
+        same_document_topical = (
+            lead_document_id is not None
+            and result.document_version_id == lead_document_id
+            and bool(topical_terms.intersection(chunk_terms))
+        )
+        if semantic_suitable or same_document_topical:
+            anchor_candidates.append(replace(result, covered_constraints=covered))
+
+    anchor_limit = min(len(constraints), max(1, max_selected_chunks // 2))
+    anchors: list[KnowledgeSearchResult] = []
+    covered_so_far: set[str] = set()
+    remaining = list(anchor_candidates)
+    while remaining and len(anchors) < anchor_limit:
+        best = min(
+            remaining,
+            key=lambda item: (
+                -len(set(item.covered_constraints).difference(covered_so_far)),
+                item.preselection_rank or 10**9,
+                -item.fused_score,
+                item.chunk_id,
+            ),
+        )
+        incremental = set(best.covered_constraints).difference(covered_so_far)
+        if not incremental:
+            break
+        anchors.append(best)
+        covered_so_far.update(incremental)
+        remaining.remove(best)
+
+    anchor_ids = {item.chunk_id for item in anchors}
+    remaining_slots = max_selected_chunks - len(anchors)
+    ordinary = [item for item in results if item.chunk_id not in anchor_ids]
+    ordinary.sort(
+        key=lambda item: (
+            bool(matched_literal_constraints(item.chunk_text, constraints))
+            and not bool(
+                topical_terms.intersection(general_lexical_terms(item.chunk_text))
+            )
+            and (
+                item.semantic_score is None
+                or item.semantic_score < semantic_threshold
+            ),
+            item.preselection_rank or 10**9,
+            item.chunk_id,
+        )
+    )
+    promoted = _promote_continuation_neighbors(
+        ordinary,
+        selection_window=remaining_slots,
+    )
+    candidates = [*anchors, *promoted]
+    selected: list[KnowledgeSearchResult] = []
+    seen: set[tuple[int, str]] = set()
+    used_chars = 0
+    for result in candidates:
+        is_anchor = result.chunk_id in anchor_ids
+        excerpt, offset = _emitted_excerpt(
+            result.chunk_text,
+            constraints=constraints if is_anchor else (),
+            max_chars=max_chunk_chars,
+        )
+        identity = (
+            result.document_version_id,
+            result.chunk_content_sha256 or str(result.chunk_id),
+        )
+        if identity in seen or used_chars + len(excerpt) > max_context_chars:
+            continue
+        emitted_coverage = matched_literal_constraints(excerpt, constraints)
+        if is_anchor and not emitted_coverage:
+            continue
+        selected.append(
+            replace(
+                result,
+                selection_reason="constraint_anchor" if is_anchor else "relevance",
+                covered_constraints=emitted_coverage,
+                emitted_excerpt=excerpt,
+                emitted_offset=offset,
+            )
+        )
+        seen.add(identity)
+        used_chars += len(excerpt)
+        if len(selected) >= max_selected_chunks:
+            break
+    return [
+        replace(item, final_rank=rank)
+        for rank, item in enumerate(selected, start=1)
+    ]
+
+
+def _emitted_excerpt(
+    text: str,
+    *,
+    constraints: tuple[LiteralConstraint, ...],
+    max_chars: int,
+) -> tuple[str, int]:
+    """Return a deterministic prefix or match-centred anchor excerpt."""
+    if len(text) <= max_chars:
+        return text, 0
+    match = next(
+        (
+            literal_match_span(text, constraint)
+            for constraint in constraints
+            if literal_match_span(text, constraint) is not None
+        ),
+        None,
+    )
+    if match is None:
+        return text[:max_chars], 0
+    midpoint = (match[0] + match[1]) // 2
+    start = max(0, min(len(text) - max_chars, midpoint - max_chars // 2))
+    return text[start : start + max_chars], start
+
+
 def _promote_continuation_neighbors(
     results: list[KnowledgeSearchResult],
     *,
@@ -666,6 +1060,18 @@ def _is_navigation_heavy(text: str) -> bool:
         return True
     dotted_lines = sum(bool(_DOTTED_LEADER.search(line)) for line in lines)
     return dotted_lines >= 2 and dotted_lines * 2 >= len(lines)
+
+
+def _navigation_classification(text: str) -> str:
+    """Return a bounded navigation diagnostic without changing ranking policy."""
+    upper_text = text.upper()
+    if "TABLE OF CONTENTS" in upper_text:
+        return "TABLE_OF_CONTENTS"
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    dotted_lines = sum(bool(_DOTTED_LEADER.search(line)) for line in lines)
+    if lines and dotted_lines >= 2 and dotted_lines * 2 >= len(lines):
+        return "DOTTED_LEADERS"
+    return "CONTENT"
 
 
 def _optional_string(value: Any) -> str | None:

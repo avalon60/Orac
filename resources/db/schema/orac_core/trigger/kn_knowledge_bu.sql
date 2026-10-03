@@ -5,6 +5,13 @@ create or replace trigger orac_core.kn_srcobj_bu
 before update on orac_core.knowledge_source_objects
 for each row
 begin
+  if :new.knowledge_scope_id <> :old.knowledge_scope_id
+     or :new.source_type <> :old.source_type
+     or :new.source_reference <> :old.source_reference
+  then
+    raise_application_error(-20408, 'Knowledge source identity and scope ownership are immutable.');
+  end if;
+
   -- Recompile after canonical scope normalization changes the source table shape.
   :new.updated_on := systimestamp;
   :new.updated_by := coalesce(

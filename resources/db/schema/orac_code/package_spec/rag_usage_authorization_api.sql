@@ -7,6 +7,12 @@
 create or replace package orac_code.rag_usage_authorization_api
 authid definer
 as
+  -- Authorise the supplied permanent scope, without resolving a successor.
+  function authorization_result_by_id(
+    p_username           in varchar2,
+    p_knowledge_scope_id in number
+  ) return varchar2;
+
   function authorization_result(
     p_username   in varchar2,
     p_scope_type in varchar2,

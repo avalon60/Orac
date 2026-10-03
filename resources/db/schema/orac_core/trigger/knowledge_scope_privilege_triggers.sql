@@ -10,9 +10,15 @@ for each row
 begin
   if :new.scope_type <> :old.scope_type
      or nvl(:new.project_id, -1) <> nvl(:old.project_id, -1)
-     or nvl(:new.plugin_registry_id, -1) <> nvl(:old.plugin_registry_id, -1)
+     or nvl(:new.plugin_id, chr(0)) <> nvl(:old.plugin_id, chr(0))
   then
     raise_application_error(-20050, 'Canonical knowledge scope ownership cannot be changed.');
+  end if;
+
+  if :old.retired_on is not null
+     and (:new.retired_on is null or :new.retired_on <> :old.retired_on)
+  then
+    raise_application_error(-20050, 'Retired knowledge scopes cannot be revived.');
   end if;
 
   :new.updated_on := systimestamp;
@@ -66,8 +72,23 @@ end;
 --changeset clive:create_trigger_orac_core_plgreg_bd context:core labels:core stripComments:false splitStatements:false endDelimiter:/ runOnChange:true
 create or replace trigger orac_core.plgreg_bd
 before delete on orac_core.plugin_registry
+for each row
+declare
+  l_completed number;
 begin
-  raise_application_error(-20053, 'Registered plugins cannot be physically deleted; disable the plugin instead.');
+  select count(*) into l_completed
+    from orac_core.plugin_removals removal
+    join orac_core.knowledge_scopes scope on scope.knowledge_scope_id = removal.knowledge_scope_id
+   where removal.plugin_registry_id = :old.plugin_registry_id
+     and removal.plugin_id = :old.plugin_id
+     and removal.knowledge_scope_id = :old.knowledge_scope_id
+     and removal.completed_on is not null
+     and removal.external_complete_yn = 'Y' and removal.files_complete_yn = 'Y'
+     and scope.retired_on is not null;
+  if :old.enabled <> 'N' or l_completed <> 1
+  then
+    raise_application_error(-20053, 'Plugin deletion requires completed, fenced removal.');
+  end if;
 end;
 /
 --rollback drop trigger orac_core.plgreg_bd;

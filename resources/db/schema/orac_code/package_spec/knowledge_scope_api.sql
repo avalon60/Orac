@@ -24,6 +24,8 @@ as
     p_scope_type in varchar2,
     p_scope_key  in varchar2
   ) return varchar2;
+
+  function scope_status_by_id(p_knowledge_scope_id in number) return varchar2;
 end knowledge_scope_api;
 /
 --rollback drop package orac_code.knowledge_scope_api;

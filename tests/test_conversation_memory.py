@@ -335,7 +335,7 @@ class ConversationMemoryTests(unittest.TestCase):
     def test_live_context_maintenance_never_calls_destructive_pruning(self) -> None:
         """Leaving prompt history does not delete persisted messages."""
         controller_source = (
-            PROJECT_ROOT / "src/controller/orac.py"
+            PROJECT_ROOT / "src/orac_core/communications/runtime.py"
         ).read_text(encoding="utf-8")
         method_source = controller_source.split(
             "    def _maybe_prune(", maxsplit=1

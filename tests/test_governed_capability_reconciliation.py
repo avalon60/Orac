@@ -185,7 +185,7 @@ class AdvancedContextFloorTests(unittest.TestCase):
         )
         self.assertIsNone(result)
 
-        source = (PROJECT_ROOT / "src/controller/orac.py").read_text(
+        source = (PROJECT_ROOT / "src/orac_core/communications/runtime.py").read_text(
             encoding="utf-8"
         )
         explicit_retrieval = source.index("self.knowledge_retrieval_service.retrieve")

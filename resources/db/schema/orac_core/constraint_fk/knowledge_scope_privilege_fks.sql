@@ -7,12 +7,12 @@ alter table orac_core.knowledge_scopes add constraint kn_scope_project_fk
   foreign key (project_id) references orac_core.project_registry (project_id);
 --rollback alter table orac_core.knowledge_scopes drop constraint kn_scope_project_fk;
 
---changeset clive:create_constraint_fk_orac_core_kn_scope_plugin_fk context:core labels:core stripComments:false
+--changeset clive:create_constraint_fk_orac_core_plgreg_kn_scope_fk1 context:core labels:core stripComments:false
 --preconditions onFail:HALT onError:HALT
---precondition-sql-check expectedResult:0 select count(1) from all_constraints where owner = 'ORAC_CORE' and constraint_name = 'KN_SCOPE_PLUGIN_FK';
-alter table orac_core.knowledge_scopes add constraint kn_scope_plugin_fk
-  foreign key (plugin_registry_id) references orac_core.plugin_registry (plugin_registry_id);
---rollback alter table orac_core.knowledge_scopes drop constraint kn_scope_plugin_fk;
+--precondition-sql-check expectedResult:0 select count(1) from all_constraints where owner = 'ORAC_CORE' and constraint_name = 'PLGREG_KN_SCOPE_FK1';
+alter table orac_core.plugin_registry add constraint plgreg_kn_scope_fk1
+  foreign key (knowledge_scope_id) references orac_core.knowledge_scopes (knowledge_scope_id);
+--rollback alter table orac_core.plugin_registry drop constraint plgreg_kn_scope_fk1;
 
 --changeset clive:create_constraint_fk_orac_core_rag_useprv_user_fk context:core labels:core stripComments:false
 --preconditions onFail:HALT onError:HALT

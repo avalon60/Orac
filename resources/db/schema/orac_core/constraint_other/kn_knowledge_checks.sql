@@ -1,19 +1,5 @@
 --liquibase formatted sql
 
---changeset clive:create_constraint_other_orac_core_kn_srcobj_scope_ck context:core labels:core stripComments:false
---preconditions onFail:HALT onError:HALT
---precondition-sql-check expectedResult:0 select count(1) from all_constraints where owner = 'ORAC_CORE' and constraint_name = 'KN_SRCOBJ_SCOPE_CK';
-alter table orac_core.knowledge_source_objects add constraint kn_srcobj_scope_ck
-  check (target_scope_type in ('PROJECT', 'PLUGIN'));
---rollback alter table orac_core.knowledge_source_objects drop constraint kn_srcobj_scope_ck;
-
---changeset clive:create_constraint_other_orac_core_kn_doc_scope_ck context:core labels:core stripComments:false
---preconditions onFail:HALT onError:HALT
---precondition-sql-check expectedResult:0 select count(1) from all_constraints where owner = 'ORAC_CORE' and constraint_name = 'KN_DOC_SCOPE_CK';
-alter table orac_core.knowledge_documents add constraint kn_doc_scope_ck
-  check (target_scope_type in ('PROJECT', 'PLUGIN'));
---rollback alter table orac_core.knowledge_documents drop constraint kn_doc_scope_ck;
-
 --changeset clive:create_constraint_other_orac_core_kn_docver_hash_ck context:core labels:core stripComments:false
 --preconditions onFail:HALT onError:HALT
 --precondition-sql-check expectedResult:0 select count(1) from all_constraints where owner = 'ORAC_CORE' and constraint_name = 'KN_DOCVER_HASH_CK';

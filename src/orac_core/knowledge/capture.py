@@ -46,6 +46,7 @@ DROP_BOX_SOURCE_FORMATS = {
 EXTRACTION_METADATA_FIELDS = {
     "schema_version",
     "producer_plugin_id",
+    "producer_knowledge_scope_id",
     "drop_location_id",
     "drop_job_id",
     "source_format",
@@ -100,6 +101,15 @@ class KnowledgeManagedFileCaptureService:
         self, request: DropBoxCaptureRequest
     ) -> ManagedCaptureResult:
         """Capture a Drop Box file, register it with Core, and return request id."""
+        if (
+            type(request.target_knowledge_scope_id) is not int
+            or request.target_knowledge_scope_id <= 0
+            or type(request.producer_knowledge_scope_id) is not int
+            or request.producer_knowledge_scope_id <= 0
+        ):
+            raise KnowledgeCaptureError(
+                "A positive pinned knowledge scope ID is required."
+            )
         with self._open_source(request) as opened_source:
             request = self._upgrade_legacy_native_request(
                 request,
@@ -136,7 +146,7 @@ class KnowledgeManagedFileCaptureService:
                 processing_profile_code=request.processing_profile,
                 processing_instruction=request.processing_instruction,
                 source_modified_on=request.source_mtime,
-                legacy_parent_source_reference=request.legacy_source_key,
+                target_knowledge_scope_id=request.target_knowledge_scope_id,
                 source_format_code=request.source_format_code,
                 normalised_markdown=request.normalised_markdown,
                 normalised_text_sha256=request.normalised_text_sha256,
@@ -382,6 +392,8 @@ class KnowledgeManagedFileCaptureService:
         if (
             metadata.get("schema_version") != 1
             or metadata.get("producer_plugin_id") != "drop_box"
+            or metadata.get("producer_knowledge_scope_id")
+            != request.producer_knowledge_scope_id
             or metadata.get("drop_location_id") != request.drop_location_id
             or metadata.get("drop_job_id") != request.drop_job_id
             or metadata.get("source_format") != request.source_format_code
@@ -421,11 +433,7 @@ class KnowledgeManagedFileCaptureService:
                 or not tag[0].isalpha()
                 or tag != tag.upper()
                 or any(
-                    not (
-                        character.isupper()
-                        or character.isdigit()
-                        or character == "_"
-                    )
+                    not (character.isupper() or character.isdigit() or character == "_")
                     for character in tag
                 )
                 for tag in tags
@@ -493,6 +501,7 @@ class KnowledgeManagedFileCaptureService:
                     {
                         "schema_version": 1,
                         "producer_plugin_id": "drop_box",
+                        "producer_knowledge_scope_id": request.producer_knowledge_scope_id,
                         "drop_location_id": request.drop_location_id,
                         "drop_job_id": request.drop_job_id,
                         "source_format": source_format,

@@ -128,8 +128,8 @@ as
       when no_data_found then
         p_user_id := null;
     end;
-    p_authorized := orac_code.rag_usage_authorization_api.authorization_result(
-                      p_username, p_scope_type, p_scope_key
+    p_authorized := orac_code.rag_usage_authorization_api.authorization_result_by_id(
+                      p_username, p_scope_id
                     );
   end resolve_identity;
 
@@ -768,6 +768,9 @@ as
     p_lexical_limit         in  number,
     p_executing_plugin_id   in  varchar2,
     p_correlation_id        in  varchar2,
+    p_constraints_json      in  clob,
+    p_min_lexical_score     in  number,
+    p_parent_retrieval_id   in  varchar2,
     p_resolution_json       out clob,
     p_content_rows          out sys_refcursor
   )
@@ -779,6 +782,8 @@ as
     l_semantic_threshold number;
     l_semantic_limit pls_integer;
     l_lexical_limit pls_integer;
+    l_constraint_count pls_integer;
+    l_constraint_length pls_integer;
     l_detail_json  json;
   begin
     if not regexp_like(
@@ -794,8 +799,26 @@ as
        or p_lexical_tokens_json is not json
        or length(p_lexical_phrase) > 2000
        or length(p_correlation_id) > 128
+       or p_min_lexical_score not between 0 and 1
+       or (p_constraints_json is not null and p_constraints_json is not json)
+       or (p_parent_retrieval_id is not null and not regexp_like(
+             lower(trim(p_parent_retrieval_id)),
+             '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+           ))
        or (p_executing_plugin_id is not null
            and upper(trim(p_scope_type)) <> 'PLUGIN')
+    then
+      raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
+    end if;
+
+    select count(*), coalesce(max(length(trim(literal))), 0)
+      into l_constraint_count, l_constraint_length
+      from json_table(
+             case when p_constraints_json is null
+                  then to_clob('[]') else p_constraints_json end,
+             '$[*]' columns (literal varchar2(4000) path '$' error on error)
+           );
+    if l_constraint_count > 4 or l_constraint_length > 120
     then
       raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
     end if;
@@ -814,6 +837,7 @@ as
                'schema_version' value 2,
                'executing_plugin_id' value trim(p_executing_plugin_id),
                'correlation_id' value trim(p_correlation_id),
+               'parent_retrieval_id' value trim(p_parent_retrieval_id),
                'embedding_profile_id' value p_embedding_profile_id
                absent on null returning json
              )
@@ -822,7 +846,9 @@ as
     else
       select json_object(
                'schema_version' value 2,
-               'embedding_profile_id' value p_embedding_profile_id
+               'embedding_profile_id' value p_embedding_profile_id,
+               'parent_retrieval_id' value trim(p_parent_retrieval_id)
+               absent on null
                returning json
              )
         into l_detail_json
@@ -943,12 +969,41 @@ as
       lexical_candidates as (
         select chunk_id, lexical_score, lexical_rank
           from lexical_ranked
-         where lexical_score >= 0.25
+         where lexical_score >= p_min_lexical_score
+      ),
+      literal_candidates as (
+        select chunk.chunk_id
+          from scope_chunks chunk
+         where p_constraints_json is not null
+           and exists (
+                 select 1
+                   from json_table(
+                          p_constraints_json,
+                          '$[*]' columns (
+                            literal varchar2(120) path '$' error on error
+                          )
+                        ) constraint_value
+                  where trim(constraint_value.literal) is not null
+                    and instr(
+                          ' ' || regexp_replace(
+                            lower(dbms_lob.substr(chunk.chunk_text, 32767, 1)),
+                            '[^[:alnum:]]+', ' '
+                          ) || ' ',
+                          ' ' || regexp_replace(
+                            lower(trim(constraint_value.literal)),
+                            '[^[:alnum:]]+', ' '
+                          ) || ' '
+                        ) > 0
+               )
+         order by chunk.chunk_id
+         fetch first l_lexical_limit rows only
       ),
       candidate_keys as (
         select chunk_id from semantic_candidates
         union
         select chunk_id from lexical_candidates
+        union
+        select chunk_id from literal_candidates
       )
       select chunk.ingestion_request_id,
              chunk.source_object_id,
@@ -1038,6 +1093,33 @@ as
   is
   begin
     open_hybrid_candidates_internal(
+      p_retrieval_id, p_username, p_scope_type, p_scope_key,
+      p_embedding_profile_id, p_query_vector_json, p_lexical_tokens_json,
+      p_lexical_phrase, p_semantic_limit, p_lexical_limit, null, null,
+      null, 0.25, null, p_resolution_json, p_content_rows
+    );
+  end open_hybrid_search_candidates;
+
+  procedure open_hybrid_search_candidates_v2(
+    p_retrieval_id          in  varchar2,
+    p_username              in  varchar2,
+    p_scope_type            in  varchar2,
+    p_scope_key             in  varchar2,
+    p_embedding_profile_id  in  number,
+    p_query_vector_json     in  clob,
+    p_lexical_tokens_json   in  clob,
+    p_lexical_phrase        in  varchar2,
+    p_semantic_limit        in  number default 50,
+    p_lexical_limit         in  number default 50,
+    p_constraints_json      in  clob default null,
+    p_min_lexical_score     in  number default 0.25,
+    p_parent_retrieval_id   in  varchar2 default null,
+    p_resolution_json       out clob,
+    p_content_rows          out sys_refcursor
+  )
+  is
+  begin
+    open_hybrid_candidates_internal(
       p_retrieval_id,
       p_username,
       p_scope_type,
@@ -1050,10 +1132,13 @@ as
       p_lexical_limit,
       null,
       null,
+      p_constraints_json,
+      p_min_lexical_score,
+      p_parent_retrieval_id,
       p_resolution_json,
       p_content_rows
     );
-  end open_hybrid_search_candidates;
+  end open_hybrid_search_candidates_v2;
 
   procedure open_authorised_project_candidates(
     p_retrieval_id          in  varchar2,
@@ -1068,11 +1153,37 @@ as
     p_content_rows          out sys_refcursor
   )
   is
+  begin
+    open_authorised_project_candidates_v2(
+      p_retrieval_id, p_username, p_embedding_profile_id, p_query_vector_json,
+      p_lexical_tokens_json, p_lexical_phrase, p_semantic_limit,
+      p_lexical_limit, null, 0.25, null, p_resolution_json, p_content_rows
+    );
+  end open_authorised_project_candidates;
+
+  procedure open_authorised_project_candidates_v2(
+    p_retrieval_id          in  varchar2,
+    p_username              in  varchar2,
+    p_embedding_profile_id  in  number,
+    p_query_vector_json     in  clob,
+    p_lexical_tokens_json   in  clob,
+    p_lexical_phrase        in  varchar2,
+    p_semantic_limit        in  number default 50,
+    p_lexical_limit         in  number default 50,
+    p_constraints_json      in  clob default null,
+    p_min_lexical_score     in  number default 0.25,
+    p_parent_retrieval_id   in  varchar2 default null,
+    p_resolution_json       out clob,
+    p_content_rows          out sys_refcursor
+  )
+  is
     l_user_id         number;
     l_scope_count     pls_integer;
     l_query_vector    vector(768, float32);
     l_semantic_limit  pls_integer;
     l_lexical_limit   pls_integer;
+    l_constraint_count pls_integer;
+    l_constraint_length pls_integer;
     l_detail_json     json;
   begin
     if not regexp_like(
@@ -1087,6 +1198,24 @@ as
        or p_lexical_tokens_json is null
        or p_lexical_tokens_json is not json
        or length(p_lexical_phrase) > 2000
+       or p_min_lexical_score not between 0 and 1
+       or (p_constraints_json is not null and p_constraints_json is not json)
+       or (p_parent_retrieval_id is not null and not regexp_like(
+             lower(trim(p_parent_retrieval_id)),
+             '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+           ))
+    then
+      raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
+    end if;
+
+    select count(*), coalesce(max(length(trim(literal))), 0)
+      into l_constraint_count, l_constraint_length
+      from json_table(
+             case when p_constraints_json is null
+                  then to_clob('[]') else p_constraints_json end,
+             '$[*]' columns (literal varchar2(4000) path '$' error on error)
+           );
+    if l_constraint_count > 4 or l_constraint_length > 120
     then
       raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
     end if;
@@ -1176,7 +1305,9 @@ as
     select json_object(
              'schema_version' value 1,
              'embedding_profile_id' value p_embedding_profile_id,
-             'authorised_project_count' value l_scope_count
+             'authorised_project_count' value l_scope_count,
+             'parent_retrieval_id' value trim(p_parent_retrieval_id)
+             absent on null
              returning json
            )
       into l_detail_json
@@ -1275,12 +1406,41 @@ as
       lexical_candidates as (
         select chunk_id, lexical_score, lexical_rank
           from lexical_ranked
-         where lexical_score >= 0.25
+         where lexical_score >= p_min_lexical_score
+      ),
+      literal_candidates as (
+        select chunk.chunk_id
+          from project_chunks chunk
+         where p_constraints_json is not null
+           and exists (
+                 select 1
+                   from json_table(
+                          p_constraints_json,
+                          '$[*]' columns (
+                            literal varchar2(120) path '$' error on error
+                          )
+                        ) constraint_value
+                  where trim(constraint_value.literal) is not null
+                    and instr(
+                          ' ' || regexp_replace(
+                            lower(dbms_lob.substr(chunk.chunk_text, 32767, 1)),
+                            '[^[:alnum:]]+', ' '
+                          ) || ' ',
+                          ' ' || regexp_replace(
+                            lower(trim(constraint_value.literal)),
+                            '[^[:alnum:]]+', ' '
+                          ) || ' '
+                        ) > 0
+               )
+         order by chunk.chunk_id
+         fetch first l_lexical_limit rows only
       ),
       candidate_keys as (
         select chunk_id from semantic_candidates
         union
         select chunk_id from lexical_candidates
+        union
+        select chunk_id from literal_candidates
       )
       select chunk.ingestion_request_id,
              chunk.source_object_id,
@@ -1351,7 +1511,7 @@ as
         raise;
       end if;
       raise_application_error(-20633, 'RETRIEVAL_AUTHORIZATION_UNAVAILABLE');
-  end open_authorised_project_candidates;
+  end open_authorised_project_candidates_v2;
 
   procedure open_plugin_hybrid_candidates(
     p_retrieval_id          in  varchar2,
@@ -1364,6 +1524,33 @@ as
     p_semantic_limit        in  number default 50,
     p_lexical_limit         in  number default 50,
     p_correlation_id        in  varchar2 default null,
+    p_resolution_json       out clob,
+    p_content_rows          out sys_refcursor
+  )
+  is
+  begin
+    open_plugin_hybrid_candidates_v2(
+      p_retrieval_id, p_username, p_plugin_id, p_embedding_profile_id,
+      p_query_vector_json, p_lexical_tokens_json, p_lexical_phrase,
+      p_semantic_limit, p_lexical_limit, p_correlation_id, null, 0.25, null,
+      p_resolution_json, p_content_rows
+    );
+  end open_plugin_hybrid_candidates;
+
+  procedure open_plugin_hybrid_candidates_v2(
+    p_retrieval_id          in  varchar2,
+    p_username              in  varchar2,
+    p_plugin_id             in  varchar2,
+    p_embedding_profile_id  in  number,
+    p_query_vector_json     in  clob,
+    p_lexical_tokens_json   in  clob,
+    p_lexical_phrase        in  varchar2,
+    p_semantic_limit        in  number default 50,
+    p_lexical_limit         in  number default 50,
+    p_correlation_id        in  varchar2 default null,
+    p_constraints_json      in  clob default null,
+    p_min_lexical_score     in  number default 0.25,
+    p_parent_retrieval_id   in  varchar2 default null,
     p_resolution_json       out clob,
     p_content_rows          out sys_refcursor
   )
@@ -1386,10 +1573,13 @@ as
       p_lexical_limit,
       trim(p_plugin_id),
       p_correlation_id,
+      p_constraints_json,
+      p_min_lexical_score,
+      p_parent_retrieval_id,
       p_resolution_json,
       p_content_rows
     );
-  end open_plugin_hybrid_candidates;
+  end open_plugin_hybrid_candidates_v2;
 
   procedure record_policy_decision(
     p_policy_request_id       in varchar2,
@@ -1834,7 +2024,7 @@ as
         raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
       end if;
       select json_object(
-               'schema_version' value 1,
+               'schema_version' value 2,
                'executing_plugin_id' value json_value(
                  l_decision.detail_json,
                  '$.executing_plugin_id' returning varchar2(255)
@@ -1846,20 +2036,23 @@ as
                'selected_chunks' value coalesce((
                  select json_arrayagg(
                           json_object(
+                            'ordinal' value provenance.selected_ordinal,
                             'document_id' value provenance.document_id,
                             'document_version_id' value provenance.document_version_id,
                             'chunk_id' value provenance.chunk_id
                             returning clob
-                          ) order by provenance.chunk_id
+                          ) order by provenance.selected_ordinal
                           returning clob
                         )
                    from (
-                     select distinct chunk.document_id,
+                     select selected.selected_ordinal,
+                                     chunk.document_id,
                                      chunk.document_version_id,
                                      chunk.chunk_id
                        from json_table(
                               p_selected_chunk_ids_json,
                               '$[*]' columns (
+                                selected_ordinal for ordinality,
                                 chunk_id number path '$' error on error
                               )
                             ) selected

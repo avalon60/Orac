@@ -12,13 +12,31 @@ as
     p_scope_key  in varchar2
   ) return varchar2
   is
+  begin
+    return authorization_result_by_id(
+      p_username => p_username,
+      p_knowledge_scope_id => orac_code.knowledge_scope_api.resolve_scope_id(
+        p_scope_type, p_scope_key
+      )
+    );
+  exception
+    when others then
+      return 'RAG_USAGE_AUTHORIZATION_UNAVAILABLE';
+  end authorization_result;
+
+  function authorization_result_by_id(
+    p_username           in varchar2,
+    p_knowledge_scope_id in number
+  ) return varchar2
+  is
     l_user_id  number;
     l_active   varchar2(1 char);
-    l_scope_id number;
     l_count    number;
     l_expired  number;
     l_username varchar2(4000 char) := trim(p_username);
     l_scope_status varchar2(100 char);
+    l_scope_type varchar2(30 char);
+    l_scope_key varchar2(255 char);
   begin
     if l_username is null
     then
@@ -36,23 +54,35 @@ as
     end;
     if l_active <> 'Y' then return 'RAG_USAGE_PRINCIPAL_INACTIVE'; end if;
 
-    l_scope_status := orac_code.knowledge_scope_api.scope_status(
-                        p_scope_type, p_scope_key
-                      );
+    begin
+      execute immediate
+        'begin :status := orac_code.knowledge_scope_api.' ||
+        'scope_status_by_id(:scope_id); end;'
+        using out l_scope_status, in p_knowledge_scope_id;
+    exception
+      when others then
+        if sqlcode <> -6550
+        then
+          raise;
+        end if;
+        select scope_type, scope_key
+          into l_scope_type, l_scope_key
+          from orac_code.knowledge_scope_registry_v
+         where knowledge_scope_id = p_knowledge_scope_id;
+        l_scope_status := orac_code.knowledge_scope_api.scope_status(
+                            l_scope_type, l_scope_key
+                          );
+    end;
     if l_scope_status <> 'RAG_USAGE_SCOPE_ELIGIBLE'
     then
       return l_scope_status;
     end if;
-    l_scope_id := orac_code.knowledge_scope_api.resolve_scope_id(
-                    p_scope_type, p_scope_key
-                  );
-    if l_scope_id is null then return 'RAG_USAGE_SCOPE_UNKNOWN'; end if;
     select count(*),
            count(case when expires_on is not null and expires_on <= systimestamp then 1 end)
       into l_count, l_expired
       from orac_api.rag_usage_privileges_v
      where user_id = l_user_id
-       and knowledge_scope_id = l_scope_id
+       and knowledge_scope_id = p_knowledge_scope_id
        and privilege_code = 'USE'
        and active_yn = 'Y'
        and effective_on <= systimestamp;
@@ -63,7 +93,7 @@ as
   exception
     when others then
       return 'RAG_USAGE_AUTHORIZATION_UNAVAILABLE';
-  end authorization_result;
+  end authorization_result_by_id;
 
   procedure open_authorised_project_domains(
     p_username        in varchar2,

@@ -18,7 +18,7 @@ as
     p_processing_profile_code  in varchar2 default null,
     p_processing_instruction   in clob default null,
     p_source_modified_on       in timestamp with time zone default null,
-    p_legacy_parent_source_reference in varchar2 default null,
+    p_target_knowledge_scope_id in number default null,
     p_source_format_code        in varchar2 default null,
     p_normalised_markdown       in clob default null,
     p_normalised_text_sha256    in varchar2 default null,

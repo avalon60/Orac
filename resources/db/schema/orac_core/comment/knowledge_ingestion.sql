@@ -1,6 +1,7 @@
 --liquibase formatted sql
 
 --changeset clive:comment_orac_core_knowledge_ingestion context:core labels:core stripComments:false runOnChange:true
+comment on column orac_core.knowledge_source_objects.knowledge_scope_id is 'Immutable source ownership. Source type and reference are unique only within this permanent scope; ordinary ingestion never reparents a source.';
 comment on table orac_core.knowledge_source_objects is 'Stable external source identities accepted for Core knowledge ingestion.'
 ;
 comment on table orac_core.knowledge_documents is 'Core knowledge document identities derived from accepted sources.'

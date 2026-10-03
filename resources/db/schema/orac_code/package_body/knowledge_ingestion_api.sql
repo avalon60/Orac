@@ -208,6 +208,11 @@ as
        and req.status_code = c_status_processing
        and req.lease_owner = p_owner_id
        and req.lease_token = p_lease_token
+       and exists (
+         select 1 from orac_api.knowledge_source_objects_v src
+          where src.source_object_id = req.source_object_id
+            and orac_code.knowledge_scope_api.scope_status_by_id(src.knowledge_scope_id) = 'RAG_USAGE_SCOPE_ELIGIBLE'
+       )
        and req.lease_expires_on > systimestamp;
 
     if l_count = 0
@@ -230,7 +235,7 @@ as
     p_processing_profile_code  in varchar2 default null,
     p_processing_instruction   in clob default null,
     p_source_modified_on       in timestamp with time zone default null,
-    p_legacy_parent_source_reference in varchar2 default null,
+    p_target_knowledge_scope_id in number default null,
     p_source_format_code        in varchar2 default null,
     p_normalised_markdown       in clob default null,
     p_normalised_text_sha256    in varchar2 default null,
@@ -263,7 +268,6 @@ as
     l_existing_source_format_code varchar2(50);
     l_conflicting_fields  varchar2(1000);
     l_ingestion_request_id number;
-    l_legacy_count         number;
     l_existing_count       number;
     l_extraction_id        number;
     l_tag_array            json_array_t;
@@ -304,6 +308,19 @@ as
     l_knowledge_scope_id := orac_code.knowledge_scope_api.resolve_scope_id(
                               l_scope_type, l_scope_key
                             );
+    if (l_source_type = 'DROP_BOX' and p_target_knowledge_scope_id is null)
+       or (p_target_knowledge_scope_id is not null
+           and (p_target_knowledge_scope_id <> l_knowledge_scope_id
+                or orac_code.knowledge_scope_api.scope_status_by_id(
+                     p_target_knowledge_scope_id
+                   ) <> 'RAG_USAGE_SCOPE_ELIGIBLE'))
+    then
+      raise_application_error(-20409, 'Pinned knowledge scope is not eligible.');
+    end if;
+    if p_target_knowledge_scope_id is not null
+    then
+      l_knowledge_scope_id := p_target_knowledge_scope_id;
+    end if;
 
     if p_byte_size is null or p_byte_size < 0
     then
@@ -346,6 +363,13 @@ as
       begin
         l_metadata_object := json_object_t.parse(p_extraction_metadata_json);
         if l_metadata_object.get_number('schema_version') <> 1
+           or not l_metadata_object.has('producer_knowledge_scope_id')
+           or l_metadata_object.get_number('producer_knowledge_scope_id') is null
+           or l_metadata_object.get_number('producer_knowledge_scope_id') <>
+              orac_code.knowledge_scope_api.resolve_scope_id('PLUGIN', 'drop_box')
+           or orac_code.knowledge_scope_api.scope_status_by_id(
+                l_metadata_object.get_number('producer_knowledge_scope_id')
+              ) <> 'RAG_USAGE_SCOPE_ELIGIBLE'
            or l_metadata_object.get_string('producer_plugin_id') <> 'drop_box'
            or l_metadata_object.get_string('source_format') <> p_source_format_code
         then
@@ -357,6 +381,7 @@ as
           if l_metadata_keys(l_index) not in (
                'schema_version',
                'producer_plugin_id',
+               'producer_knowledge_scope_id',
                'drop_location_id',
                'drop_job_id',
                'source_format',
@@ -382,20 +407,21 @@ as
       select source_object_id
         into l_source_object_id
         from orac_api.knowledge_source_objects_v
-       where source_type = l_source_type
+       where knowledge_scope_id = l_knowledge_scope_id
+         and source_type = l_source_type
          and source_reference = l_source_reference
          for update;
 
       update orac_api.knowledge_source_objects_v
-         set parent_source_reference = p_parent_source_reference,
-             knowledge_scope_id      = l_knowledge_scope_id
+         set parent_source_reference = p_parent_source_reference
        where source_object_id = l_source_object_id;
     exception
       when no_data_found then
         select count(*)
           into l_existing_count
           from orac_api.knowledge_source_objects_v
-         where source_type = l_source_type
+         where knowledge_scope_id = l_knowledge_scope_id
+           and source_type = l_source_type
            and source_reference = l_source_reference;
 
         if l_existing_count > 0
@@ -403,46 +429,7 @@ as
           raise_application_error(-20407, 'Stable source reference collision detected.');
         end if;
 
-        if l_source_type = 'DROP_BOX'
-           and p_legacy_parent_source_reference is not null
-        then
-          select count(*),
-                 min(source_object_id)
-            into l_legacy_count,
-                 l_source_object_id
-            from orac_api.knowledge_source_objects_v
-           where source_type = l_source_type
-             and source_reference like 'drop_box:drop_job:%'
-             and knowledge_scope_id = l_knowledge_scope_id
-             and parent_source_reference in (
-                   p_parent_source_reference,
-                   p_legacy_parent_source_reference
-                 );
-
-          if l_legacy_count = 1
-          then
-            update orac_api.knowledge_source_objects_v
-               set source_reference        = l_source_reference,
-                   parent_source_reference = p_parent_source_reference,
-                   knowledge_scope_id      = l_knowledge_scope_id
-             where source_object_id = l_source_object_id;
-
-            add_event_for_source(
-              l_source_object_id,
-              'source_rekeyed',
-              'Conservatively re-keyed legacy Drop Box job source to stable source identity.'
-            );
-          elsif l_legacy_count > 1
-          then
-            raise_application_error(-20408, 'Ambiguous legacy Drop Box source identity; refusing re-key.');
-          end if;
-        else
-          l_legacy_count := 0;
-        end if;
-
-        if l_legacy_count = 0
-        then
-          insert into orac_api.knowledge_source_objects_v (
+        insert into orac_api.knowledge_source_objects_v (
             source_type,
             source_reference,
             parent_source_reference,
@@ -455,7 +442,6 @@ as
             l_knowledge_scope_id
           )
           returning source_object_id into l_source_object_id;
-        end if;
     end;
 
     begin
@@ -794,10 +780,15 @@ as
     l_owner_id := normalised_required(p_owner_id, 'Owner id');
     for rec in (
       select ingestion_request_id
-        from orac_api.knowledge_ingestion_requests_v
-       where status_code = c_status_queued
+        from orac_api.knowledge_ingestion_requests_v req
+       where (status_code = c_status_queued
           or (status_code = c_status_retry_wait and next_attempt_on <= systimestamp)
-          or (status_code = c_status_processing and lease_expires_on <= systimestamp)
+          or (status_code = c_status_processing and lease_expires_on <= systimestamp))
+         and exists (
+           select 1 from orac_api.knowledge_source_objects_v src
+            where src.source_object_id = req.source_object_id
+              and orac_code.knowledge_scope_api.scope_status_by_id(src.knowledge_scope_id) = 'RAG_USAGE_SCOPE_ELIGIBLE'
+         )
        order by created_on, ingestion_request_id
        for update skip locked
     )

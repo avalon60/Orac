@@ -35,6 +35,24 @@ def _read(path: Path) -> str:
 class RagUsagePrivilegeSchemaTests(unittest.TestCase):
     """Verify the database authorization architecture remains fail closed."""
 
+    def test_retrieval_authorises_the_exact_resolved_scope(self) -> None:
+        body = _read(CODE_ROOT / "package_body" / "rag_usage_authorization_api.sql")
+        exact = body.split("function authorization_result_by_id", 1)[1]
+        exact = exact.split("end authorization_result_by_id", 1)[0]
+        self.assertIn("scope_status_by_id", exact)
+        self.assertIn("knowledge_scope_id = p_knowledge_scope_id", exact)
+        self.assertNotIn("resolve_scope_id", exact)
+        retrieval = _read(CODE_ROOT / "package_body" / "knowledge_retrieval_api.sql")
+        identity = retrieval.split("procedure resolve_identity", 1)[1]
+        identity = " ".join(identity.split("end resolve_identity", 1)[0].split())
+        self.assertIn("authorization_result_by_id( p_username, p_scope_id )", identity)
+
+    def test_pending_removal_is_inactive_in_scope_registry(self) -> None:
+        registry = _read(CODE_ROOT / "view" / "knowledge_scope_registry_v.sql")
+        self.assertIn("orac_api.plugin_removals_v removal", registry)
+        self.assertIn("removal.plugin_registry_id = plugin.plugin_registry_id", registry)
+        self.assertIn("removal.completed_on is null", registry)
+
     def test_scope_registry_uses_relational_xor_ownership(self) -> None:
         table = _read(CORE_ROOT / "table" / "knowledge_scopes.sql")
         checks = _read(
@@ -45,7 +63,9 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
         )
 
         self.assertIn("project_id", table)
-        self.assertIn("plugin_registry_id", table)
+        self.assertIn("plugin_id", table)
+        self.assertIn("retired_on", table)
+        self.assertNotIn("plugin_registry_id", table)
         self.assertNotIn("scope_key", table)
         self.assertIn("constraint kn_scope_ck1", checks)
         self.assertIn("references orac_core.project_registry", foreign_keys)
@@ -85,7 +105,9 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
         self.assertIn("p_lock_active_row => false", body)
         self.assertIn("p_lock_active_row => true", body)
         self.assertIn("rag_usage_grant_available", body)
-        self.assertIn("where knowledge_scope_id = p_knowledge_scope_id", body)
+        self.assertIn("p_requested_scope_id => p_knowledge_scope_id", body)
+        self.assertIn("p_scope_id := p_requested_scope_id", body)
+        self.assertNotIn("select scope_type, scope_key", body)
         exact_revoke = body.split("function revoke_scope_usage_by_id", 1)[1]
         self.assertIn(
             "where rag_usage_privilege_id = p_rag_usage_privilege_id", exact_revoke
@@ -156,10 +178,7 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
         self.assertNotIn("on delete cascade", triggers)
 
     def test_normalised_corpus_has_one_authoritative_scope(self) -> None:
-        migration = _read(CORE_ROOT / "table" / "zz_knowledge_scope_migration.sql")
-        normalization = _read(
-            CORE_ROOT / "migration" / "knowledge_scope_normalization.sql"
-        )
+        canonical = _read(CORE_ROOT / "table" / "knowledge_ingestion.sql")
         source_view = _read(
             SCHEMA_ROOT / "orac_api" / "view" / "knowledge_source_objects_v.sql"
         )
@@ -174,20 +193,21 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
         self.assertNotIn("target_scope_type", source_view)
         self.assertNotIn("knowledge_scope_id", document_view)
         self.assertNotIn("target_scope_type", document_view)
-        self.assertIn("knowledge_scope_id", migration)
-        self.assertIn("drop (target_scope_type, target_scope_key)", normalization)
+        self.assertIn("knowledge_scope_id", canonical)
+        self.assertNotIn("target_scope_type", canonical)
+        self.assertNotIn("target_scope_key", canonical)
         self.assertIn("target_scope_type", searchable)
         self.assertIn("target_scope_key", searchable)
 
     def test_plugin_services_distinguish_core_and_plugin_owners(self) -> None:
-        migration = _read(CORE_ROOT / "table" / "zz_knowledge_scope_migration.sql")
+        table = _read(CORE_ROOT / "table" / "plugin_services.sql")
         checks = _read(
             CORE_ROOT / "constraint_other" / "knowledge_scope_privilege_checks.sql"
         )
         foreign_keys = _read(
             CORE_ROOT / "constraint_fk" / "knowledge_scope_privilege_fks.sql"
         )
-        self.assertIn("service.plugin_id = 'orac_core'", migration)
+        self.assertIn("service_owner_type", table)
         self.assertIn("service_owner_type = 'core'", checks)
         self.assertIn("constraint plgsvc_registry_fk", foreign_keys)
 
@@ -254,7 +274,7 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
         )
         self.assertIn("orac_code.rag_usage_scope_lov_v", export)
         self.assertIn("p_name=>'p39_project_id'", export)
-        self.assertIn("p_name=>'p39_plugin_registry_id'", export)
+        self.assertIn("p_name=>'p39_plugin_id'", export)
         self.assertIn("p_button_name=>'apply_filters'", export)
         self.assertIn("p_button_name=>'administer'", page_39)
         self.assertIn('aria-label="manage privilege"', page_39)
@@ -284,7 +304,7 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
         self.assertIn("p_triggering_expression=>'project'", page_39)
         self.assertIn("p_triggering_expression=>'plugin'", page_39)
         self.assertIn("p_affected_elements=>'p39_project_id'", page_39)
-        self.assertIn("p_affected_elements=>'p39_plugin_registry_id'", page_39)
+        self.assertIn("p_affected_elements=>'p39_plugin_id'", page_39)
         action_column = page_39.split("p_db_column_name=>'rag_usage_privilege_id'", 1)[
             1
         ].split(");", 1)[0]
@@ -419,7 +439,7 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
             "p39_username": "principal",
             "p39_scope_type": "scope type",
             "p39_project_id": "project",
-            "p39_plugin_registry_id": "plugin",
+            "p39_plugin_id": "plugin",
             "p39_state": "state",
         }
         for item_name, prompt in expected_prompts.items():
@@ -438,7 +458,7 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
 
         expected_items = (
             "p39_username,p39_scope_type,p39_project_id,"
-            "p39_plugin_registry_id,p39_state"
+            "p39_plugin_id,p39_state"
         )
         self.assertIn(f"p_ajax_items_to_submit=>'{expected_items}'", page_39)
 
@@ -476,7 +496,7 @@ class RagUsagePrivilegeSchemaTests(unittest.TestCase):
         self.assertIn(f"p_affected_elements=>'{expected_items}'", clear_action)
         self.assertIn("p_action=>'native_hide'", clear_action)
         self.assertIn(
-            "p_affected_elements=>'p39_project_id,p39_plugin_registry_id'",
+            "p_affected_elements=>'p39_project_id,p39_plugin_id'",
             clear_action,
         )
         self.assertIn("p_action=>'native_refresh'", clear_action)

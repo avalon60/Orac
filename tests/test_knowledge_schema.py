@@ -174,21 +174,28 @@ class KnowledgeSchemaTests(unittest.TestCase):
         ):
             self.assertIn(token, package_sql)
 
-    def test_legacy_source_rekey_is_audited_and_conservative(self) -> None:
+    def test_source_identity_is_scope_bound_and_cannot_be_reparented(self) -> None:
+        """A reinstall cannot inherit sources belonging to its predecessor."""
         package_sql = (
             (CORE_CODE_SCHEMA / "package_body" / "knowledge_ingestion_api.sql")
             .read_text(encoding="utf-8")
             .lower()
         )
 
-        for token in (
-            "source_rekeyed",
-            "ambiguous legacy drop box source",
-            "drop_box:drop_job:%",
-            "knowledge_scope_id = l_knowledge_scope_id",
-            "add_event_for_source",
+        self.assertNotIn("source_rekeyed", package_sql)
+        self.assertNotIn("drop_box:drop_job:%", package_sql)
+        self.assertRegex(
+            package_sql,
+            r"where knowledge_scope_id = l_knowledge_scope_id\s+and source_type = l_source_type\s+and source_reference = l_source_reference",
+        )
+        for folder, filename in (
+            ("index", "kn_knowledge_indexes.sql"),
+            ("constraint_uc", "kn_knowledge_uks.sql"),
         ):
-            self.assertIn(token, package_sql)
+            sql = (CORE_SCHEMA / folder / filename).read_text().lower()
+            self.assertIn("(knowledge_scope_id, source_type, source_reference)", sql)
+        trigger = (CORE_SCHEMA / "trigger" / "kn_knowledge_bu.sql").read_text().lower()
+        self.assertIn(":new.knowledge_scope_id <> :old.knowledge_scope_id", trigger)
 
     def test_ingestion_validates_canonical_active_scope_before_writes(self) -> None:
         package_sql = (

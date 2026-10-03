@@ -15942,7 +15942,7 @@ wwv_flow_imp_page.create_page_plug(
 '       privilege.scope_type,',
 '       privilege.scope_key,',
 '       privilege.project_id,',
-'       privilege.plugin_registry_id,',
+'       privilege.plugin_id,',
 '       privilege.privilege_state,',
 '       privilege.effective_on,',
 '       privilege.expires_on,',
@@ -15962,11 +15962,11 @@ wwv_flow_imp_page.create_page_plug(
 ' where (:P39_USERNAME is null or privilege.username = :P39_USERNAME)',
 '   and (:P39_SCOPE_TYPE is null or privilege.scope_type = :P39_SCOPE_TYPE)',
 '   and (:P39_PROJECT_ID is null or privilege.project_id = :P39_PROJECT_ID)',
-'   and (:P39_PLUGIN_REGISTRY_ID is null or privilege.plugin_registry_id = :P39_PLUGIN_REGISTRY_ID)',
+'   and (:P39_PLUGIN_ID is null or privilege.plugin_id = :P39_PLUGIN_ID)',
 '   and (:P39_STATE is null or privilege.privilege_state = :P39_STATE)',
 ' order by privilege.username, privilege.scope_type, privilege.scope_key, privilege.granted_on desc'))
 ,p_plug_source_type=>'NATIVE_IR'
-,p_ajax_items_to_submit=>'P39_USERNAME,P39_SCOPE_TYPE,P39_PROJECT_ID,P39_PLUGIN_REGISTRY_ID,P39_STATE'
+,p_ajax_items_to_submit=>'P39_USERNAME,P39_SCOPE_TYPE,P39_PROJECT_ID,P39_PLUGIN_ID,P39_STATE'
 ,p_prn_page_header=>'RAG Usage Privileges'
 );
 wwv_flow_imp_page.create_worksheet(
@@ -16247,12 +16247,12 @@ wwv_flow_imp_page.create_page_item(
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(15100100000000606)
-,p_name=>'P39_PLUGIN_REGISTRY_ID'
+,p_name=>'P39_PLUGIN_ID'
 ,p_item_sequence=>70
 ,p_item_plug_id=>wwv_flow_imp.id(15100100000000215)
 ,p_prompt=>'Plugin'
 ,p_display_as=>'NATIVE_POPUP_LOV'
-,p_lov=>'select scope_key d, plugin_registry_id r from orac_code.rag_usage_scope_lov_v where scope_type = ''PLUGIN'' order by scope_key'
+,p_lov=>'select distinct plugin_id d, plugin_id r from orac_code.knowledge_scope_registry_v where scope_type = ''PLUGIN'' order by plugin_id'
 ,p_lov_display_null=>'YES'
 ,p_lov_null_text=>'- All plugins -'
 ,p_begin_on_new_line=>'N'
@@ -16352,7 +16352,7 @@ wwv_flow_imp_page.create_page_da_action(
 ,p_execute_on_page_init=>'Y'
 ,p_action=>'NATIVE_SHOW'
 ,p_affected_elements_type=>'ITEM'
-,p_affected_elements=>'P39_PLUGIN_REGISTRY_ID'
+,p_affected_elements=>'P39_PLUGIN_ID'
 );
 wwv_flow_imp_page.create_page_da_action(
  p_id=>wwv_flow_imp.id(15100100000000213)
@@ -16362,7 +16362,7 @@ wwv_flow_imp_page.create_page_da_action(
 ,p_execute_on_page_init=>'Y'
 ,p_action=>'NATIVE_HIDE'
 ,p_affected_elements_type=>'ITEM'
-,p_affected_elements=>'P39_PLUGIN_REGISTRY_ID'
+,p_affected_elements=>'P39_PLUGIN_ID'
 );
 wwv_flow_imp_page.create_page_da_action(
  p_id=>wwv_flow_imp.id(15100100000000214)
@@ -16372,7 +16372,7 @@ wwv_flow_imp_page.create_page_da_action(
 ,p_execute_on_page_init=>'Y'
 ,p_action=>'NATIVE_CLEAR'
 ,p_affected_elements_type=>'ITEM'
-,p_affected_elements=>'P39_PLUGIN_REGISTRY_ID'
+,p_affected_elements=>'P39_PLUGIN_ID'
 );
 wwv_flow_imp_page.create_page_da_event(
  p_id=>wwv_flow_imp.id(15100100000000217)
@@ -16412,7 +16412,7 @@ wwv_flow_imp_page.create_page_da_action(
 ,p_execute_on_page_init=>'N'
 ,p_action=>'NATIVE_CLEAR'
 ,p_affected_elements_type=>'ITEM'
-,p_affected_elements=>'P39_USERNAME,P39_SCOPE_TYPE,P39_PROJECT_ID,P39_PLUGIN_REGISTRY_ID,P39_STATE'
+,p_affected_elements=>'P39_USERNAME,P39_SCOPE_TYPE,P39_PROJECT_ID,P39_PLUGIN_ID,P39_STATE'
 );
 wwv_flow_imp_page.create_page_da_action(
  p_id=>wwv_flow_imp.id(15100100000000221)
@@ -16422,7 +16422,7 @@ wwv_flow_imp_page.create_page_da_action(
 ,p_execute_on_page_init=>'N'
 ,p_action=>'NATIVE_HIDE'
 ,p_affected_elements_type=>'ITEM'
-,p_affected_elements=>'P39_PROJECT_ID,P39_PLUGIN_REGISTRY_ID'
+,p_affected_elements=>'P39_PROJECT_ID,P39_PLUGIN_ID'
 );
 wwv_flow_imp_page.create_page_da_action(
  p_id=>wwv_flow_imp.id(15100100000000222)

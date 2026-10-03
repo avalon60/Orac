@@ -49,8 +49,7 @@ as
 
   procedure assess_grant_request(
     p_username        in varchar2,
-    p_scope_type      in varchar2,
-    p_scope_key       in varchar2,
+    p_requested_scope_id in number,
     p_lock_active_row in boolean,
     p_user_id         out number,
     p_scope_id        out number,
@@ -73,21 +72,15 @@ as
       return;
     end if;
 
-    p_scope_id := orac_code.knowledge_scope_api.resolve_scope_id(
-                    p_scope_type,
-                    p_scope_key
-                  );
+    p_scope_id := p_requested_scope_id;
     if p_scope_id is null
     then
       p_result := 'RAG_USAGE_SCOPE_UNKNOWN';
       return;
     end if;
 
-    l_scope_status := orac_code.knowledge_scope_api.scope_status(
-                        p_scope_type,
-                        p_scope_key
-                      );
-    if l_scope_status = 'RAG_USAGE_SCOPE_INACTIVE'
+    l_scope_status := orac_code.knowledge_scope_api.scope_status_by_id(p_scope_id);
+    if l_scope_status in ('RAG_USAGE_SCOPE_INACTIVE', 'RAG_USAGE_SCOPE_UNKNOWN')
     then
       p_result := l_scope_status;
       return;
@@ -137,22 +130,14 @@ as
     p_knowledge_scope_id in orac_api.knowledge_scopes_v.knowledge_scope_id%type
   ) return varchar2
   is
-    l_scope_type orac_api.knowledge_scopes_v.scope_type%type;
-    l_scope_key  varchar2(4000 char);
     l_user_id    number;
     l_scope_id   number;
     l_active_row orac_api.rag_usage_privileges_v%rowtype;
     l_result     varchar2(100 char);
   begin
-    select scope_type, scope_key
-      into l_scope_type, l_scope_key
-      from orac_code.knowledge_scope_registry_v
-     where knowledge_scope_id = p_knowledge_scope_id;
-
     assess_grant_request(
       p_username        => p_username,
-      p_scope_type      => l_scope_type,
-      p_scope_key       => l_scope_key,
+      p_requested_scope_id => p_knowledge_scope_id,
       p_lock_active_row => false,
       p_user_id         => l_user_id,
       p_scope_id        => l_scope_id,
@@ -165,10 +150,9 @@ as
       return 'RAG_USAGE_SCOPE_UNKNOWN';
   end grant_scope_usage_status_by_id;
 
-  function grant_scope_usage(
+  function grant_scope_usage_by_id(
     p_username          in varchar2,
-    p_scope_type        in varchar2,
-    p_scope_key         in varchar2,
+    p_knowledge_scope_id in orac_api.knowledge_scopes_v.knowledge_scope_id%type,
     p_effective_on      in timestamp with time zone default systimestamp,
     p_expires_on        in timestamp with time zone default null,
     p_granted_by        in varchar2 default null,
@@ -183,8 +167,7 @@ as
   begin
     assess_grant_request(
       p_username        => p_username,
-      p_scope_type      => p_scope_type,
-      p_scope_key       => p_scope_key,
+      p_requested_scope_id => p_knowledge_scope_id,
       p_lock_active_row => true,
       p_user_id         => l_user_id,
       p_scope_id        => l_scope_id,
@@ -224,29 +207,25 @@ as
   exception
     when dup_val_on_index then
       return 'RAG_USAGE_ALREADY_GRANTED';
-  end grant_scope_usage;
+  end grant_scope_usage_by_id;
 
-  function grant_scope_usage_by_id(
+  function grant_scope_usage(
     p_username           in varchar2,
-    p_knowledge_scope_id in orac_api.knowledge_scopes_v.knowledge_scope_id%type,
+    p_scope_type         in varchar2,
+    p_scope_key          in varchar2,
     p_effective_on       in timestamp with time zone default systimestamp,
     p_expires_on         in timestamp with time zone default null,
     p_granted_by         in varchar2 default null,
     p_grant_reason_code  in varchar2 default 'ADMIN_GRANT'
   ) return varchar2
   is
-    l_scope_type orac_api.knowledge_scopes_v.scope_type%type;
-    l_scope_key  varchar2(4000 char);
+    l_scope_id number;
   begin
-    select scope_type, scope_key
-      into l_scope_type, l_scope_key
-      from orac_code.knowledge_scope_registry_v
-     where knowledge_scope_id = p_knowledge_scope_id;
+    l_scope_id := orac_code.knowledge_scope_api.resolve_scope_id(p_scope_type, p_scope_key);
 
-    return grant_scope_usage(
+    return grant_scope_usage_by_id(
              p_username          => p_username,
-             p_scope_type        => l_scope_type,
-             p_scope_key         => l_scope_key,
+             p_knowledge_scope_id => l_scope_id,
              p_effective_on      => p_effective_on,
              p_expires_on        => p_expires_on,
              p_granted_by        => p_granted_by,
@@ -255,7 +234,7 @@ as
   exception
     when no_data_found then
       return 'RAG_USAGE_SCOPE_UNKNOWN';
-  end grant_scope_usage_by_id;
+  end grant_scope_usage;
 
   function revoke_scope_usage(
     p_username           in varchar2,

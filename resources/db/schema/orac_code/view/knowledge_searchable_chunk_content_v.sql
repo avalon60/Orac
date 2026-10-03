@@ -15,7 +15,7 @@ select req.ingestion_request_id,
        doc.document_id,
        scope.knowledge_scope_id,
        scope.scope_type target_scope_type,
-       coalesce(project.project_code, plugin.plugin_id) target_scope_key,
+       coalesce(project.project_code, scope.plugin_id) target_scope_key,
        doc.title,
        ver.document_version_id,
        ver.content_sha256 revision_content_sha256,
@@ -74,7 +74,7 @@ select req.ingestion_request_id,
   left join orac_api.project_registry_v project
     on project.project_id = scope.project_id
   left join orac_api.plugin_registry_v plugin
-    on plugin.plugin_registry_id = scope.plugin_registry_id
+    on plugin.knowledge_scope_id = scope.knowledge_scope_id
   join orac_api.knowledge_document_versions_v ver
     on ver.document_version_id = req.document_version_id
    and ver.document_version_id = doc.current_document_version_id
@@ -90,6 +90,8 @@ select req.ingestion_request_id,
   join orac_api.knowledge_chunks_v chn
     on chn.chunk_set_id = chs.chunk_set_id
  where req.status_code = 'COMPLETED'
+   and scope.retired_on is null
+   and orac_code.knowledge_scope_api.scope_status_by_id(scope.knowledge_scope_id) = 'RAG_USAGE_SCOPE_ELIGIBLE'
    and req.stage_code = 'COMPLETED'
    and not exists (
      select 1

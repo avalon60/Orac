@@ -5,6 +5,11 @@ prompt sent to a model. It can also retrieve bounded evidence from previous
 conversations and authorised PROJECT or PLUGIN knowledge without giving a
 model control over identity, scope, permissions, or storage.
 
+NDJSON, voice, internal, and OpenAI-compatible callers reach these same
+controls through `OracRequestProcessor`. Adapter-supplied history is
+request-local context; it does not replace the persisted record or host system
+policy, and adapter scope bounds never grant retrieval authority.
+
 Use this guide to understand which mechanism handles a turn, what is enabled
 in the shipped configuration, how to request grounded answers, and how to
 verify the result. The linked feature guides remain the detailed technical
@@ -117,6 +122,18 @@ When local evidence grounds the answer, the model prompt retains preceding
 user questions but excludes prior assistant answers. This prevents an earlier
 unsupported model claim from becoming apparent evidence on later grounded
 turns.
+
+Entity-bearing questions use bounded literal constraints in addition to the
+normal 65/35 hybrid ranking. Suitable entity or identifier anchors can reserve
+up to half of the evidence slots, while the remaining slots retain conceptual
+ranking and neighbour behaviour. Anchor excerpts are match-centred and coverage
+is recalculated after all character limits. Retrieval remains non-exhaustive:
+absence from the selected excerpts does not establish absence from the source
+document or wider corpus, and a name appearing near text does not by itself
+establish authorship or attribution. For bounded local-knowledge answers, Orac
+buffers streamed output by sentence and rewrites unsupported source-absence
+claims before they reach clients, persistence, or speech output. Other response
+routes retain their existing immediate streaming behaviour.
 
 ### Recall an Earlier Conversation
 

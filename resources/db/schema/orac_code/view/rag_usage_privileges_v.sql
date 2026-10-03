@@ -16,6 +16,8 @@ select privilege.rag_usage_privilege_id,
        scope.canonical_scope,
        scope.project_id,
        scope.plugin_registry_id,
+       scope.plugin_id,
+       scope.retired_on scope_retired_on,
        privilege.privilege_code,
        privilege.active_yn stored_active_yn,
        case

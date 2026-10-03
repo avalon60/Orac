@@ -185,6 +185,10 @@ def test_plugin_search_audit_provenance_is_bounded_and_scope_validated():
     )
     assert "'executing_plugin_id'" in body
     assert "'correlation_id'" in body
+    assert "'schema_version' value 2" in body
+    assert "selected_ordinal for ordinality" in body
+    assert "'ordinal' value provenance.selected_ordinal" in body
+    assert "order by provenance.selected_ordinal" in body
     assert "'document_version_id'" in body
     assert "'chunk_id'" in body
     outcome_spec = spec[spec.index("procedure record_outcome") :]

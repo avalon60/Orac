@@ -27,13 +27,13 @@ def test_capability_definitions_do_not_self_grant_model_evidence() -> None:
 def test_host_instruction_forbids_simulated_tool_results() -> None:
     """The live path must tell models not to imitate retrieval in text."""
     protocol = _text(ROOT / "src" / "orac_core" / "governed_retrieval" / "protocol.py")
-    controller = _text(ROOT / "src" / "controller" / "orac.py")
+    runtime = _text(ROOT / "src" / "orac_core" / "communications" / "runtime.py")
 
     assert "must issue exactly" in protocol
     assert "never claim retrieval occurred" in protocol
     assert "unless an actual tool result appears" in protocol
-    assert "governed_retrieval_system_instruction" in controller
-    assert "+ instruction_tokens" in controller
+    assert "governed_retrieval_system_instruction" in runtime
+    assert "+ instruction_tokens" in runtime
 
 
 def test_existing_audit_boundary_accepts_only_allowlisted_governed_metadata() -> None:

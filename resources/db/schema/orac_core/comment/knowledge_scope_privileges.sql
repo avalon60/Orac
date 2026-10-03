@@ -1,10 +1,11 @@
 --liquibase formatted sql
 
 --changeset clive:comment_orac_core_knowledge_scopes context:core labels:core stripComments:false runOnChange:true
-comment on table orac_core.knowledge_scopes is 'Canonical relational knowledge scopes owned by exactly one registered project or plugin.';
+comment on table orac_core.knowledge_scopes is 'Permanent knowledge domains with project ownership or immutable plugin attribution. Plugin domains survive operational registration removal.';
 comment on column orac_core.knowledge_scopes.scope_type is 'Canonical owner type: PROJECT or PLUGIN.';
 comment on column orac_core.knowledge_scopes.project_id is 'Project parent for a PROJECT scope.';
-comment on column orac_core.knowledge_scopes.plugin_registry_id is 'Plugin registry parent for a PLUGIN scope.';
+comment on column orac_core.knowledge_scopes.plugin_id is 'Immutable logical plugin attribution; survives deletion of the operational registry row.';
+comment on column orac_core.knowledge_scopes.retired_on is 'Irreversible retirement timestamp. Retained provenance cannot authorize current operations.';
 --rollback not required;
 
 --changeset clive:comment_orac_core_rag_usage_privileges context:core labels:core stripComments:false runOnChange:true

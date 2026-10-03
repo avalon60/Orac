@@ -8,6 +8,7 @@ create or replace package orac_api.knowledge_scopes_tapi
 authid definer
 as
   procedure ins(p_row in out orac_api.knowledge_scopes_v%rowtype);
+  procedure retire_for_removal(p_removal_id in varchar2);
 end knowledge_scopes_tapi;
 /
 --rollback drop package orac_api.knowledge_scopes_tapi;

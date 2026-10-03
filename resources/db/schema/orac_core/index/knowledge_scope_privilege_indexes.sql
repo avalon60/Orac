@@ -14,12 +14,12 @@ create unique index orac_core.kn_scope_uk1_idx
   on orac_core.knowledge_scopes (project_id);
 --rollback drop index orac_core.kn_scope_uk1_idx;
 
---changeset clive:create_index_orac_core_kn_scope_uk2 context:core labels:core stripComments:false
+--changeset clive:create_index_orac_core_plgreg_uk2 context:core labels:core stripComments:false
 --preconditions onFail:HALT onError:HALT
---precondition-sql-check expectedResult:0 select count(1) from all_indexes where owner = 'ORAC_CORE' and index_name = 'KN_SCOPE_UK2_IDX';
-create unique index orac_core.kn_scope_uk2_idx
-  on orac_core.knowledge_scopes (plugin_registry_id);
---rollback drop index orac_core.kn_scope_uk2_idx;
+--precondition-sql-check expectedResult:0 select count(1) from all_indexes where owner = 'ORAC_CORE' and index_name = 'PLGREG_UK2_IDX';
+create unique index orac_core.plgreg_uk2_idx
+  on orac_core.plugin_registry (knowledge_scope_id);
+--rollback drop index orac_core.plgreg_uk2_idx;
 
 --changeset clive:create_index_orac_core_rag_useprv_pk context:core labels:core stripComments:false
 --preconditions onFail:HALT onError:HALT

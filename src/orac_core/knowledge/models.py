@@ -28,11 +28,12 @@ class DropBoxCaptureRequest:
     source_mtime: datetime | None
     target_scope_type: str
     target_scope_key: str
+    target_knowledge_scope_id: int
+    producer_knowledge_scope_id: int
     processing_profile: str | None = None
     processing_instruction: str | None = None
     source_key: str | None = None
     location_code: str | None = None
-    legacy_source_key: str | None = None
     source_format_code: str | None = None
     source_mime_type: str | None = None
     normalised_markdown: str | None = None
@@ -109,6 +110,16 @@ class KnowledgeSearchResult:
     source_chunk_cell_range: str | None = None
     extraction_id: int | None = None
     chunk_set_id: int | None = None
+    semantic_rank: int | None = None
+    lexical_rank: int | None = None
+    preselection_rank: int | None = None
+    final_rank: int | None = None
+    navigation: str = "CONTENT"
+    selection_reason: str = "relevance"
+    literal_constraints: tuple[str, ...] = ()
+    covered_constraints: tuple[str, ...] = ()
+    emitted_excerpt: str | None = None
+    emitted_offset: int = 0
 
     @property
     def score(self) -> float:
@@ -134,6 +145,15 @@ class KnowledgeRetrievalOutcome:
     embedding_model_identifier: str | None = None
     results: tuple[KnowledgeSearchResult, ...] = ()
     retrieval_id: str | None = None
+    exhaustive: bool = False
+    method: str = "bounded_hybrid"
+    literal_constraints: tuple[str, ...] = ()
+    covered_constraints: tuple[str, ...] = ()
+    uncovered_constraints: tuple[str, ...] = ()
+    recovery_retrieval_id: str | None = None
+    recovery_candidate_count: int = 0
+    recovery_duration_ms: int | None = None
+    diagnostics: Mapping[str, Any] | None = None
 
     @property
     def scopes(self) -> tuple[KnowledgeScope, ...]:

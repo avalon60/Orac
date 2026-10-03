@@ -86,7 +86,7 @@ class KnowledgeIngestionRepository:
         processing_profile_code: str | None,
         processing_instruction: str | None,
         source_modified_on: Any | None = None,
-        legacy_parent_source_reference: str | None = None,
+        target_knowledge_scope_id: int | None = None,
         source_format_code: str | None = None,
         normalised_markdown: str | None = None,
         normalised_text_sha256: str | None = None,
@@ -119,7 +119,7 @@ class KnowledgeIngestionRepository:
                         processing_profile_code,
                         processing_instruction,
                         source_modified_on,
-                        legacy_parent_source_reference,
+                        target_knowledge_scope_id,
                         source_format_code,
                         normalised_markdown,
                         normalised_text_sha256,
@@ -683,10 +683,14 @@ class KnowledgeRetrievalRepository:
         semantic_limit: int = 50,
         lexical_limit: int = 50,
         retrieval_id: str | None = None,
+        constraints: tuple[str, ...] = (),
+        min_lexical_score: float = 0.25,
+        parent_retrieval_id: str | None = None,
+        timeout_seconds: float | None = None,
     ) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
         """Return the bounded Oracle semantic/lexical candidate union."""
         return self._call_with_cursor(
-            "open_hybrid_search_candidates",
+            "open_hybrid_search_candidates_v2",
             [
                 retrieval_id or str(uuid.uuid4()),
                 principal_username,
@@ -698,7 +702,15 @@ class KnowledgeRetrievalRepository:
                 lexical_phrase,
                 int(semantic_limit),
                 int(lexical_limit),
+                json.dumps(constraints, separators=(",", ":")),
+                float(min_lexical_score),
+                parent_retrieval_id,
             ],
+            timeout_ms=(
+                max(1, int(timeout_seconds * 1000))
+                if timeout_seconds is not None
+                else None
+            ),
         )
 
     def open_plugin_hybrid_candidates(
@@ -714,10 +726,14 @@ class KnowledgeRetrievalRepository:
         lexical_limit: int = 50,
         retrieval_id: str | None = None,
         correlation_id: str | None = None,
+        constraints: tuple[str, ...] = (),
+        min_lexical_score: float = 0.25,
+        parent_retrieval_id: str | None = None,
+        timeout_seconds: float | None = None,
     ) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
         """Return plugin-scoped native hybrid candidates through the host bridge."""
         return self._call_with_cursor(
-            "open_plugin_hybrid_candidates",
+            "open_plugin_hybrid_candidates_v2",
             [
                 retrieval_id or str(uuid.uuid4()),
                 principal_username,
@@ -729,7 +745,15 @@ class KnowledgeRetrievalRepository:
                 int(semantic_limit),
                 int(lexical_limit),
                 correlation_id,
+                json.dumps(constraints, separators=(",", ":")),
+                float(min_lexical_score),
+                parent_retrieval_id,
             ],
+            timeout_ms=(
+                max(1, int(timeout_seconds * 1000))
+                if timeout_seconds is not None
+                else None
+            ),
         )
 
     def open_authorised_project_candidates(
@@ -744,10 +768,13 @@ class KnowledgeRetrievalRepository:
         lexical_limit: int = 50,
         retrieval_id: str | None = None,
         timeout_seconds: float = 10.0,
+        constraints: tuple[str, ...] = (),
+        min_lexical_score: float = 0.25,
+        parent_retrieval_id: str | None = None,
     ) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
         """Return a global candidate union from every authorised project."""
         return self._call_with_cursor(
-            "open_authorised_project_candidates",
+            "open_authorised_project_candidates_v2",
             [
                 retrieval_id or str(uuid.uuid4()),
                 principal_username,
@@ -757,6 +784,9 @@ class KnowledgeRetrievalRepository:
                 lexical_phrase,
                 int(semantic_limit),
                 int(lexical_limit),
+                json.dumps(constraints, separators=(",", ":")),
+                float(min_lexical_score),
+                parent_retrieval_id,
             ],
             timeout_ms=max(1, int(timeout_seconds * 1000)),
         )

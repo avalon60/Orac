@@ -57,6 +57,11 @@ from .models import KnowledgeSearchResult
 from .models import ManagedCaptureResult
 from .retrieval import KnowledgeRetrievalError
 from .retrieval import KnowledgeRetrievalService
+from .constraints import LiteralConstraint
+from .constraints import extract_literal_constraints
+from .response_policy import ResponsePolicyResult
+from .response_policy import ResponsePolicyStreamBuffer
+from .response_policy import rewrite_unsupported_absence_claims
 from .scope import KnowledgeScope
 from .scope import KnowledgeScopeAuthorizer
 from .scope import RagUsageAuthorizationRepository
@@ -103,6 +108,11 @@ __all__ = [
     "KnowledgeRetrievalError",
     "KnowledgeRetrievalOutcome",
     "KnowledgeRetrievalService",
+    "LiteralConstraint",
+    "extract_literal_constraints",
+    "ResponsePolicyResult",
+    "ResponsePolicyStreamBuffer",
+    "rewrite_unsupported_absence_claims",
     "KnowledgeGroundingPack",
     "KnowledgeScope",
     "KnowledgeScopeAuthorizer",

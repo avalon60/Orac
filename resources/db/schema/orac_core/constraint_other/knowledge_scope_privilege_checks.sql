@@ -4,9 +4,9 @@
 --preconditions onFail:HALT onError:HALT
 --precondition-sql-check expectedResult:0 select count(1) from all_constraints where owner = 'ORAC_CORE' and constraint_name = 'KN_SCOPE_CK1';
 alter table orac_core.knowledge_scopes add constraint kn_scope_ck1 check (
-  (scope_type = 'PROJECT' and project_id is not null and plugin_registry_id is null)
+  (scope_type = 'PROJECT' and project_id is not null and plugin_id is null and retired_on is null)
   or
-  (scope_type = 'PLUGIN' and project_id is null and plugin_registry_id is not null)
+  (scope_type = 'PLUGIN' and project_id is null and plugin_id is not null)
 );
 --rollback alter table orac_core.knowledge_scopes drop constraint kn_scope_ck1;
 

@@ -92,8 +92,8 @@ class KnowledgeCaptureTests(unittest.TestCase):
             self.assertEqual(repo.calls[0]["source_reference"], expected_reference)
             self.assertEqual(repo.calls[0]["parent_source_reference"], source_key)
             self.assertEqual(
-                repo.calls[0]["legacy_parent_source_reference"],
-                f"TEST:{source}",
+                repo.calls[0]["target_knowledge_scope_id"],
+                41,
             )
             self.assertEqual(
                 repo.calls[0]["source_modified_on"],
@@ -136,6 +136,7 @@ class KnowledgeCaptureTests(unittest.TestCase):
                 {
                     "schema_version": 1,
                     "producer_plugin_id": "drop_box",
+                    "producer_knowledge_scope_id": 42,
                     "drop_location_id": 3,
                     "drop_job_id": 7,
                     "source_format": "markdown",
@@ -183,6 +184,8 @@ class KnowledgeCaptureTests(unittest.TestCase):
                 "SOURCE_MTIME": datetime(2026, 8, 12, 12, 0),
                 "EFFECTIVE_SCOPE_TYPE": "PROJECT",
                 "EFFECTIVE_SCOPE_KEY": "ORAC_CORE",
+                "TARGET_KNOWLEDGE_SCOPE_ID": 41,
+                "PRODUCER_KNOWLEDGE_SCOPE_ID": 42,
                 "EFFECTIVE_PROCESSING_PROFILE": "raw_reference",
                 "EFFECTIVE_PROFILE_INSTRUCTION": None,
                 "EFFECTIVE_INSTRUCTION": None,
@@ -465,11 +468,12 @@ def _request(
         source_mtime=datetime(2026, 7, 12, 12, 0),
         target_scope_type="PROJECT",
         target_scope_key="orac",
+        target_knowledge_scope_id=41,
+        producer_knowledge_scope_id=42,
         processing_profile="markdown",
         processing_instruction="ingest",
         classification_tags_json='["RAW_REFERENCE"]',
         location_code="TEST",
-        legacy_source_key=f"TEST:{source}",
     )
 
 

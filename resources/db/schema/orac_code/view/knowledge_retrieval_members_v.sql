@@ -7,7 +7,7 @@
 create or replace force view orac_code.knowledge_retrieval_members_v as
 select src.knowledge_scope_id,
        scope.scope_type target_scope_type,
-       coalesce(project.project_code, plugin.plugin_id) target_scope_key,
+       coalesce(project.project_code, scope.plugin_id) target_scope_key,
        src.source_object_id,
        src.source_type,
        src.source_reference,
@@ -75,7 +75,7 @@ select src.knowledge_scope_id,
   left join orac_api.project_registry_v project
     on project.project_id = scope.project_id
   left join orac_api.plugin_registry_v plugin
-    on plugin.plugin_registry_id = scope.plugin_registry_id
+    on plugin.knowledge_scope_id = scope.knowledge_scope_id
   join orac_api.knowledge_documents_v doc
     on doc.source_object_id = src.source_object_id
   join orac_api.knowledge_document_versions_v ver

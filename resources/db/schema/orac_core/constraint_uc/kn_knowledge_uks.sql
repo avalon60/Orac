@@ -4,7 +4,7 @@
 --preconditions onFail:HALT onError:HALT
 --precondition-sql-check expectedResult:0 select count(1) from all_constraints where owner = 'ORAC_CORE' and constraint_name = 'KN_SRCOBJ_UK1';
 alter table orac_core.knowledge_source_objects add constraint kn_srcobj_uk1
-  unique (source_type, source_reference)
+  unique (knowledge_scope_id, source_type, source_reference)
   using index orac_core.kn_srcobj_uk1_idx;
 --rollback alter table orac_core.knowledge_source_objects drop constraint kn_srcobj_uk1;
 

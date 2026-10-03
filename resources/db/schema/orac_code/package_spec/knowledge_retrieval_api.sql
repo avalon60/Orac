@@ -39,6 +39,24 @@ as
     p_content_rows          out sys_refcursor
   );
 
+  procedure open_hybrid_search_candidates_v2(
+    p_retrieval_id          in  varchar2,
+    p_username              in  varchar2,
+    p_scope_type            in  varchar2,
+    p_scope_key             in  varchar2,
+    p_embedding_profile_id  in  number,
+    p_query_vector_json     in  clob,
+    p_lexical_tokens_json   in  clob,
+    p_lexical_phrase        in  varchar2,
+    p_semantic_limit        in  number default 50,
+    p_lexical_limit         in  number default 50,
+    p_constraints_json      in  clob default null,
+    p_min_lexical_score     in  number default 0.25,
+    p_parent_retrieval_id   in  varchar2 default null,
+    p_resolution_json       out clob,
+    p_content_rows          out sys_refcursor
+  );
+
   procedure open_authorised_project_candidates(
     p_retrieval_id          in  varchar2,
     p_username              in  varchar2,
@@ -48,6 +66,22 @@ as
     p_lexical_phrase        in  varchar2,
     p_semantic_limit        in  number default 50,
     p_lexical_limit         in  number default 50,
+    p_resolution_json       out clob,
+    p_content_rows          out sys_refcursor
+  );
+
+  procedure open_authorised_project_candidates_v2(
+    p_retrieval_id          in  varchar2,
+    p_username              in  varchar2,
+    p_embedding_profile_id  in  number,
+    p_query_vector_json     in  clob,
+    p_lexical_tokens_json   in  clob,
+    p_lexical_phrase        in  varchar2,
+    p_semantic_limit        in  number default 50,
+    p_lexical_limit         in  number default 50,
+    p_constraints_json      in  clob default null,
+    p_min_lexical_score     in  number default 0.25,
+    p_parent_retrieval_id   in  varchar2 default null,
     p_resolution_json       out clob,
     p_content_rows          out sys_refcursor
   );
@@ -63,6 +97,24 @@ as
     p_semantic_limit        in  number default 50,
     p_lexical_limit         in  number default 50,
     p_correlation_id        in  varchar2 default null,
+    p_resolution_json       out clob,
+    p_content_rows          out sys_refcursor
+  );
+
+  procedure open_plugin_hybrid_candidates_v2(
+    p_retrieval_id          in  varchar2,
+    p_username              in  varchar2,
+    p_plugin_id             in  varchar2,
+    p_embedding_profile_id  in  number,
+    p_query_vector_json     in  clob,
+    p_lexical_tokens_json   in  clob,
+    p_lexical_phrase        in  varchar2,
+    p_semantic_limit        in  number default 50,
+    p_lexical_limit         in  number default 50,
+    p_correlation_id        in  varchar2 default null,
+    p_constraints_json      in  clob default null,
+    p_min_lexical_score     in  number default 0.25,
+    p_parent_retrieval_id   in  varchar2 default null,
     p_resolution_json       out clob,
     p_content_rows          out sys_refcursor
   );
