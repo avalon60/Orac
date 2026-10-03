@@ -71,6 +71,7 @@ resources/downloads/apex/*.zip
 /.agents/skills/database-change-implementation/
 /.agents/skills/database-domain-onboarding/
 /.agents/skills/dependency-checks/
+/.agents/skills/model-task-orchestration/
 /.agents/skills/oracle-sqlcl/
 /.agents/skills/plugin-documentation/
 /.agents/skills/plugin-structure-validation/
