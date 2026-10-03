@@ -35,6 +35,13 @@ location writes validate type/key scope references through
 plugin owner remains an unsupported residual risk rather than a reason to
 bypass the schema boundary.
 
+The resolved `target_knowledge_scope_id` is stored on each location and copied
+onto jobs. Enqueue checks that exact ID through the bridge; Core ingestion
+checks the same ID and rejects a retired, ineligible or successor target.
+The job snapshot is immutable. An ordinary location edit preserves its ID;
+an explicit **Use Current Installation** save resolves a fresh target for future
+jobs. No ordinary ingestion path reparents an existing source to another scope.
+
 The plugin manifest declares the scope and tag validation bridge dependencies.
 During plugin install or reconcile, the host provisions `ORAC_DROPBOX`, checks
 that both `ORAC_PLUGIN` packages are valid, grants only `EXECUTE` to
@@ -136,7 +143,8 @@ Pandoc runs without a shell in a private temporary tree with:
 
 Pandoc sandbox mode is defence-in-depth, not an operating-system sandbox.
 
-Durable extraction provenance includes the producer plugin, location and job
+Durable extraction provenance includes the producer plugin's immutable
+`producer_knowledge_scope_id`, location and job
 ids, source format, converter name/version where applicable, fixed option
 identifiers, canonical-output hash, and exact output byte size.
 

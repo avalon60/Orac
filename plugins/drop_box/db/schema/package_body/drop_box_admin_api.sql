@@ -225,6 +225,7 @@ create or replace package body orac_dropbox.drop_box_admin_api as
       enabled_yn,
       target_scope_type,
       target_scope_key,
+      target_knowledge_scope_id,
       processing_profile,
       processing_instruction,
       allowed_extensions,
@@ -243,6 +244,9 @@ create or replace package body orac_dropbox.drop_box_admin_api as
       upper(p_enabled_yn),
       lower(trim(p_target_scope_type)),
       trim(p_target_scope_key),
+      orac_plugin.knowledge_scope_validation_api.resolve_scope_id(
+        upper(trim(p_target_scope_type)), trim(p_target_scope_key)
+      ),
       lower(trim(p_processing_profile)),
       p_processing_instruction,
       trim(p_allowed_extensions),
@@ -277,11 +281,15 @@ create or replace package body orac_dropbox.drop_box_admin_api as
     p_max_file_size_mb       in orac_dropbox.drop_location.max_file_size_mb%type,
     p_stability_seconds      in orac_dropbox.drop_location.stability_seconds%type,
     p_row_version            in orac_dropbox.drop_location.row_version%type,
-    p_classification_tags_json in orac_dropbox.drop_location.classification_tags_json%type default null
+    p_classification_tags_json in orac_dropbox.drop_location.classification_tags_json%type default null,
+    p_reconfigure_target_yn  in varchar2 default 'N'
   )
   is
     l_classification_tags clob;
   begin
+    if p_reconfigure_target_yn is null or p_reconfigure_target_yn not in ('Y', 'N') then
+      raise_application_error(-20501, 'Explicit target reconfiguration must be Y or N.');
+    end if;
     l_classification_tags := canonical_classification_tags(
       p_classification_tags_json
     );
@@ -307,6 +315,15 @@ create or replace package body orac_dropbox.drop_box_admin_api as
            enabled_yn             = upper(p_enabled_yn),
            target_scope_type      = lower(trim(p_target_scope_type)),
            target_scope_key       = trim(p_target_scope_key),
+           target_knowledge_scope_id = case
+             when p_reconfigure_target_yn = 'Y'
+               or target_scope_type <> lower(trim(p_target_scope_type))
+               or target_scope_key <> trim(p_target_scope_key)
+             then orac_plugin.knowledge_scope_validation_api.resolve_scope_id(
+               upper(trim(p_target_scope_type)), trim(p_target_scope_key)
+             )
+             else target_knowledge_scope_id
+           end,
            processing_profile     = lower(trim(p_processing_profile)),
            processing_instruction = p_processing_instruction,
            classification_tags_json = l_classification_tags,

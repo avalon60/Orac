@@ -12,6 +12,7 @@ create table orac_dropbox.drop_location
   enabled_yn             varchar2(1 char) default 'Y' not null,
   target_scope_type      varchar2(50 char) not null,
   target_scope_key       varchar2(200 char) not null,
+  target_knowledge_scope_id number not null,
   processing_profile     varchar2(100 char) not null,
   processing_instruction clob,
   allowed_extensions     varchar2(1000 char),

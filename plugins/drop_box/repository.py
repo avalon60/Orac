@@ -1,4 +1,5 @@
 """Database repository for the drop-box ingestion plugin."""
+
 # Author: Clive Bostock
 # Date: 27-Jun-2026
 # Description: Calls ORAC_DROPBOX package APIs through the ORAC_PLUGIN bridge.
@@ -24,13 +25,17 @@ class DropBoxRepository:
     def __init__(self, context: Any) -> None:
         """Initialise the repository from a plugin service context."""
         self._db_session = context.plugin_db_session()
-        if getattr(self._db_session, "connected_username", None) != ORAC_PLUGIN_DATABASE_USER:
-            raise RuntimeError("Drop-box repository requires ORAC_PLUGIN database identity.")
+        if (
+            getattr(self._db_session, "connected_username", None)
+            != ORAC_PLUGIN_DATABASE_USER
+        ):
+            raise RuntimeError(
+                "Drop-box repository requires ORAC_PLUGIN database identity."
+            )
 
     def load_enabled_locations(self) -> list[DropLocation]:
         """Return enabled drop locations visible to the scanner service."""
-        rows = self._db_session.fetch_dicts(
-            """
+        rows = self._db_session.fetch_dicts("""
             select drop_location_id,
                    location_code,
                    display_name,
@@ -42,21 +47,18 @@ class DropBoxRepository:
                    ignore_patterns
               from orac_dropbox.drop_location_runtime_v
              order by location_code
-            """
-        )
+            """)
         return [DropLocation.from_row(row) for row in rows]
 
     def load_configuration_errors(self) -> list[str]:
         """Return enabled drop locations omitted from scanning for config errors."""
-        rows = self._db_session.fetch_dicts(
-            """
+        rows = self._db_session.fetch_dicts("""
             select location_code,
                    processing_profile,
                    error_message
               from orac_dropbox.drop_location_config_error_v
              order by location_code
-            """
-        )
+            """)
         return [
             (
                 f"{row['LOCATION_CODE']}: {row['ERROR_MESSAGE']} "
@@ -97,8 +99,7 @@ class DropBoxRepository:
 
     def load_handoff_jobs(self) -> list[DropBoxHandoffJob]:
         """Return queued jobs requiring Core managed-file capture."""
-        rows = self._db_session.fetch_dicts(
-            """
+        rows = self._db_session.fetch_dicts("""
             select drop_job_id,
                    drop_location_id,
                    location_code,
@@ -110,6 +111,8 @@ class DropBoxRepository:
                    source_mtime,
                    effective_scope_type,
                    effective_scope_key,
+                   target_knowledge_scope_id,
+                   producer_knowledge_scope_id,
                    effective_processing_profile,
                    effective_profile_instruction,
                    effective_instruction,
@@ -118,8 +121,7 @@ class DropBoxRepository:
                    knowledge_ingestion_request_id
               from orac_dropbox.drop_job_handoff_v
              order by stable_on nulls last, drop_job_id
-            """
-        )
+            """)
         return [DropBoxHandoffJob.from_row(row) for row in rows]
 
     def update_status(

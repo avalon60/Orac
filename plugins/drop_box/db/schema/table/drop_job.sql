@@ -17,6 +17,8 @@ create table orac_dropbox.drop_job
   status_code                  varchar2(50 char) not null,
   effective_scope_type         varchar2(50 char) not null,
   effective_scope_key          varchar2(200 char) not null,
+  target_knowledge_scope_id    number not null,
+  producer_knowledge_scope_id  number not null,
   effective_processing_profile varchar2(100 char) not null,
   effective_profile_instruction clob,
   effective_instruction        clob,

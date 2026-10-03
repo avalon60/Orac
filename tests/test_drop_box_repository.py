@@ -323,6 +323,8 @@ def _handoff_row(
         "SOURCE_MTIME": datetime(2026, 6, 27, 12, 0),
         "EFFECTIVE_SCOPE_TYPE": "PROJECT",
         "EFFECTIVE_SCOPE_KEY": "orac",
+        "TARGET_KNOWLEDGE_SCOPE_ID": 41,
+        "PRODUCER_KNOWLEDGE_SCOPE_ID": 42,
         "EFFECTIVE_PROCESSING_PROFILE": "markdown",
         "EFFECTIVE_PROFILE_INSTRUCTION": "profile instruction",
         "EFFECTIVE_INSTRUCTION": "location instruction",

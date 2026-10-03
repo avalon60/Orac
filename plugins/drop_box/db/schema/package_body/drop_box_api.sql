@@ -40,6 +40,7 @@ create or replace package body orac_dropbox.drop_box_api as
     l_job_id             orac_dropbox.drop_job.drop_job_id%type;
     l_scope_type         orac_dropbox.drop_location.target_scope_type%type;
     l_scope_key          orac_dropbox.drop_location.target_scope_key%type;
+    l_scope_id           orac_dropbox.drop_location.target_knowledge_scope_id%type;
     l_processing_profile orac_dropbox.drop_location.processing_profile%type;
     l_profile_instruction clob;
     l_instruction        orac_dropbox.drop_location.processing_instruction%type;
@@ -57,12 +58,14 @@ create or replace package body orac_dropbox.drop_box_api as
 
     select loc.target_scope_type,
            loc.target_scope_key,
+           loc.target_knowledge_scope_id,
            loc.processing_profile,
            prf.default_instruction,
            loc.processing_instruction,
            loc.classification_tags_json
       into l_scope_type,
            l_scope_key,
+           l_scope_id,
            l_processing_profile,
            l_profile_instruction,
            l_instruction,
@@ -71,7 +74,15 @@ create or replace package body orac_dropbox.drop_box_api as
       join orac_dropbox.drop_processing_profile prf
         on prf.profile_code = loc.processing_profile
        and prf.active_yn = 'Y'
-     where loc.drop_location_id = p_drop_location_id;
+     where loc.drop_location_id = p_drop_location_id
+       and loc.enabled_yn = 'Y';
+
+    if orac_plugin.knowledge_scope_validation_api.scope_status_by_id(
+         l_scope_id
+       ) <> 'RAG_USAGE_SCOPE_ELIGIBLE'
+    then
+      raise_application_error(-20409, 'Pinned knowledge scope is not eligible.');
+    end if;
 
     if l_classification_tags is null
        or dbms_lob.getlength(l_classification_tags) = 0
@@ -93,6 +104,8 @@ create or replace package body orac_dropbox.drop_box_api as
       status_code,
       effective_scope_type,
       effective_scope_key,
+      target_knowledge_scope_id,
+      producer_knowledge_scope_id,
       effective_processing_profile,
       effective_profile_instruction,
       effective_instruction,
@@ -109,6 +122,8 @@ create or replace package body orac_dropbox.drop_box_api as
       'queued',
       l_scope_type,
       l_scope_key,
+      l_scope_id,
+      orac_plugin.knowledge_scope_validation_api.resolve_scope_id('PLUGIN', 'drop_box'),
       l_processing_profile,
       l_profile_instruction,
       l_instruction,

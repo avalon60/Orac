@@ -47,7 +47,8 @@ create or replace package orac_dropbox.drop_box_admin_api as
     p_max_file_size_mb       in orac_dropbox.drop_location.max_file_size_mb%type,
     p_stability_seconds      in orac_dropbox.drop_location.stability_seconds%type,
     p_row_version            in orac_dropbox.drop_location.row_version%type,
-    p_classification_tags_json in orac_dropbox.drop_location.classification_tags_json%type default null
+    p_classification_tags_json in orac_dropbox.drop_location.classification_tags_json%type default null,
+    p_reconfigure_target_yn  in varchar2 default 'N'
   );
 
   procedure set_enabled(

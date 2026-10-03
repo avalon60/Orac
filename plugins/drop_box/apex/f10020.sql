@@ -789,16 +789,28 @@ wwv_flow_imp_shared.create_security_scheme(
  p_id=>wwv_flow_imp.id(34538832508386634)
 ,p_name=>'Administration Rights'
 ,p_scheme_type=>'NATIVE_FUNCTION_BODY'
-,p_attribute_01=>'return orac_code.plugin_apex_app_auth_api.has_required_role(''ORAC_ADMIN'') = 1;'
+,p_attribute_01=>'return orac_code.plugin_apex_app_auth_api.plugin_is_available(''drop_box'', :APP_ID) = 1 and orac_code.plugin_apex_app_auth_api.has_required_role(''ORAC_ADMIN'') = 1;'
 ,p_error_message=>'Insufficient privileges, user is not an Administrator'
 ,p_version_scn=>2391663
-,p_caching=>'BY_USER_BY_PAGE_VIEW'
+,p_caching=>'NOCACHE'
 );
 end;
 /
 prompt --application/shared_components/navigation/navigation_bar
 begin
 null;
+end;
+/
+prompt --application/shared_components/logic/application_settings
+begin
+wwv_flow_imp_shared.create_app_setting(
+ p_id=>wwv_flow_imp.id(34599000000000001)
+,p_name=>'ORAC_INSTALL_RECEIPT'
+,p_value=>'UNATTESTED'
+,p_is_required=>'Y'
+,p_on_upgrade_keep_value=>false
+,p_comments=>'Host-owned installation receipt marker. Managed by the Orac installer.'
+);
 end;
 /
 prompt --application/shared_components/logic/application_processes/prepare_cross_app_return_navigation
@@ -1331,8 +1343,7 @@ wwv_flow_imp_page.create_page_plug(
 '       loc.toggle_label',
 '  from orac_dropbox.drop_location_summary_admin_v loc',
 '  left join orac_code.knowledge_scope_registry_v scope',
-'    on scope.scope_type = upper(loc.target_scope_type)',
-'   and scope.scope_key = loc.target_scope_key',
+'    on scope.knowledge_scope_id = loc.target_knowledge_scope_id',
 '  left join job_rollup roll',
 '    on roll.drop_location_id = loc.drop_location_id',
 ' order by loc.location_code'))
@@ -2017,6 +2028,21 @@ wwv_flow_imp_page.create_page_item(
 ,p_inline_help_text=>'Choose plugin for installed plugin targets or project for a project code.'
 );
 wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(34600200000000290)
+,p_name=>'P2_RECONFIGURE_TARGET_YN'
+,p_item_sequence=>35
+,p_item_plug_id=>wwv_flow_imp.id(34600200000000103)
+,p_prompt=>'Use Current Installation'
+,p_display_as=>'NATIVE_YES_NO'
+,p_item_default=>'N'
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
+,p_is_persistent=>'N'
+,p_inline_help_text=>'Select Yes only to reconnect this location after its target plugin was reinstalled. This affects future jobs; existing queued jobs keep their original target.'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'use_defaults', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(34600200000000208)
 ,p_name=>'P2_TARGET_PLUGIN_KEY'
 ,p_item_sequence=>20
@@ -2024,7 +2050,7 @@ wwv_flow_imp_page.create_page_item(
 ,p_prompt=>'Plugin'
 ,p_display_as=>'NATIVE_SELECT_LIST'
 ,p_lov=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select scope.plugin_name d,',
+'select max(scope.plugin_name) d,',
 '       scope.scope_key r',
 '  from orac_code.knowledge_scope_registry_v scope',
 ' where scope.scope_type = ''PLUGIN''',
@@ -2036,7 +2062,8 @@ wwv_flow_imp_page.create_page_item(
 '               where eligible.return_value = scope.knowledge_scope_id',
 '            )',
 '       )',
-' order by lower(scope.plugin_name), scope.scope_key'))
+' group by scope.scope_key',
+' order by lower(max(scope.plugin_name)), scope.scope_key'))
 ,p_lov_display_null=>'YES'
 ,p_lov_null_text=>'- Select plugin -'
 ,p_cHeight=>1
@@ -2501,7 +2528,8 @@ wwv_flow_imp_page.create_page_process(
 '      p_max_file_size_mb       => :P2_MAX_FILE_SIZE_MB,',
 '      p_stability_seconds      => :P2_STABILITY_SECONDS,',
 '      p_row_version            => :P2_ROW_VERSION,',
-'      p_classification_tags_json => l_classification_tags',
+'      p_classification_tags_json => l_classification_tags,',
+'      p_reconfigure_target_yn => coalesce(:P2_RECONFIGURE_TARGET_YN, ''N'')',
 '    );',
 '  end if;',
 'end;'))
@@ -2562,6 +2590,7 @@ wwv_flow_imp_page.create_page_process(
 ,p_process_name=>'Load Drop Location'
 ,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
 'begin',
+'  :P2_RECONFIGURE_TARGET_YN := ''N'';',
 '  if :P2_DROP_LOCATION_ID is not null then',
 '    select location_code, display_name, path, enabled_yn, target_scope_type,',
 '           case when target_scope_type = ''plugin'' then target_scope_key end,',
@@ -2632,8 +2661,7 @@ wwv_flow_imp_page.create_page_plug(
 '           ) target_display_name',
 '      from orac_dropbox.drop_location_admin_v loc',
 '      left join orac_code.knowledge_scope_registry_v scope',
-'        on scope.scope_type = upper(loc.target_scope_type)',
-'       and scope.scope_key = loc.target_scope_key',
+'        on scope.knowledge_scope_id = loc.target_knowledge_scope_id',
 '     where loc.drop_location_id = to_number(:P3_DROP_LOCATION_ID)',
 '  ) loop',
 '    l_html := ''<dl class="t-AVPList t-AVPList--leftAligned">'' ||',

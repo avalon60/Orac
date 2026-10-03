@@ -29,6 +29,13 @@ It does not ingest PDF, OCR output, spreadsheets, presentations, remote
 content, or embedded media. It does not move, delete, or quarantine source
 files after processing.
 
+Locations pin the exact knowledge scope selected when their target is configured.
+Jobs keep that scope even if the location is later edited. A removed plugin's
+replacement cannot receive old queued files merely by reusing the same name.
+After reinstalling a target plugin, edit the location, select **Use Current
+Installation**, and save to reconnect future jobs. Ordinary edits preserve the
+existing association. Previously accepted project knowledge remains Core-owned.
+
 ## Install and Open the Application
 
 Install the bundled plugin from the Orac project root:

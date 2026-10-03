@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import os
+import json
 from pathlib import Path
 
 from lib.fsutils import project_home
@@ -197,6 +198,8 @@ class DropBoxHandoffJob:
     source_mtime: datetime | None
     effective_scope_type: str
     effective_scope_key: str
+    target_knowledge_scope_id: int
+    producer_knowledge_scope_id: int
     effective_processing_profile: str | None = None
     effective_profile_instruction: str | None = None
     effective_instruction: str | None = None
@@ -218,6 +221,8 @@ class DropBoxHandoffJob:
             source_mtime=row.get("SOURCE_MTIME"),
             effective_scope_type=str(row["EFFECTIVE_SCOPE_TYPE"]),
             effective_scope_key=str(row["EFFECTIVE_SCOPE_KEY"]),
+            target_knowledge_scope_id=int(row["TARGET_KNOWLEDGE_SCOPE_ID"]),
+            producer_knowledge_scope_id=int(row["PRODUCER_KNOWLEDGE_SCOPE_ID"]),
             effective_processing_profile=row.get("EFFECTIVE_PROCESSING_PROFILE"),
             effective_profile_instruction=_optional_oracle_text(
                 row.get("EFFECTIVE_PROFILE_INSTRUCTION"),
@@ -252,11 +257,12 @@ class DropBoxHandoffJob:
             source_mtime=self.source_mtime,
             target_scope_type=self.effective_scope_type,
             target_scope_key=self.effective_scope_key,
+            target_knowledge_scope_id=self.target_knowledge_scope_id,
+            producer_knowledge_scope_id=self.producer_knowledge_scope_id,
             processing_profile=self.effective_processing_profile,
             processing_instruction=instruction,
             source_key=source_key,
             location_code=self.location_code,
-            legacy_source_key=f"{self.location_code}:{self.source_path}",
             source_format_code=(
                 normalised.source_format_code if normalised is not None else None
             ),
@@ -282,7 +288,14 @@ class DropBoxHandoffJob:
                 normalised.extractor_version if normalised is not None else None
             ),
             extraction_metadata_json=(
-                normalised.metadata_json if normalised is not None else None
+                json.dumps(
+                    {
+                        **json.loads(normalised.metadata_json),
+                        "producer_knowledge_scope_id": self.producer_knowledge_scope_id,
+                    }
+                )
+                if normalised is not None
+                else None
             ),
             classification_tags_json=self.effective_classification_tags_json,
         )

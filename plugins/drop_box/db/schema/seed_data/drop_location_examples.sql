@@ -23,6 +23,7 @@ using (
          '/tmp/orac-dropbox-examples/orac_architecture_notes' path,
          'project' target_scope_type,
          'ORAC_CORE' target_scope_key,
+         orac_plugin.knowledge_scope_validation_api.resolve_scope_id('PROJECT', 'ORAC_CORE') target_knowledge_scope_id,
          'implementation_decision_record' processing_profile,
          'Example only. Edit the path and enable after choosing the project notes drop directory.' processing_instruction
     from dual
@@ -53,6 +54,7 @@ when not matched then
     enabled_yn,
     target_scope_type,
     target_scope_key,
+    target_knowledge_scope_id,
     processing_profile,
     processing_instruction,
     allowed_extensions,
@@ -70,6 +72,7 @@ when not matched then
     'N',
     src.target_scope_type,
     src.target_scope_key,
+    src.target_knowledge_scope_id,
     src.processing_profile,
     src.processing_instruction,
     'md,txt,pdf',

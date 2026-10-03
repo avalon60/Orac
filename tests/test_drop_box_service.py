@@ -211,7 +211,7 @@ class DropBoxServiceTests(unittest.TestCase):
         self.assertEqual(capture.requests[0].location_code, "TEST")
         self.assertEqual(capture.requests[0].source_key, "TEST:source.md")
         self.assertEqual(
-            capture.requests[0].legacy_source_key, "TEST:/tmp/drop/source.md"
+            capture.requests[0].target_knowledge_scope_id, 41
         )
         self.assertEqual(repository.status_updates[0]["status_code"], "processing")
         self.assertEqual(
@@ -429,6 +429,8 @@ def _handoff_job(
         source_mtime=observed_at,
         effective_scope_type="PROJECT",
         effective_scope_key="orac",
+        target_knowledge_scope_id=41,
+        producer_knowledge_scope_id=42,
         effective_processing_profile="markdown",
         effective_instruction="ingest",
     )

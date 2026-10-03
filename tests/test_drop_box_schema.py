@@ -18,6 +18,28 @@ SCHEMA_ROOT = PLUGIN_ROOT / "db" / "schema"
 class DropBoxSchemaTests(unittest.TestCase):
     """Static checks for drop-box schema assets."""
 
+    def test_queued_targets_do_not_follow_reinstalled_plugin_names(self) -> None:
+        enqueue = (SCHEMA_ROOT / "package_body/drop_box_api.sql").read_text()
+        admin = (SCHEMA_ROOT / "package_body/drop_box_admin_api.sql").read_text()
+        trigger = (SCHEMA_ROOT / "trigger/drp_job_biu.sql").read_text()
+        ingestion = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_code/package_body/knowledge_ingestion_api.sql"
+        ).read_text()
+        self.assertIn("loc.target_knowledge_scope_id", enqueue)
+        self.assertIn("scope_status_by_id", enqueue)
+        self.assertIn("p_reconfigure_target_yn = 'Y'", admin)
+        self.assertIn("else target_knowledge_scope_id", admin)
+        self.assertIn(
+            ":new.target_knowledge_scope_id <> :old.target_knowledge_scope_id", trigger
+        )
+        self.assertIn("p_target_knowledge_scope_id <> l_knowledge_scope_id", ingestion)
+        self.assertIn(
+            "l_source_type = 'DROP_BOX' and p_target_knowledge_scope_id is null",
+            ingestion,
+        )
+        self.assertNotIn("p_legacy_parent_source_reference", ingestion)
+
     def test_all_new_varchar2_columns_use_character_semantics(self) -> None:
         pattern = re.compile(r"varchar2\(\s*\d+\s*\)", re.IGNORECASE)
         for path in SCHEMA_ROOT.rglob("*.sql"):
@@ -498,8 +520,10 @@ class DropBoxSchemaTests(unittest.TestCase):
             .lower()
         )
         controller_sql = (
-            PLUGIN_ROOT / "db" / "liquibase" / "controllers" / "12_seed_data.xml"
-        ).read_text(encoding="utf-8").lower()
+            (PLUGIN_ROOT / "db" / "liquibase" / "controllers" / "12_seed_data.xml")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("drop_location_orac_docs.sql", controller_sql)
         self.assertIn("'orac_docs' location_code", seed_sql)
@@ -512,8 +536,12 @@ class DropBoxSchemaTests(unittest.TestCase):
         self.assertIn("dst.allowed_extensions", seed_sql)
         self.assertIn("pending_work/**", seed_sql)
         self.assertIn("backlog/**", seed_sql)
-        self.assertIn("knowledge_ingestion_request_id is null", seed_sql)
-        self.assertIn("'conversion_retry_wait'", seed_sql)
+        self.assertIn("src.target_knowledge_scope_id", seed_sql)
+        self.assertIn(
+            "knowledge_scope_validation_api.resolve_scope_id('project', 'orac_core')",
+            seed_sql,
+        )
+        self.assertNotIn("update orac_dropbox.drop_job", seed_sql)
         self.assertIn(
             "knowledge_scope_validation_api.scope_status('project', 'orac_core')",
             seed_sql,
@@ -522,9 +550,9 @@ class DropBoxSchemaTests(unittest.TestCase):
 
     def test_document_classifications_are_independent_reference_codes(self) -> None:
         """Drop Box requires canonical classifications without profile backfill."""
-        admin_sql = (
-            SCHEMA_ROOT / "package_body" / "drop_box_admin_api.sql"
-        ).read_text(encoding="utf-8")
+        admin_sql = (SCHEMA_ROOT / "package_body" / "drop_box_admin_api.sql").read_text(
+            encoding="utf-8"
+        )
         table_sql = (
             SCHEMA_ROOT / "table" / "drop_classification_and_retry.sql"
         ).read_text(encoding="utf-8")
@@ -540,8 +568,10 @@ class DropBoxSchemaTests(unittest.TestCase):
 
     def test_enqueue_snapshots_classifications_without_profile_fallback(self) -> None:
         package_sql = (
-            SCHEMA_ROOT / "package_body" / "drop_box_api.sql"
-        ).read_text(encoding="utf-8").lower()
+            (SCHEMA_ROOT / "package_body" / "drop_box_api.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("loc.classification_tags_json", package_sql)
         self.assertIn(
@@ -553,11 +583,15 @@ class DropBoxSchemaTests(unittest.TestCase):
 
     def test_locations_without_classifications_are_excluded_and_reported(self) -> None:
         runtime_sql = (
-            SCHEMA_ROOT / "view" / "drop_location_runtime_v.sql"
-        ).read_text(encoding="utf-8").lower()
+            (SCHEMA_ROOT / "view" / "drop_location_runtime_v.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         error_sql = (
-            SCHEMA_ROOT / "view" / "drop_location_config_error_v.sql"
-        ).read_text(encoding="utf-8").lower()
+            (SCHEMA_ROOT / "view" / "drop_location_config_error_v.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("loc.classification_tags_json is not null", runtime_sql)
         self.assertIn(

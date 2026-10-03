@@ -17,6 +17,7 @@ using (
          '$' || '{ORAC_HOME}/docs' path,
          'project' target_scope_type,
          'ORAC_CORE' target_scope_key,
+         orac_plugin.knowledge_scope_validation_api.resolve_scope_id('PROJECT', 'ORAC_CORE') target_knowledge_scope_id,
          'raw_reference' processing_profile,
          '*.tmp,*.part,*.partial,*.crdownload,.~*,~$*,.DS_Store,pending_work/**,backlog/**' ignore_patterns
     from dual
@@ -48,6 +49,7 @@ when not matched then
     enabled_yn,
     target_scope_type,
     target_scope_key,
+    target_knowledge_scope_id,
     processing_profile,
     processing_instruction,
     allowed_extensions,
@@ -66,6 +68,7 @@ when not matched then
     'Y',
     src.target_scope_type,
     src.target_scope_key,
+    src.target_knowledge_scope_id,
     src.processing_profile,
     null,
     'md',
@@ -78,23 +81,5 @@ when not matched then
     10,
     to_clob('["RAW_REFERENCE"]')
   );
-
-update orac_dropbox.drop_job job
-   set effective_scope_type = 'project',
-       effective_scope_key  = 'ORAC_CORE'
- where job.drop_location_id = (
-         select location.drop_location_id
-           from orac_dropbox.drop_location location
-          where location.location_code = 'ORAC_DOCS'
-       )
-   and job.knowledge_ingestion_request_id is null
-   and job.status_code in (
-         'queued',
-         'processing',
-         'deferred_prerequisite',
-         'conversion_retry_wait'
-       )
-   and job.effective_scope_type = 'plugin'
-   and job.effective_scope_key = 'drop_box';
 
 --rollback select 1 from dual;

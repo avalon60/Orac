@@ -20,6 +20,15 @@ begin
     :new.updated_on := coalesce(:new.updated_on, :new.created_on, systimestamp);
     :new.row_version := coalesce(:new.row_version, 1);
   else
+    if :new.target_knowledge_scope_id <> :old.target_knowledge_scope_id
+       or :new.target_knowledge_scope_id is null
+       or :new.producer_knowledge_scope_id <> :old.producer_knowledge_scope_id
+       or :new.producer_knowledge_scope_id is null
+       or :new.effective_scope_type <> :old.effective_scope_type
+       or :new.effective_scope_key <> :old.effective_scope_key
+    then
+      raise_application_error(-20409, 'Queued knowledge target is immutable.');
+    end if;
     :new.created_by := :old.created_by;
     :new.created_on := :old.created_on;
     :new.updated_by := l_actor;
