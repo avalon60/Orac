@@ -18,6 +18,7 @@ create table orac_core.plugin_apex_apps
   app_export              varchar2(1000 char) not null,
   declared_application_id number,
   installed_app_id        number,
+  installation_receipt   json,
   entry_page_id           number default 1 not null,
   label                   varchar2(256 char) not null,
   description             varchar2(1000 char),

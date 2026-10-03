@@ -14,6 +14,7 @@ select plugin_id
      , app_export
      , declared_application_id
      , installed_app_id
+     , installation_receipt
      , entry_page_id
      , label
      , description

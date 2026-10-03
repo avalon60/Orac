@@ -202,6 +202,15 @@ as
 
     return sql%rowcount;
   end mark_state;
+  procedure delete_for_removal(p_removal_id in varchar2) is
+    l_removal orac_api.plugin_removals_v%rowtype;
+  begin
+    select * into l_removal from orac_api.plugin_removals_v
+     where removal_id = p_removal_id and completed_on is null
+       and external_complete_yn = 'Y' and files_complete_yn = 'Y';
+    delete from orac_api.plugin_services_v
+     where plugin_id = l_removal.plugin_id and service_owner_type = 'PLUGIN' and plugin_registry_id = l_removal.plugin_registry_id;
+  end delete_for_removal;
 end plugin_services_tapi;
 /
 --rollback drop package body orac_api.plugin_services_tapi;

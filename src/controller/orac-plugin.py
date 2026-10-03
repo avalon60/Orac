@@ -11,6 +11,9 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
+from dataclasses import asdict
+import getpass
 import hashlib
 import json
 from pathlib import Path
@@ -26,13 +29,18 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from model.plugin_installer import PluginInstallationError
+from model.plugin_installer import PluginRemovalConfirmationError
 from model.plugin_installer import PluginInstaller
+from model.plugin_execution_lock import PluginExecutionLock
+from model.plugin_execution_lock import PluginMaintenanceError
 from model.plugin_package import PluginPackageError
 from model.plugin_registry import PluginRegistryError
 from model.plugin_registry import PluginRegistryStore
 from model.plugin_runtime import PluginRuntimeError
 from model.plugin_service_lifecycle import PluginServiceLifecycleStore
 from model.plugin_service_manager import PluginServiceManager
+from model.plugin_database_deployment import PluginDatabaseDeploymentError
+from model.plugin_apex_installation import PluginApexAppInstallError
 
 VALID_SERVICE_POLICIES = ("auto", "manual", "disabled")
 
@@ -62,18 +70,59 @@ def build_parser() -> argparse.ArgumentParser:
 
     list_plugins = subparsers.add_parser(
         "list",
-        help="List installed and unpacked plugins.",
+        help="List currently installed plugins.",
     )
     list_plugins.add_argument(
         "--json",
         action="store_true",
         help="Emit plugin inventory as JSON.",
     )
+    list_plugins.add_argument(
+        "--source-packages",
+        action="store_true",
+        help="Also show unpacked source packages separately from installed state.",
+    )
 
     status = subparsers.add_parser("status", help="Show registered plugin status.")
     status.add_argument("plugin_id")
     check = subparsers.add_parser("check", help="Validate registered plugin readiness.")
     check.add_argument("plugin_id")
+
+    for command in ("enable", "disable"):
+        lifecycle = subparsers.add_parser(
+            command, help=f"{command.title()} an installed plugin."
+        )
+        lifecycle.add_argument("plugin_id")
+    history = subparsers.add_parser(
+        "history", help="Show historical removal operations."
+    )
+    history.add_argument("plugin_id")
+    history.add_argument("--json", action="store_true")
+    remove = subparsers.add_parser(
+        "remove", help="Remove a plugin and its verified dedicated schemas."
+    )
+    remove.add_argument("plugin_id")
+    remove.add_argument(
+        "--keep-schema",
+        action="store_true",
+        help="Retain dedicated schemas locked and detached from Orac.",
+    )
+    remove.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Inspect resources without changing them.",
+    )
+    remove.add_argument(
+        "--json", action="store_true", help="Emit the removal result as JSON."
+    )
+    remove.add_argument(
+        "--yes", action="store_true", help="Confirm removal non-interactively."
+    )
+    remove.add_argument(
+        "--confirm-schema-drop",
+        metavar="PLUGIN_ID",
+        help="Explicitly acknowledge destroying this plugin's dedicated schemas.",
+    )
 
     service = subparsers.add_parser(
         "service",
@@ -125,7 +174,29 @@ def main(argv: list[str] | None = None) -> int:
     """Run the Orac plugin management CLI."""
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command == "remove":
+        if args.keep_schema and args.confirm_schema_drop is not None:
+            parser.error(
+                "--keep-schema and --confirm-schema-drop are mutually exclusive"
+            )
+        if (
+            args.confirm_schema_drop is not None
+            and args.confirm_schema_drop != args.plugin_id
+        ):
+            parser.error("--confirm-schema-drop must match the plugin ID being removed")
+    execution_lock = (
+        nullcontext()
+        if args.command in {"remove", "enable", "disable"}
+        else PluginExecutionLock(
+            PROJECT_ROOT,
+            exclusive=(
+                args.command in {"install", "check", "enable", "disable", "remove"}
+                or (args.command == "service" and args.service_command == "policy")
+            ),
+        )
+    )
     try:
+        execution_lock.__enter__()
         if args.command == "service":
             if args.service_command == "run":
                 return run_plugin_service(
@@ -155,11 +226,43 @@ def main(argv: list[str] | None = None) -> int:
             print(f"sha256: {_sha256_file(archive)}")
             return 0
         if args.command == "list":
-            entries = installer.list_plugins()
+            entries = installer.list_plugins(include_source=args.source_packages)
             if args.json:
                 print(json.dumps(entries, indent=2, default=str, sort_keys=True))
             else:
                 print(_format_plugin_inventory(entries))
+            return 0
+        if args.command in {"enable", "disable"}:
+            getattr(installer, args.command)(args.plugin_id)
+            print(f"Plugin '{args.plugin_id}' {args.command}d.")
+            return 0
+        if args.command == "history":
+            records = installer.history(args.plugin_id)
+            if args.json:
+                print(json.dumps(records, indent=2, default=str, sort_keys=True))
+            elif not records:
+                print(f"No removal history for '{args.plugin_id}'.")
+            else:
+                for record in records:
+                    state = "completed" if record.get("completed_on") else "incomplete"
+                    print(
+                        f"{record['removal_id']} {record['plugin_version']} {record['schema_disposition']}: {state}"
+                    )
+            return 0
+        if args.command == "remove":
+            result = installer.remove(
+                args.plugin_id,
+                keep_schema=args.keep_schema,
+                dry_run=args.dry_run,
+                confirmed_by=getpass.getuser(),
+                confirm=lambda inventory: _confirm_plugin_removal(args, inventory),
+            )
+            if args.json:
+                print(json.dumps(asdict(result), indent=2, default=str, sort_keys=True))
+            else:
+                print(f"{result.plugin_id}: {result.status} - {result.message}")
+                if args.dry_run:
+                    _print_removal_inventory(result.inventory)
             return 0
         if args.command == "install":
             if args.all:
@@ -191,17 +294,81 @@ def main(argv: list[str] | None = None) -> int:
             for warning in result.warnings:
                 print(f"Warning: {warning}", file=sys.stderr)
             return 0
+    except PluginRemovalConfirmationError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
     except (
         PluginInstallationError,
         PluginPackageError,
         PluginRegistryError,
         PluginRuntimeError,
+        PluginMaintenanceError,
+        PluginDatabaseDeploymentError,
+        PluginApexAppInstallError,
         OSError,
         ValueError,
     ) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
+    finally:
+        execution_lock.__exit__(None, None, None)
     return 1
+
+
+def _print_removal_inventory(inventory: dict[str, Any], *, stream: Any = None) -> None:
+    """Display credential-free resource scope before asking for confirmation."""
+    stream = stream or sys.stdout
+    if not inventory:
+        return
+    print(
+        f"Plugin: {inventory['plugin_id']} {inventory['plugin_version']}", file=stream
+    )
+    print(f"Database/PDB: {inventory['database']['database_identity']}", file=stream)
+    names = [item["schema_name"] for item in inventory["database"]["schemas"]]
+    print("Dedicated schemas: " + (", ".join(names) or "none"), file=stream)
+    if not names and inventory["schema_disposition"] == "KEEP":
+        print("This plugin has no dedicated schema; --keep-schema has no effect.", file=stream)
+    print(f"Schema disposition: {inventory['schema_disposition']}", file=stream)
+    print(
+        "APEX apps: "
+        + (", ".join(item["app_alias"] for item in inventory["apex"]) or "none"),
+        file=stream,
+    )
+    for directory in inventory["directories"]:
+        print(f"Remove {directory['kind']}: {directory['path']}", file=stream)
+    print("Plugin secrets and routing-cache entries will be removed.", file=stream)
+    print(
+        "Use --keep-schema to retain dedicated schemas locked and detached.",
+        file=stream,
+    )
+
+
+def _confirm_plugin_removal(
+    args: argparse.Namespace, inventory: dict[str, Any]
+) -> bool:
+    """Require explicit acknowledgement of the displayed plugin and schema loss."""
+    destroys_schemas = not args.keep_schema and any(
+        item.get("present") == 1 for item in inventory["database"]["schemas"]
+    )
+    if args.yes:
+        if destroys_schemas and args.confirm_schema_drop != args.plugin_id:
+            raise PluginRemovalConfirmationError(
+                "Schema destruction also requires --confirm-schema-drop "
+                + args.plugin_id
+            )
+        return True
+    if not sys.stdin.isatty():
+        raise PluginRemovalConfirmationError("Non-interactive removal requires --yes.")
+    _print_removal_inventory(inventory, stream=sys.stderr if args.json else sys.stdout)
+    phrase = "REMOVE " + args.plugin_id
+    if destroys_schemas:
+        phrase += " AND DROP SCHEMAS"
+    elif args.keep_schema:
+        phrase += " KEEP SCHEMAS"
+    try:
+        return input(f"Type '{phrase}' to confirm: ").strip() == phrase
+    except (EOFError, KeyboardInterrupt):
+        return False
 
 
 class _ConsoleLogger:
@@ -356,10 +523,15 @@ def show_plugin_service_status(
     )
     if not require_running:
         return 0
-    return 0 if rows and all(
-        row.current_state == "running" and row.lease_active_yn == "Y"
-        for row in rows
-    ) else 1
+    return (
+        0
+        if rows
+        and all(
+            row.current_state == "running" and row.lease_active_yn == "Y"
+            for row in rows
+        )
+        else 1
+    )
 
 
 def set_plugin_service_policy(

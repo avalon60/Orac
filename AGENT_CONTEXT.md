@@ -24,6 +24,7 @@ values here.
 | Core APEX applications | `resources/db/apex/` | `resources/db/apex/AGENT_CONTEXT.md` |
 | Plugin packages | `plugins/<plugin-code>/` | This root context plus plugin manifests and documentation |
 | Plugin-owned APEX exports | `plugins/<plugin-code>/apex/` | This root context plus applicable plugin manifest |
+| Core communications | `src/orac_core/communications/` | Transport-neutral request, response, event, and adapter contracts |
 
 ## APEX Ownership
 
@@ -102,5 +103,15 @@ the host-owned projection contract:
 - Plugin-private data remains in plugin-owned schemas.
 - Core owns routing, policy, confirmation, context mediation, provenance, and
   persistence.
+- Every conversational transport enters `OracRequestProcessor` using canonical
+  communications contracts. NDJSON, voice, and OpenAI-compatible shapes are
+  adapters; none is an authentication, authorisation, or execution boundary.
+- Caller restrictions only narrow Core authority: `None` adds no caller bound,
+  while an empty capability or knowledge collection permits none. External
+  session labels are namespaced to the authenticated principal.
+- The OpenAI compatibility surface is reusable core code, not an HTTP listener.
+  This tranche supports the documented text Chat Completions subset and model
+  catalogue serialisation; deployable Open WebUI, Responses, and Codex routes
+  remain later work.
 - Do not infer a new schema domain, controller, privilege path, application id,
   port, or saved connection from directory names alone.

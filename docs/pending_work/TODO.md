@@ -58,7 +58,8 @@ actions. Parked items remain pending until they are resumed or removed.
   — Implemented for new Drop Box submissions; separately reviewed
   reindex/operator workflow remains pending.
 * [1. Home Assistant runtime sync](#1-home-assistant-runtime-sync) —
-  Implemented for startup sync; periodic refresh/websocket follow-up pending.
+  Implemented with atomic startup sync, periodic reconciliation, and WebSocket
+  event refresh; an optional state-polling fallback remains pending.
 * [2. Home Assistant intent resolution](#2-home-assistant-intent-resolution) —
   Partially implemented.
 * [3. Plugin service lifecycle hardening](#3-plugin-service-lifecycle-hardening)
@@ -179,7 +180,7 @@ Next actions:
 
 Priority: High
 
-Status: Implemented for startup sync; periodic refresh/websocket follow-up pending
+Status: Implemented with atomic startup sync and websocket event refresh
 
 Value:
 
@@ -197,6 +198,10 @@ Completed:
   `HomeAssistantRepository`.
 * The managed `HomeAssistantService` runs startup sync inside the Orac-managed
   plugin service process.
+* Structural data, current states and derived capabilities publish as one
+  transaction; failed candidates roll back before failure recording.
+* The maintained websocket transport subscribes to state and registry events,
+  reconnects, and requests full refresh when structure changes.
 
 Notes:
 
@@ -205,8 +210,8 @@ Notes:
 
 Next actions:
 
-* Add periodic refresh or websocket state listener.
-* Surface sync status through APEX and/or React.
+* Add an optional state-only polling fallback for deployments that disable
+  websocket events.
 
 ---
 
@@ -214,7 +219,7 @@ Next actions:
 
 Priority: High
 
-Status: Partially implemented
+Status: Implemented for entity-first capability discovery and established routes
 
 Value:
 
@@ -230,12 +235,20 @@ Notes:
 * LLM should assist with ambiguity, not own the core resolution path.
 * Alias handling needs care: user-confirmed aliases should be trusted more than LLM-suggested ones.
 
+Completed:
+
+* Exact aliases, entities, devices and areas resolve deterministically.
+* Multi-entity devices compose action-capable member entities.
+* Home Assistant domains, actions, target applicability, state metadata and
+  supported features derive semantic primitive bindings without model rules.
+* Model-facing schemas omit raw Home Assistant services and generic execution
+  requires host-created authority.
+
 Next actions:
 
-* Define deterministic resolution rules.
-* Add alias tables or confirm existing table design.
-* Support room/area synonym handling, e.g. "lounge" -> "living room".
-* Add fallback clarification when resolution is ambiguous.
+* Add an approved alias administration workflow to the supplied APEX app.
+* Add reviewed mappings only for opaque custom-integration actions whose names
+  and schemas cannot support safe canonical discovery.
 
 ---
 

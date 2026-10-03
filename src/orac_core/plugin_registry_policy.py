@@ -21,7 +21,8 @@ def plugin_registry_row_runtime_eligible(row: Mapping[str, Any]) -> bool:
         use.
     """
     return (
-        str(row.get("enabled") or "").upper() == "Y"
+        not row.get("removal_id")
+        and str(row.get("enabled") or "").upper() == "Y"
         and str(row.get("install_status") or "") == "success"
         and str(row.get("configuration_status") or "") in {"success", "not_required"}
         and str(row.get("dependency_status") or "") in {"success", "not_required"}

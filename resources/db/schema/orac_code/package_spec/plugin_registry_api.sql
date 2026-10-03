@@ -43,6 +43,14 @@ create or replace package orac_code.plugin_registry_api as
     p_command_prerequisite_status in orac_api.plugin_registry_v.command_prerequisite_status%type,
     p_command_dependency_report in orac_api.plugin_registry_v.command_dependency_report%type
   );
+  procedure set_enabled(p_plugin_id in varchar2, p_enabled in varchar2);
+  procedure begin_removal(p_plugin_id in varchar2, p_expected_registry_id in number,
+    p_removal_id in varchar2, p_schema_disposition in varchar2,
+    p_database_identity in varchar2, p_resource_inventory in json, p_confirmed_by in varchar2);
+  procedure checkpoint_removal(p_removal_id in varchar2, p_expected_registry_id in number,
+    p_checkpoints in json, p_external_complete_yn in varchar2, p_files_complete_yn in varchar2,
+    p_error_code in varchar2 default null, p_error_message in varchar2 default null);
+  procedure finalize_removal(p_removal_id in varchar2, p_expected_registry_id in number);
 end plugin_registry_api;
 /
 

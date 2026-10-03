@@ -14,7 +14,7 @@ import inspect
 from pathlib import Path
 import sys
 from types import ModuleType
-from typing import Any, Iterator
+from typing import Any, Iterator, Mapping
 
 from model.plugin_config import PluginConfigManager
 from model.plugin_knowledge_retrieval import PluginKnowledgeRetrievalBridge
@@ -40,6 +40,17 @@ class PluginExecutionResult:
     stop_reason: str = "stop"
     provenance: dict[str, Any] = field(default_factory=dict)
     silent: bool = False
+
+
+@dataclass(frozen=True)
+class PluginServiceCommandAuthority:
+    """Host-created authority attached to managed service commands."""
+
+    plugin_id: str
+    principal_username: str
+    policy_status: str
+    trusted_confirmation: bool
+    capabilities: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -354,6 +365,11 @@ class PluginRuntimeContext:
     plugin_service_manager: Any | None = None
     plugin_config_manager: PluginConfigManager | None = None
     _secret_vault: PluginSecretVault | None = None
+    _policy_provenance: Mapping[str, Any] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     _knowledge_retrieval_bridge: PluginKnowledgeRetrievalBridge | None = field(
         default=None,
         init=False,
@@ -425,4 +441,24 @@ class PluginRuntimeContext:
             raise PluginRuntimeError(
                 "Plugin service manager does not support service command dispatch."
             )
-        return run_command(plugin_id, command, payload or {})
+        if plugin_id != self.plugin_id:
+            raise PluginRuntimeError(
+                f"Plugin '{self.plugin_id}' cannot command service '{plugin_id}'."
+            )
+        provenance = dict(self._policy_provenance or {})
+        confirmation = provenance.get("confirmation")
+        confirmation = confirmation if isinstance(confirmation, dict) else {}
+        authority = PluginServiceCommandAuthority(
+            plugin_id=self.plugin_id,
+            principal_username=str(self.auth_user or "").strip(),
+            policy_status=str(provenance.get("status") or "denied"),
+            trusted_confirmation=bool(
+                confirmation.get("trusted") and confirmation.get("status") == "confirmed"
+            ),
+            capabilities=tuple(
+                str(item) for item in provenance.get("capabilities") or ()
+            ),
+        )
+        command_payload = dict(payload or {})
+        command_payload["_orac_authority"] = authority
+        return run_command(plugin_id, command, command_payload)

@@ -20,6 +20,7 @@ as
     p_plugin_db_deployment_id in     orac_api.plugin_db_deployments_v.plugin_db_deployment_id%type,
     p_row                     in out orac_api.plugin_db_deployments_v%rowtype
   );
+  procedure delete_for_removal(p_removal_id in varchar2);
 end plugin_db_deployments_tapi;
 /
 --rollback drop package orac_api.plugin_db_deployments_tapi;

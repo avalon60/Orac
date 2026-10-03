@@ -4,6 +4,7 @@
 
 create or replace force view orac_api.plugin_registry_v as
 select plugin_registry_id
+      , knowledge_scope_id
      , plugin_id
      , plugin_name
      , plugin_version

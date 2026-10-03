@@ -1,4 +1,5 @@
 """Tests for plugin-owned database deployment support."""
+
 # Author: Clive Bostock
 # Date: 2026-06-03
 # Description: Verifies plugin database validation, packaging, and deployment gating.
@@ -13,7 +14,6 @@ import subprocess
 import tarfile
 import tempfile
 import unittest
-
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -137,6 +137,8 @@ class _FakeCursor:
 
     def execute(self, sql: str, binds: dict | None = None) -> None:
         self.statements.append((sql, binds))
+        if "from dba_objects" in sql and not self.bridge_object_exists:
+            raise RuntimeError("Required host bridge is missing or invalid.")
 
     def fetchone(self) -> tuple[int]:
         if self.statements and "from dba_objects" in self.statements[-1][0]:
@@ -220,7 +222,9 @@ def _write_plugin(
 ) -> None:
     plugin_dir = plugins_dir / plugin_id
     plugin_dir.mkdir()
-    (plugin_dir / "plugin.py").write_text("class TestPlugin:\n    pass\n", encoding="utf-8")
+    (plugin_dir / "plugin.py").write_text(
+        "class TestPlugin:\n    pass\n", encoding="utf-8"
+    )
     if with_schema:
         schema_dir = plugin_dir / "db" / "schema" / "table"
         schema_dir.mkdir(parents=True)
@@ -258,7 +262,9 @@ def _discover_one(plugins_dir: Path):
 class PluginDatabaseDeploymentTests(unittest.TestCase):
     """Tests plugin-owned database deployment behaviour."""
 
-    def test_expected_view_columns_are_collected_for_deployment_verification(self) -> None:
+    def test_expected_view_columns_are_collected_for_deployment_verification(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:
             plugins_dir = Path(temp_plugins)
             _write_plugin(
@@ -400,9 +406,7 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
                         "alpha",
                         _manifest(
                             "alpha",
-                            database=_database(
-                                bridge_api_dependencies=dependencies
-                            ),
+                            database=_database(bridge_api_dependencies=dependencies),
                         ),
                     )
 
@@ -415,9 +419,7 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
     def test_database_bridge_api_dependencies_reject_cross_schema_duplicates(
         self,
     ) -> None:
-        database = _database(
-            bridge_api_dependencies=["knowledge_scope_validation"]
-        )
+        database = _database(bridge_api_dependencies=["knowledge_scope_validation"])
         duplicate_schema = dict(database["schemas"][0])
         duplicate_schema["schema_name"] = "orac_hb"
         database["schemas"].append(duplicate_schema)
@@ -470,7 +472,10 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             validate_plugin_bridge_api_catalog(catalog)
 
     def test_plugin_without_database_section_behaves_as_before(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins,
+            tempfile.TemporaryDirectory() as temp_cache,
+        ):
             plugins_dir = Path(temp_plugins)
             _write_plugin(plugins_dir, "alpha", _manifest("alpha"))
             manager = PluginManager(
@@ -486,9 +491,14 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertIsNotNone(manager.get_manifest("alpha"))
 
     def test_required_missing_schema_warn_disable_disables_plugin(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins,
+            tempfile.TemporaryDirectory() as temp_cache,
+        ):
             plugins_dir = Path(temp_plugins)
-            _write_plugin(plugins_dir, "alpha", _manifest("alpha", database=_database()))
+            _write_plugin(
+                plugins_dir, "alpha", _manifest("alpha", database=_database())
+            )
             manager = PluginManager(
                 embedding_provider=HashEmbeddingProvider(),
                 plugins_dir=plugins_dir,
@@ -503,7 +513,10 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertIsNone(manager.get_manifest("alpha"))
 
     def test_optional_missing_schema_does_not_disable_plugin(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins,
+            tempfile.TemporaryDirectory() as temp_cache,
+        ):
             plugins_dir = Path(temp_plugins)
             _write_plugin(
                 plugins_dir,
@@ -523,7 +536,11 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertIsNotNone(manager.get_manifest("alpha"))
 
     def test_optional_deployment_failure_does_not_disable_plugin(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache, tempfile.TemporaryDirectory() as temp_archive:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins,
+            tempfile.TemporaryDirectory() as temp_cache,
+            tempfile.TemporaryDirectory() as temp_archive,
+        ):
             plugins_dir = Path(temp_plugins)
             _write_plugin(
                 plugins_dir,
@@ -618,7 +635,13 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
         )
 
     def test_home_assistant_liquibase_controller_has_stable_identity(self) -> None:
-        controller = Path("plugins") / "home_assistant" / "db" / "liquibase" / "pluginController.xml"
+        controller = (
+            Path("plugins")
+            / "home_assistant"
+            / "db"
+            / "liquibase"
+            / "pluginController.xml"
+        )
         text = controller.read_text(encoding="utf-8")
         controller_dir = controller.parent / "controllers"
 
@@ -644,13 +667,14 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
         referenced = validate_plugin_liquibase_changelog(manifest)
         plugin_dir = manifest.plugin_dir.resolve()
         referenced_relative = {
-            path.relative_to(plugin_dir).as_posix()
-            for path in referenced
+            path.relative_to(plugin_dir).as_posix() for path in referenced
         }
 
         self.assertIn("db/schema/table/ha_areas.sql", referenced_relative)
         self.assertIn("db/schema/package_body/ha_sync_api.sql", referenced_relative)
-        self.assertIn("db/schema/grant/ha_sync_api_to_orac_plugin.sql", referenced_relative)
+        self.assertIn(
+            "db/schema/grant/ha_sync_api_to_orac_plugin.sql", referenced_relative
+        )
         self.assertNotIn("apex/f10010.sql", referenced_relative)
 
     def test_home_assistant_payload_contains_sync_api_contract(self) -> None:
@@ -665,22 +689,28 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             (schema_dir / "grant" / "ha_sync_api_to_orac_plugin.sql").is_file()
         )
 
-        package_body = (
-            schema_dir / "package_body" / "ha_sync_api.sql"
-        ).read_text(encoding="utf-8")
+        package_body = (schema_dir / "package_body" / "ha_sync_api.sql").read_text(
+            encoding="utf-8"
+        )
         grant_text = (
             schema_dir / "grant" / "ha_sync_api_to_orac_plugin.sql"
         ).read_text(encoding="utf-8")
 
         self.assertIn("procedure begin_sync_run", package_body)
+        self.assertIn("procedure record_failed_sync_run", package_body)
+        self.assertIn("pragma autonomous_transaction", package_body)
         self.assertIn("delete from orac_ha.ha_states_current", package_body)
         self.assertIn("delete from orac_ha.ha_entities", package_body)
         self.assertIn("delete from orac_ha.ha_devices", package_body)
         self.assertIn("delete from orac_ha.ha_areas", package_body)
         self.assertIn("merge into orac_ha.ha_entities dst", package_body)
         self.assertIn("merge into orac_ha.ha_states_current dst", package_body)
-        self.assertIn("json_value(p_payload, '$.created_at')) ha_created_at", package_body)
-        self.assertIn("json_value(p_payload, '$.modified_at')) ha_modified_at", package_body)
+        self.assertIn(
+            "json_value(p_payload, '$.created_at')) ha_created_at", package_body
+        )
+        self.assertIn(
+            "json_value(p_payload, '$.modified_at')) ha_modified_at", package_body
+        )
         self.assertIn("dst.ha_created_at", package_body)
         self.assertIn("dst.ha_modified_at", package_body)
         self.assertNotIn("dst.created_at", package_body)
@@ -704,12 +734,12 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             path.read_text(encoding="utf-8")
             for path in (schema_dir / "constraint_fk").glob("*.sql")
         )
-        view_text = (
-            schema_dir / "view" / "ha_control_resolution_v.sql"
-        ).read_text(encoding="utf-8")
-        package_body = (
-            schema_dir / "package_body" / "ha_sync_api.sql"
-        ).read_text(encoding="utf-8")
+        view_text = (schema_dir / "view" / "ha_control_resolution_v.sql").read_text(
+            encoding="utf-8"
+        )
+        package_body = (schema_dir / "package_body" / "ha_sync_api.sql").read_text(
+            encoding="utf-8"
+        )
         grant_text = (
             schema_dir / "grant" / "ha_control_resolution_v_to_orac_plugin.sql"
         ).read_text(encoding="utf-8")
@@ -723,17 +753,22 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
         self.assertIn("row_version", table_text)
         self.assertIn("primary key (alias_name, entity_id)", primary_key_text)
         self.assertNotIn("device_aliases", all_foreign_keys)
-        self.assertIn("create or replace view orac_ha.ha_control_resolution_v", view_text)
+        self.assertIn(
+            "create or replace view orac_ha.ha_control_resolution_v", view_text
+        )
         self.assertIn("json_value(sta.attributes, '$.device_class')", view_text)
         self.assertIn("json_value(sta.attributes, '$.unit_of_measurement')", view_text)
         self.assertIn("sta.last_changed", view_text)
         self.assertIn("sta.last_updated", view_text)
         self.assertIn("ent.disabled_by", view_text)
+        self.assertIn("ent.hidden_by", view_text)
         self.assertIn("dal.enabled_flag = 'Y'", view_text)
         self.assertIn("coalesce(ent.area_id, dev.area_id)", view_text)
         self.assertIn("left join orac_ha.ha_devices dev", view_text)
         self.assertIn("when not matched then insert", package_body)
-        self.assertIn("json_value(p_payload, '$.attributes.friendly_name')", package_body)
+        self.assertIn(
+            "json_value(p_payload, '$.attributes.friendly_name')", package_body
+        )
         self.assertIn(
             "grant select on orac_ha.ha_control_resolution_v to orac_plugin",
             grant_text,
@@ -761,28 +796,38 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
                     self.assertNotRegex(text, r"(?m)^declare\\s*$")
                     self.assertNotIn("runonchange:true", text)
 
-        controller_dir = Path("plugins") / "home_assistant" / "db" / "liquibase" / "controllers"
+        controller_dir = (
+            Path("plugins") / "home_assistant" / "db" / "liquibase" / "controllers"
+        )
         for path in controller_dir.glob("*.xml"):
             text = path.read_text(encoding="utf-8")
             with self.subTest(path=path):
                 self.assertNotIn("<sqlFile", text)
 
-    def test_home_assistant_source_timestamps_and_audit_triggers_are_explicit(self) -> None:
+    def test_home_assistant_source_timestamps_and_audit_triggers_are_explicit(
+        self,
+    ) -> None:
         schema_dir = Path("plugins") / "home_assistant" / "db" / "schema"
         table_text = "\n".join(
             (schema_dir / "table" / name).read_text(encoding="utf-8").lower()
             for name in ("ha_areas.sql", "ha_devices.sql", "ha_entities.sql")
         )
         migration_text = (
-            schema_dir / "table" / "ha_source_timestamps.sql"
-        ).read_text(encoding="utf-8").lower()
+            (schema_dir / "table" / "ha_source_timestamps.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
 
         self.assertIn("ha_created_at", table_text)
         self.assertIn("ha_modified_at", table_text)
         self.assertNotRegex(table_text, r"\\bcreated_at\\s+timestamp")
         self.assertNotRegex(table_text, r"\\bmodified_at\\s+timestamp")
-        self.assertIn("set ha_created_at = coalesce(ha_created_at, created_at)", migration_text)
-        self.assertIn("set ha_modified_at = coalesce(ha_modified_at, modified_at)", migration_text)
+        self.assertIn(
+            "set ha_created_at = coalesce(ha_created_at, created_at)", migration_text
+        )
+        self.assertIn(
+            "set ha_modified_at = coalesce(ha_modified_at, modified_at)", migration_text
+        )
         self.assertIn("drop column created_at", migration_text)
         self.assertIn("drop column modified_at", migration_text)
 
@@ -795,15 +840,19 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             "dalias_biu",
         ):
             trigger_text = (
-                schema_dir / "trigger" / f"{trigger_name}.sql"
-            ).read_text(encoding="utf-8").lower()
+                (schema_dir / "trigger" / f"{trigger_name}.sql")
+                .read_text(encoding="utf-8")
+                .lower()
+            )
             with self.subTest(trigger=trigger_name):
                 self.assertIn("--liquibase formatted sql", trigger_text)
                 self.assertIn("before insert or update", trigger_text)
                 self.assertIn("sys_context('apex$session', 'app_user')", trigger_text)
                 self.assertIn("sys_context('userenv', 'proxy_user')", trigger_text)
                 self.assertIn("sys_context('userenv', 'session_user')", trigger_text)
-                self.assertIn(":new.row_version := nvl(:old.row_version, 1) + 1", trigger_text)
+                self.assertIn(
+                    ":new.row_version := nvl(:old.row_version, 1) + 1", trigger_text
+                )
 
     def test_valid_schema_name_orac_ha_is_allowed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:
@@ -821,7 +870,10 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             validate_declared_database_schemas(manifest)
 
     def test_archive_contains_manifest_plugin_json_and_schema_files(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_archive:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins,
+            tempfile.TemporaryDirectory() as temp_archive,
+        ):
             plugins_dir = Path(temp_plugins)
             _write_plugin(
                 plugins_dir,
@@ -840,7 +892,9 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
 
             with tarfile.open(archive.archive_path, "r:gz") as tar:
                 names = set(tar.getnames())
-                manifest_data = json.loads(tar.extractfile("manifest.json").read().decode("utf-8"))
+                manifest_data = json.loads(
+                    tar.extractfile("manifest.json").read().decode("utf-8")
+                )
 
             self.assertIn("plugin.json", names)
             self.assertIn("manifest.json", names)
@@ -848,12 +902,19 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertEqual(manifest_data["plugin_id"], "alpha")
             self.assertEqual(manifest_data["plugin_version"], "1.0.0")
             self.assertEqual(manifest_data["schema_version"], 2)
-            self.assertEqual(manifest_data["database"]["schemas"][0]["schema_name"], "orac_ha")
-            self.assertEqual(manifest_data["payload_checksum"], archive.payload_checksum)
+            self.assertEqual(
+                manifest_data["database"]["schemas"][0]["schema_name"], "orac_ha"
+            )
+            self.assertEqual(
+                manifest_data["payload_checksum"], archive.payload_checksum
+            )
             self.assertEqual(len(archive.archive_checksum), 64)
 
     def test_liquibase_archive_contains_controller_files(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_archive:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins,
+            tempfile.TemporaryDirectory() as temp_archive,
+        ):
             plugins_dir = Path(temp_plugins)
             _write_plugin(
                 plugins_dir,
@@ -922,7 +983,9 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
                 with_schema=True,
                 with_liquibase=True,
             )
-            controller = plugins_dir / "alpha" / "db" / "liquibase" / "pluginController.xml"
+            controller = (
+                plugins_dir / "alpha" / "db" / "liquibase" / "pluginController.xml"
+            )
             controller.write_text(
                 """<?xml version="1.0" encoding="UTF-8"?>
 <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
@@ -976,7 +1039,9 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
                     manifest=manifest,
                 )
 
-            self.assertIn("undeclared plugin-like schema 'orac_beta'", str(exc.exception))
+            self.assertIn(
+                "undeclared plugin-like schema 'orac_beta'", str(exc.exception)
+            )
 
     def test_plugin_security_allows_shared_runtime_api_reference(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:
@@ -1103,7 +1168,9 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
                     manifest=manifest,
                 )
 
-            self.assertIn("DDL targets undeclared schema 'orac_plugin'", str(exc.exception))
+            self.assertIn(
+                "DDL targets undeclared schema 'orac_plugin'", str(exc.exception)
+            )
 
     def test_plugin_security_rejects_public_synonym(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:
@@ -1175,7 +1242,10 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertIn("--controller", commands[-1])
 
     def test_liquibase_deployer_uses_liquibase_runner_for_state_checks(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_archive:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins,
+            tempfile.TemporaryDirectory() as temp_archive,
+        ):
             plugins_dir = Path(temp_plugins)
             _write_plugin(
                 plugins_dir,
@@ -1225,7 +1295,11 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
         self.assertIn("from ORAC_ALPHA.databasechangelog", sql)
 
     def test_deployment_failure_prevents_routing_eligibility(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache, tempfile.TemporaryDirectory() as temp_archive:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins,
+            tempfile.TemporaryDirectory() as temp_cache,
+            tempfile.TemporaryDirectory() as temp_archive,
+        ):
             plugins_dir = Path(temp_plugins)
             _write_plugin(
                 plugins_dir,
@@ -1257,7 +1331,11 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
     def test_failed_post_deployment_verification_prevents_routing_eligibility(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache, tempfile.TemporaryDirectory() as temp_archive:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins,
+            tempfile.TemporaryDirectory() as temp_cache,
+            tempfile.TemporaryDirectory() as temp_archive,
+        ):
             plugins_dir = Path(temp_plugins)
             _write_plugin(
                 plugins_dir,
@@ -1291,7 +1369,11 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertEqual(len(runner.calls), 1)
 
     def test_deployment_success_allows_routing_eligibility(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache, tempfile.TemporaryDirectory() as temp_archive:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins,
+            tempfile.TemporaryDirectory() as temp_cache,
+            tempfile.TemporaryDirectory() as temp_archive,
+        ):
             plugins_dir = Path(temp_plugins)
             _write_plugin(
                 plugins_dir,
@@ -1321,7 +1403,10 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertEqual(len(runner.calls), 1)
 
     def test_deployment_lifecycle_is_logged(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_archive:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins,
+            tempfile.TemporaryDirectory() as temp_archive,
+        ):
             plugins_dir = Path(temp_plugins)
             _write_plugin(
                 plugins_dir,
@@ -1349,7 +1434,9 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertIn("Packaging plugin database payload", log_text)
             self.assertIn("Staging and deploying plugin database archive", log_text)
 
-    def test_docker_runner_syncs_container_deploy_script_before_archive_deploy(self) -> None:
+    def test_docker_runner_syncs_container_deploy_script_before_archive_deploy(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             script_path = temp_path / "deploy-plugin-db.sh"
@@ -1388,7 +1475,11 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertIn("--archive", commands[-1])
 
     def test_existing_successful_checksum_skips_redeployment(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache, tempfile.TemporaryDirectory() as temp_archive:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins,
+            tempfile.TemporaryDirectory() as temp_cache,
+            tempfile.TemporaryDirectory() as temp_archive,
+        ):
             plugins_dir = Path(temp_plugins)
             _write_plugin(
                 plugins_dir,
@@ -1435,7 +1526,10 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
                 events.append("plugin-payload")
                 super().deploy(manifest=manifest, archive=archive)
 
-        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_archive:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins,
+            tempfile.TemporaryDirectory() as temp_archive,
+        ):
             plugins_dir = Path(temp_plugins)
             _write_plugin(
                 plugins_dir,
@@ -1470,8 +1564,14 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertEqual(result.status, "deployed")
             self.assertEqual(events, ["bridge-grants", "plugin-payload"])
 
-    def test_existing_valid_payload_objects_skip_stale_checksum_redeployment(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache, tempfile.TemporaryDirectory() as temp_archive:
+    def test_existing_valid_payload_objects_skip_stale_checksum_redeployment(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins,
+            tempfile.TemporaryDirectory() as temp_cache,
+            tempfile.TemporaryDirectory() as temp_archive,
+        ):
             plugins_dir = Path(temp_plugins)
             _write_plugin(
                 plugins_dir,
@@ -1509,7 +1609,11 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertEqual(len(runner.calls), 0)
 
     def test_liquibase_stale_checksum_runs_update_even_when_objects_exist(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_plugins, tempfile.TemporaryDirectory() as temp_cache, tempfile.TemporaryDirectory() as temp_archive:
+        with (
+            tempfile.TemporaryDirectory() as temp_plugins,
+            tempfile.TemporaryDirectory() as temp_cache,
+            tempfile.TemporaryDirectory() as temp_archive,
+        ):
             plugins_dir = Path(temp_plugins)
             _write_plugin(
                 plugins_dir,
@@ -1517,7 +1621,10 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
                 _manifest(
                     "alpha",
                     database=_database(
-                        deployment={"type": "liquibase", "controller": "db/liquibase/pluginController.xml"}
+                        deployment={
+                            "type": "liquibase",
+                            "controller": "db/liquibase/pluginController.xml",
+                        }
                     ),
                 ),
                 with_schema=True,
@@ -1570,21 +1677,58 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
 
             provisioner.ensure_schemas(manifest)
 
-            statements = [statement for statement, _binds in cursor.statements]
-            self.assertIn(
-                "select count(*) from dba_users where username = :schema_name",
-                statements[0],
-            )
-            self.assertTrue(
-                any(
-                    statement.startswith("create user ORAC_HA identified by")
-                    for statement in statements
-                )
-            )
+            statements = "\n".join(statement for statement, _binds in cursor.statements)
+            self.assertIn("from dba_users where username = 'ORAC_HA'", statements)
+            self.assertIn("create user ORAC_HA identified by", statements)
             self.assertIn("alter user ORAC_HA quota unlimited on users", statements)
             self.assertIn("grant create table to ORAC_HA", statements)
             self.assertTrue(session.committed)
             self.assertTrue(session.closed)
+
+    def test_docker_provisioning_requires_current_incarnation_receipt(self) -> None:
+        from model.plugin_database_deployment import _schema_provisioning_sql
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_plugin(
+                root,
+                "alpha",
+                _manifest("alpha", database=_database()),
+                with_schema=True,
+            )
+            manifest = _discover_one(root)
+            sql = _schema_provisioning_sql(manifest, oracle_pdb="FREEPDB1")
+            self.assertIn("rawtohex(guid)", sql)
+            self.assertIn("removal_id is null", sql)
+            self.assertIn("database_user_id = l_user_id", sql)
+            self.assertIn("database_user_created_on = l_created", sql)
+            self.assertIn("plugin_registry_id = l_registry_id", sql)
+            self.assertIn("disposition = 'OWNED'", sql)
+            self.assertIn("oracle_maintained = 'N' and common = 'NO'", sql)
+            self.assertIn("orac_api.plugin_schema_ownership_tapi.ins(l_receipt)", sql)
+            self.assertLess(
+                sql.index("plugin_schema_ownership_tapi.ins"),
+                sql.index("grant create session"),
+            )
+            self.assertNotIn("drop user", sql.lower())
+
+    def test_default_provisioning_uses_container_administrator(self) -> None:
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_plugin(
+                root,
+                "alpha",
+                _manifest("alpha", database=_database()),
+                with_schema=True,
+            )
+            manifest = _discover_one(root)
+            with patch.object(
+                DockerPluginDatabaseRunner, "provision_schemas"
+            ) as provision:
+                PluginDatabaseSchemaProvisioner().ensure_schemas(manifest)
+            provision.assert_called_once_with(manifest)
 
     def test_schema_provisioner_applies_catalogued_bridge_api_grant(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:
@@ -1619,18 +1763,14 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
 
             provisioner.ensure_schemas(manifest)
 
-            statements = [statement for statement, _binds in cursor.statements]
-            create_index = next(
-                index
-                for index, statement in enumerate(statements)
-                if statement.startswith("create user ORAC_HA")
-            )
+            statements = "\n".join(statement for statement, _binds in cursor.statements)
+            create_index = statements.index("create user ORAC_HA")
             grant_index = statements.index(
                 "grant EXECUTE on "
                 "ORAC_PLUGIN.KNOWLEDGE_SCOPE_VALIDATION_API to ORAC_HA"
             )
             self.assertLess(create_index, grant_index)
-            self.assertNotIn("grant option", statements[grant_index].lower())
+            self.assertNotIn("grant option", statements.lower())
 
             expected = expected_deployment_objects(
                 manifest=manifest,
@@ -1683,9 +1823,8 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             grants = [
                 statement
                 for statement, _binds in cursor.statements
-                if statement
-                == "grant EXECUTE on "
-                "ORAC_PLUGIN.KNOWLEDGE_SCOPE_VALIDATION_API to ORAC_HA"
+                if "grant EXECUTE on ORAC_PLUGIN.KNOWLEDGE_SCOPE_VALIDATION_API to ORAC_HA"
+                in statement
             ]
             self.assertEqual(len(grants), 2)
 
@@ -1716,6 +1855,123 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
                 "missing or invalid",
             ):
                 provisioner.ensure_schemas(manifest)
+
+
+class PluginSchemaRemovalTests(unittest.TestCase):
+    """Verify host cleanup authorization without executing Oracle DDL."""
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        root = Path(self.directory.name)
+        _write_plugin(root, "alpha", _manifest("alpha", database=_database()))
+        self.manifest = _discover_one(root)
+
+    def test_inspection_contains_no_cleanup_or_journal_writes(self) -> None:
+        from model.plugin_database_deployment import _schema_removal_sql
+
+        sql = _schema_removal_sql(
+            self.manifest,
+            oracle_pdb="FREEPDB1",
+            plugin_registry_id=42,
+        ).lower()
+        # Switching PDBs disables DBMS_OUTPUT; markers need re-enabling there.
+        self.assertIn(
+            "alter session set container = freepdb1;\nset serveroutput on size unlimited",
+            sql,
+        )
+        for forbidden in (
+            "drop user",
+            "alter user",
+            "execute immediate",
+            "commit;",
+            "record_disposition(",
+        ):
+            self.assertNotIn(forbidden, sql)
+        for required in (
+            "dba_dependencies",
+            "gv$session",
+            "dba_host_aces",
+            "dba_wallet_aces",
+            "dba_proxies",
+            "dba_scheduler_jobs",
+            "dba_jobs",
+            "dba_role_privs",
+            "dba_col_privs",
+            "database_user_created_on",
+            "oracle_maintained = 'n'",
+        ):
+            self.assertIn(required, sql)
+
+    def test_cleanup_requires_authorization_before_invoking_docker(self) -> None:
+        calls = []
+        runner = DockerPluginDatabaseRunner(
+            command_runner=lambda *a, **kw: calls.append(a)
+        )
+        for overrides in (
+            {"removal_id": "bad"},
+            {"database_identity": ""},
+            {"plugin_registry_id": True},
+            {"keep_schema": "yes"},
+        ):
+            with self.subTest(overrides=overrides):
+                arguments = dict(
+                    plugin_registry_id=42,
+                    removal_id="a" * 32,
+                    database_identity="12:AB:FREEPDB1",
+                    keep_schema=False,
+                )
+                arguments.update(overrides)
+                with self.assertRaises(PluginDatabaseDeploymentError):
+                    runner.clean_up_schemas(self.manifest, **arguments)
+        self.assertEqual(calls, [])
+
+    def test_keep_and_drop_both_require_journal_inventory_and_incarnation(self) -> None:
+        from model.plugin_database_deployment import _schema_removal_sql
+
+        for keep in (True, False):
+            with self.subTest(keep=keep):
+                sql = _schema_removal_sql(
+                    self.manifest,
+                    oracle_pdb="FREEPDB1",
+                    plugin_registry_id=42,
+                    removal_id="a" * 32,
+                    database_identity="12:AB:FREEPDB1",
+                    keep_schema=keep,
+                )
+                self.assertIn("'$.database.schemas[*]'", sql)
+                self.assertIn(
+                    "inventory.receipt_id = l_receipt.schema_ownership_id", sql
+                )
+                self.assertIn("completed_on is null", sql)
+                self.assertIn("Database identity changed", sql)
+                self.assertIn("assert_incarnation('ORAC_HA', l_receipt);", sql)
+                self.assertIn("'alter user ORAC_HA account lock'", sql)
+                self.assertEqual("'drop user ORAC_HA cascade'" in sql, not keep)
+                self.assertEqual("'alter user ORAC_HA quota 0 on users'" in sql, keep)
+                self.assertLess(
+                    sql.index("assert_resources('ORAC_HA')"),
+                    sql.index("execute immediate"),
+                )
+                self.assertLess(
+                    sql.index("execute immediate"), sql.index("record_disposition(")
+                )
+
+    def test_inventory_rejects_wrong_registration_and_missing_success(self) -> None:
+        inventory = dict(
+            plugin_registry_id=99,
+            plugin_id="alpha",
+            database_identity="12:AB:FREEPDB1",
+            schemas=[{"schema_name": "ORAC_HA"}],
+        )
+        for stdout in ("", "ORAC_PLUGIN_SCHEMA_INVENTORY:" + json.dumps(inventory)):
+            runner = DockerPluginDatabaseRunner(
+                command_runner=lambda *a, **kw: subprocess.CompletedProcess(
+                    a[0], 0, stdout=stdout, stderr=""
+                )
+            )
+            with self.assertRaises(PluginDatabaseDeploymentError):
+                runner.schema_removal_inventory(self.manifest, plugin_registry_id=42)
 
 
 if __name__ == "__main__":

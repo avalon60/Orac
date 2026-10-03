@@ -16,7 +16,11 @@ create or replace package body orac_code.restore_recovery_api as
   begin
     for app_rec in (
       select *
-        from orac_api.plugin_apex_apps_v
+        from orac_api.plugin_apex_apps_v app
+       where not exists (
+         select 1 from orac_api.plugin_removals_v removal
+          where removal.plugin_id = app.plugin_id and removal.completed_on is null
+       )
     )
     loop
       l_row := app_rec;
@@ -38,7 +42,12 @@ create or replace package body orac_code.restore_recovery_api as
   begin
     for plugin_rec in (
       select *
-        from orac_api.plugin_registry_v
+        from orac_api.plugin_registry_v plugin
+       where not exists (
+         select 1 from orac_api.plugin_removals_v removal
+          where removal.plugin_registry_id = plugin.plugin_registry_id
+            and removal.completed_on is null
+       )
     )
     loop
       l_row := plugin_rec;

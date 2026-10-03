@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 import sys
 import types
@@ -499,7 +498,7 @@ class OracPluginIntegrationTests(unittest.TestCase):
             "payload": {"messages": []},
         }
 
-        wire = asyncio.run(
+        response = asyncio.run(
             orchestrator._return_terminal_dialogue_response(
                 req_env=req_env,
                 content="I can’t use that knowledge source for this user.",
@@ -517,8 +516,12 @@ class OracPluginIntegrationTests(unittest.TestCase):
             )
         )
 
-        response = json.loads(wire)
-        self.assertEqual(response["meta"]["provenance"], json.loads(json.dumps(provenance)))
+        self.assertEqual(dict(response.provenance), provenance)
+        self.assertIsNotNone(response.message)
+        self.assertEqual(
+            response.message.text,
+            "I can’t use that knowledge source for this user.",
+        )
         self.assertEqual(
             orchestrator.ctx.assistant_turns[0]["meta"]["provenance"],
             provenance,

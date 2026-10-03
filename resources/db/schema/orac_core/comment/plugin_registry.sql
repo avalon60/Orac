@@ -7,6 +7,9 @@ comment on table orac_core.plugin_registry is
 comment on column orac_core.plugin_registry.plugin_id is
   'Stable plugin identifier declared by the plugin manifest.';
 
+comment on column orac_core.plugin_registry.knowledge_scope_id is
+  'Required immutable association to the fresh, matching, non-retired PLUGIN knowledge scope for this installation.';
+
 comment on column orac_core.plugin_registry.installed_path is
   'Active versioned plugin installation directory.';
 

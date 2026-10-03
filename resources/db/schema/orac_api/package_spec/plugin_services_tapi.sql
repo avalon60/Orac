@@ -59,6 +59,7 @@ as
     p_last_error_message in orac_api.plugin_services_v.last_error_message%type default null,
     p_touch_tick         in varchar2 default 'N'
   ) return number;
+  procedure delete_for_removal(p_removal_id in varchar2);
 end plugin_services_tapi;
 /
 --rollback drop package orac_api.plugin_services_tapi;

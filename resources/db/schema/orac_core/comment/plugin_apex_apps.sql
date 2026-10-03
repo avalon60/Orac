@@ -1,5 +1,9 @@
 --liquibase formatted sql
 
+--changeset clive:comment_plugin_apex_apps_installation_receipt context:core labels:core stripComments:false runOnChange:true
+comment on column orac_core.plugin_apex_apps.installation_receipt is
+  'Privileged host attestation of current registration, database/PDB, workspace, application ID and application marker; ordinary registry writers cannot forge ownership.';
+
 --changeset clive:comment_orac_core_comment_plugin_apex_apps context:core labels:core stripComments:false runOnChange:true
 comment on table orac_core.plugin_apex_apps is
   'Stores plugin-supplied APEX application installation and launch metadata.';

@@ -8,10 +8,19 @@
 create or replace trigger orac_core.plgreg_bu
 before update on orac_core.plugin_registry
 for each row
+declare
+  l_removals number;
 begin
-  if nvl(:new.plugin_id, chr(0)) <> nvl(:old.plugin_id, chr(0))
+  select count(*) into l_removals from orac_core.plugin_removals
+   where plugin_registry_id = :old.plugin_registry_id and completed_on is null;
+  if l_removals > 0
   then
-    raise_application_error(-20047, 'Plugin identifier cannot be changed.');
+    raise_application_error(-20073, 'Plugin removal is incomplete; resume removal before changing registration.');
+  end if;
+  if nvl(:new.plugin_id, chr(0)) <> nvl(:old.plugin_id, chr(0))
+     or :new.knowledge_scope_id <> :old.knowledge_scope_id
+  then
+    raise_application_error(-20047, 'Plugin identifier and current knowledge scope cannot be changed.');
   end if;
 
   :new.updated_on := systimestamp;

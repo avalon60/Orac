@@ -1,7 +1,10 @@
 """Trusted confirmation broker for risky plugin execution."""
+
 # Author: Clive Bostock
 # Date: 2026-05-25
 # Description: Tracks Orac-owned confirmation state for plugin actions.
+# Codex-assisted generated/modified.
+# Codex SDK reviewability guardrails followed.
 
 from __future__ import annotations
 
@@ -202,9 +205,67 @@ class PluginConfirmationBroker:
             request=record.request,
         )
 
+    def inspect_confirmation(
+        self,
+        *,
+        confirmation_id: str | None,
+        manifest: PluginManifest,
+        policy: PluginExecutionPolicy,
+    ) -> PluginConfirmationDecision:
+        """Validate confirmation state without consuming its single use."""
+        if not confirmation_id:
+            return PluginConfirmationDecision(
+                False, "missing", "No confirmation supplied."
+            )
+        record = self._records.get(confirmation_id)
+        if record is None:
+            return PluginConfirmationDecision(
+                False,
+                "not_found",
+                "Confirmation id was not issued by Orac.",
+                confirmation_id,
+            )
+        if record.consumed_at is not None:
+            return PluginConfirmationDecision(
+                False,
+                "replayed",
+                "Confirmation has already been consumed.",
+                confirmation_id,
+                record.request,
+            )
+        if self._is_expired(record):
+            return PluginConfirmationDecision(
+                False,
+                "expired",
+                "Confirmation request has expired.",
+                confirmation_id,
+                record.request,
+            )
+        if record.confirmed_at is None:
+            return PluginConfirmationDecision(
+                False,
+                "pending",
+                "Confirmation request has not been approved.",
+                confirmation_id,
+                record.request,
+            )
+        if not self._matches_request(record.request, manifest, policy):
+            return PluginConfirmationDecision(
+                False,
+                "mismatch",
+                "Confirmation does not match the requested action.",
+                confirmation_id,
+                record.request,
+            )
+        return PluginConfirmationDecision(
+            True, "confirmed", None, confirmation_id, record.request
+        )
+
     def _is_expired(self, record: _ConfirmationRecord) -> bool:
         """Return whether a confirmation record is expired."""
-        return self._coerce_utc(self._now()) >= self._coerce_utc(record.request.expires_at)
+        return self._coerce_utc(self._now()) >= self._coerce_utc(
+            record.request.expires_at
+        )
 
     @staticmethod
     def _matches_request(
@@ -216,7 +277,8 @@ class PluginConfirmationBroker:
         return (
             request.plugin_id == manifest.plugin_id
             and request.action_type == str(policy.action_type)
-            and request.capabilities == tuple(policy.capabilities or manifest.capabilities)
+            and request.capabilities
+            == tuple(policy.capabilities or manifest.capabilities)
         )
 
     @staticmethod

@@ -103,6 +103,15 @@ as
     returning row_version
          into p_row.row_version;
   end upd;
+  procedure delete_for_removal(p_removal_id in varchar2) is
+    l_removal orac_api.plugin_removals_v%rowtype;
+  begin
+    select * into l_removal from orac_api.plugin_removals_v
+     where removal_id = p_removal_id and completed_on is null
+       and external_complete_yn = 'Y' and files_complete_yn = 'Y';
+    delete from orac_api.plugin_db_deployments_v
+     where plugin_id = l_removal.plugin_id;
+  end delete_for_removal;
 end plugin_db_deployments_tapi;
 /
 --rollback drop package body orac_api.plugin_db_deployments_tapi

@@ -1,4 +1,5 @@
 """Plugin-owned database payload validation, packaging, and deployment."""
+
 # Author: Clive Bostock
 # Date: 2026-06-03
 # Description: Validates and deploys plugin-local database schema bundles.
@@ -97,8 +98,7 @@ _SCHEMA_QUALIFIED_REFERENCE = re.compile(
     re.IGNORECASE,
 )
 _PLUGIN_BRIDGE_REFERENCE = re.compile(
-    r'(?<![a-z0-9_])"?orac_plugin"?\s*\.\s*'
-    r'"?([a-z][a-z0-9_]*)"?',
+    r'(?<![a-z0-9_])"?orac_plugin"?\s*\.\s*' r'"?([a-z][a-z0-9_]*)"?',
     re.IGNORECASE,
 )
 _PUBLIC_SYNONYM = re.compile(
@@ -285,6 +285,7 @@ class PluginDatabaseSchemaProvisioner:
         project_identifier: str | None = None,
         session_factory: Callable[[], PluginDatabaseSession] | None = None,
         password_factory: Callable[[], str] | None = None,
+        admin_runner: DockerPluginDatabaseRunner | None = None,
         logger: Any | None = None,
     ) -> None:
         """Initialise the plugin schema provisioner.
@@ -298,10 +299,9 @@ class PluginDatabaseSchemaProvisioner:
         self._connection_name = connection_name
         self._project_identifier = project_identifier
         self._session_factory = session_factory
-        self._password_factory = password_factory or (
-            lambda: secrets.token_urlsafe(32)
-        )
+        self._password_factory = password_factory or (lambda: secrets.token_urlsafe(32))
         self._logger = logger
+        self._admin_runner = admin_runner
 
     def ensure_schemas(self, manifest: PluginManifest) -> None:
         """Ensure every declared plugin database schema exists.
@@ -312,17 +312,23 @@ class PluginDatabaseSchemaProvisioner:
         if not manifest.database_schemas:
             return
 
+        if self._session_factory is None:
+            # Real provisioning uses the existing container administrator,
+            # never the application's runtime DSN or name-only adoption.
+            runner = self._admin_runner or DockerPluginDatabaseRunner(
+                logger=self._logger
+            )
+            runner.provision_schemas(manifest)
+            return
+
         session: PluginDatabaseSession | None = None
         try:
             session = self._connect()
             with session.cursor() as cursor:
-                for schema in manifest.database_schemas:
-                    self._ensure_schema(cursor, schema.schema_name)
-                    self._ensure_bridge_api_dependencies(
-                        cursor,
-                        schema.schema_name,
-                        schema.bridge_api_dependencies,
-                    )
+                for block in _schema_provisioning_blocks(
+                    manifest, oracle_pdb="FREEPDB1"
+                ):
+                    cursor.execute(block)
             session.commit()
         except Exception as exc:
             raise PluginDatabaseDeploymentError(
@@ -372,66 +378,6 @@ class PluginDatabaseSchemaProvisioner:
             dsn=dsn,
         )
 
-    def _ensure_schema(self, cursor: Any, schema_name: str) -> None:
-        """Create one plugin schema when missing, then apply required grants."""
-        identifier = _schema_identifier(schema_name)
-        cursor.execute(
-            "select count(*) from dba_users where username = :schema_name",
-            {"schema_name": identifier},
-        )
-        row = cursor.fetchone()
-        exists = bool(row and int(row[0]) > 0)
-        if not exists:
-            self._log_info(f"Creating plugin database schema '{identifier}'.")
-            cursor.execute(
-                f"create user {identifier} identified by "
-                f"{_quoted_oracle_password(self._password_factory())} "
-                "default tablespace users temporary tablespace temp account lock"
-            )
-        else:
-            self._log_info(f"Plugin database schema '{identifier}' already exists.")
-
-        cursor.execute(f"alter user {identifier} quota unlimited on users")
-        for grant in self._SCHEMA_GRANTS:
-            cursor.execute(f"grant {grant} to {identifier}")
-        self._log_info(f"Plugin database schema '{identifier}' grants verified.")
-
-    def _ensure_bridge_api_dependencies(
-        self,
-        cursor: Any,
-        schema_name: str,
-        dependency_ids: tuple[str, ...],
-    ) -> None:
-        """Apply approved host bridge API grants to one plugin schema."""
-        validate_plugin_bridge_api_catalog()
-        grantee = _schema_identifier(schema_name)
-        for dependency_id in dependency_ids:
-            dependency = PLUGIN_BRIDGE_API_CATALOG[dependency_id]
-            cursor.execute(
-                "select count(*) from dba_objects "
-                "where owner = :owner and object_name = :object_name "
-                "and object_type = :object_type and status = 'VALID'",
-                {
-                    "owner": dependency["owner"],
-                    "object_name": dependency["object_name"],
-                    "object_type": dependency["object_type"],
-                },
-            )
-            row = cursor.fetchone()
-            if not row or int(row[0]) != 1:
-                raise PluginDatabaseDeploymentError(
-                    "Plugin bridge API dependency is missing or invalid: "
-                    f"{dependency_id}"
-                )
-            cursor.execute(
-                f"grant {dependency['privilege']} on "
-                f"{dependency['owner']}.{dependency['object_name']} to {grantee}"
-            )
-            self._log_info(
-                f"Plugin bridge API dependency '{dependency_id}' granted to "
-                f"'{grantee}'."
-            )
-
     def _log_info(self, message: str) -> None:
         """Write an info message when a logger is available."""
         if self._logger and hasattr(self._logger, "log_info"):
@@ -480,6 +426,129 @@ class DockerPluginDatabaseRunner:
         self._oracle_pdb = oracle_pdb
         self._command_runner = command_runner or subprocess.run
         self._logger = logger
+
+    def provision_schemas(self, manifest: PluginManifest) -> None:
+        """Provision dedicated users with current-registration ownership receipts.
+
+        Existing users require an exact receipt and dictionary incarnation.
+        A crash between CREATE USER and the receipt fails closed on retry.
+        """
+        validate_declared_database_schemas(manifest)
+        sql = _schema_provisioning_sql(manifest, oracle_pdb=self._oracle_pdb)
+        command = [
+            self._docker_bin,
+            "exec",
+            self._container_name,
+            "bash",
+            "-lc",
+            "sqlplus -L -s / as sysdba <<'SQL'\n" + sql + "\nSQL",
+        ]
+        output = self._run_capture(
+            command, "provision receipted plugin schemas", timeout_seconds=180
+        )
+        if "ORAC_PLUGIN_SCHEMA_RECEIPTS_OK" not in output:
+            raise PluginDatabaseDeploymentError(
+                "Plugin schema provisioning did not confirm ownership receipts."
+            )
+
+    @property
+    def administrative_target(self) -> tuple[str, str]:
+        """Return the host-configured container and PDB for companion cleanup."""
+        return self._container_name, self._oracle_pdb
+
+    def schema_removal_inventory(
+        self,
+        manifest: PluginManifest,
+        *,
+        plugin_registry_id: int,
+        removal_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Read dictionary-backed ownership and reject unsafe cleanup targets.
+
+        This performs no DDL or journal writes. An incomplete removal ID allows
+        inspection of an absent user after an uncertain DROP USER response.
+        """
+        sql = _schema_removal_sql(
+            manifest,
+            oracle_pdb=self._oracle_pdb,
+            plugin_registry_id=plugin_registry_id,
+            removal_id=removal_id,
+        )
+        output = self._run_schema_maintenance(sql, "inspect plugin schema ownership")
+        prefix = "ORAC_PLUGIN_SCHEMA_INVENTORY:"
+        records = [
+            line[len(prefix) :]
+            for line in output.splitlines()
+            if line.startswith(prefix)
+        ]
+        if len(records) != 1 or len(records[0].encode("utf-8")) > 65536:
+            raise PluginDatabaseDeploymentError("Schema inventory was not confirmed.")
+        try:
+            inventory = json.loads(records[0])
+        except (ValueError, TypeError) as exc:
+            raise PluginDatabaseDeploymentError(
+                "Schema inventory was invalid."
+            ) from exc
+        if (
+            not isinstance(inventory, dict)
+            or inventory.get("plugin_registry_id") != plugin_registry_id
+            or inventory.get("plugin_id") != manifest.plugin_id
+            or not isinstance(inventory.get("database_identity"), str)
+            or not inventory["database_identity"]
+            or not isinstance(inventory.get("schemas"), list)
+            or [
+                entry.get("schema_name")
+                for entry in inventory["schemas"]
+                if isinstance(entry, dict)
+            ]
+            != [
+                _schema_identifier(item.schema_name)
+                for item in manifest.database_schemas
+            ]
+        ):
+            raise PluginDatabaseDeploymentError(
+                "Schema inventory identity did not match."
+            )
+        return inventory
+
+    def clean_up_schemas(
+        self,
+        manifest: PluginManifest,
+        *,
+        plugin_registry_id: int,
+        removal_id: str,
+        database_identity: str,
+        keep_schema: bool,
+    ) -> None:
+        """Apply an already journaled disposition after fresh dictionary checks.
+
+        The durable operation, exact current registration, PDB identity and
+        ownership receipts authorize every schema. No caller-supplied username
+        is accepted. Lost replies are recovered by inspecting actual state.
+        """
+        sql = _schema_removal_sql(
+            manifest,
+            oracle_pdb=self._oracle_pdb,
+            plugin_registry_id=plugin_registry_id,
+            removal_id=removal_id,
+            database_identity=database_identity,
+            keep_schema=keep_schema,
+        )
+        output = self._run_schema_maintenance(sql, "clean up receipted plugin schemas")
+        if "ORAC_PLUGIN_SCHEMA_CLEANUP_OK" not in output.splitlines():
+            raise PluginDatabaseDeploymentError("Schema cleanup was not confirmed.")
+
+    def _run_schema_maintenance(self, sql: str, action: str) -> str:
+        """Run host-generated administrative SQL with a bounded wait."""
+        command = [
+            self._docker_bin,
+            "exec",
+            self._container_name,
+            "bash",
+            "-lc",
+            "sqlplus -L -s / as sysdba <<'SQL'\n" + sql + "\nSQL",
+        ]
+        return self._run_capture(command, action, timeout_seconds=180)
 
     def deploy(
         self,
@@ -680,19 +749,27 @@ class DockerPluginDatabaseRunner:
         """Run one Docker command and raise a sanitized deployment error."""
         self._run_capture(command, action)
 
-    def _run_capture(self, command: list[str], action: str) -> str:
+    def _run_capture(
+        self, command: list[str], action: str, *, timeout_seconds: int | None = None
+    ) -> str:
         """Run one Docker command and return combined output."""
+        timeout_options: dict[str, Any] = (
+            {"timeout": timeout_seconds} if timeout_seconds is not None else {}
+        )
         try:
             completed = self._command_runner(
                 command,
                 check=False,
                 text=True,
                 capture_output=True,
+                **timeout_options,
             )
-        except OSError as exc:
+        except subprocess.TimeoutExpired as exc:
             raise PluginDatabaseDeploymentError(
-                f"Unable to {action}: {exc}"
+                f"Timed out while attempting to {action}; verify actual state before retry."
             ) from exc
+        except OSError as exc:
+            raise PluginDatabaseDeploymentError(f"Unable to {action}: {exc}") from exc
 
         if completed.returncode != 0:
             output = "\n".join(
@@ -842,16 +919,20 @@ class PluginDatabaseDeployer:
         """
         self._logger = logger
         self._runner = runner or DockerPluginDatabaseRunner(logger=logger)
-        self._liquibase_runner = liquibase_runner or DockerPluginLiquibaseDatabaseRunner(
-            logger=logger
+        self._liquibase_runner = (
+            liquibase_runner or DockerPluginLiquibaseDatabaseRunner(logger=logger)
         )
-        self._schema_provisioner = (
-            schema_provisioner or PluginDatabaseSchemaProvisioner(logger=logger)
+        self._schema_provisioner = schema_provisioner
+        self._archive_root = (
+            Path(archive_root)
+            if archive_root
+            else Path(tempfile.gettempdir()) / "orac-plugin-db"
         )
-        self._archive_root = Path(archive_root) if archive_root else Path(tempfile.gettempdir()) / "orac-plugin-db"
         self._clock = clock or (lambda: datetime.now(UTC))
 
-    def deploy_if_needed(self, manifest: PluginManifest) -> PluginDatabaseDeploymentResult:
+    def deploy_if_needed(
+        self, manifest: PluginManifest
+    ) -> PluginDatabaseDeploymentResult:
         """Deploy a plugin database payload when required by the manifest.
 
         :param manifest: Plugin manifest to evaluate.
@@ -866,7 +947,9 @@ class PluginDatabaseDeployer:
             )
 
         schema_payload_path = plugin_schema_payload_path(manifest)
-        schema_names = ", ".join(schema.schema_name for schema in manifest.database_schemas)
+        schema_names = ", ".join(
+            schema.schema_name for schema in manifest.database_schemas
+        )
         self._log_info(
             "Plugin database deployment check starting for "
             f"'{manifest.plugin_id}' schemas [{schema_names}]."
@@ -906,7 +989,10 @@ class PluginDatabaseDeployer:
                 "Provisioning plugin database schemas or reconciling grants for "
                 f"'{manifest.plugin_id}'."
             )
-            self._schema_provisioner.ensure_schemas(manifest)
+            provisioner = self._schema_provisioner or PluginDatabaseSchemaProvisioner(
+                admin_runner=self._runner_for_manifest(manifest), logger=self._logger
+            )
+            provisioner.ensure_schemas(manifest)
             if self._is_already_deployed(
                 manifest,
                 payload_checksum,
@@ -1003,7 +1089,9 @@ class PluginDatabaseDeployer:
         output_dir = self._archive_root / manifest.plugin_id / manifest.version
         output_dir.mkdir(parents=True, exist_ok=True)
         archive_path = output_dir / f"{manifest.plugin_id}-{manifest.version}-db.tar.gz"
-        created_timestamp = self._clock().astimezone(UTC).replace(microsecond=0).isoformat()
+        created_timestamp = (
+            self._clock().astimezone(UTC).replace(microsecond=0).isoformat()
+        )
 
         files = _archive_inputs(manifest)
         payload_checksum = _payload_checksum(files, manifest)
@@ -1025,7 +1113,10 @@ class PluginDatabaseDeployer:
                     _add_bytes_to_tar(
                         tar,
                         "manifest.json",
-                        json.dumps(archive_manifest, indent=2, sort_keys=True).encode("utf-8") + b"\n",
+                        json.dumps(archive_manifest, indent=2, sort_keys=True).encode(
+                            "utf-8"
+                        )
+                        + b"\n",
                     )
                     for source_path, archive_name in files:
                         _add_file_to_tar(tar, source_path, archive_name)
@@ -1038,11 +1129,19 @@ class PluginDatabaseDeployer:
             manifest=archive_manifest,
         )
 
-    def _runner_for_manifest(self, manifest: PluginManifest) -> DockerPluginDatabaseRunner:
+    def _runner_for_manifest(
+        self, manifest: PluginManifest
+    ) -> DockerPluginDatabaseRunner:
         """Return the deployment runner for the manifest's declared mechanism."""
         if manifest.database_deployment.deployment_type == "liquibase":
             return self._liquibase_runner
         return self._runner
+
+    def administrative_runner_for(
+        self, manifest: PluginManifest
+    ) -> DockerPluginDatabaseRunner:
+        """Use the same host target for provisioning, inspection and removal."""
+        return self._runner_for_manifest(manifest)
 
     @staticmethod
     def _disabled_result(
@@ -1154,6 +1253,441 @@ class PluginDatabaseDeployer:
         """Write a warning message when a logger is available."""
         if self._logger and hasattr(self._logger, "log_warning"):
             self._logger.log_warning(message)
+
+
+def _schema_removal_sql(
+    manifest: PluginManifest,
+    *,
+    oracle_pdb: str,
+    plugin_registry_id: int,
+    removal_id: str | None = None,
+    database_identity: str | None = None,
+    keep_schema: bool | None = None,
+) -> str:
+    """Build fail-closed inspection or cleanup for manifest-declared schemas.
+
+    Cleanup additionally requires the durable operation's immutable inventory.
+    Dictionary queries deliberately reject unmanaged autonomous resources;
+    v1 does not guess how to stop or transfer them.
+    """
+    validate_declared_database_schemas(manifest)
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", manifest.plugin_id):
+        raise PluginDatabaseValidationError(
+            "Invalid plugin identity for schema cleanup."
+        )
+    if type(plugin_registry_id) is not int or plugin_registry_id <= 0:
+        raise PluginDatabaseValidationError("A current registration ID is required.")
+    if removal_id is not None and not re.fullmatch(r"[a-fA-F0-9]{32}", removal_id):
+        raise PluginDatabaseValidationError("Invalid removal operation ID.")
+    mutate = keep_schema is not None
+    if mutate and (
+        not removal_id or not database_identity or type(keep_schema) is not bool
+    ):
+        raise PluginDatabaseValidationError(
+            "Cleanup requires durable removal authorization."
+        )
+    if database_identity is not None and (
+        len(database_identity) > 256
+        or "\n" in database_identity
+        or "\r" in database_identity
+    ):
+        raise PluginDatabaseValidationError("Invalid database identity.")
+    pdb = _schema_identifier(oracle_pdb)
+    plugin = _sql_literal(manifest.plugin_id)
+    operation = _sql_literal(removal_id) if removal_id else "null"
+    expected_database = _sql_literal(database_identity) if database_identity else "null"
+    disposition = "RETAINED" if keep_schema else "DROPPED"
+    statements: list[str] = []
+    for schema in manifest.database_schemas:
+        name = _schema_identifier(schema.schema_name)
+        if name in {"SYS", "SYSTEM", "PDBADMIN", "PUBLIC"} or name.startswith(
+            ("C##", "APEX_", "FLOWS_", "ORDS_")
+        ):
+            raise PluginDatabaseValidationError("Protected schema cannot be removed.")
+        bridge_conditions = ["1 = 0"]
+        for dependency_id in schema.bridge_api_dependencies:
+            dependency = PLUGIN_BRIDGE_API_CATALOG[dependency_id]
+            bridge_conditions.append(
+                f"(owner = '{dependency['owner']}' and table_name = '{dependency['object_name']}' "
+                f"and privilege = '{dependency['privilege']}' and grantable = 'NO')"
+            )
+        cleanup = ""
+        if mutate:
+            cleanup = f"""
+  select count(*) into l_count
+    from json_table(l_operation.resource_inventory, '$.database.schemas[*]'
+      columns (receipt_id number path '$.receipt_id',
+               schema_name varchar2(128) path '$.schema_name')) inventory
+   where inventory.receipt_id = l_receipt.schema_ownership_id
+     and inventory.schema_name = '{name}';
+  if l_count <> 1 then
+    raise_application_error(-20079, 'Schema receipt is absent from authorized inventory.');
+  end if;
+  if l_present = 1 and l_receipt.disposition = 'OWNED' then
+    -- Every DDL commits implicitly. Revalidate incarnation before each call.
+    assert_incarnation('{name}', l_receipt);
+    execute immediate 'alter user {name} account lock';
+    assert_resources('{name}');
+    for item in (select grantee, table_name, privilege from dba_tab_privs
+                  where owner = '{name}' and grantee <> '{name}') loop
+      assert_incarnation('{name}', l_receipt);
+      execute immediate 'revoke ' || item.privilege || ' on {name}.' ||
+        dbms_assert.enquote_name(item.table_name, false) || ' from ' ||
+        dbms_assert.enquote_name(item.grantee, false);
+    end loop;
+    for item in (select owner, table_name, privilege from dba_tab_privs
+                  where grantee = '{name}' and owner <> '{name}') loop
+      assert_incarnation('{name}', l_receipt);
+      execute immediate 'revoke ' || item.privilege || ' on ' ||
+        dbms_assert.enquote_name(item.owner, false) || '.' ||
+        dbms_assert.enquote_name(item.table_name, false) || ' from {name}';
+    end loop;
+    {"" if not keep_schema else f'''for item in (select privilege from dba_sys_privs where grantee = '{name}') loop
+      assert_incarnation('{name}', l_receipt);
+      execute immediate 'revoke ' || item.privilege || ' from {name}';
+    end loop;'''}
+    assert_incarnation('{name}', l_receipt);
+    assert_resources('{name}');
+    {f"execute immediate 'alter user {name} quota 0 on users';" if keep_schema else f"execute immediate 'drop user {name} cascade';"}
+  end if;
+  orac_api.plugin_schema_ownership_tapi.record_disposition(
+    l_receipt.schema_ownership_id, {operation}, '{disposition}');
+  commit;
+"""
+        statements.append(f"""
+  select count(*) into l_count
+    from orac_api.plugin_registry_v registry,
+         json_table(registry.database_schemas_summary, '$[*]'
+           columns (schema_name varchar2(128) path '$')) declared
+   where registry.plugin_registry_id = {plugin_registry_id}
+     and upper(declared.schema_name) = '{name}';
+  if l_count <> 1 then
+    raise_application_error(-20079, 'Schema differs from current registration.');
+  end if;
+  select count(*) into l_count from orac_api.plugin_schema_ownership_v
+   where plugin_registry_id = {plugin_registry_id} and plugin_id = {plugin}
+     and schema_name = '{name}';
+  if l_count = 0 then
+    select count(*) into l_present from dba_users where username = '{name}';
+    if l_present <> 0 then
+      raise_application_error(-20079, 'Unreceipted existing schema cannot be adopted or removed.');
+    end if;
+    {f'''select count(*) into l_count
+      from json_table(l_operation.resource_inventory, '$.database.schemas[*]'
+        columns (schema_name varchar2(128) path '$.schema_name',
+                 state varchar2(32) path '$.state')) inventory
+     where schema_name = '{name}' and state = 'NOT_PROVISIONED';
+    if l_count <> 1 then
+      raise_application_error(-20079, 'Unprovisioned schema differs from authorized inventory.');
+    end if;''' if mutate else ''}
+    l_item := json_object_t();
+    l_item.put('schema_name', '{name}');
+    l_item.put('state', 'NOT_PROVISIONED');
+    l_item.put('present', 0);
+    l_item.put_null('receipt_id');
+    l_schemas.append(l_item);
+  else
+  select * into l_receipt from orac_api.plugin_schema_ownership_v
+   where plugin_registry_id = {plugin_registry_id} and plugin_id = {plugin}
+     and database_identity = l_database_identity and schema_name = '{name}'
+     and (disposition = 'OWNED' or removal_id = {operation});
+  select count(*) into l_present from dba_users where username = '{name}';
+  if l_present = 1 then
+    if l_receipt.disposition = 'DROPPED' then
+      raise_application_error(-20079, 'A removed schema name is occupied again.');
+    end if;
+    assert_incarnation('{name}', l_receipt);
+    assert_resources('{name}');
+    if l_receipt.disposition = 'RETAINED' then
+      select count(*) into l_count from dba_users
+       where username = '{name}' and account_status like '%LOCKED%';
+      if l_count <> 1 then
+        raise_application_error(-20079, 'Retained schema is no longer locked.');
+      end if;
+      select sum(grants_count) into l_count from (
+        select count(*) grants_count from dba_tab_privs
+         where owner = '{name}' or grantee = '{name}'
+        union all select count(*) from dba_sys_privs where grantee = '{name}'
+      );
+      if l_count <> 0 then
+        raise_application_error(-20079, 'Retained schema has been reconnected.');
+      end if;
+    end if;
+    select count(*) into l_count from dba_tab_privs
+     where grantee = '{name}' and owner <> '{name}'
+       and not ({' or '.join(bridge_conditions)});
+    if l_count <> 0 then
+      raise_application_error(-20079, 'Unexpected incoming object grants block cleanup.');
+    end if;
+  elsif {operation} is null or l_operation.schema_disposition <> 'DROP'
+        or l_receipt.disposition = 'RETAINED' then
+    raise_application_error(-20079, 'Missing schema requires an authorized DROP recovery.');
+  end if;
+  l_item := json_object_t();
+  l_item.put('schema_name', '{name}');
+  l_item.put('receipt_id', l_receipt.schema_ownership_id);
+  l_item.put('database_user_id', l_receipt.database_user_id);
+  l_item.put('database_user_created_on', to_char(l_receipt.database_user_created_on, 'YYYY-MM-DD"T"HH24:MI:SS'));
+  l_item.put('disposition', l_receipt.disposition);
+  l_item.put('present', l_present);
+  l_schemas.append(l_item);
+  {cleanup}
+  end if;
+""")
+    allowed_privileges = ", ".join(
+        _sql_literal(item.upper())
+        for item in PluginDatabaseSchemaProvisioner._SCHEMA_GRANTS
+    )
+    return f"""whenever sqlerror exit failure rollback
+whenever oserror exit failure rollback
+set define off echo off feedback off serveroutput on size unlimited linesize 32767
+alter session set container = {pdb};
+set serveroutput on size unlimited
+declare
+  l_database_identity varchar2(256 char);
+  l_count number;
+  l_present number;
+  l_receipt orac_api.plugin_schema_ownership_v%rowtype;
+  l_operation orac_api.plugin_removals_v%rowtype;
+  l_result json_object_t := json_object_t();
+  l_schemas json_array_t := json_array_t();
+  l_deployments json_array_t := json_array_t();
+  l_item json_object_t;
+
+  procedure assert_incarnation(p_name varchar2,
+    p_receipt orac_api.plugin_schema_ownership_v%rowtype) is
+    l_matches number;
+  begin
+    select count(*) into l_matches from dba_users
+     where username = p_name and user_id = p_receipt.database_user_id
+       and created = p_receipt.database_user_created_on
+       and oracle_maintained = 'N' and common = 'NO';
+    if l_matches <> 1 then
+      raise_application_error(-20079, 'Schema ownership incarnation changed.');
+    end if;
+  end;
+
+  procedure assert_resources(p_name varchar2) is
+    l_blockers number;
+  begin
+    select sum(blockers) into l_blockers from (
+      select count(*) blockers from gv$session where username = p_name
+      union all select count(*) from dba_constraints c join dba_constraints parent
+        on parent.owner = c.r_owner and parent.constraint_name = c.r_constraint_name
+        where c.constraint_type = 'R' and parent.owner = p_name and c.owner <> p_name
+      union all select count(*) from dba_dependencies
+        where referenced_owner = p_name and owner <> p_name
+      union all select count(*) from dba_synonyms
+        where table_owner = p_name and owner <> p_name
+      union all select count(*) from dba_scheduler_jobs where owner = p_name
+      union all select count(*) from dba_scheduler_programs where owner = p_name
+      union all select count(*) from dba_scheduler_schedules where owner = p_name
+      union all select count(*) from dba_jobs where schema_user = p_name or log_user = p_name
+      union all select count(*) from dba_queue_tables where owner = p_name
+      union all select count(*) from dba_db_links where owner = p_name
+      union all select count(*) from dba_host_aces where principal = p_name
+      union all select count(*) from dba_wallet_aces where principal = p_name
+      union all select count(*) from dba_proxies where proxy = p_name or client = p_name
+      union all select count(*) from dba_role_privs where grantee = p_name
+      union all select count(*) from dba_sys_privs where grantee = p_name
+        and (privilege not in ({allowed_privileges}) or admin_option <> 'NO')
+      union all select count(*) from dba_col_privs where owner = p_name or grantee = p_name
+      union all select count(*) from dba_tab_privs where owner = p_name and grantee <> p_name
+        and (grantee not in ('ORAC_PLUGIN', 'ORAC_APX_PUB') or grantable <> 'NO'
+             or privilege not in ('SELECT', 'INSERT', 'UPDATE', 'DELETE', 'EXECUTE', 'REFERENCES', 'READ'))
+    );
+    if l_blockers <> 0 then
+      raise_application_error(-20079, 'Sessions, dependencies or unmanaged resources block schema cleanup.');
+    end if;
+  end;
+begin
+  if sys_context('userenv', 'session_user') <> 'SYS' then
+    raise_application_error(-20078, 'Privileged host cleanup is required.');
+  end if;
+  select to_char(dbid) || ':' || rawtohex(guid) || ':' || name
+    into l_database_identity from v$pdbs
+   where con_id = to_number(sys_context('userenv', 'con_id'))
+     and name = '{pdb}' and open_mode = 'READ WRITE';
+  if {expected_database} is not null and l_database_identity <> {expected_database} then
+    raise_application_error(-20079, 'Database identity changed.');
+  end if;
+  select count(*) into l_count from orac_code.plugin_registry_v
+   where plugin_id = {plugin} and plugin_registry_id = {plugin_registry_id}
+     and (removal_id is null and {operation} is null or removal_id = {operation});
+  if l_count <> 1 then
+    raise_application_error(-20079, 'Current registration or removal fence changed.');
+  end if;
+  select count(*) into l_count
+    from orac_api.plugin_registry_v registry,
+         json_table(registry.database_schemas_summary, '$[*]'
+           columns (schema_name varchar2(128) path '$')) declared
+   where registry.plugin_registry_id = {plugin_registry_id};
+  if l_count <> {len(manifest.database_schemas)} then
+    raise_application_error(-20079, 'Declared schema inventory changed.');
+  end if;
+  if {operation} is not null then
+    select * into l_operation from orac_api.plugin_removals_v
+     where removal_id = {operation} and plugin_id = {plugin}
+       and plugin_registry_id = {plugin_registry_id}
+       and database_identity = l_database_identity and completed_on is null;
+    {f'''if l_operation.schema_disposition <> '{"KEEP" if keep_schema else "DROP"}' then
+      raise_application_error(-20079, 'Schema disposition differs from authorization.');
+    end if;''' if mutate else ''}
+  end if;
+  {chr(10).join(statements)}
+  l_result.put('plugin_id', {plugin});
+  l_result.put('plugin_registry_id', {plugin_registry_id});
+  l_result.put('database_identity', l_database_identity);
+  l_result.put('schemas', l_schemas);
+  for deployment in (
+    select schema_name, plugin_version, deployment_checksum, deployment_status
+      from orac_api.plugin_db_deployments_v where plugin_id = {plugin}
+     order by plugin_db_deployment_id
+  ) loop
+    l_item := json_object_t();
+    l_item.put('schema_name', deployment.schema_name);
+    l_item.put('plugin_version', deployment.plugin_version);
+    l_item.put('deployment_checksum', deployment.deployment_checksum);
+    l_item.put('deployment_status', deployment.deployment_status);
+    l_deployments.append(l_item);
+  end loop;
+  l_result.put('deployments', l_deployments);
+  dbms_output.put_line('ORAC_PLUGIN_SCHEMA_INVENTORY:' || l_result.to_string());
+end;
+/
+{"prompt ORAC_PLUGIN_SCHEMA_CLEANUP_OK" if mutate else ""}
+exit success
+"""
+
+
+def _schema_provisioning_sql(manifest: PluginManifest, *, oracle_pdb: str) -> str:
+    """Wrap receipt-guarded provisioning blocks in the administrative runner."""
+    pdb = _schema_identifier(oracle_pdb)
+    blocks = _schema_provisioning_blocks(manifest, oracle_pdb=pdb)
+    return "\n".join(
+        [
+            "whenever sqlerror exit failure rollback",
+            "whenever oserror exit failure rollback",
+            "set define off echo off feedback off serveroutput on",
+            f"alter session set container = {pdb};",
+            "set serveroutput on size unlimited",
+            *[block + "\n/" for block in blocks],
+            "prompt ORAC_PLUGIN_SCHEMA_RECEIPTS_OK",
+            "exit success",
+        ]
+    )
+
+
+def _schema_provisioning_blocks(
+    manifest: PluginManifest, *, oracle_pdb: str
+) -> list[str]:
+    """Build administrative provisioning with dictionary-backed ownership.
+
+    The only identifiers come from a validated manifest and the host bridge
+    catalogue. The password is generated inside Oracle and is never returned.
+    """
+    validate_declared_database_schemas(manifest)
+    validate_plugin_bridge_api_catalog()
+    pdb = _schema_identifier(oracle_pdb)
+    plugin = _sql_literal(manifest.plugin_id)
+    blocks: list[str] = []
+    for schema in manifest.database_schemas:
+        name = _schema_identifier(schema.schema_name)
+        if name in {"SYS", "SYSTEM", "PDBADMIN", "PUBLIC"} or name.startswith(
+            ("C##", "APEX_", "FLOWS_", "ORDS_")
+        ):
+            raise PluginDatabaseValidationError(
+                "Protected schema cannot be plugin-owned."
+            )
+        grants = [
+            f"execute immediate 'alter user {name} quota unlimited on users';",
+            *[
+                f"execute immediate 'grant {privilege} to {name}';"
+                for privilege in PluginDatabaseSchemaProvisioner._SCHEMA_GRANTS
+            ],
+        ]
+        for dependency_id in schema.bridge_api_dependencies:
+            dependency = PLUGIN_BRIDGE_API_CATALOG[dependency_id]
+            owner = dependency["owner"]
+            object_name = dependency["object_name"]
+            object_type = dependency["object_type"]
+            grants.append(f"""
+  select count(*) into l_count from dba_objects
+   where owner = '{owner}' and object_name = '{object_name}'
+     and object_type = '{object_type}' and status = 'VALID';
+  if l_count <> 1 then
+    raise_application_error(-20079, 'Required host bridge is missing or invalid.');
+  end if;
+  execute immediate 'grant {dependency['privilege']} on {owner}.{object_name} to {name}';
+""")
+        blocks.append(f"""
+declare
+  l_registry_id number;
+  l_database_identity varchar2(256 char);
+  l_user_id number;
+  l_created date;
+  l_count number;
+  l_receipt orac_api.plugin_schema_ownership_v%rowtype;
+begin
+  if sys_context('userenv', 'session_user') <> 'SYS' then
+    raise_application_error(-20078, 'Privileged host provisioning is required.');
+  end if;
+  select to_char(dbid) || ':' || rawtohex(guid) || ':' || name
+    into l_database_identity from v$pdbs
+   where con_id = to_number(sys_context('userenv', 'con_id'))
+     and name = '{pdb}' and open_mode = 'READ WRITE';
+  select plugin_registry_id into l_registry_id
+    from orac_code.plugin_registry_v
+   where plugin_id = {plugin} and removal_id is null;
+  select count(*) into l_count
+    from orac_api.plugin_registry_v registry,
+         json_table(registry.database_schemas_summary, '$[*]'
+           columns (schema_name varchar2(128) path '$')) declared
+   where registry.plugin_registry_id = l_registry_id
+     and upper(declared.schema_name) = '{name}';
+  if l_count <> 1 then
+    raise_application_error(-20079, 'Current registration does not declare this schema.');
+  end if;
+  select count(*) into l_count from dba_users where username = '{name}';
+  if l_count = 0 then
+    select count(*) into l_count from orac_api.plugin_schema_ownership_v
+     where database_identity = l_database_identity and schema_name = '{name}'
+       and disposition in ('OWNED', 'RETAINED');
+    if l_count <> 0 then
+      raise_application_error(-20079, 'Missing owned or retained schema requires recovery.');
+    end if;
+    execute immediate 'create user {name} identified by "' ||
+      dbms_random.string('x', 40) || '" default tablespace users temporary tablespace temp account lock';
+    select user_id, created into l_user_id, l_created from dba_users
+     where username = '{name}' and oracle_maintained = 'N' and common = 'NO';
+    l_receipt.plugin_id := {plugin};
+    l_receipt.plugin_registry_id := l_registry_id;
+    l_receipt.database_identity := l_database_identity;
+    l_receipt.schema_name := '{name}';
+    l_receipt.database_user_id := l_user_id;
+    l_receipt.database_user_created_on := l_created;
+    select json_object('method' value 'HOST_CREATE_USER',
+                       'actor' value 'SYS',
+                       'schema' value '{name}' returning json)
+      into l_receipt.provisioning_evidence from dual;
+    orac_api.plugin_schema_ownership_tapi.ins(l_receipt);
+    commit;
+  else
+    select user_id, created into l_user_id, l_created from dba_users
+     where username = '{name}' and oracle_maintained = 'N' and common = 'NO';
+    select count(*) into l_count from orac_api.plugin_schema_ownership_v
+     where plugin_id = {plugin} and plugin_registry_id = l_registry_id
+       and database_identity = l_database_identity and schema_name = '{name}'
+       and database_user_id = l_user_id and database_user_created_on = l_created
+       and disposition = 'OWNED';
+    if l_count <> 1 then
+      raise_application_error(-20079, 'Existing schema has no matching current ownership receipt.');
+    end if;
+  end if;
+  {chr(10).join(grants)}
+end;
+""")
+    return blocks
 
 
 def plugin_schema_payload_path(manifest: PluginManifest) -> Path:
@@ -1452,20 +1986,14 @@ def _validate_plugin_sql_file(
     for match in _DDL_OWNER_STATEMENT.finditer(text):
         owner = match.group(1).lower()
         if owner not in declared_schemas:
-            violations.append(
-                f"{path}: DDL targets undeclared schema '{owner}'"
-            )
+            violations.append(f"{path}: DDL targets undeclared schema '{owner}'")
     for match in _GRANT_STATEMENT.finditer(text):
         owner = match.group(2).lower()
         grantee = match.group(4).lower()
         if owner not in declared_schemas:
-            violations.append(
-                f"{path}: grant source schema '{owner}' is not declared"
-            )
+            violations.append(f"{path}: grant source schema '{owner}' is not declared")
         if grantee not in declared_schemas and grantee not in _ALLOWED_PLUGIN_GRANTEES:
-            violations.append(
-                f"{path}: grant target schema '{grantee}' is not allowed"
-            )
+            violations.append(f"{path}: grant target schema '{grantee}' is not allowed")
     for match in _SCHEMA_QUALIFIED_REFERENCE.finditer(text):
         schema_name = match.group(1).lower()
         if (
@@ -1480,7 +2008,9 @@ def _validate_plugin_sql_file(
     return sorted(set(violations))
 
 
-def scan_protected_schema_references(schema_payload_path: Path) -> list[ProtectedSchemaReference]:
+def scan_protected_schema_references(
+    schema_payload_path: Path,
+) -> list[ProtectedSchemaReference]:
     """Return all protected Orac schema references in a plugin schema payload."""
     if not schema_payload_path.exists():
         return []
@@ -1492,7 +2022,9 @@ def scan_protected_schema_references(schema_payload_path: Path) -> list[Protecte
         try:
             lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError as exc:
-            raise PluginDatabaseValidationError(f"Unable to read plugin DDL {path}: {exc}") from exc
+            raise PluginDatabaseValidationError(
+                f"Unable to read plugin DDL {path}: {exc}"
+            ) from exc
         for line_number, line_text in enumerate(lines, start=1):
             for match in _PROTECTED_SCHEMA_REFERENCE.finditer(line_text):
                 violations.append(
@@ -1546,9 +2078,7 @@ def _archive_manifest(
                     "purpose": schema.purpose,
                     "managed_by": schema.managed_by,
                     "minimum_version": schema.minimum_version,
-                    "bridge_api_dependencies": list(
-                        schema.bridge_api_dependencies
-                    ),
+                    "bridge_api_dependencies": list(schema.bridge_api_dependencies),
                     "version_check": {"enabled": schema.version_check.enabled},
                     "backup": (
                         None
@@ -1898,7 +2428,9 @@ def _extract_expected_columns(
         for column_name in match.group(1).split(","):
             normalized_name = column_name.strip()
             if re.fullmatch(r"[a-z][a-z0-9_$#]*", normalized_name, re.IGNORECASE):
-                columns.add((owner.upper(), object_name.upper(), normalized_name.upper()))
+                columns.add(
+                    (owner.upper(), object_name.upper(), normalized_name.upper())
+                )
     return columns
 
 
@@ -1964,7 +2496,9 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _add_file_to_tar(tar: tarfile.TarFile, source_path: Path, archive_name: str) -> None:
+def _add_file_to_tar(
+    tar: tarfile.TarFile, source_path: Path, archive_name: str
+) -> None:
     """Add a file to a tar archive with deterministic metadata."""
     data = source_path.read_bytes()
     _add_bytes_to_tar(tar, archive_name, data)

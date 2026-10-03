@@ -7,6 +7,7 @@
 
 create or replace view orac_code.plugin_registry_v as
 select plugin_registry_id
+     , knowledge_scope_id
      , plugin_id
      , plugin_name
      , plugin_version
@@ -33,6 +34,10 @@ select plugin_registry_id
      , last_error_code
      , last_error_message
      , row_version
-  from orac_api.plugin_registry_v;
+     , database_schemas_summary
+     , (select removal.removal_id from orac_api.plugin_removals_v removal
+         where removal.plugin_registry_id = plugin.plugin_registry_id
+           and removal.completed_on is null) removal_id
+  from orac_api.plugin_registry_v plugin;
 
 --rollback drop view orac_code.plugin_registry_v;

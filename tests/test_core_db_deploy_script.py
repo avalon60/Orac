@@ -99,6 +99,19 @@ def _run_script(
 class CoreDbDeployScriptTests(unittest.TestCase):
     """Tests core Liquibase deployment wrapper behaviour."""
 
+    def test_connection_failure_cannot_report_validation_success(self) -> None:
+        """SQLcl may return zero after a connection error without running Liquibase."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            env = _write_mock_environment(Path(temp_dir))
+            env["SQLCL_OUTPUT"] = (
+                "Connection failed\n"
+                "  Error Message = ORA-12514: Service unavailable"
+            )
+            result = _run_script(env, "--validate")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("reported an error", result.stdout + result.stderr)
+            self.assertNotIn("validate completed", result.stdout)
+
     def test_uses_non_sys_connection_and_runtime_properties(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

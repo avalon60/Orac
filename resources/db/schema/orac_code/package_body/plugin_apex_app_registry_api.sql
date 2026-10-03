@@ -48,7 +48,7 @@ create or replace package body orac_code.plugin_apex_app_registry_api as
     l_row.parsing_schema := p_parsing_schema;
     l_row.app_export := p_app_export;
     l_row.declared_application_id := p_declared_application_id;
-    l_row.installed_app_id := p_installed_app_id;
+    l_row.installed_app_id := coalesce(p_installed_app_id, l_row.installed_app_id);
     l_row.entry_page_id := p_entry_page_id;
     l_row.label := p_label;
     l_row.description := p_description;

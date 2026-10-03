@@ -226,7 +226,7 @@ liquibase_log_has_error() {
   local log_file="$1"
 
   grep -Eiq \
-    "^(ERROR:|An error has occurred:|Processing has failed)|Option not recognized|Unexpected token|can not be used for Liquibase" \
+    "^(ERROR:|Connection failed|An error has occurred:|Processing has failed)|Error Message = ORA-[0-9]+|Option not recognized|Unexpected token|can not be used for Liquibase" \
     "${log_file}"
 }
 

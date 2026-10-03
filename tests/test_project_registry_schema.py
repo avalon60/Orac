@@ -1,4 +1,5 @@
 """Static checks for the core project registry and ingestion target LOV."""
+
 # Author: Clive Bostock
 # Date: 11-Jul-2026
 # Description: Verifies project registry schema assets and supported LOV access.
@@ -7,7 +8,6 @@ from __future__ import annotations
 
 from pathlib import Path
 import unittest
-
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -93,20 +93,20 @@ class ProjectRegistrySchemaTests(unittest.TestCase):
 
         registry_text = "\n".join(registry_sql)
         self.assertNotIn("select distinct target_scope_key", registry_text)
-        self.assertNotIn("insert into orac_api.project_registry_v select", registry_text)
+        self.assertNotIn(
+            "insert into orac_api.project_registry_v select", registry_text
+        )
         self.assertNotIn("insert into orac_core.project_registry select", registry_text)
         self.assertNotIn("merge into orac_api.project_registry_v", registry_text)
 
-    def test_orac_docs_scope_migration_uses_the_api_layer(self) -> None:
-        migration = self._read(
-            "resources/db/schema/orac_code/post_install/orac_docs_scope.sql"
-        ).lower()
-
-        self.assertIn("update orac_api.knowledge_source_objects_v", migration)
-        self.assertIn("parent_source_reference like 'orac_docs:%'", migration)
-        self.assertIn("project.project_code = 'orac_core'", migration)
-        self.assertIn("plugin.plugin_id = 'drop_box'", migration)
-        self.assertNotIn("update orac_core.knowledge_source_objects", migration)
+    def test_clean_build_does_not_reparent_orac_docs_sources(self) -> None:
+        """Project setup must not move historical plugin-owned lineage."""
+        self.assertFalse(
+            (
+                PROJECT_ROOT
+                / "resources/db/schema/orac_code/post_install/orac_docs_scope.sql"
+            ).exists()
+        )
 
     def test_project_registry_api_and_code_views_use_supported_layers(self) -> None:
         api_view = self._read(

@@ -96,9 +96,7 @@ def _apex_page_sections(export_sql: str) -> dict[int, str]:
     }
 
 
-def _apex_component_block(
-    pattern: re.Pattern[str], page_sql: str, marker: str
-) -> str:
+def _apex_component_block(pattern: re.Pattern[str], page_sql: str, marker: str) -> str:
     """Return the APEX component block containing the requested marker."""
     for match in pattern.finditer(page_sql):
         component_block = match.group(1)
@@ -137,6 +135,34 @@ def _apex_prompt_block(export_sql: str, prompt: str) -> str:
 
 class PluginApexAppSchemaTests(unittest.TestCase):
     """Verify static schema assets for plugin-supplied APEX app registration."""
+
+    def test_plugin_execution_authorization_is_uncached_and_checks_lifecycle(
+        self,
+    ) -> None:
+        body = (
+            PROJECT_ROOT
+            / "resources/db/schema/orac_code/package_body/plugin_apex_app_auth_api.sql"
+        ).read_text()
+        availability = body.split("function plugin_is_available(", 1)[1].split(
+            "end plugin_is_available;", 1
+        )[0]
+        for predicate in (
+            "plugin.removal_id is null",
+            "plugin.enabled = 'Y'",
+            "app.installed_app_id = p_application_id",
+            "plugin.readiness_status = 'success'",
+            "return 0;",
+        ):
+            self.assertIn(predicate, availability)
+        for plugin, filename in (
+            ("home_assistant", "f10010.sql"),
+            ("drop_box", "f10020.sql"),
+        ):
+            export = (PROJECT_ROOT / "plugins" / plugin / "apex" / filename).read_text()
+            self.assertIn(f"plugin_is_available(''{plugin}'', :APP_ID)", export)
+            self.assertIn(",p_caching=>'NOCACHE'", export)
+        core = (APEX_ROOT / "orac_apps/f1043.sql").read_text()
+        self.assertNotIn("plugin_is_available(", core)
 
     def test_core_registry_assets_are_declared(self) -> None:
         expected = (
@@ -235,7 +261,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("enabled = 'Y'", view_sql)
         self.assertIn("install_status = 'installed'", view_sql)
         self.assertIn("installed_app_id is not null", view_sql)
-        self.assertIn("left join orac_code.plugin_registry_v plugin", view_sql)
+        self.assertIn("join orac_code.plugin_registry_v plugin", view_sql)
+        self.assertNotIn("left join orac_code.plugin_registry_v plugin", view_sql)
+        self.assertIn("plugin.enabled = 'Y'", view_sql)
+        self.assertIn("plugin.removal_id is null", view_sql)
         self.assertIn(
             "coalesce(app.icon, plugin.ui_icon_class, 'fa fa-plug') as icon",
             view_sql,
@@ -469,14 +498,10 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             "p_db_column_name=>'plugin_app_link'",
         )
 
-        self.assertIn(
-            "from orac_code.plugin_apex_app_menu_visible_v", page_one
-        )
+        self.assertIn("from orac_code.plugin_apex_app_menu_visible_v", page_one)
         self.assertIn("from orac_code.plugin_service_status_v", page_one)
         self.assertIn("when app.visible_app_count = 1", page_one)
-        self.assertIn(
-            "and app.card_link is not null then app.card_link", page_one
-        )
+        self.assertIn("and app.card_link is not null then app.card_link", page_one)
         self.assertIn("end as plugin_app_link", page_one)
         self.assertIn("left join visible_apps app", page_one)
         self.assertIn("and app.app_rank = 1", page_one)
@@ -490,9 +515,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         )
         self.assertNotIn("p_column_link=>", plugin_column)
         self.assertNotIn("p_column_linktext=>", plugin_column)
-        self.assertIn(
-            "p_display_text_as=>'without_modification'", plugin_column
-        )
+        self.assertIn("p_display_text_as=>'without_modification'", plugin_column)
         self.assertIn("p_display_text_as=>'hidden_escape_sc'", link_column)
 
     def test_f1043_plugin_navigation_page_preserves_launcher_cards(self) -> None:
@@ -960,9 +983,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         )
 
         self.assertIn("p_button_image_alt=>'create project'", create_button)
-        self.assertIn(
-            "p_button_position=>'right_of_ir_search_bar'", create_button
-        )
+        self.assertIn("p_button_position=>'right_of_ir_search_bar'", create_button)
         self.assertIn("p_button_is_hot=>'y'", create_button)
         self.assertIn(
             "p_button_redirect_url=>'f?p=&app_id.:38:&app_session.::&debug.:rp,38::'",
@@ -972,7 +993,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertNotIn("p38_project_id", create_button)
 
         self.assertIn("p_column_label=>'edit'", edit_column)
-        self.assertIn("aria-label=\"edit\"", edit_column)
+        self.assertIn('aria-label="edit"', edit_column)
         self.assertIn("p38_project_id:#project_id#", edit_column)
         self.assertNotIn("hidden_escape_sc", edit_column)
         self.assertIn("p_column_alignment=>'center'", edit_column)
@@ -1506,9 +1527,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         capability_region_end = export_sql.index(
             "wwv_flow_imp_page.create_page_plug(", capability_region_start
         )
-        capability_region = export_sql[
-            capability_region_start:capability_region_end
-        ]
+        capability_region = export_sql[capability_region_start:capability_region_end]
         self.assertIn("p_function_body_language=>'plsql'", capability_region)
         self.assertIn("orac_dropbox.drop_box_admin_api.create_location", export_sql)
         self.assertIn("orac_dropbox.drop_box_admin_api.update_location", export_sql)
@@ -1537,9 +1556,7 @@ class PluginApexAppSchemaTests(unittest.TestCase):
             export_sql,
         )
         self.assertIn("p_dialog_width=>'1200'", export_sql)
-        classification_item_start = export_sql.index(
-            "p_name=>'p2_classification_tags'"
-        )
+        classification_item_start = export_sql.index("p_name=>'p2_classification_tags'")
         classification_item_end = export_sql.index(
             "wwv_flow_imp_page.create_page_item(", classification_item_start
         )
@@ -1692,7 +1709,8 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertNotIn("display_value d", project_text)
 
         self.assertIn("p_prompt=>'plugin'", plugin_text)
-        self.assertIn("scope.plugin_name d", plugin_text)
+        self.assertIn("max(scope.plugin_name) d", plugin_text)
+        self.assertIn("group by scope.scope_key", plugin_text)
         self.assertIn("scope.scope_key r", plugin_text)
         self.assertIn("scope.scope_key = :p2_target_plugin_key", plugin_text)
         self.assertIn("eligible.return_value = scope.knowledge_scope_id", plugin_text)
@@ -1749,19 +1767,13 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         )
         self.assertIn("p_process_when=>'save'", page_two)
         self.assertIn("p_process_when_type=>'request_in_condition'", page_two)
-        self.assertIn(
-            "p_validation_name=>'eligible project is selected'", page_two
-        )
-        self.assertIn(
-            "p_validation_name=>'eligible plugin is selected'", page_two
-        )
+        self.assertIn("p_validation_name=>'eligible project is selected'", page_two)
+        self.assertIn("p_validation_name=>'eligible plugin is selected'", page_two)
         self.assertIn("from orac_code.rag_usage_scope_lov_v", page_two)
         self.assertIn("select an eligible project", page_two)
         self.assertIn("select an eligible plugin", page_two)
         self.assertEqual(
-            page_two.count(
-                "p_when_button_pressed=>wwv_flow_imp.id(34600200000000302)"
-            ),
+            page_two.count("p_when_button_pressed=>wwv_flow_imp.id(34600200000000302)"),
             2,
         )
         self.assertIn("p_process_name=>'delete drop location'", page_two)

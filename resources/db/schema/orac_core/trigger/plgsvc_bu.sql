@@ -17,7 +17,12 @@ begin
       into l_owner_count
       from orac_core.plugin_registry plugin
      where plugin.plugin_registry_id = :new.plugin_registry_id
-       and plugin.plugin_id = :new.plugin_id;
+       and plugin.plugin_id = :new.plugin_id
+       and not exists (
+         select 1 from orac_core.plugin_removals removal
+          where removal.plugin_registry_id = plugin.plugin_registry_id
+            and removal.completed_on is null
+       );
 
     if l_owner_count <> 1
     then

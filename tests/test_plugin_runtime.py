@@ -19,6 +19,7 @@ from model.plugin_config import PluginConfigManager
 from model.plugin_runtime import PluginDataAccess, PluginRuntimeError
 from model.plugin_runtime import load_plugin_class, load_plugin_service_class
 from model.plugin_runtime import PluginRuntimeContext
+from model.plugin_runtime import PluginServiceCommandAuthority
 
 
 class _FakeContextManager:
@@ -127,6 +128,41 @@ class PluginRuntimeTests(unittest.TestCase):
         self.assertIs(context.plugin_config(), config_manager)
         self.assertEqual(context.plugin_config().plugin_id, "home_assistant")
         self.assertFalse(hasattr(context.plugin_config(), "for_plugin"))
+
+    def test_runtime_context_replaces_service_command_authority(self) -> None:
+        manifests, errors = PluginDiscovery(Path("plugins")).discover()
+        self.assertEqual(errors, [])
+        manifest = next(
+            item for item in manifests if item.plugin_id == "home_assistant"
+        )
+
+        class _Manager:
+            def run_service_command(self, plugin_id, command, payload):
+                return plugin_id, command, payload
+
+        context = PluginRuntimeContext(
+            manifest=manifest,
+            logger=None,
+            config_mgr=None,
+            auth_user="clive",
+            plugin_service_manager=_Manager(),
+            _policy_provenance={
+                "status": "allowed",
+                "capabilities": ("home_assistant.generic_control",),
+                "confirmation": {"trusted": True, "status": "confirmed"},
+            },
+        )
+
+        _plugin_id, _command, payload = context.run_service_command(
+            "home_assistant",
+            "execute_capability",
+            {"_orac_authority": {"policy_status": "allowed"}},
+        )
+
+        authority = payload["_orac_authority"]
+        self.assertIsInstance(authority, PluginServiceCommandAuthority)
+        self.assertEqual(authority.principal_username, "clive")
+        self.assertTrue(authority.trusted_confirmation)
 
 
 if __name__ == "__main__":

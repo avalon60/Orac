@@ -1,4 +1,5 @@
 """Runtime adapter for durable plugin audit persistence."""
+
 # Author: Clive Bostock
 # Date: 2026-05-26
 # Description: Normalises plugin lifecycle metadata and writes it through the
@@ -14,6 +15,7 @@ from typing import Any
 try:
     import oracledb
 except Exception:  # pragma: no cover - test/runtime fallback
+
     class _OracledbStub:
         NUMBER = object()
 
@@ -102,21 +104,41 @@ class PluginAuditPayload:
         request_context = dict(request_context or {})
 
         confirmation_data = provenance.get("confirmation")
-        confirmation_data = confirmation_data if isinstance(confirmation_data, dict) else {}
+        confirmation_data = (
+            confirmation_data if isinstance(confirmation_data, dict) else {}
+        )
         confirmation_request = provenance.get("confirmation_request")
         confirmation_request = (
             confirmation_request if isinstance(confirmation_request, dict) else {}
         )
 
-        plugin_id = str(provenance.get("plugin_id") or request_context.get("plugin_id") or "")
-        plugin_name = str(provenance.get("plugin_name") or request_context.get("plugin_name") or "")
-        action_type = str(provenance.get("action_type") or request_context.get("action_type") or "")
+        plugin_id = str(
+            provenance.get("plugin_id") or request_context.get("plugin_id") or ""
+        )
+        plugin_name = str(
+            provenance.get("plugin_name") or request_context.get("plugin_name") or ""
+        )
+        action_type = str(
+            provenance.get("action_type") or request_context.get("action_type") or ""
+        )
 
-        capabilities = _as_tuple(provenance.get("capabilities") or request_context.get("capabilities"))
-        entitlements = _as_tuple(provenance.get("entitlements") or request_context.get("entitlements"))
+        capabilities = _as_tuple(
+            provenance.get("capabilities") or request_context.get("capabilities")
+        )
+        entitlements = _as_tuple(
+            provenance.get("entitlements") or request_context.get("entitlements")
+        )
 
-        decision = policy_decision or str(provenance.get("policy_decision") or provenance.get("status") or "").strip() or None
-        execution_state = execution_status or str(provenance.get("status") or "").strip() or None
+        decision = (
+            policy_decision
+            or str(
+                provenance.get("policy_decision") or provenance.get("status") or ""
+            ).strip()
+            or None
+        )
+        execution_state = (
+            execution_status or str(provenance.get("status") or "").strip() or None
+        )
         if execution_state is None and decision in {"denied", "requires_confirmation"}:
             execution_state = decision
         if execution_state is None and decision == "allowed":
@@ -128,40 +150,55 @@ class PluginAuditPayload:
                 or str(confirmation_request.get("status") or "").strip()
                 or None
             )
-        confirmation_id = str(
-            provenance.get("confirmation_id")
-            or confirmation_data.get("confirmation_id")
-            or confirmation_request.get("confirmation_id")
-            or ""
-        ).strip() or None
+        confirmation_id = (
+            str(
+                provenance.get("confirmation_id")
+                or confirmation_data.get("confirmation_id")
+                or confirmation_request.get("confirmation_id")
+                or ""
+            ).strip()
+            or None
+        )
 
-        request_id = str(
-            request_context.get("request_id")
-            or request_context.get("req_id")
-            or provenance.get("request_id")
-            or ""
-        ).strip() or None
-        correlation_id = str(
-            request_context.get("correlation_id")
-            or provenance.get("correlation_id")
-            or request_id
-            or ""
-        ).strip() or None
-        turn_id = str(
-            request_context.get("turn_id")
-            or provenance.get("turn_id")
-            or ""
-        ).strip() or None
+        request_id = (
+            str(
+                request_context.get("request_id")
+                or request_context.get("req_id")
+                or provenance.get("request_id")
+                or ""
+            ).strip()
+            or None
+        )
+        correlation_id = (
+            str(
+                request_context.get("correlation_id")
+                or provenance.get("correlation_id")
+                or request_id
+                or ""
+            ).strip()
+            or None
+        )
+        turn_id = (
+            str(
+                request_context.get("turn_id") or provenance.get("turn_id") or ""
+            ).strip()
+            or None
+        )
 
         return cls(
             request_id=request_id,
             correlation_id=correlation_id,
             turn_id=turn_id,
             conversation_id=_as_int(
-                request_context.get("conversation_id") or provenance.get("conversation_id")
+                request_context.get("conversation_id")
+                or provenance.get("conversation_id")
             ),
-            message_id=_as_int(request_context.get("message_id") or provenance.get("message_id")),
-            user_id=_as_int(request_context.get("user_id") or provenance.get("user_id")),
+            message_id=_as_int(
+                request_context.get("message_id") or provenance.get("message_id")
+            ),
+            user_id=_as_int(
+                request_context.get("user_id") or provenance.get("user_id")
+            ),
             plugin_id=plugin_id,
             plugin_name=plugin_name,
             action_type=action_type,
@@ -171,8 +208,13 @@ class PluginAuditPayload:
             confirmation_id=confirmation_id,
             confirmation_status=confirmation_status,
             execution_status=execution_state,
-            timeout_seconds=_as_float(timeout_seconds or provenance.get("timeout_seconds")),
-            failure_type=str(failure_type or provenance.get("failure_type") or "").strip() or None,
+            timeout_seconds=_as_float(
+                timeout_seconds or provenance.get("timeout_seconds")
+            ),
+            failure_type=str(
+                failure_type or provenance.get("failure_type") or ""
+            ).strip()
+            or None,
             failure_message=str(
                 failure_message or provenance.get("failure_message") or ""
             ).strip()
@@ -270,7 +312,9 @@ class PluginAuditSession:
 class PluginAuditAdapter:
     """Writes plugin lifecycle rows through the approved code API when possible."""
 
-    def __init__(self, *, db_session: Any | None, logger: Any, strict: bool = False) -> None:
+    def __init__(
+        self, *, db_session: Any | None, logger: Any, strict: bool = False
+    ) -> None:
         """Initialise the adapter.
 
         Args:
@@ -291,6 +335,48 @@ class PluginAuditAdapter:
                 persistence is unavailable.
         """
         self._db_session = db_session
+
+    def record_lifecycle(
+        self,
+        *,
+        plugin_id: str,
+        plugin_version: str,
+        action: str,
+        outcome: str,
+        actor: str,
+        removal_id: str | None = None,
+        knowledge_scope_id: int | None = None,
+        confirmation: str | None = None,
+    ) -> None:
+        """Record a management action without inventing conversation context."""
+        if action not in {"remove", "enable", "disable"} or outcome not in {
+            "started",
+            "completed",
+            "failed",
+        }:
+            raise ValueError("Unsupported plugin lifecycle audit event.")
+        provenance = {
+            "plugin_id": plugin_id,
+            "plugin_name": plugin_id,
+            "plugin_version": plugin_version,
+            "action_type": "local_mutation",
+            "lifecycle_action": action,
+            "lifecycle_outcome": outcome,
+            "actor": actor,
+            "removal_id": removal_id,
+            "knowledge_scope_id": knowledge_scope_id,
+            "lifecycle_confirmation": confirmation,
+        }
+        session = self.create_session(provenance=provenance)
+        session.record_execution_event(
+            event_type={
+                "started": "execution_started",
+                "completed": "execution_completed",
+                "failed": "execution_failed",
+            }[outcome],
+            execution_status="execution_started" if outcome == "started" else outcome,
+            provenance_json=provenance,
+        )
 
     def create_session(
         self,
@@ -321,7 +407,9 @@ class PluginAuditAdapter:
             return session
 
         try:
-            session.plugin_invocation_id, session.row_version = self._begin_invocation(payload)
+            session.plugin_invocation_id, session.row_version = self._begin_invocation(
+                payload
+            )
         except Exception as exc:
             self._log_failure("begin_invocation", exc)
             if self._strict:
@@ -492,7 +580,9 @@ end;
                 },
             )
             self._db_session.commit()
-            return self._extract_out_int(plugin_invocation_id), self._extract_out_int(row_version)
+            return self._extract_out_int(plugin_invocation_id), self._extract_out_int(
+                row_version
+            )
 
     def _call_package(self, method_name: str, **kwargs: Any) -> int | None:
         """Call a package procedure using a narrow PL/SQL block."""

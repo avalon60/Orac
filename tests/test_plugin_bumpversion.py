@@ -27,6 +27,7 @@ EXPECTED_BUMP_TARGETS = {
     "drop_box": {"../drop_box.json"},
     "home_assistant": {"../home_assistant.json", "manifest.ini"},
     "media_control": {"../media_control.json"},
+    "orac_gateway": {"../orac_gateway.json", "manifest.ini"},
     "weather": {"../weather.json"},
 }
 
@@ -122,9 +123,9 @@ class PluginBumpVersionConfigTests(unittest.TestCase):
             manifest = json.loads(
                 (root / "home_assistant.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(manifest["version"], "1.0.3")
+            self.assertEqual(manifest["version"], "1.1.1")
             self.assertIn(
-                "version = 1.0.3",
+                "version = 1.1.1",
                 (plugin_dir / "manifest.ini").read_text(encoding="utf-8"),
             )
 

@@ -1,6 +1,10 @@
 --liquibase formatted sql
 
 --changeset clive:comment_orac_core_comment_plugin_services context:core labels:core stripComments:false runOnChange:true
+comment on column orac_core.plugin_services.service_owner_type is
+  'PLUGIN services belong to the exact current registration; CORE services survive plugin removal.';
+comment on column orac_core.plugin_services.plugin_registry_id is
+  'Current registration owning a PLUGIN service; absent for synthetic CORE services.';
 comment on table orac_core.plugin_services is
   'Orac-owned lifecycle policy, status, and lease state for plugin services.'
 ;

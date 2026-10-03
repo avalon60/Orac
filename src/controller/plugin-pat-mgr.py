@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Manage encrypted plugin personal access tokens for Orac."""
+
 # Author: Clive Bostock
 # Date: 05-Jun-2026
 # Description: Maintains encrypted plugin personal access tokens in ~/.Orac/pat_vault.ini.
@@ -22,10 +23,13 @@ if str(SRC_ROOT) not in sys.path:
 from model.plugin_secret_vault import DEFAULT_PAT_VAULT_PATH
 from model.plugin_secret_vault import PluginPatVaultStore
 from model.plugin_secret_vault import PluginSecretVaultError
+from model.plugin_execution_lock import PluginExecutionLock, PluginMaintenanceError
 
 __author__ = "Clive Bostock"
 __date__ = "05-Jun-2026"
-__description__ = "Maintains encrypted plugin personal access tokens in ~/.Orac/pat_vault.ini."
+__description__ = (
+    "Maintains encrypted plugin personal access tokens in ~/.Orac/pat_vault.ini."
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -124,13 +128,28 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
-        return _run(args, store, parser)
-    except PluginSecretVaultError as exc:
+        mutating = (
+            any(value is not None for value in (args.set, args.edit, args.delete_key))
+            or args.delete_plugin
+        )
+        with PluginExecutionLock(PROJECT_ROOT, exclusive=mutating):
+            return _run(args, store, parser)
+    except (PluginSecretVaultError, PluginMaintenanceError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    except OSError:
+        print(
+            "Error: Plugin maintenance access could not be established.",
+            file=sys.stderr,
+        )
         return 1
 
 
-def _run(args: argparse.Namespace, store: PluginPatVaultStore, parser: argparse.ArgumentParser) -> int:
+def _run(
+    args: argparse.Namespace,
+    store: PluginPatVaultStore,
+    parser: argparse.ArgumentParser,
+) -> int:
     """Execute the selected operation."""
     if args.list_plugins:
         for plugin_id in store.list_plugins():
@@ -205,7 +224,9 @@ def _run(args: argparse.Namespace, store: PluginPatVaultStore, parser: argparse.
     if args.get is not None:
         key = _selected_key(store, plugin_id, args.get)
         if not args.reveal:
-            print("Refusing to print decrypted secret without --reveal.", file=sys.stderr)
+            print(
+                "Refusing to print decrypted secret without --reveal.", file=sys.stderr
+            )
             return 2
         print(store.get_secret(plugin_id, key))
         return 0

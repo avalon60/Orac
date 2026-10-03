@@ -8,9 +8,17 @@ as
     p_row in out orac_api.plugin_registry_v%rowtype
   )
   is
+    l_scope orac_api.knowledge_scopes_v%rowtype;
   begin
+    savepoint plugin_registration;
+    -- Only a new operational registration creates a scope. Never adopt history.
+    l_scope.scope_type := 'PLUGIN';
+    l_scope.plugin_id := p_row.plugin_id;
+    orac_api.knowledge_scopes_tapi.ins(l_scope);
+    p_row.knowledge_scope_id := l_scope.knowledge_scope_id;
     insert into orac_api.plugin_registry_v
       (
+        knowledge_scope_id,
         plugin_id, plugin_name, plugin_version, runtime_mode, manifest_hash,
         package_hash, install_source_type, install_source_ref, installed_path,
         config_path, capabilities_summary, entitlements_summary,
@@ -24,6 +32,7 @@ as
       )
     values
       (
+        p_row.knowledge_scope_id,
         p_row.plugin_id, p_row.plugin_name, p_row.plugin_version,
         p_row.runtime_mode, p_row.manifest_hash, p_row.package_hash,
         p_row.install_source_type, p_row.install_source_ref,
@@ -42,6 +51,10 @@ as
       )
     returning plugin_registry_id, row_version
          into p_row.plugin_registry_id, p_row.row_version;
+  exception
+    when others then
+      rollback to plugin_registration;
+      raise;
   end ins;
 
   procedure upd(
@@ -82,6 +95,16 @@ as
      where plugin_registry_id = p_plugin_registry_id
     returning row_version into p_row.row_version;
   end upd;
+  procedure del(p_plugin_registry_id in number) is
+  begin
+    -- The database delete guard requires a completed operation for this exact
+    -- registration and its retired scope in the same finalization transaction.
+    delete from orac_api.plugin_registry_v where plugin_registry_id = p_plugin_registry_id;
+    if sql%rowcount <> 1
+    then
+      raise_application_error(-20043, 'Plugin registry row was not found.');
+    end if;
+  end del;
 end plugin_registry_tapi;
 /
 --rollback drop package body orac_api.plugin_registry_tapi

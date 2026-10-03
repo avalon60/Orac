@@ -384,6 +384,29 @@ class TestService:
 """
 
 
+GATEWAY_CONTEXT_SERVICE_CODE = """
+class TestPlugin:
+    pass
+
+
+class TestService:
+    def __init__(self, logger=None, config_mgr=None, manifest=None):
+        self.context_seen = False
+
+    def run(self, context):
+        self.context_seen = (
+            context.request_processor is not None
+            and context.model_catalog_provider is not None
+            and context.embedding_provider is not None
+        )
+        while not context.stop_event.wait(0.01):
+            pass
+
+    def health(self, context):
+        return self.context_seen and not context.stop_event.is_set()
+"""
+
+
 def _raise_missing_orac_plugin_credentials():
     raise PluginDatabaseSessionError(
         "ORAC_PLUGIN database credentials are unavailable. Configure saved DSN "
@@ -618,6 +641,64 @@ class PluginServiceManagerTests(unittest.TestCase):
             service_manager.stop(plugin_id)
 
             self.assertEqual(service_manager.get_state(plugin_id), "stopped")
+
+    def test_service_receives_narrow_gateway_host_collaborators(self) -> None:
+        """The manager should inject Core gates without exposing a runtime object."""
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            plugin_id = "gateway_context"
+            manifest = _base_manifest(plugin_id, _long_running_runtime())
+            manifest["entitlements"] = ["core.communications.gateway"]
+            _write_plugin(
+                plugins_dir,
+                plugin_id,
+                manifest,
+                GATEWAY_CONTEXT_SERVICE_CODE,
+            )
+            processor = object()
+
+            def catalogue():
+                return []
+
+            def embedder(_model, _inputs):
+                return []
+
+            service_manager = _service_manager(
+                request_processor=processor,
+                model_catalog_provider=catalogue,
+                embedding_provider=embedder,
+                core_gateway_plugin_ids=frozenset({plugin_id}),
+            )
+            service_manager.register_manifests(_discover(plugins_dir))
+
+            self.assertTrue(service_manager.start(plugin_id))
+            self.assertTrue(_wait_until(lambda: service_manager.check_health(plugin_id)))
+            self.assertTrue(service_manager.stop(plugin_id))
+
+    def test_service_cannot_self_grant_gateway_host_collaborators(self) -> None:
+        """A declared entitlement alone must not grant the Core gateway seam."""
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            plugin_id = "untrusted_gateway"
+            manifest = _base_manifest(plugin_id, _long_running_runtime())
+            manifest["entitlements"] = ["core.communications.gateway"]
+            _write_plugin(
+                plugins_dir,
+                plugin_id,
+                manifest,
+                GATEWAY_CONTEXT_SERVICE_CODE,
+            )
+            service_manager = _service_manager(
+                request_processor=object(),
+                model_catalog_provider=lambda: [],
+                embedding_provider=lambda _model, _inputs: [],
+            )
+            service_manager.register_manifests(_discover(plugins_dir))
+
+            self.assertTrue(service_manager.start(plugin_id))
+            self.assertFalse(service_manager.check_health(plugin_id))
+            self.assertEqual(service_manager.get_state(plugin_id), "unhealthy")
+            self.assertTrue(service_manager.stop(plugin_id))
 
     def test_auto_start_services_are_started_under_supervision_and_stop_all_stops_them(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:

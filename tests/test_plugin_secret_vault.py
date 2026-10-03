@@ -1,4 +1,5 @@
 """Tests for encrypted plugin personal access token vaults."""
+
 # Author: Clive Bostock
 # Date: 05-Jun-2026
 # Description: Verifies plugin-scoped PAT vault storage, CLI behaviour and runtime boundaries.
@@ -27,7 +28,6 @@ from model.plugin_secret_vault import PluginPatVaultStore
 from model.plugin_secret_vault import PluginSecretVault
 from model.plugin_secret_vault import PluginSecretVaultError
 from model.plugin_service_manager import PluginServiceContext
-
 
 PLUGIN_PAT_MGR_PATH = PROJECT_ROOT / "src" / "controller" / "plugin-pat-mgr.py"
 
@@ -66,18 +66,24 @@ def _manifest(plugin_id: str, *, secrets: dict | None = None) -> dict:
     return manifest
 
 
-def _write_plugin(plugins_dir: Path, plugin_id: str, *, secrets: dict | None = None) -> None:
+def _write_plugin(
+    plugins_dir: Path, plugin_id: str, *, secrets: dict | None = None
+) -> None:
     """Write a minimal discoverable plugin."""
     plugin_dir = plugins_dir / plugin_id
     plugin_dir.mkdir()
-    (plugin_dir / "plugin.py").write_text("class TestPlugin:\n    pass\n", encoding="utf-8")
+    (plugin_dir / "plugin.py").write_text(
+        "class TestPlugin:\n    pass\n", encoding="utf-8"
+    )
     (plugins_dir / f"{plugin_id}.json").write_text(
         json.dumps(_manifest(plugin_id, secrets=secrets)),
         encoding="utf-8",
     )
 
 
-def _secrets_block(*, allow_custom_keys: bool = False, default_key: str = "access_token") -> dict:
+def _secrets_block(
+    *, allow_custom_keys: bool = False, default_key: str = "access_token"
+) -> dict:
     """Return a standard test secrets block."""
     return {
         "vault": "pat_vault",
@@ -102,6 +108,65 @@ def _secrets_block(*, allow_custom_keys: bool = False, default_key: str = "acces
 
 class PluginSecretVaultTests(unittest.TestCase):
     """Tests encrypted plugin PAT vault storage and scoped access."""
+
+    def test_failed_replace_preserves_all_existing_secrets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "vault.ini"
+            store = PluginPatVaultStore(
+                vault_path=path, allowed_plugins=("weather", "home_assistant")
+            )
+            store.set_secret("weather", "access_token", "weather-token")
+            store.set_secret("home_assistant", "access_token", "ha-token")
+            original = path.read_bytes()
+            with patch("model.plugin_secret_vault.os.replace", side_effect=OSError):
+                with self.assertRaises(OSError):
+                    store.delete_plugin("weather")
+            self.assertEqual(path.read_bytes(), original)
+            self.assertEqual(list(path.parent.glob(".pat-vault-*")), [])
+            self.assertTrue(store.delete_plugin("weather"))
+            self.assertFalse(store.delete_plugin("weather"))
+            self.assertEqual(store.get_secret("home_assistant"), "ha-token")
+
+    def test_concurrent_updates_preserve_other_plugin_sections(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "vault.ini"
+            plugins = tuple(f"plugin_{index}" for index in range(12))
+            barrier = threading.Barrier(len(plugins))
+            errors: list[Exception] = []
+
+            def write_secret(plugin: str) -> None:
+                try:
+                    store = PluginPatVaultStore(
+                        vault_path=path, allowed_plugins=plugins
+                    )
+                    barrier.wait(timeout=5)
+                    store.set_secret(plugin, "access_token", plugin)
+                except Exception as exc:
+                    errors.append(exc)
+
+            threads = [
+                threading.Thread(target=write_secret, args=(plugin,))
+                for plugin in plugins
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=10)
+                self.assertFalse(thread.is_alive())
+            self.assertEqual(errors, [])
+            store = PluginPatVaultStore(vault_path=path, allowed_plugins=plugins)
+            self.assertEqual(store.list_plugins(), tuple(sorted(plugins)))
+
+    def test_symlink_vault_does_not_modify_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target = Path(temp_dir) / "unrelated.ini"
+            target.write_text("preserve", encoding="utf-8")
+            path = Path(temp_dir) / "vault.ini"
+            path.symlink_to(target)
+            store = PluginPatVaultStore(vault_path=path, allowed_plugins=("weather",))
+            with self.assertRaises(PluginSecretVaultError):
+                store.delete_plugin("weather")
+            self.assertEqual(target.read_text(encoding="utf-8"), "preserve")
 
     def test_creates_vault_file_and_round_trips_encrypted_values(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -131,7 +196,9 @@ class PluginSecretVaultTests(unittest.TestCase):
 
             self.assertEqual(store.get_secret("home_assistant"), "token-three")
             self.assertEqual(store.list_plugins(), ("home_assistant",))
-            self.assertEqual(store.list_keys("home_assistant"), ("access_token", "websocket_token"))
+            self.assertEqual(
+                store.list_keys("home_assistant"), ("access_token", "websocket_token")
+            )
             vault_text = vault_path.read_text(encoding="utf-8")
             self.assertNotIn("token-one", vault_text)
             self.assertNotIn("token-two", vault_text)
@@ -211,7 +278,9 @@ class PluginSecretVaultTests(unittest.TestCase):
 
             store.set_secret("home_assistant", "websocket_token", "token")
 
-            self.assertEqual(store.get_secret("home_assistant", "websocket_token"), "token")
+            self.assertEqual(
+                store.get_secret("home_assistant", "websocket_token"), "token"
+            )
 
     def test_manifest_default_key_is_used_by_scoped_vault_get(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -19,10 +19,13 @@ select app.plugin_id
      , coalesce(app.card_title, app.label) card_title
      , app.card_subtitle
   from orac_api.plugin_apex_apps_v app
-  left join orac_code.plugin_registry_v plugin
+  join orac_code.plugin_registry_v plugin
     on plugin.plugin_id = app.plugin_id
  where app.enabled = 'Y'
+   and plugin.enabled = 'Y'
+   and plugin.removal_id is null
    and app.install_status = 'installed'
+   and json_value(app.installation_receipt, '$.plugin_registry_id' returning number) = plugin.plugin_registry_id
    and app.installed_app_id is not null;
 
 --rollback drop view orac_code.plugin_apex_app_menu_v;

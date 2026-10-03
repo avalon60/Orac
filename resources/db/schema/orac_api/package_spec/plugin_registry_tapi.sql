@@ -13,6 +13,7 @@ as
     p_plugin_registry_id in     orac_api.plugin_registry_v.plugin_registry_id%type,
     p_row                in out orac_api.plugin_registry_v%rowtype
   );
+  procedure del(p_plugin_registry_id in number);
 end plugin_registry_tapi;
 /
 --rollback drop package orac_api.plugin_registry_tapi;

@@ -1,7 +1,10 @@
 """Policy checks and provenance helpers for plugin execution."""
+
 # Author: Clive Bostock
 # Date: 2026-05-24
 # Description: Classifies plugin action risk before loading plugin code.
+# Codex-assisted generated/modified.
+# Codex SDK reviewability guardrails followed.
 
 from __future__ import annotations
 
@@ -12,7 +15,6 @@ from model.plugin_confirmation_broker import PluginConfirmationBroker
 from model.plugin_confirmation_broker import PluginConfirmationDecision
 from model.plugin_confirmation_broker import PluginConfirmationRequest
 from model.plugin_routing.models import PluginExecutionPolicy, PluginManifest
-
 
 SAFE_ACTION_TYPES = {"informational_read_only"}
 KNOWN_ACTION_TYPES = {
@@ -33,6 +35,15 @@ class PluginPolicyDecision:
     status: str
     reason: str | None
     provenance: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class PluginPolicyEligibility:
+    """Side-effect-free eligibility result used before arbitration."""
+
+    executable: bool
+    status: str
+    reason: str | None
 
 
 def evaluate_plugin_policy(
@@ -57,11 +68,15 @@ def evaluate_plugin_policy(
     action_type = str(policy.action_type or "").strip()
     if action_type not in KNOWN_ACTION_TYPES:
         reason = f"Unknown plugin action type '{action_type}'."
-        return _decision(manifest, policy, allowed=False, status="denied", reason=reason)
+        return _decision(
+            manifest, policy, allowed=False, status="denied", reason=reason
+        )
 
     if policy.scaffold:
         reason = "Plugin is marked scaffold or experimental and is not control-capable."
-        return _decision(manifest, policy, allowed=False, status="denied", reason=reason)
+        return _decision(
+            manifest, policy, allowed=False, status="denied", reason=reason
+        )
 
     if action_type in SAFE_ACTION_TYPES and policy.allowed_by_default:
         return _decision(manifest, policy, allowed=True, status="allowed", reason=None)
@@ -105,6 +120,50 @@ def evaluate_plugin_policy(
 
     reason = "Plugin action is not allowed by the current execution policy."
     return _decision(manifest, policy, allowed=False, status="denied", reason=reason)
+
+
+def inspect_plugin_policy_eligibility(
+    manifest: PluginManifest,
+    *,
+    meta: dict[str, Any] | None = None,
+    confirmation_broker: PluginConfirmationBroker | None = None,
+) -> PluginPolicyEligibility:
+    """Classify policy without issuing or consuming confirmation state."""
+    policy = manifest.execution_policy or PluginExecutionPolicy(
+        action_type="privileged_system_action",
+        requires_confirmation=True,
+        allowed_by_default=False,
+        capabilities=manifest.capabilities,
+        entitlements=manifest.entitlements,
+        notes="Missing execution policy; failing closed.",
+    )
+    action_type = str(policy.action_type or "").strip()
+    if action_type not in KNOWN_ACTION_TYPES or policy.scaffold:
+        return PluginPolicyEligibility(False, "denied", "Plugin policy is ineligible.")
+    if policy.requires_confirmation:
+        metadata = meta if isinstance(meta, dict) else {}
+        confirmation = metadata.get("plugin_confirmation")
+        confirmation = confirmation if isinstance(confirmation, dict) else {}
+        confirmation_id = confirmation.get("confirmation_id") or confirmation.get("id")
+        if confirmation_broker is None:
+            return PluginPolicyEligibility(
+                False, "requires_confirmation", "Explicit confirmation required."
+            )
+        decision = confirmation_broker.inspect_confirmation(
+            confirmation_id=str(confirmation_id or ""),
+            manifest=manifest,
+            policy=policy,
+        )
+        return PluginPolicyEligibility(
+            decision.confirmed,
+            "allowed" if decision.confirmed else "requires_confirmation",
+            decision.reason,
+        )
+    if policy.allowed_by_default:
+        return PluginPolicyEligibility(True, "allowed", None)
+    return PluginPolicyEligibility(
+        False, "denied", "Action is not allowed by execution policy."
+    )
 
 
 def _trusted_confirmation_decision(

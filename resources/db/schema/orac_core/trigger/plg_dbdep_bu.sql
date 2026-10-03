@@ -7,10 +7,20 @@
 
 
 create or replace trigger orac_core.plg_dbdep_bu
-before update on orac_core.plugin_db_deployments
+before insert or update on orac_core.plugin_db_deployments
 for each row
+declare
+  l_removals number;
 begin
-  :new.updated_on := systimestamp;
+  select count(*) into l_removals from orac_core.plugin_removals
+   where plugin_id = :new.plugin_id and completed_on is null;
+  if l_removals <> 0
+  then
+    raise_application_error(-20073, 'Plugin removal blocks operational registration changes.');
+  end if;
+  if updating
+  then
+    :new.updated_on := systimestamp;
   :new.updated_by := coalesce(
                        sys_context('apex$session', 'app_user'),
                        sys_context('userenv', 'proxy_user'),
@@ -18,6 +28,7 @@ begin
                        user
                      );
   :new.row_version := nvl(:old.row_version, 1) + 1;
+  end if;
 end;
 /
 

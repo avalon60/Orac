@@ -45,6 +45,8 @@ PLUGIN_SERVICE_STATES = {
     "lease_lost",
 }
 
+DEFAULT_CORE_GATEWAY_PLUGIN_IDS = frozenset({"orac_gateway"})
+
 
 class ScheduledPluginService(Protocol):
     """Protocol for scheduled service plugin implementations."""
@@ -71,6 +73,9 @@ class PluginServiceContext:
     service_code: str = "default"
     config_mgr: Any | None = None
     plugin_config_manager: PluginConfigManager | None = None
+    request_processor: Any | None = None
+    model_catalog_provider: Callable[[], list[dict[str, Any]]] | None = None
+    embedding_provider: Callable[[str, list[str]], list[list[float]]] | None = None
     _plugin_db_session_factory: Callable[[], OracPluginDatabaseSession] | None = None
     _secret_vault: PluginSecretVault | None = None
     _command_dependency_checker: PluginCommandDependencyChecker | None = None
@@ -164,6 +169,12 @@ class PluginServiceManager:
         command_status_recorder: (
             Callable[[str, PluginCommandDependencyResult], None] | None
         ) = None,
+        request_processor: Any | None = None,
+        model_catalog_provider: Callable[[], list[dict[str, Any]]] | None = None,
+        embedding_provider: (
+            Callable[[str, list[str]], list[list[float]]] | None
+        ) = None,
+        core_gateway_plugin_ids: frozenset[str] = DEFAULT_CORE_GATEWAY_PLUGIN_IDS,
     ) -> None:
         self._logger = logger
         self._config_mgr = config_mgr
@@ -198,6 +209,10 @@ class PluginServiceManager:
         self._command_status_recorder = (
             command_status_recorder or self._record_command_status
         )
+        self._request_processor = request_processor
+        self._model_catalog_provider = model_catalog_provider
+        self._embedding_provider = embedding_provider
+        self._core_gateway_plugin_ids = frozenset(core_gateway_plugin_ids)
         self._records: dict[tuple[str, str], _ServiceRecord] = {}
         self._dependency_invalid: dict[str, PluginManifest] = {}
 
@@ -557,6 +572,10 @@ class PluginServiceManager:
     def _prepare_record(self, record: _ServiceRecord) -> None:
         plugin_class = self._load_service_class(record)
         instance = self._instantiate_service(plugin_class, record.manifest)
+        gateway_authorised = (
+            record.manifest.plugin_id in self._core_gateway_plugin_ids
+            and "core.communications.gateway" in record.manifest.entitlements
+        )
         context = PluginServiceContext(
             plugin_id=record.manifest.plugin_id,
             service_code=record.service_runtime.service_code,
@@ -567,6 +586,15 @@ class PluginServiceManager:
             plugin_config_manager=PluginConfigManager(
                 record.manifest,
                 logger=self._logger,
+            ),
+            request_processor=(
+                self._request_processor if gateway_authorised else None
+            ),
+            model_catalog_provider=(
+                self._model_catalog_provider if gateway_authorised else None
+            ),
+            embedding_provider=(
+                self._embedding_provider if gateway_authorised else None
             ),
             _plugin_db_session_factory=self._plugin_db_session_factory,
             _secret_vault=PluginSecretVault(

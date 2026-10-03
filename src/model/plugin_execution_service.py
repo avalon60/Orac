@@ -1,7 +1,10 @@
 """Service wrapper for Orac plugin execution coordination."""
+
 # Author: Clive Bostock
 # Date: 2026-05-25
 # Description: Keeps controller code behind a narrow plugin execution seam.
+# Codex-assisted generated/modified.
+# Codex SDK reviewability guardrails followed.
 
 from __future__ import annotations
 
@@ -57,11 +60,34 @@ class PluginExecutionService:
             meta=meta,
             auth_user=auth_user,
         )
-        decision = self._plugin_arbiter.arbitrate(
-            utterance=prompt,
-            candidates=tuple(handoff.candidates if handoff is not None else ()),
-            pending_context=scoped_pending_context,
+        candidates = tuple(handoff.candidates if handoff is not None else ())
+        eligible_candidates, ineligible_candidates = self._eligible_candidates(
+            candidates=candidates,
+            meta=meta,
         )
+        if not eligible_candidates and len(ineligible_candidates) == 1:
+            return self._route_selected_candidate(
+                prompt=prompt,
+                meta=meta,
+                candidate=ineligible_candidates[0],
+                auth_user=auth_user,
+                request_context=request_context,
+                refreshed=bool(handoff.refreshed if handoff is not None else False),
+                arbitration={
+                    "source": "plugin_eligibility",
+                    "decision_type": "policy_blocked",
+                },
+            )
+        arbitration_kwargs = {
+            "utterance": prompt,
+            "candidates": eligible_candidates,
+            "pending_context": scoped_pending_context,
+        }
+        if isinstance(self._plugin_arbiter, PluginArbiter):
+            arbitration_kwargs["adviser_allowed"] = callable(
+                getattr(self._plugin_router, "candidate_eligibility", None)
+            )
+        decision = self._plugin_arbiter.arbitrate(**arbitration_kwargs)
         if decision.decision_type == "llm_fallback":
             if self._plugin_router is None:
                 self._logger.log_debug(
@@ -80,29 +106,92 @@ class PluginExecutionService:
                 content=decision.clarification_prompt or decision.reason,
                 provenance=_arbitration_provenance(decision),
             )
-        selected = _selected_candidate(decision)
+        if decision.reason == "llm_adviser_selected_plugin":
+            selected = _selected_eligible_candidate(decision, eligible_candidates)
+        else:
+            selected = _selected_candidate(decision)
+        eligible_keys = {_candidate_key(candidate) for candidate in eligible_candidates}
+        if (
+            selected is None or _candidate_key(selected) not in eligible_keys
+        ) and decision.selected_plugin_id is not None:
+            self._logger.log_warning(
+                "Plugin arbiter returned a candidate outside the eligible set."
+            )
+            return PluginExecutionResult(
+                plugin_id="orac_core",
+                content="The requested plugin capability is not available.",
+                handled=True,
+                provenance={"source": "plugin_arbitration", "status": "rejected"},
+            )
         if selected is None:
             return None
-        selected_handoff = PluginRoutingHandoff(
-            candidates=(selected,),
+        if decision.reason == "llm_adviser_selected_plugin":
+            revalidate = getattr(self._plugin_router, "candidate_eligibility", None)
+            try:
+                revalidated = bool(
+                    callable(revalidate) and revalidate(selected, meta=meta).executable
+                )
+            except Exception:
+                revalidated = False
+            if not revalidated:
+                self._logger.log_warning(
+                    "LLM arbitration candidate failed deterministic revalidation."
+                )
+                return None
+            self._logger.log_debug(
+                "LLM arbitration candidate passed deterministic revalidation: "
+                f"candidate={_candidate_key(selected)}"
+            )
+        return self._route_selected_candidate(
+            prompt=prompt,
+            meta=meta,
+            candidate=selected,
+            auth_user=auth_user,
+            request_context=request_context,
             refreshed=bool(handoff.refreshed if handoff is not None else False),
+            arbitration=_arbitration_provenance(decision),
         )
 
-        if self._plugin_router is None:
-            self._logger.log_debug(
-                "Plugin execution unavailable; falling back to conversational flow."
-            )
-            return None
+    def _eligible_candidates(
+        self,
+        *,
+        candidates: tuple[Any, ...],
+        meta: dict[str, Any] | None,
+    ) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
+        """Partition candidates using side-effect-free host policy checks."""
+        check = getattr(self._plugin_router, "candidate_eligibility", None)
+        if not callable(check):
+            return candidates, ()
+        eligible: list[Any] = []
+        ineligible: list[Any] = []
+        for candidate in candidates:
+            result = check(candidate, meta=meta)
+            (eligible if result.executable else ineligible).append(candidate)
+        return tuple(eligible), tuple(ineligible)
 
+    def _route_selected_candidate(
+        self,
+        *,
+        prompt: str,
+        meta: dict[str, Any] | None,
+        candidate: Any,
+        auth_user: str,
+        request_context: dict[str, Any] | None,
+        refreshed: bool,
+        arbitration: dict[str, Any],
+    ) -> PluginExecutionResult | None:
+        """Invoke final policy and execution for exactly one selected route."""
+        if self._plugin_router is None:
+            return None
         result = self._plugin_router.route(
             prompt,
             meta,
-            selected_handoff,
+            PluginRoutingHandoff(candidates=(candidate,), refreshed=refreshed),
             auth_user,
             audit_adapter=self._plugin_audit_adapter,
             request_context={
                 **(request_context or {}),
-                "arbitration": _arbitration_provenance(decision),
+                "arbitration": arbitration,
             },
         )
         if result is None or not result.handled:
@@ -133,6 +222,24 @@ def _selected_candidate(decision: ArbitrationDecision) -> PluginRouteCandidate |
     return None
 
 
+def _selected_eligible_candidate(
+    decision: ArbitrationDecision,
+    eligible_candidates: tuple[PluginRouteCandidate, ...],
+) -> PluginRouteCandidate | None:
+    """Resolve a selection to the original core-eligible candidate object."""
+    selected_key = (
+        str(decision.selected_plugin_id or ""),
+        str(decision.selected_capability_id or ""),
+        str(decision.selected_intent_name or "default"),
+    )
+    if not all(selected_key):
+        return None
+    for candidate in eligible_candidates:
+        if _candidate_key(candidate) == selected_key:
+            return candidate
+    return None
+
+
 def _arbitration_provenance(decision: ArbitrationDecision) -> dict[str, Any]:
     """Return compact provenance for a core arbitration decision."""
     return {
@@ -154,6 +261,15 @@ def _arbitration_provenance(decision: ArbitrationDecision) -> dict[str, Any]:
             for candidate in decision.candidates
         ],
     }
+
+
+def _candidate_key(candidate: Any) -> tuple[str, str, str]:
+    """Return the authority-relevant identity of a route candidate."""
+    return (
+        str(getattr(candidate, "plugin_id", "")),
+        str(getattr(candidate, "capability_id", "")),
+        str(getattr(candidate, "intent_name", "") or "default"),
+    )
 
 
 def _scoped_pending_context(

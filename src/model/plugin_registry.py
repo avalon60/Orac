@@ -1,4 +1,5 @@
 """Persist and resolve active Orac plugin installation registry records."""
+
 # Author: Clive Bostock
 # Date: 07-Jun-2026
 # Description: Mediates plugin registry access through approved Oracle APIs.
@@ -53,7 +54,8 @@ class PluginRegistryStore:
         "command_prerequisite_status, command_dependency_report, "
         "database_status, readiness_status, enabled, "
         "ui_icon_class, ui_accent_class, last_error_code, last_error_message, "
-        "row_version"
+        "row_version, plugin_registry_id, knowledge_scope_id, "
+        "database_schemas_summary, removal_id"
     )
 
     def __init__(
@@ -191,6 +193,120 @@ class PluginRegistryStore:
             "from orac_code.plugin_registry_v order by plugin_id",
             {},
         )
+
+    def set_enabled(self, plugin_id: str, *, enabled: bool) -> None:
+        """Change enablement without recreating an absent installation."""
+        self._mutate(
+            "begin orac_code.plugin_registry_api.set_enabled(:plugin_id, :enabled); end;",
+            {"plugin_id": plugin_id, "enabled": "Y" if enabled else "N"},
+        )
+
+    def removal_history(self, plugin_id: str) -> list[dict[str, Any]]:
+        """Read inert removal history, including an incomplete operation."""
+        return self._query(
+            "select removal_id, plugin_id, plugin_registry_id, knowledge_scope_id, "
+            "plugin_version, manifest_hash, schema_disposition, database_identity, "
+            "resource_inventory, checkpoints, external_complete_yn, files_complete_yn, "
+            "confirmed_by, completed_on, last_error_code, last_error_message, created_on "
+            "from orac_code.plugin_removals_v where plugin_id = :plugin_id "
+            "order by created_on desc, removal_id",
+            {"plugin_id": plugin_id},
+        )
+
+    def begin_removal(
+        self,
+        *,
+        plugin_id: str,
+        registry_id: int,
+        removal_id: str,
+        keep_schema: bool,
+        database_identity: str,
+        inventory: dict[str, Any],
+        confirmed_by: str,
+    ) -> None:
+        """Atomically disable and fence an explicitly authorised installation.
+
+        The caller must hold maintenance access and validate the bounded
+        inventory before invoking this mutation. Approval is not inferred here.
+        """
+        self._mutate(
+            "begin orac_code.plugin_registry_api.begin_removal("
+            ":plugin_id, :registry_id, :removal_id, :disposition, "
+            ":database_identity, :inventory, :confirmed_by); end;",
+            {
+                "plugin_id": plugin_id,
+                "registry_id": registry_id,
+                "removal_id": removal_id,
+                "disposition": "KEEP" if keep_schema else "DROP",
+                "database_identity": database_identity,
+                "inventory": _bounded_lifecycle_json(inventory),
+                "confirmed_by": confirmed_by,
+            },
+            json_parameters=("inventory",),
+        )
+
+    def checkpoint_removal(
+        self,
+        *,
+        removal_id: str,
+        registry_id: int,
+        checkpoints: dict[str, Any],
+        external_complete: bool,
+        files_complete: bool,
+        error_code: str | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        """Persist verified cleanup progress for exactly one fenced target."""
+        self._mutate(
+            "begin orac_code.plugin_registry_api.checkpoint_removal("
+            ":removal_id, :registry_id, :checkpoints, :external_complete, "
+            ":files_complete, :error_code, :error_message); end;",
+            {
+                "removal_id": removal_id,
+                "registry_id": registry_id,
+                "checkpoints": _bounded_lifecycle_json(checkpoints),
+                "external_complete": "Y" if external_complete else "N",
+                "files_complete": "Y" if files_complete else "N",
+                "error_code": error_code,
+                "error_message": error_message,
+            },
+            json_parameters=("checkpoints",),
+        )
+
+    def finalize_removal(self, *, removal_id: str, registry_id: int) -> None:
+        """Commit Core cleanup and registry deletion as one guarded transaction."""
+        self._mutate(
+            "begin orac_code.plugin_registry_api.finalize_removal(:removal_id, :registry_id); end;",
+            {"removal_id": removal_id, "registry_id": registry_id},
+        )
+
+    def _mutate(
+        self,
+        sql: str,
+        binds: dict[str, Any],
+        *,
+        json_parameters: tuple[str, ...] = (),
+    ) -> None:
+        """Execute one controlled lifecycle transaction without leaking binds."""
+        session = self._connect()
+        try:
+            with session.cursor() as cursor:
+                if json_parameters:
+                    cursor.setinputsizes(
+                        **{name: oracledb.DB_TYPE_JSON for name in json_parameters}
+                    )
+                cursor.execute(sql, binds)
+            session.commit()
+        except Exception as exc:
+            try:
+                session.rollback()
+            except Exception:
+                # Closing the session is the remaining rollback boundary.
+                # Preserve the original failure, including an uncertain commit.
+                pass
+            raise PluginRegistryError("Plugin lifecycle transaction failed.") from exc
+        finally:
+            _close_quietly(session)
 
     def list_enabled(self) -> list[dict[str, Any]]:
         """Return registry rows that passed every runtime eligibility gate."""
@@ -480,6 +596,21 @@ def _close_quietly(session: Any) -> None:
         session.close()
     except Exception:
         pass
+
+
+def _bounded_lifecycle_json(value: dict[str, Any]) -> dict[str, Any]:
+    """Validate bounded journal objects before opening a database session."""
+    if not isinstance(value, dict):
+        raise PluginRegistryError("Plugin lifecycle metadata must be a JSON object.")
+    try:
+        encoded = json.dumps(value, allow_nan=False, ensure_ascii=False)
+    except (TypeError, ValueError, OverflowError, RecursionError) as exc:
+        raise PluginRegistryError(
+            "Plugin lifecycle metadata is not valid JSON."
+        ) from exc
+    if len(encoded.encode("utf-8")) > 65536:
+        raise PluginRegistryError("Plugin lifecycle metadata exceeds 64 KiB.")
+    return value
 
 
 def _json_bind_value(value: Any) -> Any:

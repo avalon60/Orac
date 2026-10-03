@@ -30,11 +30,99 @@ from that registry path. Runtime routing and service startup do not fall back to
 the source tree when a registered installed snapshot is missing.
 
 Use `bin/orac-plugin.sh check <plugin-id>` to validate the activated snapshot.
-Treat `bin/orac-plugin.sh list` as inventory: it shows source-tree manifests,
-registry state, and installed-artifact health. If a registry row says `success`
+Treat `bin/orac-plugin.sh list` as the current installed inventory: it shows
+registry state and installed-artifact health. Use `list --source-packages` to
+include bundled source packages, including ones that are not installed.
+If a registry row says `success`
 while `installed_path` is missing, `list` reports the artifact drift and
 `check` fails for that plugin. Reinstall or quarantine the plugin state before
 relying on that plugin's routing or services.
+
+## Disable, Enable and Remove
+
+Disable an installation to make it unavailable while keeping its configuration,
+database objects and operational state. Enable validates the current installation
+before making it available again:
+
+```bash
+bin/orac-plugin.sh disable home_assistant
+bin/orac-plugin.sh enable home_assistant
+```
+
+Lifecycle maintenance requires exclusive access on the governed Orac host. Stop
+Orac runners and foreground plugin services first, leaving Oracle running. The
+runtime, service runner, installer and PAT manager share a host execution lock.
+This workflow supports one governed host; it does not coordinate running Orac
+instances on other hosts. Active database sessions or unsafe dependencies can
+also block cleanup and must be resolved before retrying.
+
+Removal deletes the current registration, managed installation snapshots,
+plugin configuration, its PAT-vault section and routing-cache entries. It removes
+receipted plugin APEX applications, preserving shared workspaces and parsing
+schemas. **By default it also drops verified dedicated plugin schemas and their
+data.** Inspect the intended resources first:
+
+```bash
+bin/orac-plugin.sh remove home_assistant --dry-run --json
+bin/orac-plugin.sh remove home_assistant
+```
+
+Interactive removal displays the resource inventory and requires the exact
+confirmation phrase shown. Unattended schema destruction requires both
+acknowledgements naming the target:
+
+```bash
+bin/orac-plugin.sh remove home_assistant --yes --confirm-schema-drop home_assistant
+```
+
+To retain the dedicated schemas and their data, select this disposition before
+starting removal:
+
+```bash
+bin/orac-plugin.sh remove home_assistant --keep-schema --dry-run --json
+bin/orac-plugin.sh remove home_assistant --keep-schema --yes
+```
+
+Retained schemas are locked and detached from Orac grants; their retention is
+recorded. An ordinary reinstall cannot adopt these users. Resolve retained
+schemas through a separately reviewed administrative procedure before trying
+to reuse the same schema names. `--keep-schema` still removes owned APEX apps
+and managed plugin files. For plugins with no dedicated schema it has no effect.
+
+Removal verifies the PDB identity, privileged ownership receipts and current
+dictionary user/application identities. Unreceipted existing objects, changed
+identities or unsafe dependencies stop the operation. There is no force option.
+Required APEX exports must declare `ORAC_INSTALL_RECEIPT`; the installer writes
+and records its marker after import. An interrupted import without a receipt
+requires administrative investigation rather than automatic adoption.
+
+Once confirmed, removal disables and fences that exact installation. A cleanup
+failure leaves a durable operation for recovery; enabling, upgrading or replacing
+the installation cannot bypass it. Inspect history and repeat the removal command
+with its original schema disposition after resolving the reported blocker:
+
+```bash
+bin/orac-plugin.sh history home_assistant --json
+bin/orac-plugin.sh remove home_assistant --keep-schema
+```
+
+The retry uses the saved inventory and works after managed package files have
+already been deleted. Completed history remains available after registration
+deletion. Developer source under `plugins/` is preserved, so it can still appear
+in `list --source-packages` after removal.
+
+Core knowledge and audit history are retained. Removal retires the old plugin
+knowledge scope; a later installation gets a fresh registration and scope.
+Historical documents, source identities and grants do not transfer to it.
+Project-owned knowledge keeps its project ownership. Drop Box jobs remain pinned
+to their original target and producer scopes, including across reinstallations.
+
+These changes target a clean database build. They do not supply an in-place
+migration for existing databases. The administrative SQL and APEX import/removal paths were acceptance-tested in
+an isolated Oracle Free 26ai/APEX 24.2 container, including DROP, KEEP, receipt
+checks and interrupted-cleanup recovery. This does not migrate or deploy changes
+to an existing database. Follow the maintenance and confirmation steps above
+when installing the clean-build release.
 
 ## Source Plugin Identity
 
@@ -84,6 +172,11 @@ Routing text is derived only from routing-semantic metadata. Runtime,
 configuration, database, and execution-policy data do not become prompt or
 routing text. Plugins produce route candidates; Orac core arbitrates whether
 any candidate owns the current user turn.
+
+When explicitly enabled, [LLM-assisted routing arbitration](llm-routing-arbitration.md)
+may advise on an unresolved set only after Core has removed ineligible
+candidates. It prefers abstention over weak semantic matches, cannot expand the
+set, and remains outside final policy, confirmation, and invocation.
 
 Declarative route metadata may describe capability-level intents:
 
@@ -326,6 +419,14 @@ Status report in App 1043 or the CLI:
 bin/orac-plugin.sh service policy <plugin_id> <service_code> <auto|manual|disabled>
 ```
 
+On-demand plugins dispatching to their managed service receive an Orac-created
+`PluginServiceCommandAuthority`. The runtime overwrites the reserved authority
+payload field, binds it to the authenticated principal and current plugin, and
+copies only host policy and broker-trusted confirmation outcomes. Services
+that expose generic mutation commands should require this object and derive
+low-level operations internally; model arguments must not select raw external
+API methods.
+
 `execution_model` is `long_running` or `scheduled`. Scheduled services may also
 declare:
 
@@ -387,6 +488,10 @@ bin/plugin-pat-mgr.sh --plugin home_assistant --set access_token
 bin/plugin-pat-mgr.sh --plugin home_assistant --list-expected
 bin/plugin-pat-mgr.sh --plugin home_assistant --check access_token
 ```
+
+Vault updates use a stable lock and atomic replacement so concurrent changes
+preserve other plugin sections. Keep the vault and its parent directories free
+of symlinks. Deleting one plugin section leaves other sections intact.
 
 Secret metadata is declared as:
 
@@ -506,6 +611,16 @@ plugin service discovery since the lifecycle table was recreated.
 A plugin may declare owned database schemas and deployment assets. Plugin-owned
 DDL remains under the plugin directory and is deployed through the approved
 plugin database deployment path.
+
+On the clean-build schema, provisioning uses the Docker administrator and
+records ownership against the current registration, PDB identity and Oracle
+user incarnation. An existing schema requires a matching `OWNED` receipt;
+schema-name declarations alone do not permit adoption. Missing, retained or
+recreated users with inconsistent receipts stop provisioning. If creation was
+interrupted before its receipt was recorded, retry refuses adoption and
+requires investigation. These source changes require clean-build Oracle
+compilation and integration verification before deployment; they are not a
+migration for an existing development database.
 
 Database metadata is declared with the optional `database` object:
 

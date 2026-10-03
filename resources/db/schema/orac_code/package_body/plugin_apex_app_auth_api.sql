@@ -9,6 +9,37 @@ create or replace package body orac_code.plugin_apex_app_auth_api as
   c_hub_app_id constant number := 1043;
   c_workspace  constant varchar2(30 char) := 'ORAC';
 
+  function plugin_is_available(
+    p_plugin_id      in varchar2,
+    p_application_id in number
+  ) return number
+  is
+    l_count number;
+  begin
+    select count(*) into l_count
+      from orac_code.plugin_registry_v plugin
+      join orac_api.plugin_apex_apps_v app
+        on app.plugin_id = plugin.plugin_id
+     where plugin.plugin_id = p_plugin_id
+       and app.installed_app_id = p_application_id
+       and app.enabled = 'Y'
+       and app.install_status = 'installed'
+       and json_value(app.installation_receipt, '$.plugin_registry_id' returning number) = plugin.plugin_registry_id
+       and json_value(app.installation_receipt, '$.application_id' returning number) = p_application_id
+       and plugin.enabled = 'Y'
+       and plugin.removal_id is null
+       and plugin.install_status = 'success'
+       and plugin.configuration_status in ('success', 'not_required')
+       and plugin.dependency_status in ('success', 'not_required')
+       and plugin.command_prerequisite_status in ('not_applicable', 'success', 'degraded')
+       and plugin.database_status in ('deployed', 'already_deployed', 'not_required', 'optional_missing')
+       and plugin.readiness_status = 'success';
+    return case when l_count = 1 then 1 else 0 end;
+  exception
+    when others then
+      return 0;
+  end plugin_is_available;
+
   procedure set_workspace_context
   is
     l_security_group_id number;

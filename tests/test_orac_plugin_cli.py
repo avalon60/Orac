@@ -13,6 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import sys
 import unittest
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -29,6 +30,104 @@ def _load_orac_plugin_module():
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
+
+
+class PluginRemovalCliTests(unittest.TestCase):
+    """Confirmation must identify the plugin before any destructive request."""
+
+    def setUp(self) -> None:
+        self.cli = _load_orac_plugin_module()
+        self.inventory = {
+            "plugin_id": "alpha",
+            "plugin_version": "1.0",
+            "database": {
+                "database_identity": "db:pdb",
+                "schemas": [
+                    {"schema_name": "ORAC_ALPHA", "present": 1},
+                ],
+            },
+            "schema_disposition": "DROP",
+            "apex": [],
+            "directories": [],
+        }
+
+    def test_noninteractive_schema_drop_needs_both_acknowledgements(self) -> None:
+        for flags, allowed in (
+            ([], False),
+            (["--yes"], False),
+            (["--yes", "--confirm-schema-drop", "alpha"], True),
+        ):
+            with self.subTest(flags=flags):
+                args = self.cli.build_parser().parse_args(["remove", "alpha", *flags])
+                with patch.object(self.cli.sys.stdin, "isatty", return_value=False):
+                    if allowed:
+                        self.assertTrue(
+                            self.cli._confirm_plugin_removal(args, self.inventory)
+                        )
+                    else:
+                        with self.assertRaises(self.cli.PluginRemovalConfirmationError):
+                            self.cli._confirm_plugin_removal(args, self.inventory)
+
+    def test_keep_and_schema_less_confirmation_does_not_require_drop_ack(self) -> None:
+        keep = self.cli.build_parser().parse_args(
+            ["remove", "alpha", "--keep-schema", "--yes"]
+        )
+        self.assertTrue(self.cli._confirm_plugin_removal(keep, self.inventory))
+        self.inventory["database"]["schemas"] = []
+        plain = self.cli.build_parser().parse_args(["remove", "alpha", "--yes"])
+        self.assertTrue(self.cli._confirm_plugin_removal(plain, self.inventory))
+
+    def test_interactive_phrase_names_plugin_and_schema_destruction(self) -> None:
+        args = self.cli.build_parser().parse_args(["remove", "alpha"])
+        with (
+            patch.object(self.cli.sys.stdin, "isatty", return_value=True),
+            patch(
+                "builtins.input", return_value="REMOVE alpha AND DROP SCHEMAS"
+            ) as prompt,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertTrue(self.cli._confirm_plugin_removal(args, self.inventory))
+            self.assertIn("REMOVE alpha AND DROP SCHEMAS", prompt.call_args.args[0])
+
+    def test_invalid_schema_confirmation_arguments_exit_two_before_installer(
+        self,
+    ) -> None:
+        for arguments in (
+            ["--confirm-schema-drop", "other"],
+            ["--keep-schema", "--confirm-schema-drop", "alpha"],
+        ):
+            with (
+                self.subTest(arguments=arguments),
+                patch.object(self.cli, "PluginInstaller") as installer,
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                with self.assertRaises(SystemExit) as error:
+                    self.cli.main(["remove", "alpha", *arguments])
+                self.assertEqual(error.exception.code, 2)
+                installer.assert_not_called()
+
+    def test_missing_confirmation_returns_two(self) -> None:
+        with (
+            patch.object(self.cli, "PluginInstaller") as installer,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            installer.return_value.remove.side_effect = (
+                self.cli.PluginRemovalConfirmationError("declined")
+            )
+            self.assertEqual(self.cli.main(["remove", "alpha"]), 2)
+
+    def test_installed_listing_and_source_inventory_are_explicit(self) -> None:
+        parser = self.cli.build_parser()
+        self.assertFalse(parser.parse_args(["list"]).source_packages)
+        self.assertTrue(
+            parser.parse_args(["list", "--source-packages"]).source_packages
+        )
+        self.assertTrue(
+            parser.parse_args(["remove", "alpha", "--dry-run", "--json"]).dry_run
+        )
+        self.assertEqual(
+            parser.parse_args(["history", "alpha", "--json"]).command, "history"
+        )
 
 
 class _Registry:

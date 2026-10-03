@@ -1,4 +1,5 @@
 """Encrypted plugin-scoped personal access token vault."""
+
 # Author: Clive Bostock
 # Date: 05-Jun-2026
 # Description: Stores encrypted plugin personal access tokens and exposes scoped runtime access.
@@ -6,8 +7,14 @@
 from __future__ import annotations
 
 from configparser import ConfigParser
+from contextlib import contextmanager
+from collections.abc import Iterator
+import fcntl
+import os
 from pathlib import Path
 import re
+import stat
+import tempfile
 from typing import Iterable
 
 from lib.user_security import decrypted_user_credential
@@ -18,7 +25,9 @@ from model.plugin_routing.models import PluginSecretKey
 
 __author__ = "Clive Bostock"
 __date__ = "05-Jun-2026"
-__description__ = "Stores encrypted plugin personal access tokens and exposes scoped runtime access."
+__description__ = (
+    "Stores encrypted plugin personal access tokens and exposes scoped runtime access."
+)
 
 
 DEFAULT_PAT_VAULT_PATH = Path("~/.Orac/pat_vault.ini").expanduser()
@@ -72,23 +81,26 @@ class PluginPatVaultStore:
         if not secret_value:
             raise PluginSecretVaultError("Secret value must not be empty.")
 
-        config = self._read_config()
-        if not config.has_section(plugin):
-            config.add_section(plugin)
-        config.set(plugin, secret_key, encrypted_user_credential(secret_value))
-        self._write_config(config)
+        with self._locked_update() as config:
+            if not config.has_section(plugin):
+                config.add_section(plugin)
+            config.set(plugin, secret_key, encrypted_user_credential(secret_value))
 
     def edit_secret(self, plugin_id: str, key: str, value: str) -> None:
         """Update an existing encrypted plugin secret."""
         manifest = self._validate_known_plugin(plugin_id)
         plugin = manifest.plugin_id
         secret_key = self._validate_secret_key(manifest, key)
-        config = self._read_config()
-        if not config.has_section(plugin) or not config.has_option(plugin, secret_key):
-            raise PluginSecretVaultError(
-                f"Plugin secret '{secret_key}' is not configured for '{plugin}'."
-            )
-        self.set_secret(plugin, secret_key, value)
+        if not value:
+            raise PluginSecretVaultError("Secret value must not be empty.")
+        with self._locked_update() as config:
+            if not config.has_section(plugin) or not config.has_option(
+                plugin, secret_key
+            ):
+                raise PluginSecretVaultError(
+                    f"Plugin secret '{secret_key}' is not configured for '{plugin}'."
+                )
+            config.set(plugin, secret_key, encrypted_user_credential(value))
 
     def get_secret(self, plugin_id: str, key: str = DEFAULT_PAT_KEY) -> str:
         """Return one decrypted plugin secret."""
@@ -97,7 +109,9 @@ class PluginPatVaultStore:
         secret_key = self._validate_secret_key(manifest, key)
         config = self._read_config()
         if not config.has_section(plugin) or not config.has_option(plugin, secret_key):
-            raise PluginSecretVaultError(self._missing_secret_message(manifest, secret_key))
+            raise PluginSecretVaultError(
+                self._missing_secret_message(manifest, secret_key)
+            )
 
         encrypted_value = config.get(plugin, secret_key)
         try:
@@ -112,22 +126,20 @@ class PluginPatVaultStore:
         manifest = self._validate_known_plugin(plugin_id)
         plugin = manifest.plugin_id
         secret_key = self._validate_secret_key(manifest, key)
-        config = self._read_config()
-        if not config.has_section(plugin):
-            return False
-        removed = config.remove_option(plugin, secret_key)
-        if not config.items(plugin):
-            config.remove_section(plugin)
-        self._write_config(config)
+        with self._locked_update() as config:
+            if not config.has_section(plugin):
+                return False
+            removed = config.remove_option(plugin, secret_key)
+            if not config.items(plugin):
+                config.remove_section(plugin)
         return removed
 
     def delete_plugin(self, plugin_id: str) -> bool:
         """Delete all vault secrets for one plugin section."""
         manifest = self._validate_known_plugin(plugin_id)
         plugin = manifest.plugin_id
-        config = self._read_config()
-        removed = config.remove_section(plugin)
-        self._write_config(config)
+        with self._locked_update() as config:
+            removed = config.remove_section(plugin)
         return removed
 
     def list_plugins(self) -> tuple[str, ...]:
@@ -154,7 +166,9 @@ class PluginPatVaultStore:
         """Return whether one validated plugin secret is configured."""
         manifest = self._validate_known_plugin(plugin_id)
         plugin = manifest.plugin_id
-        secret_key = self._validate_secret_key(manifest, key or self.default_key(plugin))
+        secret_key = self._validate_secret_key(
+            manifest, key or self.default_key(plugin)
+        )
         config = self._read_config()
         return config.has_section(plugin) and config.has_option(plugin, secret_key)
 
@@ -228,23 +242,63 @@ class PluginPatVaultStore:
         """Read the vault file, creating it first when needed."""
         self._ensure_vault_file()
         config = ConfigParser(interpolation=None)
-        config.read(self.vault_path)
+        fd = os.open(self.vault_path, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd, "r", encoding="utf-8") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                raise PluginSecretVaultError("Vault must be a regular file.")
+            config.read_file(handle)
         return config
 
-    def _write_config(self, config: ConfigParser) -> None:
-        """Persist the vault config with restrictive permissions where possible."""
+    @contextmanager
+    def _locked_update(self) -> Iterator[ConfigParser]:
+        """Serialise the complete read/modify/replace on a stable lock inode."""
         self._ensure_vault_file()
-        with self.vault_path.open("w", encoding="utf-8") as handle:
-            config.write(handle)
-        _chmod_best_effort(self.vault_path, 0o600)
+        lock_path = self.vault_path.with_name(self.vault_path.name + ".lock")
+        fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise PluginSecretVaultError("Vault lock must be a regular file.")
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            config = self._read_config()
+            yield config
+            self._write_config(config)
+        finally:
+            os.close(fd)
+
+    def _write_config(self, config: ConfigParser) -> None:
+        """Atomically replace the vault while the caller holds its stable lock."""
+        self._ensure_vault_file()
+        fd, name = tempfile.mkstemp(prefix=".pat-vault-", dir=self.vault_path.parent)
+        temporary_path = Path(name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                config.write(handle)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary_path, self.vault_path)
+            directory_fd = os.open(self.vault_path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        finally:
+            temporary_path.unlink(missing_ok=True)
 
     def _ensure_vault_file(self) -> None:
         """Create the vault directory and file with restrictive permissions."""
         self.vault_path.parent.mkdir(parents=True, exist_ok=True)
+        if any(
+            path.is_symlink() for path in (self.vault_path, *self.vault_path.parents)
+        ):
+            raise PluginSecretVaultError("Vault paths must not contain symlinks.")
         _chmod_best_effort(self.vault_path.parent, 0o700)
-        if not self.vault_path.exists():
-            self.vault_path.touch(mode=0o600)
-        _chmod_best_effort(self.vault_path, 0o600)
+        fd = os.open(self.vault_path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise PluginSecretVaultError("Vault must be a regular file.")
+            os.fchmod(fd, 0o600)
+        finally:
+            os.close(fd)
 
 
 class PluginSecretVault:
@@ -283,9 +337,7 @@ def _normalise_plugin_id(plugin_id: str) -> str:
     """Return a validated plugin id."""
     plugin = str(plugin_id or "").strip()
     if not _PLUGIN_ID_PATTERN.fullmatch(plugin):
-        raise PluginSecretVaultError(
-            "Plugin id must match ^[a-z][a-z0-9_]*$."
-        )
+        raise PluginSecretVaultError("Plugin id must match ^[a-z][a-z0-9_]*$.")
     return plugin
 
 

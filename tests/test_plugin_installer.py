@@ -420,11 +420,11 @@ class PluginInstallerTests(unittest.TestCase):
             self.assertTrue(
                 (result.installed_path / "resources" / "intercept_meta.json").is_file()
             )
-            self.assertFalse(
-                (result.installed_path / "plugin" / "resources").exists()
-            )
+            self.assertFalse((result.installed_path / "plugin" / "resources").exists())
             self.assertTrue(
-                (root / "plugins" / "alpha" / "resources" / "intercept_meta.json").is_file()
+                (
+                    root / "plugins" / "alpha" / "resources" / "intercept_meta.json"
+                ).is_file()
             )
 
     def test_extracted_package_resource_resolves_from_managed_layout(self) -> None:
@@ -703,6 +703,37 @@ class PluginInstallerTests(unittest.TestCase):
             self.assertFalse(result.enabled)
             self.assertEqual(result.status, "database_failed")
             self.assertFalse(registry.rows["alpha"]["enabled"])
+            snapshot = Path(registry.rows["alpha"]["installed_path"])
+            self.assertTrue((snapshot / "manifest.json").is_file())
+            self.assertTrue((snapshot / "plugin" / "plugin.py").is_file())
+            self.assertEqual(snapshot.parent.parent.name, "snapshots")
+            self.assertEqual(registry.history[0]["installed_path"], str(snapshot))
+
+    def test_retry_rejects_tampered_package_snapshot_before_database_work(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = _write_source_plugin(root, "alpha")
+            registry = _Registry()
+            database = _DatabaseDeployer(
+                _DatabaseResult(
+                    eligible=False, status="deployment_failed", message="failed"
+                )
+            )
+            installer = PluginInstaller(
+                project_root=root,
+                managed_root=root / "var/plugins",
+                config_root=root / "config",
+                registry=registry,
+                dependency_installer=_DependencyInstaller(),
+                database_deployer=database,
+            )
+            installer.install_source(source)
+            snapshot = Path(registry.rows["alpha"]["installed_path"])
+            (snapshot / "plugin/plugin.py").write_text("changed", encoding="utf-8")
+            database.calls.clear()
+            with self.assertRaisesRegex(PluginInstallationError, "snapshot differs"):
+                installer.install_source(source)
+            self.assertEqual(database.calls, [])
 
     def test_registry_failure_rolls_back_candidate_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -766,7 +797,7 @@ class PluginInstallerTests(unittest.TestCase):
             )
             installer.install_source(alpha_source)
 
-            entries = installer.list_plugins()
+            entries = installer.list_plugins(include_source=True)
 
             by_id = {entry["plugin_id"]: entry for entry in entries}
             self.assertTrue(by_id["alpha"]["installed"])
@@ -872,8 +903,10 @@ class PluginInstallerTests(unittest.TestCase):
 
             self.assertTrue(result.enabled)
             self.assertEqual(apex_installer.calls, [("alpha", "ALPHA_STATUS")])
-            self.assertEqual(apex_registry.rows[0]["install_status"], "installed")
-            self.assertEqual(apex_registry.rows[0]["installed_app_id"], 2042)
+            self.assertEqual(apex_registry.rows[0]["install_status"], "pending")
+            self.assertIsNone(apex_registry.rows[0]["installed_app_id"])
+            self.assertEqual(apex_registry.rows[-1]["install_status"], "installed")
+            self.assertEqual(apex_registry.rows[-1]["installed_app_id"], 2042)
             self.assertEqual(apex_registry.rows[0]["declared_application_id"], 1043)
             self.assertEqual(apex_registry.rows[0]["required_roles"], '["ORAC_ADMIN"]')
             self.assertEqual(apex_registry.rows[0]["icon"], "fa fa-folder-open")
@@ -1004,9 +1037,10 @@ class PluginInstallerTests(unittest.TestCase):
             self.assertFalse(result.enabled)
             self.assertEqual(result.status, "apex_failed")
             self.assertFalse(registry.rows["alpha"]["enabled"])
-            self.assertEqual(apex_registry.rows[0]["install_status"], "failed")
+            self.assertEqual(apex_registry.rows[0]["install_status"], "pending")
+            self.assertEqual(apex_registry.rows[-1]["install_status"], "failed")
             self.assertIn(
-                "mock APEX import failure", apex_registry.rows[0]["last_error_message"]
+                "mock APEX import failure", apex_registry.rows[-1]["last_error_message"]
             )
 
     def test_optional_apex_app_is_registered_without_import(self) -> None:
@@ -1089,7 +1123,8 @@ class ExistingPluginDependencyTests(unittest.TestCase):
         self.assertEqual(errors, [])
         by_id = {manifest.plugin_id: manifest for manifest in manifests}
         self.assertEqual(
-            by_id["home_assistant"].python_dependencies, ("requests<3,>=2.32",)
+            by_id["home_assistant"].python_dependencies,
+            ("requests<3,>=2.32", "websocket-client<2,>=1.9"),
         )
         self.assertEqual(by_id["weather"].python_dependencies, ("requests<3,>=2.32",))
         self.assertEqual(by_id["media_control"].python_dependencies, ())

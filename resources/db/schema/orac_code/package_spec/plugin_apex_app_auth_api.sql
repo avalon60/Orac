@@ -6,6 +6,11 @@
 -- __description__: plugin APEX application authorization helper API
 
 create or replace package orac_code.plugin_apex_app_auth_api as
+  function plugin_is_available(
+    p_plugin_id      in varchar2,
+    p_application_id in number
+  ) return number;
+
   function has_required_role(
     p_required_role in varchar2,
     p_app_user      in varchar2 default null
