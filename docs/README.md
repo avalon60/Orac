@@ -67,6 +67,12 @@ to complete.
 
 ## Architecture and Protocols
 
+- [Unified Orac Communications](communications.md): canonical requests,
+  processor lifecycle, trusted principals, NDJSON/voice compatibility, and the
+  reusable OpenAI Chat Completions adapter.
+- [LLM-Assisted Routing Arbitration](llm-routing-arbitration.md): optional,
+  bounded routing advice, provider configuration, abstention, and Core
+  revalidation.
 - [Conversation Context, Memory, and RAG](conversation-context-memory-and-rag.md)
 - [Core Document Ingestion](document-ingestion.md)
 - [Drop Box Data Lifecycle](../plugins/drop_box/docs/drop-box-data-lifecycle.md)

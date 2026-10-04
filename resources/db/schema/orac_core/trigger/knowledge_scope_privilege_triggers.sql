@@ -107,6 +107,12 @@ create or replace trigger orac_core.users_bi
 before insert on orac_core.users
 for each row
 begin
+  if lower(:new.username) = 'system'
+  then
+    :new.username := 'system';
+    :new.is_active := 'N';
+  end if;
+
   if :new.username <> trim(:new.username)
   then
     raise_application_error(-20058, 'Username must not contain surrounding whitespace.');

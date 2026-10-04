@@ -29,7 +29,7 @@ select
                  ', ' || json_value(p.pref_value, '$.country' returning varchar2(4000) null on error)
              end
       end
-    when p.pref_key = 'default_llm_id' then
+    when p.pref_key in ('default_llm_id', 'general_chat_llm') then
       coalesce(
         (
           select r.name

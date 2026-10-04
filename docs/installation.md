@@ -123,7 +123,27 @@ The command:
 - builds the Oracle image
 - starts the database container
 - installs the core Oracle Database objects and ORDS/APEX assets
+- creates an ordinary Orac user matching the installer login and seeds its
+  default user preferences without granting administrative access
+- ensures the reserved non-interactive `system` preference owner exists
 - waits for the `ORAC deployment complete` marker
+
+When deployment is run through `sudo`, the originating `SUDO_USER` is used;
+otherwise the script uses `id -un`. Re-running deployment preserves an
+existing matching Orac user, including its preferences, roles, and profile.
+The existing `orac_admin` APEX bootstrap account remains separate.
+
+On application startup, Orac canonicalises the installation-wide
+`max_tokens`, `show_reasoning`, and `strip_reasoning_tags` values under the
+reserved system principal before requests are accepted. A valid existing
+SYSTEM value wins, followed by unanimous valid legacy user values, the shipped
+`*_default` configuration, and the catalogue fallback. The caller owns the
+transaction and rolls the complete migration back when any key fails.
+
+The upgrade removes successfully migrated ordinary per-user rows. Database or
+application rollback does not recreate that historical data, so capture a
+backup before upgrade if a data rollback to per-user ownership must remain
+possible.
 
 Useful options:
 

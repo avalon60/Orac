@@ -10,6 +10,24 @@ create or replace trigger orac_core.users_bu
 before update on orac_core.users
 for each row
 begin
+  if lower(:new.username) = 'system'
+     and lower(:old.username) <> 'system'
+  then
+    raise_application_error(
+      -20076,
+      'An ordinary user cannot be renamed to the reserved SYSTEM principal.'
+    );
+  end if;
+
+  if lower(:old.username) = 'system'
+     and (lower(:new.username) <> 'system' or :new.is_active <> 'N')
+  then
+    raise_application_error(
+      -20075,
+      'The reserved SYSTEM principal cannot be renamed or activated.'
+    );
+  end if;
+
   if :new.username <> trim(:new.username)
   then
     raise_application_error(-20058, 'Username must not contain surrounding whitespace.');

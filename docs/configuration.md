@@ -2,6 +2,62 @@
 
 This is the canonical reference for `resources/config/orac.ini`. It documents every shipped section and key. Plugin-local `plugin.ini` files are documented with their plugins and are not part of this reference.
 
+## Interactive chat latency
+
+`[service] keep_alive` is passed to every Ollama chat, generate, streaming, and
+tool request. The shipped `30m` value keeps an interactive model resident while
+still allowing Ollama to reclaim it later.
+
+`[diagnostics] chat_latency_enabled` controls one content-free structured INFO
+summary per request. It contains correlation identifiers, monotonic milestones,
+prompt accounting, effective model options, and Ollama duration metadata, but
+never prompt text, retrieved content, credentials, or authentication material.
+
+`[conversation_title]` configures the supervised durable title worker. Title
+generation is outside response completion and has its own model, endpoint,
+timeout, output cap, lease, and batch size.
+
+## `[arbitrator]`
+
+Optional bounded LLM routing advice after deterministic plugin gates and
+matching. See [LLM-Assisted Routing Arbitration](llm-routing-arbitration.md)
+for provider examples, authority boundaries, fallback behaviour, and extension
+instructions.
+
+### `enabled`
+
+Explicit feature switch. Optional; defaults to `false`. When false, Orac does
+not initialise or invoke an arbitration provider.
+
+### `provider`
+
+Provider type. Required when enabled. Valid values are `ollama`,
+`openai_compatible`, and `edge_runtime`.
+
+### `model`
+
+Provider model identifier. Required and non-empty when enabled. It remains
+independent from `[service].default_model_name` even when both values match.
+
+### `endpoint`
+
+Required non-empty HTTP(S) base URL for Ollama and OpenAI-compatible providers.
+Optional and runtime specific for an injected edge provider.
+
+### `timeout_seconds`
+
+Optional provider timeout from 0.1 to 120 seconds. Default: `10`.
+
+### `min_confidence`
+
+Optional finite plugin-acceptance threshold from 0 through 1. Default: `0.90`.
+It rejects weak selections and never grants authority.
+
+### `api_key_env`
+
+Optional environment-variable name containing an OpenAI-compatible credential.
+The configuration value is a name, never the secret itself.
+
 ## Reading This Reference
 
 - **Shipped value** is the value in the repository's `orac.ini`.
@@ -191,7 +247,9 @@ Removes model reasoning-tag content from user-facing output when enabled.
 
 **Example:** `strip_reasoning_tags_default = false`
 
-**Notes:** This is a runtime preference default. Saved user preferences and explicit request metadata take precedence.
+**Notes:** This is the migration/runtime fallback for the installation-wide
+`system.strip_reasoning_tags` preference. Explicit request metadata and a valid
+SYSTEM value take precedence. The catalogue/built-in fallback is `true`.
 
 ### `timezone_default`
 
@@ -241,9 +299,14 @@ Default concise-response preference used when no saved preference is set.
 - **Allowed values:** Positive integers
 - **Status:** active
 
-Default maximum response-token budget used when no saved preference is set.
+Default maximum response-token budget used when no SYSTEM preference is set.
 
 **Example:** `max_tokens_default = 2048`
+
+**Notes:** Explicit request metadata and a valid
+`system.max_tokens` value take precedence. The catalogue/built-in fallback is
+`512`; the resolved value remains bounded to `1..32768` and subject to
+`settings.max_tokens_limit`.
 
 ### `show_reasoning_default`
 
@@ -257,6 +320,10 @@ Default maximum response-token budget used when no saved preference is set.
 Default permission flag for provider-visible reasoning summaries where supported.
 
 **Example:** `show_reasoning_default = false`
+
+**Notes:** Explicit request metadata and a valid
+`system.show_reasoning` value take precedence. The catalogue/built-in fallback
+is `false`. This setting is independent from reasoning-tag stripping.
 
 ### `tts_rate_default`
 
@@ -1066,75 +1133,6 @@ Configures supplementary for the `[logging]` subsystem.
 Configures feature for the `[logging]` subsystem.
 
 **Example:** `feature = cyan`
-
-## `[openai_gateway]`
-
-Reserved settings for a future OpenAI-compatible gateway.
-
-### `enabled`
-
-- **Type:** boolean
-- **Shipped value:** `false`
-- **Runtime fallback:** The shipped value is authoritative; loaders without a separate default require the configured key
-- **Required:** No; supplied by the shipped configuration
-- **Allowed values:** `true`, `false`
-- **Status:** reserved
-
-Configures enabled for the `[openai_gateway]` subsystem.
-
-**Example:** `enabled = false`
-
-### `host`
-
-- **Type:** string
-- **Shipped value:** `127.0.0.1`
-- **Runtime fallback:** The shipped value is authoritative; loaders without a separate default require the configured key
-- **Required:** No; supplied by the shipped configuration
-- **Allowed values:** Any value valid for the described subsystem
-- **Status:** reserved
-
-Configures host for the `[openai_gateway]` subsystem.
-
-**Example:** `host = 127.0.0.1`
-
-### `port`
-
-- **Type:** integer
-- **Shipped value:** `11435`
-- **Runtime fallback:** The shipped value is authoritative; loaders without a separate default require the configured key
-- **Required:** No; supplied by the shipped configuration
-- **Allowed values:** Any value valid for the described subsystem
-- **Status:** reserved
-
-Configures port for the `[openai_gateway]` subsystem.
-
-**Example:** `port = 11435`
-
-### `require_api_key`
-
-- **Type:** boolean
-- **Shipped value:** `true`
-- **Runtime fallback:** The shipped value is authoritative; loaders without a separate default require the configured key
-- **Required:** No; supplied by the shipped configuration
-- **Allowed values:** `true`, `false`
-- **Status:** reserved
-
-Configures require api key for the `[openai_gateway]` subsystem.
-
-**Example:** `require_api_key = true`
-
-### `api_key_env`
-
-- **Type:** string
-- **Shipped value:** `ORAC_OPENAI_GATEWAY_API_KEY`
-- **Runtime fallback:** The shipped value is authoritative; loaders without a separate default require the configured key
-- **Required:** No; supplied by the shipped configuration
-- **Allowed values:** Any value valid for the described subsystem
-- **Status:** reserved
-
-Configures api key env for the `[openai_gateway]` subsystem.
-
-**Example:** `api_key_env = ORAC_OPENAI_GATEWAY_API_KEY`
 
 ## `[retrieval]`
 

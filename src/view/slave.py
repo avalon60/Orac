@@ -10,6 +10,7 @@ the successor ship to Liberator.
 import argparse
 import asyncio
 import json
+import time
 import os
 import re
 import textwrap
@@ -18,7 +19,6 @@ import hmac
 import base64
 import hashlib
 import secrets
-import time
 from pathlib import Path
 from datetime import datetime, timezone
 from getpass import getuser
@@ -31,6 +31,7 @@ except ImportError:  # pragma: no cover - platform-dependent availability
 from lib.fsutils import project_home
 from lib.config_mgr import ConfigManager
 from lib.protocol_validation import disabled_protocol_validator
+from orac_core.identity import is_reserved_non_interactive_principal
 # Icons / logging
 from lib.icons import Icons
 import shutil
@@ -275,6 +276,8 @@ def remember_history_entry(user_input: str) -> None:
 # IMPORTANT: load secret once at module import (fail-fast if missing)
 SECRET = load_secret()
 CALLING_USER = os.getenv("ORAC_CALLING_USER") or getuser()  # allow override for service accounts
+if is_reserved_non_interactive_principal(CALLING_USER):
+    raise RuntimeError("A reserved non-interactive principal cannot use slave.py authentication.")
 CLIENT_SESSION_ID = f"slave-{CALLING_USER}-{uuid.uuid4().hex[:12]}"
 
 
@@ -430,8 +433,14 @@ async def tcp_client(
                 channel="voice" if tts_enabled else "text",
             )
             wire = json.dumps(req_env, ensure_ascii=False) + "\n"
+            request_started_at = time.perf_counter()
+            first_output_at: float | None = None
             writer.write(wire.encode("utf-8"))
             await writer.drain()
+            logger.log_info(
+                "chat client latency: "
+                f"request_id={req_env['id']} phase=request_sent elapsed_ms=0.000"
+            )
 
             stream_rendered = False
             stream_finished = False
@@ -496,6 +505,13 @@ async def tcp_client(
                         print(f"{ts_prefix()}{Icons.robot} Orac: ", end="", flush=True)
                         stream_rendered = True
                     elif frame_type == "text_delta":
+                        if first_output_at is None:
+                            first_output_at = time.perf_counter()
+                            logger.log_info(
+                                "chat client latency: "
+                                f"request_id={req_env['id']} phase=first_output "
+                                f"elapsed_ms={(first_output_at - request_started_at) * 1000:.3f}"
+                            )
                         if not stream_rendered:
                             print(
                                 f"{ts_prefix()}{Icons.robot} Orac: ",
@@ -514,6 +530,11 @@ async def tcp_client(
                             f"Speech text chunk received: {payload.get('chunk', '')!r}"
                         )
                     elif frame_type == "stream_end":
+                        logger.log_info(
+                            "chat client latency: "
+                            f"request_id={req_env['id']} phase=stream_end "
+                            f"elapsed_ms={(time.perf_counter() - request_started_at) * 1000:.3f}"
+                        )
                         stream_finished = True
                         if stream_rendered:
                             print()
@@ -558,6 +579,11 @@ async def tcp_client(
                     break
 
                 if stream_rendered or stream_finished:
+                    logger.log_info(
+                        "chat client latency: "
+                        f"request_id={req_env['id']} phase=prompt_return "
+                        f"elapsed_ms={(time.perf_counter() - request_started_at) * 1000:.3f}"
+                    )
                     print()
                     break
 
@@ -574,6 +600,11 @@ async def tcp_client(
                     print()
                 else:
                     print(first_prefix + "\n")
+                logger.log_info(
+                    "chat client latency: "
+                    f"request_id={req_env['id']} phase=prompt_return "
+                    f"elapsed_ms={(time.perf_counter() - request_started_at) * 1000:.3f}"
+                )
                 break
 
 # --- Main ---

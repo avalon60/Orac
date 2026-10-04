@@ -521,11 +521,20 @@ wwv_flow_imp_shared.create_list(
 );
 wwv_flow_imp_shared.create_list_item(
  p_id=>wwv_flow_imp.id(14400100000000002)
-,p_list_item_display_sequence=>10
+,p_list_item_display_sequence=>20
 ,p_list_item_link_text=>'Preference Definitions'
 ,p_list_item_link_target=>'f?p=&APP_ID.:7:&APP_SESSION.::&DEBUG.:::'
 ,p_list_item_icon=>'fa-sliders'
 ,p_list_text_01=>'Manage preference keys, labels, defaults, and allowed value metadata.'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(14400100000000008)
+,p_list_item_display_sequence=>10
+,p_list_item_link_text=>'System Configuration'
+,p_list_item_link_target=>'f?p=&APP_ID.:41:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-cogs'
+,p_list_text_01=>'Manage installation-wide Orac preferences.'
 ,p_list_item_current_type=>'TARGET_PAGE'
 );
 wwv_flow_imp_shared.create_list_item(
@@ -9374,6 +9383,7 @@ wwv_flow_imp_page.create_report_region(
 '        or upper(x."DISPLAY_NAME") like ''%''||upper(:P2_SEARCH)||''%''',
 '        or upper(x."USERNAME") like ''%''||upper(:P2_SEARCH)||''%''',
 '    )',
+'  and lower(x."USERNAME") <> ''system''',
 'order by "DISPLAY_NAME"'))
 ,p_ajax_enabled=>'Y'
 ,p_ajax_items_to_submit=>'P2_SEARCH'
@@ -9483,7 +9493,8 @@ wwv_flow_imp_page.create_report_region(
 '         then ''fa fa-check u-success-text''',
 '       end as "IS_ACTIVE_ICON"',
 '  from "USERS" x',
-' where x."USER_ID" = :P2_USER_ID'))
+' where x."USER_ID" = :P2_USER_ID',
+'   and lower(x."USERNAME") <> ''system'''))
 ,p_display_when_condition=>'P2_USER_ID'
 ,p_display_condition_type=>'ITEM_IS_NOT_NULL'
 ,p_ajax_enabled=>'Y'
@@ -9990,6 +10001,16 @@ wwv_flow_imp_page.create_page_da_event(
 ,p_bind_event_type=>'apexafterclosedialog'
 );
 wwv_flow_imp_page.create_page_da_action(
+ p_id=>wwv_flow_imp.id(24410000000000002)
+,p_event_id=>wwv_flow_imp.id(12717431437390327)
+,p_event_result=>'TRUE'
+,p_action_sequence=>10
+,p_execute_on_page_init=>'N'
+,p_action=>'NATIVE_REFRESH'
+,p_affected_elements_type=>'REGION'
+,p_affected_region_id=>wwv_flow_imp.id(12659500736390278)
+);
+wwv_flow_imp_page.create_page_da_action(
  p_id=>wwv_flow_imp.id(12718085249390327)
 ,p_event_id=>wwv_flow_imp.id(12717431437390327)
 ,p_event_result=>'TRUE'
@@ -10421,6 +10442,18 @@ wwv_flow_imp_page.create_page_item(
   'show_line_breaks', 'Y')).to_clob
 );
 wwv_flow_imp_page.create_page_validation(
+ p_id=>wwv_flow_imp.id(24410000000000001)
+,p_validation_name=>'Reserved principal cannot be maintained'
+,p_validation_sequence=>40
+,p_validation=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select 1 from users',
+' where user_id = :P4_USER_ID',
+'   and lower(username) = ''system'''))
+,p_validation_type=>'NOT_EXISTS'
+,p_error_message=>'The reserved system configuration owner cannot be maintained as a user.'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+);
+wwv_flow_imp_page.create_page_validation(
  p_id=>wwv_flow_imp.id(12645697938390265)
 ,p_validation_name=>'P4_CREATED_ON must be timestamp'
 ,p_validation_sequence=>50
@@ -10445,8 +10478,10 @@ wwv_flow_imp_page.create_page_validation(
 ,p_validation_name=>'Username Exists'
 ,p_validation_sequence=>80
 ,p_validation=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select 1 from users',
-'where username = lower(:P4_USERNAME)'))
+'select 1',
+'  from users',
+' where username = lower(:P4_USERNAME)',
+'   and (:P4_USER_ID is null or user_id <> :P4_USER_ID)'))
 ,p_validation_type=>'NOT_EXISTS'
 ,p_error_message=>'This username is already in use - please choose another.'
 ,p_error_display_location=>'INLINE_WITH_FIELD_AND_NOTIFICATION'
@@ -17232,6 +17267,180 @@ wwv_flow_imp_page.create_page_process(
 ,p_process_clob_language=>'PLSQL'
 ,p_error_display_location=>'INLINE_IN_NOTIFICATION'
 ,p_internal_uid=>15200100000000328
+);
+end;
+/
+prompt --application/pages/page_00041
+begin
+wwv_flow_imp_page.create_page(
+ p_id=>41
+,p_name=>'System Configuration'
+,p_alias=>'SYSTEM-CONFIGURATION'
+,p_step_title=>'System Configuration'
+,p_autocomplete_on_off=>'OFF'
+,p_step_template=>2526643373347724467
+,p_page_template_options=>'#DEFAULT#'
+,p_required_role=>wwv_flow_imp.id(11450849677769089)
+,p_protection_level=>'C'
+,p_page_component_map=>'11'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(24410000000000010)
+,p_plug_name=>'System Preferences'
+,p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'
+,p_plug_template=>4072358936313175081
+,p_plug_display_sequence=>10
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'expand_shortcuts', 'N',
+  'output_as', 'HTML',
+  'show_line_breaks', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(24410000000000011)
+,p_name=>'P41_GENERAL_CHAT_LLM'
+,p_is_required=>true
+,p_item_sequence=>10
+,p_item_plug_id=>wwv_flow_imp.id(24410000000000010)
+,p_prompt=>'General Chat LLM'
+,p_display_as=>'NATIVE_SELECT_LIST'
+,p_lov=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select name || '' ('' || provider || '')'' d,',
+'       llm_id r',
+'  from orac_api.llm_registry_v',
+' where is_enabled = ''Y''',
+' order by provider, name'))
+,p_lov_display_null=>'YES'
+,p_lov_null_text=>'- Select General Chat LLM -'
+,p_cHeight=>1
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
+,p_lov_display_extra=>'NO'
+,p_help_text=>'The installation-wide model used for ordinary conversation when no specialised routing rule applies.'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'page_action_on_selection', 'NONE')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(24410000000000014)
+,p_name=>'P41_MAX_TOKENS'
+,p_is_required=>true
+,p_source_data_type=>'NUMBER'
+,p_item_sequence=>20
+,p_item_plug_id=>wwv_flow_imp.id(24410000000000010)
+,p_prompt=>'Max Tokens'
+,p_display_as=>'NATIVE_NUMBER_FIELD'
+,p_cSize=>10
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
+,p_help_text=>'The installation-wide default response-token budget. Explicit requests may override it, subject to the configured safety cap.'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(24410000000000015)
+,p_name=>'P41_SHOW_REASONING'
+,p_is_required=>true
+,p_item_sequence=>30
+,p_item_plug_id=>wwv_flow_imp.id(24410000000000010)
+,p_prompt=>'Show Reasoning'
+,p_display_as=>'NATIVE_SELECT_LIST'
+,p_lov=>'STATIC:Yes;true,No;false'
+,p_lov_display_null=>'NO'
+,p_cHeight=>1
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
+,p_lov_display_extra=>'NO'
+,p_help_text=>'Controls whether model reasoning content is displayed by default.'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'page_action_on_selection', 'NONE')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(24410000000000016)
+,p_name=>'P41_STRIP_REASONING_TAGS'
+,p_is_required=>true
+,p_item_sequence=>40
+,p_item_plug_id=>wwv_flow_imp.id(24410000000000010)
+,p_prompt=>'Strip Reasoning Tags'
+,p_display_as=>'NATIVE_SELECT_LIST'
+,p_lov=>'STATIC:Yes;true,No;false'
+,p_lov_display_null=>'NO'
+,p_cHeight=>1
+,p_field_template=>1609122147107268652
+,p_item_template_options=>'#DEFAULT#'
+,p_lov_display_extra=>'NO'
+,p_help_text=>'Controls whether reasoning markup is removed from visible output by default.'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'page_action_on_selection', 'NONE')).to_clob
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(24410000000000012)
+,p_button_sequence=>50
+,p_button_plug_id=>wwv_flow_imp.id(24410000000000010)
+,p_button_name=>'SAVE'
+,p_button_action=>'SUBMIT'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>4072362960822175091
+,p_button_is_hot=>'Y'
+,p_button_image_alt=>'Save System Configuration'
+,p_button_position=>'NEXT'
+);
+wwv_flow_imp_page.create_page_validation(
+ p_id=>wwv_flow_imp.id(24410000000000017)
+,p_validation_name=>'Max Tokens Is In Range'
+,p_validation_sequence=>10
+,p_validation=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'return regexp_like(:P41_MAX_TOKENS, ''^\d+$'')',
+'   and to_number(:P41_MAX_TOKENS default null on conversion error)',
+'       between 1 and 32768;'))
+,p_validation2=>'PLSQL'
+,p_validation_type=>'FUNC_BODY_RETURNING_BOOLEAN'
+,p_error_message=>'Max Tokens must be a whole number from 1 through 32768.'
+,p_associated_item=>wwv_flow_imp.id(24410000000000014)
+,p_error_display_location=>'INLINE_WITH_FIELD_AND_NOTIFICATION'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(24410000000000013)
+,p_process_sequence=>10
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Save System Preferences'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'orac_code.user_preferences_api.set_system_general_chat_llm(',
+'  p_llm_id => :P41_GENERAL_CHAT_LLM',
+');',
+'orac_code.user_preferences_api.set_system_scalar(',
+'  p_pref_key   => ''max_tokens'',',
+'  p_pref_value => json(to_char(:P41_MAX_TOKENS))',
+');',
+'orac_code.user_preferences_api.set_system_scalar(',
+'  p_pref_key   => ''show_reasoning'',',
+'  p_pref_value => json(lower(:P41_SHOW_REASONING))',
+');',
+'orac_code.user_preferences_api.set_system_scalar(',
+'  p_pref_key   => ''strip_reasoning_tags'',',
+'  p_pref_value => json(lower(:P41_STRIP_REASONING_TAGS))',
+');'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_process_when_button_id=>wwv_flow_imp.id(24410000000000012)
+,p_process_success_message=>'System configuration saved.'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(24410000000000018)
+,p_process_sequence=>10
+,p_process_point=>'BEFORE_HEADER'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Load System Preferences'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+':P41_GENERAL_CHAT_LLM := orac_code.user_preferences_api.get_system_general_chat_llm;',
+':P41_MAX_TOKENS := coalesce(',
+'  orac_code.user_preferences_api.get_system_scalar(''max_tokens''), ''512''',
+');',
+':P41_SHOW_REASONING := coalesce(',
+'  orac_code.user_preferences_api.get_system_scalar(''show_reasoning''), ''false''',
+');',
+':P41_STRIP_REASONING_TAGS := coalesce(',
+'  orac_code.user_preferences_api.get_system_scalar(''strip_reasoning_tags''), ''true''',
+');'))
+,p_process_clob_language=>'PLSQL'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
 );
 end;
 /

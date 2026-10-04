@@ -11,6 +11,7 @@ orac_core,tts_voices,tts_voice
 orac_core,message_embeddings,mesg_emb
 orac_core,messages,mesgs
 orac_core,conversation_memory_requests,conv_memreq
+orac_core,conversation_title_requests,conv_titreq
 orac_core,conversation_summary_checkpoints,conv_sumchk
 orac_core,conversation_summary_sources,conv_sumsrc
 orac_core,orac_search_queries,orac_srch_q

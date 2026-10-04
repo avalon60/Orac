@@ -1,11 +1,18 @@
 Backlog: LLM provider/config redesign
 
+Status note (28-Sep-2026): Orac Gateway is now implemented as the
+`orac_gateway` service plugin. Gateway listener and authentication settings
+belong to that plugin's scoped configuration and secret vault. The generic
+multi-provider API-key manager described below remains a separate backlog
+proposal; its historical `[openai_gateway]` examples are not active runtime
+configuration.
+
 - Separate local-discovered models from cloud-configured models.
 - Keep api_keys.ini under ~/.Orac for encrypted API keys.
 - Distinguish inbound keys from outbound keys.
 - Move user preferences towards selecting llm_config rather than raw llm_registry rows.
 - Consider OraTAPI-style runtime profiles later.
-- Add OpenAI-compatible gateway as optional first-party runtime later.
+- Extend the Orac Gateway plugin only through its host-mediated service boundary.
 
 
 
@@ -226,7 +233,7 @@ Deliverables:
 5. Update any relevant README or developer notes if there is an obvious place for this utility.
 
 Out of scope for this task:
-- Do not implement the OpenAI gateway yet.
+- Do not move Orac Gateway settings back into core `orac.ini`.
 - Do not change `orac.ini` loading unless there is already a natural place to document future integration.
 - Do not add provider base URLs to `api_keys.ini`.
 - Do not modify `llm_registry` or `llm_config`.

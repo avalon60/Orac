@@ -1,8 +1,14 @@
-# model/orac_auth.py  (additions)
+"""Authenticate signed Orac protocol frames."""
+
+# Author: Clive Bostock
+# Date: 2026-10-03
+# Description: Verify protocol signatures and reject reserved principals.
 
 import json, hmac, base64, hashlib, time
 from dataclasses import dataclass
 from typing import Optional, Callable
+
+from orac_core.identity import is_reserved_non_interactive_principal
 
 def _canonical_json(obj) -> bytes:
   return json.dumps(obj, separators=(",", ":"), sort_keys=True, ensure_ascii=False).encode("utf-8")
@@ -40,6 +46,9 @@ class ZenFrameAuth(FrameAuthProvider):
       sig   = str(auth.get("sig") or "")
       if not (user and ts and nonce and sig and route):
         return AuthResult(None, False, "missing auth fields")
+
+      if is_reserved_non_interactive_principal(user):
+        return AuthResult(None, False, "reserved non-interactive principal")
 
       now = int(time.time())
       tsi = int(ts)

@@ -28,8 +28,9 @@ credentials, retrieval, plugins, and home-automation integrations.
 - Speech synthesis through Kokoro with Piper fallback.
 - Explicit or policy-controlled internet retrieval through a local SearXNG
   service.
-- Deterministic, core-owned dialogue routing across plugins, authorised local
-  knowledge, internet retrieval, and ordinary LLM conversation.
+- Core-owned dialogue routing across plugins, authorised local knowledge,
+  internet retrieval, and ordinary LLM conversation, with optional bounded LLM
+  advice after deterministic gates and matching.
 - Manifest-driven plugins with scoped configuration, secrets, execution policy,
   service lifecycle, database deployment, packaged APEX application
   installation, shared navigation, and audit boundaries.
@@ -161,6 +162,7 @@ deployment script currently supports only `TOPOLOGY=db-local`.
 - [Weather](plugins/weather/README.md)
 - [Internet retrieval](docs/retrieval.md)
 - [Dialogue routing and local knowledge](docs/dialogue-routing.md)
+- [LLM-assisted routing arbitration](docs/llm-routing-arbitration.md)
 - [Conversation context, memory, and RAG](docs/conversation-context-memory-and-rag.md)
 - [Voice pipeline](docs/voice-pipeline.md)
 - [APEX administration](docs/apex-administration.md)

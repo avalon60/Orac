@@ -98,6 +98,14 @@ App 10020 field and lifecycle report.
 
 ## User Preference Sliders
 
+App 1042 Page 41 is the administrator-only System Configuration surface. It
+loads the canonical SYSTEM values on every render and maintains General Chat
+LLM, Max Tokens, Show Reasoning, and Strip Reasoning Tags through
+`orac_code.user_preferences_api`. Max Tokens is server-validated as an integer
+from `1` through `32768`; the two reasoning controls are saved as JSON Boolean
+values and remain independent. Page 6 cannot edit these protected keys or any
+row owned by the reserved system principal.
+
 The administration preference editor renders slider-capable numeric
 preferences from catalogue metadata. Page 6 uses a native metadata-driven range
 input created with DOM APIs inside the fixed `ORAC_PREF_SLIDER_HOST` region.

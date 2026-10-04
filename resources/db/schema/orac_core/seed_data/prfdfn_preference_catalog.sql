@@ -47,9 +47,9 @@ using (
   from dual
   union all
   select
-    'default_llm_id',
-    'Default LLM',
-    'Default LLM identifier used when no model is explicitly selected.',
+    'general_chat_llm',
+    'General Chat LLM',
+    'Installation-wide LLM used for ordinary conversation when no specialised routing rule applies.',
     'number',
     'select_list',
     'sql',
@@ -67,11 +67,39 @@ using (
     cast(null as number),
     cast(null as varchar2(1000 byte)),
     'Y',
-    'Y',
+    'N',
     20,
     'model',
-    'Choose the model used by default for new requests.',
+    'Choose the installation-wide model used for ordinary conversational requests.',
     'Y'
+  from dual
+  union all
+  select
+    'default_llm_id',
+    'Legacy Default LLM',
+    'Retained temporarily as migration input for the system general-chat model.',
+    'number',
+    'select_list',
+    'sql',
+    q'[select name || ' (' || provider || ')' d,
+             to_char(llm_id) r
+        from orac_api.llm_registry_v
+       where is_enabled = 'Y'
+          or llm_id = to_number(:P_CURRENT_VALUE default null on conversion error)
+       order by provider, name]',
+    cast(null as varchar2(100 byte)),
+    json('0'),
+    0,
+    cast(null as number),
+    cast(null as number),
+    cast(null as number),
+    cast(null as varchar2(1000 byte)),
+    'Y',
+    'N',
+    21,
+    'model',
+    'Legacy per-user model setting; ordinary chat no longer reads this preference.',
+    'N'
   from dual
   union all
   select
@@ -209,7 +237,7 @@ using (
   select
     'max_tokens',
     'Max Tokens',
-    'Default maximum token budget used for LLM responses.',
+    'Installation-wide default maximum token budget used for LLM responses.',
     'number',
     'slider',
     cast(null as varchar2(30 byte)),
@@ -222,10 +250,10 @@ using (
     cast(null as number),
     cast(null as varchar2(1000 byte)),
     'Y',
-    'Y',
+    'N',
     80,
     'model',
-    'Limits response size for supported models.',
+    'Sets the installation-wide response-size default for supported models.',
     'Y'
   from dual
   union all
@@ -278,7 +306,7 @@ using (
   select
     'show_reasoning',
     'Show Reasoning',
-    'Whether reasoning content should be displayed when available.',
+    'Whether reasoning content should be displayed installation-wide when available.',
     'boolean',
     'checkbox',
     cast(null as varchar2(30 byte)),
@@ -291,17 +319,17 @@ using (
     cast(null as number),
     cast(null as varchar2(1000 byte)),
     'Y',
-    'Y',
+    'N',
     110,
     'reasoning',
-    'Show internal reasoning content when a model provides it.',
+    'Sets the installation-wide default for displaying model reasoning content.',
     'Y'
   from dual
   union all
   select
     'strip_reasoning_tags',
     'Strip Reasoning Tags',
-    'Whether reasoning markup tags should be removed from visible output.',
+    'Whether reasoning markup tags should be removed installation-wide from visible output.',
     'boolean',
     'checkbox',
     cast(null as varchar2(30 byte)),
@@ -314,10 +342,10 @@ using (
     cast(null as number),
     cast(null as varchar2(1000 byte)),
     'Y',
-    'Y',
+    'N',
     120,
     'reasoning',
-    'Keeps visible output cleaner when reasoning markup is present.',
+    'Sets the installation-wide default for removing reasoning markup from visible output.',
     'Y'
   from dual
   union all
@@ -613,4 +641,4 @@ update orac_core.user_preferences
 delete from orac_core.preference_definitions
  where pref_key = 'weather_location';
 
---rollback delete from orac_core.preference_definitions where pref_key in ('date_format', 'default_llm_id', 'personality_code', 'enable_advanced_mode', 'enable_feedback', 'force_concise', 'landing_page_id', 'max_tokens', 'push_opt_in', 'rows_per_report', 'show_reasoning', 'strip_reasoning_tags', 'temperature', 'user_location', 'timezone', 'tts_pitch', 'tts_rate', 'tts_voice');
+--rollback delete from orac_core.preference_definitions where pref_key in ('date_format', 'default_llm_id', 'general_chat_llm', 'personality_code', 'enable_advanced_mode', 'enable_feedback', 'force_concise', 'landing_page_id', 'max_tokens', 'push_opt_in', 'rows_per_report', 'show_reasoning', 'strip_reasoning_tags', 'temperature', 'user_location', 'timezone', 'tts_pitch', 'tts_rate', 'tts_voice');

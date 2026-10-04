@@ -931,6 +931,46 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         self.assertIn("p_short_name=>'project'", export_sql)
         self.assertIn("p_page_id=>38", export_sql)
 
+    def test_f1042_user_update_uniqueness_excludes_current_user(self) -> None:
+        """Username validation must reject peers without matching its own row."""
+        export_sql = (
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        page_4 = _apex_page_sections(export_sql)[4]
+        username_validation = page_4.split(
+            "p_validation_name=>'username exists'", 1
+        )[1].split("wwv_flow_imp_page.create_page_validation(", 1)[0]
+
+        self.assertIn("where username = lower(:p4_username)", username_validation)
+        self.assertIn(
+            "and (:p4_user_id is null or user_id <> :p4_user_id)",
+            username_validation,
+        )
+
+    def test_f1042_user_dialog_refreshes_master_and_detail_regions(self) -> None:
+        """Closing the user dialog must synchronize both user displays."""
+        export_sql = (
+            (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        page_2 = _apex_page_sections(export_sql)[2]
+        dialog_closed = page_2.split(
+            "p_id=>wwv_flow_imp.id(12717431437390327)", 1
+        )[1].split("wwv_flow_imp_page.create_page_da_event(", 1)[0]
+
+        self.assertEqual(2, dialog_closed.count("p_action=>'native_refresh'"))
+        self.assertIn(
+            "p_affected_region_id=>wwv_flow_imp.id(12659500736390278)",
+            dialog_closed,
+        )
+        self.assertIn(
+            "p_affected_region_id=>wwv_flow_imp.id(12664193477390286)",
+            dialog_closed,
+        )
+
     def test_f1042_projects_report_uses_project_registry_code_view(self) -> None:
         export_sql = (
             (PROJECT_ROOT / "resources/db/apex/orac_apps/f1042.sql")
@@ -1181,9 +1221,6 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         editable_runtime_preferences = (
             "date_format",
             "force_concise",
-            "max_tokens",
-            "show_reasoning",
-            "strip_reasoning_tags",
             "timezone",
             "tts_pitch",
             "tts_rate",
@@ -1194,6 +1231,11 @@ class PluginApexAppSchemaTests(unittest.TestCase):
         for pref_key in editable_runtime_preferences:
             with self.subTest(pref_key=pref_key):
                 self.assertEqual(self._seeded_editable_flag(seed_sql, pref_key), "Y")
+                self.assertEqual(self._seeded_active_flag(seed_sql, pref_key), "Y")
+
+        for pref_key in ("max_tokens", "show_reasoning", "strip_reasoning_tags"):
+            with self.subTest(system_pref_key=pref_key):
+                self.assertEqual(self._seeded_editable_flag(seed_sql, pref_key), "N")
                 self.assertEqual(self._seeded_active_flag(seed_sql, pref_key), "Y")
 
     def test_user_location_seed_retires_weather_location(self) -> None:

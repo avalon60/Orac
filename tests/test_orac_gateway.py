@@ -36,6 +36,7 @@ from plugins.orac_gateway.auth import GatewayAuthenticationError
 from plugins.orac_gateway.auth import GatewayAuthenticator
 from plugins.orac_gateway.auth import GatewayIdentity
 from plugins.orac_gateway.auth import validate_listener_policy
+from plugins.orac_gateway.plugin import OracGatewayPlugin
 from plugins.orac_gateway.protocol import GatewayProtocol
 from plugins.orac_gateway.protocol import GatewayProtocolError
 from plugins.orac_gateway.service import OracGatewayService
@@ -95,6 +96,17 @@ def _protocol(processor=None) -> GatewayProtocol:
         ],
         embedding_provider=lambda model, inputs: [[float(len(value))] for value in inputs],
     )
+
+
+def test_plugin_entry_point_declines_direct_execution() -> None:
+    """The service-only marker must satisfy readiness without a second route."""
+    plugin = OracGatewayPlugin()
+
+    assert plugin.execute("hello", {"source": "test"}) is None
+    assert plugin.handle(object()) == {
+        "status": "unsupported",
+        "message": "Orac Gateway is available through its managed HTTP service.",
+    }
 
 
 def test_trusted_loopback_authentication_is_strictly_local() -> None:

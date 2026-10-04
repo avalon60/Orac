@@ -6,6 +6,7 @@
 
 import asyncio
 import json
+import time
 from typing import Any
 
 
@@ -25,6 +26,7 @@ class OracListener:
                 if not data:
                     break
                 incoming = data.decode("utf-8", errors="replace").rstrip("\r\n")
+                request_started_at = time.perf_counter()
                 print(f"📥 Received frame: {_frame_log_summary(incoming)}")
                 self._remember_voice_turn(incoming, voice_turns)
 
@@ -34,6 +36,11 @@ class OracListener:
                         if not isinstance(out, str):
                             out = json.dumps(out, ensure_ascii=False)
                         await self._write_frame(writer, out)
+                        print(
+                            "⏱️ transport frame drained: "
+                            f"elapsed_ms={(time.perf_counter() - request_started_at) * 1000:.3f} "
+                            f"{_frame_log_summary(out)}"
+                        )
                 else:
                     out = await self.orchestrator.handle_request(incoming)
                     if not isinstance(out, str):

@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 import oracledb  # for error code inspection
 from lib.session_manager import DBSession  # <- your DBSession wrapper
 from orac_core.knowledge import PromptContextSnapshot
+from orac_core.identity import is_reserved_non_interactive_principal
 
 
 class OracContextManager:
@@ -405,6 +406,8 @@ class OracContextManager:
 
     def _create_user(self, username: str) -> int:
         norm = username.strip()
+        if is_reserved_non_interactive_principal(norm):
+            raise PermissionError(f"user '{norm}' is reserved and non-interactive")
         with self.db.cursor() as cur:
             out_id = cur.var(oracledb.NUMBER)
             cur.execute(
@@ -422,6 +425,8 @@ class OracContextManager:
         Raises PermissionError if not found and auto-provision is disabled.
         """
         norm = username.strip()  # ensure consistent lookup/logging
+        if is_reserved_non_interactive_principal(norm):
+            raise PermissionError(f"user '{norm}' is reserved and non-interactive")
         uid = self._find_user_id(norm)
         if uid is not None:
             return uid
@@ -885,6 +890,36 @@ class OracContextManager:
             f"update {self.conversations_object} set title = :t where conversation_id = :cid",
             {"t": title[:200], "cid": cid}
         )
+
+    def get_conversation_title(self, session_id: str) -> str | None:
+        """Return a real conversation title, excluding the schema placeholder."""
+        cid = self._conversation_id(session_id)
+        if not cid:
+            return None
+        rows = self.db.fetch_as_lists(
+            f"select title from {self.conversations_object} where conversation_id = :cid",
+            {"cid": cid},
+        )
+        if not rows or rows[0][0] is None:
+            return None
+        title = str(rows[0][0]).strip()
+        if not title or title.casefold() == "brief exchange...":
+            return None
+        return title
+
+    def enqueue_conversation_title_request(self, session_id: str) -> bool:
+        """Idempotently enqueue title generation for an existing conversation."""
+        cid = self._conversation_id(session_id)
+        if not cid:
+            return False
+        with self.db.cursor() as cursor:
+            result = cursor.callfunc(
+                "orac_code.conversation_title_api.enqueue_request",
+                int,
+                [cid],
+            )
+        self.db.commit()
+        return result is not None
 
     def close_conversation(self, session_id: str) -> None:
         """Marks a conversation as 'closed'."""

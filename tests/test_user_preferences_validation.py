@@ -347,7 +347,7 @@ class UserPreferencesValidationTests(unittest.TestCase):
         """The retired location key should only remain in seed migration SQL."""
         retired_key = "weather" + "_location"
         checked_paths = (
-            PROJECT_ROOT / "src/controller/orac.py",
+            PROJECT_ROOT / "src/orac_core/communications/runtime.py",
             PROJECT_ROOT / "src/model/plugin_runtime.py",
             PROJECT_ROOT / "plugins/weather/plugin.py",
             CODE_ROOT / "package_body/preference_lov_api.sql",

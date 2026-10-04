@@ -37,6 +37,31 @@ create or replace package orac_code.user_preferences_api as
     p_pref_id      in out orac_api.user_preferences_v.pref_id%type,
     p_row_version     out orac_api.user_preferences_v.row_version%type
   );
+
+  function get_system_scalar(
+    p_pref_key in orac_api.user_preferences_v.pref_key%type
+  ) return varchar2;
+
+  procedure set_system_scalar(
+    p_pref_key   in orac_api.user_preferences_v.pref_key%type,
+    p_pref_value in orac_api.user_preferences_v.pref_value%type
+  );
+
+  procedure migrate_system_scalar(
+    p_pref_key     in orac_api.user_preferences_v.pref_key%type,
+    p_config_value in varchar2
+  );
+
+  function get_system_general_chat_llm return number;
+
+  procedure set_system_general_chat_llm(
+    p_llm_id in number
+  );
+
+  procedure migrate_general_chat_llm(
+    p_config_provider in varchar2,
+    p_config_model    in varchar2
+  );
 end user_preferences_api;
 /
 

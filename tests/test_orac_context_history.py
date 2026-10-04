@@ -956,6 +956,7 @@ class _SyncCursor:
 
     def __init__(self) -> None:
         self.statements: list[tuple[str, dict]] = []
+        self.procedure_calls: list[tuple[str, list[object]]] = []
 
     def __enter__(self) -> "_SyncCursor":
         return self
@@ -967,6 +968,9 @@ class _SyncCursor:
     def execute(self, sql: str, params: dict) -> None:
         self.statements.append((sql, params))
 
+    def callproc(self, name: str, params: list[object]) -> None:
+        self.procedure_calls.append((name, params))
+
 
 class _SyncDBSession:
     """DB stub for llm registry sync tests."""
@@ -975,6 +979,7 @@ class _SyncDBSession:
         self.rows = rows
         self.cursor_obj = _SyncCursor()
         self.committed = False
+        self.rolled_back = False
 
     def dict_sql_dataset(self, sql: str) -> list[dict]:
         del sql
@@ -987,7 +992,32 @@ class _SyncDBSession:
         self.committed = True
 
     def rollback(self) -> None:
-        return None
+        self.rolled_back = True
+
+
+class _FailingSyncCursor(_SyncCursor):
+    """Captures the first registry sync write and then fails it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_next = True
+
+    def execute(self, sql: str, params: dict) -> None:
+        super().execute(sql, params)
+        if self.fail_next:
+            self.fail_next = False
+            raise RuntimeError(
+                "synthetic mid-transaction registry write failure"
+            )
+
+
+class _FailingProcedureCursor(_SyncCursor):
+    """Fail the second system-preference migration call."""
+
+    def callproc(self, name: str, params: list[object]) -> None:
+        super().callproc(name, params)
+        if len(self.procedure_calls) == 2:
+            raise RuntimeError("synthetic scalar migration failure")
 
 
 class _ProbeCursor:
@@ -1680,12 +1710,16 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Use date format YYYY-MM-DD HH24:MI.", clock)
 
     async def test_max_tokens_preference_reaches_generation_options(self) -> None:
-        """Saved max_tokens should set provider-neutral num_predict."""
+        """System max_tokens should reach provider options and the safety cap."""
         context_manager = _MemoryContextManager()
-        context_manager.user_preferences[("clive", "max_tokens")] = "640"
+        context_manager.user_preferences[("system", "max_tokens")] = "640"
+        context_manager.user_preferences[("clive", "max_tokens")] = "999"
         orchestrator = self._make_orac_stub(
             llm_responses=["Bounded answer."],
             context_manager=context_manager,
+        )
+        orchestrator.config_mgr = _FakeConfigManager(
+            {("settings", "max_tokens_limit"): "600"}
         )
 
         wire = await orchestrator.handle_request(
@@ -1696,13 +1730,79 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["meta"]["status"], "ok")
         self.assertEqual(
             orchestrator.llm.generation_options_seen[-1]["num_predict"],
-            640,
+            600,
+        )
+
+    def test_system_scalar_preferences_are_shared_and_preserve_false(self) -> None:
+        """System scalars should ignore legacy users and retain Boolean false."""
+        context_manager = _MemoryContextManager()
+        context_manager.user_preferences[("system", "max_tokens")] = "700"
+        context_manager.user_preferences[("system", "show_reasoning")] = "false"
+        context_manager.user_preferences[("clive", "max_tokens")] = "900"
+        orchestrator = self._make_orac_stub(
+            llm_responses=[],
+            context_manager=context_manager,
+        )
+
+        clive_resolved: dict[str, object] = {}
+        orchestrator._apply_scalar_runtime_preferences(clive_resolved, "clive")
+        resolved: dict[str, object] = {}
+        orchestrator._apply_scalar_runtime_preferences(resolved, "alice")
+        self.assertEqual(clive_resolved["max_tokens"], 700)
+        self.assertEqual(resolved["max_tokens"], 700)
+        self.assertFalse(resolved["show_reasoning"])
+        self.assertEqual(
+            resolved["_preference_sources"]["max_tokens"],
+            "system_preference",
+        )
+        self.assertEqual(
+            resolved["_preference_sources"]["show_reasoning"],
+            "system_preference",
+        )
+
+    def test_explicit_scalar_override_precedes_system_preference(self) -> None:
+        """Explicit scalar metadata should remain the highest-precedence source."""
+        context_manager = _MemoryContextManager()
+        context_manager.user_preferences[("system", "max_tokens")] = "700"
+        orchestrator = self._make_orac_stub(
+            llm_responses=[],
+            context_manager=context_manager,
+        )
+        resolved: dict[str, object] = {"max_tokens": 800}
+
+        orchestrator._apply_scalar_runtime_preferences(resolved, "clive")
+
+        self.assertEqual(resolved["max_tokens"], 800)
+        self.assertEqual(
+            resolved["_preference_sources"]["max_tokens"],
+            "request",
+        )
+
+    def test_missing_system_scalar_uses_false_config_and_builtin_fallbacks(self) -> None:
+        """False config values should survive and missing values should use built-ins."""
+        orchestrator = self._make_orac_stub(llm_responses=[])
+        orchestrator.config_mgr = _FakeConfigManager(
+            {("settings", "strip_reasoning_tags_default"): "false"}
+        )
+        resolved: dict[str, object] = {}
+
+        orchestrator._apply_scalar_runtime_preferences(resolved, "clive")
+
+        self.assertFalse(resolved["strip_reasoning_tags"])
+        self.assertEqual(resolved["max_tokens"], 512)
+        self.assertEqual(
+            resolved["_preference_sources"]["strip_reasoning_tags"],
+            "config_default",
+        )
+        self.assertEqual(
+            resolved["_preference_sources"]["max_tokens"],
+            "built_in_default",
         )
 
     async def test_non_streaming_reasoning_stripping_respects_preference(self) -> None:
         """Resolved strip_reasoning_tags should control non-streaming output."""
         context_manager = _MemoryContextManager()
-        context_manager.user_preferences[("clive", "strip_reasoning_tags")] = "true"
+        context_manager.user_preferences[("system", "strip_reasoning_tags")] = "true"
         orchestrator = self._make_orac_stub(
             llm_responses=["Visible <think>hidden reasoning</think> done."],
             context_manager=context_manager,
@@ -1722,7 +1822,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
     async def test_streaming_reasoning_stripping_is_chunk_boundary_safe(self) -> None:
         """Streaming removal should handle split <think> tags safely."""
         context_manager = _MemoryContextManager()
-        context_manager.user_preferences[("clive", "strip_reasoning_tags")] = "true"
+        context_manager.user_preferences[("system", "strip_reasoning_tags")] = "true"
         orchestrator = self._make_orac_stub(
             llm_responses=[],
             context_manager=context_manager,
@@ -1777,6 +1877,27 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Keep answers concise.", normal_prompt)
         self.assertNotIn("Keep the reply concise.", normal_prompt)
         self.assertIn("Keep answers concise.", concise_prompt)
+
+    def test_automatic_knowledge_failure_notice_is_not_user_facing(self) -> None:
+        """Automatic project-search failures should remain diagnostic only."""
+        orchestrator = self._make_orac_stub(llm_responses=[])
+
+        prompt = orchestrator._build_contextual_prompt(
+            "session-1",
+            "Hi",
+            {
+                "_automatic_knowledge_notice": (
+                    "Local project documents could not be checked."
+                )
+            },
+            "clive",
+        )
+
+        self.assertNotIn(
+            "Local project documents could not be checked.",
+            prompt,
+        )
+        self.assertNotIn("Begin the response with exactly:", prompt)
 
     def test_ambiguous_preference_config_keys_fail_in_strict_mode(self) -> None:
         """Strict diagnostics should identify preference and config keys."""
@@ -2549,7 +2670,11 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             self._request(
                 "Is the TV light on?",
                 req_id="req-plugin-voice",
-                meta={"stream": True, "session_id": "voice-session"},
+                meta={
+                    "stream": True,
+                    "channel": "voice",
+                    "session_id": "voice-session",
+                },
             )
         ):
             frames.append(json.loads(wire))
@@ -2653,6 +2778,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             {
                 "temperature": 0.2,
                 "repeat_penalty": 1.1,
+                "num_predict": 512,
             },
         )
 
@@ -2689,7 +2815,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
                 "repeat_penalty": 1.1,
                 "top_p": 0.9,
                 "top_k": 40,
-                "num_predict": 3072,
+                "num_predict": 512,
             },
         )
 
@@ -2730,7 +2856,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
             {
                 "temperature": 0.1,
                 "repeat_penalty": 1.1,
-                "num_predict": 1536,
+                "num_predict": 512,
             },
         )
 
@@ -2798,12 +2924,12 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotEqual(old_fingerprint, new_fingerprint)
 
-    async def test_default_llm_preference_change_starts_new_conversation(self) -> None:
+    async def test_system_general_chat_llm_change_starts_new_conversation(self) -> None:
         context_manager = _MemoryContextManager()
         context_manager.conversation_ids["clive"] = 1
         context_manager.conversation_llm_ids["clive"] = 1
         context_manager.messages_by_session["clive"] = []
-        context_manager.user_preferences[("clive", "default_llm_id")] = "2"
+        context_manager.user_preferences[("system", "general_chat_llm")] = "2"
         context_manager.llm_registry_entries[2] = {
             "LLM_ID": 2,
             "PROVIDER": "ollama",
@@ -2828,13 +2954,39 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response["meta"]["model"], "preferred-model")
         self.assertEqual(response["meta"]["personality_code"], "DEFAULT")
-        self.assertEqual(response["meta"]["llm_source"], "user_preference")
+        self.assertEqual(response["meta"]["llm_source"], "system_preference")
         self.assertEqual(context_manager.closed_sessions, ["clive"])
         self.assertEqual(len(user_turn_sessions), 1)
         self.assertTrue(user_turn_sessions[0].startswith("clive#"))
         self.assertEqual(
             context_manager.conversation_llm_ids[user_turn_sessions[0]],
             2,
+        )
+
+    def test_general_chat_llm_is_shared_and_ignores_legacy_user_values(self) -> None:
+        context_manager = _MemoryContextManager()
+        context_manager.user_preferences[("system", "general_chat_llm")] = "2"
+        context_manager.user_preferences[("clive", "default_llm_id")] = "3"
+        context_manager.user_preferences[("alice", "default_llm_id")] = "4"
+        orchestrator = self._make_orac_stub(
+            llm_responses=[],
+            context_manager=context_manager,
+        )
+        clive_meta: dict[str, object] = {}
+        alice_meta: dict[str, object] = {}
+
+        orchestrator._apply_default_llm_preference(clive_meta, "clive")
+        orchestrator._apply_default_llm_preference(alice_meta, "alice")
+
+        self.assertEqual(clive_meta["default_llm_id"], 2)
+        self.assertEqual(alice_meta["default_llm_id"], 2)
+        self.assertEqual(
+            clive_meta["_preference_sources"]["default_llm_id"],
+            "system_preference",
+        )
+        self.assertEqual(
+            alice_meta["_preference_sources"]["default_llm_id"],
+            "system_preference",
         )
 
     async def test_missing_default_llm_preference_uses_configured_default(self) -> None:
@@ -2859,7 +3011,7 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         context_manager = _MemoryContextManager()
-        context_manager.user_preferences[("clive", "default_llm_id")] = "2"
+        context_manager.user_preferences[("system", "general_chat_llm")] = "2"
         context_manager.llm_registry_entries[2] = {
             "LLM_ID": 2,
             "PROVIDER": "ollama",
@@ -3924,6 +4076,56 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(orchestrator.ctx.db, healthy_session)
         self.assertEqual(rebound_sessions, [healthy_session])
 
+    def test_system_scalar_startup_migration_passes_all_config_defaults(self) -> None:
+        """Startup should migrate all scalar keys in one caller transaction."""
+        orchestrator = Orac.__new__(Orac)
+        orchestrator.config_mgr = _FakeConfigManager(
+            {
+                ("settings", "max_tokens_default"): "2048",
+                ("settings", "show_reasoning_default"): "false",
+                ("settings", "strip_reasoning_tags_default"): "false",
+            }
+        )
+        orchestrator.db_session = _SyncDBSession(rows=[])
+
+        orchestrator._migrate_system_scalar_preferences()
+
+        self.assertTrue(orchestrator.db_session.committed)
+        self.assertFalse(orchestrator.db_session.rolled_back)
+        self.assertEqual(
+            orchestrator.db_session.cursor_obj.procedure_calls,
+            [
+                (
+                    "orac_code.user_preferences_api.migrate_system_scalar",
+                    ["max_tokens", "2048"],
+                ),
+                (
+                    "orac_code.user_preferences_api.migrate_system_scalar",
+                    ["show_reasoning", "false"],
+                ),
+                (
+                    "orac_code.user_preferences_api.migrate_system_scalar",
+                    ["strip_reasoning_tags", "false"],
+                ),
+            ],
+        )
+
+    def test_system_scalar_startup_migration_rolls_back_on_failure(self) -> None:
+        """A failed per-key migration should roll back the complete attempt."""
+        orchestrator = Orac.__new__(Orac)
+        orchestrator.config_mgr = _FakeConfigManager({})
+        orchestrator.db_session = _SyncDBSession(rows=[])
+        orchestrator.db_session.cursor_obj = _FailingProcedureCursor()
+
+        orchestrator._migrate_system_scalar_preferences()
+
+        self.assertFalse(orchestrator.db_session.committed)
+        self.assertTrue(orchestrator.db_session.rolled_back)
+        self.assertEqual(
+            len(orchestrator.db_session.cursor_obj.procedure_calls),
+            2,
+        )
+
     def test_llm_registry_sync_preserves_existing_probe_metadata(self) -> None:
         orchestrator = Orac.__new__(Orac)
         orchestrator.model_name = "qwen2.5:7b"
@@ -3991,6 +4193,15 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(merged_properties["provider"], "ollama")
         self.assertEqual(merged_properties["model"], "qwen2.5:7b")
         self.assertTrue(merged_properties["is_default_runtime_model"])
+        self.assertEqual(
+            orchestrator.db_session.cursor_obj.procedure_calls,
+            [
+                (
+                    "orac_code.user_preferences_api.migrate_general_chat_llm",
+                    ["ollama", "qwen2.5:7b"],
+                )
+            ],
+        )
 
     def test_llm_registry_sync_defaults_new_rows_to_unresolved(self) -> None:
         orchestrator = Orac.__new__(Orac)

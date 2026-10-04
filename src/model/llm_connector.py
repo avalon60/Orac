@@ -821,6 +821,9 @@ class OllamaConnector(LLMConnector):
             ),
         )
         self._max_num_predict_retries = 2
+        self.keep_alive = self.config_mgr.config_value(
+            "service", "keep_alive", default="30m"
+        ).strip() or "30m"
 
         # Keep the connector hint minimal. User-facing behaviour belongs in
         # Orac's main system prompt policy, not the transport wrapper.
@@ -907,6 +910,7 @@ class OllamaConnector(LLMConnector):
             "model": self.model_name,
             "messages": msgs,
             "stream": False,
+            "keep_alive": getattr(self, "keep_alive", "30m"),
             "think": bool(show_reasoning),   # we’ll force False in send_prompt
             "options": self._ollama_options(
                 num_predict=num_predict,
@@ -925,6 +929,13 @@ class OllamaConnector(LLMConnector):
             "prompt_tokens": int(data.get("prompt_eval_count") or 0),
             "completion_tokens": int(data.get("eval_count") or 0),
             "total_tokens": int(data.get("prompt_eval_count") or 0) + int(data.get("eval_count") or 0),
+            **{
+                key: data.get(key)
+                for key in (
+                    "load_duration", "prompt_eval_duration", "eval_duration", "total_duration"
+                )
+                if data.get(key) is not None
+            },
         }
 
     def _generate_once(
@@ -939,6 +950,7 @@ class OllamaConnector(LLMConnector):
             "model": self.model_name,
             "prompt": prompt,
             "stream": False,
+            "keep_alive": getattr(self, "keep_alive", "30m"),
             "options": self._ollama_options(
                 num_predict=num_predict,
                 generation_options=generation_options,
@@ -953,6 +965,13 @@ class OllamaConnector(LLMConnector):
             "prompt_tokens": int(data.get("prompt_eval_count") or 0),
             "completion_tokens": int(data.get("eval_count") or 0),
             "total_tokens": int(data.get("prompt_eval_count") or 0) + int(data.get("eval_count") or 0),
+            **{
+                key: data.get(key)
+                for key in (
+                    "load_duration", "prompt_eval_duration", "eval_duration", "total_duration"
+                )
+                if data.get(key) is not None
+            },
         }
 
     def _chat_stream(
@@ -975,6 +994,7 @@ class OllamaConnector(LLMConnector):
             "model": self.model_name,
             "messages": msgs,
             "stream": True,
+            "keep_alive": getattr(self, "keep_alive", "30m"),
             "think": bool(show_reasoning),
             "options": self._ollama_options(
                 num_predict=num_predict,
@@ -1028,6 +1048,7 @@ class OllamaConnector(LLMConnector):
             "model": self.model_name,
             "messages": self._ollama_tool_messages(messages),
             "stream": stream,
+            "keep_alive": getattr(self, "keep_alive", "30m"),
             "think": False,
             "options": self._ollama_options(
                 num_predict=self._initial_num_predict(generation_options),

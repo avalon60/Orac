@@ -17,6 +17,12 @@ events.
 The detailed state and event contract is documented in
 [Voice Turn Lifecycle](voice-turn-lifecycle.md).
 
+After STT, the signed voice NDJSON frame is authenticated and adapted to the
+same canonical `OracRequestProcessor` used by non-voice interfaces. Routing,
+retrieval, plugin policy, context mediation, and model invocation therefore do
+not have a voice-specific bypass. TTS coalescing, playback, echo control, and
+barge-in remain owned by the voice output/lifecycle layer.
+
 ## Text Console and Optional TTS
 
 The interactive text client is silent by default:

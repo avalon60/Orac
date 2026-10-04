@@ -12,6 +12,7 @@ services:
       - "${ORADATA_DIR:-/u01/orac-db/oradata}:/opt/oracle/oradata"
     environment:
       ORACLE_PWD: ${ORACLE_PWD:-}
+      ORAC_INSTALL_USERNAME: ${ORAC_INSTALL_USERNAME:-}
     restart: unless-stopped
 
   orac-kokoro:

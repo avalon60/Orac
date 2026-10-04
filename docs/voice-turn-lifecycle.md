@@ -7,7 +7,8 @@ It is intentionally strict. The local voice client has been refactored around a 
 Relevant files:
 
 - `src/orac_voice/voice_loop_local.py`
-- `src/controller/orac.py`
+- `src/orac_core/communications/runtime.py`
+- `src/controller/orac.py` (compatibility facade)
 - `src/orac_voice/tts_worker.py`
 - `src/orac_voice/tts_coalescer.py`
 - `src/orac_voice/barge_in.py`
@@ -20,6 +21,12 @@ Relevant files:
 ## Scope
 
 The local voice loop has two distinct responsibilities:
+
+The inbound voice prompt is transport adaptation, not a separate orchestration
+engine: after signed-frame authentication it becomes a canonical request and
+uses `OracRequestProcessor`. Voice-specific ownership begins again at output,
+where coalescing, TTS, playback, cancellation, and the final turn-complete
+signal remain outside the shared processor.
 
 1. Detect wake words, capture user speech, and submit a prompt.
 2. Observe Orac's streaming and TTS lifecycle closely enough to keep the UI, barge-in, and re-arming state correct.
@@ -159,9 +166,14 @@ That means the owner must know, at minimum:
 
 ### Current ownership reality
 
-`src/controller/orac.py` currently approximates this ownership by subscribing to playback events and maintaining counters.
+`src/orac_core/communications/runtime.py` currently approximates this ownership
+through the voice output adapter, which subscribes to playback events and
+maintains counters.
 
-That is a useful approximation, but it is not a proof. The controller does not own the audio device clock directly; `src/orac_voice/tts_worker.py` and `src/orac_voice/audio_playback.py` own the actual synthesis/playback boundary.
+That is a useful approximation, but it is not a proof. The communications
+runtime does not own the audio device clock directly;
+`src/orac_voice/tts_worker.py` and `src/orac_voice/audio_playback.py` own the
+actual synthesis/playback boundary.
 
 If the system needs a truly authoritative turn-complete signal, the emission point should move closer to the TTS worker or to a dedicated lifecycle aggregator built on top of it.
 
@@ -274,7 +286,7 @@ These races have already been seen in the current implementation history and mus
 
 The following are places where the current code appears to violate or only approximate the contract.
 
-### `src/controller/orac.py`
+### `src/orac_core/communications/runtime.py`
 
 - `voice_turn_complete` is emitted here, but this module does not own the audio device and cannot truly prove that playback has drained.
 - Completion is inferred from playback counters and stream state. That is better than guessing from text alone, but it is still a heuristic.

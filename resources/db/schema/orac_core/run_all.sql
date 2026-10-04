@@ -364,6 +364,7 @@ prompt === triggers ===
 @trigger/user_pe_bu.sql
 @trigger/user_pref_bu.sql
 @trigger/user_syns_bu.sql
+@trigger/users_bd.sql
 @trigger/users_bu.sql
 
 prompt === seed data ===

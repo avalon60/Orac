@@ -495,7 +495,7 @@ run_container_with_retries() {
     export ORAC_DB_CONTAINER_NAME="${ORAC_DB_CONTAINER_NAME:-$CONTAINER_NAME}"
     export CONTAINER_NAME="$ORAC_DB_CONTAINER_NAME"
     export ORAC_IMAGE_NAME ORAC_IMAGE_TAG ORACLE_PWD ORADATA_DIR
-    export PORT_SQLNET PORT_HTTP PORT_EM
+    export PORT_SQLNET PORT_HTTP PORT_EM ORAC_INSTALL_USERNAME
     compose_cmd up -d orac-db
 
     echo "🎉 '${CONTAINER_NAME}' is up"
@@ -548,6 +548,13 @@ source "$ORAC_ENV_FILE"
 : "${ORAC_IMAGE_NAME:=orac}"
 : "${ORAC_IMAGE_TAG:=latest}"
 
+ORAC_INSTALL_USERNAME="${SUDO_USER:-$(id -un)}"
+ORAC_INSTALL_USERNAME="${ORAC_INSTALL_USERNAME,,}"
+if [[ ${#ORAC_INSTALL_USERNAME} -lt 3 || ${#ORAC_INSTALL_USERNAME} -gt 32 || ! "$ORAC_INSTALL_USERNAME" =~ ^[a-z][a-z0-9]*([._-][a-z0-9]+)*$ ]]; then
+  echo "❌ Installer login cannot be normalised to an Orac username: ${ORAC_INSTALL_USERNAME}"
+  exit 1
+fi
+
 DOCKER_IMAGE="${ORAC_IMAGE_NAME}:${ORAC_IMAGE_TAG}"
 CONTAINER_NAME="$ORAC_DB_CONTAINER_NAME"
 
@@ -571,6 +578,7 @@ echo " DOCKER_IMAGE    : ${DOCKER_IMAGE}"
 echo " ORADATA_DIR     : ${ORADATA_DIR}"
 echo " PORTS           : sqlnet=${PORT_SQLNET}, http=${PORT_HTTP}, em=${PORT_EM}"
 echo " TOPOLOGY        : ${TOPOLOGY}"
+echo " INSTALL USER    : ${ORAC_INSTALL_USERNAME}"
 echo
 
 check_prerequisites
