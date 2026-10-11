@@ -90,6 +90,7 @@ select req.ingestion_request_id,
   join orac_api.knowledge_chunks_v chn
     on chn.chunk_set_id = chs.chunk_set_id
  where req.status_code = 'COMPLETED'
+   and doc.retrieval_enabled_yn = 'Y'
    and scope.retired_on is null
    and orac_code.knowledge_scope_api.scope_status_by_id(scope.knowledge_scope_id) = 'RAG_USAGE_SCOPE_ELIGIBLE'
    and req.stage_code = 'COMPLETED'

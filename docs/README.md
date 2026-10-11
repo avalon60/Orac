@@ -22,6 +22,8 @@ to complete.
 
 - [Plugins](plugins.md): plugin manifests, lifecycle, policy, configuration,
   secrets, services, database payloads, and audit boundaries.
+- [Orac Knowledge Server](../plugins/orac_knowledge_server/docs/orac-knowledge-server.md):
+  connect read-only MCP clients to one Core-governed project.
 - [Document Ingestion](document-ingestion.md): Core-managed source storage,
   document lineage, worker configuration, APEX scope administration, chunking,
   embeddings, tags, and retrieval boundaries.

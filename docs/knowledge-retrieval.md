@@ -4,6 +4,12 @@ P1-06 adds a Core-internal, least-privilege boundary for reading document and
 normalised artefact material. It does not add a public download endpoint or a
 raw binary attachment route.
 
+The optional [Orac Knowledge Server](../plugins/orac_knowledge_server/docs/orac-knowledge-server.md)
+uses a host-owned, project-bound bridge over this retrieval path. Its search
+references are rechecked on fetch. Documents with
+`retrieval_enabled_yn = 'N'` are excluded from current searchable chunks and
+materialisation eligibility.
+
 ## Security boundary
 
 The trusted Core host supplies the authenticated username and a caller-generated

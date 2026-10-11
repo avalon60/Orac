@@ -15,6 +15,7 @@ select src.knowledge_scope_id,
        doc.document_id,
        doc.title document_title,
        doc.current_document_version_id,
+       doc.retrieval_enabled_yn,
        ver.document_version_id,
        ver.content_sha256 revision_content_sha256,
        ver.mime_type revision_mime_type,
@@ -51,7 +52,8 @@ select src.knowledge_scope_id,
             and link.doc_class_domain_code = 'DOC_CLASS'
        ) classification_tags_json,
        case
-         when exists (
+         when doc.retrieval_enabled_yn = 'Y'
+          and exists (
            select 1
              from orac_api.knowledge_ingestion_requests_v req
             where req.document_version_id = ver.document_version_id

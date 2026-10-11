@@ -1,0 +1,13 @@
+[retrieval]
+project_code = %PROJECT_CODE%
+allowed_classifications = RAW_REFERENCE
+
+[mcp]
+listen_host = 127.0.0.1
+listen_port = 11436
+
+[identity]
+mode = local_bearer
+local_bindings = local_clive:clive,local_nicola:nicola
+# For provider-neutral external OAuth, use mode = oidc with issuer,
+# resource_url, jwks_url and subject_bindings. Keep all values administrator-owned.

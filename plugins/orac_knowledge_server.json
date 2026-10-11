@@ -1,0 +1,63 @@
+{
+  "schema_version": 2,
+  "plugin_id": "orac_knowledge_server",
+  "name": "Orac Knowledge Server",
+  "description": "Read-only MCP adapter over one Core-governed project scope.",
+  "version": "0.1.0",
+  "python_dependencies": ["mcp>=1.30,<2", "PyJWT[crypto]>=2.8,<3", "uvicorn>=0.30,<1"],
+  "enabled": false,
+  "capabilities": ["orac_knowledge_server.search", "orac_knowledge_server.fetch"],
+  "entitlements": ["network.local_http", "core.knowledge.project_retrieval"],
+  "entities": ["project evidence"],
+  "examples": [],
+  "entry_point": "plugin:OracKnowledgeServerPlugin",
+  "execution": {
+    "action_type": "external_read",
+    "requires_confirmation": false,
+    "allowed_by_default": false,
+    "capabilities": ["orac_knowledge_server.search", "orac_knowledge_server.fetch"],
+    "entitlements": ["network.local_http", "core.knowledge.project_retrieval"],
+    "scaffold": false,
+    "notes": "MCP translates protocol only; Core binds scope and reauthorises every result."
+  },
+  "runtime": {
+    "mode": "service",
+    "service": {
+      "entry_point": "service:OracKnowledgeServerService",
+      "execution_model": "long_running",
+      "start_policy": "manual",
+      "restart_policy": "on_failure",
+      "shutdown_timeout_seconds": 10,
+      "health_check": {
+        "enabled": true,
+        "method": "health",
+        "interval_seconds": 30,
+        "timeout_seconds": 5,
+        "failure_threshold": 3
+      }
+    }
+  },
+  "configuration": {
+    "required": [
+      {"section": "retrieval", "key": "project_code", "type": "string", "description": "One administrator-selected existing project code."},
+      {"section": "retrieval", "key": "allowed_classifications", "type": "list", "description": "Explicit permitted document classification codes."}
+    ],
+    "optional": [
+      {"section": "mcp", "key": "listen_host", "type": "string", "description": "Loopback listener address."},
+      {"section": "mcp", "key": "listen_port", "type": "int", "description": "Loopback listener port."},
+      {"section": "identity", "key": "mode", "type": "string", "description": "local_bearer or oidc."},
+      {"section": "identity", "key": "local_bindings", "type": "string", "description": "Secret key to existing principal bindings."},
+      {"section": "identity", "key": "issuer", "type": "string", "description": "External OAuth issuer URL."},
+      {"section": "identity", "key": "resource_url", "type": "string", "description": "Canonical HTTPS MCP resource URL and token audience."},
+      {"section": "identity", "key": "jwks_url", "type": "string", "description": "Issuer JWKS URL."},
+      {"section": "identity", "key": "subject_bindings", "type": "string", "description": "Immutable subject to existing principal bindings."}
+    ]
+  },
+  "secrets": {
+    "vault": "pat_vault",
+    "default_key": "local_token",
+    "allow_custom_keys": true,
+    "keys": {}
+  },
+  "database": {"required": false, "on_missing": "warn_disable", "schemas": []}
+}

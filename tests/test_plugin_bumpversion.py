@@ -28,6 +28,7 @@ EXPECTED_BUMP_TARGETS = {
     "home_assistant": {"../home_assistant.json", "manifest.ini"},
     "media_control": {"../media_control.json"},
     "orac_gateway": {"../orac_gateway.json", "manifest.ini"},
+    "orac_knowledge_server": {"../orac_knowledge_server.json"},
     "weather": {"../weather.json"},
 }
 

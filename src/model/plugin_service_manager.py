@@ -30,6 +30,7 @@ from model.plugin_routing.models import PluginManifest
 from model.plugin_runtime import PluginRuntimeError, load_plugin_service_class
 from model.plugin_secret_vault import PluginSecretVault
 from model.plugin_service_lifecycle import PluginServiceLifecycleStore
+from orac_core.knowledge.project_bridge import CoreProjectRetrievalBridge
 
 
 PLUGIN_SERVICE_STATES = {
@@ -46,6 +47,7 @@ PLUGIN_SERVICE_STATES = {
 }
 
 DEFAULT_CORE_GATEWAY_PLUGIN_IDS = frozenset({"orac_gateway"})
+DEFAULT_CORE_RETRIEVAL_PLUGIN_IDS = frozenset({"orac_knowledge_server"})
 
 
 class ScheduledPluginService(Protocol):
@@ -76,6 +78,7 @@ class PluginServiceContext:
     request_processor: Any | None = None
     model_catalog_provider: Callable[[], list[dict[str, Any]]] | None = None
     embedding_provider: Callable[[str, list[str]], list[list[float]]] | None = None
+    project_retrieval_bridge: CoreProjectRetrievalBridge | None = None
     _plugin_db_session_factory: Callable[[], OracPluginDatabaseSession] | None = None
     _secret_vault: PluginSecretVault | None = None
     _command_dependency_checker: PluginCommandDependencyChecker | None = None
@@ -175,6 +178,8 @@ class PluginServiceManager:
             Callable[[str, list[str]], list[list[float]]] | None
         ) = None,
         core_gateway_plugin_ids: frozenset[str] = DEFAULT_CORE_GATEWAY_PLUGIN_IDS,
+        project_retrieval_service: Any | None = None,
+        core_retrieval_plugin_ids: frozenset[str] = DEFAULT_CORE_RETRIEVAL_PLUGIN_IDS,
     ) -> None:
         self._logger = logger
         self._config_mgr = config_mgr
@@ -213,6 +218,8 @@ class PluginServiceManager:
         self._model_catalog_provider = model_catalog_provider
         self._embedding_provider = embedding_provider
         self._core_gateway_plugin_ids = frozenset(core_gateway_plugin_ids)
+        self._project_retrieval_service = project_retrieval_service
+        self._core_retrieval_plugin_ids = frozenset(core_retrieval_plugin_ids)
         self._records: dict[tuple[str, str], _ServiceRecord] = {}
         self._dependency_invalid: dict[str, PluginManifest] = {}
 
@@ -576,6 +583,29 @@ class PluginServiceManager:
             record.manifest.plugin_id in self._core_gateway_plugin_ids
             and "core.communications.gateway" in record.manifest.entitlements
         )
+        plugin_config = PluginConfigManager(
+            record.manifest,
+            logger=self._logger,
+        )
+        retrieval_authorised = (
+            record.manifest.plugin_id in self._core_retrieval_plugin_ids
+            and "core.knowledge.project_retrieval" in record.manifest.entitlements
+        )
+        project_bridge = None
+        if retrieval_authorised and self._project_retrieval_service is not None:
+            project_code = str(plugin_config.config_value("retrieval", "project_code")).strip()
+            classifications = frozenset(
+                item.strip().upper()
+                for item in str(
+                    plugin_config.config_value("retrieval", "allowed_classifications")
+                ).split(",")
+                if item.strip()
+            )
+            project_bridge = CoreProjectRetrievalBridge(
+                project_code=project_code,
+                allowed_classifications=classifications,
+                retrieval_service=self._project_retrieval_service,
+            )
         context = PluginServiceContext(
             plugin_id=record.manifest.plugin_id,
             service_code=record.service_runtime.service_code,
@@ -583,10 +613,7 @@ class PluginServiceManager:
             stop_event=threading.Event(),
             manifest=record.manifest,
             config_mgr=self._config_mgr,
-            plugin_config_manager=PluginConfigManager(
-                record.manifest,
-                logger=self._logger,
-            ),
+            plugin_config_manager=plugin_config,
             request_processor=(
                 self._request_processor if gateway_authorised else None
             ),
@@ -596,6 +623,7 @@ class PluginServiceManager:
             embedding_provider=(
                 self._embedding_provider if gateway_authorised else None
             ),
+            project_retrieval_bridge=project_bridge,
             _plugin_db_session_factory=self._plugin_db_session_factory,
             _secret_vault=PluginSecretVault(
                 plugin_id=record.manifest.plugin_id,

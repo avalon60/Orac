@@ -112,6 +112,12 @@ as
     p_error_message        in clob,
     p_retryable_yn         in varchar2 default 'Y'
   );
+
+  procedure set_document_retrieval_enabled(
+    p_document_id          in number,
+    p_expected_row_version in number,
+    p_enabled_yn           in varchar2
+  );
 end knowledge_ingestion_api;
 /
 

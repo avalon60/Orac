@@ -407,6 +407,30 @@ class TestService:
 """
 
 
+RETRIEVAL_CONTEXT_SERVICE_CODE = """
+class TestPlugin:
+    pass
+
+
+class TestService:
+    def __init__(self, logger=None, config_mgr=None, manifest=None):
+        self.context_seen = False
+
+    def run(self, context):
+        bridge = context.project_retrieval_bridge
+        self.context_seen = bool(
+            bridge is not None
+            and bridge._scope.canonical_name == "PROJECT:TEST_PROJECT"
+            and bridge._allowed_classifications == frozenset({"RAW_REFERENCE"})
+        )
+        while not context.stop_event.wait(0.01):
+            pass
+
+    def health(self, context):
+        return self.context_seen and not context.stop_event.is_set()
+"""
+
+
 def _raise_missing_orac_plugin_credentials():
     raise PluginDatabaseSessionError(
         "ORAC_PLUGIN database credentials are unavailable. Configure saved DSN "
@@ -699,6 +723,37 @@ class PluginServiceManagerTests(unittest.TestCase):
             self.assertFalse(service_manager.check_health(plugin_id))
             self.assertEqual(service_manager.get_state(plugin_id), "unhealthy")
             self.assertTrue(service_manager.stop(plugin_id))
+
+    def test_project_retrieval_bridge_requires_host_allowlist_and_entitlement(self) -> None:
+        """Only the named service receives a configured Core retrieval bridge."""
+        with tempfile.TemporaryDirectory() as temp_plugins:
+            plugins_dir = Path(temp_plugins)
+            for plugin_id in ("trusted_retrieval", "untrusted_retrieval"):
+                manifest = _base_manifest(plugin_id, _long_running_runtime())
+                manifest["entitlements"] = ["core.knowledge.project_retrieval"]
+                _write_plugin(
+                    plugins_dir, plugin_id, manifest, RETRIEVAL_CONTEXT_SERVICE_CODE
+                )
+                (plugins_dir / plugin_id / "plugin.ini").write_text(
+                    "[retrieval]\nproject_code = TEST_PROJECT\n"
+                    "allowed_classifications = RAW_REFERENCE\n",
+                    encoding="utf-8",
+                )
+            service_manager = _service_manager(
+                project_retrieval_service=object(),
+                core_retrieval_plugin_ids=frozenset({"trusted_retrieval"}),
+            )
+            service_manager.register_manifests(_discover(plugins_dir))
+            self.assertTrue(service_manager.start("trusted_retrieval"))
+            self.assertTrue(
+                _wait_until(
+                    lambda: service_manager.check_health("trusted_retrieval")
+                )
+            )
+            self.assertTrue(service_manager.stop("trusted_retrieval"))
+            self.assertTrue(service_manager.start("untrusted_retrieval"))
+            self.assertFalse(service_manager.check_health("untrusted_retrieval"))
+            self.assertTrue(service_manager.stop("untrusted_retrieval"))
 
     def test_auto_start_services_are_started_under_supervision_and_stop_all_stops_them(self) -> None:
         with tempfile.TemporaryDirectory() as temp_plugins:

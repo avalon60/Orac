@@ -3455,6 +3455,7 @@ class OracCommunicationsRuntime:
                 request_processor=self._communications_request_processor(),
                 model_catalog_provider=self.gateway_model_catalog,
                 embedding_provider=self.gateway_embed,
+                project_retrieval_service=self.plugin_knowledge_retrieval_service,
             )
             self.plugin_audit_adapter = PluginAuditAdapter(
                 db_session=self.db_session,

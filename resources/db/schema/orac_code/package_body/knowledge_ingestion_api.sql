@@ -1383,6 +1383,34 @@ as
       p_error_message
     );
   end fail_request;
+
+  procedure set_document_retrieval_enabled(
+    p_document_id          in number,
+    p_expected_row_version in number,
+    p_enabled_yn           in varchar2
+  )
+  is
+  begin
+    if p_document_id is null
+       or p_document_id <= 0
+       or p_expected_row_version is null
+       or p_expected_row_version <= 0
+       or p_enabled_yn is null
+       or p_enabled_yn not in ('Y', 'N')
+    then
+      raise_application_error(-20632, 'RETRIEVAL_REQUEST_INVALID');
+    end if;
+
+    update orac_api.knowledge_documents_v
+       set retrieval_enabled_yn = p_enabled_yn
+     where document_id = p_document_id
+       and row_version = p_expected_row_version;
+
+    if sql%rowcount <> 1
+    then
+      raise_application_error(-20632, 'RETRIEVAL_DOCUMENT_CHANGED');
+    end if;
+  end set_document_retrieval_enabled;
 end knowledge_ingestion_api;
 /
 
