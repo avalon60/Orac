@@ -73,6 +73,8 @@ resources/downloads/apex/*.zip
 /.agents/skills/dependency-checks/
 /.agents/skills/model-task-orchestration/
 /.agents/skills/oracle-sqlcl/
+/.agents/skills/specification-interview/
+/.agents/skills/utplsql-authoring/
 /.agents/skills/plugin-documentation/
 /.agents/skills/plugin-structure-validation/
 /.agents/skills/plsql-code-review/
