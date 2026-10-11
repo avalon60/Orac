@@ -1127,7 +1127,6 @@ class ExistingPluginDependencyTests(unittest.TestCase):
             ("requests<3,>=2.32", "websocket-client<2,>=1.9"),
         )
         self.assertEqual(by_id["weather"].python_dependencies, ("requests<3,>=2.32",))
-        self.assertEqual(by_id["media_control"].python_dependencies, ())
 
     def test_weather_source_passes_installed_package_import_audit(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

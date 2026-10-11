@@ -26,7 +26,6 @@ from model.plugin_routing.discovery import PluginDiscovery  # noqa: E402
 EXPECTED_BUMP_TARGETS = {
     "drop_box": {"../drop_box.json"},
     "home_assistant": {"../home_assistant.json", "manifest.ini"},
-    "media_control": {"../media_control.json"},
     "orac_gateway": {"../orac_gateway.json", "manifest.ini"},
     "orac_knowledge_server": {"../orac_knowledge_server.json"},
     "weather": {"../weather.json"},
