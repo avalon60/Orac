@@ -13,6 +13,7 @@ from typing import Protocol
 from loguru import logger
 
 from lib.config_mgr import ConfigManager
+from lib.logutil import log_call
 from orac_voice.tts_piper import resolve_orac_home
 
 
@@ -136,6 +137,7 @@ class FasterWhisperSttEngine:
     )
     return self._model
 
+  @log_call
   def transcribe_wav(self, wav_path: Path) -> str:
     """Transcribe one WAV file with faster-whisper.
 

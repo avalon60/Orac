@@ -24,6 +24,7 @@ import uuid
 from loguru import logger
 
 from lib.config_mgr import ConfigManager
+from lib.logutil import log_call
 from orac_voice.activation import DEFAULT_ACTIVATION_MODE
 from orac_voice.activation import DEFAULT_WAKE_ENGINE
 from orac_voice.activation import DEFAULT_WAKE_PHRASE
@@ -688,6 +689,7 @@ def _run_tts_test(args: argparse.Namespace) -> int:
     return 1
 
 
+@log_call
 def _transcribe_once(
   args: argparse.Namespace,
   *,

@@ -20,7 +20,7 @@ from urllib.parse import urlparse, urlunparse
 import requests
 from lib.config_mgr import ConfigManager
 from lib.fsutils import project_home
-from lib.logutil import Logger
+from lib.logutil import Logger, log_call
 from orac_core.knowledge.model_submission import StrictModelInvocationOptions
 from orac_core.governed_retrieval.protocol import ToolStreamEvent
 from orac_core.governed_retrieval.protocol import ToolStreamEventKind
@@ -382,6 +382,7 @@ class LLMConnector(LLMConnectorABC):
         text = result.get("text", "")
         yield text if isinstance(text, str) else str(text)
 
+    @log_call
     def stream_tool_events(
         self,
         *,
@@ -593,6 +594,7 @@ class LMStudioConnector(LLMConnector):
         payload.update(provider_generation_options("lmstudio", generation_options))
         return payload
 
+    @log_call
     def stream_tool_events(
         self,
         *,
@@ -1104,6 +1106,7 @@ class OllamaConnector(LLMConnector):
             return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
         return ""
 
+    @log_call
     def stream_tool_events(
         self,
         *,

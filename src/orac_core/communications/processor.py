@@ -12,6 +12,7 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Protocol
 
+from lib.logutil import log_call
 from orac_core.communications.models import MessageRole
 from orac_core.communications.models import OracRequest
 from orac_core.communications.models import OracResponse
@@ -25,6 +26,7 @@ EventSink = Callable[[StreamEvent], Awaitable[None]]
 class CommunicationsRuntime(Protocol):
     """Narrow collaborator implemented by the host orchestration runtime."""
 
+    @log_call
     async def process(
         self,
         request: OracRequest,
@@ -111,6 +113,7 @@ class OracRequestProcessor:
                 error=error,
             )
 
+    @log_call
     async def stream(self, request: OracRequest) -> AsyncIterator[StreamEvent]:
         """Queue-wrap ``process`` without introducing a second engine."""
         queue: asyncio.Queue[StreamEvent] = asyncio.Queue()

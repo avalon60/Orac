@@ -1108,6 +1108,15 @@ Sets the minimum runtime logging severity.
 
 **Notes:** The runtime fallback differs from the shipped value; the configured value remains authoritative when present.
 
+For call timing diagnostics, set `log_level = TRACE` and restart the Orac
+processes being measured. TRACE records show a qualified function name, elapsed
+wall time in milliseconds, and `ok`, `raised`, or `closed` status. They omit
+arguments, results, prompts, and transcripts. The main chat, retrieval, model
+stream, plugin, and voice boundaries are instrumented. Nested timings overlap:
+a caller's elapsed time includes downstream calls and waits, so do not add
+the durations together. Restore the usual log level after diagnosis to reduce
+log volume.
+
 ### `supplementary`
 
 - **Type:** string

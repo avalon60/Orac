@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
+from lib.logutil import log_call
 from model.plugin_arbitration import PluginArbiter
 from model.plugin_audit_adapter import PluginAuditAdapter
 from model.plugin_routing.handoff import PluginRoutingHandoff
@@ -43,6 +44,7 @@ class PluginExecutionService:
         self.plugin_audit_adapter = plugin_audit_adapter
         self._plugin_arbiter = plugin_arbiter or PluginArbiter(logger=logger)
 
+    @log_call
     def execute(
         self,
         *,

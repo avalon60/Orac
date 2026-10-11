@@ -19,6 +19,7 @@ from typing import Protocol
 from loguru import logger
 
 from lib.config_mgr import ConfigManager
+from lib.logutil import log_call
 from lib.fsutils import project_home
 
 
@@ -319,6 +320,7 @@ class PiperTtsEngine:
     )
     return self.output_dir / name
 
+  @log_call
   def synthesise_to_wav(
     self,
     text: str,

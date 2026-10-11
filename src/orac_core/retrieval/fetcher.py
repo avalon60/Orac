@@ -22,6 +22,7 @@ from urllib.request import Request
 import re
 import socket
 
+from lib.logutil import log_call
 from .models import FetchedSource
 from .models import SearchResult
 
@@ -55,6 +56,7 @@ class SourceFetcher:
         self._max_redirects = max(0, int(max_redirects))
         self._opener = build_opener(_NoRedirectHandler)
 
+    @log_call
     def fetch_sources(
         self,
         results: tuple[SearchResult, ...] | list[SearchResult],

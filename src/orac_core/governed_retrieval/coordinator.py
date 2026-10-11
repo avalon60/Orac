@@ -17,6 +17,7 @@ import time
 from typing import Any
 import uuid
 
+from lib.logutil import log_call
 from orac_core.conversation_memory import LogicalRetrievalRequest
 from orac_core.conversation_memory import RetrievalDomain
 from orac_core.conversation_memory import TrustedRetrievalContext
@@ -89,6 +90,7 @@ class GovernedToolExecution:
         self._iterator = iterator
         self.result = result
 
+    @log_call
     def stream(self) -> Iterator[str]:
         """Yield only user-visible assistant text."""
         yield from self._iterator
@@ -217,6 +219,7 @@ class GovernedRetrievalToolCoordinator:
         )
         return GovernedToolExecution(iterator, result)
 
+    @log_call
     def _run(
         self,
         *,
@@ -282,6 +285,7 @@ class GovernedRetrievalToolCoordinator:
             result=result,
         )
 
+    @log_call
     def _run_required_decision(
         self,
         *,
@@ -1118,6 +1122,7 @@ class GovernedRetrievalToolCoordinator:
         return base
 
     @staticmethod
+    @log_call
     def _final_answer_stream(
         *,
         connector: Any,

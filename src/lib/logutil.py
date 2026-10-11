@@ -1,10 +1,16 @@
-# lib/logutil.py
+"""Configure Orac logging and provide content-safe call timing helpers."""
+
 # Author: Clive Bostock
-# Updated: 2025-09-19
-# Duplicate-safe, thread-safe, process-wide logging around Loguru with run ID and decorators.
+# Date: 11-Oct-2026
+# Description: Configure process-wide Loguru sinks and TRACE call timing.
 
 from pathlib import Path
-import time, functools, os, threading
+import functools
+import inspect
+import os
+import threading
+import time
+from contextlib import aclosing
 from typing import Callable, Any, Optional
 from loguru import logger as logr
 from sys import stderr
@@ -356,9 +362,10 @@ def _log_trace(debug_message: str) -> None:
     logr.trace(f"{Icons.bullet} {debug_message}")
 
 def log_call(func: Callable[..., Any]) -> Callable[..., Any]:
-    """A decorator to log the execution and duration of a function call at TRACE level.
+    """Log a call's elapsed time and outcome at TRACE without logging its data.
 
-    The logging includes the function's name and the elapsed time in milliseconds.
+    Coroutine and generator calls are measured through completion or closure,
+    rather than just until the awaitable or iterator is created.
 
     Args:
         func: The function to be wrapped.
@@ -366,11 +373,75 @@ def log_call(func: Callable[..., Any]) -> Callable[..., Any]:
     Returns:
         Callable[..., Any]: The wrapped function.
     """
+    name = f"{func.__module__}.{func.__qualname__}"
+
+    def record(start: float, outcome: str) -> None:
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        _log_trace(f"Call: {name} [{outcome}; elapsed {elapsed_ms:.2f} ms]")
+
+    if inspect.isasyncgenfunction(func):
+        @functools.wraps(func)
+        async def async_generator_wrapper(*args, **kwargs):
+            start = time.perf_counter()
+            outcome = "closed"
+            try:
+                async with aclosing(func(*args, **kwargs)) as iterator:
+                    async for item in iterator:
+                        yield item
+                outcome = "ok"
+            except GeneratorExit:
+                raise
+            except BaseException:
+                outcome = "raised"
+                raise
+            finally:
+                record(start, outcome)
+
+        return async_generator_wrapper
+
+    if inspect.iscoroutinefunction(func):
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            start = time.perf_counter()
+            outcome = "ok"
+            try:
+                return await func(*args, **kwargs)
+            except BaseException:
+                outcome = "raised"
+                raise
+            finally:
+                record(start, outcome)
+
+        return async_wrapper
+
+    if inspect.isgeneratorfunction(func):
+        @functools.wraps(func)
+        def generator_wrapper(*args, **kwargs):
+            start = time.perf_counter()
+            outcome = "closed"
+            try:
+                yield from func(*args, **kwargs)
+                outcome = "ok"
+            except GeneratorExit:
+                raise
+            except BaseException:
+                outcome = "raised"
+                raise
+            finally:
+                record(start, outcome)
+
+        return generator_wrapper
+
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         start = time.perf_counter()
-        res = func(*args, **kwargs)
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        _log_trace(f"Call: {func.__name__} (...) [elapsed {elapsed_ms:.2f} ms]")
-        return res
+        outcome = "ok"
+        try:
+            return func(*args, **kwargs)
+        except BaseException:
+            outcome = "raised"
+            raise
+        finally:
+            record(start, outcome)
+
     return wrapper

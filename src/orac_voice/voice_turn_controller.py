@@ -14,6 +14,8 @@ from typing import Protocol
 
 from loguru import logger
 
+from lib.logutil import log_call
+
 from orac_voice.barge_in import BargeInController
 from orac_voice.barge_in import BargeInResult
 from orac_voice.barge_in import OpenWakeWordBargeInController
@@ -97,6 +99,7 @@ class VoiceTurnController:
     self.completion_idle_message = completion_idle_message
     self.on_final_text = on_final_text
 
+  @log_call
   async def run(self) -> int:
     """Send the prompt and process protocol frames until the turn finishes."""
     from view import slave as slave_client

@@ -16,6 +16,7 @@ from urllib.request import Request
 from urllib.request import urlopen
 import json
 
+from lib.logutil import log_call
 from .models import SearchRequest
 from .models import SearchResult
 
@@ -47,6 +48,7 @@ class SearXNGSearchProvider:
         self._timeout_seconds = max(0.1, float(timeout_seconds))
         self._logger = logger
 
+    @log_call
     def search(self, request: SearchRequest) -> tuple[SearchResult, ...]:
         """Return structured results from the SearXNG JSON search endpoint."""
         if not request.query.strip():

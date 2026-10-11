@@ -32,7 +32,7 @@ from model.llm_connector import LLMUsageMetadata
 from lib.config_mgr import ConfigManager
 from lib.fsutils import project_home
 from lib.icons import Icons
-from lib.logutil import Logger
+from lib.logutil import Logger, log_call
 from lib.protocol_validation import disabled_protocol_validator
 from model.orac_auth import FrameAuthChain, ZenFrameAuth
 from model.context_manager import OracContextManager
@@ -7834,6 +7834,7 @@ class OracCommunicationsRuntime:
             _log_exception("Auto-title enqueue failed (non-fatal)", e)
 
     # --- Main request handler -------------------------------------------------
+    @log_call
     async def handle_request_events(self, message: str) -> AsyncIterator[str]:
         """Yield NDJSON response frames for a request.
 
@@ -8007,6 +8008,7 @@ class OracCommunicationsRuntime:
             if not response_task.done():
                 response_task.cancel()
 
+    @log_call
     async def handle_request(
         self,
         message: str,
@@ -8089,6 +8091,7 @@ class OracCommunicationsRuntime:
                 logger.log_info(trace.log_line())
             reset_latency_trace(trace_token)
 
+    @log_call
     async def process(
         self,
         request: OracRequest,
@@ -8306,6 +8309,7 @@ class OracCommunicationsRuntime:
             ensure_ascii=False,
         )
 
+    @log_call
     async def _execute_ordered_pipeline(
         self,
         request: OracRequest,

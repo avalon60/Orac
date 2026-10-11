@@ -11,6 +11,7 @@ from time import time
 from typing import Any
 from typing import Mapping
 
+from lib.logutil import log_call
 from .models import SearchRequest
 from .models import SearchResult
 from .providers import SearchProvider
@@ -55,6 +56,7 @@ class SearchBroker:
         """Return the broker settings."""
         return self._settings
 
+    @log_call
     def search(self, request: SearchRequest) -> tuple[SearchResult, ...]:
         """Return structured results for a single search request."""
         if not self._settings.internet_search_enabled:

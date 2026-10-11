@@ -21,6 +21,7 @@ from loguru import logger
 import requests
 
 from lib.config_mgr import ConfigManager
+from lib.logutil import log_call
 from orac_voice.tts_piper import expand_config_path
 from orac_voice.tts_piper import resolve_orac_home
 
@@ -524,6 +525,7 @@ class KokoroTtsEngine:
     )
     return self.output_dir / name
 
+  @log_call
   def synthesise_to_wav(
     self,
     text: str,

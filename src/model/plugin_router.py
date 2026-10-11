@@ -17,6 +17,7 @@ import re
 import threading
 from typing import Any
 
+from lib.logutil import log_call
 from model.plugin_audit_adapter import PluginAuditAdapter
 from model.plugin_audit_adapter import PluginAuditSession
 from model.plugin_execution_policy import (
@@ -201,6 +202,7 @@ class PluginRouter:
             explicit_timeout=execution_timeout_seconds,
         )
 
+    @log_call
     def route(
         self,
         prompt: str,
