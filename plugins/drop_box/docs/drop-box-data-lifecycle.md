@@ -15,7 +15,7 @@ contract is in [Document Ingestion](../../../docs/document-ingestion.md).
 | --- | --- |
 | `ORAC_DROPBOX` | Drop locations, compatibility profiles, jobs, retry metadata, and job events. |
 | Drop Box scanner | Filesystem observations, in-process stability memory, SHA-256 hashing, and durable enqueue. |
-| Drop Box converter | Source-format validation, native canonicalisation, controlled Pandoc invocation, and bounded extraction provenance. |
+| Drop Box converter | Source-format validation, native canonicalisation, controlled Pandoc or Poppler invocation, and bounded extraction provenance. |
 | `ORAC_PLUGIN` bridge | Approved Core validation interfaces exposed to plugin-owned schemas. |
 | Orac Core capture | Source revalidation, content-addressed storage of the raw original and canonical Markdown, atomic normalised output-set registration, scope resolution, transactional document lineage, tags, and ingestion request creation. |
 | Orac Core worker | Leased request processing, verification and independent chunking of PRIMARY, MANIFEST, or TABLE members, embeddings, completion, retry, and Core events. |
@@ -116,6 +116,10 @@ Native formats:
 - Plain text: the same canonicalisation, represented as canonical Markdown
   text.
 
+Poppler-backed format:
+
+- Text-based PDF, extracted with page markers; pages without extractable text fail.
+
 Pandoc-backed formats:
 
 - DOCX
@@ -154,7 +158,7 @@ identifiers, canonical-output hash, and exact output byte size.
 | --- | --- |
 | `queued` | Durable observation is ready for a handoff attempt or waiting after a transient Core failure. |
 | `processing` | The service is converting or calling Core. |
-| `deferred_prerequisite` | Pandoc is unavailable, incompatible, or could not be safely probed. |
+| `deferred_prerequisite` | Pandoc or Poppler is unavailable, incompatible, or could not be safely probed. |
 | `conversion_retry_wait` | A retryable converter failure is waiting for its next attempt. |
 | `handed_off` | Core accepted the source and returned an ingestion request id. |
 | `failed` | Capture validation or conversion retry exhaustion ended the current job. |
@@ -329,7 +333,7 @@ The current lifecycle deliberately excludes:
 
 - post-processing source movement, deletion, or physical quarantine;
 - manual terminal-job reopening without a separately reviewed audit workflow;
-- PDF/OCR, spreadsheets, presentations, remote acquisition, and embedded media;
+- OCR for scanned PDFs, spreadsheets, presentations, remote acquisition, and embedded media;
 - model-generated transformations;
 - automatic regeneration of historical completed versions when a converter or
   chunker changes;

@@ -21,11 +21,12 @@ Drop Box currently:
 - stores jobs and job events in the plugin-owned `ORAC_DROPBOX` schema;
 - normalises Markdown and UTF-8 plain text without Pandoc;
 - converts DOCX, HTML, ODT, RTF, and EPUB with an allowlisted Pandoc recipe;
+- extracts page-labelled text from text-based PDFs with Poppler `pdftotext`;
 - submits the original source, canonical Markdown, extraction provenance,
   classification tags, and ingestion notes to Core;
 - reports Drop Box and Core lifecycle state through its APEX application.
 
-It does not ingest PDF, OCR output, spreadsheets, presentations, remote
+It does not perform OCR for scans or ingest spreadsheets, presentations, remote
 content, or embedded media. It does not move, delete, or quarantine source
 files after processing.
 
@@ -125,22 +126,25 @@ Installing the location does not grant any user dialogue access. Grant
 `PROJECT:ORAC_CORE` separately in App 1042 Pages 39/40 when retrieval is
 required.
 
-## Pandoc Capability
+## Converter Capabilities
 
-Pandoc `>=3.1,<4` is an optional declared command prerequisite. Markdown and
-plain text work without it. DOCX, HTML, ODT, RTF, and EPUB jobs wait in
+Pandoc `>=3.1,<4` and Poppler `pdftotext >=22,<30` are optional declared
+command prerequisites. Markdown and plain text work without either tool. DOCX, HTML, ODT, RTF, and EPUB jobs wait in
 `deferred_prerequisite` when Pandoc is missing, incompatible, or cannot be
-probed.
+probed. PDF jobs likewise wait if `pdftotext` is unavailable; other formats
+continue normally. Textless pages, including scanned pages, are rejected for
+separate OCR or review rather than indexed as complete.
 
 Check the active plugin and the service environment:
 
 ```bash
 bin/orac-plugin.sh check drop_box
 pandoc --version
+pdftotext -v
 ```
 
 Orac probes a Core-owned command catalogue and never installs operating-system
-packages. Installing a compatible Pandoc into the existing controlled service
+packages. Installing a compatible converter into the existing controlled service
 path is detected by the 15-minute re-probe. A changed container image,
 executable mount, or configured path requires the affected service or
 container to restart.
@@ -280,10 +284,11 @@ Use **View Activity** on Page 1 to filter this report to one location.
 
 ## Supported Formats and Limits
 
-| Extension | Handling | Pandoc required |
+| Extension | Handling | Converter required |
 | --- | --- | --- |
 | `.md` | UTF-8/BOM and newline normalisation; preserved as Markdown | No |
 | `.txt` | UTF-8/BOM and newline normalisation; treated as canonical Markdown text | No |
+| `.pdf` | Embedded text extracted with page markers; textless pages rejected | Poppler |
 | `.docx` | Archive/signature validation and fixed DOCX-to-GFM conversion | Yes |
 | `.html`, `.htm` | UTF-8 and HTML marker validation, then fixed HTML-to-GFM conversion | Yes |
 | `.odt` | Archive/signature validation and fixed ODT-to-GFM conversion | Yes |
@@ -294,7 +299,7 @@ Hard limits include:
 
 - 100 MiB original source;
 - 50 MiB canonical Markdown;
-- 60-second Pandoc conversion;
+- 60-second converter execution;
 - 10,000 archive entries;
 - 250 MiB expanded archive total;
 - 100 MiB per expanded archive member;

@@ -79,6 +79,9 @@ FORMAT_RECIPES = {
     ".txt": FormatRecipe(
         "plain_text", "text/plain", None, "dropbox_text_to_markdown"
     ),
+    ".pdf": FormatRecipe(
+        "pdf", "application/pdf", None, "dropbox_poppler_text"
+    ),
     ".docx": FormatRecipe(
         "docx",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -137,7 +140,16 @@ class DropBoxDocumentConverter:
             self._validate_format(staged, recipe)
             converter_version: str | None = None
             option_ids: list[str] = []
-            if recipe.reader is None:
+            if recipe.source_format_code == "pdf":
+                if command_probe is None or not command_probe.available:
+                    raise DropBoxConversionError(
+                        "PDFTOTEXT_UNAVAILABLE",
+                        "Poppler pdftotext is unavailable in the Drop Box runtime.",
+                        retryable=True,
+                    )
+                converter_version = command_probe.detected_version
+                output, option_ids = self._run_pdftotext(staged, command_probe, root)
+            elif recipe.reader is None:
                 output = canonicalise_utf8(staged.read_bytes())
             else:
                 if command_probe is None or not command_probe.available:
@@ -174,7 +186,10 @@ class DropBoxDocumentConverter:
                 "drop_location_id": int(drop_location_id),
                 "drop_job_id": int(drop_job_id),
                 "source_format": recipe.source_format_code,
-                "converter_name": "pandoc" if recipe.reader else None,
+                "converter_name": (
+                    "pdftotext" if recipe.source_format_code == "pdf"
+                    else "pandoc" if recipe.reader else None
+                ),
                 "converter_version": converter_version,
                 "fixed_option_identifiers": option_ids,
             }
@@ -194,6 +209,13 @@ class DropBoxDocumentConverter:
             )
 
     def _validate_format(self, path: Path, recipe: FormatRecipe) -> None:
+        if recipe.source_format_code == "pdf":
+            with path.open("rb") as source:
+                if source.read(5) != b"%PDF-":
+                    raise DropBoxConversionError(
+                        "FORMAT_MISMATCH", "PDF suffix and file signature do not agree."
+                    )
+            return
         if recipe.source_format_code in {"markdown", "plain_text"}:
             canonicalise_utf8(path.read_bytes())
             return
@@ -275,6 +297,59 @@ class DropBoxDocumentConverter:
             "writer_gfm_no_raw_html",
             "wrap_none",
             "empty_resource_path",
+        ]
+
+
+    def _run_pdftotext(
+        self, staged: Path, probe: PluginCommandProbe, root: Path
+    ) -> tuple[str, list[str]]:
+        """Extract page-labelled text from a verified text PDF."""
+        if not probe.executable_path:
+            raise DropBoxConversionError(
+                "PDFTOTEXT_UNAVAILABLE", "Poppler executable was not resolved.",
+                retryable=True,
+            )
+        work = root / "work"
+        home = root / "home"
+        work.mkdir(mode=0o700)
+        home.mkdir(mode=0o700)
+        process = subprocess.Popen(
+            [
+                probe.executable_path, "-layout", "-enc", "UTF-8",
+                "-eol", "unix", str(staged), "-",
+            ],
+            cwd=work,
+            env={"PATH": DEFAULT_COMMAND_PATH, "HOME": str(home),
+                 "TMPDIR": str(work), "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"},
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=(os.name == "posix"),
+        )
+        stdout, _stderr = _communicate_bounded(process, root, converter_code="PDFTOTEXT")
+        if process.returncode != 0:
+            raise DropBoxConversionError(
+                "PDF_UNREADABLE", "PDF text extraction failed or the file is encrypted."
+            )
+        try:
+            extracted = stdout.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise DropBoxConversionError(
+                "INVALID_NORMALISED_OUTPUT", "PDF text extraction was not UTF-8."
+            ) from exc
+        pages = extracted.split("\f")
+        if pages and not pages[-1].strip():
+            pages.pop()
+        if not pages or any(not page.strip() for page in pages):
+            raise DropBoxConversionError(
+                "PDF_TEXT_INCOMPLETE", "One or more PDF pages have no extractable text."
+            )
+        output = "\n\n".join(
+            f"<!-- Page {number} -->\n\n{page.strip()}"
+            for number, page in enumerate(pages, start=1)
+        )
+        return canonicalise_utf8(output.encode("utf-8")), [
+            "poppler_layout", "utf8", "unix_eol", "page_markers"
         ]
 
 
@@ -399,12 +474,14 @@ def _terminate_process(process: subprocess.Popen[bytes]) -> None:
 def _communicate_bounded(
     process: subprocess.Popen[bytes],
     temporary_root: Path,
+    *,
+    converter_code: str = "PANDOC",
 ) -> tuple[bytes, bytes]:
-    """Read Pandoc pipes while enforcing time, output, and temporary limits."""
+    """Read converter pipes while enforcing time, output, and temporary limits."""
     if process.stdout is None or process.stderr is None:
         _terminate_process(process)
         raise DropBoxConversionError(
-            "PANDOC_FAILED", "Pandoc output pipes were not available.", retryable=True
+            f"{converter_code}_FAILED", "Converter output pipes were not available.", retryable=True
         )
     selector = selectors.DefaultSelector()
     selector.register(process.stdout, selectors.EVENT_READ, "stdout")
@@ -419,8 +496,8 @@ def _communicate_bounded(
             if now - started > PANDOC_TIMEOUT_SECONDS:
                 _terminate_process(process)
                 raise DropBoxConversionError(
-                    "PANDOC_TIMEOUT",
-                    "Pandoc conversion timed out.",
+                    f"{converter_code}_TIMEOUT",
+                    "Conversion timed out.",
                     retryable=True,
                 )
             if now >= next_storage_check:
@@ -428,7 +505,7 @@ def _communicate_bounded(
                     _terminate_process(process)
                     raise DropBoxConversionError(
                         "TEMP_STORAGE_LIMIT",
-                        "Pandoc temporary storage exceeded 400 MiB.",
+                        "Converter temporary storage exceeded 400 MiB.",
                     )
                 next_storage_check = now + 0.25
             events = selector.select(timeout=0.1)
@@ -443,7 +520,7 @@ def _communicate_bounded(
                         _terminate_process(process)
                         raise DropBoxConversionError(
                             "NORMALISED_TOO_LARGE",
-                            "Pandoc output exceeds the 50 MiB limit.",
+                            "Converter output exceeds the 50 MiB limit.",
                         )
                 elif len(stderr) < MAX_STDERR_BYTES:
                     remaining = MAX_STDERR_BYTES - len(stderr)

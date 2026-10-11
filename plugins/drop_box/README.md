@@ -29,6 +29,7 @@ relational classification tags, retrieval, and grounding provenance.
 ## Capability Summary
 
 - Native Markdown and UTF-8 plain-text canonicalisation.
+- Text-based PDF extraction through optional Poppler `pdftotext`.
 - DOCX, HTML, ODT, RTF, and EPUB conversion through optional Pandoc
   `>=3.1,<4`.
 - Recursive or non-recursive filesystem scanning with extension, size,
@@ -39,7 +40,7 @@ relational classification tags, retrieval, and grounding provenance.
 - Admin-only APEX application `ORAC_DROPBOX_ADMIN` (App 10020).
 - Seeded recursive `ORAC_DOCS` location targeting `PROJECT:ORAC_CORE`.
 
-PDF, OCR, spreadsheets, presentations, remote acquisition, embedded-media
+OCR for scanned PDFs, spreadsheets, presentations, remote acquisition, embedded-media
 extraction, source-file movement, deletion, and physical quarantine are not
 implemented.
 
@@ -50,7 +51,7 @@ The source manifest is [`plugins/drop_box.json`](../drop_box.json). It declares:
 - plugin id `drop_box`;
 - scheduled service `scanner`;
 - automatic startup and a 30-second interval;
-- optional Pandoc command prerequisite;
+- optional Pandoc and Poppler command prerequisites;
 - plugin-owned schema `ORAC_DROPBOX`;
 - approved `ORAC_PLUGIN` scope and tag validation bridge dependencies;
 - required APEX application `ORAC_DROPBOX_ADMIN`.

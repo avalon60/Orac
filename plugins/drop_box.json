@@ -86,6 +86,13 @@
       "required": false,
       "purpose": "Convert DOCX, HTML, ODT, RTF and EPUB to normalized Markdown.",
       "install_hint": "Install Pandoc 3.1+ and ensure it is on the Orac service PATH."
+    },
+    {
+      "command": "pdftotext",
+      "version_specifier": ">=22,<30",
+      "required": false,
+      "purpose": "Extract searchable text from text-based PDF files.",
+      "install_hint": "Install Poppler pdftotext and ensure it is on the Orac service PATH."
     }
   ],
   "database": {

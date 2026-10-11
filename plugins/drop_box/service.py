@@ -147,7 +147,9 @@ class DropBoxService:
                 )
                 recipe = FORMAT_RECIPES.get(job.source_path.suffix.lower())
                 command_probe = None
-                if recipe is not None and recipe.reader is not None:
+                if recipe is not None and recipe.source_format_code == "pdf":
+                    command_probe = context.resolve_command_dependency("pdftotext")
+                elif recipe is not None and recipe.reader is not None:
                     command_probe = context.resolve_command_dependency("pandoc")
                 normalised = self._converter.normalise(
                     job.source_path,
@@ -173,6 +175,7 @@ class DropBoxService:
                     "PANDOC_INCOMPATIBLE",
                     "PANDOC_PROBE_FAILED",
                     "PANDOC_PROBE_TIMED_OUT",
+                    "PDFTOTEXT_UNAVAILABLE",
                 }:
                     status = "deferred_prerequisite"
                 elif exc.retryable:

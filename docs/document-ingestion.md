@@ -15,7 +15,7 @@ should also read the
 
 | Owner | Responsibilities |
 | --- | --- |
-| Drop Box plugin | Filesystem discovery, stability checks, source hashing, format and archive validation, native text normalisation, allowlisted Pandoc conversion, plugin-owned job/audit state, and submission to the Core capture service. |
+| Drop Box plugin | Filesystem discovery, stability checks, source hashing, format and archive validation, native text normalisation, allowlisted Pandoc conversion and Poppler PDF extraction, plugin-owned job/audit state, and submission to the Core capture service. |
 | Orac Core capture | Revalidate the source identity and canonical Markdown, persist both immutable representations in the Core-managed content-addressed store, register the complete normalised output set, resolve the canonical scope, and create the transactional knowledge lineage and ingestion request. |
 | Orac Core worker | Claim queued requests, verify registered managed artefacts, create source-specific Markdown or CSV chunk sets, create embeddings, enforce completion invariants, and record bounded request events and failure state. |
 | Orac Core retrieval | Authorise an authenticated principal for one active canonical scope, select searchable chunks, construct bounded untrusted evidence, and retain response provenance. |
@@ -34,7 +34,7 @@ and the model-facing context boundary.
    target scope, classification tags, and ingestion notes.
 4. Drop Box validates the source format and produces canonical
    GitHub-flavoured Markdown. Markdown and plain text are normalised natively;
-   DOCX, HTML, ODT, RTF, and EPUB use the fixed Pandoc recipe.
+   DOCX, HTML, ODT, RTF, and EPUB use the fixed Pandoc recipe; text-based PDFs use Poppler extraction with page markers.
 5. `KnowledgeManagedFileCaptureService` revalidates the original file, hashes,
    canonical Markdown, MIME values, extractor identity, bounded extraction
    metadata, classification tags, and ingestion notes.
@@ -429,7 +429,7 @@ settings, or RAG usage privileges.
 
 The current ingestion path does not provide:
 
-- PDF or OCR ingestion;
+- OCR for scanned or image-only PDFs;
 - spreadsheet or presentation conversion;
 - remote acquisition, email ingestion, or embedded-media extraction;
 - model-generated document transformation;

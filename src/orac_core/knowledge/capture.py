@@ -31,6 +31,7 @@ DROP_BOX_EXTRACTORS = {
     "dropbox_markdown_passthrough",
     "dropbox_text_to_markdown",
     "dropbox_pandoc_gfm",
+    "dropbox_poppler_text",
 }
 DROP_BOX_SOURCE_FORMATS = {
     "markdown": "text/markdown",
@@ -42,6 +43,7 @@ DROP_BOX_SOURCE_FORMATS = {
     "odt": "application/vnd.oasis.opendocument.text",
     "rtf": "application/rtf",
     "epub": "application/epub+zip",
+    "pdf": "application/pdf",
 }
 EXTRACTION_METADATA_FIELDS = {
     "schema_version",

@@ -38,6 +38,7 @@ COMMAND_RESULTS = {
 _COMMAND_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _CONTROL_CHARACTER = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _PANDOC_VERSION = re.compile(r"^pandoc\s+([0-9]+(?:\.[0-9A-Za-z]+)*)", re.IGNORECASE)
+_PDFTOTEXT_VERSION = re.compile(r"^pdftotext version\s+([0-9]+(?:\.[0-9A-Za-z]+)*)", re.IGNORECASE)
 
 
 class PluginCommandDependencyError(RuntimeError):
@@ -120,7 +121,12 @@ SAFE_PROBE_CATALOGUE = {
         arguments=("--version",),
         version_pattern=_PANDOC_VERSION,
         timeout_seconds=5.0,
-    )
+    ),
+    "pdftotext": _ProbeDefinition(
+        arguments=("-v",),
+        version_pattern=_PDFTOTEXT_VERSION,
+        timeout_seconds=5.0,
+    ),
 }
 
 
@@ -331,7 +337,7 @@ class PluginCommandDependencyChecker:
                     + (f": {detail}" if detail else ".")
                 ),
             )
-        text = _sanitise_output(stdout)
+        text = _sanitise_output(stdout or stderr)
         match = definition.version_pattern.search(text)
         if match is None:
             return self._result(

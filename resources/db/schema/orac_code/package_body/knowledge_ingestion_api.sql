@@ -341,7 +341,8 @@ as
       if p_extractor_code not in (
            'dropbox_markdown_passthrough',
            'dropbox_text_to_markdown',
-           'dropbox_pandoc_gfm'
+           'dropbox_pandoc_gfm',
+           'dropbox_poppler_text'
          ) or p_extractor_version <> '1'
       then
         raise_application_error(-20412, 'Extractor identity is invalid.');

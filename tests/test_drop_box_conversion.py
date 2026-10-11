@@ -132,5 +132,82 @@ class DropBoxConversionTests(unittest.TestCase):
                     self.assertEqual(result.extractor_code, "dropbox_pandoc_gfm")
 
 
+    def test_real_poppler_preserves_page_markers_and_rejects_missing_text(self) -> None:
+        """Text PDFs retain page provenance; a blank page blocks handoff."""
+        declarations = normalise_command_dependencies([{
+            "command": "pdftotext", "version_specifier": ">=22,<30",
+            "required": False, "purpose": "Extract PDF text.",
+            "install_hint": "Install Poppler.",
+        }])
+        probe = PluginCommandDependencyChecker().check(
+            declarations, context="integration"
+        ).probes[0]
+        if not probe.available:
+            self.skipTest("Poppler is not available in the controlled test PATH.")
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "fixture.pdf"
+            for pages, expected in (
+                (("First page", "Second page"), None),
+                (("First page", ""), "PDF_TEXT_INCOMPLETE"),
+            ):
+                with self.subTest(pages=pages):
+                    _write_simple_pdf(source, pages)
+                    payload = source.read_bytes()
+                    kwargs = dict(
+                        expected_sha256=hashlib.sha256(payload).hexdigest(),
+                        expected_size=len(payload), command_probe=probe,
+                        drop_location_id=1, drop_job_id=2,
+                    )
+                    if expected:
+                        with self.assertRaises(DropBoxConversionError) as raised:
+                            DropBoxDocumentConverter().normalise(source, **kwargs)
+                        self.assertEqual(raised.exception.reason_code, expected)
+                    else:
+                        result = DropBoxDocumentConverter().normalise(source, **kwargs)
+                        self.assertIn("<!-- Page 1 -->\n\nFirst page", result.markdown)
+                        self.assertIn("<!-- Page 2 -->\n\nSecond page", result.markdown)
+                        self.assertEqual(result.extractor_code, "dropbox_poppler_text")
+                        self.assertEqual(source.read_bytes(), payload)
+
+
+def _write_simple_pdf(path: Path, pages: tuple[str, ...]) -> None:
+    """Write a small, valid text PDF fixture without external dependencies."""
+    objects: list[bytes | None] = [
+        b"<< /Type /Catalog /Pages 2 0 R >>", None,
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    kids = []
+    for page in pages:
+        page_id = len(objects) + 1
+        stream_id = page_id + 1
+        kids.append(f"{page_id} 0 R")
+        stream = f"BT /F1 12 Tf 72 720 Td ({page}) Tj ET".encode("ascii")
+        objects.append((
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            f"/Resources << /Font << /F1 3 0 R >> >> /Contents {stream_id} 0 R >>"
+        ).encode("ascii"))
+        objects.append(
+            f"<< /Length {len(stream)} >>\nstream\n".encode("ascii")
+            + stream + b"\nendstream"
+        )
+    objects[1] = (
+        f"<< /Type /Pages /Kids [{' '.join(kids)}] /Count {len(pages)} >>"
+    ).encode("ascii")
+    data = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for number, obj in enumerate(objects, 1):
+        offsets.append(len(data))
+        data.extend(f"{number} 0 obj\n".encode("ascii") + obj + b"\nendobj\n")
+    start_xref = len(data)
+    data.extend(f"xref\n0 {len(offsets)}\n0000000000 65535 f \n".encode("ascii"))
+    for offset in offsets[1:]:
+        data.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    data.extend((
+        f"trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\n"
+        f"startxref\n{start_xref}\n%%EOF\n"
+    ).encode("ascii"))
+    path.write_bytes(data)
+
+
 if __name__ == "__main__":
     unittest.main()
