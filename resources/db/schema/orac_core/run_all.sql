@@ -186,6 +186,7 @@ prompt === constraints_uc ===
 prompt === migrations ===
 @migration/p2_03_metadata_seed.sql
 @migration/p2_03_z_metadata_corrections.sql
+@migration/p2_04_openai_compatible_provider.sql
 
 prompt === constraints_fk ===
 @constraint_fk/prfdfn_dom_refval_fk1.sql

@@ -96,7 +96,7 @@ Local or remote LLM provider and generation-budget settings.
 - **Shipped value:** `ollama`
 - **Runtime fallback:** The shipped value is authoritative; loaders without a separate default require the configured key
 - **Required:** Yes for the configured LLM path
-- **Allowed values:** Configured provider identifier, such as `ollama` or `lmstudio`
+- **Allowed values:** `ollama`, `lmstudio`, or `openai_compatible`
 - **Status:** active
 
 Selects the configured LLM provider implementation.
@@ -154,6 +154,83 @@ Initial output-token budget for model generation.
 Percentage increase applied when generation reaches the token limit.
 
 **Example:** `num_predict_incr_pct = 100`
+
+### OpenAI-compatible outbound runner
+
+The OpenAI-compatible connector follows the same single-runner lifecycle as
+Ollama and LM Studio. Configure the active runner, its URL and its startup
+model together in `[service]`, then restart Orac:
+
+```ini
+[service]
+llm_service_id = openai_compatible
+service_url = http://HOST:PORT/v1
+default_model_name = EXACT_MODEL_ID
+api_key_env =
+context_tokens = 32768
+model_context_tokens = {}
+model_capabilities = {}
+include_stream_usage = false
+```
+
+Replace the host, port, model ID and context limit with verified values. The
+URL may be an HTTP or HTTPS origin, optionally ending in `/v1`; URL credentials,
+other paths, query strings and fragments are rejected. HTTPS certificate
+verification remains enabled. `api_key_env` names a process environment
+variable containing an optional bearer token; never put the token in this INI.
+`llm_timeout` sets the request timeout. Optional `model_context_tokens` maps
+exact wire IDs to verified limits when models differ, and optional
+`model_capabilities` maps exact IDs to declared `tools`, `streaming`, or
+`reasoning` capabilities. Declarations do not bypass Core's capability
+evidence or tool permission checks. Enable `include_stream_usage` only if the
+runner accepts `stream_options.include_usage`.
+
+On startup, Orac discovers this runner's models through `/v1/models` and
+synchronises its provider-scoped registry rows. In APEX application 1042,
+choose an enabled model from that runner under **System Configuration →
+General Chat LLM** and save. To return to Ollama, restore its three `[service]`
+values, restart Orac, then select an Ollama model in the same administrator
+page. A saved model from a different runner is not available until its runner
+is active again. Ollama embeddings remain independently configured.
+
+This connector supports non-streaming and incremental SSE Chat Completions,
+model discovery, governed tool messages, optional reasoning and usage fields,
+and bearer authentication. It does not call the Responses API, pull models,
+manage the runner process, or provide embeddings. Context limits must be
+configured when discovery does not provide reliable metadata.
+
+#### Optional live interoperability procedure
+
+Use the same procedure on the initial Linux Mint machine or a later Strix Halo
+host. It requires a separately managed service and a model already loaded there;
+it does not install, start, or reconfigure the inference engine.
+
+1. Confirm the runner's origin and exact wire model ID with `GET /v1/models`.
+   Supply `Authorization: Bearer <token>` if the service requires it. Record
+   the configured context limit and supported tools and reasoning fields from
+   the runner's own documentation or measured metadata.
+2. Send a harmless `POST /v1/chat/completions` request with that model and
+   `stream: false`; verify a successful assistant message. Repeat with
+   `stream: true` and verify that distinct SSE content deltas arrive before
+   `[DONE]`, rather than all at once.
+3. Configure the three `[service]` values above, plus optional settings and
+   the environment credential. Restart Orac and verify that startup discovery
+   registers the exact model ID. Select it on the administrator page.
+4. Submit an ordinary Orac chat request, then a two-step governed tool request.
+   Confirm the tool is offered, authorised, executed by Core, and returned to
+   the model. Repeat with RAG and memory enabled; verify evidence and memory
+   appear through the established Core flow and the conversation persists.
+5. If authentication is enabled, repeat a request with a deliberately invalid
+   credential in a controlled test session and confirm a structured failure
+   without a credential in logs. Test an unavailable model, interrupted stream,
+   and an unavailable endpoint. Restore the valid configuration afterwards.
+6. Restore each existing runner's three `[service]` values in turn, restart,
+   and confirm its discovery and a basic conversation. Check that Ollama-backed
+   embeddings still work when chat uses the OpenAI-compatible runner.
+
+Record the service version, model ID, configured context limit, observed tool
+and reasoning formats, and results separately. Local protocol tests do not
+establish live Strata interoperability.
 
 ## `[database]`
 
