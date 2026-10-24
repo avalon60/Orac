@@ -25,6 +25,7 @@ from orac_core.knowledge.model_submission import StrictModelInvocationOptions
 from orac_core.governed_retrieval.protocol import ToolStreamEvent
 from orac_core.governed_retrieval.protocol import ToolStreamEventKind
 from orac_core.context_budget import RuntimeContextObservation
+from orac_core.communications.latency import current_latency_trace
 
 
 APP_HOME = project_home()
@@ -144,7 +145,7 @@ def provider_generation_options(
             if key in OLLAMA_GENERATION_KEYS
         }
 
-    if provider_key in {"openai", "lmstudio"}:
+    if provider_key in {"openai", "lmstudio", "openai_compatible"}:
         # OpenAI-compatible backends vary on seed/repetition support, so only
         # pass the common request fields here. Adapter-specific capability
         # checks can opt in to additional fields later.
@@ -757,6 +758,484 @@ class LMStudioConnector(LLMConnector):
             ToolStreamEventKind.ASSISTANT_COMPLETION,
             finish_reason=str(choice.get("finish_reason") or "stop"),
         )
+
+
+class OpenAICompatibleError(RuntimeError):
+    """A safe, structured failure from an outbound inference endpoint."""
+
+    def __init__(self, code: str, status_code: int | None = None) -> None:
+        self.code = code
+        self.status_code = status_code
+        super().__init__(code)
+
+
+class OpenAICompatibleConnector(LMStudioConnector):
+    """Core-owned Chat Completions adapter for an authorised endpoint."""
+
+    def __init__(
+        self,
+        model_name: str,
+        service_url: str,
+        *,
+        api_key: str | None = None,
+        timeout_seconds: int = 120,
+        context_tokens: int | None = None,
+        model_context_tokens: Mapping[str, int] | None = None,
+        model_capabilities: Mapping[str, list[str]] | None = None,
+        include_stream_usage: bool = False,
+    ) -> None:
+        LLMConnector.__init__(self, "openai_compatible")
+        self.logger = Logger()
+        self.model_name = model_name.strip()
+        parsed = urlparse(service_url.strip())
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.username
+            or parsed.password
+            or parsed.query
+            or parsed.fragment
+            or parsed.path.rstrip("/") not in {"", "/v1"}
+        ):
+            raise ValueError("Invalid OpenAI-compatible endpoint URL")
+        self.service_url = urlunparse(parsed._replace(path="")).rstrip("/")
+        self._connect_timeout = min(5, timeout_seconds)
+        self._read_timeout = timeout_seconds
+        self._total_timeout = timeout_seconds
+        self._context_tokens = context_tokens
+        self._model_context_tokens = dict(model_context_tokens or {})
+        self._model_capabilities = dict(model_capabilities or {})
+        self._include_stream_usage = include_stream_usage
+        self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+    def _endpoint(self, suffix: str) -> str:
+        """Build one unambiguous v1 endpoint path."""
+        return f"{self.service_url}/v1/{suffix}"
+
+    def provider_context_serialization(
+        self,
+        *,
+        prompt: str | None = None,
+        messages: Sequence[Mapping[str, Any]] | None = None,
+        tools: Sequence[Mapping[str, Any]] | None = None,
+    ) -> tuple[str, str]:
+        """Reuse the Chat Completions shape with a provider-neutral trace ID."""
+        serialized, _ = super().provider_context_serialization(
+            prompt=prompt, messages=messages, tools=tools
+        )
+        return serialized, "OPENAI_COMPATIBLE_CHAT_CONTEXT_V1"
+
+    def _check_response(self, response: requests.Response) -> None:
+        """Raise a content-free error without leaking response or headers."""
+        status = response.status_code
+        if 200 <= status < 300:
+            return
+        code = {
+            400: "INFERENCE_INVALID_REQUEST",
+            401: "INFERENCE_AUTHENTICATION_FAILED",
+            403: "INFERENCE_FORBIDDEN",
+            404: "INFERENCE_MODEL_UNAVAILABLE",
+            408: "INFERENCE_TIMEOUT",
+            413: "INFERENCE_CONTEXT_OVERFLOW",
+            429: "INFERENCE_RATE_LIMITED",
+        }.get(status, "INFERENCE_BACKEND_ERROR")
+        raise OpenAICompatibleError(code, status)
+
+    def runtime_context_observation(self) -> RuntimeContextObservation:
+        """Return only an explicitly configured context limit."""
+        return RuntimeContextObservation(
+            context_limit_tokens=self._context_tokens,
+            source_code=(
+                "OPENAI_COMPATIBLE_CONFIGURED"
+                if self._context_tokens is not None
+                else "OPENAI_COMPATIBLE_UNAVAILABLE"
+            ),
+        )
+
+    def list_models(self) -> list[str]:
+        """Discover exact wire model identifiers from this endpoint."""
+        try:
+            response = requests.get(
+                self._endpoint("models"),
+                headers=self._headers,
+                allow_redirects=False,
+                timeout=(self._connect_timeout, self._read_timeout),
+            )
+            self._check_response(response)
+            data = response.json()
+            if not isinstance(data, dict):
+                raise OpenAICompatibleError("INFERENCE_DISCOVERY_INVALID")
+            models = data.get("data")
+            if not isinstance(models, list):
+                raise OpenAICompatibleError("INFERENCE_DISCOVERY_INVALID")
+            if any(
+                not isinstance(item, dict)
+                or not isinstance(item.get("id"), str)
+                or not item["id"]
+                for item in models
+            ):
+                raise OpenAICompatibleError("INFERENCE_DISCOVERY_INVALID")
+            return [item["id"] for item in models]
+        except requests.Timeout:
+            raise OpenAICompatibleError("INFERENCE_TIMEOUT") from None
+        except requests.RequestException:
+            raise OpenAICompatibleError("INFERENCE_TRANSPORT_ERROR") from None
+        except ValueError:
+            raise OpenAICompatibleError("INFERENCE_DISCOVERY_INVALID") from None
+
+    def list_model_details(self) -> list[dict[str, Any]]:
+        """Attach only administrator-declared context metadata to discovered models."""
+        model_capabilities = getattr(self, "_model_capabilities", {})
+        if self._context_tokens is None and not self._model_context_tokens and not model_capabilities:
+            return []
+        details = []
+        for model in self.list_models():
+            limit = self._model_context_tokens.get(model, self._context_tokens)
+            metadata: dict[str, Any] = {"name": model}
+            if limit is not None:
+                metadata["provider_declared_context_tokens"] = limit
+                metadata["context_source"] = "administrator_configuration"
+            if model in model_capabilities:
+                metadata["provider_declared_capabilities"] = model_capabilities[model]
+            details.append(metadata)
+        return details
+
+    def _openai_tool_payload(
+        self,
+        *,
+        messages: Sequence[Mapping[str, Any]],
+        tools: Sequence[Mapping[str, Any]],
+        generation_options: dict[str, Any] | None,
+        stream: bool,
+    ) -> dict[str, Any]:
+        """Reuse LM Studio's Chat Completions message and tool shape."""
+        payload = super()._openai_tool_payload(
+            messages=messages,
+            tools=tools,
+            generation_options=generation_options,
+            stream=stream,
+        )
+        if stream and getattr(self, "_include_stream_usage", False):
+            payload["stream_options"] = {"include_usage": True}
+        return payload
+
+    def send_prompt(
+        self,
+        prompt_type: str,
+        prompt: str,
+        stream: bool = False,
+        generation_options: dict[str, Any] | None = None,
+        invocation_options: StrictModelInvocationOptions | None = None,
+    ) -> str:
+        """Send one ordinary prompt through the authorised chat endpoint."""
+        return self.send_prompt_with_meta(
+            prompt_type, prompt, stream, generation_options, invocation_options
+        )["text"]
+
+    def send_prompt_with_meta(
+        self,
+        prompt_type: str,
+        prompt: str,
+        stream: bool = False,
+        generation_options: dict[str, Any] | None = None,
+        invocation_options: StrictModelInvocationOptions | None = None,
+    ) -> dict[str, Any]:
+        """Return visible text and provider-reported usage when present."""
+        del prompt_type, stream
+        payload = self._openai_tool_payload(
+            messages=[{"role": "user", "content": prompt}],
+            tools=[],
+            generation_options=strict_generation_options(generation_options, invocation_options),
+            stream=False,
+        )
+        try:
+            response = requests.post(
+                self._endpoint("chat/completions"), json=payload,
+                headers=self._headers,
+                allow_redirects=False,
+                timeout=(self._connect_timeout, self._read_timeout),
+            )
+            self._check_response(response)
+            frame = response.json()
+            if not isinstance(frame, dict):
+                raise OpenAICompatibleError("INFERENCE_RESPONSE_INVALID")
+            trace = current_latency_trace()
+            if trace is not None:
+                trace.mark("llm_backend_response_complete")
+        except requests.Timeout:
+            raise OpenAICompatibleError("INFERENCE_TIMEOUT") from None
+        except requests.RequestException:
+            raise OpenAICompatibleError("INFERENCE_TRANSPORT_ERROR") from None
+        except ValueError:
+            raise OpenAICompatibleError("INFERENCE_RESPONSE_INVALID") from None
+        choices = frame.get("choices") or []
+        if not choices or not isinstance(choices[0], dict):
+            raise OpenAICompatibleError("INFERENCE_RESPONSE_INVALID")
+        choice = choices[0]
+        message = choice.get("message") or {}
+        if not isinstance(message, dict):
+            raise OpenAICompatibleError("INFERENCE_RESPONSE_INVALID")
+        result: dict[str, Any] = {
+            "text": str(message.get("content") or ""),
+            "done_reason": str(choice.get("finish_reason") or ""),
+        }
+        usage = frame.get("usage")
+        if isinstance(usage, dict):
+            result["usage"] = usage
+            for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                if isinstance(usage.get(key), int):
+                    result[key] = usage[key]
+        return result
+
+    @log_call
+    def stream_prompt_deltas(
+        self,
+        prompt_type: str,
+        prompt: str,
+        generation_options: dict[str, Any] | None = None,
+        on_usage_metadata: LLMUsageMetadataCallback | None = None,
+        invocation_options: StrictModelInvocationOptions | None = None,
+    ) -> Iterator[str]:
+        """Yield actual visible deltas while keeping reasoning separate."""
+        del prompt_type
+        events = self.stream_tool_events(
+            messages=[{"role": "user", "content": prompt}],
+            tools=[],
+            generation_options=strict_generation_options(generation_options, invocation_options),
+        )
+        try:
+            for event in events:
+                if event.kind == ToolStreamEventKind.ASSISTANT_TEXT_DELTA:
+                    yield event.text
+                elif event.kind == ToolStreamEventKind.USAGE and on_usage_metadata:
+                    usage = _usage_metadata_from_result(dict(event.usage or {}))
+                    if usage is not None:
+                        on_usage_metadata(usage)
+                elif event.kind == ToolStreamEventKind.ERROR:
+                    raise OpenAICompatibleError(event.error_code)
+        finally:
+            events.close()
+
+    def buffered_tool_events(
+        self,
+        *,
+        messages: Sequence[Mapping[str, Any]],
+        tools: Sequence[Mapping[str, Any]],
+        generation_options: dict[str, Any] | None = None,
+    ) -> Iterator[ToolStreamEvent]:
+        """Normalise one non-streaming tool decision without executing tools."""
+        payload = self._openai_tool_payload(
+            messages=messages, tools=tools,
+            generation_options=generation_options, stream=False,
+        )
+        try:
+            response = requests.post(
+                self._endpoint("chat/completions"), json=payload,
+                headers=self._headers,
+                allow_redirects=False,
+                timeout=(self._connect_timeout, self._read_timeout),
+            )
+            self._check_response(response)
+            frame = response.json()
+            if not isinstance(frame, dict):
+                raise OpenAICompatibleError("INFERENCE_RESPONSE_INVALID")
+        except requests.Timeout:
+            raise OpenAICompatibleError("INFERENCE_TIMEOUT") from None
+        except requests.RequestException:
+            raise OpenAICompatibleError("INFERENCE_TRANSPORT_ERROR") from None
+        except ValueError:
+            raise OpenAICompatibleError("INFERENCE_RESPONSE_INVALID") from None
+        choices = frame.get("choices") or []
+        if not choices or not isinstance(choices[0], dict):
+            raise OpenAICompatibleError("INFERENCE_RESPONSE_INVALID")
+        choice = choices[0]
+        message = choice.get("message") or {}
+        if not isinstance(message, dict):
+            raise OpenAICompatibleError("INFERENCE_RESPONSE_INVALID")
+        if message.get("content"):
+            yield ToolStreamEvent(ToolStreamEventKind.ASSISTANT_TEXT_DELTA,
+                                  text=str(message["content"]))
+        validated_calls = []
+        for index, native in enumerate(message.get("tool_calls") or []):
+            if not isinstance(native, dict) or not isinstance(native.get("function"), dict):
+                raise OpenAICompatibleError("INFERENCE_TOOL_CALL_INVALID")
+            function = native["function"]
+            call_id = str(native.get("id") or "")
+            name = str(function.get("name") or "")
+            arguments = function.get("arguments")
+            if not call_id or not name or not isinstance(arguments, str):
+                raise OpenAICompatibleError("INFERENCE_TOOL_CALL_INVALID")
+            try:
+                parsed = json.loads(arguments)
+            except (TypeError, ValueError):
+                raise OpenAICompatibleError("INFERENCE_TOOL_CALL_INVALID") from None
+            if not isinstance(parsed, dict):
+                raise OpenAICompatibleError("INFERENCE_TOOL_CALL_INVALID")
+            validated_calls.append((index, call_id, name, arguments))
+        for index, call_id, name, arguments in validated_calls:
+            yield ToolStreamEvent(ToolStreamEventKind.TOOL_CALL_START,
+                                  call_id=call_id, call_index=index, tool_name=name)
+            yield ToolStreamEvent(ToolStreamEventKind.TOOL_CALL_ARGUMENT_DELTA,
+                                  call_id=call_id, call_index=index, tool_name=name,
+                                  arguments_delta=arguments)
+            yield ToolStreamEvent(ToolStreamEventKind.TOOL_CALL_COMPLETED,
+                                  call_id=call_id, call_index=index, tool_name=name)
+        if isinstance(frame.get("usage"), dict):
+            yield ToolStreamEvent(ToolStreamEventKind.USAGE, usage=frame["usage"])
+        yield ToolStreamEvent(ToolStreamEventKind.ASSISTANT_COMPLETION,
+                              finish_reason=str(choice.get("finish_reason") or "stop"))
+
+    @log_call
+    def stream_tool_events(
+        self,
+        *,
+        messages: Sequence[Mapping[str, Any]],
+        tools: Sequence[Mapping[str, Any]],
+        generation_options: dict[str, Any] | None = None,
+    ) -> Iterator[ToolStreamEvent]:
+        """Parse SSE frames and emit completed tool calls only at a terminal choice."""
+        payload = self._openai_tool_payload(
+            messages=messages, tools=tools,
+            generation_options=generation_options, stream=True,
+        )
+        calls: dict[int, dict[str, str]] = {}
+        finished = False
+        done = False
+        finish_reason = ""
+        deadline = time.monotonic() + getattr(self, "_total_timeout", self._read_timeout)
+        try:
+            trace = current_latency_trace()
+            with requests.post(
+                self._endpoint("chat/completions"), json=payload,
+                headers=self._headers, stream=True,
+                allow_redirects=False,
+                timeout=(self._connect_timeout, self._read_timeout),
+            ) as response:
+                self._check_response(response)
+                data_lines: list[str] = []
+                event_name = ""
+                # The requests default buffers up to 512 bytes before yielding;
+                # a one-byte read makes short SSE frames visible immediately.
+                for raw_line in response.iter_lines(chunk_size=1, decode_unicode=True):
+                    if time.monotonic() > deadline:
+                        raise OpenAICompatibleError("INFERENCE_TIMEOUT")
+                    line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else str(raw_line)
+                    if line == "":
+                        if not data_lines:
+                            event_name = ""
+                            continue
+                        body = "\n".join(data_lines)
+                        data_lines.clear()
+                        if body == "[DONE]":
+                            done = True
+                            if trace is not None:
+                                trace.mark("llm_backend_response_complete")
+                            break
+                        if event_name == "error":
+                            raise OpenAICompatibleError("INFERENCE_BACKEND_ERROR")
+                        event_name = ""
+                        try:
+                            frame = json.loads(body)
+                        except (TypeError, ValueError):
+                            raise OpenAICompatibleError("INFERENCE_STREAM_FRAME_INVALID") from None
+                        if not isinstance(frame, dict):
+                            raise OpenAICompatibleError("INFERENCE_STREAM_FRAME_INVALID")
+                        if frame.get("error") is not None:
+                            raise OpenAICompatibleError("INFERENCE_BACKEND_ERROR")
+                        usage = frame.get("usage")
+                        if isinstance(usage, dict):
+                            yield ToolStreamEvent(ToolStreamEventKind.USAGE, usage=usage)
+                        choices = frame.get("choices") or []
+                        if not choices:
+                            continue
+                        choice = choices[0]
+                        if not isinstance(choice, dict):
+                            raise OpenAICompatibleError("INFERENCE_STREAM_FRAME_INVALID")
+                        delta = choice.get("delta") or {}
+                        if not isinstance(delta, dict):
+                            raise OpenAICompatibleError("INFERENCE_STREAM_FRAME_INVALID")
+                        if finished and (
+                            delta.get("content")
+                            or delta.get("reasoning_content")
+                            or delta.get("reasoning")
+                            or delta.get("tool_calls")
+                        ):
+                            raise OpenAICompatibleError("INFERENCE_STREAM_FRAME_INVALID")
+                        if trace is not None and "llm_first_generation_event" not in trace.milestones:
+                            if delta.get("content") or delta.get("reasoning_content") or delta.get("reasoning") or delta.get("tool_calls"):
+                                trace.mark("llm_first_generation_event")
+                        if delta.get("content"):
+                            yield ToolStreamEvent(ToolStreamEventKind.ASSISTANT_TEXT_DELTA, text=str(delta["content"]))
+                        reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+                        if reasoning:
+                            yield ToolStreamEvent(ToolStreamEventKind.REASONING_DELTA, text=str(reasoning))
+                        for native in delta.get("tool_calls") or []:
+                            if not isinstance(native, dict):
+                                raise OpenAICompatibleError("INFERENCE_TOOL_CALL_INVALID")
+                            index = native.get("index")
+                            if not isinstance(index, int) or index < 0:
+                                raise OpenAICompatibleError("INFERENCE_TOOL_CALL_INVALID")
+                            function = native.get("function") or {}
+                            if not isinstance(function, dict):
+                                raise OpenAICompatibleError("INFERENCE_TOOL_CALL_INVALID")
+                            record = calls.setdefault(index, {"id": "", "name": "", "arguments": ""})
+                            if native.get("id"):
+                                record["id"] += str(native["id"])
+                            if function.get("name"):
+                                record["name"] += str(function["name"])
+                            if function.get("arguments"):
+                                part = str(function["arguments"])
+                                record["arguments"] += part
+                        reason = choice.get("finish_reason")
+                        if reason:
+                            if finished:
+                                raise OpenAICompatibleError("INFERENCE_STREAM_FRAME_INVALID")
+                            if calls and reason != "tool_calls":
+                                raise OpenAICompatibleError("INFERENCE_TOOL_CALL_INCOMPLETE")
+                            finish_reason = str(reason)
+                            finished = True
+                        continue
+                    if line.startswith(":"):
+                        continue
+                    if line.startswith("data:"):
+                        data_lines.append(line[5:].lstrip(" "))
+                    elif line.startswith("event:"):
+                        event_name = line[6:].strip()
+                    elif line.startswith(("id:", "retry:")):
+                        continue
+                    else:
+                        raise OpenAICompatibleError("INFERENCE_STREAM_FRAME_INVALID")
+                if data_lines:
+                    raise OpenAICompatibleError("INFERENCE_STREAM_TRUNCATED")
+        except requests.Timeout:
+            raise OpenAICompatibleError("INFERENCE_TIMEOUT") from None
+        except requests.RequestException:
+            raise OpenAICompatibleError("INFERENCE_TRANSPORT_ERROR") from None
+        if not finished or not done:
+            raise OpenAICompatibleError("INFERENCE_STREAM_TRUNCATED")
+        # Validate the entire batch before Core can observe any executable call.
+        for index, record in sorted(calls.items()):
+            if not record["id"] or not record["name"]:
+                raise OpenAICompatibleError("INFERENCE_TOOL_CALL_INCOMPLETE")
+            try:
+                arguments = json.loads(record["arguments"])
+            except (TypeError, ValueError):
+                raise OpenAICompatibleError("INFERENCE_TOOL_CALL_INVALID") from None
+            if not isinstance(arguments, dict):
+                raise OpenAICompatibleError("INFERENCE_TOOL_CALL_INVALID")
+        for index, record in sorted(calls.items()):
+            yield ToolStreamEvent(ToolStreamEventKind.TOOL_CALL_START,
+                                  call_id=record["id"], call_index=index,
+                                  tool_name=record["name"])
+            yield ToolStreamEvent(ToolStreamEventKind.TOOL_CALL_ARGUMENT_DELTA,
+                                  call_id=record["id"], call_index=index,
+                                  tool_name=record["name"],
+                                  arguments_delta=record["arguments"])
+            yield ToolStreamEvent(ToolStreamEventKind.TOOL_CALL_COMPLETED,
+                                  call_id=record["id"], call_index=index,
+                                  tool_name=record["name"])
+        yield ToolStreamEvent(ToolStreamEventKind.ASSISTANT_COMPLETION,
+                              finish_reason=finish_reason)
 
 
 class OllamaConnector(LLMConnector):

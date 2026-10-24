@@ -1181,6 +1181,8 @@ class OracCommunicationsRuntime:
             self.llm_service_id = self.config_mgr.config_value(
                 "service", "llm_service_id"
             )
+            if self.llm_service_id.strip().lower().startswith("openai_compatible:"):
+                raise ValueError("Select the OpenAI-compatible runner with llm_service_id=openai_compatible")
             self.model_name = self.config_mgr.config_value(
                 "service", "default_model_name"
             )
@@ -1340,10 +1342,16 @@ class OracCommunicationsRuntime:
 
             self._validate_or_pull_model()
             try:
+                connector_options = (
+                    {"endpoint_options": self._configured_openai_compatible_options(self.model_name)}
+                    if self.llm_service_id == "openai_compatible"
+                    else {}
+                )
                 self.llm = self.provider_registry.create_connector(
                     provider_id=self.llm_service_id,
                     service_url=self.service_url,
                     model_name=self.model_name,
+                    **connector_options,
                 )
             except ValueError as exc:
                 message = (
@@ -2424,6 +2432,11 @@ class OracCommunicationsRuntime:
         self._refresh_backend_model_inventory()
 
         if not discovered:
+            if self.llm_service_id == "openai_compatible":
+                logger.log_warning(
+                    "Inference model discovery returned no models; registry sync skipped."
+                )
+                return
             self._available_backend_models = {self.model_name.strip()}
             provider = self.llm_service_id.strip().lower()
             invalidated = 0
@@ -2874,6 +2887,15 @@ class OracCommunicationsRuntime:
             return {}
 
         normalized: dict[str, Any] = {"name": name}
+        context_limit = model_details.get("provider_declared_context_tokens")
+        if isinstance(context_limit, int) and not isinstance(context_limit, bool) and context_limit > 0:
+            normalized["provider_declared_context_tokens"] = context_limit
+            normalized["context_source"] = str(
+                model_details.get("context_source") or "provider_metadata"
+            )
+        capabilities = model_details.get("provider_declared_capabilities")
+        if isinstance(capabilities, list) and all(isinstance(code, str) for code in capabilities):
+            normalized["provider_declared_capabilities"] = capabilities
         details = model_details.get("details")
         details_map = details if isinstance(details, dict) else {}
 
@@ -3151,11 +3173,11 @@ class OracCommunicationsRuntime:
 
         properties = row.get("PROPERTIES")
         service_url = self.service_url
-        if isinstance(properties, dict):
+        if provider != "openai_compatible" and isinstance(properties, dict):
             service_url = (
                 str(properties.get("service_url") or service_url).strip() or service_url
             )
-        elif isinstance(properties, str) and properties.strip():
+        elif provider != "openai_compatible" and isinstance(properties, str) and properties.strip():
             try:
                 parsed_props = json.loads(properties)
             except Exception:
@@ -6640,6 +6662,8 @@ class OracCommunicationsRuntime:
             str(service_url or "").strip(),
             str(model_name or "").strip(),
         )
+        if key[0] == "openai_compatible" and key[1].rstrip("/") != self.service_url.rstrip("/"):
+            raise ValueError("Inference endpoint URL is not authorised")
         cached = self._llm_connector_cache.get(key)
         if cached is not None:
             return cached
@@ -6649,15 +6673,79 @@ class OracCommunicationsRuntime:
             provider_registry = ProviderRegistry(logger=logger)
             self.provider_registry = provider_registry
         try:
+            connector_options = (
+                {"endpoint_options": self._configured_openai_compatible_options(key[2])}
+                if key[0] == "openai_compatible"
+                else {}
+            )
             connector = provider_registry.create_connector(
                 provider_id=key[0],
                 service_url=key[1],
                 model_name=key[2],
+                **connector_options,
             )
         except ValueError as exc:
             raise RuntimeError(f"Unsupported LLM service: {service_id}") from exc
         self._llm_connector_cache[key] = connector
         return connector
+
+    def _configured_openai_compatible_options(self, model_name: str) -> dict[str, Any]:
+        """Read admin-owned runner options without storing credentials in the INI."""
+        section = "service"
+        env_name = self.config_mgr.config_value(
+            section, "api_key_env", default=""
+        ).strip()
+        if env_name and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", env_name):
+            raise ValueError("Invalid inference credential reference")
+        api_key = os.environ.get(env_name) if env_name else None
+        if env_name and not api_key:
+            raise ValueError("Inference credential is unavailable")
+
+        timeout = int(self.config_mgr.config_value(
+            section, "llm_timeout", default="120"
+        ))
+        context_raw = self.config_mgr.config_value(
+            section, "context_tokens", default=""
+        ).strip()
+        context_tokens = int(context_raw) if context_raw else None
+        model_context_tokens = json.loads(self.config_mgr.config_value(
+            section, "model_context_tokens", default="{}"
+        ))
+        model_capabilities = json.loads(self.config_mgr.config_value(
+            section, "model_capabilities", default="{}"
+        ))
+        if (
+            timeout < 1
+            or timeout > 3600
+            or (context_tokens is not None and context_tokens < 1)
+            or not isinstance(model_context_tokens, dict)
+            or any(
+                not isinstance(name, str)
+                or not isinstance(limit, int)
+                or isinstance(limit, bool)
+                or limit < 1
+                for name, limit in model_context_tokens.items()
+            )
+            or not isinstance(model_capabilities, dict)
+            or any(
+                not isinstance(name, str)
+                or not isinstance(codes, list)
+                or any(code not in {"tools", "reasoning", "streaming"} for code in codes)
+                for name, codes in model_capabilities.items()
+            )
+        ):
+            raise ValueError("Invalid OpenAI-compatible runner options")
+
+        return {
+            "api_key": api_key,
+            "timeout_seconds": timeout,
+            "context_tokens": model_context_tokens.get(model_name, context_tokens),
+            "model_context_tokens": model_context_tokens,
+            "model_capabilities": model_capabilities,
+            "include_stream_usage": self.config_mgr.bool_config_value(
+                section, "include_stream_usage", default=False
+            ),
+        }
 
     def _registry_row_enabled(self, llm_row: dict[str, Any]) -> bool:
         """Return whether a registry row is enabled for conversational use."""

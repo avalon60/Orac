@@ -7,7 +7,8 @@ from orac_core.knowledge.model_submission import StrictModelInvocationOptions
 MODEL_SERVICE_DESCRIPTORS = {
     "lmstudio": "LM Studio",
     "ollama": "Ollama",
-    "openai": "OpenAI ChatGPT API"
+    "openai": "OpenAI ChatGPT API",
+    "openai_compatible": "OpenAI-compatible inference",
 }
 
 class LLMConnectorABC(ABC):

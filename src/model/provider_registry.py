@@ -13,7 +13,7 @@ from typing import Any
 import requests
 
 from lib.icons import Icons
-from model.llm_connector import LMStudioConnector, OllamaConnector
+from model.llm_connector import LMStudioConnector, OllamaConnector, OpenAICompatibleConnector
 
 
 @dataclass(frozen=True)
@@ -81,6 +81,26 @@ class ProviderRegistry:
                 structured_tools_require_buffered_decision=False,
             ),
         ),
+        "openai_compatible": (
+            OpenAICompatibleConnector,
+            ProviderCapabilities(
+                provider_id="openai_compatible",
+                display_name="OpenAI-compatible inference",
+                supports_native_streaming=True,
+                uses_fallback_streaming=False,
+                supports_usage_metadata=True,
+                supports_model_listing=True,
+                supports_model_details=False,
+                supports_model_pull=False,
+                requires_loaded_model=False,
+                cancellation_semantics="client_disconnect_stops_stream_consumer",
+                processing_locality="CONFIGURED_ENDPOINT",
+                text_evidence_eligible=True,
+                supports_structured_tool_calling=True,
+                supports_streamed_structured_tool_calling=True,
+                structured_tools_require_buffered_decision=False,
+            ),
+        ),
     }
 
     def __init__(self, *, logger: Any | None = None) -> None:
@@ -112,9 +132,16 @@ class ProviderRegistry:
         provider_id: str,
         service_url: str,
         model_name: str,
+        endpoint_options: dict[str, Any] | None = None,
     ) -> Any:
         """Instantiate the connector for a known provider."""
         connector_cls = self.connector_class(provider_id)
+        if connector_cls is OpenAICompatibleConnector:
+            return connector_cls(
+                service_url=service_url,
+                model_name=model_name,
+                **(endpoint_options or {}),
+            )
         return connector_cls(service_url=service_url, model_name=model_name)
 
     def validate_or_prepare_model(
@@ -134,6 +161,8 @@ class ProviderRegistry:
                 service_url=service_url,
                 model_name=model_name,
             )
+            return
+        if provider_key == "openai_compatible":
             return
         raise RuntimeError(f"{Icons.error} Unknown LLM service: {provider_id}")
 

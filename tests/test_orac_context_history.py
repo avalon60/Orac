@@ -4237,6 +4237,68 @@ class OracContextHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inserted_properties["parameter_size"], "7B")
         self.assertEqual(inserted_properties["quantization_level"], "Q4_K_M")
 
+    def test_openai_runner_sync_uses_existing_provider_scoped_registry(self) -> None:
+        """The configured runner discovers exact IDs without changing other providers."""
+        orchestrator = Orac.__new__(Orac)
+        orchestrator.model_name = "vendor/model:1"
+        orchestrator.llm_service_id = "openai_compatible"
+        orchestrator.service_url = "http://inference.example/v1"
+        orchestrator._available_backend_models = set()
+        orchestrator.db_session = _SyncDBSession(rows=[
+            {"LLM_ID": 1, "PROVIDER": "ollama", "MODEL": "local", "IS_ENABLED": "Y"},
+            {"LLM_ID": 2, "PROVIDER": "openai_compatible", "MODEL": "old", "IS_ENABLED": "Y"},
+        ])
+        orchestrator.llm = types.SimpleNamespace(
+            list_models=lambda: ["vendor/model:1"],
+            list_model_details=lambda: [{
+                "name": "vendor/model:1",
+                "provider_declared_context_tokens": 32768,
+                "context_source": "administrator_configuration",
+            }],
+        )
+
+        orchestrator._sync_llm_registry()
+
+        statements = orchestrator.db_session.cursor_obj.statements
+        insert = next(params for sql, params in statements if "insert into" in sql.lower())
+        self.assertEqual(insert["provider"], "openai_compatible")
+        self.assertEqual(insert["model"], "vendor/model:1")
+        self.assertEqual(insert["provider_context_tokens"], 32768)
+        self.assertEqual(
+            [params["llm_id"] for sql, params in statements if "is_enabled = 'N'" in sql],
+            [2],
+        )
+
+    def test_openai_runner_uses_only_service_url_and_environment_credential(self) -> None:
+        """Model rows cannot redirect the configured runner or expose its token."""
+        orchestrator = Orac.__new__(Orac)
+        orchestrator.llm_service_id = "openai_compatible"
+        orchestrator.service_url = "https://inference.example/v1"
+        orchestrator._llm_connector_cache = {}
+        orchestrator.config_mgr = _FakeConfigManager({
+            ("service", "api_key_env"): "ORAC_TEST_INFERENCE_KEY",
+            ("service", "context_tokens"): "32768",
+        })
+        orchestrator.config_mgr.bool_config_value = lambda *args, **kwargs: False
+        orchestrator.provider_registry = types.SimpleNamespace(
+            create_connector=lambda **kwargs: kwargs
+        )
+
+        with patch.dict(os.environ, {"ORAC_TEST_INFERENCE_KEY": "secret"}):
+            connector = orchestrator._get_llm_connector(
+                service_id="openai_compatible",
+                service_url="https://inference.example/v1",
+                model_name="vendor/model:1",
+            )
+            self.assertEqual(connector["endpoint_options"]["api_key"], "secret")
+            self.assertEqual(connector["endpoint_options"]["context_tokens"], 32768)
+            with self.assertRaisesRegex(ValueError, "not authorised"):
+                orchestrator._get_llm_connector(
+                    service_id="openai_compatible",
+                    service_url="https://other.example/v1",
+                    model_name="vendor/model:1",
+                )
+
     def test_unresolved_llm_probe_marks_row_complete(self) -> None:
         orchestrator = Orac.__new__(Orac)
         orchestrator.llm_service_id = "ollama"
