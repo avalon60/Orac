@@ -120,6 +120,141 @@ class LogutilTests(unittest.TestCase):
             logr.remove(sink_id)
         self.assertEqual(records, [])
 
+    def test_log_call_reports_nested_depth_and_restores_after_failure(self) -> None:
+        """Nested calls advance depth and failures leave later calls at the root."""
+        records = []
+        sink_id = logr.add(records.append, level="TRACE")
+        try:
+            @log_call
+            def recurse(remaining: int) -> None:
+                if remaining:
+                    recurse(remaining - 1)
+
+            @log_call
+            def fail() -> None:
+                recurse(0)
+                raise ValueError("private-error")
+
+            recurse(2)
+            with self.assertRaises(ValueError):
+                fail()
+            recurse(0)
+        finally:
+            logr.remove(sink_id)
+
+        messages = [item.record["message"] for item in records]
+        self.assertEqual(
+            [message.rsplit("depth ", 1)[1].rstrip("]") for message in messages],
+            ["2", "1", "0", "1", "0", "0"],
+        )
+        self.assertTrue(all("private-error" not in message for message in messages))
+
+    def test_log_call_isolates_concurrent_async_calls_and_cancellation(self) -> None:
+        """Concurrent tasks keep their own depth and cancellation restores it."""
+        records = []
+        sink_id = logr.add(records.append, level="TRACE")
+        try:
+            @log_call
+            async def child() -> None:
+                await asyncio.sleep(0)
+
+            @log_call
+            async def parent() -> None:
+                await asyncio.gather(child(), child())
+
+            @log_call
+            async def cancelled() -> None:
+                raise asyncio.CancelledError()
+
+            async def run() -> None:
+                await asyncio.gather(parent(), parent())
+                with self.assertRaises(asyncio.CancelledError):
+                    await cancelled()
+                await child()
+
+            asyncio.run(run())
+        finally:
+            logr.remove(sink_id)
+
+        messages = [item.record["message"] for item in records]
+        self.assertEqual(sum("depth 1]" in message for message in messages), 4)
+        self.assertEqual(sum("depth 0]" in message for message in messages), 4)
+        self.assertEqual(sum("[raised;" in message for message in messages), 1)
+
+    def test_log_call_stream_depth_does_not_leak_between_yields(self) -> None:
+        """Stream internals are nested while consumers resume at their own depth."""
+        records = []
+        sink_id = logr.add(records.append, level="TRACE")
+        try:
+            @log_call
+            def leaf() -> None:
+                pass
+
+            @log_call
+            def stream():
+                leaf()
+                yield "private-item"
+                leaf()
+
+            @log_call
+            async def async_stream():
+                leaf()
+                yield "private-async-item"
+                leaf()
+
+            iterator = stream()
+            self.assertEqual(next(iterator), "private-item")
+            leaf()
+            self.assertEqual(list(iterator), [])
+
+            async def consume() -> None:
+                iterator = async_stream()
+                self.assertEqual(await anext(iterator), "private-async-item")
+                leaf()
+                self.assertEqual([item async for item in iterator], [])
+
+            asyncio.run(consume())
+        finally:
+            logr.remove(sink_id)
+
+        messages = [item.record["message"] for item in records]
+        self.assertEqual(sum("depth 1]" in message for message in messages), 4)
+        self.assertEqual(sum("depth 0]" in message for message in messages), 4)
+        self.assertTrue(all("private-item" not in message for message in messages))
+
+    def test_log_call_records_partial_stream_closure(self) -> None:
+        """Closing suspended streams records their outcome at the root depth."""
+        records = []
+        sink_id = logr.add(records.append, level="TRACE")
+        try:
+            @log_call
+            def stream():
+                yield "first"
+                yield "second"
+
+            @log_call
+            async def async_stream():
+                yield "first"
+                yield "second"
+
+            iterator = stream()
+            self.assertEqual(next(iterator), "first")
+            iterator.close()
+
+            async def consume() -> None:
+                iterator = async_stream()
+                self.assertEqual(await anext(iterator), "first")
+                await iterator.aclose()
+
+            asyncio.run(consume())
+        finally:
+            logr.remove(sink_id)
+
+        messages = [item.record["message"] for item in records]
+        self.assertEqual(len(messages), 2)
+        self.assertTrue(all("[closed; elapsed " in message for message in messages))
+        self.assertTrue(all("depth 0]" in message for message in messages))
+
 
 if __name__ == "__main__":
     unittest.main()

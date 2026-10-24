@@ -11,6 +11,7 @@ import os
 import threading
 import time
 from contextlib import aclosing
+from contextvars import ContextVar
 from typing import Callable, Any, Optional
 from loguru import logger as logr
 from sys import stderr
@@ -34,6 +35,59 @@ config_manager = ConfigManager(config_file_path=CONFIG_FILE)
 # Process-global config guards
 # ----------------------------
 _CONFIG_LOCK = threading.RLock()
+_CALL_DEPTH: ContextVar[int] = ContextVar("orac_log_call_depth", default=-1)
+
+
+class _DepthIterator:
+    """Run generator operations at their call depth without leaking it to consumers."""
+
+    def __init__(self, iterator: Any, depth: int) -> None:
+        self._iterator = iterator
+        self._depth = depth
+
+    def __iter__(self) -> "_DepthIterator":
+        return self
+
+    def _invoke(self, method: str, *args: Any) -> Any:
+        token = _CALL_DEPTH.set(self._depth)
+        try:
+            return getattr(self._iterator, method)(*args)
+        finally:
+            _CALL_DEPTH.reset(token)
+
+    def __next__(self) -> Any:
+        return self._invoke("__next__")
+
+    def send(self, value: Any) -> Any:
+        return self._invoke("send", value)
+
+    def throw(self, *args: Any) -> Any:
+        return self._invoke("throw", *args)
+
+    def close(self) -> Any:
+        return self._invoke("close")
+
+
+class _DepthAsyncIterator:
+    """Run asynchronous generator advancement and closure at its call depth."""
+
+    def __init__(self, iterator: Any, depth: int) -> None:
+        self._iterator = iterator
+        self._depth = depth
+
+    async def __anext__(self) -> Any:
+        token = _CALL_DEPTH.set(self._depth)
+        try:
+            return await self._iterator.__anext__()
+        finally:
+            _CALL_DEPTH.reset(token)
+
+    async def aclose(self) -> None:
+        token = _CALL_DEPTH.set(self._depth)
+        try:
+            await self._iterator.aclose()
+        finally:
+            _CALL_DEPTH.reset(token)
 
 def _get_state() -> str:
     """Gets the current logging configuration state.
@@ -375,27 +429,32 @@ def log_call(func: Callable[..., Any]) -> Callable[..., Any]:
     """
     name = f"{func.__module__}.{func.__qualname__}"
 
-    def record(start: float, outcome: str) -> None:
+    def record(start: float, outcome: str, depth: int) -> None:
         elapsed_ms = (time.perf_counter() - start) * 1000
-        _log_trace(f"Call: {name} [{outcome}; elapsed {elapsed_ms:.2f} ms]")
+        _log_trace(f"Call: {name} [{outcome}; elapsed {elapsed_ms:.2f} ms; depth {depth}]")
 
     if inspect.isasyncgenfunction(func):
         @functools.wraps(func)
         async def async_generator_wrapper(*args, **kwargs):
             start = time.perf_counter()
+            depth = _CALL_DEPTH.get() + 1
             outcome = "closed"
             try:
-                async with aclosing(func(*args, **kwargs)) as iterator:
-                    async for item in iterator:
+                async with aclosing(_DepthAsyncIterator(func(*args, **kwargs), depth)) as iterator:
+                    while True:
+                        try:
+                            item = await iterator.__anext__()
+                        except StopAsyncIteration:
+                            outcome = "ok"
+                            break
                         yield item
-                outcome = "ok"
             except GeneratorExit:
                 raise
             except BaseException:
                 outcome = "raised"
                 raise
             finally:
-                record(start, outcome)
+                record(start, outcome, depth)
 
         return async_generator_wrapper
 
@@ -403,6 +462,8 @@ def log_call(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             start = time.perf_counter()
+            depth = _CALL_DEPTH.get() + 1
+            token = _CALL_DEPTH.set(depth)
             outcome = "ok"
             try:
                 return await func(*args, **kwargs)
@@ -410,7 +471,8 @@ def log_call(func: Callable[..., Any]) -> Callable[..., Any]:
                 outcome = "raised"
                 raise
             finally:
-                record(start, outcome)
+                _CALL_DEPTH.reset(token)
+                record(start, outcome, depth)
 
         return async_wrapper
 
@@ -418,9 +480,10 @@ def log_call(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
         def generator_wrapper(*args, **kwargs):
             start = time.perf_counter()
+            depth = _CALL_DEPTH.get() + 1
             outcome = "closed"
             try:
-                yield from func(*args, **kwargs)
+                yield from _DepthIterator(func(*args, **kwargs), depth)
                 outcome = "ok"
             except GeneratorExit:
                 raise
@@ -428,13 +491,15 @@ def log_call(func: Callable[..., Any]) -> Callable[..., Any]:
                 outcome = "raised"
                 raise
             finally:
-                record(start, outcome)
+                record(start, outcome, depth)
 
         return generator_wrapper
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         start = time.perf_counter()
+        depth = _CALL_DEPTH.get() + 1
+        token = _CALL_DEPTH.set(depth)
         outcome = "ok"
         try:
             return func(*args, **kwargs)
@@ -442,6 +507,7 @@ def log_call(func: Callable[..., Any]) -> Callable[..., Any]:
             outcome = "raised"
             raise
         finally:
-            record(start, outcome)
+            _CALL_DEPTH.reset(token)
+            record(start, outcome, depth)
 
     return wrapper
