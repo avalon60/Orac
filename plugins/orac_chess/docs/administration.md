@@ -1,0 +1,298 @@
+# Orac Chess Administration
+
+The plugin owns the data and all maintenance APIs in `ORAC_CHESS`. Its APEX
+application uses workspace `ORAC`, parsing schema `ORAC_APX_PUB`, Universal Theme,
+and the stable alias `ORAC_CHESS_ADMIN`. The manifest explicitly assigns app ID
+`10030`; the host records its installation receipt. Former app `100` was removed
+on 08-Nov-2026. Never import into an unrelated application ID.
+
+## Pages
+
+| Pages | Collection | Details |
+| --- | --- | --- |
+| 1 | Home | Collection navigation |
+| 10 / 11 | Openings and systems | Classification, parent, aliases, ECO and gambit links |
+| 20 / 21 | Gambits | Name, description and multiple linked openings |
+| 30 / 31 | Variations | Owner, parent, complete linear PGN and root FEN |
+| 40 / 41 | Videos | Metadata, HTTP(S) URL and subject links |
+| 50 / 51 | Concepts | Code, category and subject links |
+| 60 / 61 | Games | Complete PGN and separate searchable metadata |
+| 70 / 71 | Commentary | Exactly one opening, gambit or variation |
+| 80 / 81 | Images | Metadata, explicit upload replacement and subject links |
+| 90 | Image delivery | Authenticated, authorized content only |
+| 110 / 111 | Content Sources | Creator / publisher, author and notes |
+| 9999 | Login | Existing Oracle APEX Accounts |
+
+Collection pages use interactive reports. Associations are edited inside detail
+pages, rather than exposed as top-level collections. Cancel navigates away without
+submitting. Save and delete carry protected `row_version` values; stale versions
+are rejected. Deletes are restrictive, except controlled image deletion which
+removes image associations in its own savepoint. Unlinking never deletes shared
+material.
+
+Video Platform is a static select list, initially containing and defaulting to
+YouTube. Existing platform values remain visible when editing older records.
+The Videos report opens Video URL links in a new browser tab.
+
+Use **Content Sources** to maintain the creator or publisher name, author and
+optional notes. Videos share these sources. The Video **Creator** popup shows
+creator / publisher and author in separate columns and searches both; selecting a
+row stores its exact creator name. Leave Creator blank when no source applies.
+Create a source before assigning it to a video. A source used by a video cannot
+be renamed or deleted; its author and notes remain editable. An unused source
+can be renamed. Cancel leaves the saved source unchanged.
+Video URL appears before External Video Id. When URL or Platform changes and
+Platform is YouTube, a recognised URL fills the editable External Video Id:
+`youtube.com` (also `www` and `m`) supports `/watch?v=ID`, `/shorts/ID` and
+`/embed/ID`; `youtu.be` (also `www`) supports `/ID`. HTTP and HTTPS URLs are
+accepted, including timestamp and other query parameters. IDs must contain
+exactly 11 letters, digits, underscores or hyphens; duplicate `v` parameters
+on watch URLs are rejected. This recognises URL shapes without checking whether
+a video exists or fetching it. A valid changed URL replaces the current ID;
+unsupported or invalid URLs and other platforms preserve it. Opening a record
+does not default the ID, and it remains manually editable.
+
+## API and grants
+
+Public definer-rights packages are `chess_admin_api` (reference entities and
+explicit associations), `chess_variation_api`, `chess_game_api` and
+`chess_image_api`. Specifications under `db/schema/package_spec` are the exact
+scalar contracts. `p_id` is null for insert; updates/deletes require the observed
+version; saves return the new version. Every composite operation rolls its own
+work back on failure. The caller alone commits or rolls back the transaction.
+
+`chess_admin_tapi` and `chess_validation_api` are private. Only SELECT on explicit
+`chess_*_v` read views and EXECUTE on the four public packages are granted to
+`ORAC_APX_PUB`. No base DML, private API, PUBLIC grants or public synonyms are
+introduced. Image listing views contain byte length and metadata without BLOBs.
+
+The singleton `chess_admin_control` serializes maintenance operations before
+hierarchy checks, preventing concurrent write-skew cycles. Row locks and stale
+version checks occur after that lock. Association edits increment the subject
+and shared material aggregate versions. This intentionally favors correct,
+low-volume administration over concurrent write throughput.
+
+## PGN validation
+
+The active deployment chain loads unchanged, pinned MIT-licensed chess.js 1.4.0,
+the policy already exercised by the isolated Oracle proof, and a separate typed
+production CLOB bridge. `chess_mle_lib`, `chess_mle_policy`, `chess_mle_bridge`,
+`chess_mle_env`, and the three `chess_mle_*` call specifications are private.
+The environment is PURE; no SQL, network, filesystem or external service is
+used by the validator. The host provisions CREATE MLE only for the exact
+`orac_chess` / `ORAC_CHESS` pair, in addition to its existing owner grants.
+No consumer MLE or private API grant is introduced.
+
+`tools/generate_mle_runtime.py --check` verifies source reproducibility and the
+upstream pin. Generated module loading uses UTF-8 hex CLOB chunks so SQLcl
+cannot rewrite JavaScript escapes. Each module, environment and call specification
+has its own replaceable changeset before the public API controller. The final
+compile pass rejects invalid objects and executes a legal-PGN semantic smoke.
+The 161 baseline changesets and historical diagnostic history are preserved.
+
+Validation consumes every token, checks canonical SAN against legal library
+moves, replays every game RAV, and verifies FEN/SetUp and result consistency.
+Variations accept one complete mainline with comments/NAG and reject RAV.
+PGN is bounded at 4 Mi characters (also checked against JavaScript UTF-16 length),
+and RAV depth at 64. Original PGN text and annotations remain unchanged.
+Runtime exceptions fail closed with `-20020`; invalid PGN uses `-20021` and
+invalid branch relationships use `-20025`. Public save operations use the existing
+private TAPI savepoint, locks and optimistic version checks.
+
+A child stores the complete line, with the same root initial position and same
+normalised prefix through `branch_ply` shared half-moves. Both lines need a next
+half-move and those moves must differ. Identical lines and pure extensions are
+rejected. Child FEN is null; a nonstandard root FEN must appear in every PGN
+with matching SetUp `1`. Whole-tree validation resolves the true root, rejects
+cycles/rootless ancestry and checks every descendant against its immediate parent.
+Parent changes that invalidate any descendant roll back atomically. Ordinary
+variation maintenance cannot change ownership.
+
+Pages 30/31 and 60/61 provide create, edit, save, cancel and conditional,
+confirmation-protected delete. Variation edits use the existing modal, close it
+after success and refresh the collection. Game edits remain a full page. Subject
+type selects the visible owner selector; existing variation ownership is read-only
+and enforced again by the server. The game's **Fill empty fields from PGN** action
+validates complete PGN and fills only empty White, Black, Event, Site, Result and
+ECO metadata. It never saves or overwrites populated fields. All Chess application dates use DD-Mon-YYYY with English month names (for example
+07-Nov-2026), including published dates, game dates and reports. Video duration
+accepts MM:SS or HH:MM:SS, such as 09:30 or 1:02:30, and is stored as whole
+seconds. Blank duration remains optional; zero, malformed values and values above
+9999999999 seconds are rejected on Save. Report durations use the same readable
+format while sorting and filtering use numeric seconds. The internal page item
+P41_DURATION_SECONDS retains its name but now carries the formatted text; the
+Save process converts and validates it before calling the unchanged numeric API. Runtime browser verification remains outstanding.
+
+The Java source candidate, source-DDL parser failure (ORA-29536), and cleanup
+record remain under diagnostics and [verification](verification.md). They are not
+included in production deployment.
+
+### Recovery
+
+`tools/generate_mle_recovery.py --check` verifies a data-preserving withdrawal
+bundle. First use the host receipt/import path to import
+`apex/recovery/orac_chess_admin_readonly.sql`, preserving installed application 10030.
+Then an explicitly approved owner/admin may execute
+`db/recovery/mle/withdraw.sql`: restore fail-closed writer and validation bodies,
+verify compilation, then remove the seven private MLE objects in dependency order.
+It preserves tables, data, Liquibase history and existing privileges. Do not run
+normal forward deployment until deliberately reapplying the integration; its canonical runtime objects and affected facade/writer bodies use runAlways
+as well as runOnChange. This deliberately recreates withdrawn objects and restores
+writers through the ordinary managed route without clearing history/checksums.
+The approved DEV withdrawal and ordinary managed reapplication passed on
+07-Nov-2026; see the [verification record](verification.md).
+
+## Images and URLs
+
+Image alt text is required. Uploads accept PNG/JPEG only, with server-side signature, chunk/segment structure
+and size validation. PNG chunks require CRCs, legal IHDR, ordering and IEND;
+JPEG requires supported frame, valid quantization/Huffman tables, matching scan
+components, bounded segments/scans and a final EOI. Both are
+limited to 16 megapixels. This is bounded structure validation, not pixel-level
+PNG deflate/JPEG entropy decoding; that remains an explicit validation limit. Metadata-only saves pass a null replacement BLOB and retain
+bytes and MIME. Replacements supply a new BLOB and MIME together. The default
+persisted upload limit is 10 MiB. An authorized DBA can change it separately:
+
+```sql
+update orac_chess.chess_admin_control
+set max_image_bytes = 10485760 where control_id = 1;
+commit;
+```
+
+The positive integer check prevents disabling the limit. This operation is
+administrative configuration and is not an APEX parsing-schema privilege.
+Image delivery sends an allowlisted MIME, sanitized inline filename,
+`X-Content-Type-Options: nosniff`, and private/no-store cache policy. Page 90
+uses the same authentication and authorization as every maintenance page.
+Video/source URLs accept HTTP(S), reject controls and markup, and are never
+fetched. Video ingestion, transcripts, YouTube APIs, MCP, AI and engines are
+outside this application.
+
+## Authentication and deployment
+
+Every protected page applies both
+`plugin_apex_app_auth_api.plugin_is_available('orac_chess', :APP_ID)` and
+`has_required_role('ORAC_ADMIN')`, with NOCACHE authorization evaluation. The
+application uses existing workspace accounts; deployment creates no credentials.
+Host cross-app navigation is retained. Disabling the plugin denies the app and
+image delivery.
+
+Deploy only through the existing host lifecycle:
+
+```text
+bin/orac-plugin.sh install --bundled orac_chess
+bin/orac-plugin.sh check orac_chess
+```
+
+The production controller has additive administration migrations after the
+unchanged 161-changeset baseline. It installs structural additions, technical
+comments/annotations, views, package specs/bodies, consumer grants and a final
+dependency-order body compilation pass. That pass prevents unchanged bodies
+remaining invalid after a specification upgrade. The failed Java chain is excluded. Do not reset
+checksums, rewrite baseline scripts, or remove/recreate the schema for upgrades.
+The manifest preserves the existing disabled default. The host owns live
+registration enablement and receipt reconciliation.
+
+The canonical application asset is `apex/orac_chess_admin.sql`. After an
+intentional Builder change, export the verified installed app through SQLcl,
+replace this asset, and preserve the alias, parsing schema, required receipt
+setting, plugin/role checks and host return navigation. Reset the exported
+`ORAC_INSTALL_RECEIPT` value to `UNATTESTED`; the host reattests it during import.
+Keep the standard display-name prologue because the host initially sets the name
+to the alias. Reinstall twice to verify receipt
+identity and repeatability. Keep optional Chess dependencies out of core install.
+
+## Verification
+
+Run the local authoritative validator corpus:
+
+```text
+.venv/bin/python -m pytest tests/test_orac_chess_validator.py
+python3 plugins/orac_chess/tools/generate_java_sources.py --check
+```
+
+Database verification must also exercise the public APIs, invalid input,
+optimistic versions, association rollback, hierarchy cycles, parent subtree
+revalidation, image content and parsing-schema denials. Roll back disposable
+fixtures. Run two-session concurrency checks and install/upgrade repeatability.
+Authenticated browser smoke requires an existing authorized workspace account;
+metadata checks alone do not prove runtime usability.
+
+utPLSQL is a separate development prerequisite, never bundled by this plugin.
+No LOGGER instrumentation is introduced, as requested. See the
+[verification record](verification.md) for actual results and remaining limitations.
+
+To generate data-preserving Oracle acceptance checks for these conversions, run
+`python3 plugins/orac_chess/tools/generate_duration_date_acceptance.py --output /tmp/chess_duration_date_acceptance.sql`.
+Run the generated script in a disposable SQLcl session against the approved DEV
+database. It extracts the actual APEX conversion code, checks valid and rejected
+durations, numeric round trips and English dates under a French session language.
+It performs no application data writes and restores English session language.
+This check complements the authenticated form and report browser checks.
+
+## ECO assignments
+
+Openings, gambits and variations each have their own direct ECO assignments.
+Use **Edit ECO Codes** to search by code or any part of the complete description.
+The dialog's Save stages a complete selection, including an empty selection; the
+form's Save applies it. Dialog Cancel leaves the staged selection unchanged, and
+form Cancel discards the staged changes. A normal form save preserves ECO codes
+when the editor was not saved. The collection reports filter the direct codes
+shown for each row. A game has its own optional ECO code, independent of its
+linked opening; no classifier runs automatically.
+
+A variation's **Related ECO Codes** shows codes assigned to ancestor variations
+and its owning opening or gambit. A gambit's related codes come from explicitly
+linked openings. Related entries identify their source and are context only; they
+do not assign those codes to the current record. Expand a code to read its full
+reference description. The same description is used across all three collections.
+
+The ECO extension is installed after the existing administration and seed
+controllers. Opening and game assignments must already refer to the complete
+catalogue, or its preflight halts for investigation. The new gambit and variation
+mappings start empty. A populated mapping is not automatically dropped on
+rollback; retain the data and repair the installation forward. Do not edit
+historical changesets, reset checksums, or change the APEX identity or receipt as
+part of recovery.
+
+For future CSV seed batches, `gambits.csv` may add `eco_codes`, and either
+`openings.csv` or `gambits.csv` may add `mainline_eco_codes` for the created
+mainline variation. Values are pipe-separated, for example `C25|C29`.
+Mainline codes require a mainline PGN. These optional assignments are applied
+only when the corresponding gambit or variation is created; existing records and
+their codes are preserved. ECO-aware batches are generated with the later runtime
+and registered after the extension APIs. Existing released batches and their
+generated SQL remain unchanged.
+
+The additive DEV upgrade, repeat install and APEX source import were checked as
+described in [the verification record](verification.md). Browser interaction,
+accessibility and fresh or isolated populated installation remain unverified.
+
+### Isolated acceptance procedure
+
+In an isolated disposable database, install the plugin from an empty schema and
+run `db/acceptance/verify_eco_reference.sql` and
+`db/acceptance/verify_eco_assignments.sql`. Repeat from a populated pre-extension
+installation with saved opening and game assignments and an edited catalogue
+description. Capture the Liquibase history and checksums, catalogue descriptions,
+assignments, app ID and import receipt before upgrading; compare them after the
+upgrade and after repeating it. Confirm no existing values were rewritten, all
+objects are valid, and APEX retains only the intended reads and public API grants.
+A preflight mismatch must halt without advancing the ECO extension.
+
+In an authenticated browser, test all three forms with an existing record and a
+new record. Save a multi-code selection, reopen and filter it, and confirm choices
+survive searching and pagination. Open and cancel the editor, clear its selection
+and cancel the main form, then clear it again and save the main form. Check that
+ordinary saves, missing or stale editor values and switching records do not clear
+assignments. Exercise stale versions and invalid selections, and compare direct
+filters with labelled related context. Check keyboard operation, narrow screens,
+long Unicode descriptions and searches beyond the preview. For example, Vienna
+has a C25–C29 family, while a specific line may use C29; individual gambits can
+have C25, so do not infer a code from a name. These checks require an approved
+isolated environment and have not been run as part of the source change.
+
+`python3 plugins/orac_chess/tools/generate_eco_apex.py --check` verifies that the
+marked editor and disclosure components match their shared templates. After a
+source change, regenerate those fragments and then regenerate the read-only
+recovery export with `tools/generate_mle_recovery.py`.

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="../../schema/table/chess_content_source.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_csr_creator_ux.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_csr_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_csr_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/seed_data/chess_content_source.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/seed_data/chess_content_source_existing.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_vid_creator_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_fk/chs_vid_creator_fk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_content_source.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/annotation/chess_content_source.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/view/chess_content_source_v.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/grant/chess_content_source_reads.sql" relativeToChangelogFile="true"/>
+</databaseChangeLog>

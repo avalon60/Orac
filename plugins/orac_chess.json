@@ -1,0 +1,87 @@
+{
+  "schema_version": 2,
+  "plugin_id": "orac_chess",
+  "name": "Orac Chess",
+  "description": "Controlled chess reference administration with a Universal Theme APEX application.",
+  "version": "0.2.0",
+  "enabled": false,
+  "capabilities": [],
+  "entitlements": [],
+  "entities": [
+    "opening",
+    "gambit",
+    "variation",
+    "game",
+    "video",
+    "concept"
+  ],
+  "examples": [],
+  "runtime": {
+    "mode": "on_demand"
+  },
+  "database": {
+    "required": true,
+    "on_missing": "warn_disable",
+    "deployment": {
+      "type": "liquibase",
+      "controller": "db/liquibase/pluginController.xml"
+    },
+    "schemas": [
+      {
+        "schema_name": "orac_chess",
+        "purpose": "Stores plugin-private chess reference and instructional data.",
+        "managed_by": "orac",
+        "minimum_version": "0.2.0",
+        "version_check": {
+          "enabled": false
+        },
+        "bridge_api_dependencies": [],
+        "backup": {
+          "include": true,
+          "export_mode": "schema"
+        }
+      }
+    ]
+  },
+  "apex_apps": [
+    {
+      "app_alias": "ORAC_CHESS_ADMIN",
+      "label": "Orac Chess Administration",
+      "description": "Maintain chess reference and instructional data.",
+      "app_export": "apex/orac_chess_admin.sql",
+      "workspace": "ORAC",
+      "parsing_schema": "ORAC_APX_PUB",
+      "application_id": 10030,
+      "entry_page_id": 1,
+      "install_required": true,
+      "replace_existing": true,
+      "required_roles": [
+        "ORAC_ADMIN"
+      ],
+      "enabled": true
+    }
+  ],
+  "ui": {
+    "icon_class": "fa-chess",
+    "surfaces": [
+      {
+        "id": "orac_chess.administration",
+        "type": "admin_status",
+        "label": "Orac Chess Administration",
+        "description": "Maintain chess reference and instructional data.",
+        "target": "apex",
+        "audience": "admin",
+        "required_roles": [
+          "ORAC_ADMIN"
+        ],
+        "enabled": true,
+        "apex": {
+          "app_alias": "ORAC_CHESS_ADMIN",
+          "app_export": "apex/orac_chess_admin.sql",
+          "entry_page_id": 1,
+          "install_required": true
+        }
+      }
+    ]
+  }
+}

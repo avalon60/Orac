@@ -1,0 +1,5 @@
+,p_inline_css=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'.chess-eco-list { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .5rem; }',
+'.chess-eco-list > details { flex: 0 1 auto; min-width: 0; max-width: 100%; }',
+'.chess-eco-list > details[open] { flex-basis: 100%; }',
+'.chess-eco-description { white-space: pre-wrap; overflow-wrap: anywhere; }'))

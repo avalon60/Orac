@@ -40,6 +40,15 @@ PROTECTED_ORAC_SCHEMAS = (
     "orac_plugin",
 )
 
+# Host-approved owner privileges, keyed by both registered plugin and schema.
+# Plugin SQL/manifests cannot request extra system privileges. These grants are
+# reconciled on every deployment; failed payloads retain them for repair. Never
+# revoke rights here: DDL commits and pre-existing grants have no provenance.
+_PLUGIN_SCHEMA_EXTRA_PRIVILEGES = {
+    ("orac_chess", "ORAC_CHESS"): ("create mle",),
+}
+
+
 PLUGIN_BRIDGE_API_CATALOG = {
     "knowledge_scope_validation": {
         "owner": "ORAC_PLUGIN",
@@ -1438,6 +1447,18 @@ def _schema_removal_sql(
         _sql_literal(item.upper())
         for item in PluginDatabaseSchemaProvisioner._SCHEMA_GRANTS
     )
+    approved_extra_privileges = (
+        " or ".join(
+            f"(p_name = {_sql_literal(schema_name)} and privilege = {_sql_literal(privilege.upper())})"
+            for (
+                plugin_id,
+                schema_name,
+            ), privileges in _PLUGIN_SCHEMA_EXTRA_PRIVILEGES.items()
+            if plugin_id == manifest.plugin_id
+            for privilege in privileges
+        )
+        or "1 = 0"
+    )
     return f"""whenever sqlerror exit failure rollback
 whenever oserror exit failure rollback
 set define off echo off feedback off serveroutput on size unlimited linesize 32767
@@ -1490,7 +1511,8 @@ declare
       union all select count(*) from dba_proxies where proxy = p_name or client = p_name
       union all select count(*) from dba_role_privs where grantee = p_name
       union all select count(*) from dba_sys_privs where grantee = p_name
-        and (privilege not in ({allowed_privileges}) or admin_option <> 'NO')
+        and ((privilege not in ({allowed_privileges}) and not ({approved_extra_privileges}))
+             or admin_option <> 'NO')
       union all select count(*) from dba_col_privs where owner = p_name or grantee = p_name
       union all select count(*) from dba_tab_privs where owner = p_name and grantee <> p_name
         and (grantee not in ('ORAC_PLUGIN', 'ORAC_APX_PUB') or grantable <> 'NO'
@@ -1603,7 +1625,12 @@ def _schema_provisioning_blocks(
             f"execute immediate 'alter user {name} quota unlimited on users';",
             *[
                 f"execute immediate 'grant {privilege} to {name}';"
-                for privilege in PluginDatabaseSchemaProvisioner._SCHEMA_GRANTS
+                for privilege in (
+                    *PluginDatabaseSchemaProvisioner._SCHEMA_GRANTS,
+                    *_PLUGIN_SCHEMA_EXTRA_PRIVILEGES.get(
+                        (manifest.plugin_id, name), ()
+                    ),
+                )
             ],
         ]
         for dependency_id in schema.bridge_api_dependencies:

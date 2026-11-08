@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  logicalFilePath="plugins/orac_chess/db/liquibase/controllers/05_constraint_other.xml"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="../../schema/constraint_other/chs_cmt_kind_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_cmt_subject_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_con_category_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_gam_eco_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_gam_result_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_oec_eco_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_opn_parent_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_opn_type_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_var_branch_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_var_cycle_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_var_ply_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_var_subject_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_vid_duration_ck.sql" relativeToChangelogFile="true"/>
+</databaseChangeLog>

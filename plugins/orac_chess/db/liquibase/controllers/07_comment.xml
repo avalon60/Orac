@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  logicalFilePath="plugins/orac_chess/db/liquibase/controllers/07_comment.xml"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="../../schema/comment/chess_commentary.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_concept.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_concept_gambit.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_concept_opening.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_concept_variation.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_gambit.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_game.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_image.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_image_gambit.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_image_opening.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_image_variation.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_opening.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_opening_alias.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_opening_eco.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_opening_gambit.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_variation.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_video.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_video_gambit.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_video_opening.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_video_variation.sql" relativeToChangelogFile="true"/>
+</databaseChangeLog>

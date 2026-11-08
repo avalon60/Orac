@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  logicalFilePath="plugins/orac_chess/db/liquibase/controllers/04_constraint_uc.xml"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="../../schema/constraint_uc/chs_con_code_uk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_uc/chs_gmb_name_uk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_uc/chs_opa_name_uk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_uc/chs_opn_name_uk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_uc/chs_var_gmb_ref_uk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_uc/chs_var_opn_ref_uk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_uc/chs_var_subject_name_uk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_uc/chs_vid_external_uk.sql" relativeToChangelogFile="true"/>
+</databaseChangeLog>

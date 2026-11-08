@@ -1,0 +1,12 @@
+--liquibase formatted sql
+-- Author: clive
+-- Date: 02-Nov-2026
+-- Description: Installs the Chess administration contract.
+-- Purpose: Add approved private maintenance objects without changing baseline history.
+-- Usage: Managed plugin deployment through db/liquibase/pluginController.xml.
+
+--changeset clive:orac_chess_admin_chess_video_v context:plugin,prod labels:plugin stripComments:false runOnChange:true
+create or replace view orac_chess.chess_video_v as
+select video_id, platform, external_video_id, video_url, title, creator, description, duration_seconds, published_on, created_on, updated_on, row_version
+from orac_chess.chess_video;
+--rollback drop view orac_chess.chess_video_v;

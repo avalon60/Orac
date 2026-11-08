@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  logicalFilePath="plugins/orac_chess/db/liquibase/pluginController.xml"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="controllers/01_table.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/02_index.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/03_constraint_pk.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/04_constraint_uc.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/05_constraint_other.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/06_constraint_fk.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/07_comment.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/08_admin_structure.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/08_content_source.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/08_admin_metadata.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/09_admin_views.xml" relativeToChangelogFile="true"/>
+  <!-- The Java proof remains diagnostic history; production uses private PURE MLE. -->
+  <include file="controllers/09_mle_runtime.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/13_eco_reference.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/10_admin_api.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/11_admin_compile.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/12_seed_batches.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/14_eco_relationships.xml" relativeToChangelogFile="true"/>
+</databaseChangeLog>

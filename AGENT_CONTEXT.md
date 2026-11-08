@@ -34,6 +34,49 @@ grant-direction, and controller facts remain in
 `resources/db/schema/AGENT_CONTEXT.md`. Plugin-owned APEX applications remain
 root-governed through their plugin manifests and documentation.
 
+### Existing ORAC Workspace Applications
+
+DEV installation status below reflects the APEX inventory verified on
+06-Nov-2026, with the Chess correction verified on 08-Nov-2026. Repository declarations also reserve IDs for applications not
+installed in that environment.
+
+| Application ID | Application | Ownership | DEV installation | Repository evidence |
+| --- | --- | --- | --- | --- |
+| `1042` | Orac Administration | Core Orac | Installed | `resources/db/apex/AGENT_CONTEXT.md`; `resources/db/apex/orac_apps/f1042.sql` |
+| `1043` | Plugin Control | Core Orac | Installed | `resources/db/apex/AGENT_CONTEXT.md`; `resources/db/apex/orac_apps/f1043.sql` |
+| `10010` | Home Assistant Status | Plugin: `home_assistant` | Not installed; ID declared | `plugins/home_assistant.json`; `plugins/home_assistant/apex/f10010.sql` |
+| `10020` | Drop Box Admin | Plugin: `drop_box` | Not installed; ID declared | `plugins/drop_box.json`; `plugins/drop_box/apex/f10020.sql` |
+| `10030` | Orac Chess Administration | Plugin: `orac_chess` | Installed; former application `100` removed | `plugins/orac_chess.json`; reservation below |
+| `10042` | Plugin App Scaffold | Core scaffold | Installed | `resources/db/apex/AGENT_CONTEXT.md`; `resources/db/apex/orac_apps/f10042.sql` |
+
+Core application details remain authoritative in
+`resources/db/apex/AGENT_CONTEXT.md`; plugin declarations remain in their
+manifests. The range configuration currently assigns `1000`–`1100` to Core and
+`10000`–`10100` to Plugin in workspace `ORAC`. The existing core-owned scaffold
+`10042` therefore has an ownership/range mismatch requiring separate resolution.
+Treat its ID as occupied. Chess now uses its reserved Plugin-range ID below.
+
+### Orac Chess Application ID Reservation
+
+| Workspace | Domain | Inclusive range | Reserved application ID | Owner |
+| --- | --- | --- | --- | --- |
+| `ORAC` | `Plugin` | `10000`–`10100` | `10030` | `orac_chess` — Orac Chess Administration |
+
+The requester selected `10030` on 06-Nov-2026. The range is defined in
+`docs/agent-guardrails/apex-app-id-ranges.csv`. Repository evidence includes
+Home Assistant's `10010`, Drop Box's `10020`, the scaffold's `10042`, and the
+Chess export's existing default application ID `10030`; no competing repository
+claim for `10030` was found. No live APEX check was performed during this
+allocation pass.
+
+The DEV installation verified on 08-Nov-2026 is application `10030`, alias
+`ORAC_CHESS_ADMIN`, with parsing schema `ORAC_APX_PUB`. The manifest explicitly
+declares `application_id: 10030`. The user-authorised correction removed former
+application `100` through the APEX platform API and replaced its exact host
+registration and receipt. Current APEX metadata, registry and navigation use
+`10030`; plugin schema, data and Liquibase history were preserved. See
+`plugins/orac_chess/docs/verification.md` for evidence and remaining UI checks.
+
 ## Database Domains
 
 | Domain | Schemas | Ownership |
@@ -41,6 +84,7 @@ root-governed through their plugin manifests and documentation.
 | `orac` | `orac_core`, `orac_api`, `orac_code`, `orac_plugin`, `orac_apx_pub`, `orac` | Core data, controlled API, business code, plugin bridge, APEX access, and runtime access |
 | `home_assistant` | `orac_ha` | Home Assistant plugin-private data and APIs |
 | `drop_box` | `orac_dropbox` | Drop Box plugin-private configuration, jobs, and audit data |
+| `orac_chess` | `orac_chess` | Chess plugin-private relational reference and instructional data |
 
 Plugin schemas expose only approved entrypoints to `orac_plugin` or
 `orac_apx_pub`. They do not receive direct access to `orac_core`.
@@ -52,6 +96,7 @@ Plugin schemas expose only approved entrypoints to `orac_plugin` or
 | Core Orac | `resources/db/schema/install.sql` or `install_orac.sql` | `resources/db/schema/productController.xml` | Includes the six core layer/access schema controllers in dependency order |
 | Home Assistant | Core-owned plugin deployment runner | `plugins/home_assistant/db/liquibase/pluginController.xml` | Runs as `orac_ha` |
 | Drop Box | Core-owned plugin deployment runner | `plugins/drop_box/db/liquibase/pluginController.xml` | Runs as `orac_dropbox` |
+| Orac Chess | Core-owned plugin deployment runner | `plugins/orac_chess/db/liquibase/pluginController.xml` | Runs as `orac_chess` |
 
 Plugin manifests declare the controller path and schema. Plugin controller
 files own their ordered object-type includes.

@@ -1685,6 +1685,115 @@ class PluginDatabaseDeploymentTests(unittest.TestCase):
             self.assertTrue(session.committed)
             self.assertTrue(session.closed)
 
+    def test_mle_privilege_is_scoped_to_host_approved_plugin_and_schema(self) -> None:
+        """Only the approved Chess identity and owner receive CREATE MLE."""
+        from model.plugin_database_deployment import _schema_provisioning_sql
+        from model.plugin_database_deployment import _schema_removal_sql
+
+        for plugin_id, schema_name, expected in (
+            ("orac_chess", "orac_chess", True),
+            ("alpha", "orac_chess", False),
+            ("orac_chess", "orac_ha", False),
+            ("alpha", "orac_ha", False),
+        ):
+            with self.subTest(plugin_id=plugin_id, schema_name=schema_name):
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    _write_plugin(
+                        root,
+                        plugin_id,
+                        _manifest(plugin_id, database=_database(schema_name)),
+                    )
+                    manifest = _discover_one(root)
+                    sql = _schema_provisioning_sql(manifest, oracle_pdb="FREEPDB1")
+                    self.assertEqual("grant create mle to" in sql, expected)
+                    self.assertNotIn("create any mle", sql.lower())
+                    self.assertNotIn("revoke", sql.lower())
+                    if expected:
+                        self.assertLess(
+                            sql.index(
+                                "Existing schema has no matching current ownership receipt"
+                            ),
+                            sql.index("grant create mle to ORAC_CHESS"),
+                        )
+                    removal = _schema_removal_sql(
+                        manifest, oracle_pdb="FREEPDB1", plugin_registry_id=1
+                    )
+                    self.assertEqual(
+                        "p_name = 'ORAC_CHESS' and privilege = 'CREATE MLE'" in removal,
+                        plugin_id == "orac_chess",
+                    )
+
+    def test_already_deployed_chess_reconciles_mle_before_returning(self) -> None:
+        """A tracked Chess payload still receives host privilege repair."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_plugin(
+                root,
+                "orac_chess",
+                _manifest("orac_chess", database=_database("orac_chess")),
+                with_schema=True,
+                ddl="create table orac_chess.example_table (id number);\n",
+            )
+            manifest = _discover_one(root)
+            cursor = _FakeCursor(user_exists=True)
+            runner = _FakeRunner(already_deployed=True)
+            result = PluginDatabaseDeployer(
+                runner=runner,
+                schema_provisioner=PluginDatabaseSchemaProvisioner(
+                    session_factory=lambda: _FakeSession(cursor)
+                ),
+                archive_root=root / "archives",
+            ).deploy_if_needed(manifest)
+            self.assertEqual(result.status, "already_deployed")
+            self.assertTrue(
+                any(
+                    "grant create mle to ORAC_CHESS" in sql
+                    for sql, _ in cursor.statements
+                )
+            )
+            self.assertEqual(runner.calls, [])
+
+    def test_mle_grant_is_reconciled_and_failure_preserves_rights(self) -> None:
+        """Repair retries grants and reports failure without speculative revocation."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_plugin(
+                root,
+                "orac_chess",
+                _manifest("orac_chess", database=_database("orac_chess")),
+            )
+            manifest = _discover_one(root)
+            cursor = _FakeCursor(user_exists=True)
+            provisioner = PluginDatabaseSchemaProvisioner(
+                session_factory=lambda: _FakeSession(cursor)
+            )
+            provisioner.ensure_schemas(manifest)
+            provisioner.ensure_schemas(manifest)
+            self.assertEqual(
+                sum(
+                    "grant create mle to ORAC_CHESS" in sql
+                    for sql, _ in cursor.statements
+                ),
+                2,
+            )
+
+            class DeniedCursor(_FakeCursor):
+                def execute(self, sql: str, binds: dict | None = None) -> None:
+                    super().execute(sql, binds)
+                    raise RuntimeError("ORA-01031: insufficient privileges")
+
+            denied_cursor = DeniedCursor()
+            session = _FakeSession(denied_cursor)
+            denied = PluginDatabaseSchemaProvisioner(session_factory=lambda: session)
+            with self.assertRaisesRegex(PluginDatabaseDeploymentError, "ORA-01031"):
+                denied.ensure_schemas(manifest)
+            self.assertTrue(session.closed)
+            self.assertFalse(session.committed)
+            self.assertFalse(
+                any("revoke" in sql.lower() for sql, _ in denied_cursor.statements)
+            )
+
     def test_docker_provisioning_requires_current_incarnation_receipt(self) -> None:
         from model.plugin_database_deployment import _schema_provisioning_sql
 

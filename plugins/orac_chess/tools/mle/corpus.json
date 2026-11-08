@@ -1,0 +1,294 @@
+[
+  {
+    "name": "java-01",
+    "op": "validate",
+    "pgn": "1. e4 e5 2. Nf3 Nc6 *",
+    "valid": true,
+    "single": 1,
+    "fen": null
+  },
+  {
+    "name": "java-02",
+    "op": "validate",
+    "pgn": "1.e4 {comment} e5 $1 2.Nf3!? Nc6 *",
+    "valid": true,
+    "single": 1,
+    "fen": null
+  },
+  {
+    "name": "java-03",
+    "op": "validate",
+    "pgn": "1.e4 (1.d4 d5 (1...Nf6)) e5 *",
+    "valid": true,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-04",
+    "op": "validate",
+    "pgn": "1.e4 (1.d4 d5 (1...Nf6)) e5 *",
+    "valid": false,
+    "single": 1,
+    "fen": null
+  },
+  {
+    "name": "java-05",
+    "op": "validate",
+    "pgn": "1.e4 (1.d4 Ke7) e5 *",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-06",
+    "op": "validate",
+    "pgn": "1.e4 e5 * trailing",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-07",
+    "op": "validate",
+    "pgn": "1.e4 e5 * 1.d4",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-08",
+    "op": "validate",
+    "pgn": "1.e4# e5 *",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-09",
+    "op": "validate",
+    "pgn": "1.e4 e5 2.Ne3 *",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-10",
+    "op": "validate",
+    "pgn": "1.e4 e5",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-11",
+    "op": "validate",
+    "pgn": "1.e4 {unterminated e5 *",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-12",
+    "op": "validate",
+    "pgn": "1.e4 (1.d4 e5 *",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-13",
+    "op": "validate",
+    "pgn": "[Result \"1-0\"]\n1.e4 e5 *",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-14",
+    "op": "validate",
+    "pgn": "[FEN \"8/8/8/8/8/8/8/K6k w - - 0 1\"]\n1.Kb1 *",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-15",
+    "op": "validate",
+    "pgn": "[SetUp \"1\"] [FEN \"8/8/8/8/8/8/8/K6k w - - 0 1\"] 1.Kb1 *",
+    "valid": true,
+    "single": 1,
+    "fen": "8/8/8/8/8/8/8/K6k w - - 0 1"
+  },
+  {
+    "name": "java-16",
+    "op": "validate",
+    "pgn": "[SetUp \"1\"] [FEN \"8/8/8/8/8/8/8/KK5k w - - 0 1\"] 1.Kb1 *",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-17",
+    "op": "validate",
+    "pgn": "1.e4e5 *",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-18",
+    "op": "validate",
+    "pgn": "1.e4 * (1.d4)",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-19",
+    "op": "validate",
+    "pgn": "1.e4 (1.d4 (1.c4 e5) d5) e5 *",
+    "valid": true,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-20",
+    "op": "validate",
+    "pgn": "1.e4 (1.d4 (1.c4 Ke7) d5) e5 *",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-21",
+    "op": "validate",
+    "pgn": "1.e4 e5 2.Nf3 Nc6 3.Bb5 a6 4.Ba4 Nf6 5.O-O *",
+    "valid": true,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-22",
+    "op": "validate",
+    "pgn": "1.O-O *",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-23",
+    "op": "validate",
+    "pgn": "1.e4 e5 2.Qh5 Nc6 3.Bc4 Nf6 4.Qxf7# 1-0",
+    "valid": true,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-24",
+    "op": "validate",
+    "pgn": "1.e4 e5 2.Qh5 Nc6 3.Bc4 Nf6 4.Qxf7+ 1-0",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-25",
+    "op": "validate",
+    "pgn": "[SetUp \"1\"] [FEN \"8/8/8/8/8/8/8/K6k w K - 0 1\"] 1.Kb1 *",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-26",
+    "op": "validate",
+    "pgn": "[SetUp \"1\"] [FEN \"8/8/8/8/8/8/8/K6k w - e6 0 1\"] 1.Kb1 *",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-27",
+    "op": "validate",
+    "pgn": "[SetUp \"1\"] [FEN \"8/8/8/8/8/8/8/Kk6 w - - 0 1\"] 1.Kb1 *",
+    "valid": false,
+    "single": 0,
+    "fen": null
+  },
+  {
+    "name": "java-28",
+    "op": "branch",
+    "parent": "1.e4 e5 2.Nf3 *",
+    "child": "1.e4 c5 *",
+    "ply": 1,
+    "valid": true
+  },
+  {
+    "name": "java-29",
+    "op": "branch",
+    "parent": "1.e4 e5 *",
+    "child": "1.e4 e5 2.Nf3 *",
+    "ply": 2,
+    "valid": false
+  },
+  {
+    "name": "empty",
+    "op": "validate",
+    "pgn": "",
+    "valid": false
+  },
+  {
+    "name": "only-result",
+    "op": "validate",
+    "pgn": "*",
+    "valid": false
+  },
+  {
+    "name": "duplicate-tag",
+    "op": "validate",
+    "pgn": "[Event \"a\"] [Event \"b\"] 1.e4 *",
+    "valid": false
+  },
+  {
+    "name": "rav-empty",
+    "op": "validate",
+    "pgn": "1.e4 () *",
+    "valid": false
+  },
+  {
+    "name": "rav-number",
+    "op": "validate",
+    "pgn": "1.e4 (1...d5) *",
+    "valid": false
+  },
+  {
+    "name": "rav-trailing",
+    "op": "validate",
+    "pgn": "1.e4 (1.d4 * d5) *",
+    "valid": false
+  },
+  {
+    "name": "nested-comment",
+    "op": "validate",
+    "pgn": "1.e4 {a {b}} *",
+    "valid": false
+  },
+  {
+    "name": "under-specified-san",
+    "op": "validate",
+    "pgn": "1.e4 e5 2.Nf3 Nc6 3.Bc4 Nf6 4.d3 Bc5 5.Nd2 *",
+    "valid": false
+  },
+  {
+    "name": "escaped-header",
+    "op": "validate",
+    "pgn": "[Event \"a\\\\b\\\"c\"] 1.e4 *",
+    "valid": true
+  },
+  {
+    "name": "zero-prefix",
+    "op": "validate",
+    "pgn": "1.e4 *",
+    "valid": true
+  }
+]

@@ -1,0 +1,62 @@
+{
+  "EDITOR_11": {
+    "type": "editor",
+    "page": 11,
+    "base": 99300000000001100,
+    "owner": 27430604072874915,
+    "stage": "P11_LINK_ECO_CODE"
+  },
+  "DIRECT_11": {
+    "type": "disclosure",
+    "id": 99100000000000011,
+    "name": "ECO Codes",
+    "query": "'  for r in (select cast(null as varchar2(500)) source_label,m.eco_code,e.description from orac_chess.chess_opening_eco_v m join orac_chess.chess_eco_code_v e on e.eco_code=m.eco_code where m.opening_id=:P11_OPENING_ID order by m.eco_code) loop',"
+  },
+  "EDITOR_21": {
+    "type": "editor",
+    "page": 21,
+    "base": 99300000000002100,
+    "owner": 27430604072874963,
+    "stage": "P21_ECO_CODES"
+  },
+  "DIRECT_21": {
+    "type": "disclosure",
+    "id": 99100000000000021,
+    "name": "ECO Codes",
+    "query": "'  for r in (select cast(null as varchar2(500)) source_label,m.eco_code,e.description from orac_chess.chess_gambit_eco_v m join orac_chess.chess_eco_code_v e on e.eco_code=m.eco_code where m.gambit_id=:P21_GAMBIT_ID order by m.eco_code) loop',"
+  },
+  "RELATED_21": {
+    "type": "disclosure",
+    "id": 99200000000000021,
+    "name": "Related ECO Codes (context only)",
+    "query": "'  for r in (select ''Opening: '' || o.name source_label,m.eco_code,e.description from orac_chess.chess_opening_gambit_v g join orac_chess.chess_opening_v o on o.opening_id=g.opening_id join orac_chess.chess_opening_eco_v m on m.opening_id=o.opening_id join orac_chess.chess_eco_code_v e on e.eco_code=m.eco_code where g.gambit_id=:P21_GAMBIT_ID order by o.name,m.eco_code) loop',"
+  },
+  "EDITOR_31": {
+    "type": "editor",
+    "page": 31,
+    "base": 99300000000003100,
+    "owner": 27430604072874988,
+    "stage": "P31_ECO_CODES"
+  },
+  "DIRECT_31": {
+    "type": "disclosure",
+    "id": 99100000000000031,
+    "name": "ECO Codes",
+    "query": "'  for r in (select cast(null as varchar2(500)) source_label,m.eco_code,e.description from orac_chess.chess_variation_eco_v m join orac_chess.chess_eco_code_v e on e.eco_code=m.eco_code where m.variation_id=:P31_VARIATION_ID order by m.eco_code) loop',"
+  },
+  "RELATED_31": {
+    "type": "disclosure",
+    "id": 99200000000000031,
+    "name": "Related ECO Codes (context only)",
+    "query": "'  for r in (select source_type || '': '' || source_name source_label,eco_code,description from (select ''Variation'' source_type,a.name source_name,m.eco_code,e.description from orac_chess.chess_variation_v a join orac_chess.chess_variation_eco_v m on m.variation_id=a.variation_id join orac_chess.chess_eco_code_v e on e.eco_code=m.eco_code where a.variation_id in (select variation_id from orac_chess.chess_variation_v start with variation_id=(select parent_variation_id from orac_chess.chess_variation_v where variation_id=:P31_VARIATION_ID) connect by nocycle prior parent_variation_id=variation_id) union all select ''Opening'',o.name,m.eco_code,e.description from orac_chess.chess_variation_v v join orac_chess.chess_opening_v o on o.opening_id=v.opening_id join orac_chess.chess_opening_eco_v m on m.opening_id=o.opening_id join orac_chess.chess_eco_code_v e on e.eco_code=m.eco_code where v.variation_id=:P31_VARIATION_ID union all select ''Gambit'',g.name,m.eco_code,e.description from orac_chess.chess_variation_v v join orac_chess.chess_gambit_v g on g.gambit_id=v.gambit_id join orac_chess.chess_gambit_eco_v m on m.gambit_id=g.gambit_id join orac_chess.chess_eco_code_v e on e.eco_code=m.eco_code where v.variation_id=:P31_VARIATION_ID) order by source_type,source_name,eco_code) loop',"
+  },
+  "CSS_11": {
+    "type": "css"
+  },
+  "CSS_21": {
+    "type": "css"
+  },
+  "CSS_31": {
+    "type": "css"
+  }
+}

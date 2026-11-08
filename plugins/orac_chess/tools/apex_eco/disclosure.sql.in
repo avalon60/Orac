@@ -1,0 +1,27 @@
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(@ID@)
+,p_plug_name=>'@NAME@'
+,p_plug_template=>4072358936313175081
+,p_plug_display_sequence=>35
+,p_function_body_language=>'PLSQL'
+,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'declare',
+'  l_html clob := to_clob(''<div class="chess-eco-list">'');',
+'  l_offset pls_integer;',
+'begin',
+@QUERY@
+'    l_html := l_html || ''<details><summary>'';',
+'    if r.source_label is not null then l_html := l_html || apex_escape.html(r.source_label) || '' ''; end if;',
+'    l_html := l_html || ''<span class="t-Badge">'' || apex_escape.html(r.eco_code) || ''</span></summary><div class="chess-eco-description">'';',
+'    l_offset := 1;',
+'    while l_offset <= dbms_lob.getlength(r.description) loop',
+'      l_html := l_html || apex_escape.html(dbms_lob.substr(r.description, 1000, l_offset));',
+'      l_offset := l_offset + 1000;',
+'    end loop;',
+'    l_html := l_html || ''</div></details>'';',
+'  end loop;',
+'  return l_html || ''</div>'';',
+'end;'))
+,p_plug_source_type=>'NATIVE_DYNAMIC_CONTENT'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2('expand_shortcuts','N','output_as','HTML','show_line_breaks','Y')).to_clob
+);

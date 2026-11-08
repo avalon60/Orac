@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  logicalFilePath="plugins/orac_chess/db/liquibase/controllers/02_index.xml"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="../../schema/index/chs_cgb_gambit_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_cgb_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_cmt_gambit_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_cmt_opening_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_cmt_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_cmt_variation_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_con_code_ux.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_con_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_cop_opening_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_cop_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_cvr_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_cvr_variation_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_gam_eco_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_gam_opening_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_gam_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_gmb_name_ux.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_gmb_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_igb_gambit_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_igb_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_img_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_iop_opening_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_iop_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_ivr_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_ivr_variation_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_oec_eco_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_oec_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_opa_name_ux.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_opa_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_opg_gambit_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_opg_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_opn_name_ux.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_opn_p_opening_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_opn_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_var_gmb_ref_ux.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_var_main_gmb_ux.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_var_main_opn_ux.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_var_opn_ref_ux.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_var_parent_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_var_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_var_subject_name_ux.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_vgb_gambit_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_vgb_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_vid_external_ux.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_vid_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_vid_pub_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_vop_opening_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_vop_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_vvr_pk_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_vvr_variation_ix.sql" relativeToChangelogFile="true"/>
+</databaseChangeLog>

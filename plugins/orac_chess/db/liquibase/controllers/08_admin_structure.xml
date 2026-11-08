@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="../../schema/alter_table/chess_admin_versions.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/table/chess_admin_control.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_adc_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_adc_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/seed_data/chess_admin_control.sql" relativeToChangelogFile="true"/>
+</databaseChangeLog>

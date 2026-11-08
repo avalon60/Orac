@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="../../schema/mle_module/chess_mle_lib.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/mle_module/chess_mle_policy.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/mle_module/chess_mle_bridge.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/mle_env/chess_mle_env.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/function/chess_mle_validate.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/function/chess_mle_branch.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/function/chess_mle_header.sql" relativeToChangelogFile="true"/>
+</databaseChangeLog>

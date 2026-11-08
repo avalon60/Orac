@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  logicalFilePath="plugins/orac_chess/db/liquibase/controllers/03_constraint_pk.xml"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="../../schema/constraint_pk/chs_cgb_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_cmt_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_con_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_cop_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_cvr_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_gam_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_gmb_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_igb_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_img_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_iop_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_ivr_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_oec_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_opa_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_opg_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_opn_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_var_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_vgb_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_vid_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_vop_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_vvr_pk.sql" relativeToChangelogFile="true"/>
+</databaseChangeLog>

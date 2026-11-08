@@ -1,0 +1,53 @@
+--liquibase formatted sql
+-- Author: clive
+-- Date: 02-Nov-2026
+-- Description: Generated pinned Java source; edit upstream or adapter source.
+-- Purpose: Source-only Oracle JVM chess validation with no external permissions.
+-- Usage: Managed plugin Liquibase controller; regenerate using tools/generate_java_sources.py.
+
+--changeset clive:orac_chess_java_073_ToStringSummary context:plugin,prod labels:plugin runOnChange:true stripComments:false endDelimiter:/
+declare
+  l_source clob;
+begin
+  l_source := l_source || to_clob('create or replace java source named "org/apache/commons/lang3/builder/ToStringSummary" as
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.commons.lang3.builder;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+/**
+ * Use this annotation on the fields to get the summary instead of the detailed
+ * information when using {@link ReflectionToStringBuilder}.
+ *
+ * <p>
+ * Notice that not all {@link ToStringStyle} implementations support the
+ * appendSummary method.
+ * </p>
+ *
+ * @since 3.8
+ */
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.FIELD)
+public @interface ToStringSummary {
+    // empty
+}');
+  execute immediate l_source;
+end;
+/
+--rollback drop java source "org/apache/commons/lang3/builder/ToStringSummary";

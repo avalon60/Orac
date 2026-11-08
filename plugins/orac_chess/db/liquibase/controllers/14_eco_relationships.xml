@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="../../schema/pre_install/chess_eco_preflight.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/table/chess_gambit_eco.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_gec_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_fk/chs_gec_subject_fk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_fk/chs_gec_eco_fk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_gec_eco_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_gec_eco_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/view/chess_gambit_eco_v.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/grant/chess_gambit_eco_reads.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/table/chess_variation_eco.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_vec_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_fk/chs_vec_subject_fk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_fk/chs_vec_eco_fk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_vec_eco_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/index/chs_vec_eco_ix.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/view/chess_variation_eco_v.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/grant/chess_variation_eco_reads.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_fk/chs_oec_eco_fk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_fk/chs_gam_eco_fk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/package_spec/chess_admin_tapi_eco.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/package_spec/chess_admin_api_eco.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/package_spec/chess_variation_api_eco.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/package_body/chess_admin_tapi_eco.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/package_body/chess_admin_api_eco.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/package_body/chess_variation_api_eco.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/post_install/chess_admin_eco_compile.sql" relativeToChangelogFile="true"/>
+  <include file="15_eco_seed_batches.xml" relativeToChangelogFile="true"/>
+</databaseChangeLog>

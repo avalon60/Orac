@@ -1,0 +1,3 @@
+workspace,domain,lower_app_id,upper_app_id
+ORAC,Core,1000,1100
+ORAC,Plugin,10000,10100

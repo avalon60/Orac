@@ -1,0 +1,14 @@
+{
+  "component": "chess.js",
+  "version": "1.4.0",
+  "source": "https://registry.npmjs.org/chess.js/-/chess.js-1.4.0.tgz",
+  "release_sha256": "dce92e280439d7a16f645be94f22e6da50e579a1f3011d0a2381755bfe2c2ef7",
+  "upstream_commit": "unknown (not recorded in release package.json)",
+  "files_sha256": {
+    "chess.mjs": "76c7c34f0e2e9ab076521a5d6fe786a9cce537bb1b6f29d32a9c9970b5b232d2",
+    "LICENSE": "0b3a3c2b4432a26bb18f9d06f5bba4de015bcc980306b7db28b06025495e2186",
+    "package.json": "36a258fdfb5e76d0816bf2b63dab3c917a0a8652f943da0e6be7e9b543765dfd"
+  },
+  "modifications": "dist/esm/chess.js renamed chess.mjs byte-for-byte; no source changes",
+  "update_policy": "Explicit pinned release update; repeat tarball checksum/extraction and all local and database corpus tests."
+}
