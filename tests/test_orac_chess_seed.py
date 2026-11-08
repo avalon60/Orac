@@ -288,9 +288,13 @@ def test_once_only_controller_and_check() -> None:
     """Install and upgrade reach the immutable seed once, following compiled APIs."""
     controller = seed.ROOT / "db/liquibase/pluginController.xml"
     includes = [node.attrib["file"] for node in ET.parse(controller).getroot()]
-    assert includes.index("controllers/12_seed_batches.xml") > includes.index(
+    assert includes.index("controllers/14_eco_relationships.xml") < includes.index(
         "controllers/11_admin_compile.xml"
+    ) < includes.index("controllers/12_seed_batches.xml") < includes.index(
+        "controllers/15_eco_seed_batches.xml"
     )
+    assert includes.count("controllers/12_seed_batches.xml") == 1
+    assert includes.count("controllers/15_eco_seed_batches.xml") == 1
     sql = (
         seed.ROOT / "db/schema/seed_data/chess_batch_2026_11_07_bootstrap.sql"
     ).read_text()
@@ -451,6 +455,10 @@ def test_optional_eco_fields_use_post_extension_runtime(batch: Path) -> None:
     assert "save_variation_with_eco" in rendered
     assert not seed.is_eco_aware(BATCH)
     controller = seed.ROOT / "db/liquibase/controllers/14_eco_relationships.xml"
-    assert controller.read_text().index("chess_variation_api_eco.sql") < controller.read_text().index(
-        "15_eco_seed_batches.xml"
-    )
+    assert "chess_variation_api_eco.sql" in controller.read_text()
+    assert "15_eco_seed_batches.xml" not in controller.read_text()
+    root_controller = seed.ROOT / "db/liquibase/pluginController.xml"
+    includes = [node.attrib["file"] for node in ET.parse(root_controller).getroot()]
+    assert includes.index("controllers/14_eco_relationships.xml") < includes.index(
+        "controllers/12_seed_batches.xml"
+    ) < includes.index("controllers/15_eco_seed_batches.xml")

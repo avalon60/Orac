@@ -26,5 +26,4 @@
   <include file="../../schema/package_body/chess_admin_api_eco.sql" relativeToChangelogFile="true"/>
   <include file="../../schema/package_body/chess_variation_api_eco.sql" relativeToChangelogFile="true"/>
   <include file="../../schema/post_install/chess_admin_eco_compile.sql" relativeToChangelogFile="true"/>
-  <include file="15_eco_seed_batches.xml" relativeToChangelogFile="true"/>
 </databaseChangeLog>

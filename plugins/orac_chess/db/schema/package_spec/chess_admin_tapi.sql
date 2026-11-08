@@ -75,6 +75,9 @@ create or replace package orac_chess.chess_admin_tapi authid definer as
     p_creator in varchar2, p_author in varchar2, p_notes in clob,
     p_new_version out number);
   procedure delete_content_source(p_creator in varchar2, p_expected_version in number);
+  -- Atomically create/link videos; both observed aggregate versions are required. Caller owns transaction.
+  procedure set_subject_video_link(p_subject_type in varchar2, p_subject_id in number, p_expected_subject_version in number, p_video_id in number, p_expected_video_version in number, p_link in boolean, p_new_subject_version out number, p_new_video_version out number);
+  procedure create_video_for_subject(p_platform in varchar2, p_external_video_id in varchar2, p_video_url in varchar2, p_title in varchar2, p_creator in varchar2, p_description in clob, p_duration_seconds in number, p_published_on in date, p_subject_type in varchar2, p_subject_id in number, p_expected_subject_version in number, p_video_id out number, p_new_subject_version out number, p_new_video_version out number);
 end chess_admin_tapi;
 /
 --rollback drop package orac_chess.chess_admin_tapi;

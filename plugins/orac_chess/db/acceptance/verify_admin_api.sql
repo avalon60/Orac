@@ -330,4 +330,5 @@ exception when others then
 end;
 /
 rollback;
+@@verify_subject_videos.sql
 exit

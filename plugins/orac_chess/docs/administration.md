@@ -23,16 +23,48 @@ on 08-Nov-2026. Never import into an unrelated application ID.
 | 110 / 111 | Content Sources | Creator / publisher, author and notes |
 | 9999 | Login | Existing Oracle APEX Accounts |
 
-Collection pages use interactive reports. Associations are edited inside detail
+Collection pages use interactive reports. In the Videos report, clicking a video
+title opens its video URL in a new tab. Associations are edited inside detail
 pages, rather than exposed as top-level collections. Cancel navigates away without
-submitting. Save and delete carry protected `row_version` values; stale versions
-are rejected. Deletes are restrictive, except controlled image deletion which
+submitting. Save and delete carry observed `row_version` values; stale versions are rejected.
+Opening and Gambit version items permit exact versions returned by video actions
+to be applied in the browser; protected subject identities and API version checks
+remain authoritative. Deletes are restrictive, except controlled image deletion which
 removes image associations in its own savepoint. Unlinking never deletes shared
 material.
 
 Video Platform is a static select list, initially containing and defaulting to
 YouTube. Existing platform values remain visible when editing older records.
 The Videos report opens Video URL links in a new browser tab.
+
+Opening and Gambit detail pages have a **Related videos** region. Each linked
+video shows its title, creator and formatted duration, with **Watch** opening its
+HTTP(S) URL in a safe new tab. **Edit video** opens the shared Video modal.
+**Unlink** asks for confirmation and removes only that subject's association;
+the shared video and its other associations remain. Expand **Link existing
+video** to search titles, creators and platforms; already linked videos are
+excluded. Click **Link** beside the chosen video to add it immediately; entering
+a search alone does not add an association. Save a new subject before adding
+videos. Wait for a video action to finish before saving the subject. The page
+blocks submission while the action is pending so Save uses its returned version.
+
+**Create video** opens a cleared Video modal. Saving from a subject creates the
+video and its association atomically; a stale or invalid subject leaves no new
+video behind. Creating from the main Videos page creates an unassociated video.
+Cancel closes the modal without submitting or validating. Invalid input keeps
+the modal and its origin context available for correction. Saving closes it and
+refreshes the originating video region while preserving unsaved subject fields.
+Metadata-only video edits do not advance the subject's observed version. Link
+mutations return exact versions and the parent adopts them only for the same
+subject, observed version and client correlation token; another tab or stale
+response cannot silently replace that token. Refreshing the video list never
+fetches a newer subject version. A stale action requires reloading the subject.
+
+The Video association reports display subject names. A reciprocal link closes
+the Video modal before the parent navigates to the selected Opening or Gambit,
+or opens the selected Variation. Existing Video association controls remain
+available. Mutations affecting the originating Opening/Gambit also check its
+observed version.
 
 Use **Content Sources** to maintain the creator or publisher name, author and
 optional notes. Videos share these sources. The Video **Creator** popup shows
@@ -187,8 +219,12 @@ bin/orac-plugin.sh check orac_chess
 The production controller has additive administration migrations after the
 unchanged 161-changeset baseline. It installs structural additions, technical
 comments/annotations, views, package specs/bodies, consumer grants and a final
-dependency-order body compilation pass. That pass prevents unchanged bodies
-remaining invalid after a specification upgrade. The failed Java chain is excluded. Do not reset
+dependency-order body compilation pass. Reference data `13` precedes baseline
+APIs `10`, then final ECO contracts and their compile check `14` precede shared
+compilation `11`, bootstrap seeds `12` and ECO seeds `15`. This order prevents an
+unchanged ECO body being compiled against the temporary baseline specification.
+Controller `15` is included once at the root. The compilation pass prevents
+unchanged bodies remaining invalid after a specification upgrade. The failed Java chain is excluded. Do not reset
 checksums, rewrite baseline scripts, or remove/recreate the schema for upgrades.
 The manifest preserves the existing disabled default. The host owns live
 registration enablement and receipt reconciliation.

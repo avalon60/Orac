@@ -122,6 +122,14 @@ create or replace package body orac_chess.chess_admin_api as
   begin
     chess_admin_tapi.delete_content_source(p_creator, p_expected_version);
   end delete_content_source;
+  procedure set_subject_video_link(p_subject_type in varchar2, p_subject_id in number, p_expected_subject_version in number, p_video_id in number, p_expected_video_version in number, p_link in boolean, p_new_subject_version out number, p_new_video_version out number) is
+  begin
+    chess_admin_tapi.set_subject_video_link(p_subject_type => p_subject_type, p_subject_id => p_subject_id, p_expected_subject_version => p_expected_subject_version, p_video_id => p_video_id, p_expected_video_version => p_expected_video_version, p_link => p_link, p_new_subject_version => p_new_subject_version, p_new_video_version => p_new_video_version);
+  end set_subject_video_link;
+  procedure create_video_for_subject(p_platform in varchar2, p_external_video_id in varchar2, p_video_url in varchar2, p_title in varchar2, p_creator in varchar2, p_description in clob, p_duration_seconds in number, p_published_on in date, p_subject_type in varchar2, p_subject_id in number, p_expected_subject_version in number, p_video_id out number, p_new_subject_version out number, p_new_video_version out number) is
+  begin
+    chess_admin_tapi.create_video_for_subject(p_platform => p_platform, p_external_video_id => p_external_video_id, p_video_url => p_video_url, p_title => p_title, p_creator => p_creator, p_description => p_description, p_duration_seconds => p_duration_seconds, p_published_on => p_published_on, p_subject_type => p_subject_type, p_subject_id => p_subject_id, p_expected_subject_version => p_expected_subject_version, p_video_id => p_video_id, p_new_subject_version => p_new_subject_version, p_new_video_version => p_new_video_version);
+  end create_video_for_subject;
 end chess_admin_api;
 /
 --rollback select 1/0 from dual;

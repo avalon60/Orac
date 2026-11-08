@@ -404,3 +404,164 @@ def test_chess_declared_application_and_exports_use_reserved_id() -> None:
         assert ',p_default_application_id=>10030\n' in source
         assert not re.search(r'(?:set_application_id\(|p_default_application_id=>)100(?:\)|\s)', source)
         assert source.count('<div class="chess-eco-list">') == 8
+
+
+def test_subject_video_api_contract_survives_eco_replacement() -> None:
+    """Both install stages expose the same atomic, caller-owned video operations."""
+    for package in ('chess_admin_api', 'chess_admin_tapi'):
+        for folder in ('package_spec', 'package_body'):
+            baseline = (ROOT / f'db/schema/{folder}/{package}.sql').read_text()
+            eco = (ROOT / f'db/schema/{folder}/{package}_eco.sql').read_text()
+            for operation in ('set_subject_video_link', 'create_video_for_subject'):
+                signature = re.search(rf'  procedure {operation}\([^\n]+', baseline).group()
+                assert signature in eco
+            if folder == 'package_body':
+                added = baseline.split('  procedure set_subject_video_link(', 1)[1].split(f'end {package};', 1)[0]
+                assert added == eco.split('  procedure set_subject_video_link(', 1)[1].split(f'end {package};', 1)[0]
+                assert not re.search(r'\bcommit\b', added, re.I)
+    acceptance = (ROOT / 'db/acceptance/verify_subject_videos.sql').read_text()
+    assert '@@verify_subject_videos.sql' in (ROOT / 'db/acceptance/verify_admin_api.sql').read_text()
+    for contract in ('no orphan video', 'Caller rollback removes', 'Stale subject link',
+                     'Stale video link', 'Missing link', 'Unlink retains shared video',
+                     'Metadata edits leave subject version unchanged'):
+        assert contract in acceptance
+
+
+def test_related_video_returns_preserve_observed_subject_state() -> None:
+    """Execute exported JS: only the matching origin may adopt an exact mutation result."""
+    import subprocess
+
+    source = (ROOT / 'apex/orac_chess_admin.sql').read_text()
+    for page, subject in ((11, 'OPENING'), (21, 'GAMBIT')):
+        content = source.split(f'prompt --application/pages/page_{page:05d}', 1)[1].split('prompt --application/pages/', 1)[0]
+        code = content.split('p_javascript_code_onload=>wwv_flow_string.join(wwv_flow_t_varchar2(\n', 1)[1].split('\n,p_step_title', 1)[0]
+        javascript = '\n'.join(re.findall(r"^'((?:[^']|'')*)'(?:,|\)\)(?:.*)?)?$", code, re.M)).replace("''", "'")
+        assert 'chessVideoAction' in javascript
+        harness = r'''const assert = require('node:assert/strict');
+const values = {KEY:'7', VERSION:'3', UNSAVED:'Unsaved subject text'};
+let response, request, closed, beforeSubmit, options, refreshed=0, alerts=0;
+const chain = {off:()=>chain,on:(name,handler)=>{if(name.startsWith('apexafterclosedialog.chessVideo'))closed=handler;if(name.startsWith('apexbeforepagesubmit.chessVideo'))beforeSubmit=handler;return chain;}};
+const apex = {
+ item:name=>({getValue:()=>values[name],setValue:value=>{values[name]=String(value);}}),
+ region:()=>({refresh:()=>{refreshed++;}}),jQuery:()=>chain,
+ server:{process:(name,data,callbacks)=>{request=data;options=callbacks;response=data=>{callbacks.success(data);callbacks.complete();};}},
+ navigation:{dialog:()=>{}},message:{alert:()=>{alerts++;},confirm:(message,callback)=>callback(true)}
+};
+const window = {};
+// Deliberately provide no randomUUID: HTTP development pages still have getRandomValues.
+const crypto = {getRandomValues:array=>{array.fill(10);return array;}};
+new Function('window','apex','crypto',CODE)(window,apex,crypto);
+assert.match(window.chessVideoToken,/^[0-9a-f-]{36}$/);
+window.chessVideoAction('LINK',20,5);
+assert.equal(request.x06,'7');
+assert.equal(beforeSubmit(),false); // Save must not submit the old observed version.
+assert.equal(alerts,1);
+const firstRequest=request;
+window.chessVideoAction('LINK',21,5);
+assert.equal(request,firstRequest); assert.equal(alerts,2); // serialise mutations
+alerts=0;
+response({subjectId:7,expected:3,token:window.chessVideoToken,version:4});
+assert.equal(values.VERSION,'4'); assert.equal(refreshed,1);
+assert.equal(values.UNSAVED,'Unsaved subject text');
+assert.equal(beforeSubmit(),undefined); // Save may proceed after adopting the result.
+window.chessVideoAction('LINK',21,5);
+response({error:'Failed'});
+assert.equal(values.VERSION,'4'); assert.equal(refreshed,1); assert.equal(alerts,1);
+assert.equal(beforeSubmit(),undefined);
+window.chessVideoAction('LINK',21,5);
+options.error(); options.complete();
+assert.equal(values.VERSION,'4'); assert.equal(refreshed,1); assert.equal(alerts,2);
+assert.equal(beforeSubmit(),undefined); alerts=0;
+// An older asynchronous result must not replace the now-observed version.
+response({subjectId:7,expected:3,token:window.chessVideoToken,version:99});
+assert.equal(values.VERSION,'4'); assert.equal(refreshed,1);
+window.chessVideoAction('DIALOG',20);
+response({url:'signed-modal-url'});
+closed({}, {P41_ORIGIN_ID:7,P41_ORIGIN_EXPECTED:4,P41_ORIGIN_TOKEN:window.chessVideoToken});
+assert.equal(values.VERSION,'4'); assert.equal(refreshed,2); // metadata-only edit
+closed({}, {P41_ORIGIN_ID:8,P41_ORIGIN_EXPECTED:4,P41_ORIGIN_TOKEN:window.chessVideoToken,P41_ORIGIN_NEW_VERSION:9});
+assert.equal(values.VERSION,'4'); assert.equal(refreshed,2);
+closed({}, {P41_ORIGIN_ID:7,P41_ORIGIN_EXPECTED:4,P41_ORIGIN_TOKEN:'different',P41_ORIGIN_NEW_VERSION:9});
+assert.equal(values.VERSION,'4');
+closed({}, {P41_ORIGIN_ID:7,P41_ORIGIN_EXPECTED:4,P41_ORIGIN_TOKEN:window.chessVideoToken,P41_ORIGIN_NEW_VERSION:5});
+assert.equal(values.VERSION,'5'); assert.equal(refreshed,3);
+values.KEY=''; window.chessVideoAction('DIALOG'); assert.equal(alerts,1);
+'''.replace('KEY', f'P{page}_{subject}_ID').replace('VERSION', f'P{page}_ROW_VERSION').replace('CODE', json.dumps(javascript))
+        # Replacement above also affects the returned P41 property names; restore them.
+        harness = harness.replace(f'ORIGIN_NEW_P{page}_ROW_VERSION', 'ORIGIN_NEW_VERSION')
+        subprocess.run(['node', '-e', harness], check=True, text=True)
+
+
+def test_related_video_search_filters_choices_after_region_refresh() -> None:
+    """Search titles, creators and platforms without hiding linked videos."""
+    import subprocess
+
+    source = (ROOT / 'apex/orac_chess_admin.sql').read_text()
+    for page in (11, 21):
+        content = source.split(f'prompt --application/pages/page_{page:05d}', 1)[1].split('prompt --application/pages/', 1)[0]
+        # Decode the export string and then the dynamic PL/SQL HTML literal.
+        exported_line = next(line for line in content.splitlines() if 'oninput=' in line)
+        plsql = re.fullmatch(r"'((?:[^']|'')*)',?", exported_line).group(1).replace("''", "'")
+        html = re.search(r"l_html := l_html \|\| '((?:[^']|'')*)';", plsql).group(1).replace("''", "'")
+        javascript = re.search(r'oninput="([^"]+)"', html).group(1)
+        harness = r'''const assert = require('node:assert/strict');
+const linked = {textContent:'Already linked lesson', hidden:false};
+const row = textContent => ({textContent, hidden:false});
+let choices = [row('Queen Gambit basics — Alice — YouTube'),
+               row('Sicilian lesson — ChessVibes — Vimeo'),
+               row('Endgame ideas — Bob — PeerTube')];
+let query = '';
+const apex = {region:name=>{
+  assert.equal(name,'related_videos');
+  return {widget:()=>null, element:{find:selector=>({each:callback=>{
+    const rows = selector === '.chess-video-choice' ? choices : [...choices, linked];
+    rows.forEach(item=>callback.call(item));
+  }})}};
+}};
+const document = {getElementById:id=>{
+  assert.equal(id,'video_search'); return {value:query};
+}};
+const filter = new Function('apex','document',CODE);
+const search = (value, expected) => {
+  query=value; filter(apex,document);
+  assert.deepEqual(choices.map(item=>item.hidden),expected);
+  assert.equal(linked.hidden,false);
+};
+search('gAmBiT',[false,true,true]);
+search('cHeSsViBeS',[true,false,true]);
+search('pEeRtUbE',[true,true,false]);
+search('no matching lesson',[true,true,true]);
+search('',[false,false,false]);
+// A region refresh replaces the available rows; subsequent input uses those rows.
+const previousChoices = choices;
+choices = [row('New opening — Carol — Vimeo'),row('Fresh gambit — Dan — YouTube')];
+search('GaMbIt',[true,false]);
+assert.deepEqual(previousChoices.map(item=>item.hidden),[false,false,false]);
+search('',[false,false]);
+'''.replace('CODE', json.dumps(javascript))
+        subprocess.run(['node', '-e', harness], check=True, text=True, timeout=30)
+
+
+def test_video_modal_uses_protected_origin_and_safe_subject_links() -> None:
+    """Protect the modal identity, cancellation, cross-tab checks and outbound-link boundary."""
+    source = (ROOT / 'apex/orac_chess_admin.sql').read_text()
+    video = source.split('prompt --application/pages/page_00041', 1)[1].split('prompt --application/pages/', 1)[0]
+    assert "p_page_mode=>'MODAL'" in video
+    assert "p_process_type=>'NATIVE_CLOSE_WINDOW'" in video
+    assert "javascript:apex.navigation.dialog.cancel(true);" in video
+    assert 'create_page_branch(' not in video
+    for item in ('ORIGIN_TYPE', 'ORIGIN_ID', 'ORIGIN_EXPECTED', 'ORIGIN_TOKEN'):
+        definition = next(block for block in re.findall(r'create_page_item\(.*?\n\);', video, re.S)
+                          if f"p_name=>'P41_{item}'" in block)
+        assert "p_protection_level=>'S'" in definition
+        assert "'value_protected','Y'" in definition
+    for page, subject in ((11, 'OPENING'), (21, 'GAMBIT')):
+        content = source.split(f'prompt --application/pages/page_{page:05d}', 1)[1].split('prompt --application/pages/', 1)[0]
+        assert 'rel="noopener noreferrer"' in content
+        assert "regexp_like(r.video_url,''^https?://''" in content
+        assert "apex_escape.html_attribute(r.video_url)" in content
+        assert f'to_number(apex_application.g_x06) != :P{page}_{subject}_ID' in content
+        assert "regexp_like(apex_application.g_x02,''^[0-9]+$'')" in content
+        assert "p_clear_cache=>''41''" in content
+        assert 'apex_escape.html(r.platform)' in content
+        assert 'not exists (select 1 from orac_chess.chess_video_' in content

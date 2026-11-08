@@ -116,7 +116,7 @@ def test_source_rejects_invalid_input(
 def test_install_reachability_and_host_import_boundary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The host can package the plugin and the appended controller reaches all new assets."""
+    """The host can package the plugin and install final contracts before compilation."""
     monkeypatch.syspath_prepend(str(ROOT / "src"))
     from model.plugin_dependencies import validate_declared_imports
 
@@ -124,8 +124,18 @@ def test_install_reachability_and_host_import_boundary(
     ns = {"lb": "http://www.liquibase.org/xml/ns/dbchangelog"}
     main = eco.ROOT / "db/liquibase/pluginController.xml"
     includes = ET.parse(main).findall("lb:include", ns)
-    assert includes[-1].attrib["file"] == "controllers/14_eco_relationships.xml"
-    assert includes[-2].attrib["file"] == "controllers/12_seed_batches.xml"
+    paths = [item.attrib["file"] for item in includes]
+    dependency_order = [
+        "controllers/13_eco_reference.xml",
+        "controllers/10_admin_api.xml",
+        "controllers/14_eco_relationships.xml",
+        "controllers/11_admin_compile.xml",
+        "controllers/12_seed_batches.xml",
+        "controllers/15_eco_seed_batches.xml",
+    ]
+    positions = [paths.index(path) for path in dependency_order]
+    assert positions == sorted(positions)
+    assert paths.count("controllers/15_eco_seed_batches.xml") == 1
     reference = next(item for item in includes if item.attrib["file"] == "controllers/13_eco_reference.xml")
     controller = main.parent / reference.attrib["file"]
     assets = [
@@ -143,7 +153,7 @@ def test_install_reachability_and_host_import_boundary(
 
 
 def test_additive_relationship_controller_and_atomic_wrappers() -> None:
-    """The extension installs after old batches and retains independent save paths."""
+    """The extension compiles final ECO contracts and retains independent save paths."""
     ns = {"lb": "http://www.liquibase.org/xml/ns/dbchangelog"}
     root = eco.ROOT
     controller = root / "db/liquibase/controllers/14_eco_relationships.xml"
@@ -153,8 +163,8 @@ def test_additive_relationship_controller_and_atomic_wrappers() -> None:
     ]
     assert all(path.is_file() for path in assets)
     assert assets[0].name == "chess_eco_preflight.sql"
-    assert assets[-2].name == "chess_admin_eco_compile.sql"
-    assert assets[-1].name == "15_eco_seed_batches.xml"
+    assert assets[-1].name == "chess_admin_eco_compile.sql"
+    assert not any(path.name == "15_eco_seed_batches.xml" for path in assets)
     ddl = "\n".join(path.read_text() for path in assets if path.suffix == ".sql")
     for subject, abbrev in (("gambit", "gec"), ("variation", "vec")):
         assert f"primary key ({subject}_id, eco_code)" in ddl

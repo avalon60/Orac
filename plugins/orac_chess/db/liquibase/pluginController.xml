@@ -17,7 +17,8 @@
   <include file="controllers/09_mle_runtime.xml" relativeToChangelogFile="true"/>
   <include file="controllers/13_eco_reference.xml" relativeToChangelogFile="true"/>
   <include file="controllers/10_admin_api.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/14_eco_relationships.xml" relativeToChangelogFile="true"/>
   <include file="controllers/11_admin_compile.xml" relativeToChangelogFile="true"/>
   <include file="controllers/12_seed_batches.xml" relativeToChangelogFile="true"/>
-  <include file="controllers/14_eco_relationships.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/15_eco_seed_batches.xml" relativeToChangelogFile="true"/>
 </databaseChangeLog>

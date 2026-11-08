@@ -1260,6 +1260,56 @@ create or replace package body orac_chess.chess_admin_tapi as
       end if;
       raise;
   end delete_content_source;
+  -- Lock control serialises aggregate mutations before checking both observed versions.
+  procedure set_subject_video_link(p_subject_type in varchar2, p_subject_id in number, p_expected_subject_version in number, p_video_id in number, p_expected_video_version in number, p_link in boolean, p_new_subject_version out number, p_new_video_version out number) is
+    l_subject_version number;
+    l_video_version number;
+  begin
+    savepoint chess_subject_video_link;
+    chess_validation_api.lock_control;
+    if p_subject_type = 'OPENING'
+    then
+      select row_version into l_subject_version from chess_opening where opening_id=p_subject_id for update;
+    elsif p_subject_type = 'GAMBIT'
+    then
+      select row_version into l_subject_version from chess_gambit where gambit_id=p_subject_id for update;
+    else
+      raise_application_error(-20014, 'Choose an opening or gambit.');
+    end if;
+    chess_validation_api.require_version(l_subject_version,p_expected_subject_version);
+    select row_version into l_video_version from chess_video where video_id=p_video_id for update;
+    chess_validation_api.require_version(l_video_version,p_expected_video_version);
+    if p_subject_type = 'OPENING'
+    then
+      link_video_opening(p_video_id,p_subject_id,p_expected_video_version,p_link,p_new_video_version);
+    else
+      link_video_gambit(p_video_id,p_subject_id,p_expected_video_version,p_link,p_new_video_version);
+    end if;
+    -- Existing link routines increment each aggregate once under the control lock.
+    p_new_subject_version := l_subject_version + 1;
+  exception
+    when no_data_found then
+      rollback to chess_subject_video_link;
+      raise_application_error(-20008, 'A linked record does not exist.');
+    when others then
+      rollback to chess_subject_video_link;
+      raise;
+  end set_subject_video_link;
+
+  procedure create_video_for_subject(p_platform in varchar2, p_external_video_id in varchar2, p_video_url in varchar2, p_title in varchar2, p_creator in varchar2, p_description in clob, p_duration_seconds in number, p_published_on in date, p_subject_type in varchar2, p_subject_id in number, p_expected_subject_version in number, p_video_id out number, p_new_subject_version out number, p_new_video_version out number) is
+    l_video_id number;
+    l_video_version number;
+  begin
+    savepoint chess_subject_video_create;
+    chess_validation_api.lock_control;
+    save_video(l_video_id,null,p_platform,p_external_video_id,p_video_url,p_title,p_creator,p_description,p_duration_seconds,p_published_on,l_video_version);
+    set_subject_video_link(p_subject_type,p_subject_id,p_expected_subject_version,l_video_id,l_video_version,true,p_new_subject_version,p_new_video_version);
+    p_video_id := l_video_id;
+  exception
+    when others then
+      rollback to chess_subject_video_create;
+      raise;
+  end create_video_for_subject;
 end chess_admin_tapi;
 /
 --rollback drop package body orac_chess.chess_admin_tapi;

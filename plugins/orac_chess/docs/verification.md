@@ -417,3 +417,161 @@ as `ORAC_CHESS` after clean installation, upgrade and repeated deployment. The
 script includes consumer access, user-edit preservation and failure-atomicity
 rehearsal instructions. Live installation, Liquibase history and Unicode consumer
 behaviour remain unverified until those checks are performed.
+
+
+### Subject video workflow source phase — 08-Nov-2026
+
+The canonical application `10030` export and generated recovery export now share
+the Related videos workflow on Opening `11` and Gambit `21`, and the native
+Video `41` modal reused by Videos `40`. Source checks execute the exported parent
+JavaScript with mocked APEX APIs: exact-version adoption, stale-result rejection,
+identity/token mismatch rejection, metadata-only refresh, unsaved-field retention,
+and a browser environment without `crypto.randomUUID`. Checks also cover signed
+origin items, numeric AJAX identities, safe outbound URLs, excluded existing
+links, modal cancellation/closure and baseline/ECO public-contract parity.
+
+`create_video_for_subject` and `set_subject_video_link` are additive public API
+operations delegated to the private TAPI. Each composed mutation has a distinct
+outer savepoint, uses the existing control lock and save/link routines, and leaves
+commit ownership with its caller. Existing link routines increment video and
+subject versions exactly once. No tables or grants were added. Deployment remains
+host plugin runner → `db/liquibase/pluginController.xml`. The corrected dependency
+order is `13_eco_reference.xml` → `10_admin_api.xml` (baseline specs/bodies) →
+`14_eco_relationships.xml` (ECO replacement specs/bodies and ECO compile) →
+`11_admin_compile.xml` → `12_seed_batches.xml` → `15_eco_seed_batches.xml`.
+The ECO seed controller is included once at the root, after bootstrap seeds;
+final ECO contracts are restored before the shared compilation pass. These are replaceable
+`runOnChange` package changes with their existing rollback declarations.
+
+`db/acceptance/verify_subject_videos.sql` is a **test/support artifact**, also
+included by `verify_admin_api.sql`. On an approved DEV connection it exercises
+both subjects, atomic creation, duplicate video/link rejection, missing records
+and links, invalid subject kind, stale video/subject versions, no orphan videos,
+exact version increments, metadata-only subject-version stability, shared-video
+retention and caller rollback. A commit inside an API invalidates the caller's
+savepoint and fails the harness. At the end of the source phase, this new SQL
+harness had not been executed; the subsequent DEV results are recorded below.
+
+Local verification for this source change: the four focused Chess administration,
+ECO, schema and seed modules passed **100 tests**. ECO generation and regenerated
+MLE recovery reproducibility checks, plus `git diff --check`, passed. At that
+source-phase checkpoint, live package compilation, installed APEX source parsing,
+fresh installation, upgrade, Liquibase execution/history, rollback SQL execution
+and authenticated desktop/narrow browser workflows were unverified. Subsequent
+DEV deployment evidence follows; browser and isolated fresh-install evidence
+remain outstanding. The link-existing search
+currently filters the available video choices in the browser; assess a paginated
+server search if the catalogue grows substantially.
+
+
+### Subject video workflow DEV deployment — 08-Nov-2026
+
+The approved target was verified as `SYSTEM` in `FREEPDB1`. The first managed
+`bin/orac-plugin.sh install --bundled orac_chess` attempt failed at controller
+`11_admin_compile.xml`: replacing the installed ECO TAPI specification with the
+baseline specification temporarily left the unchanged ECO variation body referring
+to missing `SAVE_VARIATION_WITH_ECO`. The dependency order was corrected as shown
+above, retaining the ECO compile inside controller `14` and moving controller
+`15` to one root include after bootstrap. No changeset history or checksum bypass
+was used. The managed retry and a repeat installation both succeeded;
+`bin/orac-plugin.sh check orac_chess` also passed.
+
+Installed APEX metadata confirmed application `10030`, workspace `ORAC`, alias
+`ORAC_CHESS_ADMIN`, parsing schema `ORAC_APX_PUB`, Related videos regions on pages
+`11` and `21`, and page `41` as a Modal Dialog. Host registration reported success,
+database `already_deployed`, readiness success and enabled `Y`. The installed
+receipt and declared application ID both matched `10030`; host readiness verified
+the receipt.
+
+`verify_subject_videos.sql` passed twice with its fixtures rolled back.
+`verify_apex_sources.sql` passed twice, parsing **91** installed sources on each
+run. Chess had zero invalid objects and zero `DBA_ERRORS` rows. Before/after
+snapshots matched: **1 opening, 0 gambits, 44 videos, 0 video-opening links and
+0 video-gambit links**. Liquibase retained the same **408 history keys**, with no
+added or removed keys and no history resets. The only checksum changes were the
+expected eight `runOnChange` administration API/TAPI specification/body assets
+across baseline and ECO variants.
+
+Private backup, count/history snapshots and deployment logs are retained in
+`/tmp/chess-video-import-20261108` with directory mode `700`. These DEV results
+verify the managed upgrade/repeat path and installed source/API acceptance.
+An isolated clean fresh installation and authenticated browser workflows at
+desktop and narrow widths remain unverified, including rendered layout,
+accessibility, dialog interactions and preservation of unsaved fields in the
+actual browser.
+
+## Video title links, 08-Nov-2026
+
+Imported the canonical export through the host receipt-checked APEX importer
+into DEV `FREEPDB1`, workspace `ORAC`, application `10030`. Installed page 40
+metadata confirms `TITLE` uses `#VIDEO_URL#`, link text `#TITLE#`, and
+`target="_blank" rel="noopener noreferrer"`. The 22 administration tests and
+recovery generation check passed. Rendered browser interaction was not checked.
+
+The initial full lifecycle attempt stopped at the pre-ECO compilation assertion:
+its earlier administration scripts had replaced ECO API contracts/bodies before
+the later ECO controller could restore them. Restored the canonical ECO TAPI and
+administration API specifications/bodies and variation API body, then recompiled
+the administration bodies. Final owner metadata shows no invalid Chess objects or
+compilation errors; the schema-qualified PGN validation smoke returned no error.
+The host plugin status remains enabled with installation/readiness `success`.
+The repeat-install ordering defect remains unresolved; use the host APEX importer
+for this UI-only update rather than repeating full database deployment.
+
+## Related video search source fix, 08-Nov-2026
+
+The Opening and Gambit search handlers now use the Related videos region element
+to find available choices. The dynamic content region has no widget, so the
+previous handler failed before updating visibility. The recovery export was
+regenerated from the canonical export.
+
+The regression executes each exported handler after decoding both SQL string
+layers, with a null region widget. It reproduces the previous error and passes
+with the correction, covering case-insensitive title, creator and platform
+substrings, no matches, clearing the search, replacement rows after a region
+refresh, and preservation of linked rows. All **26 administration tests** passed;
+ECO and recovery generator `--check` runs and `git diff --check` passed. A
+repository-wide search found the corrected handlers only in the canonical and
+generated recovery exports, with no remaining old handler.
+
+The installed DEV app was backed up to `/tmp/chess-before-search-fix/f10030.sql`.
+The host receipt-checked APEX-only importer then applied the same two handler
+corrections to that fresh export, preserving other installed app settings. Import
+completed for application `10030` in `FREEPDB1`. SQLcl metadata confirms corrected
+handlers on both pages 11 and 21 and no invalid `ORAC_CHESS` objects. No database
+controllers or schema changes were run. The import reset the existing browser
+session; authenticated browser acceptance is pending sign-in. Other workflow
+documentation remains accurate because existing search behaviour is restored.
+
+
+## Related video submission race protection, 08-Nov-2026
+
+Observed facts: the exported Opening and Gambit Link controls start asynchronous
+`SUBJECT_VIDEO` requests. Previously, page submission was allowed before their
+responses updated the subject version. The saved DEV export at
+`/tmp/chess-before-search-fix/f10030.sql` contains the same callback and version
+adoption path. Save only processes subject metadata and ECO associations; typing
+in the video search does not itself link a video. The existing API acceptance
+harness checks link/unlink versions and caller rollback, rather than browser
+request ordering or cross-request persistence.
+
+Derived conclusion: Save could submit the older observed version while a video
+mutation was pending. Both pages now cancel page submission during that request
+and reject overlapping video actions. Success payloads must contain a dialog URL
+or a positive mutation version, with no error, before they are used. Request
+completion releases the submission barrier after success or failure. API
+transaction ownership and callback commit behaviour are unchanged.
+
+The exported JavaScript regression exercises both pages with a delayed response:
+submission is rejected before completion and allowed after adopting the returned
+version. It also covers overlapping actions, error payloads, network errors,
+unchanged unsaved fields and stale dialog responses. The generated recovery export
+contains the same protection.
+
+Unverified hypothesis: request ordering may explain the reported association
+missing after Save/reopen. No authenticated reproduction, Link response trace or
+persisted before/after state has yet established the cause of that report. The
+source protection has not been imported or checked in the live browser. Required
+acceptance remains: link an existing video, Save and reopen each subject type;
+repeat with immediate Save during a delayed request and verify the association
+from a subsequent request, including rendered desktop and narrow layouts.
