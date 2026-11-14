@@ -23,7 +23,7 @@ LOG_DIR="${PROJECT_DIR}/logs"
 ORAC_VERSION="$(grep -m1 '__version__' "${CONTROL_DIR}/__init__.py" 2>/dev/null | cut -d'"' -f2 || echo 'dev')"
 
 # Runtime dir + files
-RUN_DIR="/run/orac"
+RUN_DIR="${ORAC_RUN_DIR:-/run/orac}"
 PID_FILE="${RUN_DIR}/orac.pid"
 SECRET_FILE="${RUN_DIR}/slave.secret"
 TOKEN_FILE="${RUN_DIR}/slave.token"   # only if you choose the simple-token path
