@@ -79,5 +79,6 @@ resources/downloads/apex/*.zip
 /.agents/skills/plugin-structure-validation/
 /.agents/skills/plsql-code-review/
 /.agents/skills/python-code-review/
+/.agents/skills/apex-application-id-allocation/
 /web/.agents/skills/application-surface-onboarding/
 # END AVALON CODEX SDK GENERATED FILES
