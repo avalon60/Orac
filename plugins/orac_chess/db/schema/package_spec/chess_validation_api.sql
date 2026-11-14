@@ -23,6 +23,8 @@ create or replace package orac_chess.chess_validation_api authid definer as
   -- Private validation operation; never granted to the APEX parsing schema.
   procedure validate_branch(p_parent clob,p_child clob,p_ply number,p_fen varchar2);
   -- Private validation operation; never granted to the APEX parsing schema.
+  procedure validate_continuation(p_parent clob,p_child clob,p_ply number,p_fen varchar2);
+  -- Private validation operation; never granted to the APEX parsing schema.
   procedure validate_variation_tree(p_id number);
   -- Private validation operation; never granted to the APEX parsing schema.
   procedure validate_image(p_content blob, p_mime varchar2, p_alt varchar2);

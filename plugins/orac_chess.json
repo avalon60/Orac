@@ -3,9 +3,11 @@
   "plugin_id": "orac_chess",
   "name": "Orac Chess",
   "description": "Controlled chess reference administration with a Universal Theme APEX application.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "enabled": false,
-  "capabilities": [],
+  "capabilities": [
+    "orac_chess.query"
+  ],
   "entitlements": [],
   "entities": [
     "opening",
@@ -31,7 +33,7 @@
         "schema_name": "orac_chess",
         "purpose": "Stores plugin-private chess reference and instructional data.",
         "managed_by": "orac",
-        "minimum_version": "0.2.0",
+        "minimum_version": "0.3.0",
         "version_check": {
           "enabled": false
         },
@@ -81,6 +83,117 @@
           "entry_page_id": 1,
           "install_required": true
         }
+      }
+    ]
+  },
+  "query_datasets": [
+    {
+      "version": 1,
+      "dataset_id": "orac_chess.reference",
+      "capability_id": "orac_chess.query",
+      "metadata_version": "3",
+      "views": {
+        "orac_chess.chess_query_opening_v": [
+          "opening_id",
+          "name",
+          "opening_type",
+          "parent_opening_id"
+        ],
+        "orac_chess.chess_query_opening_alias_v": [
+          "opening_alias_id",
+          "opening_id",
+          "alias_name"
+        ],
+        "orac_chess.chess_query_gambit_v": [
+          "gambit_id",
+          "name"
+        ],
+        "orac_chess.chess_query_opening_gambit_v": [
+          "opening_id",
+          "gambit_id"
+        ],
+        "orac_chess.chess_query_opening_eco_v": [
+          "opening_id",
+          "eco_code"
+        ],
+        "orac_chess.chess_query_gambit_eco_v": [
+          "gambit_id",
+          "eco_code"
+        ],
+        "orac_chess.chess_query_variation_eco_v": [
+          "variation_id",
+          "eco_code"
+        ],
+        "orac_chess.chess_query_eco_code_v": [
+          "eco_code",
+          "description"
+        ],
+        "orac_chess.chess_query_variation_v": [
+          "variation_id",
+          "opening_id",
+          "gambit_id",
+          "variation_type",
+          "parent_variation_id",
+          "branch_ply",
+          "name",
+          "line_kind"
+        ],
+        "orac_chess.chess_query_opening_text_v": [
+          "opening_id",
+          "name",
+          "description",
+          "description_truncated",
+          "strategy",
+          "strategy_truncated"
+        ],
+        "orac_chess.chess_query_gambit_text_v": [
+          "gambit_id",
+          "name",
+          "description",
+          "description_truncated",
+          "strategy",
+          "strategy_truncated"
+        ],
+        "orac_chess.chess_query_variation_line_v": [
+          "variation_id",
+          "opening_id",
+          "gambit_id",
+          "variation_type",
+          "parent_variation_id",
+          "branch_ply",
+          "name",
+          "line_kind",
+          "pgn",
+          "pgn_truncated",
+          "starting_fen"
+        ]
+      }
+    }
+  ],
+  "execution": {
+    "action_type": "informational_read_only",
+    "requires_confirmation": false,
+    "allowed_by_default": true,
+    "capabilities": [
+      "orac_chess.query"
+    ]
+  },
+  "routing": {
+    "capabilities": [
+      {
+        "id": "orac_chess.query",
+        "description": "Ask about Chess catalogue records and receive explanations with separately labelled general chess knowledge.",
+        "intents": [
+          {
+            "name": "query_reference",
+            "examples": [
+              "Which openings have the Smith-Morra gambit?",
+              "Find ECO codes for the Sicilian opening",
+              "List variations belonging to this opening",
+              "What is the Evans Gambit?"
+            ]
+          }
+        ]
       }
     ]
   }

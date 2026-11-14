@@ -7,6 +7,6 @@
 
 --changeset clive:orac_chess_admin_chess_gambit_v context:plugin,prod labels:plugin stripComments:false runOnChange:true
 create or replace view orac_chess.chess_gambit_v as
-select gambit_id, name, description, row_version
+select gambit_id, name, description, strategy, row_version
 from orac_chess.chess_gambit;
 --rollback drop view orac_chess.chess_gambit_v;

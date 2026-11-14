@@ -227,6 +227,13 @@ wwv_flow_imp_shared.create_list_item(
 ,p_list_item_link_target=>'f?p=&APP_ID.:110:&APP_SESSION.::&DEBUG.:::'
 ,p_list_item_current_type=>'TARGET_PAGE'
 );
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(88000000000120004)
+,p_list_item_display_sequence=>110
+,p_list_item_link_text=>'Query Chess'
+,p_list_item_link_target=>'f?p=&APP_ID.:120:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
 end;
 /
 prompt --application/shared_components/navigation/lists/navigation_bar
@@ -1417,35 +1424,6 @@ wwv_flow_imp_page.create_worksheet_rpt(
 ,p_is_default=>'Y'
 ,p_report_columns=>'OPENING_ID:NAME:OPENING_TYPE:PARENT_OPENING_ID:ECO_CODES'
 );
-wwv_flow_imp_page.create_page_plug(
- p_id=>wwv_flow_imp.id(33072953942781188)
-,p_plug_name=>'Hierarchy'
-,p_plug_template=>4072358936313175081
-,p_plug_display_sequence=>5
-,p_function_body_language=>'PLSQL'
-,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'declare',
-'  l_html clob := ''<ul class="t-LinksList">'';',
-'  l_count number := 0;',
-'begin',
-'  for r in (select opening_id id,name,level depth from orac_chess.chess_opening_v',
-'            where rownum<=2000 start with parent_opening_id is null',
-'            connect by nocycle prior opening_id=parent_opening_id order siblings by name)',
-'  loop',
-'    l_count:=l_count+1;',
-'    l_html:=l_html||''<li style="margin-left:''||to_char((r.depth-1)*2)||''rem"><a href="''||',
-'      apex_escape.html_attribute(apex_page.get_url(p_page=>11,p_items=>''P11_OPENING_ID'',p_values=>r.id))||''">''||',
-'      apex_escape.html(r.name)||''</a></li>'';',
-'  end loop;',
-'  if l_count=0 then l_html:=l_html||''<li>No saved records.</li>''; end if;',
-'  return l_html||''</ul><p>Tree preview is limited to 2,000 rows. Use the report to search all records.</p>'';',
-'end;'))
-,p_plug_source_type=>'NATIVE_DYNAMIC_CONTENT'
-,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'expand_shortcuts', 'N',
-  'output_as', 'HTML',
-  'show_line_breaks', 'Y')).to_clob
-);
 wwv_flow_imp_page.create_page_button(
  p_id=>wwv_flow_imp.id(27430604072874914)
 ,p_button_sequence=>10
@@ -1520,6 +1498,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_name=>'ECO Codes'
 ,p_plug_template=>4072358936313175081
 ,p_plug_display_sequence=>35
+,p_include_in_reg_disp_sel_yn=>'Y'
 ,p_function_body_language=>'PLSQL'
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
 'declare',
@@ -1544,11 +1523,26 @@ wwv_flow_imp_page.create_page_plug(
 );
 -- END GENERATED ECO DIRECT_11
 wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(97000000000000011)
+,p_plug_name=>'View'
+,p_region_template_options=>'#DEFAULT#:margin-bottom-md'
+,p_escape_on_http_output=>'Y'
+,p_plug_template=>4501440665235496320
+,p_plug_display_sequence=>5
+,p_plug_source_type=>'NATIVE_DISPLAY_SELECTOR'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'display_region_icons', 'N',
+  'include_show_all', 'N',
+  'rds_mode', 'STANDARD',
+  'remember_selection', 'N')).to_clob
+);
+wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(27430604072874915)
-,p_plug_name=>'Opening details'
+,p_plug_name=>'Opening Synopsis'
 ,p_region_template_options=>'#DEFAULT#'
 ,p_plug_template=>4072358936313175081
 ,p_plug_display_sequence=>10
+,p_include_in_reg_disp_sel_yn=>'Y'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'expand_shortcuts', 'N',
   'output_as', 'TEXT',
@@ -1601,8 +1595,9 @@ wwv_flow_imp_page.create_page_plug(
 ,p_region_template_options=>'#DEFAULT#'
 ,p_plug_template=>4072358936313175081
 ,p_plug_display_sequence=>53
+,p_include_in_reg_disp_sel_yn=>'Y'
 ,p_query_type=>'SQL'
-,p_plug_source=>'select gambit_id from orac_chess.chess_opening_gambit_v where opening_id=:P11_OPENING_ID'
+,p_plug_source=>'select g.gambit_id, g.name, coalesce(dbms_lob.substr(g.description, 240, 1), ''No description available.'') description from orac_chess.chess_opening_gambit_v m join orac_chess.chess_gambit_v g on g.gambit_id=m.gambit_id where m.opening_id=:P11_OPENING_ID order by g.name'
 ,p_plug_source_type=>'NATIVE_IR'
 );
 wwv_flow_imp_page.create_worksheet(
@@ -1623,8 +1618,31 @@ wwv_flow_imp_page.create_worksheet_column(
 ,p_db_column_name=>'GAMBIT_ID'
 ,p_display_order=>1
 ,p_column_identifier=>'A'
-,p_column_label=>'Gambit Id'
+,p_column_label=>'Gambit'
 ,p_column_type=>'NUMBER'
+,p_display_text_as=>'HIDDEN_ESCAPE_SC'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(97200000000001101)
+,p_db_column_name=>'NAME'
+,p_display_order=>2
+,p_column_identifier=>'B'
+,p_column_label=>'Gambit'
+,p_column_type=>'STRING'
+,p_column_link=>'f?p=&APP_ID.:22:&APP_SESSION.::&DEBUG.:22:P22_GAMBIT_ID:#GAMBIT_ID#'
+,p_column_linktext=>'#NAME#'
+,p_display_text_as=>'ESCAPE_SC'
+,p_use_as_row_header=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(97200000000001102)
+,p_db_column_name=>'DESCRIPTION'
+,p_display_order=>3
+,p_column_identifier=>'C'
+,p_column_label=>'Description'
+,p_column_type=>'STRING'
+,p_display_text_as=>'ESCAPE_SC'
 ,p_use_as_row_header=>'N'
 );
 wwv_flow_imp_page.create_worksheet_rpt(
@@ -1634,7 +1652,7 @@ wwv_flow_imp_page.create_worksheet_rpt(
 ,p_report_alias=>'50000000000100046'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'GAMBIT_ID'
+,p_report_columns=>'NAME:DESCRIPTION'
 );
 wwv_flow_imp_page.create_page_button(
  p_id=>wwv_flow_imp.id(27430604072874934)
@@ -1794,13 +1812,27 @@ wwv_flow_imp_page.create_page_item(
 ,p_item_template_options=>'#DEFAULT#'
 );
 wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(99400000000000011)
+,p_name=>'P11_STRATEGY'
+,p_data_type=>'CLOB'
+,p_item_sequence=>13
+,p_item_plug_id=>wwv_flow_imp.id(27430604072874915)
+,p_prompt=>'Strategy'
+,p_display_as=>'NATIVE_TEXTAREA'
+,p_cSize=>80
+,p_cHeight=>8
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_tag_attributes=>'style="margin-bottom:2rem"'
+);
+wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(27430604072874921)
 ,p_name=>'P11_PARENT_OPENING_ID'
-,p_item_sequence=>13
+,p_item_sequence=>14
 ,p_item_plug_id=>wwv_flow_imp.id(27430604072874915)
 ,p_prompt=>'Parent Opening Id'
 ,p_display_as=>'NATIVE_SELECT_LIST'
-,p_lov=>'select name d, opening_id r from orac_chess.chess_opening_v order by 1'
+,p_lov=>'select name d, opening_id r from orac_chess.chess_opening_v where opening_id not in (select opening_id from orac_chess.chess_opening_v start with opening_id = :P11_OPENING_ID connect by nocycle prior opening_id = parent_opening_id) order by 1'
 ,p_lov_display_null=>'YES'
 ,p_lov_null_text=>'- None -'
 ,p_field_template=>1609121967514267634
@@ -1827,7 +1859,8 @@ wwv_flow_imp_page.create_page_item(
 ,p_name=>'P11_LINK_GAMBIT_ID'
 ,p_item_sequence=>1
 ,p_item_plug_id=>wwv_flow_imp.id(27430604072874947)
-,p_prompt=>'Link Gambit Id'
+,p_prompt=>'Gambit'
+,p_help_text=>'Link associates the selected existing gambit with this opening. Unlink removes only that association; the gambit is retained.'
 ,p_display_as=>'NATIVE_SELECT_LIST'
 ,p_lov=>'select name d,gambit_id r from orac_chess.chess_gambit_v order by name'
 ,p_lov_display_null=>'YES'
@@ -2093,9 +2126,9 @@ wwv_flow_imp_page.create_page_process(
 '  l_version number;',
 'begin',
 '  if :P11_ECO_EDIT_REQUESTED = ''Y'' then',
-'    orac_chess.chess_admin_api.save_opening_with_eco(:P11_OPENING_ID, :P11_ROW_VERSION, :P11_NAME, :P11_OPENING_TYPE, :P11_DESCRIPTION, :P11_PARENT_OPENING_ID, :P11_LINK_ECO_CODE, l_version);',
+'    orac_chess.chess_admin_api.save_opening_with_eco(:P11_OPENING_ID, :P11_ROW_VERSION, :P11_NAME, :P11_OPENING_TYPE, :P11_DESCRIPTION, :P11_STRATEGY, :P11_PARENT_OPENING_ID, :P11_LINK_ECO_CODE, l_version);',
 '  else',
-'    orac_chess.chess_admin_api.save_opening(:P11_OPENING_ID, :P11_ROW_VERSION, :P11_NAME, :P11_OPENING_TYPE, :P11_DESCRIPTION, :P11_PARENT_OPENING_ID, l_version);',
+'    orac_chess.chess_admin_api.save_opening(:P11_OPENING_ID, :P11_ROW_VERSION, :P11_NAME, :P11_OPENING_TYPE, :P11_DESCRIPTION, :P11_STRATEGY, :P11_PARENT_OPENING_ID, l_version);',
 '  end if;',
 'end;'))
 ,p_process_clob_language=>'PLSQL'
@@ -2182,7 +2215,7 @@ wwv_flow_imp_page.create_page_process(
 '    :P11_LINK_ECO_CODE := null;',
 '  end if;',
 '  if :REQUEST is null and :P11_OPENING_ID is not null then',
-'    select name, opening_type, description, parent_opening_id, row_version into :P11_NAME, :P11_OPENING_TYPE, :P11_DESCRIPTION, :P11_PARENT_OPENING_ID, :P11_ROW_VERSION from orac_chess.chess_opening_v where opening_id=:P11_OPENING_ID;',
+'    select name, opening_type, description, strategy, parent_opening_id, row_version into :P11_NAME, :P11_OPENING_TYPE, :P11_DESCRIPTION, :P11_STRATEGY, :P11_PARENT_OPENING_ID, :P11_ROW_VERSION from orac_chess.chess_opening_v where opening_id=:P11_OPENING_ID;',
 '    select listagg(eco_code, '':'' ) within group (order by eco_code) into :P11_LINK_ECO_CODE from orac_chess.chess_opening_eco_v where opening_id=:P11_OPENING_ID;',
 '  end if;',
 'end;'))
@@ -2660,6 +2693,20 @@ wwv_flow_imp_page.create_page_item(
 ,p_item_template_options=>'#DEFAULT#'
 );
 wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(99400000000000021)
+,p_name=>'P21_STRATEGY'
+,p_data_type=>'CLOB'
+,p_item_sequence=>12
+,p_item_plug_id=>wwv_flow_imp.id(27430604072874963)
+,p_prompt=>'Strategy'
+,p_display_as=>'NATIVE_TEXTAREA'
+,p_cSize=>80
+,p_cHeight=>8
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_tag_attributes=>'style="margin-bottom:2rem"'
+);
+wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(33072953942681204)
 ,p_name=>'P21_LINK_OPENING_ID'
 ,p_item_sequence=>1
@@ -2929,9 +2976,9 @@ wwv_flow_imp_page.create_page_process(
 '  l_version number;',
 'begin',
 '  if :P21_ECO_EDIT_REQUESTED = ''Y'' then',
-'  orac_chess.chess_admin_api.save_gambit_with_eco(:P21_GAMBIT_ID,  :P21_ROW_VERSION, :P21_NAME, :P21_DESCRIPTION, :P21_ECO_CODES, l_version);',
+'  orac_chess.chess_admin_api.save_gambit_with_eco(:P21_GAMBIT_ID,  :P21_ROW_VERSION, :P21_NAME, :P21_DESCRIPTION, :P21_STRATEGY, :P21_ECO_CODES, l_version);',
 '  else',
-'  orac_chess.chess_admin_api.save_gambit(:P21_GAMBIT_ID,  :P21_ROW_VERSION, :P21_NAME, :P21_DESCRIPTION, l_version);',
+'  orac_chess.chess_admin_api.save_gambit(:P21_GAMBIT_ID,  :P21_ROW_VERSION, :P21_NAME, :P21_DESCRIPTION, :P21_STRATEGY, l_version);',
 '  end if;',
 'end;'))
 ,p_process_clob_language=>'PLSQL'
@@ -2992,7 +3039,7 @@ wwv_flow_imp_page.create_page_process(
 '    :P21_ECO_CODES := null;',
 '  end if;',
 '  if :REQUEST is null and :P21_GAMBIT_ID is not null then',
-'    select name, description, row_version into :P21_NAME, :P21_DESCRIPTION, :P21_ROW_VERSION from orac_chess.chess_gambit_v where gambit_id=:P21_GAMBIT_ID;',
+'    select name, description, strategy, row_version into :P21_NAME, :P21_DESCRIPTION, :P21_STRATEGY, :P21_ROW_VERSION from orac_chess.chess_gambit_v where gambit_id=:P21_GAMBIT_ID;',
 '    select listagg(eco_code, '':'' ) within group (order by eco_code) into :P21_ECO_CODES from orac_chess.chess_gambit_eco_v where gambit_id=:P21_GAMBIT_ID;',
 '  end if;',
 'end;'))
@@ -3079,6 +3126,84 @@ wwv_flow_imp_page.create_page_process(
 );
 end;
 /
+prompt --application/pages/page_00022
+begin
+wwv_flow_imp_page.create_page(
+ p_id=>22
+,p_name=>'Gambit Details'
+,p_page_mode=>'MODAL'
+,p_step_title=>'Gambit Details'
+,p_autocomplete_on_off=>'OFF'
+,p_step_template=>2100407606326202693
+,p_page_template_options=>'#DEFAULT#:js-dialog-class-t-Drawer--pullOutEnd'
+,p_dialog_chained=>'N'
+,p_dialog_resizable=>'Y'
+,p_required_role=>wwv_flow_imp.id(21969436581161538)
+,p_protection_level=>'C'
+,p_inline_css=>'.chess-gambit-text { white-space: pre-wrap; overflow-wrap: anywhere; }'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(97200000000002201)
+,p_plug_name=>'Gambit Details'
+,p_plug_template=>4501440665235496320
+,p_plug_display_sequence=>10
+,p_function_body_language=>'PLSQL'
+,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'declare',
+'  l_name varchar2(4000);',
+'  l_description clob;',
+'  l_strategy clob;',
+'  l_html clob;',
+'  function escaped_text(p_text clob, p_fallback varchar2) return clob is',
+'    l_result clob;',
+'    l_offset pls_integer := 1;',
+'  begin',
+'    if p_text is null then return to_clob(apex_escape.html(p_fallback)); end if;',
+'    while l_offset <= dbms_lob.getlength(p_text) loop',
+'      l_result := l_result || apex_escape.html(dbms_lob.substr(p_text, 1000, l_offset));',
+'      l_offset := l_offset + 1000;',
+'    end loop;',
+'    return l_result;',
+'  end;',
+'begin',
+'  begin',
+'    select name, description, strategy into l_name, l_description, l_strategy',
+'      from orac_chess.chess_gambit_v where gambit_id=:P22_GAMBIT_ID;',
+'  exception when no_data_found then',
+'    return to_clob(''<p>This gambit is no longer available. Close this drawer and refresh the opening.</p>'');',
+'  end;',
+'  l_html := to_clob(''<h2>'') || apex_escape.html(l_name) || ''</h2>'';',
+'  l_html := l_html || ''<h3>Description</h3><div class="chess-gambit-text">'' || escaped_text(l_description, ''No description available.'') || ''</div>'';',
+'  l_html := l_html || ''<h3>Strategy</h3><div class="chess-gambit-text">'' || escaped_text(l_strategy, ''No strategy available.'') || ''</div>'';',
+'  return l_html;',
+'end;'))
+,p_plug_source_type=>'NATIVE_DYNAMIC_CONTENT'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2('expand_shortcuts','N','output_as','HTML','show_line_breaks','N')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(97200000000002202)
+,p_name=>'P22_GAMBIT_ID'
+,p_item_sequence=>10
+,p_item_plug_id=>wwv_flow_imp.id(97200000000002201)
+,p_display_as=>'NATIVE_HIDDEN'
+,p_protection_level=>'S'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2('value_protected','Y')).to_clob
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(97200000000002203)
+,p_button_sequence=>10
+,p_button_plug_id=>wwv_flow_imp.id(97200000000002201)
+,p_button_name=>'CLOSE'
+,p_button_action=>'REDIRECT_URL'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_template_id=>4072362960822175091
+,p_button_image_alt=>'Close'
+,p_button_position=>'CLOSE'
+,p_button_execute_validations=>'N'
+,p_button_redirect_url=>'javascript:apex.navigation.dialog.cancel(true);'
+);
+end;
+/
 prompt --application/pages/page_00030
 begin
 wwv_flow_imp_page.create_page(
@@ -3091,11 +3216,26 @@ wwv_flow_imp_page.create_page(
 ,p_protection_level=>'C'
 );
 wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(97000000000000030)
+,p_plug_name=>'View'
+,p_region_template_options=>'#DEFAULT#:margin-bottom-md'
+,p_escape_on_http_output=>'Y'
+,p_plug_template=>4501440665235496320
+,p_plug_display_sequence=>5
+,p_plug_source_type=>'NATIVE_DISPLAY_SELECTOR'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'display_region_icons', 'N',
+  'include_show_all', 'N',
+  'rds_mode', 'STANDARD',
+  'remember_selection', 'N')).to_clob
+);
+wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(27430604072874975)
-,p_plug_name=>'Variations'
+,p_plug_name=>'Report'
 ,p_region_template_options=>'#DEFAULT#'
 ,p_plug_template=>4072358936313175081
 ,p_plug_display_sequence=>10
+,p_include_in_reg_disp_sel_yn=>'Y'
 ,p_query_type=>'SQL'
 ,p_plug_source=>'select v.variation_id, v.opening_id, v.gambit_id, v.parent_variation_id, v.branch_ply, v.name, v.line_kind, v.starting_fen, v.row_version, (select listagg(e.eco_code, '', '') within group (order by e.eco_code) from orac_chess.chess_variation_eco_v e where e.variation_id=v.variation_id) eco_codes from orac_chess.chess_variation_v v'
 ,p_plug_source_type=>'NATIVE_IR'
@@ -3217,9 +3357,10 @@ wwv_flow_imp_page.create_worksheet_rpt(
 );
 wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(33072953942781208)
-,p_plug_name=>'Hierarchy'
+,p_plug_name=>'Variations Hierarchy'
 ,p_plug_template=>4072358936313175081
-,p_plug_display_sequence=>5
+,p_plug_display_sequence=>20
+,p_include_in_reg_disp_sel_yn=>'Y'
 ,p_function_body_language=>'PLSQL'
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
 'declare',
@@ -3408,6 +3549,7 @@ wwv_flow_imp_page.create_page_item(
 ,p_field_template=>1609121967514267634
 ,p_item_template_options=>'#DEFAULT#:t-Form-fieldContainer--stretchInputs'
 ,p_lov_display_extra=>'NO'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2('case_sensitive','N','display_as','POPUP','fetch_on_search','N','initial_fetch','FIRST_ROWSET','manual_entry','N','match_type','CONTAINS','min_chars','0')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(27430604072874992)
@@ -3424,6 +3566,7 @@ wwv_flow_imp_page.create_page_item(
 ,p_field_template=>1609121967514267634
 ,p_item_template_options=>'#DEFAULT#:t-Form-fieldContainer--stretchInputs'
 ,p_lov_display_extra=>'NO'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2('case_sensitive','N','display_as','POPUP','fetch_on_search','N','initial_fetch','FIRST_ROWSET','manual_entry','N','match_type','CONTAINS','min_chars','0')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(27430604072874993)
@@ -3432,12 +3575,22 @@ wwv_flow_imp_page.create_page_item(
 ,p_item_plug_id=>wwv_flow_imp.id(27430604072874988)
 ,p_prompt=>'Parent Variation Id'
 ,p_display_as=>'NATIVE_DISPLAY_ONLY'
-,p_lov=>'select name d, variation_id r from orac_chess.chess_variation_v order by 1'
+,p_lov=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select v.name || '' ['' || v.line_kind || '']'' d, v.variation_id r',
+'from orac_chess.chess_variation_v v',
+'where ((:P31_OPENING_ID is not null and :P31_GAMBIT_ID is null and v.opening_id = :P31_OPENING_ID)',
+'    or (:P31_GAMBIT_ID is not null and :P31_OPENING_ID is null and v.gambit_id = :P31_GAMBIT_ID))',
+'  and (:P31_VARIATION_ID is null or v.variation_id <> :P31_VARIATION_ID)',
+'order by case when v.parent_variation_id is null then 0 else 1 end, v.name, v.variation_id'))
+,p_lov_cascade_parent_items=>'P31_OPENING_ID,P31_GAMBIT_ID'
+,p_ajax_items_to_submit=>'P31_OPENING_ID,P31_GAMBIT_ID,P31_VARIATION_ID'
+,p_help_text=>'Choose a parent from the selected opening or gambit. The current variation is excluded; Save validates cycles and complete move relationships.'
 ,p_lov_display_null=>'YES'
 ,p_lov_null_text=>'- None -'
 ,p_field_template=>1609121967514267634
 ,p_item_template_options=>'#DEFAULT#:t-Form-fieldContainer--stretchInputs'
 ,p_lov_display_extra=>'NO'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2('case_sensitive','N','display_as','POPUP','fetch_on_search','N','initial_fetch','FIRST_ROWSET','manual_entry','N','match_type','CONTAINS','min_chars','0')).to_clob
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(27430604072874994)
@@ -3470,8 +3623,9 @@ wwv_flow_imp_page.create_page_item(
 ,p_item_sequence=>15
 ,p_item_plug_id=>wwv_flow_imp.id(27430604072874988)
 ,p_prompt=>'Line Kind'
+,p_help_text=>'MAIN is a root line. ALTERNATIVE diverges before its parent ends. CONTINUATION extends the complete parent; Branch Ply equals the number of parent half-moves. Child lines inherit the root FEN.'
 ,p_display_as=>'NATIVE_DISPLAY_ONLY'
-,p_lov=>'STATIC:MAIN;MAIN,ALTERNATIVE;ALTERNATIVE'
+,p_lov=>'STATIC:MAIN;MAIN,ALTERNATIVE;ALTERNATIVE,CONTINUATION;CONTINUATION'
 ,p_lov_display_null=>'YES'
 ,p_lov_null_text=>'- None -'
 ,p_field_template=>1609121967514267634
@@ -7433,6 +7587,195 @@ wwv_flow_imp_page.create_page_process(
 ':P9999_REMEMBER := case when :P9999_USERNAME is not null then ''Y'' end;'))
 ,p_process_clob_language=>'PLSQL'
 ,p_internal_uid=>4260436848286744
+);
+end;
+/
+prompt --application/pages/page_00120
+begin
+wwv_flow_imp_page.create_page(
+ p_id=>120
+,p_name=>'Query Chess'
+,p_step_title=>'Query Chess'
+,p_warn_on_unsaved_changes=>'N'
+,p_autocomplete_on_off=>'OFF'
+,p_required_role=>wwv_flow_imp.id(21969436581161538)
+,p_protection_level=>'C'
+,p_inline_css=>'#P120_QUESTION {width:100%;resize:vertical;} #chess-query-results .chess-query-table {overflow-x:auto;max-width:100%;} #chess-query-results table {width:max-content;min-width:100%;} #chess-query-results th, #chess-query-results td {min-width:8rem;max-width:32rem;white-space:normal;overflow-wrap:anywhere;} #chess-query-results pre {white-space:pre-wrap;overflow-wrap:anywhere;} #chess-query-results details {margin-top:1rem;} #chess-query-status {min-height:1.5em;} #chess-query-results .chess-query-answer {white-space:pre-wrap;overflow-wrap:anywhere;} #chess-query-results summary {display:list-item;list-style:disclosure-closed inside;width:fit-content;cursor:pointer;color:var(--ut-link-text-color,inherit);text-decoration:underline;text-underline-offset:.2em;padding:.25rem .125rem;border-radius:.125rem;} #chess-query-results details[open]>summary {list-style-type:disclosure-open;} #chess-query-results summary:hover {text-decoration-thickness:2px;} #chess-query-results summary:focus-visible {outline:2px solid currentColor;outline-offset:3px;}'
+,p_javascript_code_onload=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'// Author: Clive Bostock',
+'// Date: 13-Nov-2026',
+'// Purpose: Submit and poll session-bound Chess queries with accessible, literal results.',
+'// Usage: Query Chess page 120 in existing application 10030.',
+'(function () {',
+'  const button = document.getElementById("chess-query-submit"), status = document.getElementById("chess-query-status"), output = document.getElementById("chess-query-output");',
+'  let busy = false, generation = 0;',
+'  function finish(message) { status.textContent = message; busy = false; button.disabled = false; output.setAttribute("aria-busy", "false"); }',
+'  function show(data) {',
+'    if (!data || typeof data !== "object") return false;',
+'    if (["clarification", "unsupported", "REFUSED"].includes(data.status)) { finish(typeof data.message === "string" ? data.message : "This question cannot be answered from the reference catalogue."); return true; }',
+'    if (!Array.isArray(data.columns) || !data.columns.every(value => typeof value === "string") || !Array.isArray(data.rows) || !data.rows.every(row => Array.isArray(row) && row.length === data.columns.length && row.every(value => value === null || ["string", "number", "boolean"].includes(typeof value)))) return false;',
+
+'    const general = (data.answer_status === "complete" || data.answer_status === "complete_clipped") && !data.general_knowledge_answer ? "No supplementary general chess knowledge was used." : data.general_knowledge_answer;',
+'    [["From the Chess catalogue", data.catalogue_answer], ["General chess knowledge", general]].forEach(function (section) {',
+'      if (typeof section[1] === "string" && section[1]) { const heading = document.createElement("h3"), text = document.createElement("p"); heading.textContent = section[0]; text.textContent = section[1]; text.className = "chess-query-answer"; output.append(heading); output.append(text); }',
+'    });',
+'    if (data.answer_status === "unavailable" || data.answer_status === "complete_clipped") { const note = document.createElement("p"); note.textContent = data.answer_status === "unavailable" ? "Explanation unavailable. The retrieved evidence is shown below." : "The explanation uses a limited portion of the retrieved evidence."; output.append(note); }',
+'    const count = data.rows.length;',
+'    finish(data.truncated ? "Results truncated at the safety limit." : count ? "" : "No matching reference records found.");',
+
+'    const records = document.createElement("details"), recordsSummary = document.createElement("summary");',
+'    recordsSummary.textContent = "Supporting records (" + count + ")"; records.append(recordsSummary);',
+'    const hasAnswer = [data.catalogue_answer, data.general_knowledge_answer].some(value => typeof value === "string" && value.trim());',
+'    records.open = data.answer_status === "unavailable" || !hasAnswer;',
+'    if (count) {',
+'      const wrapper = document.createElement("div"); wrapper.className = "chess-query-table"; wrapper.setAttribute("tabindex", "0"); wrapper.setAttribute("role", "region"); wrapper.setAttribute("aria-label", "Supporting records table");',
+'      const table = document.createElement("table"); table.className = "t-Report-report";',
+'      const caption = document.createElement("caption"); caption.textContent = "Chess reference results"; table.append(caption);',
+'      const head = document.createElement("thead"), tr = document.createElement("tr");',
+'      data.columns.forEach(function (value) { const cell = document.createElement("th"); cell.className = "t-Report-colHead"; cell.setAttribute("scope", "col"); cell.textContent = value; tr.append(cell); }); head.append(tr); table.append(head);',
+'      const body = document.createElement("tbody"); data.rows.forEach(function (row) { const line = document.createElement("tr"); row.forEach(function (value) { const cell = document.createElement("td"); cell.className = "t-Report-cell"; cell.textContent = value === null ? "" : String(value); line.append(cell); }); body.append(line); }); table.append(body); wrapper.append(table); records.append(wrapper);',
+'    }',
+
+'    else { const empty = document.createElement("p"); empty.textContent = "No matching reference records found."; records.append(empty); }',
+'    output.append(records);',
+'    if (typeof data.sql === "string" && data.sql) { const details = document.createElement("details"), summary = document.createElement("summary"), sql = document.createElement("pre"); summary.textContent = "View query SQL"; sql.textContent = data.sql; details.append(summary); details.append(sql); output.append(details); }',
+'    return true;',
+'  }',
+'  button.addEventListener("click", function () {',
+'    if (busy) return;',
+'    const question = String(apex.item("P120_QUESTION").getValue()).trim();',
+'    output.replaceChildren();',
+'    if (!question) { finish("Enter a question about the Chess reference catalogue."); apex.item("P120_QUESTION").setFocus(); return; }',
+'    busy = true; const token = ++generation; button.disabled = true; output.setAttribute("aria-busy", "true"); status.textContent = "Submitting your question...";',
+'    const current = () => busy && token === generation;',
+'    const startError = () => { if (current()) finish("The query could not be started. Reload the page and sign in if prompted before trying again. If this continues, ask an administrator to check the query service."); };',
+'    const readError = () => { if (current()) finish("The query status could not be retrieved. Reload the page and sign in if prompted before trying again. If this continues, ask an administrator to check the query service."); };',
+'    apex.server.process("CHESS_QUERY_SUBMIT", {x01:question}, {dataType:"json", success:function (data) {',
+'      if (!current()) return;',
+'      if (!data || !/^[0-9]{1,18}$/.test(String(data.requestId || ""))) { startError(); return; }',
+'      const requestId = String(data.requestId); let attempts = 0, retries = 0;',
+'      function readFailure(xhr, textStatus) {',
+'        if (!current()) return;',
+'        const code = xhr && Number.isFinite(xhr.status) ? xhr.status : null;',
+'        if (code === 401 || code === 403) { finish("Sign-in or access could not be verified. Reload the page and sign in if prompted. If this continues, ask an administrator to check your access."); return; }',
+'        const kind = typeof textStatus === "string" ? textStatus.toLowerCase() : "";',
+'        if (kind === "apex" || kind === "parsererror") { finish("The query response could not be read. Reload the page and sign in if prompted. If this continues, ask an administrator to check the query service."); return; }',
+'        const excluded = ["abort", "cancel", "canceled", "cancelled", "superseded"].includes(kind);',
+'        const transient = code !== null && ["error", "timeout"].includes(kind) && !excluded && ([408, 502, 503, 504].includes(code) || (code === 0 && kind === "error") || kind === "timeout");',
+'        if (transient && retries < 2 && attempts < 100) {',
+'          retries += 1; status.textContent = "Connection interrupted. Retrying query status...";',
+'          window.setTimeout(function () { if (current()) poll(); }, retries * 2000);',
+'          return;',
+'        }',
+'        readError();',
+'      }',
+'      function poll() {',
+'        if (!current()) return;',
+'        if (++attempts > 100) { finish("Your query is still pending. Submit again later."); return; }',
+'        apex.server.process("CHESS_QUERY_READ", {x01:requestId}, {dataType:"json", success:function (reply) {',
+'          if (!current()) return;',
+'          if (!reply || typeof reply !== "object") { readError(); return; }',
+'          if (reply.status === "QUEUED" || reply.status === "PROCESSING") { status.textContent = reply.status === "QUEUED" ? "Your query is queued..." : "Searching the reference catalogue..."; window.setTimeout(poll, 2000); }',
+'          else if (reply.status === "FAILED") finish("The query could not be completed. Try again later.");',
+'          else if (reply.status === "EXPIRED") finish("This query has expired. Submit your question again.");',
+'          else if (reply.status !== "COMPLETED" || !show(reply.result)) readError();',
+'        },error:readFailure});',
+'      }',
+'      poll();',
+'    },error:startError});',
+'  });',
+'}());'))
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(88000000000120001)
+,p_plug_name=>'Ask the reference catalogue'
+,p_region_template_options=>'#DEFAULT#'
+,p_plug_template=>4072358936313175081
+,p_plug_display_sequence=>10
+,p_plug_display_point=>'BODY'
+,p_plug_source_type=>'NATIVE_STATIC'
+,p_plug_source=>'<p>Explore explicit relationships between openings, gambits, variations and ECO codes in the verified reference catalogue.</p><p>For example: Which openings share the same gambit?</p>'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2('expand_shortcuts','N','output_as','HTML','show_line_breaks','N')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(88000000000120004)
+,p_name=>'P120_QUESTION'
+,p_item_sequence=>10
+,p_item_plug_id=>wwv_flow_imp.id(88000000000120001)
+,p_prompt=>'Your question'
+,p_display_as=>'NATIVE_TEXTAREA'
+,p_cSize=>80
+,p_cMaxlength=>2048
+,p_cHeight=>4
+,p_field_template=>1609121967514267634
+,p_item_template_options=>'#DEFAULT#'
+,p_colspan=>12
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(88000000000120005)
+,p_button_sequence=>20
+,p_button_plug_id=>wwv_flow_imp.id(88000000000120001)
+,p_button_name=>'ASK_CHESS'
+,p_button_action=>'DEFINED_BY_DA'
+,p_button_template_id=>4072362960822175091
+,p_button_is_hot=>'Y'
+,p_button_image_alt=>'Ask Chess'
+,p_button_position=>'NEXT'
+,p_button_static_id=>'chess-query-submit'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(88000000000120006)
+,p_plug_name=>'Results'
+,p_region_name=>'chess-query-results'
+,p_region_template_options=>'#DEFAULT#'
+,p_plug_template=>4072358936313175081
+,p_plug_display_sequence=>20
+,p_plug_display_point=>'BODY'
+,p_plug_source_type=>'NATIVE_STATIC'
+,p_plug_source=>'<p id="chess-query-status" role="status" aria-live="polite" aria-atomic="true">Enter a question to search the reference catalogue.</p><div id="chess-query-output" aria-busy="false"></div>'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2('expand_shortcuts','N','output_as','HTML','show_line_breaks','N')).to_clob
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(88000000000120002)
+,p_process_sequence=>20
+,p_process_point=>'ON_DEMAND'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'CHESS_QUERY_SUBMIT'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'declare',
+'  l_request number;',
+'begin',
+'  if not apex_authorization.is_authorized(''Administration Rights'') then',
+'    raise_application_error(-20814,''QUERY_UNAVAILABLE'');',
+'  end if;',
+'  orac_code.relational_query_api.submit_query(''orac_chess.reference'',apex_application.g_x01,l_request);',
+'  apex_json.open_object;',
+'  apex_json.write(''requestId'',l_request);',
+'  apex_json.close_object;',
+'end;'))
+,p_process_clob_language=>'PLSQL'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(88000000000120003)
+,p_process_sequence=>30
+,p_process_point=>'ON_DEMAND'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'CHESS_QUERY_READ'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'declare',
+'  l_status varchar2(20 char);',
+'  l_result clob;',
+'begin',
+'  if not apex_authorization.is_authorized(''Administration Rights'') or not regexp_like(apex_application.g_x01,''^[0-9]{1,18}$'') then',
+'    raise_application_error(-20814,''QUERY_UNAVAILABLE'');',
+'  end if;',
+'  orac_code.relational_query_api.read_query(to_number(apex_application.g_x01),l_status,l_result);',
+'  apex_json.open_object;',
+'  apex_json.write(''status'',l_status);',
+'  if l_result is not null then apex_json.write_raw(''result'',l_result); end if;',
+'  apex_json.close_object;',
+'end;'))
+,p_process_clob_language=>'PLSQL'
 );
 end;
 /

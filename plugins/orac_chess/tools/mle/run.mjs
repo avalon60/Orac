@@ -6,7 +6,7 @@
  */
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
-import {validate, branch, header} from './validator.mjs';
+import {validate, branch, continuation, header} from './validator.mjs';
 if (process.argv.includes('--help')) {
   console.log('Usage: node plugins/orac_chess/tools/mle/run.mjs');
   process.exit(0);
@@ -14,7 +14,7 @@ if (process.argv.includes('--help')) {
 assert.equal(process.argv.length, 2, 'Unexpected argument');
 const cases = JSON.parse(fs.readFileSync(new URL('./corpus.json', import.meta.url)));
 for (const c of cases) {
-  const error = c.op === 'branch' ? branch(c.parent,c.child,c.ply,c.fen) : validate(c.pgn,c.single,c.fen);
+  const error = c.op === 'continuation' ? continuation(c.parent,c.child,c.ply,c.fen) : c.op === 'branch' ? branch(c.parent,c.child,c.ply,c.fen) : validate(c.pgn,c.single,c.fen);
   assert.equal(error === null,c.valid,`${c.name}: ${error}`);
 }
 assert.equal(header('[Event "hello"] 1.e4 *','Event'),'hello');

@@ -60,6 +60,10 @@ create or replace package body orac_chess.chess_validation_api as
   begin
     raise_application_error(-20020,'Chess PGN maintenance is unavailable: runtime withdrawn.');
   end;
+  procedure validate_continuation(p_parent clob,p_child clob,p_ply number,p_fen varchar2) is
+  begin
+    raise_application_error(-20020,'Chess PGN maintenance is unavailable: runtime withdrawn.');
+  end;
   procedure validate_variation_tree(p_id number) is
   begin
     raise_application_error(-20020,'Chess PGN maintenance is unavailable: runtime withdrawn.');

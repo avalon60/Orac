@@ -4,7 +4,7 @@
  * Purpose: Expose fixed validation operations without diagnostic JSON dispatch.
  * Usage: Private CHESS_MLE_* call specifications in the PURE Chess environment.
  */
-import {validate, branch, header} from 'orac-chess-policy';
+import {validate, branch, continuation, header} from 'orac-chess-policy';
 
 function text(input) {
   if (input === null) return null;
@@ -16,6 +16,9 @@ export function validatePgn(input, single, fen) {
 }
 export function validateBranch(parent, child, ply, fen) {
   return branch(text(parent), text(child), ply, fen);
+}
+export function validateContinuation(parent, child, ply, fen) {
+  return continuation(text(parent), text(child), ply, fen);
 }
 export function pgnHeader(input, name) {
   return header(text(input), name);

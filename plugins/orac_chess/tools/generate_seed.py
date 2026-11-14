@@ -1,7 +1,7 @@
 """Validate immutable Chess CSV batches and generate packaged Liquibase SQL."""
 
 # Author: Clive Bostock
-# Date: 07-Nov-2026
+# Date: 10-Nov-2026
 # Description: Generate deterministic API-only catalogue bootstrap batches.
 # Purpose: Package validated CSV data without install-time filesystem or network dependencies.
 # Usage: python3 plugins/orac_chess/tools/generate_seed.py --check
@@ -17,6 +17,9 @@ from pathlib import Path
 import re
 import sys
 from urllib.parse import parse_qs, urlsplit
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools.seed_branches import load_variations  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -341,7 +344,10 @@ def load_batch(batch: Path) -> dict[str, object]:
                 "gambit_names": names(row, "Gambit Names"),
             }
         )
-    return {"openings": openings, "gambits": gambits, "videos": videos}
+    result = {"openings": openings, "gambits": gambits, "videos": videos}
+    if (batch / "variations.csv").exists():
+        result["variations"] = load_variations(batch, openings, gambits, read_csv)
+    return result
 
 
 def is_eco_aware(batch: Path) -> bool:
@@ -351,7 +357,8 @@ def is_eco_aware(batch: Path) -> bool:
             return set(next(csv.reader(stream), []))
 
     return bool(
-        headers(batch / "gambits.csv") & {"eco_codes", "mainline_eco_codes"}
+        (batch / "variations.csv").exists()
+        or headers(batch / "gambits.csv") & {"eco_codes", "mainline_eco_codes"}
         or "mainline_eco_codes" in headers(batch / "openings.csv")
     )
 
@@ -369,6 +376,8 @@ def generate(batch: Path) -> str:
         for i in range(0, len(data), 400)
     )
     template_name = "seed_runtime_eco.sql" if eco_aware else "seed_runtime.sql"
+    if (batch / "variations.csv").exists():
+        template_name = "seed_runtime_branches.sql"
     template = (ROOT / "tools" / template_name).read_text(encoding="utf-8")
     return template.replace("@BATCH@", batch.name).replace(
         "-- @PAYLOAD@", assignments.rstrip()

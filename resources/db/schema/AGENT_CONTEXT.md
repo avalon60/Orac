@@ -222,6 +222,7 @@ Active plugin-owned database domains are:
 |---|---|---|---|---|
 | `home_assistant` | `orac_ha` | `plugins/home_assistant.json` | `plugins/home_assistant/db/liquibase/pluginController.xml` | Home Assistant plugin-private integration state and APIs. |
 | `drop_box` | `orac_dropbox` | `plugins/drop_box.json` | `plugins/drop_box/db/liquibase/pluginController.xml` | Drop Box plugin-private configuration, ingestion jobs, and audit data. |
+| `orac_chess` | `orac_chess` | `plugins/orac_chess.json` | `plugins/orac_chess/db/liquibase/pluginController.xml` | Chess plugin-private relational reference and instructional data. |
 
 The Core-owned plugin deployment runner reads the declared schema and
 controller from the plugin package. Plugin deployment uses contexts
@@ -232,9 +233,20 @@ Plugin controllers own their ordered object-type includes. Plugin-private
 schemas expose only approved entrypoints to `orac_plugin` and approved APEX
 surfaces to `orac_apx_pub`; they do not receive direct access to `orac_core`.
 
+The `orac_chess` domain uses object namespace `chess` under
+`plugins/orac_chess/db/schema/`, owned solely by `ORAC_CHESS`. Its production
+controller is `plugins/orac_chess/db/liquibase/pluginController.xml`; the
+Core-owned plugin runner provisions the owner before applying it. This release
+has no separate consumer/access or support schema, incoming bridge dependency,
+or non-production controller. Approved maintenance views/APIs serve ORAC_APX_PUB
+and application 10030. The separate query projection views grant only READ to
+ORAC_PLUGIN through plugin controller 16; their Core live review gate ships
+unverified. The schema owner is initially locked by provisioning and opened by
+the host deployment runner.
+
 ## Explicitly Out Of Normal Scope
 
-`orac_ha` and `orac_dropbox` are active plugin-owned schemas. Do not include
+`orac_ha`, `orac_dropbox`, and `orac_chess` are active plugin-owned schemas. Do not include
 them in core Orac database work, grant changes, or topology changes unless the
 task explicitly covers the owning plugin or its approved bridge.
 

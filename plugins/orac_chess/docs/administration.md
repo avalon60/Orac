@@ -23,6 +23,16 @@ on 08-Nov-2026. Never import into an unrelated application ID.
 | 110 / 111 | Content Sources | Creator / publisher, author and notes |
 | 9999 | Login | Existing Oracle APEX Accounts |
 
+The Opening detail page uses **View** to switch between **Opening Synopsis**,
+**ECO Codes** and **Opening Gambit**. Opening Synopsis is selected when the
+page opens; the selector does not remember the previous selection.
+
+On the Variations collection page, use the native region display selector to
+choose **Report** or **Variations Hierarchy**. Report is ordered first and the
+selector does not remember the previous selection, so the interactive report is
+the intended default when opening the page. Hierarchy links open the existing
+Variation detail dialog.
+
 Collection pages use interactive reports. In the Videos report, clicking a video
 title opens its video URL in a new tab. Associations are edited inside detail
 pages, rather than exposed as top-level collections. Cancel navigates away without
@@ -131,14 +141,40 @@ Runtime exceptions fail closed with `-20020`; invalid PGN uses `-20021` and
 invalid branch relationships use `-20025`. Public save operations use the existing
 private TAPI savepoint, locks and optimistic version checks.
 
-A child stores the complete line, with the same root initial position and same
-normalised prefix through `branch_ply` shared half-moves. Both lines need a next
-half-move and those moves must differ. Identical lines and pure extensions are
-rejected. Child FEN is null; a nonstandard root FEN must appear in every PGN
-with matching SetUp `1`. Whole-tree validation resolves the true root, rejects
-cycles/rootless ancestry and checks every descendant against its immediate parent.
-Parent changes that invalidate any descendant roll back atomically. Ordinary
-variation maintenance cannot change ownership.
+A root uses `MAIN`. An `ALTERNATIVE` child stores the complete line, with the
+same root initial position and normalised prefix through `branch_ply` shared
+half-moves. Both lines need a next half-move and those moves must differ;
+identical lines and pure extensions remain invalid alternatives.
+
+A `CONTINUATION` child instead extends its complete parent by at least one legal
+move. Its `branch_ply` equals the parent's half-move count, and every parent UCI
+move and intermediate position must match the child's prefix. Equal, shorter or
+different-prefix lines are rejected. This additive line kind does not change
+`MAIN` or `ALTERNATIVE` semantics or public writer signatures.
+
+Both child kinds inherit the same owner and root initial position. Child FEN is
+null; a nonstandard root FEN must appear in every PGN with matching SetUp `1`.
+Existing-node updates use whole-tree validation to resolve the true root, reject
+cycles/rootless ancestry and validate every descendant according to its own line
+kind. New inserts still validate the complete PGN, immediate parent edge, owner,
+cycle prevention and inherited root FEN under the aggregate lock. The newly
+allocated primary key cannot already have descendants under the immediate
+composite parent foreign keys, so inserting that leaf does not rescan unchanged
+siblings. Updates retain full descendant validation. Parent changes
+that invalidate any retained descendant roll back atomically. Ordinary variation
+maintenance cannot change ownership. Runtime withdrawal fails both edge kinds
+closed. The structural migration widens the check before retiring the old narrow
+check; rollback retains additive support so valid continuation data is not
+stranded. No production tree-depth limit is introduced. The original curated CSV
+batch's two-edge packaging rule remains unchanged.
+
+Variation owner and parent choices use native searchable popup LOVs with the
+first server-fetched rowset, rather than rendering every catalogue record as a
+select option. Parent choices are scoped to the selected opening or gambit,
+exclude the edited variation, and show line kind. Owner changes refresh the
+parent choices; existing variation ownership remains read-only. Backend cycle,
+owner and complete-move validation remains authoritative. Recovery displays the
+three fields as read-only values.
 
 Pages 30/31 and 60/61 provide create, edit, save, cancel and conditional,
 confirmation-protected delete. Variation edits use the existing modal, close it
@@ -332,3 +368,25 @@ isolated environment and have not been run as part of the source change.
 marked editor and disclosure components match their shared templates. After a
 source change, regenerate those fragments and then regenerate the read-only
 recovery export with `tools/generate_mle_recovery.py`.
+
+## Strategy
+
+Opening page 11 and Gambit page 21 have a separate **Strategy** textarea after
+Description. Save writes the full strategy; clearing the field explicitly clears
+it. Description retains its existing concise reference purpose. Legacy API
+callers retain their signatures and preserve strategy on update. New overloads
+accept `p_strategy` immediately after `p_description`; explicit null clears.
+All operations retain optimistic locking and the caller-owned transaction.
+
+### Gambits linked to an opening
+
+On an Opening, select **Opening Gambit** to see each linked gambit's name and a
+short description (up to 240 characters). Internal identifiers are hidden. Select
+a gambit name to open the read-only **Gambit Details** drawer with its full
+Description and Strategy. **Close** returns to the same opening without saving
+or submitting its form. Missing descriptions and strategies have explanatory
+fallback text; an unavailable gambit has a friendly message.
+
+The **Gambit** selector chooses an existing gambit. **Link** associates it with
+the opening; **Unlink** removes that association and retains the gambit. The
+separate Gambit maintenance page retains its existing editing workflow.

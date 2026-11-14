@@ -94,6 +94,22 @@ create or replace package body orac_chess.chess_validation_api as
       raise_application_error(-20025,l_error);
     end if;
   end validate_branch;
+  procedure validate_continuation(p_parent clob,p_child clob,p_ply number,p_fen varchar2) is
+    l_error varchar2(700);
+  begin
+    validate_pgn(p_parent,true,p_fen);
+    validate_pgn(p_child,true,p_fen);
+    begin
+      l_error := chess_mle_continuation(p_parent,p_child,p_ply,p_fen);
+    exception
+      when others then
+        raise_application_error(-20020,'Chess validation runtime is unavailable.');
+    end;
+    if l_error is not null
+    then
+      raise_application_error(-20025,l_error);
+    end if;
+  end validate_continuation;
   procedure validate_variation_tree(p_id number) is
     type visited_type is table of boolean index by varchar2(40);
     l_visited visited_type;
@@ -140,7 +156,12 @@ create or replace package body orac_chess.chess_validation_api as
         end if;
         select * into l_parent from chess_variation
         where variation_id=l_node.parent_variation_id;
-        validate_branch(l_parent.pgn,l_node.pgn,l_node.branch_ply,l_root.starting_fen);
+        if l_node.line_kind = 'CONTINUATION'
+        then
+          validate_continuation(l_parent.pgn,l_node.pgn,l_node.branch_ply,l_root.starting_fen);
+        else
+          validate_branch(l_parent.pgn,l_node.pgn,l_node.branch_ply,l_root.starting_fen);
+        end if;
       end if;
     end loop;
   exception

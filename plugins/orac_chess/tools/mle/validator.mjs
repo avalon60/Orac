@@ -127,5 +127,17 @@ export function branch(parent, child, ply, fen = null) {
   } catch (error) { return String(error?.message || 'Invalid PGN/FEN').slice(0,700); }
 }
 
+/** Validate an exact complete-parent prefix followed by at least one legal move. */
+export function continuation(parent, child, ply, fen = null) {
+  try {
+    const p = parse(parent,1,fen), c = parse(child,1,fen);
+    need(Number.isInteger(ply) && ply === p.moves.length, 'Continuation ply must equal parent length');
+    need(c.moves.length > p.moves.length, 'Continuation must extend the complete parent');
+    need(p.moves.join(',') === c.moves.slice(0,ply).join(',') &&
+      p.positions.every((position,index) => position === c.positions[index]), 'Continuation prefix differs');
+    return null;
+  } catch (error) { return String(error?.message || 'Invalid PGN/FEN').slice(0,700); }
+}
+
 /** Extract a header only after full validation, matching the Java policy. */
 export function header(text, name) { return parse(text).tags[name] ?? null; }

@@ -3,6 +3,49 @@
 The current DEV identity is application **10030**. Earlier deployment records
 below, including the first 08-Nov-2026 layout import, describe historical states.
 
+## Opening detail selector — 13-Nov-2026
+
+Both packaged exports rename the detail region to **Opening Synopsis** and add
+one native **View** selector for Opening Synopsis, ECO Codes and Opening Gambit.
+Opening Synopsis has the first display sequence; Show All and remembered
+selection are disabled. Existing form items, save/delete/cancel actions and
+gambit link/unlink controls retain their region connections.
+
+Local verification: 46 focused Opening/Variation selector, administration, ECO
+and APEX callback tests passed. ECO and recovery generator checks and scoped
+`git diff --check` passed. Only the page 11 disclosure gains selector membership
+through the shared ECO template. No database or APEX import was performed.
+Authenticated desktop and narrow-screen verification remains pending after an
+authorised import: check the default tab, switch all three views, confirm ECO
+disclosure and gambit report actions, and save an Opening edit.
+
+## Parent opening dropdown — 10-Nov-2026
+
+DEV application 10030, page 11 now excludes the current opening and all its
+descendants from `P11_PARENT_OPENING_ID`. Valid ancestors and unrelated openings
+remain selectable; a new opening lists all openings and `- None -` remains.
+Both packaged exports carry the same filter. The live page was exported before
+importing a copy with only this LOV changed; unrelated pending repository changes
+were not deployed. Backup: `/tmp/chess-parent-lov-20261110/opening-page-before.sql`.
+
+Host SQLcl verified SYSTEM / FREEPDB1 and the ORAC workspace, ORAC_APX_PUB owner
+and ORAC_CHESS_ADMIN alias before import. Installed metadata matches the filter.
+Read-only Oracle fixtures against the installed SQL passed self/descendant,
+valid-parent and null-ID cases. All 26 administration tests passed. Refreshing
+the authenticated Vienna Game form confirmed its own name disappeared from the
+parent dropdown, leaving `- None -` for the current catalogue.
+
+## Governed reference query source — 08-Nov-2026
+
+Version 0.3.0 adds disabled query source assets, narrow projections and READ grants,
+a shared Core service and Query Chess page 120. Read-only DEV inspection used
+CSV environment `dev` / connection `orac`; the verified session was ORAC in
+FREEPDB1, current schema ORAC. No CHESS_QUERY objects were visible. Live contents,
+provenance/classification, effective executor grants/dependencies, Oracle fresh
+install/upgrade/rollback and authenticated APEX workflows remain unverified.
+No schema/application deployment or enablement was performed. See
+[reference querying](reference-query.md) and the [Core release gate](../../../docs/relational-query.md).
+
 ## Application ID correction and app 100 purge — 08-Nov-2026
 
 The user explicitly authorised removal of application 100 and installation of
@@ -575,3 +618,727 @@ source protection has not been imported or checked in the live browser. Required
 acceptance remains: link an existing video, Save and reopen each subject type;
 repeat with immediate Save during a delayed request and verify the association
 from a subsequent request, including rendered desktop and narrow layouts.
+
+Authenticated browser acceptance completed on 08-Nov-2026 in a separate Chrome
+verification tab. On Gambit 124 (Queen's Gambit) and Opening 83 (Vienna Game),
+`iCeLaNdIc` showed exactly three matching available videos. A nonmatching query
+hid every available choice while the existing linked video stayed visible.
+Clearing restored all 43 available choices on each page. Browser error logs were
+empty after the checks. Desktop rendering of the filtered Opening region was
+visually inspected. No records or video associations were changed. Narrow-screen
+layout and live dialog/association refresh were not exercised; replacement-row
+filtering remains covered by the executable regression.
+
+## Starter catalogue repository checks — 10 November 2026
+
+The immutable `2026_11_10_starter_catalogue` batch supplies 50 openings/systems,
+40 gambits, 90 root mainlines and 100 additional named branches. The generator
+validates complete initial-position PGN with bundled chess.js, reference ECO
+codes, topological ownership, genuine divergence and a maximum of two parent
+edges. Original released SQL and both previous runtime templates remain byte
+identical. Source-level checks verify the bundled TSV hashes and every selected
+source record against the per-entry provenance manifest.
+
+The focused seed, starter-catalogue, ECO, administration and validator checks are covered
+by `tests/test_orac_chess_seed.py`, `tests/test_orac_chess_starter_catalogue.py`,
+`tests/test_orac_chess_eco.py`, `tests/test_orac_chess_administration.py` and
+`tests/test_orac_chess_validator.py`.
+The initial focused run passed 103 tests; after the terminal-result correction
+the same focused suites passed 106 tests.
+`tools/generate_seed.py --check` verifies both packaged batches and controller
+registration. In a combined run including the schema suite, 110 tests passed
+and two existing manifest assertions failed because the working tree already
+declares `orac_chess.query`; those assertions still expect no capabilities.
+This catalogue change does not modify that manifest or those assertions.
+
+The authorised isolated-target acceptance route is documented in
+`bootstrap-seeds.md`, with an executable replay/edit/history check at
+`db/acceptance/verify_starter_catalogue.sql`. Fresh installation, direct replay,
+edited-parent/conflict handling, rollback and browser/consumer acceptance remain
+unverified. The managed DEV deployment evidence below covers the existing
+installation only.
+
+
+The first authorised DEV reinstall attempt exposed a packaging defect: source
+move sequences lacked the terminal PGN result required by the database
+validator. Before any successful history entry, the undeployed starter batch
+was corrected to append `*` to all 190 instructional lines. Source PGN remains
+verbatim in provenance; `packaged_pgn` records the complete input. Offline
+validation now uses the bundled production PGN policy adapter (backed by
+chess.js), with regression coverage rejecting missing terminal results in
+opening roots, gambit roots and branches. This correction does not alter the
+released bootstrap batch or either historical runtime template.
+
+
+## Starter catalogue DEV deployment — 10 November 2026
+
+Two consecutive managed `bin/orac-plugin.sh install --bundled orac_chess` runs
+succeeded against DEV `FREEPDB1`; plugin version `0.3.0` passed readiness.
+Post-install metadata showed 50 openings, 40 gambits, 190 variations and the
+original 44 videos. The starter changeset has one `EXECUTED` history row;
+there were zero orphan variations and zero invalid `ORAC_CHESS` objects.
+APEX application `10030` was present. The second managed run succeeded without
+replaying the recorded starter changeset. The successfully installed starter
+SQL has not been changed since that deployment.
+
+The import also required a narrow correction to the existing page 120 query
+callbacks: `CHESS_QUERY_SUBMIT` and `CHESS_QUERY_READ` now use `ON_DEMAND` in
+both canonical and recovery exports. The live APEX 24.2 process-point constraint
+accepts `ON_DEMAND` and does not accept `AJAX_CALLBACK`. Callback, administration
+and ECO regressions passed 38 tests; query logic and authorisation are unchanged.
+
+A separate installed-source check, `verify_apex_sources`, still fails for page
+120 `CHESS_QUERY_SUBMIT` with `PLS-00201: ORAC_CODE.RELATIONAL_QUERY_API must be
+declared`. The separate Core query feature is not deployed or lacks the needed
+grant in this target. The successful managed install/readiness result does not
+establish that this query page works. Core query deployment or grant correction
+is outside the starter catalogue change and was not performed here.
+
+These managed reinstalls do not establish isolated fresh-install, direct replay,
+user-edit/conflict, rollback or rendered browser acceptance. Those checks remain
+unverified, including end-to-end APEX/query consumer behaviour.
+
+### Variations view selector — 10-Nov-2026
+
+Managed installation of Chess 0.3.0 succeeded and passed readiness checks in
+DEV FREEPDB1, application 10030. Installed page 30 metadata confirms the native
+View selector at sequence 5, Report at 10 and Variations Hierarchy at 20.
+Authenticated desktop browser verification confirmed Report is selected after
+page load and reload, switching to Variations Hierarchy hides the report, and
+switching back restores the interactive report. No Show All tab is offered.
+Narrow viewport verification was not performed. The 40 focused selector,
+administration, ECO and callback tests passed, as did recovery generation
+verification and `git diff --check`.
+
+### Description completeness and Vienna reset — 10-Nov-2026
+
+The managed Chess 0.3.0 installation succeeded and passed readiness checks on
+DEV FREEPDB1. The additive description correction restored Vienna Game's
+existing subject ID 83 to the packaged OPENING classification, canonical
+description, no parent and exactly C25, as explicitly requested to replace its
+earlier test metadata. Its three already canonical move lines were untouched.
+The one blank ChessVibes video description was filled using its stable identity.
+Post-install owner queries confirmed zero missing/whitespace descriptions among
+50 openings, 40 gambits and 44 videos, and zero missing annotations among 190
+variations. Before/after description checksums and aggregate row versions for
+all non-target openings, all gambits, all variations and all non-target videos
+matched. Vienna's version advanced from 22 to 23. The 72 focused description,
+catalogue and seed tests, both released seed generation checks and whitespace
+checks passed. Isolated correction acceptance and browser inspection were not
+performed during this deployment.
+
+
+## Continuation support repository checks — 10 November 2026
+
+Approved additive `CONTINUATION` edges use the complete-parent UCI and position
+prefix, a strictly longer legal child PGN and `branch_ply` equal to the parent's
+half-move count. Existing `MAIN`/`ALTERNATIVE` behaviour is retained. Immediate
+saves and retained-descendant checks route through the same private MLE-backed
+validation operation; baseline and ECO TAPI paths, Java diagnostics, recovery
+withdrawal and APEX line-kind help/LOV are included in the change.
+
+The portable Node corpus passes 47 cases, including valid continuation and
+wrong-prefix, equal, shorter, wrong/fractional/negative-ply and own-FEN rejection.
+The original released branch constraint and table creation SQL are unchanged;
+new controller `17_continuation.xml` runs after API compilation and before seed
+controllers. Separate once-only DDL changesets add the wider validated check
+before retiring the narrow check, and retain the additive support on rollback.
+These continuation-specific checks are separate from the approved private
+catalogue sync ledger and release application described below.
+
+`db/acceptance/verify_continuation.sql` supplies rollback-only owner/child/FEN,
+grandchild, alternative, ancestor-edit and atomicity acceptance through the public
+writers. This script, Oracle compilation/migration, concurrency and rendered APEX
+continuation maintenance have not been executed for this change. The comprehensive
+catalogue sync uses its separately approved reconciliation design.
+
+
+## Comprehensive catalogue runtime acceptance — 11 November 2026
+
+The approved private catalogue ledger/API installed validly in DEV `FREEPDB1`.
+Live rollback-only continuation acceptance passed, including new-child owner,
+PGN/edge/FEN rejection and retained-descendant rollback on ancestor updates.
+The full sync fixture harness passed actual creation/adoption, strict dry-run
+transaction/sequence preservation, unchanged and version-only repeats, unchanged
+source after local edits, independent field updates, user overrides, untracked
+user relationships/parents, tombstones and dependent skips, deprecation, atomic
+late failure and coordinated parent/child topology conflict handling. These
+fixtures were rolled back; they do not certify a separate structural fresh install.
+
+The complete read-only release plan completed in 11 minutes 54 seconds and
+reported 5,018 creations, 55 existing relationship updates, 180 adoptions,
+125 unchanged entries, 5,198 ledger entries and 71 protected-field/relationship
+conflicts, with no deprecated keys. It performed no catalogue DML. The 5,198
+payload entries are 128 openings, 612 gambits and 4,458 variation references;
+100 original curated branches remain outside the payload and are preserved,
+so the projected installed variation total is 4,558.
+
+An initial full apply was cancelled after performance evidence showed repeated
+whole-owner-tree validation for every inserted leaf. Its transaction rolled back:
+metadata checks confirmed the original 50 openings, 40 gambits and 190 variations,
+zero catalogue-ledger rows and no comprehensive release history row. Both TAPI
+paths now capture insert/update intent before ID allocation. New leaves retain
+all authoritative local checks and immediate parent foreign keys under the
+aggregate lock; only the redundant scan of unchanged siblings is omitted.
+Existing-node updates retain whole-tree validation. Both live acceptance harnesses
+passed again after this invariant-preserving optimisation.
+
+Final managed release completion, baseline preservation, full repeat results and
+APEX browser evidence are recorded after the live application finishes. Until
+then the plan counts above are projected, not installed counts. The source
+coverage report separately records shorter-prefix omissions and the deferred
+Lion's Jaw mapping; mapped source rows are not a claim that every row became a
+new branch. The former 2,000-row hierarchy preview limit remains visible and the
+interactive Report is the complete search route.
+
+
+### Query Chess layout deployment — 12-Nov-2026
+
+Two consecutive managed `bin/orac-plugin.sh install --bundled orac_chess`
+runs succeeded on DEV FREEPDB1, with readiness passing. The separate
+`bin/orac-plugin.sh check orac_chess` also passed. Installed APEX metadata
+confirms application 10030, parsing schema ORAC_APX_PUB, page 120 native
+P120_QUESTION textarea and ASK_CHESS button with Defined by Dynamic Action.
+
+The installed-source acceptance check still fails on CHESS_QUERY_SUBMIT with
+PLS-00201 for ORAC_CODE.RELATIONAL_QUERY_API. Read-only SYSTEM metadata confirms
+neither RELATIONAL_QUERY_API nor RELATIONAL_QUERY_WORKER_API exists in
+ORAC_CODE; the APEX API grant is absent too. Thus the layout deployment does
+not make querying operational. Core query deployment, live dataset review and
+enablement were not performed by this UI deployment.
+
+Browser navigation reached the application's login page after import. Rendered
+layout and authenticated query acceptance therefore remain unverified pending
+fresh authentication. Local callback and administration regression evidence
+remains separate from this live installation evidence.
+
+### Query Core deployment and prose implementation — 12-Nov-2026
+
+The user-authorised query-only DEV release applied 34 new Core changesets
+through the existing deployment runner filtered by `relational_query`. The
+canonical controller paths and changeset identities were retained; unrelated
+pending Core migrations were not applied. Both ORAC_CODE query package
+specifications/bodies are VALID. The APEX query API is granted to ORAC_APX_PUB;
+the worker API is granted to normal ORAC. Installed APEX source validation now
+passes 92 sources, resolving the previously recorded missing-API failure.
+
+Two managed Chess installation runs succeeded. All 12 query projections are
+VALID. The acceptance PL/SQL executed as ORAC_PLUGIN verifies all 12 READ
+grants and the excluded-column boundary. SYSTEM's ALL_TAB_PRIVS returned zero
+for grants between other owners; DBA_TAB_PRIVS and the actual consumer checks
+confirm the grants exist. That visibility difference was not a grant defect.
+
+The normal registration API registered metadata version 2 with manifest hash
+`ec7c532bca41d69a959f4ae998e071216c78236e7ef8361ca9030f9b12c2a9fb`.
+The dataset remains unverified and query execution remains disabled. Review
+inspected 128 openings, 612 gambits and 4,558 variations; exposed description
+and PGN values fit within the 1,000-character bound. Of 740 descriptions, 739
+match the pinned comprehensive catalogue; the preserved live Queen's Gambit
+record contains D06. Of the PGN values, 4,508 match the comprehensive source
+and 50 are preserved earlier lines with chess-token contents. This content
+inspection does not establish live model accuracy or semantic correctness.
+
+Live metadata collection as ORAC_PLUGIN sees all 12 view projections but
+returns zero keys and zero relationships because base-table constraint
+metadata is not visible to that consumer. The release gate remains closed
+pending a reviewed architecture decision for exposing only projected
+constraint metadata; broad dictionary or base-table grants were not added.
+
+Local implementation adds separated catalogue/general-knowledge prose,
+bounded synthesis, compatible result fields and literal APEX/chat presentation.
+Those source checks are separate from deployment acceptance. No live model,
+chat query, authenticated APEX queue workflow, isolated fresh installation or
+rollback acceptance has completed. Browser navigation requires a fresh login
+after reimport. Orac was stopped at baseline and remains stopped.
+
+### Query reviewed snapshot and live backend checkpoint — 12-Nov-2026
+
+Subsequent user approval selected a reviewed Core snapshot and authorised the
+reviewed pending Core migrations. Those migrations were applied through the
+managed runner. The two APEX knowledge query package lifecycle joins were
+corrected to use the approved CODE registry projection, which exposes removal
+state; their bodies compile. Core query recompile/validity guards now run on
+every managed update. No new metadata table, broad dictionary privilege or
+base-table grant was added.
+
+The actual installed dictionary review produced 12 view signatures, 23 projected
+keys and 33 explicit relationships. The snapshot review ID is
+`c40c507e-cea8-4d2e-af5a-73688c3bf946`, with canonical digest
+`59b492b1acffba84517d7c897a5f5ed52b56d1afb0e4664c31a025aa0966e279`.
+The existing catalogue evidence was populated through the authorised review
+operation, verification passed and query execution was enabled. Runtime now
+checks bridge-visible signatures against that review and retrieves projected
+constraints through the fixed CODE worker API. Enabled runtime manifest loaders
+also now apply authoritative registry enablement while preserving the packaged
+disabled installation default and manifest hash.
+
+A live backend request using the configured Ollama connector completed in
+approximately 60 seconds, returned five real Evans Gambit records and supplied
+both catalogue and general-knowledge prose sections with the expected review
+provenance. Synthesis took approximately 13 seconds. This is direct backend
+acceptance, not authenticated browser or APEX queue acceptance. One generated
+general-knowledge sentence incorrectly called the bishop capture forced;
+synthesis instructions now explicitly distinguish a gambit offer from optional
+acceptance and require “if accepted” where appropriate. A prompt-contract
+regression protects that instruction, but does not prove model semantic accuracy.
+
+The managed query worker was verified running. The user-owned private runtime
+directory under `var/run/orac` is selected with ORAC_RUN_DIR; use the same value
+for start, status and stop so they locate the same runtime state. The standard
+/run/orac default remains unchanged. Authenticated APEX queue/browser workflows,
+rendered desktop/narrow layouts, isolated fresh-install and rollback acceptance
+remain outstanding at this checkpoint.
+
+
+A subsequent live question, “Which openings are explicitly linked to the Evans
+Gambit?”, executed a correct EXISTS/join query and returned Italian Game
+(opening ID 196), but synthesis incorrectly denied that any explicit link was
+present. The explanation input had omitted SQL/binds and therefore lost the
+selection context when only opening columns were projected. The repaired
+bounded evidence now includes the validated canonical SQL and scalar binds
+inside the same 32 KiB limit. If that context cannot fit, the service returns
+the successful table without synthesising context-free prose. Instructions
+also preserve nonempty matching associations and avoid unsolicited dates or
+biography. This source repair and its deterministic adapter tests require a
+fresh live-model check; semantic correctness is not inferred from test success.
+
+### Query release backend and signed-chat acceptance — 12-Nov-2026
+
+The reviewed full Core deployment reported 53 changeset executions including
+recurring guards. The APEX knowledge lifecycle join repairs compile, and the
+reviewed snapshot remains loaded and verified with query execution enabled.
+The managed query worker is active. Production plugin routing now uses its
+explicit dedicated semantic Ollama embedding profile instead of constructing
+a non-semantic hash test fixture. Cache identity includes routing scope,
+provider, endpoint fingerprint, real model, dimensions and profile version.
+
+Signed chat with existing explicit Chess addressing selected the Chess query
+capability at score 0.7656 and returned the catalogue-backed Italian Game
+relationship, supporting table and SQL. The measured unaddressed relationship
+question scored 0.6558 and followed clarification; “What is the Evans Gambit?”
+scored 0.5830 and followed ordinary-chat fallback. Existing confidence thresholds,
+explicit-address policy and arbitration were preserved; no matching shortcut
+or threshold reduction was added.
+
+Direct backend checks rejected the unrelated France question as unsupported
+and returned an accurate no-match catalogue result for an absent gambit. A
+later explanatory Evans query returned 47 real rows with `complete_clipped`
+prose correctly describing b4, the Italian Game and C51 from supplied evidence.
+The model returned no separate general-knowledge text. Both renderers now
+retain the General chess knowledge heading for successful synthesis and show
+“No supplementary general chess knowledge was used.” when that field is empty;
+this is a host-authored indication of the empty supplementary field, not a
+new model-generated claim. Clarification, unsupported and failed synthesis
+responses do not show that successful-answer note.
+
+These are backend and signed-chat checks, not authenticated APEX submission,
+queue completion/readback or rendered page acceptance. Browser access still
+requires a fresh login. Desktop/narrow visual checks and isolated fresh-install
+and rollback acceptance remain unverified. Model samples demonstrated factual
+errors earlier in this release, so successful operational checks and revised
+prompts do not establish a general semantic-correctness guarantee.
+
+### Final renderer import checkpoint — 12-Nov-2026
+
+The dedicated production routing profile uses local Ollama Nomic embeddings
+with 768 dimensions. Measured canonical scores were 0.6558 for the ordinary
+relationship question, 0.5830 for the exact unaddressed Evans explanation,
+0.4381 for unrelated France and 0.7656 for the explicitly addressed Chess
+relationship question. Signed TCP chat selected `orac_chess.query` through
+existing explicit-plausible arbitration for the addressed question and returned
+the truthful Italian Game association, evidence table and SQL. The handled
+reply did not invoke an additional conversational synthesis pass. Its transport
+usage counters were zero; that does not mean the underlying query generator
+and explanation provider made no model calls.
+
+After the full Core deployment and package repairs, both query APIs are VALID
+and installed APEX source validation passes 92 sources. The only remaining
+invalid object recorded by the final Core check is the pre-existing KN_SCOPE_BD
+baseline object. France was unsupported with empty answer sections. The absent
+gambit returned zero rows and a correct catalogue no-match explanation; its
+previous supplementary formatting-limit text prompted the instruction repair.
+The final Evans backend sample returned 47 rows, `complete_clipped`, correct
+b4/Italian Game/C51 prose and an empty supplementary field, now represented by
+the fixed successful-answer placeholder in both renderers.
+
+The final managed renderer import correctly refused while Orac held the live
+runtime lock. The runtime was stopped through its supported lifecycle before
+the managed import succeeded. The manifest fingerprint is unchanged; restart
+and post-import gate/worker checks are distinct from the import result. Use
+the same private ORAC_RUN_DIR value for start, status and stop. Sign in again
+after this final application import to inspect the rendered page.
+
+Local release regression coverage passes 318 tests and 28 subtests; recovery
+export consistency and scoped whitespace checks pass. Authenticated APEX queue
+submission/completion/readback and desktop/narrow visual acceptance remain
+unverified because browser access still requires login. Isolated fresh-install
+and rollback acceptance were not run. These remaining gaps prevent a claim of
+complete end-to-end acceptance.
+
+
+Post-import confirmation: Orac restarted successfully from the private runtime
+directory. The managed relational-query service reports running, an active lease,
+a current tick and no last error. Consumer inspection after import still loads
+12 views, 23 keys and 33 relationships for the unchanged reviewed manifest.
+The coordinator's final focused subset passed 282 tests and 28 subtests; the
+implementer's broader eleven-module suite passed 318 tests and 28 subtests.
+The CLI `check` command correctly refuses while the governed runtime holds its
+execution lock; the final managed import itself passed readiness before restart.
+Browser authentication remains the handoff needed for queue and layout checks.
+
+The balanced workflow reused the approved planner specification
+(gpt-6.1-sol, medium) and implementation assignment (gpt-6.1-sol, low).
+Independent review was disabled and a separate tester was not configured;
+implementation and coordinator verification above are not independent review.
+
+## Strategy release verification — 13-Nov-2026
+
+Development `FREEPDB1` was verified through mapped `orac` inspection and
+`orac-db` provisioning connections. The managed bundled Chess installer
+completed the strategy deployment and a second install successfully, both
+passing readiness. All 740 installed strategy text SHA-256 hashes match the
+immutable overlay after the second install. The originally running Orac runner
+was restored through its existing `var/run/orac` runtime directory; the TCP bridge
+on `127.0.0.1:8765` is ready. No production deployment occurred.
+
+- 128/128 opening/system and 612/612 gambit rows contain strategy. Installed
+  word bounds are 88–130 and 84–130 respectively.
+- Existing owner identities, names, types, parents and descriptions, and
+  variation identities, ownership, parents and move text have identical
+  before/after checksums; maximum existing description length was 267 and
+  maximum PGN length 204, within the complete checksum input bound.
+- All Chess objects are valid with no compilation errors. Application 10030
+  remains `ORAC_CHESS_ADMIN`, parsing schema `ORAC_APX_PUB`. APEX metadata
+  confirms Description/Strategy sequences 12/13 on P11 (Parent follows at 14),
+  and 11/12 on P21. Coordinator browser verification confirmed authenticated
+  desktop P11/P21 Description → Strategy → blank spacing → existing data.
+  P21 at 390×844 with navigation collapsed wraps readably and scrolls; reload
+  retains strategy. Browser checks did not edit/save records; writers were
+  exercised through the installed API. Narrow P11 was not separately inspected.
+- Opening/gambit query text projections contain all strategy evidence. The
+  rollback-only API suite also proves a 4,000-character fixture is projected
+  as 2,000 characters with `strategy_truncated=Y`. Dataset metadata is version 3.
+- `tests/test_orac_chess*.py`: 158 passed, including deterministic historical
+  output, immutable release preservation, exact-position equivalence, all
+  740 legal reference replays, pawn-break origins/paths/targets and blocked
+  bishop-ray assertions.
+- `db/acceptance/verify_strategy.sql` passes adopted first initialisation,
+  legacy opening/gambit and ECO writer preservation, explicit null clears,
+  source null, absent fields, local edits, upstream updates, reruns, stale
+  versions, tombstones and failed-batch atomicity. Fixtures are rolled back.
+- The final pre-deployment plan proposed 740 updates, no creations, no
+  relationship/parent/owner edge changes and no validation failures. Thirteen
+  existing records retained 71 user override details (mostly ECO relationships
+  and one description); strategy did not overwrite these changes.
+
+Only the maintained `ORAC_CHESS` schema was available; no isolated fresh-install
+target was provisioned or destroyed. Fresh-install execution remains outstanding.
+The install order explicitly keeps the legacy opening view through the immutable
+historical description seed, then installs the strategy projection and catalogue
+API before catalogue releases. The historical description acceptance script is
+a check of that legacy lifecycle stage, before the strategy projection.
+
+Strategy prose is original feature-assisted Codex content with targeted editorial
+refinements and explicit source/PGN/FEN provenance, not 740 independent human or
+engine reviews. Identical reference-position equivalence is recorded in the
+overlay rather than inventing differences between equivalent names.
+
+
+## Query gate renewal and authenticated APEX proof — 13-Nov-2026
+
+The Strategy release changed the installed dataset to metadata version 3 and
+manifest fingerprint `3af7a84a79a73a71abffa48479c73c110da3f1af590f6c900244bffe5f3a7fc8`.
+The catalogue correctly reset `verified_yn` to N, while retaining the older
+version-2 evidence for history. Query submission therefore had no eligible
+verified dataset. Source implementation and an earlier successful version-2
+backend check did not establish readiness after this release.
+
+The authorised operator reviewed all 740 live strategy values (128 openings
+and 612 gambits): every value matches the immutable strategy overlay, and the
+maximum length is 869 characters, within the 2,000-character projection bound.
+The strategy evidence SHA-256 is
+`8b9413b532c0abeb9e7282d36a55e8cf2403156ca004604c5b93dde63fe3e3e3`.
+The renewed snapshot was generated from actual installed column/dependency and
+enabled, validated PK/UK/FK metadata. It contains 12 views, 23 keys and 33
+relationships, review ID `1a90ad21-ec6b-4595-9ceb-c037c1e7457e`, canonical digest
+`a8a2bd8f7a88031bb28b0c0bada7dfffa7eb323904b21b104c73973b8c491453`.
+The exact version-3 identity was verified through the existing Core API view;
+consumer inspection loads the complete reviewed metadata. No gate bypass,
+broader grants, source rollback or Strategy release reversal was used.
+
+Authenticated ORAC_ADMIN browser acceptance on application 10030 page 120 now
+passes: submitting “What is Evans Gambit?” shows queued status and disables the
+button; the managed worker processes request 21; Core records COMPLETED with
+`answer_status=complete_clipped` and the new review ID. The same browser session
+retrieves and renders 47 rows, a catalogue explanation of the b4 pawn offer,
+both labelled prose sections, the explicit no-supplementary-knowledge note and
+the evidence-limitation notice. The Ask Chess button becomes available again.
+This proves the APEX submission, worker and result-delivery path for the tested
+request, rather than only an internal backend call. Desktop screenshot evidence
+was captured separately. Narrow layout, cross-session browser denial and
+isolated fresh-install/rollback acceptance remain separate outstanding checks.
+
+Every future query projection or manifest version change must renew the live
+review for that exact identity before query availability is reported as ready.
+A successful managed plugin install alone does not establish that review.
+
+
+### Overview query and supporting-record presentation source — 13-Nov-2026
+
+The supplied overview result contained 47 joined variation records and 16
+columns, repeating entity prose and strategy. Query-generation instructions now
+request entity text evidence directly for definitions, reserving related
+opening/ECO/move joins for questions that ask for them. Ambiguous entities and
+explicit list/variation requests retain their records; no deduplication or
+arbitrary first-record workaround was added.
+
+Page 120 keeps the full unchanged returned table inside Supporting records (N)
+while displaying the two prose sections first. The native disclosure starts
+closed for actual prose and opens for unavailable synthesis or absent actual
+answer text. A supplementary placeholder alone is not actual prose. SQL remains
+in its own closed disclosure. Readable-width wrapping cells scroll horizontally
+inside a labelled keyboard-focusable region. Both exports carry the update;
+the recovery export was regenerated.
+Metadata version 3, reviewed projections, manifest fingerprint and review state
+were not changed by this source update. Local focused query/APEX/admin/strategy
+checks passed 136 tests. The final full regression run passed 325 tests and
+28 subtests; recovery consistency, compilation and scoped whitespace checks
+also passed. Deployment and fresh live/model/rendered evidence must be recorded
+separately.
+
+### Compact query live deployment — 13-Nov-2026
+
+The configured live model answered “What is the Evans Gambit?” with one row
+and five columns (NAME, DESCRIPTION, DESCRIPTION_TRUNCATED, STRATEGY,
+STRATEGY_TRUNCATED), using a name filter on the single text view without joins;
+synthesis completed without clipping. The explicit variation-list question
+returned all 47 requested rows and two columns (NAME, LINE_KIND) through the
+requested gambit-to-variation join, without deduplication. The managed import
+initially refused the active governed runner; after stopping Orac through its
+private-runtime lifecycle, installation and readiness passed and Orac restarted.
+Post-import consumer checks retain metadata version 3, the same 3af-prefixed
+manifest hash, verified review and 12 views/23 keys/33 relationships. No schema
+or data deletion was performed. Source validation passed 325 tests and 28
+subtests, with recovery and scoped whitespace checks passing. Browser reload
+requires a fresh login and was left for handoff; the compact rendered layout
+has not yet been visually verified.
+
+### Opening Gambit descriptors and details drawer — 13-Nov-2026
+
+The maintained application export and regenerated recovery export now show
+Opening Gambit names and description previews instead of identifiers. The
+name's declarative APEX link clears page 22 and supplies its protected hidden
+`P22_GAMBIT_ID`; page 22 uses the same business authorisation scheme and page
+protection as the existing maintenance pages. Its read-only Gambit Details
+right drawer reads only `chess_gambit_v`, escapes the name and every chunk of
+the full description and strategy, preserves line breaks, and handles an absent
+record. Close cancels the dialog without submitting the parent. Page 21 Gambit
+maintenance, the opening's link API and row-version handling are unchanged.
+
+Repository dependency searches cover the maintained/recovery exports, tests,
+generators and plugin documentation. `GAMBIT_ID` remains an internal join,
+primary-key, link-target and association API value. `P11_LINK_GAMBIT_ID` remains
+compatible with its existing LOV and processes, while its visible label is
+**Gambit** with Link/Unlink help. Other pages' Gambit Id and Link Gambit Id
+labels belong to separate maintenance workflows and are outside this change.
+No schema, grants, API or application identity change is required.
+
+Validation performed:
+
+- `.venv/bin/python plugins/orac_chess/tools/generate_mle_recovery.py`
+- `.venv/bin/python plugins/orac_chess/tools/generate_eco_apex.py --check`
+- `.venv/bin/python plugins/orac_chess/tools/generate_mle_recovery.py --check`
+- `.venv/bin/python -m pytest tests/test_orac_chess_opening_selector.py tests/test_orac_chess_administration.py tests/test_orac_chess_apex_callbacks.py -q`
+  — 36 passed.
+
+These checks validate packaged definitions, escaping and authorisation contracts;
+rendered behaviour remains unverified. Before UI acceptance,
+verify normal and narrow widths, long/multiline and missing text, absent records,
+checksum rejection for tampered IDs, and name links opening the right drawer.
+Verify Close preserves an unsaved Opening form and the selected Opening Gambit
+view, and that Link/Unlink retain existing locking behaviour. Existing saved
+reports should not offer the hidden identifier as a visible column.
+
+The user-authorised DEV import completed through the receipt-aware host importer
+into `FREEPDB1`, workspace `ORAC`, application `10030`, parsing schema
+`ORAC_APX_PUB`. The live export was backed up under
+`/tmp/chess-gambit-import-20261113`; only the Gambit report, its selector and new
+page 22 were patched into that backup. Post-import export comparison, normalising
+APEX ID offsets, confirmed all 22 unrelated page definitions were preserved.
+Unrelated pending repository changes were excluded. The standard display-name
+prologue preserved **Orac Chess Administration** under the host alias override.
+
+Installed metadata confirms a numeric `GAMBIT_ID` with hidden display type
+`HIDDEN_ESCAPE_SC`, visible escaped Name/Description columns, the name link,
+page 22's modal/right-drawer option, protected hidden item and zero drawer
+processes. Host SQLcl verified the installation receipt matches the application;
+the installed report SQL parses and the drawer renderer compiles without
+executing it. Orac was stopped for the maintenance lock and restarted with its
+TCP bridge ready. Browser verification reached login after the import reset the
+session; authenticated visual/workflow checks above remain outstanding.
+
+The first staging attempt encountered `SP2-0310` because the Oracle container
+could not read the copied export; staging permissions were corrected. Import
+validation then exposed missing required report-label metadata and an invalid
+`HIDDEN` column data type. Failed imports rolled back; the source, recovery and
+regression assertions were corrected to retain a label and use numeric type
+with `HIDDEN_ESCAPE_SC`, then the final import completed without SQL errors.
+
+### Query Chess status-read recovery — 13-Nov-2026
+
+Page 120 now retries transient status-read failures at most twice per query,
+after two then four seconds, using the existing request ID. Successful polls
+do not reset that budget, retries count towards the 100-read limit, and the
+Ask Chess action stays disabled throughout. Submission is not automatically
+retried. Authentication, access, APEX response, parse, cancellation and other
+non-transient failures stop immediately with safe reload/sign-in guidance;
+raw response bodies and operational errors are not displayed.
+
+Validation passed 32 focused tests with
+`.venv/bin/python -m pytest -q tests/test_orac_chess_apex_callbacks.py tests/test_orac_chess_administration.py`.
+These include both exports, retry eligibility and exclusions, the total retry
+budget, same-ID reads, busy-state restoration, stale timers and the read limit.
+The recovery generator `--check` and scoped `git diff --check` also passed.
+
+The receipt-aware managed DEV import applied only page 120 from a live backup.
+Post-import export comparison, normalising APEX ID offsets, confirmed that only
+page `00120` changed and all other page definitions and the page inventory were
+preserved, including the new Gambit Details drawer. Dataset metadata remained
+version `3` with verification flag `Y`.
+
+Authenticated browser acceptance remains pending a fresh login. The local
+callback tests and installed export comparison do not establish a rendered
+browser or live retry-workflow pass.
+
+
+### Shared-gambit reliability checks — 13-Nov-2026
+
+Transient correction feedback now includes the rejected SQL/binds and a safe
+validator explanation, with one correction maximum. Generation explicitly
+forbids semicolons and other excluded constructs and requires exact declared
+views. The known nested-query false denial was repaired by nearest-local-scope
+column resolution; alias shadowing, local ambiguity and non-correlatable
+boundaries remain fail-closed. Ordinary column qualification preserves the
+existing ORDER BY output-alias and exact reviewed CONNECT BY exceptions.
+No grants, schema objects, dataset gate or SQL grammar were broadened.
+
+An initial five-run configured-runtime batch completed five queries and
+returned the three correct distinct opening pairs for Queen's Gambit. After
+additional qualification/shared-relationship guidance, an intermediate batch
+completed one of two runs; the other was denied SQL_SYNTAX after its correction,
+without the raw candidate having been captured then. A later instrumented
+actual-runtime sample and three generation-only samples did not reproduce that
+forbidden-token failure. No speculative normalization was introduced.
+
+After the lexical-scope repair, the final fully captured actual-runtime batch
+completed five of five requests on their first generation attempts in
+15.84–16.04 seconds. Every request returned three openings: Queen's Gambit,
+Queen's Gambit Accepted and Queen's Gambit Declined. SQL used the reviewed
+opening-gambit junction with an EXISTS condition requiring the same gambit and
+a different opening ID; no singleton relationships were included. Raw diagnostic
+candidates were retained only in private /tmp evidence, not production audit.
+The final shared-query batch preceded only the hierarchy-specific prompt
+compatibility exception; that exception does not affect this question.
+Authenticated browser verification still requires a fresh valid APEX session;
+no authentication or session checks were weakened to accommodate an expired one.
+
+### Authenticated query verification — 13-Nov-2026
+
+Two consecutive browser submissions of the page's shared-gambit example
+completed successfully (requests 47 and 48), displaying prose above initially
+collapsed supporting records and SQL. The evidence and SQL disclosures opened
+correctly; the first query returned the three distinct Queen's Gambit opening
+pairs. A third submission was rejected before queue insertion. Its database
+session still had future idle/lifetime limits, while reload required login.
+The access log recorded a separate app-1042 login immediately before that
+rejection, and the user confirmed using another Orac app during the test.
+Apps 10030, 1042 and 1043 share the workspace authentication cookie. This
+supports a superseded browser-cookie/session explanation; it is not evidence
+of SQL generation failure or ordinary timeout expiry. An isolated fresh-login
+browser run was needed to distinguish that interruption. No authentication
+controls were changed.
+
+The subsequent isolated authenticated run completed three consecutive instances
+of the shared-gambit example (requests 52–54), followed by “What is the Evans
+Gambit?” (request 55), without a status or submission failure. The example
+answers named the same three Queen's Gambit openings. Evans returned one
+supporting row and separate catalogue-grounded and general-knowledge prose,
+including the correct b4 offer and an explicitly conditional acceptance.
+The disclosures start collapsed and open correctly. Desktop and 390-by-844
+layouts were visually inspected; the temporary viewport override was reset,
+debugging was disabled, and the authenticated Evans answer was left visible.
+The reviewed dataset remained metadata version 3 with verification flag Y.
+These passes do not establish elimination of the earlier uncaptured stochastic
+SQL_SYNTAX denial or prove the exact cookie value changed during the interrupted
+run. They do establish successful live prose and supporting results in a stable
+authenticated session.
+
+### Query-page navigation warning — 13-Nov-2026
+
+Page 120 now explicitly sets Warn on Unsaved Changes to No. Its question field
+is transient query input, not a maintenance form requiring Save. The canonical
+and generated recovery exports carry the native page property; no application-
+wide warning handler or maintenance-form behaviour was changed. The 32 focused
+APEX checks and recovery consistency check passed. A receipt-aware DEV import
+changed only this property in a fresh live application backup. The post-import
+export comparison confirmed every other page and all other page-120 definitions
+were unchanged. After a fresh login, changing the question to “What is the
+Halloween Gambit?” and clicking Openings navigated directly to page 10 with no
+JavaScript navigation dialog present. No question submission or catalogue data
+edit was needed for this check.
+
+### Prose flow without duplicate record counts — 13-Nov-2026
+
+Successful non-empty query results no longer display a separate row-count
+message above the prose. Supporting records (N) retains the count; zero-match
+and truncation notices remain. Both exports were updated, with 32 focused checks
+and recovery consistency passing. A managed DEV import changed only that status
+expression, confirmed against a fresh post-import export. An authenticated Evans
+Gambit query displayed the catalogue prose directly, Supporting records (1),
+and SQL disclosure without “1 row returned”. Other page definitions, including
+the query-page navigation-warning setting, were preserved.
+
+### Query progress encoding and disclosure affordance — 13-Nov-2026
+
+All four query progress messages now use ASCII dots rather than a Unicode
+ellipsis, avoiding the three replacement characters found in the installed
+export. Supporting records and SQL remain native details/summary disclosures,
+styled with the live theme's link colour, underlining, pointer cursor, native
+open/closed markers, hover emphasis and a visible keyboard-focus outline.
+The canonical/recovery exports and existing retry-message assertion were updated;
+32 focused checks and recovery consistency passed. The managed DEV import was
+verified against a fresh export: only page 120's CSS and progress punctuation
+changed, with all unrelated definitions preserved. Authenticated visual checks
+remain pending sign-in.
+
+### Editorial seed deployment — 13-Nov-2026
+
+The user-authorised DEV deployment used the managed bundled Chess installer in
+`FREEPDB1`. Target identity was checked through mapped `orac` inspection and
+`orac-db` provisioning connections. Administrative SQLcl access was needed for
+private Chess data and Liquibase history, which the runtime connection cannot
+read. Host SQLcl required execution outside the network-restricted sandbox.
+
+The read-only preflight proposed 740 updates, no creations or relationship/edge
+changes, and no validation failures. Existing overrides on 13 records were
+preserved. The active Orac runner was stopped to release its maintenance lock;
+the managed install succeeded and passed readiness. The runner was restored
+using its existing `var/run/orac` directory, with the TCP bridge ready on
+`127.0.0.1:8765`.
+
+Post-deployment snapshots verified all 128 opening/system and 612 gambit
+strategies exactly match `2026_11_13_editorial_catalogue`, including blank-line
+paragraphs. All other owner fields and all 4,558 variations were unchanged.
+All 462 prior Liquibase checksums were preserved; the new editorial changeset
+was recorded as `EXECUTED`. The existing run-always opening projection and
+strategy recompile entries became `RERAN` without checksum changes. No Chess
+objects were invalid.
+
+The installed-API `verify_strategy.sql` acceptance suite passed and its fixtures
+were rolled back, including multiline source updates, reruns and local override
+preservation. A subsequent read-only catalogue plan reported zero creations,
+updates, validation failures and ledger changes. Private before/after snapshots
+and the installer log are under `/tmp/chess-editorial-deploy-20261113/`.
+This verifies the existing DEV upgrade; isolated fresh installation and new
+authenticated browser checks were not performed. Query-table whitespace
+rendering remains unchanged.

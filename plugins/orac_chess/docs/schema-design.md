@@ -867,6 +867,10 @@ preserves edits to existing Author and Notes values.
 | Remote Chess Academy | Igor Smirnov | GM |
 | ChesswithAkeem | Akeem Brown | CM |
 | ChessCenturion | Alex | ~2000 |
+| Gotham Chess | Levy Rozman | |
+
+The additive 13-Nov-2026 source seed supplies Gotham Chess with blank Notes.
+It preserves an existing matching row, including any user edits.
 
 `CHESS_CONTENT_SOURCE_V` explicitly projects all six source columns and grants
 SELECT only to `ORAC_APX_PUB`. Public `CHESS_ADMIN_API.SAVE_CONTENT_SOURCE`
@@ -924,3 +928,51 @@ or game values. Diagnose and correct the source of a mismatch before retrying;
 the migration does not rewrite assignments. Mapping-table rollback deliberately
 halts to protect accumulated data. Use a reviewed forward repair that preserves
 mappings and historical Liquibase entries.
+
+## Continuation edges and private catalogue baselines — 11-Nov-2026
+
+`CHESS_VARIATION.LINE_KIND` retains `MAIN` for roots and `ALTERNATIVE` for an
+actual divergent next move. Additive `CONTINUATION` children contain the entire
+parent UCI/position prefix plus at least one move, with `branch_ply` equal to the
+parent half-move count. Both child kinds retain the same owner and inherit root
+FEN; children do not define their own FEN column. Controller `17_continuation.xml`
+adds the broader validated shape check before retiring the narrow released
+check. Original table/check creation scripts are unchanged.
+
+The user-approved private `CHESS_CATALOGUE_ENTRY` table is reconciliation
+metadata, not another reference catalogue. It has these columns:
+
+| Column | Role |
+| --- | --- |
+| `catalogue_key` | Stable source key, primary key, up to 100 characters |
+| `entity_kind` | `OPENING`, `GAMBIT` or `VARIATION` |
+| `opening_id`, `gambit_id`, `variation_id` | Individually unique nullable domain foreign keys; only the matching kind is populated |
+| `ownership` | `CREATED` or scalar-protected `ADOPTED` |
+| `source_revision` | Last reconciled semantic source revision |
+| `last_source_hash` | 32-byte SHA-256 of desired fields and sorted relationship sets |
+| `baseline_json` | Valid JSON containing source state, actual applied state, persistent overrides and observed version |
+
+Foreign keys use `ON DELETE SET NULL`, preserving the stable key as a tombstone
+when a tracked domain row is deliberately deleted. The private definer-rights
+`CHESS_CATALOGUE_API` owns ledger writes; domain writes still use existing public
+save/link APIs. No ledger view, APEX grant, audit trigger or parallel ECO mapping
+is introduced. The natural catalogue-key PK and domain-ID unique constraints
+provide indexes for source lookup and reverse identity resolution.
+
+Controller `18_catalogue_sync.xml` installs this metadata and private planner/API
+before the versioned comprehensive batch in controller `15`. Unchanged-source
+runs perform no domain or ledger DML, including after local edits. Apply uses one
+savepoint and the existing control lock, changes ledger state last, and does not
+commit. Rollback retains additive support, source baselines and domain data.
+See [bootstrap and sync operations](bootstrap-seeds.md#incremental-comprehensive-catalogue-sync)
+for field/edge ownership, read-only planning, conflict handling and acceptance.
+
+### Strategy upgrade ordering
+
+Nullable strategy CLOBs are added before administration writers. The opening
+view retains its legacy six-column shape through the immutable historical
+description batch, whose PL/SQL uses that rowtype. The final strategy view
+projection and catalogue API are then installed before comprehensive and
+strategy releases. This preserves historical seed bytes on clean installations
+as well as upgrades. Catalogue compilation is explicitly repeated after view
+replacement. Gambit strategy has no historical rowtype consumer at that boundary.

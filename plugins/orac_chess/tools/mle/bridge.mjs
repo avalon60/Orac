@@ -4,7 +4,7 @@
  * Purpose: Exercise genuine CLOB input/output in a PURE MLE environment.
  * Usage: Called only by ORAC_CHESS.CHESS_MLE_PROOF_RUN diagnostic call spec.
  */
-import {validate, branch, header} from 'orac-chess-policy';
+import {validate, branch, continuation, header} from 'orac-chess-policy';
 import {OracleClob} from 'mle-js-plsqltypes';
 export function run(input) {
   if (input === null || input.length() > 16777216) throw new Error('Invalid diagnostic request CLOB');
@@ -12,7 +12,7 @@ export function run(input) {
   const results = request.cases.map(c => {
     if (c.depth !== undefined) c.pgn = '1.e4 ('.repeat(c.depth) + '1.d4' + ')'.repeat(c.depth) + ' *';
     if (c.size !== undefined) c.pgn = '1.e4 {' + 'a'.repeat(c.size - 9) + '} *';
-    const error = c.op === 'branch' ? branch(c.parent,c.child,c.ply,c.fen) : validate(c.pgn,c.single,c.fen);
+    const error = c.op === 'continuation' ? continuation(c.parent,c.child,c.ply,c.fen) : c.op === 'branch' ? branch(c.parent,c.child,c.ply,c.fen) : validate(c.pgn,c.single,c.fen);
     return {name:c.name, valid:error === null, error};
   });
   const output = OracleClob.createTemporary(false);

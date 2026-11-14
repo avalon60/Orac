@@ -122,6 +122,22 @@ create or replace package body orac_chess.chess_admin_api as
   begin
     chess_admin_tapi.delete_content_source(p_creator, p_expected_version);
   end delete_content_source;
+  procedure save_opening(p_id in out number, p_expected_version in number, p_name in varchar2, p_opening_type in varchar2, p_description in clob, p_strategy in clob, p_parent_opening_id in number, p_new_version out number) is
+  begin
+    chess_admin_tapi.save_opening(p_id, p_expected_version, p_name, p_opening_type, p_description, p_strategy,p_parent_opening_id, p_new_version);
+  end;
+  procedure save_gambit(p_id in out number, p_expected_version in number, p_name in varchar2, p_description in clob, p_strategy in clob, p_new_version out number) is
+  begin
+    chess_admin_tapi.save_gambit(p_id, p_expected_version, p_name, p_description, p_strategy,p_new_version);
+  end;
+  procedure save_opening_with_eco(p_id in out number, p_expected_version in number, p_name in varchar2, p_opening_type in varchar2, p_description in clob, p_strategy in clob, p_parent_opening_id in number, p_eco_codes in varchar2, p_new_version out number) is
+  begin
+    chess_admin_tapi.save_opening_with_eco(p_id,p_expected_version,p_name,p_opening_type,p_description,p_strategy,p_parent_opening_id,p_eco_codes,p_new_version);
+  end;
+  procedure save_gambit_with_eco(p_id in out number, p_expected_version in number, p_name in varchar2, p_description in clob, p_strategy in clob, p_eco_codes in varchar2, p_new_version out number) is
+  begin
+    chess_admin_tapi.save_gambit_with_eco(p_id,p_expected_version,p_name,p_description,p_strategy,p_eco_codes,p_new_version);
+  end;
   procedure set_subject_video_link(p_subject_type in varchar2, p_subject_id in number, p_expected_subject_version in number, p_video_id in number, p_expected_video_version in number, p_link in boolean, p_new_subject_version out number, p_new_video_version out number) is
   begin
     chess_admin_tapi.set_subject_video_link(p_subject_type => p_subject_type, p_subject_id => p_subject_id, p_expected_subject_version => p_expected_subject_version, p_video_id => p_video_id, p_expected_video_version => p_expected_video_version, p_link => p_link, p_new_subject_version => p_new_subject_version, p_new_video_version => p_new_video_version);

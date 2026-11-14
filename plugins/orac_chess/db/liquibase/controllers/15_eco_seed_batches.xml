@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
   <!-- Append immutable ECO-aware batches here after their SQL has been reviewed. -->
+  <include file="../../schema/seed_data/chess_batch_2026_11_10_starter_catalogue.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/seed_data/chess_descriptions_2026_11_10.sql" relativeToChangelogFile="true"/>
+  <!-- Historical description batch requires the legacy six-column opening view. -->
+  <include file="../../schema/view/chess_opening_v_strategy.sql" relativeToChangelogFile="true"/>
+  <include file="18_catalogue_sync.xml" relativeToChangelogFile="true"/>
+  <include file="../../schema/seed_data/chess_batch_2026_11_10_comprehensive_catalogue.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/seed_data/chess_batch_2026_11_12_strategy_catalogue.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/seed_data/chess_batch_2026_11_13_editorial_catalogue.sql" relativeToChangelogFile="true"/>
 </databaseChangeLog>

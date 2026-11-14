@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Author: Clive Bostock; Date: 12-Nov-2026; Purpose: Install reviewed explanation projections. -->
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="../../schema/view/chess_query_opening_text_v.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/grant/chess_query_opening_text_v_read.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/view/chess_query_gambit_text_v.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/grant/chess_query_gambit_text_v_read.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/view/chess_query_variation_line_v.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/grant/chess_query_variation_line_v_read.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_query_explanations.sql" relativeToChangelogFile="true"/>
+</databaseChangeLog>

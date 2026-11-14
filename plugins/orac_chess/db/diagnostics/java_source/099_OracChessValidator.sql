@@ -169,6 +169,16 @@ public final class OracChessValidator {
       need(!p.mainMoves.get(ply).equals(c.mainMoves.get(ply)),"Branch must differ on its next half-move");return null;
     } catch(Exception e) {return safe(e);}
   }
+  public static String continuation(Clob parent,Clob child,int ply,String fen) {
+    try {
+      OracChessValidator p=parsed(parent,1,fen),c=parsed(child,1,fen);
+      need(ply==p.mainMoves.size(),"Continuation ply must equal parent length");
+      need(c.mainMoves.size()>ply,"Continuation must extend the complete parent");
+      need(p.mainMoves.equals(c.mainMoves.subList(0,ply))&&
+        p.mainPositions.equals(c.mainPositions.subList(0,ply+1)),"Continuation prefix differs");
+      return null;
+    } catch(Exception e) {return safe(e);}
+  }
   public static String header(Clob text,String name) {
     try {return parsed(text,0,null).tags.get(name);} catch(Exception e) {throw new IllegalArgumentException(safe(e));}
   }

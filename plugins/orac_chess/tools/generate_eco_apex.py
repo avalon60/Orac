@@ -39,6 +39,11 @@ def render_component(component: dict[str, object]) -> str:
     elif kind == "css":
         pass
     elif kind == "disclosure":
+        membership = (
+            ",p_include_in_reg_disp_sel_yn=>'Y'\n"
+            if component.get("include_in_selector", False) else ""
+        )
+        source = source.replace("@SELECTOR_MEMBERSHIP@", membership)
         for key in ("id", "name", "query"):
             source = source.replace(f"@{key.upper()}@", str(component[key]))
     else:

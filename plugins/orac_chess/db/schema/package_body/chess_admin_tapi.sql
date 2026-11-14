@@ -442,6 +442,7 @@ create or replace package body orac_chess.chess_admin_tapi as
       raise;
   end;
   procedure save_variation(p_id in out number, p_expected_version in number, p_opening_id in number, p_gambit_id in number, p_parent_variation_id in number, p_branch_ply in number, p_name in varchar2, p_line_kind in varchar2, p_pgn in clob, p_starting_fen in varchar2, p_annotation in clob, p_new_version out number) is
+    l_is_insert boolean := p_id is null;
     l_version number;
     l_fen varchar2(200);
     l_parent clob;
@@ -489,7 +490,12 @@ create or replace package body orac_chess.chess_admin_tapi as
         and (opening_id=p_opening_id or gambit_id=p_gambit_id) for update;
       select starting_fen into l_fen from chess_variation where parent_variation_id is null
         start with variation_id=p_parent_variation_id connect by nocycle prior parent_variation_id=variation_id;
-      chess_validation_api.validate_branch(l_parent,p_pgn,p_branch_ply,l_fen);
+      if p_line_kind = 'CONTINUATION'
+      then
+        chess_validation_api.validate_continuation(l_parent,p_pgn,p_branch_ply,l_fen);
+      else
+        chess_validation_api.validate_branch(l_parent,p_pgn,p_branch_ply,l_fen);
+      end if;
     else
       l_fen := p_starting_fen;
     end if;
@@ -504,7 +510,14 @@ create or replace package body orac_chess.chess_admin_tapi as
       update chess_variation set opening_id=p_opening_id, gambit_id=p_gambit_id, parent_variation_id=p_parent_variation_id, branch_ply=p_branch_ply, name=p_name, line_kind=p_line_kind, pgn=p_pgn, starting_fen=p_starting_fen, annotation=p_annotation, row_version=row_version+1
       where variation_id=p_id returning row_version into p_new_version;
     end if;
-    chess_validation_api.validate_variation_tree(p_id);
+    -- A newly allocated PK cannot already have descendants under immediate FKs.
+    -- The control lock plus own PGN, parent edge/owner and inherited-root checks
+    -- above preserve the valid-tree invariant without revisiting unchanged siblings.
+    -- Existing-node updates can invalidate retained descendants and must validate all.
+    if not l_is_insert
+    then
+      chess_validation_api.validate_variation_tree(p_id);
+    end if;
   exception
     when no_data_found then
       rollback to chess_admin_save;
@@ -1261,6 +1274,77 @@ create or replace package body orac_chess.chess_admin_tapi as
       raise;
   end delete_content_source;
   -- Lock control serialises aggregate mutations before checking both observed versions.
+  procedure save_opening(p_id in out number, p_expected_version in number, p_name in varchar2, p_opening_type in varchar2, p_description in clob, p_strategy in clob, p_parent_opening_id in number, p_new_version out number) is
+    l_version number;
+  begin
+    savepoint chess_admin_save;
+    chess_validation_api.lock_control;
+    chess_validation_api.validate_opening(p_id,p_parent_opening_id);
+    if p_id is null
+    then
+      insert into chess_opening (name, opening_type, description, strategy, parent_opening_id)
+      values (p_name, p_opening_type, p_description, p_strategy, p_parent_opening_id) returning opening_id,row_version into p_id,p_new_version;
+    else
+      select row_version into l_version from chess_opening where opening_id=p_id for update;
+      chess_validation_api.require_version(l_version,p_expected_version);
+      update chess_opening set name=p_name, opening_type=p_opening_type, description=p_description, strategy=p_strategy, parent_opening_id=p_parent_opening_id, row_version=row_version+1
+      where opening_id=p_id returning row_version into p_new_version;
+    end if;
+  exception
+    when no_data_found then
+      rollback to chess_admin_save;
+      raise_application_error(-20008, 'Record does not exist.');
+    when dup_val_on_index then
+      rollback to chess_admin_save;
+      raise_application_error(-20009, 'A record with these details already exists.');
+    when others then
+      rollback to chess_admin_save;
+      if sqlcode=-2291 then
+        raise_application_error(-20013,'A selected related record does not exist.');
+      elsif sqlcode=-2290 then
+        raise_application_error(-20014,'A value violates its allowed category, ownership or format.');
+      elsif sqlcode=-12899 then
+        raise_application_error(-20016,'A value is longer than the allowed field length.');
+      elsif sqlcode=-1400 then
+        raise_application_error(-20015,'A required value is missing.');
+      end if;
+      raise;
+  end;
+  procedure save_gambit(p_id in out number, p_expected_version in number, p_name in varchar2, p_description in clob, p_strategy in clob, p_new_version out number) is
+    l_version number;
+  begin
+    savepoint chess_admin_save;
+    chess_validation_api.lock_control;
+    if p_id is null
+    then
+      insert into chess_gambit (name, description, strategy)
+      values (p_name, p_description, p_strategy) returning gambit_id,row_version into p_id,p_new_version;
+    else
+      select row_version into l_version from chess_gambit where gambit_id=p_id for update;
+      chess_validation_api.require_version(l_version,p_expected_version);
+      update chess_gambit set name=p_name, description=p_description, strategy=p_strategy, row_version=row_version+1
+      where gambit_id=p_id returning row_version into p_new_version;
+    end if;
+  exception
+    when no_data_found then
+      rollback to chess_admin_save;
+      raise_application_error(-20008, 'Record does not exist.');
+    when dup_val_on_index then
+      rollback to chess_admin_save;
+      raise_application_error(-20009, 'A record with these details already exists.');
+    when others then
+      rollback to chess_admin_save;
+      if sqlcode=-2291 then
+        raise_application_error(-20013,'A selected related record does not exist.');
+      elsif sqlcode=-2290 then
+        raise_application_error(-20014,'A value violates its allowed category, ownership or format.');
+      elsif sqlcode=-12899 then
+        raise_application_error(-20016,'A value is longer than the allowed field length.');
+      elsif sqlcode=-1400 then
+        raise_application_error(-20015,'A required value is missing.');
+      end if;
+      raise;
+  end;
   procedure set_subject_video_link(p_subject_type in varchar2, p_subject_id in number, p_expected_subject_version in number, p_video_id in number, p_expected_video_version in number, p_link in boolean, p_new_subject_version out number, p_new_video_version out number) is
     l_subject_version number;
     l_video_version number;

@@ -18,6 +18,10 @@ def test_consumer_grants_are_only_explicit_reads_and_public_apis() -> None:
     """The parsing schema receives no private entrypoint or base DML grant."""
     text = '\n'.join(p.read_text() for p in (ROOT / 'db/schema/grant').glob('*.sql'))
     grants = re.findall(r'^grant (\w+) on orac_chess\.(\w+) to (\w+);', text, re.M)
+    bridge = [(privilege, name) for privilege, name, grantee in grants if grantee == "orac_plugin"]
+    assert len(bridge) == 12
+    assert all(privilege == "read" and name.startswith("chess_query_") and name.endswith("_v") for privilege, name in bridge)
+    grants = [grant for grant in grants if grant[2] != "orac_plugin"]
     assert len(grants) == 28
     assert ('select', 'chess_content_source_v', 'orac_apx_pub') in grants
     assert ('select', 'chess_eco_code_v', 'orac_apx_pub') in grants
@@ -66,7 +70,7 @@ def test_apex_export_applies_auth_and_uses_controlled_api_processes() -> None:
             assert 'p_button_confirmation=>' not in content
             assert 'p_button_css_classes=>' not in content
             assert "p_display_as=>'NATIVE_DISPLAY_ONLY'" not in content
-    assert count == 20
+    assert count == 22
     assert not re.search(r'\b(?:insert into|update|delete from|merge into)\s+orac_chess\.', source, re.I)
     assert 'chess_admin_tapi.' not in source
     assert 'chess_validation_api.' not in source

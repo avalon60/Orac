@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
+  <include file="../../schema/table/chess_catalogue_entry.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_pk/chs_catent_pk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_catent_kind_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_catent_owner_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_catent_subject_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_other/chs_catent_json_ck.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_uc/chs_catent_opening_uk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_uc/chs_catent_gambit_uk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_uc/chs_catent_variation_uk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_fk/chs_catent_opening_fk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_fk/chs_catent_gambit_fk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/constraint_fk/chs_catent_variation_fk.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/comment/chess_catalogue_entry.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/annotation/chess_catalogue_entry.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/package_spec/chess_catalogue_api.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/package_body/chess_catalogue_api.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/post_install/chess_catalogue_compile.sql" relativeToChangelogFile="true"/>
+</databaseChangeLog>

@@ -3,7 +3,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_name=>'@NAME@'
 ,p_plug_template=>4072358936313175081
 ,p_plug_display_sequence=>35
-,p_function_body_language=>'PLSQL'
+@SELECTOR_MEMBERSHIP@,p_function_body_language=>'PLSQL'
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
 'declare',
 '  l_html clob := to_clob(''<div class="chess-eco-list">'');',

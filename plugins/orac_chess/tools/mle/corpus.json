@@ -290,5 +290,69 @@
     "op": "validate",
     "pgn": "1.e4 *",
     "valid": true
+  },
+  {
+    "name": "continuation-valid",
+    "op": "continuation",
+    "parent": "1.e4 e5 *",
+    "child": "1.e4 e5 2.Nf3 *",
+    "ply": 2,
+    "valid": true
+  },
+  {
+    "name": "continuation-prefix-differs",
+    "op": "continuation",
+    "parent": "1.e4 e5 *",
+    "child": "1.e4 c5 2.Nf3 *",
+    "ply": 2,
+    "valid": false
+  },
+  {
+    "name": "continuation-equal",
+    "op": "continuation",
+    "parent": "1.e4 e5 *",
+    "child": "1.e4 e5 *",
+    "ply": 2,
+    "valid": false
+  },
+  {
+    "name": "continuation-shorter",
+    "op": "continuation",
+    "parent": "1.e4 e5 *",
+    "child": "1.e4 *",
+    "ply": 2,
+    "valid": false
+  },
+  {
+    "name": "continuation-wrong-ply",
+    "op": "continuation",
+    "parent": "1.e4 e5 *",
+    "child": "1.e4 e5 2.Nf3 *",
+    "ply": 1,
+    "valid": false
+  },
+  {
+    "name": "continuation-negative-ply",
+    "op": "continuation",
+    "parent": "1.e4 e5 *",
+    "child": "1.e4 e5 2.Nf3 *",
+    "ply": -1,
+    "valid": false
+  },
+  {
+    "name": "continuation-fraction-ply",
+    "op": "continuation",
+    "parent": "1.e4 e5 *",
+    "child": "1.e4 e5 2.Nf3 *",
+    "ply": 2.5,
+    "valid": false
+  },
+  {
+    "name": "continuation-child-fen",
+    "op": "continuation",
+    "parent": "1.e4 *",
+    "child": "[SetUp \"1\"] [FEN \"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1\"] 1.e4 e5 *",
+    "ply": 1,
+    "valid": false
   }
 ]

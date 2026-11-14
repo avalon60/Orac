@@ -53,6 +53,7 @@ imports (
     for name, params, export in [
         ("validate", "p_pgn clob, p_single number, p_fen varchar2", "validatePgn"),
         ("branch", "p_parent clob, p_child clob, p_ply number, p_fen varchar2", "validateBranch"),
+        ("continuation", "p_parent clob, p_child clob, p_ply number, p_fen varchar2", "validateContinuation"),
         ("header", "p_pgn clob, p_name varchar2", "pgnHeader"),
     ]:
         assets[root / f"db/schema/function/chess_mle_{name}.sql"] = header + f"""

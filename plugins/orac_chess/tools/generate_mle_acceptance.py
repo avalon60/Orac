@@ -38,12 +38,14 @@ declare
   l_depth clob;
   l_code number;
   l_count number := 0;
-  procedure check_case(p_name varchar2,p_valid boolean,p_single boolean,p_fen varchar2 default null,p_ply number default null) is
+  procedure check_case(p_name varchar2,p_valid boolean,p_single boolean,p_fen varchar2 default null,p_ply number default null,p_continuation boolean default false) is
   begin
     l_code:=0;
     begin
       if p_ply is null then
         orac_chess.chess_validation_api.validate_pgn(l_pgn,p_single,p_fen);
+      elsif p_continuation then
+        orac_chess.chess_validation_api.validate_continuation(l_parent,l_pgn,p_ply,p_fen);
       else
         orac_chess.chess_validation_api.validate_branch(l_parent,l_pgn,p_ply,p_fen);
       end if;
@@ -73,7 +75,7 @@ begin
         if 'parent' in case:
             source += clob_assignments('l_parent',case['parent'])
         fen = "'"+case['fen'].replace("'","''")+"'" if case.get('fen') else 'null'
-        source += f"  check_case('{case['name']}',{str(case['valid']).lower()},{str(case.get('single')==1).lower()},{fen},{case.get('ply','null')});\n"
+        source += f"  check_case('{case['name']}',{str(case['valid']).lower()},{str(case.get('single')==1).lower()},{fen},{case.get('ply','null')},{str(case.get('op')=='continuation').lower()});\n"
     source += """  for depth in 64..65 loop
     l_pgn:=null;
     for n in 1..depth loop l_pgn:=l_pgn||to_clob('1.e4 ('); end loop;

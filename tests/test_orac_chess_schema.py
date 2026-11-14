@@ -40,11 +40,11 @@ class OracChessSchemaTests(unittest.TestCase):
     SCHEMA = PLUGIN_DIR / "db" / "schema"
 
     def test_manifest_has_no_executable_surface(self) -> None:
-        """A database-only plugin has no runtime entry point or route."""
+        """The Core-owned query route adds no plugin executable entry point."""
         manifest = PluginDiscovery(self.MANIFEST.parent).load_manifest(self.MANIFEST)
         self.assertEqual(manifest.plugin_id, "orac_chess")
-        self.assertEqual(manifest.capabilities, ())
-        self.assertEqual(manifest.route_capabilities, ())
+        self.assertEqual(manifest.capabilities, ("orac_chess.query",))
+        self.assertEqual(tuple(item.capability_id for item in manifest.route_capabilities), ("orac_chess.query",))
         self.assertIsNone(manifest.entry_point)
         self.assertEqual(manifest.service_runtimes, ())
         self.assertEqual(manifest.database_schemas[0].schema_name, "orac_chess")
@@ -55,6 +55,10 @@ class OracChessSchemaTests(unittest.TestCase):
         """The manifest exception cannot silently enable ordinary empty plugins."""
         data = json.loads(self.MANIFEST.read_text())
         data["database"]["required"] = False
+        data["capabilities"] = []
+        data.pop("query_datasets", None)
+        data.pop("routing", None)
+        data.pop("execution", None)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "orac_chess.json"
             path.write_text(json.dumps(data))
@@ -69,9 +73,9 @@ class OracChessSchemaTests(unittest.TestCase):
         referenced = validate_plugin_liquibase_changelog(manifest)
         source = set(self.SCHEMA.rglob("*.sql"))
         self.assertEqual(set(referenced), source)
-        self.assertEqual(len(list((self.SCHEMA / "table").glob("*.sql"))), 25)
-        self.assertEqual(len(list((self.SCHEMA / "constraint_fk").glob("*.sql"))), 38)
-        self.assertEqual(len(list((self.SCHEMA / "constraint_pk").glob("*.sql"))), 25)
+        self.assertEqual(len(list((self.SCHEMA / "table").glob("*.sql"))), 26)
+        self.assertEqual(len(list((self.SCHEMA / "constraint_fk").glob("*.sql"))), 41)
+        self.assertEqual(len(list((self.SCHEMA / "constraint_pk").glob("*.sql"))), 26)
         self.assertEqual(len(list((self.SCHEMA / "index").glob("*.sql"))), 54)
         change_ids: list[str] = []
         for path in source:

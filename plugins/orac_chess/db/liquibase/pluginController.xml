@@ -19,6 +19,9 @@
   <include file="controllers/10_admin_api.xml" relativeToChangelogFile="true"/>
   <include file="controllers/14_eco_relationships.xml" relativeToChangelogFile="true"/>
   <include file="controllers/11_admin_compile.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/17_continuation.xml" relativeToChangelogFile="true"/>
   <include file="controllers/12_seed_batches.xml" relativeToChangelogFile="true"/>
   <include file="controllers/15_eco_seed_batches.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/16_query_reference.xml" relativeToChangelogFile="true"/>
+  <include file="controllers/19_query_explanations.xml" relativeToChangelogFile="true"/>
 </databaseChangeLog>

@@ -32,6 +32,7 @@ begin
 end;
 /
 drop function orac_chess.chess_mle_header;
+drop function orac_chess.chess_mle_continuation;
 drop function orac_chess.chess_mle_branch;
 drop function orac_chess.chess_mle_validate;
 drop mle env orac_chess.chess_mle_env;

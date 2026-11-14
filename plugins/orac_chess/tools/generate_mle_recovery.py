@@ -19,7 +19,7 @@ def generate(root: Path) -> dict[Path, str]:
     assets: dict[Path, str] = {}
     unavailable = "    raise_application_error(-20020,'Chess PGN maintenance is unavailable: runtime withdrawn.');\n  end;\n"
     validation = (root / 'db/schema/package_body/chess_validation_api.sql').read_text()
-    for name, following in [('pgn_header', '  procedure lock_control'), ('validate_pgn', '  procedure validate_branch'), ('validate_branch', '  procedure validate_variation_tree'), ('validate_variation_tree', '  procedure validate_image_structure')]:
+    for name, following in [('pgn_header', '  procedure lock_control'), ('validate_pgn', '  procedure validate_branch'), ('validate_branch', '  procedure validate_continuation'), ('validate_continuation', '  procedure validate_variation_tree'), ('validate_variation_tree', '  procedure validate_image_structure')]:
         start = validation.index('  ' + ('function' if name == 'pgn_header' else 'procedure') + ' ' + name + '(')
         end = validation.index(following, start)
         declaration = validation[start:validation.index(' is\n', start) + 4]
@@ -46,6 +46,13 @@ def generate(root: Path) -> dict[Path, str]:
         part = re.sub(r'wwv_flow_imp_page.create_page_button\(.*?\n\);\n', lambda m: '' if re.search(r"p_button_name=>'(SAVE|DELETE|HEADERS|CREATE)'", m[0]) else m[0], part, flags=re.S)
         if page in (31,61):
             part = re.sub(r"p_display_as=>'NATIVE_(?:TEXT_FIELD|TEXTAREA|NUMBER_FIELD|SELECT_LIST|DATE_PICKER_APEX)'", "p_display_as=>'NATIVE_DISPLAY_ONLY'", part)
+            if page == 31:
+                part = re.sub(
+                    r"wwv_flow_imp_page.create_page_item\(.*?\n\);",
+                    lambda match: match[0].replace("p_display_as=>'NATIVE_POPUP_LOV'", "p_display_as=>'NATIVE_DISPLAY_ONLY'")
+                    if any(f"p_name=>'{name}'" in match[0] for name in ("P31_OPENING_ID", "P31_GAMBIT_ID", "P31_PARENT_VARIATION_ID"))
+                    else match[0], part, flags=re.S,
+                )
             region = f"""wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id({97000000000000000+page})
 ,p_plug_name=>'PGN maintenance unavailable'
@@ -90,6 +97,7 @@ begin
 end;
 /
 drop function orac_chess.chess_mle_header;
+drop function orac_chess.chess_mle_continuation;
 drop function orac_chess.chess_mle_branch;
 drop function orac_chess.chess_mle_validate;
 drop mle env orac_chess.chess_mle_env;

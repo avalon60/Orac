@@ -6,5 +6,6 @@
   <include file="../../schema/mle_env/chess_mle_env.sql" relativeToChangelogFile="true"/>
   <include file="../../schema/function/chess_mle_validate.sql" relativeToChangelogFile="true"/>
   <include file="../../schema/function/chess_mle_branch.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/function/chess_mle_continuation.sql" relativeToChangelogFile="true"/>
   <include file="../../schema/function/chess_mle_header.sql" relativeToChangelogFile="true"/>
 </databaseChangeLog>

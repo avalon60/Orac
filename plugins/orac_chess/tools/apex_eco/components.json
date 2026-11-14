@@ -8,6 +8,7 @@
   },
   "DIRECT_11": {
     "type": "disclosure",
+    "include_in_selector": true,
     "id": 99100000000000011,
     "name": "ECO Codes",
     "query": "'  for r in (select cast(null as varchar2(500)) source_label,m.eco_code,e.description from orac_chess.chess_opening_eco_v m join orac_chess.chess_eco_code_v e on e.eco_code=m.eco_code where m.opening_id=:P11_OPENING_ID order by m.eco_code) loop',"

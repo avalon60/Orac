@@ -488,6 +488,7 @@ create or replace package body orac_chess.chess_admin_tapi as
       raise;
   end;
   procedure save_variation(p_id in out number, p_expected_version in number, p_opening_id in number, p_gambit_id in number, p_parent_variation_id in number, p_branch_ply in number, p_name in varchar2, p_line_kind in varchar2, p_pgn in clob, p_starting_fen in varchar2, p_annotation in clob, p_new_version out number) is
+    l_is_insert boolean := p_id is null;
     l_version number;
     l_fen varchar2(200);
     l_parent clob;
@@ -535,7 +536,12 @@ create or replace package body orac_chess.chess_admin_tapi as
         and (opening_id=p_opening_id or gambit_id=p_gambit_id) for update;
       select starting_fen into l_fen from chess_variation where parent_variation_id is null
         start with variation_id=p_parent_variation_id connect by nocycle prior parent_variation_id=variation_id;
-      chess_validation_api.validate_branch(l_parent,p_pgn,p_branch_ply,l_fen);
+      if p_line_kind = 'CONTINUATION'
+      then
+        chess_validation_api.validate_continuation(l_parent,p_pgn,p_branch_ply,l_fen);
+      else
+        chess_validation_api.validate_branch(l_parent,p_pgn,p_branch_ply,l_fen);
+      end if;
     else
       l_fen := p_starting_fen;
     end if;
@@ -550,7 +556,14 @@ create or replace package body orac_chess.chess_admin_tapi as
       update chess_variation set opening_id=p_opening_id, gambit_id=p_gambit_id, parent_variation_id=p_parent_variation_id, branch_ply=p_branch_ply, name=p_name, line_kind=p_line_kind, pgn=p_pgn, starting_fen=p_starting_fen, annotation=p_annotation, row_version=row_version+1
       where variation_id=p_id returning row_version into p_new_version;
     end if;
-    chess_validation_api.validate_variation_tree(p_id);
+    -- A newly allocated PK cannot already have descendants under immediate FKs.
+    -- The control lock plus own PGN, parent edge/owner and inherited-root checks
+    -- above preserve the valid-tree invariant without revisiting unchanged siblings.
+    -- Existing-node updates can invalidate retained descendants and must validate all.
+    if not l_is_insert
+    then
+      chess_validation_api.validate_variation_tree(p_id);
+    end if;
   exception
     when no_data_found then
       rollback to chess_admin_save;
@@ -1353,6 +1366,169 @@ create or replace package body orac_chess.chess_admin_tapi as
       raise;
   end delete_content_source;
   -- Lock control serialises aggregate mutations before checking both observed versions.
+  procedure save_opening(p_id in out number, p_expected_version in number, p_name in varchar2, p_opening_type in varchar2, p_description in clob, p_strategy in clob, p_parent_opening_id in number, p_new_version out number) is
+    l_version number;
+  begin
+    savepoint chess_admin_save;
+    chess_validation_api.lock_control;
+    chess_validation_api.validate_opening(p_id,p_parent_opening_id);
+    if p_id is null
+    then
+      insert into chess_opening (name, opening_type, description, strategy, parent_opening_id)
+      values (p_name, p_opening_type, p_description, p_strategy, p_parent_opening_id) returning opening_id,row_version into p_id,p_new_version;
+    else
+      select row_version into l_version from chess_opening where opening_id=p_id for update;
+      chess_validation_api.require_version(l_version,p_expected_version);
+      update chess_opening set name=p_name, opening_type=p_opening_type, description=p_description, strategy=p_strategy, parent_opening_id=p_parent_opening_id, row_version=row_version+1
+      where opening_id=p_id returning row_version into p_new_version;
+    end if;
+  exception
+    when no_data_found then
+      rollback to chess_admin_save;
+      raise_application_error(-20008, 'Record does not exist.');
+    when dup_val_on_index then
+      rollback to chess_admin_save;
+      raise_application_error(-20009, 'A record with these details already exists.');
+    when others then
+      rollback to chess_admin_save;
+      if sqlcode=-2291 then
+        raise_application_error(-20013,'A selected related record does not exist.');
+      elsif sqlcode=-2290 then
+        raise_application_error(-20014,'A value violates its allowed category, ownership or format.');
+      elsif sqlcode=-12899 then
+        raise_application_error(-20016,'A value is longer than the allowed field length.');
+      elsif sqlcode=-1400 then
+        raise_application_error(-20015,'A required value is missing.');
+      end if;
+      raise;
+  end;
+  procedure save_gambit(p_id in out number, p_expected_version in number, p_name in varchar2, p_description in clob, p_strategy in clob, p_new_version out number) is
+    l_version number;
+  begin
+    savepoint chess_admin_save;
+    chess_validation_api.lock_control;
+    if p_id is null
+    then
+      insert into chess_gambit (name, description, strategy)
+      values (p_name, p_description, p_strategy) returning gambit_id,row_version into p_id,p_new_version;
+    else
+      select row_version into l_version from chess_gambit where gambit_id=p_id for update;
+      chess_validation_api.require_version(l_version,p_expected_version);
+      update chess_gambit set name=p_name, description=p_description, strategy=p_strategy, row_version=row_version+1
+      where gambit_id=p_id returning row_version into p_new_version;
+    end if;
+  exception
+    when no_data_found then
+      rollback to chess_admin_save;
+      raise_application_error(-20008, 'Record does not exist.');
+    when dup_val_on_index then
+      rollback to chess_admin_save;
+      raise_application_error(-20009, 'A record with these details already exists.');
+    when others then
+      rollback to chess_admin_save;
+      if sqlcode=-2291 then
+        raise_application_error(-20013,'A selected related record does not exist.');
+      elsif sqlcode=-2290 then
+        raise_application_error(-20014,'A value violates its allowed category, ownership or format.');
+      elsif sqlcode=-12899 then
+        raise_application_error(-20016,'A value is longer than the allowed field length.');
+      elsif sqlcode=-1400 then
+        raise_application_error(-20015,'A required value is missing.');
+      end if;
+      raise;
+  end;
+  procedure save_opening_with_eco(p_id in out number, p_expected_version in number, p_name in varchar2, p_opening_type in varchar2, p_description in clob, p_strategy in clob, p_parent_opening_id in number, p_eco_codes in varchar2, p_new_version out number) is
+    l_code varchar2(3);
+    l_count number;
+    l_seen varchar2(32767) := ':';
+    l_pos pls_integer := 1;
+    l_end pls_integer;
+  begin
+    savepoint chess_opening_and_eco;
+    -- Validate the complete set before changing the subject or its links.
+    if p_eco_codes is not null then
+      if not regexp_like(p_eco_codes, '^[A-E][0-9][0-9](:[A-E][0-9][0-9])*$', 'c') then
+        raise_application_error(-20014, 'Invalid ECO code selection.');
+      end if;
+      loop
+        l_end := instr(p_eco_codes, ':', l_pos);
+        if l_end = 0 then l_end := length(p_eco_codes) + 1; end if;
+        l_code := substr(p_eco_codes, l_pos, l_end - l_pos);
+        if instr(l_seen, ':' || l_code || ':') > 0 then
+          raise_application_error(-20009, 'Duplicate ECO code selection.');
+        end if;
+        select count(*) into l_count from chess_eco_code where eco_code = l_code;
+        if l_count = 0 then
+          raise_application_error(-20013, 'A selected ECO code does not exist.');
+        end if;
+        l_seen := l_seen || l_code || ':';
+        exit when l_end > length(p_eco_codes);
+        l_pos := l_end + 1;
+      end loop;
+    end if;
+    save_opening(p_id,p_expected_version,p_name,p_opening_type,p_description,p_strategy,p_parent_opening_id,p_new_version);
+    delete from chess_opening_eco
+     where opening_id = p_id and instr(l_seen, ':' || eco_code || ':') = 0;
+    l_pos := 1;
+    while l_pos < length(l_seen) loop
+      l_end := instr(l_seen, ':', l_pos + 1);
+      l_code := substr(l_seen, l_pos + 1, l_end - l_pos - 1);
+      insert into chess_opening_eco (opening_id, eco_code)
+      select p_id, l_code from dual
+       where not exists (select 1 from chess_opening_eco where opening_id = p_id and eco_code = l_code);
+      l_pos := l_end;
+    end loop;
+  exception
+    when others then
+      rollback to chess_opening_and_eco;
+      raise;
+  end;
+  procedure save_gambit_with_eco(p_id in out number, p_expected_version in number, p_name in varchar2, p_description in clob, p_strategy in clob, p_eco_codes in varchar2, p_new_version out number) is
+    l_code varchar2(3);
+    l_count number;
+    l_seen varchar2(32767) := ':';
+    l_pos pls_integer := 1;
+    l_end pls_integer;
+  begin
+    savepoint chess_gambit_and_eco;
+    -- Validate the complete set before changing the subject or its links.
+    if p_eco_codes is not null then
+      if not regexp_like(p_eco_codes, '^[A-E][0-9][0-9](:[A-E][0-9][0-9])*$', 'c') then
+        raise_application_error(-20014, 'Invalid ECO code selection.');
+      end if;
+      loop
+        l_end := instr(p_eco_codes, ':', l_pos);
+        if l_end = 0 then l_end := length(p_eco_codes) + 1; end if;
+        l_code := substr(p_eco_codes, l_pos, l_end - l_pos);
+        if instr(l_seen, ':' || l_code || ':') > 0 then
+          raise_application_error(-20009, 'Duplicate ECO code selection.');
+        end if;
+        select count(*) into l_count from chess_eco_code where eco_code = l_code;
+        if l_count = 0 then
+          raise_application_error(-20013, 'A selected ECO code does not exist.');
+        end if;
+        l_seen := l_seen || l_code || ':';
+        exit when l_end > length(p_eco_codes);
+        l_pos := l_end + 1;
+      end loop;
+    end if;
+    save_gambit(p_id,p_expected_version,p_name,p_description,p_strategy,p_new_version);
+    delete from chess_gambit_eco
+     where gambit_id = p_id and instr(l_seen, ':' || eco_code || ':') = 0;
+    l_pos := 1;
+    while l_pos < length(l_seen) loop
+      l_end := instr(l_seen, ':', l_pos + 1);
+      l_code := substr(l_seen, l_pos + 1, l_end - l_pos - 1);
+      insert into chess_gambit_eco (gambit_id, eco_code)
+      select p_id, l_code from dual
+       where not exists (select 1 from chess_gambit_eco where gambit_id = p_id and eco_code = l_code);
+      l_pos := l_end;
+    end loop;
+  exception
+    when others then
+      rollback to chess_gambit_and_eco;
+      raise;
+  end;
   procedure set_subject_video_link(p_subject_type in varchar2, p_subject_id in number, p_expected_subject_version in number, p_video_id in number, p_expected_video_version in number, p_link in boolean, p_new_subject_version out number, p_new_video_version out number) is
     l_subject_version number;
     l_video_version number;

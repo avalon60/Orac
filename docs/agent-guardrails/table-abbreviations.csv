@@ -91,3 +91,4 @@ orac_chess,chess_variation_eco,chs_vec
 orac_core,relational_query_catalogue,rq_cat
 orac_core,relational_query_requests,rq_req
 orac_core,relational_query_audit,rq_aud
+orac_chess,chess_catalogue_entry,chs_catent

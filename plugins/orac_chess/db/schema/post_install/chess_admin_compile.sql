@@ -41,12 +41,17 @@ declare
 begin
   select count(*) into l_count from user_objects
   where object_name in ('CHESS_MLE_LIB','CHESS_MLE_POLICY','CHESS_MLE_BRIDGE',
-    'CHESS_MLE_ENV','CHESS_MLE_VALIDATE','CHESS_MLE_BRANCH','CHESS_MLE_HEADER',
+    'CHESS_MLE_ENV','CHESS_MLE_VALIDATE','CHESS_MLE_BRANCH','CHESS_MLE_CONTINUATION','CHESS_MLE_HEADER',
     'CHESS_VALIDATION_API','CHESS_ADMIN_TAPI','CHESS_ADMIN_API','CHESS_GAME_API',
     'CHESS_VARIATION_API','CHESS_IMAGE_API') and status<>'VALID';
   if l_count<>0
   then
     raise_application_error(-20020,'Chess runtime or API compilation failed.');
+  end if;
+  if chess_mle_continuation(to_clob('1.e4 *'),to_clob('1.e4 e5 *'),1,null) is not null
+    or chess_mle_continuation(to_clob('1.e4 *'),to_clob('1.d4 d5 *'),1,null) is null
+  then
+    raise_application_error(-20020,'Chess continuation semantic smoke failed.');
   end if;
   if chess_mle_validate(to_clob('1.e4 *'),0,null) is not null
   then

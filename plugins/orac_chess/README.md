@@ -6,6 +6,10 @@ with the Universal Theme **Orac Chess Administration** application. See
 security, installation and testing, and [schema design](docs/schema-design.md)
 for the authoritative relational model and baseline history.
 
+Version 0.3.0 adds the disabled [reference query capability](docs/reference-query.md)
+and Query Chess page 120, with a separate Core live data review gate. It retains
+the existing administration application access and maintenance controls.
+
 The 0.2.0 administration changes are additive upgrades to the 161-changeset
 baseline. They do not rewrite deployed baseline history.
 
@@ -47,6 +51,17 @@ prose. Successful batches never replay, so later upgrades preserve user edits
 and deletions. See [CSV bootstrap batches](docs/bootstrap-seeds.md) for templates,
 generation, release rules, transaction handling and the supplied, unexecuted
 isolated database acceptance checks.
+
+The comprehensive reference expansion builds on those released batches using
+pinned CC0 Lichess source data: 128 opening/system identities, 612 gambits and a
+projected 4,558 variations, including 100 protected prior branches. Native
+searchable popup LOVs and additive continuation edges support the larger
+collection. The private source-management ledger protects existing subjects,
+merges safe updates to newly imported records and exposes a read-only plan with
+explicit conflicts. See [mapping and coverage](docs/comprehensive-catalogue.md),
+[sync operations](docs/bootstrap-seeds.md#incremental-comprehensive-catalogue-sync)
+and [deployment evidence](docs/verification.md) for actual target results and
+remaining verification limits.
 
 ### Opening ECO selections
 

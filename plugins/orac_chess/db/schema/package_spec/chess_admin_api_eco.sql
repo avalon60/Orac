@@ -9,14 +9,22 @@
 create or replace package orac_chess.chess_admin_api authid definer as
   -- Insert when p_id is null; otherwise require the observed version. Return the new version.
   procedure save_opening(p_id in out number, p_expected_version in number, p_name in varchar2, p_opening_type in varchar2, p_description in clob, p_parent_opening_id in number, p_new_version out number);
+  -- Explicit nullable strategy: null clears; legacy overload preserves existing strategy.
+  procedure save_opening(p_id in out number, p_expected_version in number, p_name in varchar2, p_opening_type in varchar2, p_description in clob, p_strategy in clob, p_parent_opening_id in number, p_new_version out number);
   -- Require the observed version and reject referenced rows; caller owns commit/rollback.
   -- Save opening and complete colon-separated ECO set atomically; caller owns transaction.
   procedure save_opening_with_eco(p_id in out number, p_expected_version in number, p_name in varchar2, p_opening_type in varchar2, p_description in clob, p_parent_opening_id in number, p_eco_codes in varchar2, p_new_version out number);
+  -- Explicit nullable strategy: null clears; legacy overload preserves existing strategy.
+  procedure save_opening_with_eco(p_id in out number, p_expected_version in number, p_name in varchar2, p_opening_type in varchar2, p_description in clob, p_strategy in clob, p_parent_opening_id in number, p_eco_codes in varchar2, p_new_version out number);
   procedure delete_opening(p_id number, p_expected_version number);
   -- Insert when p_id is null; otherwise require the observed version. Return the new version.
   procedure save_gambit(p_id in out number, p_expected_version in number, p_name in varchar2, p_description in clob, p_new_version out number);
+  -- Explicit nullable strategy: null clears; legacy overload preserves existing strategy.
+  procedure save_gambit(p_id in out number, p_expected_version in number, p_name in varchar2, p_description in clob, p_strategy in clob, p_new_version out number);
   -- Save the subject and its complete explicit ECO set in the caller transaction.
   procedure save_gambit_with_eco(p_id in out number, p_expected_version in number, p_name in varchar2, p_description in clob, p_eco_codes in varchar2, p_new_version out number);
+  -- Explicit nullable strategy: null clears; legacy overload preserves existing strategy.
+  procedure save_gambit_with_eco(p_id in out number, p_expected_version in number, p_name in varchar2, p_description in clob, p_strategy in clob, p_eco_codes in varchar2, p_new_version out number);
   -- Require the observed version and reject referenced rows; caller owns commit/rollback.
   procedure delete_gambit(p_id number, p_expected_version number);
   -- Insert when p_id is null; otherwise require the observed version. Return the new version.

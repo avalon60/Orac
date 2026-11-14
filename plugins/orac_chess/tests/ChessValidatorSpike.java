@@ -42,6 +42,11 @@ public class ChessValidatorSpike {
     check("[SetUp \"1\"] [FEN \"8/8/8/8/8/8/8/K6k w K - 0 1\"] 1.Kb1 *",false,0,null);
     check("[SetUp \"1\"] [FEN \"8/8/8/8/8/8/8/K6k w - e6 0 1\"] 1.Kb1 *",false,0,null);
     check("[SetUp \"1\"] [FEN \"8/8/8/8/8/8/8/Kk6 w - - 0 1\"] 1.Kb1 *",false,0,null);
+    if(OracChessValidator.continuation(clob("1.e4 e5 *"),clob("1.e4 e5 2.Nf3 *"),2,null)!=null) throw new AssertionError("valid continuation");
+    if(OracChessValidator.continuation(clob("1.e4 e5 *"),clob("1.e4 c5 2.Nf3 *"),2,null)==null) throw new AssertionError("wrong prefix");
+    if(OracChessValidator.continuation(clob("1.e4 e5 *"),clob("1.e4 e5 *"),2,null)==null) throw new AssertionError("equal continuation");
+    if(OracChessValidator.continuation(clob("1.e4 e5 *"),clob("1.e4 *"),2,null)==null) throw new AssertionError("short continuation");
+    if(OracChessValidator.continuation(clob("1.e4 e5 *"),clob("1.e4 e5 2.Nf3 *"),1,null)==null) throw new AssertionError("wrong continuation ply");
     if(OracChessValidator.branch(clob("1.e4 e5 2.Nf3 *"),clob("1.e4 c5 *"),1,null)!=null) throw new AssertionError("valid branch");count++;
     if(OracChessValidator.branch(clob("1.e4 e5 *"),clob("1.e4 e5 2.Nf3 *"),2,null)==null) throw new AssertionError("extension accepted");count++;
     System.out.println(count+" validator spike checks passed");
