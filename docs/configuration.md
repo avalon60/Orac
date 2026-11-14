@@ -1186,13 +1186,21 @@ Sets the minimum runtime logging severity.
 **Notes:** The runtime fallback differs from the shipped value; the configured value remains authoritative when present.
 
 For call timing diagnostics, set `log_level = TRACE` and restart the Orac
-processes being measured. TRACE records show a qualified function name, elapsed
-wall time in milliseconds, and `ok`, `raised`, or `closed` status. They omit
-arguments, results, prompts, and transcripts. The main chat, retrieval, model
-stream, plugin, and voice boundaries are instrumented. Nested timings overlap:
-a caller's elapsed time includes downstream calls and waits, so do not add
-the durations together. Restore the usual log level after diagnosis to reduce
-log volume.
+processes being measured. Each invocation of a function or method instrumented
+with `log_call` produces a `Call:` record when it finishes. This includes the
+main chat, retrieval, model stream, plugin, and voice boundaries, as well as
+some lower-level helpers such as credential handling. TRACE does not record
+every Python function or method call; calls without this instrumentation do
+not produce a `Call:` timing record.
+
+A record shows the qualified function or method name, outcome (`ok`, `raised`,
+or `closed`), elapsed wall time in milliseconds, and `depth`. Depth starts at
+0 and counts nested instrumented calls, not all calls on the Python stack. For
+example, a helper called within an instrumented method can appear at depth 1,
+while an unrelated instrumented call starts at depth 0. Records omit arguments,
+results, prompts, and transcripts. Nested timings overlap: a caller's elapsed
+time includes downstream calls and waits, so do not add the durations together.
+Restore the usual log level after diagnosis to reduce log volume.
 
 ### `supplementary`
 
