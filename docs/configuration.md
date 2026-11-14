@@ -3333,3 +3333,37 @@ Configures vad initial timeout seconds for the `[voice]` subsystem.
 Comma-separated phrases that terminate a local voice session.
 
 **Example:** `session_exit_phrases = exit,quit,stop listening,goodbye`
+
+## Plugin routing semantic embedding profile
+
+Production plugin routing requires an explicit, dedicated profile. It does not
+inherit knowledge, conversation-memory or domain-discovery embedding settings.
+For example, with an installed local Nomic embedding model:
+
+```ini
+[plugin_routing]
+enabled = true
+embedding_provider = ollama
+embedding_service_url = http://localhost:11434
+embedding_model_id = nomic-embed-text:latest
+embedding_dimensions = 768
+embedding_profile_version = routing-v1
+```
+
+All five embedding fields are required when routing is enabled. The only
+configured production provider is `ollama`; hash/deterministic providers are
+test fixtures and cannot be selected in production configuration. The endpoint
+must be a plain HTTP(S) service URL without credentials, query or fragment.
+Provider output is checked for model identity, dimensions and finite values.
+
+Routing's cache-facing identity includes its own scope, provider, endpoint
+fingerprint, model, dimensions and profile version. The underlying request still
+uses the real configured model name. Bump the profile version when replacing
+weights behind a mutable model tag. Endpoint URLs are fingerprinted rather
+than copied into cache identifiers. Existing canonical intent text and routing
+thresholds remain unchanged; no automatic threshold lowering is performed.
+
+Missing/invalid settings or embedding service failures leave plugin routing
+unavailable through the existing logged, non-fatal path. Ordinary conversation
+remains available, and no hash-vector fallback is used. Deterministic providers
+remain available only through explicit unit-test injection into routing objects.

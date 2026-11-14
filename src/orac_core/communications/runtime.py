@@ -50,7 +50,6 @@ from model.plugin_arbitration import PluginArbiter
 from model.arbitration_provider import initialise_arbitration
 from model.llm_routing_adviser import LLMRoutingAdviser
 from model.plugin_routing import (
-    DeterministicHashTestEmbeddingProvider,
     PluginManager,
     PluginRoutingHandoff,
     render_plugin_routing_hints,
@@ -124,6 +123,7 @@ from orac_core.knowledge.grounding import KnowledgeGroundingPackBuilder
 from orac_core.knowledge.repository import KnowledgeEmbeddingRepository
 from orac_core.knowledge.repository import KnowledgeRetrievalRepository
 from orac_core.knowledge.embeddings import knowledge_embedding_provider
+from orac_core.plugin_routing_embeddings import plugin_routing_embedding_provider
 from orac_core.knowledge.response_policy import apply_response_policy
 from orac_core.knowledge.response_policy import ResponsePolicyStreamBuffer
 from orac_core.conversation_memory import ConversationMemoryGroundingPack
@@ -3433,16 +3433,9 @@ class OracCommunicationsRuntime:
             return
 
         try:
-            embedding_model_id = self.config_mgr.config_value(
-                "plugin_routing", "embedding_model_id", default="hash-embedding-v1"
-            )
-            embedding_dimensions = self.config_mgr.int_config_value(
-                "plugin_routing", "embedding_dimensions", default=32
-            )
-            embedding_provider = DeterministicHashTestEmbeddingProvider(
-                model_id=embedding_model_id,
-                dimensions=embedding_dimensions,
-            )
+            embedding_provider = plugin_routing_embedding_provider(self.config_mgr)
+            if not (getattr(embedding_provider, "semantic", False) and getattr(embedding_provider, "production_allowed", False)):
+                raise ValueError("Plugin routing provider is not approved for production semantic routing")
             self.plugin_manager = PluginManager(
                 embedding_provider=embedding_provider, logger=logger
             )

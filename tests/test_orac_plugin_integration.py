@@ -186,6 +186,9 @@ class _FakePluginServiceManager:
 
 
 class _FakeEmbeddingProvider:
+    semantic = True
+    production_allowed = True
+
     def __init__(self, *args, **kwargs):
         self.args = args
         self.kwargs = kwargs
@@ -612,8 +615,8 @@ class OracPluginIntegrationTests(unittest.TestCase):
         with (
             patch.object(
                 orac_module,
-                "DeterministicHashTestEmbeddingProvider",
-                _FakeEmbeddingProvider,
+                "plugin_routing_embedding_provider",
+                lambda config: _FakeEmbeddingProvider(),
             ),
             patch.object(orac_module, "PluginManager", _FakePluginManager),
             patch.object(orac_module, "PluginRouter", _FakePluginRouter),
@@ -625,6 +628,29 @@ class OracPluginIntegrationTests(unittest.TestCase):
         self.assertIsInstance(orchestrator.plugin_router, _FakePluginRouter)
         self.assertIsNotNone(orchestrator.plugin_execution_service)
         self.assertIs(orchestrator.plugin_execution_service.plugin_audit_adapter, orchestrator.plugin_audit_adapter)
+
+    def test_plugin_routing_bootstrap_rejects_fixture_provider_without_disabling_chat(self) -> None:
+        """Production bootstrap fails routing closed without selecting hash fallback."""
+        orchestrator = self._make_orac_stub()
+        fixture = types.SimpleNamespace(semantic=False, production_allowed=False, model_id="fixture")
+        with (
+            patch.object(orac_module, "plugin_routing_embedding_provider", return_value=fixture),
+            patch.object(orac_module, "PluginManager") as manager,
+        ):
+            orchestrator._init_plugin_routing()
+        manager.assert_not_called()
+        self.assertIsNone(orchestrator.plugin_manager)
+        self.assertFalse(orchestrator._plugin_routing_ready)
+        self.assertTrue(orchestrator._plugin_routing_enabled)
+
+    def test_plugin_routing_bootstrap_configuration_failure_is_nonfatal(self) -> None:
+        """Missing explicit routing settings leave ordinary conversation available."""
+        orchestrator = self._make_orac_stub()
+        orchestrator.config_mgr = _FakeConfigManager()
+        orchestrator._init_plugin_routing()
+        self.assertIsNone(orchestrator.plugin_router)
+        self.assertFalse(orchestrator._plugin_routing_ready)
+        self.assertTrue(orchestrator._plugin_routing_enabled)
 
     def test_execute_plugin_request_delegates_to_plugin_execution_service(self) -> None:
         orchestrator = self._make_orac_stub()
