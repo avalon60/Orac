@@ -30,6 +30,7 @@ from model.plugin_routing.models import PluginManifest
 from model.plugin_runtime import PluginRuntimeError, load_plugin_service_class
 from model.plugin_secret_vault import PluginSecretVault
 from model.plugin_service_lifecycle import PluginServiceLifecycleStore
+from orac_core.governed_retrieval import AuthorisedKnowledgeDomainRepository
 from orac_core.knowledge.project_bridge import CoreProjectRetrievalBridge
 
 
@@ -78,6 +79,7 @@ class PluginServiceContext:
     request_processor: Any | None = None
     model_catalog_provider: Callable[[], list[dict[str, Any]]] | None = None
     embedding_provider: Callable[[str, list[str]], list[list[float]]] | None = None
+    relational_query_runtime: Any | None = None
     project_retrieval_bridge: CoreProjectRetrievalBridge | None = None
     _plugin_db_session_factory: Callable[[], OracPluginDatabaseSession] | None = None
     _secret_vault: PluginSecretVault | None = None
@@ -179,6 +181,7 @@ class PluginServiceManager:
         ) = None,
         core_gateway_plugin_ids: frozenset[str] = DEFAULT_CORE_GATEWAY_PLUGIN_IDS,
         project_retrieval_service: Any | None = None,
+        relational_query_runtime: Any | None = None,
         core_retrieval_plugin_ids: frozenset[str] = DEFAULT_CORE_RETRIEVAL_PLUGIN_IDS,
     ) -> None:
         self._logger = logger
@@ -219,6 +222,7 @@ class PluginServiceManager:
         self._embedding_provider = embedding_provider
         self._core_gateway_plugin_ids = frozenset(core_gateway_plugin_ids)
         self._project_retrieval_service = project_retrieval_service
+        self._relational_query_runtime = relational_query_runtime
         self._core_retrieval_plugin_ids = frozenset(core_retrieval_plugin_ids)
         self._records: dict[tuple[str, str], _ServiceRecord] = {}
         self._dependency_invalid: dict[str, PluginManifest] = {}
@@ -593,7 +597,10 @@ class PluginServiceManager:
         )
         project_bridge = None
         if retrieval_authorised and self._project_retrieval_service is not None:
-            project_code = str(plugin_config.config_value("retrieval", "project_code")).strip()
+            retrieval_config = plugin_config.section_dict("retrieval")
+            project_code = retrieval_config.get("project_code")
+            if project_code is not None:
+                project_code = project_code.strip()
             classifications = frozenset(
                 item.strip().upper()
                 for item in str(
@@ -605,6 +612,7 @@ class PluginServiceManager:
                 project_code=project_code,
                 allowed_classifications=classifications,
                 retrieval_service=self._project_retrieval_service,
+                project_repository=AuthorisedKnowledgeDomainRepository(),
             )
         context = PluginServiceContext(
             plugin_id=record.manifest.plugin_id,
@@ -624,6 +632,7 @@ class PluginServiceManager:
                 self._embedding_provider if gateway_authorised else None
             ),
             project_retrieval_bridge=project_bridge,
+            relational_query_runtime=(self._relational_query_runtime if record.manifest.plugin_id == "orac_core" and record.service_runtime.service_code == "relational_query" else None),
             _plugin_db_session_factory=self._plugin_db_session_factory,
             _secret_vault=PluginSecretVault(
                 plugin_id=record.manifest.plugin_id,

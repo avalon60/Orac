@@ -368,6 +368,10 @@ that additional project as a Drop Box target.
 
 Plugin scopes are derived from the installed plugin registry and must be
 enabled and runtime-eligible. They are not created from a Drop Box location.
+An installed plugin's APEX application can submit an authorised asynchronous
+search against its own plugin scope through the
+[Plugin APEX Knowledge Search](plugin-apex-knowledge-search.md) API. The
+signed-in APEX user still needs a current `USE` grant on that scope.
 
 ### App 1042: RAG Usage Privileges, Pages 39 and 40
 

@@ -246,6 +246,49 @@ class PluginRegistryTests(unittest.TestCase):
             ):
                 store.enabled_manifests()
 
+    def test_runtime_loaders_apply_registry_enablement_without_changing_payload(self) -> None:
+        """An enabled installed row overrides its disabled installation default only at runtime."""
+        from model.plugin_registry import inspect_registered_plugin_artifact
+        from model.plugin_routing.embeddings import DeterministicHashTestEmbeddingProvider
+        from model.plugin_routing.manager import PluginManager
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            installed = _write_installed_manifest(root, "alpha")
+            payload_path = installed / "manifest.json"
+            payload = json.loads(payload_path.read_text())
+            payload["enabled"] = False
+            payload_path.write_text(json.dumps(payload))
+            manifest = PluginDiscovery(installed).load_manifest(
+                payload_path, plugin_dir=installed / "plugin", enforce_filename=False,
+            )
+            row = _registry_row("alpha", installed_path=str(installed), manifest_hash=manifest.manifest_hash)
+            store = PluginRegistryStore()
+            store.get = lambda plugin_id: row
+            store.list_enabled = lambda: [row]
+            self.assertFalse(inspect_registered_plugin_artifact(row).manifest.enabled)
+            self.assertTrue(store.enabled_manifest("alpha").enabled)
+            self.assertTrue(store.load_enabled_manifest_result().manifests[0].enabled)
+            self.assertEqual(store.enabled_manifest("alpha").manifest_hash, manifest.manifest_hash)
+            self.assertFalse(json.loads(payload_path.read_text())["enabled"])
+            manager = PluginManager(
+                embedding_provider=DeterministicHashTestEmbeddingProvider(),
+                plugins_dir=root / "source", cache_dir=root / "cache",
+                registry_store=store, require_registry=True,
+            )
+            manager.refresh()
+            self.assertTrue(manager.get_manifest("alpha").enabled)
+            self.assertEqual(manager.get_manifest("alpha").manifest_hash, manifest.manifest_hash)
+            for field, value in (("enabled", "N"), ("readiness_status", "failed"), ("removal_id", "removal-1")):
+                with self.subTest(field=field):
+                    blocked = dict(row, **{field: value})
+                    store.get = lambda plugin_id: blocked
+                    store.list_enabled = lambda: [blocked]
+                    self.assertIsNone(store.enabled_manifest("alpha"))
+                    self.assertEqual(store.load_enabled_manifest_result().manifests, ())
+                    manager.refresh()
+                    self.assertIsNone(manager.get_manifest("alpha"))
+
     def test_apex_app_listing_uses_menu_view(self) -> None:
         cursor = _FakeCursor()
         cursor.description = [("PLUGIN_ID",), ("APP_ALIAS",), ("LABEL",)]

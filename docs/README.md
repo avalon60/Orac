@@ -27,6 +27,8 @@ to complete.
 - [Document Ingestion](document-ingestion.md): Core-managed source storage,
   document lineage, worker configuration, APEX scope administration, chunking,
   embeddings, tags, and retrieval boundaries.
+- [Plugin APEX Knowledge Search](plugin-apex-knowledge-search.md): submit and
+  poll for authorised semantic evidence in the installed plugin's scope.
 - [Knowledge Storage Maintenance](knowledge-maintenance.md): run read-only
   migration preflight, full read-only reconciliation, backfill legacy
   extractions, and migrate verified raw locators in bounded resumable batches.
@@ -107,3 +109,5 @@ canonical operating guidance and should not be treated as runtime contracts.
 The [Phase 2B context-budget readiness record](pending_work/phase2b-context-budget-readiness.md)
 is retained as historical implementation evidence; the canonical runtime
 contract is [Unified Model-Aware Context Budgeting](context-budgeting.md).
+
+- [Governed relational queries](relational-query.md): Core SQL service, Chess dataset, authenticated chat/APEX boundaries and release verification.

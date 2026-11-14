@@ -99,6 +99,7 @@ REQUIRED_FIELDS = {
     "runtime",
 }
 OPTIONAL_FIELDS = {
+    "query_datasets",
     "entities",
     "examples",
     "entry_point",
@@ -227,7 +228,6 @@ class PluginDiscovery:
         capabilities = self._require_string_list(
             data["capabilities"],
             "capabilities",
-            allow_empty=False,
         )
         entitlements = self._require_string_list(
             data["entitlements"],
@@ -259,6 +259,20 @@ class PluginDiscovery:
             database_deployment,
             database_schemas,
         ) = self._load_database(data.get("database", {}))
+        if not capabilities and not (
+            database_required
+            and database_schemas
+            and database_deployment.deployment_type == "liquibase"
+            and not entry_point
+            and not service_runtimes
+            and not route_capabilities
+            and not interceptor_entry_point
+            and not entitlements
+        ):
+            raise PluginManifestError(
+                "capabilities must contain at least one value unless this is a "
+                "database-only Liquibase plugin without runtime entry points"
+            )
         secrets = self._load_secrets(data.get("secrets"))
         ui = self._load_ui(data.get("ui"))
         apex_apps = self._load_apex_apps(data.get("apex_apps"))
@@ -274,6 +288,12 @@ class PluginDiscovery:
             )
         except PluginCommandDependencyError as exc:
             raise PluginManifestError(f"command_dependencies: {exc}") from exc
+
+        from orac_core.relational_query.catalogue import parse_datasets
+        try:
+            query_datasets = parse_datasets(data.get("query_datasets", []), plugin_id, tuple(capabilities), tuple(schema.schema_name.lower() for schema in database_schemas))
+        except ValueError as exc:
+            raise PluginManifestError(str(exc)) from exc
 
         manifest_hash = hashlib.sha256(manifest_text.encode("utf-8")).hexdigest()
 
@@ -309,6 +329,7 @@ class PluginDiscovery:
             apex_apps=tuple(apex_apps),
             python_dependencies=python_dependencies,
             command_dependencies=command_dependencies,
+            query_datasets=query_datasets,
         )
 
     def _load_routing(

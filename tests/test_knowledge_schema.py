@@ -69,7 +69,8 @@ class KnowledgeSchemaTests(unittest.TestCase):
             for path in (CORE_SCHEMA / "constraint_fk").glob("*.sql")
         )
         id_columns = set(re.findall(r"\b([a-z][a-z0-9_]*_id)\s+number\b", table_text))
-        deliberate_non_fk = {"ingestion_event_id", "target_id"}
+        # APEX application IDs are managed by APEX, outside ORAC_CORE tables.
+        deliberate_non_fk = {"ingestion_event_id", "target_id", "application_id"}
         parent_or_identity = {
             "source_object_id",
             "ingestion_request_id",
@@ -85,6 +86,7 @@ class KnowledgeSchemaTests(unittest.TestCase):
             "knowledge_scope_id",
             "artefact_id",
             "retrieval_event_id",
+            "search_request_id",
         }
         for constraint_name in (
             "kn_docvtag_kn_docver_fk1",

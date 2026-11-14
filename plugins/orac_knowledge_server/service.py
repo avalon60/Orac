@@ -238,19 +238,33 @@ class OracKnowledgeServerService:
         )
 
         @mcp.tool(
-            name="search",
-            description="Search the configured Orac project; return bounded previews and references.",
+            name="list_projects",
+            description="List currently authorised Orac projects in bounded pages.",
             annotations=_READ_ONLY,
         )
-        def search(query: str) -> dict[str, Any]:
-            """Find authorised current evidence without accepting a scope selector."""
+        def list_projects(offset: int = 0) -> dict[str, Any]:
+            """Return a fresh page of project names and descriptions."""
+            principal = _principal.get()
+            if principal is None:
+                raise ProjectRetrievalDenied("Evidence is unavailable.")
+            return asdict(bridge.list_projects(principal=principal, offset=offset))
+
+        @mcp.tool(
+            name="search",
+            description="Search one authorised project, or all currently authorised projects.",
+            annotations=_READ_ONLY,
+        )
+        def search(query: str, project_code: str | None = None) -> dict[str, Any]:
+            """Find current evidence using only Core-approved project scopes."""
             principal = _principal.get()
             if principal is None:
                 raise ProjectRetrievalDenied("Evidence is unavailable.")
             return {
                 "results": [
                     asdict(item)
-                    for item in bridge.search(principal=principal, query=query)
+                    for item in bridge.search(
+                        principal=principal, query=query, project_code=project_code
+                    )
                 ]
             }
 

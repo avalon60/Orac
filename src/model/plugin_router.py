@@ -181,6 +181,7 @@ class PluginRouter:
         plugin_service_manager=None,
         plugin_db_session_factory=None,
         knowledge_retrieval_service=None,
+        relational_query_runtime=None,
         execution_timeout_seconds: float | None = None,
     ):
         self._plugin_manager = plugin_manager
@@ -197,6 +198,7 @@ class PluginRouter:
             ).create
         )
         self._knowledge_retrieval_service = knowledge_retrieval_service
+        self._relational_query_runtime = relational_query_runtime
         self._execution_timeout_seconds = _resolve_execution_timeout_seconds(
             config_mgr,
             explicit_timeout=execution_timeout_seconds,
@@ -228,7 +230,7 @@ class PluginRouter:
                     f"Plugin execution skipped because manifest '{candidate.plugin_id}' was not found."
                 )
                 continue
-            if not manifest.entry_point:
+            if not manifest.entry_point and not manifest.query_datasets:
                 self._logger.log_debug(
                     f"Plugin execution skipped for '{candidate.plugin_id}' because no entry_point is defined."
                 )
@@ -324,7 +326,8 @@ class PluginRouter:
                         policy_decision=policy_decision,
                         audit_session=audit_session,
                         request_context=request_context,
-                    )
+                    ),
+                    timeout_seconds=(150.0 if any(item.capability_id == candidate.capability_id for item in manifest.query_datasets) else None),
                 )
             except _PluginInvocationTimeout:
                 self._logger.log_error(
@@ -439,7 +442,7 @@ class PluginRouter:
                 False, "denied", "Plugin registry unavailable."
             )
         manifest = self._plugin_manager.get_manifest(candidate.plugin_id)
-        if manifest is None or not manifest.enabled or not manifest.entry_point:
+        if manifest is None or not manifest.enabled or (not manifest.entry_point and not manifest.query_datasets):
             return PluginPolicyEligibility(False, "denied", "Plugin is not enabled.")
         capability_id = str(getattr(candidate, "capability_id", "") or "")
         if capability_id:
@@ -471,6 +474,25 @@ class PluginRouter:
         request_context: dict[str, Any] | None = None,
     ) -> PluginExecutionResult | object | None:
         """Load and invoke one policy-approved plugin candidate."""
+        dataset = next((item for item in manifest.query_datasets if item.capability_id == candidate.capability_id), None)
+        if dataset is not None:
+            from dataclasses import asdict
+            import json
+            from orac_core.communications.models import CapabilityRestrictions, PrincipalContext
+            from orac_core.relational_query.models import QueryDenied
+            try:
+                if self._relational_query_runtime is None:
+                    raise QueryDenied("DATASET_UNAVAILABLE")
+                bound = (request_context or {}).get("capability_restrictions")
+                restrictions = CapabilityRestrictions(capability_ids=frozenset(bound) if bound is not None else None)
+                result = self._relational_query_runtime.query(PrincipalContext(auth_user), dataset.dataset_id,
+                    prompt, _retrieval_correlation_id(request_context) or "", restrictions)
+                return PluginExecutionResult(plugin_id=manifest.plugin_id, content=_format_relational_query_result(result),
+                    handled=True, provenance={"source": "relational_query", "plugin_id": manifest.plugin_id,
+                    "capability_id": dataset.capability_id, "dataset_id": dataset.dataset_id, "status": result.status})
+            except QueryDenied as exc:
+                return PluginExecutionResult(plugin_id=manifest.plugin_id, content="The reference query is unavailable (" + str(exc) + ").",
+                    handled=True, provenance={"source": "relational_query", "status": "denied", "reason": str(exc)})
         try:
             plugin_class = load_plugin_class(manifest)
         except BaseException as exc:
@@ -596,9 +618,9 @@ class PluginRouter:
             )
         return result
 
-    def _invoke_with_timeout(self, func):
+    def _invoke_with_timeout(self, func, *, timeout_seconds=None):
         """Run plugin invocation with a bounded wait in a daemon worker thread."""
-        timeout_seconds = self._execution_timeout_seconds
+        timeout_seconds = self._execution_timeout_seconds if timeout_seconds is None else timeout_seconds
         if timeout_seconds <= 0:
             return func()
 
@@ -1025,3 +1047,40 @@ def _resolve_execution_timeout_seconds(
             return DEFAULT_PLUGIN_EXECUTION_TIMEOUT_SECONDS
 
     return DEFAULT_PLUGIN_EXECUTION_TIMEOUT_SECONDS
+
+
+def _format_relational_query_result(result: Any) -> str:
+    """Present literal shared prose and tabular evidence without another model."""
+    import html
+    import re
+
+    def literal(value: Any) -> str:
+        text = html.escape("" if value is None else str(value), quote=False)
+        return re.sub(r"([\\`*_{}\[\]()#+.!|>~-])", lambda match: chr(92) + match.group(0), text)
+
+    if result.status in {"clarification", "unsupported"}:
+        return literal(result.message)
+    sections = []
+    general = result.general_knowledge_answer
+    if result.answer_status in {"complete", "complete_clipped"} and not general:
+        general = "No supplementary general chess knowledge was used."
+    for title, value in (("From the Chess catalogue", result.catalogue_answer),
+                         ("General chess knowledge", general)):
+        if value:
+            sections.append("### " + title + "\n\n" + literal(value))
+    if result.answer_status == "unavailable":
+        sections.append("Explanation unavailable.")
+    elif result.answer_status == "complete_clipped":
+        sections.append("The explanation uses a limited portion of the retrieved evidence.")
+    if result.columns:
+        table = ["| " + " | ".join(literal(value).replace("\n", " ") for value in result.columns) + " |",
+                 "| " + " | ".join("---" for _ in result.columns) + " |"]
+        table.extend("| " + " | ".join(literal(value).replace("\n", " ") for value in row) + " |" for row in result.rows)
+        sections.append("### Supporting records\n\n" + "\n".join(table))
+    if not result.rows:
+        sections.append("No matching reference records found.")
+    if result.truncated:
+        sections.append("Results truncated at the safety limit.")
+    if result.sql:
+        sections.append("### SQL\n\n" + "\n".join("    " + line for line in result.sql.splitlines()))
+    return "\n\n".join(sections)

@@ -15,6 +15,8 @@ import threading
 import time
 from typing import Callable
 
+from orac_core.governed_retrieval.discovery import AuthorisedKnowledgeDomainRepository
+
 from .models import KnowledgeSearchResult
 from .retrieval import KnowledgeRetrievalService
 from .scope import KnowledgeScope
@@ -28,6 +30,8 @@ MAX_CALLS_PER_MINUTE = 30
 MAX_CONCURRENT_CALLS = 2
 SEARCH_TICKET_SECONDS = 300
 MAX_TICKETS = 256
+PROJECT_PAGE_SIZE = 25
+PROJECT_CATALOGUE_LIMIT = 4096
 
 
 class ProjectRetrievalDenied(PermissionError):
@@ -39,6 +43,7 @@ class ProjectEvidence:
     """One bounded current chunk with an opaque fetch reference."""
 
     reference: str
+    project_code: str
     document_id: int
     document_version_id: int
     chunk_id: int
@@ -48,9 +53,27 @@ class ProjectEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class ProjectDescriptor:
+    """One bounded, currently authorised project descriptor."""
+
+    project_code: str
+    display_name: str
+    description: str
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectPage:
+    """One page of project descriptors with a fresh-query continuation offset."""
+
+    projects: tuple[ProjectDescriptor, ...]
+    next_offset: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class _Ticket:
     principal: str
     query: str
+    project_code: str
     document_id: int
     document_version_id: int
     chunk_id: int
@@ -59,44 +82,72 @@ class _Ticket:
 
 
 class CoreProjectRetrievalBridge:
-    """Bind one configured project and reuse Core's live retrieval decision."""
+    """Expose authorised projects through Core-owned discovery and retrieval."""
 
     def __init__(
         self,
         *,
-        project_code: str,
+        project_code: str | None,
         allowed_classifications: frozenset[str],
         retrieval_service: KnowledgeRetrievalService,
+        project_repository: AuthorisedKnowledgeDomainRepository,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        """Initialise a fail-closed bridge for one administrator-selected project."""
+        """Initialise a fail-closed bridge with an optional administrator limit."""
         if (
-            not project_code
-            or len(project_code) > 100
-            or project_code == "*"
+            (
+                project_code is not None
+                and (not project_code or len(project_code) > 100 or project_code == "*")
+            )
             or not allowed_classifications
             or any(
                 not code or len(code) > 100 or code == "*"
                 for code in allowed_classifications
             )
         ):
-            raise ValueError("Project and classification restrictions are required.")
-        self._scope = KnowledgeScope("PROJECT", project_code)
+            raise ValueError("Project or classification restriction is invalid.")
+        self._restricted_project = project_code
         self._allowed_classifications = frozenset(allowed_classifications)
         self._retrieval = retrieval_service
+        self._projects = project_repository
         self._clock = clock
         self._lock = threading.Lock()
         self._recent_calls: dict[str, deque[float]] = defaultdict(deque)
         self._active_calls: dict[str, int] = defaultdict(int)
         self._tickets: dict[str, _Ticket] = {}
 
-    def search(self, *, principal: str, query: str) -> tuple[ProjectEvidence, ...]:
+    def list_projects(self, *, principal: str, offset: int = 0) -> ProjectPage:
+        """Page through a fresh Core-authorised catalogue for this principal."""
+        if type(offset) is not int or not 0 <= offset <= PROJECT_CATALOGUE_LIMIT:
+            raise ValueError("Project offset is invalid.")
+        self._enter(principal)
+        try:
+            projects = self._catalogue(principal)
+            page = projects[offset : offset + PROJECT_PAGE_SIZE]
+            next_offset = offset + len(page)
+            return ProjectPage(
+                projects=page,
+                next_offset=next_offset if next_offset < len(projects) else None,
+            )
+        finally:
+            self._leave(principal)
+
+    def search(
+        self, *, principal: str, query: str, project_code: str | None = None
+    ) -> tuple[ProjectEvidence, ...]:
         """Return minimal previews and references from current authorised chunks."""
         if not isinstance(query, str) or not 1 <= len(query.strip()) <= MAX_QUERY_CHARS:
             raise ValueError("Query length is invalid.")
+        if project_code is not None and (
+            not isinstance(project_code, str)
+            or not 1 <= len(project_code) <= 100
+            or project_code == "*"
+        ):
+            raise ValueError("Project selection is invalid.")
         self._enter(principal)
         try:
-            results = self._current_results(principal, query.strip())
+            scope = self._selected_scope(principal, project_code)
+            results = self._current_results(principal, query.strip(), scope)
             evidence: list[ProjectEvidence] = []
             with self._lock:
                 self._expire_tickets()
@@ -105,6 +156,7 @@ class CoreProjectRetrievalBridge:
                     self._tickets[reference] = _Ticket(
                         principal=principal,
                         query=query.strip(),
+                        project_code=item.scope.scope_key,
                         document_id=item.document_id,
                         document_version_id=item.document_version_id,
                         chunk_id=item.chunk_id,
@@ -129,7 +181,8 @@ class CoreProjectRetrievalBridge:
                 ticket = self._tickets.get(reference)
             if ticket is None or ticket.principal != principal:
                 raise ProjectRetrievalDenied("Evidence is unavailable.")
-            for item in self._current_results(principal, ticket.query):
+            scope = self._selected_scope(principal, ticket.project_code)
+            for item in self._current_results(principal, ticket.query, scope):
                 if (
                     item.document_id == ticket.document_id
                     and item.document_version_id == ticket.document_version_id
@@ -142,36 +195,93 @@ class CoreProjectRetrievalBridge:
             self._leave(principal)
 
     def _current_results(
-        self, principal: str, query: str
+        self, principal: str, query: str, scope: KnowledgeScope | None
     ) -> tuple[KnowledgeSearchResult, ...]:
         if not principal or not principal.strip():
             raise ProjectRetrievalDenied("Evidence is unavailable.")
         try:
-            outcome = self._retrieval.retrieve(
-                query,
+            limits = dict(
                 principal_username=principal,
-                scope=self._scope,
                 max_candidate_chunks=100,
                 max_selected_chunks=MAX_RESULTS,
                 max_chunk_chars=MAX_FETCH_CHARS,
                 max_context_chars=MAX_RESULTS * MAX_FETCH_CHARS,
             )
+            if scope is None:
+                outcome = self._retrieval.retrieve_authorised_projects(query, **limits)
+            else:
+                outcome = self._retrieval.retrieve(query, scope=scope, **limits)
         except Exception:
             raise ProjectRetrievalDenied("Evidence is unavailable.") from None
-        if outcome.status == "failed" or outcome.scope != self._scope:
+        if outcome.status == "failed" or outcome.scope != scope:
             raise ProjectRetrievalDenied("Evidence is unavailable.")
         if outcome.status == "no_evidence":
             return ()
         if outcome.status != "grounded" or len(outcome.results) > MAX_RESULTS:
             raise ProjectRetrievalDenied("Evidence is unavailable.")
-        return tuple(item for item in outcome.results if self._visible(item))
+        return tuple(item for item in outcome.results if self._visible(item, scope))
 
-    def _visible(self, item: KnowledgeSearchResult) -> bool:
+    def _visible(
+        self, item: KnowledgeSearchResult, scope: KnowledgeScope | None
+    ) -> bool:
         return (
-            item.scope == self._scope
+            item.scope.scope_type == "PROJECT"
+            and (scope is None or item.scope == scope)
             and bool(item.classification_tags)
             and set(item.classification_tags).issubset(self._allowed_classifications)
         )
+
+    def _selected_scope(
+        self, principal: str, project_code: str | None
+    ) -> KnowledgeScope | None:
+        """Check the live catalogue before accepting a project selector."""
+        if self._restricted_project is not None:
+            if project_code is not None and project_code != self._restricted_project:
+                raise ProjectRetrievalDenied("Evidence is unavailable.")
+            project_code = self._restricted_project
+        if project_code is None:
+            self._catalogue(principal)
+            return None
+        if not any(
+            item.project_code == project_code for item in self._catalogue(principal)
+        ):
+            raise ProjectRetrievalDenied("Evidence is unavailable.")
+        return KnowledgeScope("PROJECT", project_code)
+
+    def _catalogue(self, principal: str) -> tuple[ProjectDescriptor, ...]:
+        """Read Core's current catalogue and reject incomplete or malformed data."""
+        if not isinstance(principal, str) or not principal.strip():
+            raise ProjectRetrievalDenied("Evidence is unavailable.")
+        try:
+            rows = self._projects.load_authorised_projects(
+                principal, PROJECT_CATALOGUE_LIMIT + 1
+            )
+            if len(rows) > PROJECT_CATALOGUE_LIMIT or any(
+                int(row["authorised_catalogue_size"]) != len(rows) for row in rows
+            ):
+                raise ProjectRetrievalDenied("Project catalogue is unavailable.")
+            projects = []
+            seen = set()
+            for row in rows:
+                code = str(row["project_code"]).strip()
+                if not code or len(code) > 100 or code in seen:
+                    raise ValueError("Invalid project catalogue")
+                seen.add(code)
+                if self._restricted_project is None or code == self._restricted_project:
+                    projects.append(
+                        ProjectDescriptor(
+                            project_code=code,
+                            display_name=str(row.get("display_name") or code).strip()[
+                                :200
+                            ],
+                            description=str(row.get("description") or "").strip()[:500],
+                        )
+                    )
+            return tuple(projects)
+        except ProjectRetrievalDenied:
+            raise
+        except Exception:
+            raise ProjectRetrievalDenied("Project catalogue is unavailable.") from None
 
     @staticmethod
     def _evidence(
@@ -182,6 +292,7 @@ class CoreProjectRetrievalBridge:
         )
         return ProjectEvidence(
             reference=reference,
+            project_code=item.scope.scope_key,
             document_id=item.document_id,
             document_version_id=item.document_version_id,
             chunk_id=item.chunk_id,

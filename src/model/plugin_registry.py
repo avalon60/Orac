@@ -343,7 +343,7 @@ class PluginRegistryStore:
         status = inspect_registered_plugin_artifact(row)
         if not status.ok:
             raise PluginRegistryError(status.message or status.code)
-        return status.manifest
+        return replace(status.manifest, enabled=True) if status.manifest is not None else None
 
     def load_enabled_manifest_result(
         self,
@@ -354,6 +354,8 @@ class PluginRegistryStore:
         manifests: list[PluginManifest] = []
         issues: list[PluginRegistryArtifactStatus] = []
         for row in self.list_enabled():
+            if not plugin_registry_row_runtime_eligible(row):
+                continue
             status = inspect_registered_plugin_artifact(row)
             if not status.ok:
                 if strict:
@@ -361,7 +363,7 @@ class PluginRegistryStore:
                 issues.append(status)
                 continue
             if status.manifest is not None:
-                manifests.append(status.manifest)
+                manifests.append(replace(status.manifest, enabled=True))
         return PluginRegistryManifestLoadResult(
             manifests=tuple(manifests),
             issues=tuple(issues),

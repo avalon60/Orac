@@ -50,6 +50,7 @@ orac_core,knowledge_ingestion_events,kn_inge
 orac_core,knowledge_scopes,kn_scope
 orac_core,knowledge_document_version_tags,kn_docvtag
 orac_core,knowledge_retrieval_events,kn_retev
+orac_core,knowledge_apex_search_requests,kn_apxsr
 orac_core,rag_usage_privileges,rag_useprv
 orac_core,domain_codes,dom_codes
 orac_core,domain_ref_values,dom_refval
@@ -87,3 +88,6 @@ orac_chess,chess_content_source,chs_csr
 orac_chess,chess_eco_code,chs_eco
 orac_chess,chess_gambit_eco,chs_gec
 orac_chess,chess_variation_eco,chs_vec
+orac_core,relational_query_catalogue,rq_cat
+orac_core,relational_query_requests,rq_req
+orac_core,relational_query_audit,rq_aud

@@ -3469,6 +3469,8 @@ class OracCommunicationsRuntime:
                 "lease_acquire_retry_seconds",
                 default=plugin_service_lease_seconds + 2,
             )
+            from orac_core.relational_query.runtime import QueryRuntime
+            self.relational_query_runtime = QueryRuntime(self.plugin_manager, self.config_mgr, self.llm)
             self.plugin_service_manager = PluginServiceManager(
                 logger=logger,
                 config_mgr=self.config_mgr,
@@ -3478,6 +3480,7 @@ class OracCommunicationsRuntime:
                 model_catalog_provider=self.gateway_model_catalog,
                 embedding_provider=self.gateway_embed,
                 project_retrieval_service=self.plugin_knowledge_retrieval_service,
+                relational_query_runtime=self.relational_query_runtime,
             )
             self.plugin_audit_adapter = PluginAuditAdapter(
                 db_session=self.db_session,
@@ -3492,6 +3495,7 @@ class OracCommunicationsRuntime:
                 confirmation_broker=self.plugin_confirmation_broker,
                 plugin_service_manager=self.plugin_service_manager,
                 knowledge_retrieval_service=self.plugin_knowledge_retrieval_service,
+                relational_query_runtime=self.relational_query_runtime,
             )
             self.plugin_execution_service = PluginExecutionService(
                 plugin_router=self.plugin_router,
@@ -4455,10 +4459,13 @@ class OracCommunicationsRuntime:
             conversation_title_enabled = config_mgr.bool_config_value(
                 "conversation_title", "enabled", default=True
             )
-        if knowledge_enabled or conversation_memory_enabled or conversation_title_enabled:
+        # Retention maintenance continues while execution is disabled.
+        query_maintenance_enabled = True
+        if knowledge_enabled or conversation_memory_enabled or conversation_title_enabled or query_maintenance_enabled:
             service_manifests.append(
                 core_knowledge_service_manifest(
                     include_knowledge=knowledge_enabled,
+                    include_relational_query=query_maintenance_enabled,
                     include_conversation_memory=conversation_memory_enabled,
                     include_conversation_title=conversation_title_enabled,
                 )
@@ -10237,6 +10244,7 @@ class OracCommunicationsRuntime:
                         "conversation_id": conversation_id,
                         "message_id": None,
                         "user_id": user_id,
+                        "capability_restrictions": request.restrictions.capability_ids,
                         **(
                             {
                                 "knowledge_scope_restrictions": tuple(

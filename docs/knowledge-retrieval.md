@@ -5,8 +5,10 @@ normalised artefact material. It does not add a public download endpoint or a
 raw binary attachment route.
 
 The optional [Orac Knowledge Server](../plugins/orac_knowledge_server/docs/orac-knowledge-server.md)
-uses a host-owned, project-bound bridge over this retrieval path. Its search
-references are rechecked on fetch. Documents with
+uses a host-owned bridge over Core's authorised project catalogue and scoped
+or global retrieval paths. It can disclose currently authorised project names
+and descriptions to connected MCP clients; optional administrator configuration
+limits it to one project. Its search references are rechecked on fetch. Documents with
 `retrieval_enabled_yn = 'N'` are excluded from current searchable chunks and
 materialisation eligibility.
 

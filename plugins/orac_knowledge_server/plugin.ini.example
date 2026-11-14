@@ -1,6 +1,7 @@
 [retrieval]
-project_code = %PROJECT_CODE%
 allowed_classifications = RAW_REFERENCE
+# Optional restriction to one existing project. Omit for all authorised projects.
+# project_code = NHS_RECORDS
 
 [mcp]
 listen_host = 127.0.0.1

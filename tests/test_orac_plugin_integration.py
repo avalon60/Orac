@@ -10,6 +10,8 @@ from pathlib import Path
 import sys
 import types
 import unittest
+
+import oracledb
 from unittest.mock import AsyncMock, patch
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -399,6 +401,7 @@ class OracPluginIntegrationTests(unittest.TestCase):
         orchestrator.config_mgr = object()
         orchestrator.ctx = object()
         orchestrator.model_name = "test-model"
+        orchestrator.llm = object()
         orchestrator.llm_service_id = "unit-provider"
         orchestrator.service_url = "http://unit-provider"
         orchestrator._llm_connector_cache = {}
@@ -720,10 +723,10 @@ class OracPluginIntegrationTests(unittest.TestCase):
         self.assertEqual(orchestrator.plugin_manager.refresh_calls, 1)
         self.assertEqual(
             [manifest.plugin_id for manifest in service_manager.registered_manifests],
-            ["svc_auto", "hybrid_manual"],
+            ["svc_auto", "hybrid_manual", "orac_core"],
         )
         self.assertEqual(service_manager.start_auto_calls, 1)
-        self.assertEqual(report["service_lifecycle"]["registered"], 2)
+        self.assertEqual(report["service_lifecycle"]["registered"], 3)
 
     def test_refresh_registers_services_idempotently_without_stopping_running_loops(self) -> None:
         orchestrator = self._make_orac_stub()
@@ -872,6 +875,7 @@ class OracPluginIntegrationTests(unittest.TestCase):
         orchestrator = self._make_orac_stub()
         provider_registry = _FakeProviderRegistry()
         orchestrator.provider_registry = provider_registry
+        orchestrator.llm = object()
         orchestrator.llm_service_id = "unit-provider"
         orchestrator.service_url = "http://unit-provider"
         orchestrator.model_name = "unit-model"

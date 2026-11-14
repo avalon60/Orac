@@ -307,6 +307,7 @@ class PluginManifest:
     python_dependencies: tuple[str, ...] = ()
     command_dependencies: tuple[PluginCommandDependency, ...] = ()
     config_path: Path | None = None
+    query_datasets: tuple[Any, ...] = ()
 
 
 @dataclass(frozen=True)

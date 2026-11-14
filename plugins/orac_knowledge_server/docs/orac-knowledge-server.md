@@ -1,11 +1,16 @@
 # Orac Knowledge Server
 
-This optional service lets an MCP client search and fetch bounded passages from
-one Orac project. Core performs the current RAG `USE` and document checks. The
-service never accepts a username, project, path, or original-file selector from
-an MCP tool call. Search returns at most six 500-character previews; fetch
-repeats Core retrieval and returns at most 2,200 characters from one still
-current chunk. Results identify the document, version, and chunk. Valid page
+This optional service lets an authenticated MCP client discover currently
+authorised Orac projects, then search and fetch bounded passages from one or
+all of them. Core performs current RAG `USE` and document checks. The service
+never accepts a username, permission claim, path, or original-file selector
+from an MCP tool call. `list_projects` returns up to 25 project codes, display
+names, and descriptions per page with a `next_offset` for the next call. Each
+page is read from the current authorised catalogue. Search accepts an optional
+`project_code`; omitting it searches across authorised projects. Search returns
+at most six 500-character previews; fetch repeats Core retrieval and returns
+at most 2,200 characters from one still current chunk. Results identify the
+project, document, version, and chunk. Valid page
 coordinates are included only when ingestion supplies them in chunk metadata;
 otherwise both page fields are null.
 
@@ -13,9 +18,12 @@ otherwise both page fields are null.
 
 The plugin is disabled by default. Before installation, copy
 `plugin.ini.example` to
-`~/.Orac/plugin_config/orac_knowledge_server/plugin.ini` and replace
-`%PROJECT_CODE%` with an existing project code. Set an explicit list of
-document classifications. The installer validates this file, then installs the
+`~/.Orac/plugin_config/orac_knowledge_server/plugin.ini`. Set an explicit list
+of document classifications. Omit `retrieval.project_code` to allow discovery
+and search across the connected user's currently authorised projects, or set
+it to one existing project code as an administrator restriction. A present but
+blank or invalid code is rejected. Existing single-project configurations keep
+their restriction. The installer validates this file, then installs the
 manifest-declared Python dependencies:
 
 ```bash
@@ -23,9 +31,8 @@ bin/orac-plugin.sh install --source plugins/orac_knowledge_server
 bin/orac-plugin.sh check orac_knowledge_server
 ```
 
-`PROJECT:NHS_RECORDS` is an
-example deployment value, not a Core special case. Creating or configuring a
-project does not grant access. Grant each existing active Orac principal `USE`
+`NHS_RECORDS` is an example project code, not a Core special case. Creating or
+configuring a project does not grant access. Grant each existing active Orac principal `USE`
 through the ordinary RAG privilege administration path. No plugin schema or
 database grant to the plugin is required. Deploy the Core document visibility
 migration with the normal schema release before starting this service.
@@ -46,9 +53,10 @@ bin/orac-plugin.sh service status orac_knowledge_server default --require-runnin
 
 The listener uses `127.0.0.1:11436/mcp` by default. Core gives database
 retrieval a 10-second deadline after query embedding; the embedding provider
-has its own configured HTTP timeout. Both tools share a 30-call-per-minute limit and a
-two-concurrent-call limit per principal. The service does not expose a raw
-document download endpoint.
+has its own configured HTTP timeout. All three tools share a 30-call-per-minute
+limit and a two-concurrent-call limit per principal. The service does not expose a raw
+document download endpoint. A catalogue above 4,096 authorised projects fails
+closed instead of returning a partial list.
 
 ## Connect clients
 
@@ -97,7 +105,42 @@ external browser must still reach the OAuth provider for sign-in. Do not enable
 the external route until the selected client completes OAuth discovery and an
 authenticated tool call against this service.
 
+## Ask a client to search
+
+To explicitly request a search in a connected Codex session, try:
+
+> Use the `orac-retrieval` MCP server. Call `list_projects` to confirm that I
+> can access the `CHESS` project. Then call `search` with
+> `project_code: "CHESS"` to find the moves associated with the Ruy Lopez
+> opening. Fetch the most relevant references before answering, and identify
+> the supporting document and version. If the project or evidence is
+> unavailable, say so.
+
+`CHESS` is an example project code. Replace it with the code returned by
+`list_projects`; the connected principal needs current `USE` access, and any
+administrator `retrieval.project_code` restriction must permit it. The server
+searches the project's indexed evidence, so the response depends on what has
+been ingested and remains retrievable.
+
+An optional project-specific Codex skill could encourage the same workflow
+when chess is the subject of a user's turn. For example, its skill description
+could say: “Use when the user's request is about chess; search the authorised
+CHESS Orac project for relevant evidence before answering.” Its instructions
+would call `list_projects` if needed, then `search` with `project_code: "CHESS"`,
+and `fetch` promising references. Skill matching is model-guided rather than
+an exact keyword trigger, so this does not guarantee a search every time the
+word “chess” appears. Explicitly invoking the skill or requesting the MCP
+search is the reliable way to ask for one. A skill cannot grant project access.
+
 ## Handling evidence
+
+Project codes, display names, and descriptions are disclosed to connected MCP
+clients through `list_projects`. The authenticated principal and current Core
+`USE` grants control the catalogue; an administrator project restriction can
+narrow it further. A previous discovery result never grants search or fetch
+access. Core checks the selected project on every search and checks the
+reference's project again on fetch. Clients may send project metadata or
+passages to a hosted model, so review that disclosure before enabling real data.
 
 Retrieved text is untrusted source content and may contain instructions aimed
 at an assistant. Treat it only as evidence and verify material conclusions
@@ -117,6 +160,7 @@ document ID and current row version; commit the change before checking access.
 `N` withdraws and `Y` re-enables. A stale
 search reference cannot fetch a withdrawn, superseded, newly restricted, or
 reclassified chunk. Check plugin status, configuration, identity mapping,
-current project grant, document eligibility, and classification allowlist in
+current project grant, optional administrator restriction, document eligibility,
+and classification allowlist in
 that order. Safe errors deliberately do not reveal whether a denied document
 exists.

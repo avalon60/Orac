@@ -2845,6 +2845,22 @@ cffi = "*"
 numpy = ["numpy"]
 
 [[package]]
+name = "sqlglot"
+version = "27.28.1"
+description = "An easily customizable SQL parser and transpiler"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "sqlglot-27.28.1-py3-none-any.whl", hash = "sha256:035e8a905a52a4bdbf0d7c590d8ea98fa4d4195b509b35e20c33dd462ec17b82"},
+    {file = "sqlglot-27.28.1.tar.gz", hash = "sha256:01c03da1aa0c7773002cfb4a58bd4b0656196e0164aee1d83104b3d3cc1475f3"},
+]
+
+[package.extras]
+dev = ["duckdb (>=0.6)", "maturin (>=1.4,<2.0)", "mypy", "pandas", "pandas-stubs", "pdoc", "pre-commit", "pyperf", "python-dateutil", "pytz", "ruff (==0.7.2)", "types-python-dateutil", "types-pytz", "typing_extensions"]
+rs = ["sqlglotrs (==0.7.3)"]
+
+[[package]]
 name = "tenacity"
 version = "9.1.4"
 description = "Retry code until it succeeds"
@@ -3463,4 +3479,4 @@ voice-wake-porcupine = ["pvporcupine", "pvrecorder"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<4.0"
-content-hash = "d1fca338ae125592ca7c5d301aea2a24bc7a2bf37832ac35966bc27e3a690fb1"
+content-hash = "383812fe55e43865fabcaac2d23e2a61ca910787ed05f6ae44e241abe6a5cc8d"

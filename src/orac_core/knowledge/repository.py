@@ -33,8 +33,16 @@ _RETRIEVAL_TEXT_FIELDS = frozenset(
 )
 
 
-def default_orac_session() -> Any:
-    """Open the saved Orac runtime database connection."""
+def default_orac_session(*, connection_timeout_seconds: float | None = None) -> Any:
+    """Open the saved Orac runtime database connection.
+
+    Args:
+        connection_timeout_seconds: Optional TCP connection limit with no retries;
+            omitted callers preserve their existing driver defaults.
+
+    Returns:
+        A normal Orac runtime session using the saved credentials and wallet.
+    """
     config_mgr = ConfigManager(
         config_file_path=project_home() / "resources" / "config" / "orac.ini"
     )
@@ -48,12 +56,18 @@ def default_orac_session() -> Any:
         property_key="wallet_zip_path",
         default_value="",
     )
+    options = {}
+    if connection_timeout_seconds is not None:
+        if connection_timeout_seconds <= 0:
+            raise ValueError("Connection timeout must be positive")
+        options = {"tcp_connect_timeout": connection_timeout_seconds, "retry_count": 0}
     return DBSession(
         wallet_zip_path=wallet or "",
         verbose=False,
         user=username,
         password=password,
         dsn=dsn,
+        **options,
     )
 
 

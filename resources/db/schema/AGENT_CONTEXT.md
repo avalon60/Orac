@@ -252,3 +252,25 @@ and security guardrails before changing it.
 - Check `docs/agent-guardrails/table-abbreviations.csv` before creating or
   renaming tables, constraints, indexes, triggers, TAPI packages, or object
   names derived from table abbreviations.
+
+## Governed Relational Query Contract
+
+Core owns `relational_query_catalogue` (dataset lifecycle/live review evidence,
+not user permissions), `relational_query_requests` (one-day principal/app/APEX
+session-bound work) and `relational_query_audit` (30-day content-free events).
+They follow the existing CORE -> API -> CODE chain. CODE grants only the APEX
+query API to ORAC_APX_PUB and worker API to ORAC. The executor remains the existing
+ORAC_PLUGIN bridge, using separately validated narrow plugin query views.
+Optional Chess projections and READ grants belong exclusively to plugin
+controller `16_query_reference.xml`; Core installation never requires Chess.
+See `docs/relational-query.md` for disabled defaults and unverified release gates.
+
+
+The query catalogue's existing evidence JSON also owns an immutable reviewed
+projection snapshot for keys and foreign-key relationships. CODE's fixed worker
+metadata function returns only that snapshot after the verification gate;
+normal ORAC has no review-authoring privilege. ORAC_PLUGIN continues to read
+only approved views and bridge-visible signatures, without base-table or broad
+dictionary grants. Review replacement invalidates result delivery. Constraint
+changes require operator invalidation/review because hidden base constraints
+cannot be continuously inspected by the bridge.

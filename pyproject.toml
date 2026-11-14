@@ -5,6 +5,7 @@ description = "Your project description"
 authors = [{name = "Clive Bostock"}]
 requires-python = ">=3.12,<4.0"
 dependencies = [
+  "sqlglot==27.28.1",
   "orac-protocol @ git+https://github.com/avalon60/Orac.git@protocol/v1.0.0#subdirectory=protocol",
   "piper-tts (>=1.4.2,<2.0.0)",
   "sounddevice (>=0.5.5,<0.6.0)",

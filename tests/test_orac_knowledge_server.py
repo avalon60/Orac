@@ -46,6 +46,7 @@ class SyntheticRetrieval:
         self.chunk: SyntheticChunk | None = SyntheticChunk()
         self.grants = {"clive", "nicola"}
         self.calls: list[tuple[str, KnowledgeScope]] = []
+        self.global_calls: list[str] = []
 
     def retrieve(
         self,
@@ -66,13 +67,65 @@ class SyntheticRetrieval:
             results=results,
         )
 
+    def retrieve_authorised_projects(
+        self, query: str, *, principal_username: str, **_limits: object
+    ) -> object:
+        """Model Core's global search over currently authorised projects."""
+        self.global_calls.append(principal_username)
+        results = (
+            (self.chunk,)
+            if principal_username in self.grants and self.chunk is not None
+            else ()
+        )
+        return SimpleNamespace(
+            status="grounded" if results else "no_evidence",
+            scope=None,
+            results=results,
+        )
 
-def _bridge(retrieval: SyntheticRetrieval) -> CoreProjectRetrievalBridge:
+
+class SyntheticProjects:
+    """Model Core's current authorised project descriptor catalogue."""
+
+    def __init__(self) -> None:
+        self.grants = {"clive", "nicola"}
+        self.active = {"NHS_RECORDS", "OTHER"}
+        self.fail = False
+        self.extra = 0
+
+    def load_authorised_projects(
+        self, principal_username: str, candidate_limit: int
+    ) -> list[dict[str, object]]:
+        """Return only projects currently visible to an active principal."""
+        if self.fail:
+            raise RuntimeError("private database detail")
+        if principal_username not in self.grants:
+            return []
+        codes = [code for code in ("NHS_RECORDS", "OTHER") if code in self.active]
+        codes.extend(f"EXTRA_{number}" for number in range(self.extra))
+        size = len(codes)
+        return [
+            {
+                "project_code": code,
+                "display_name": f"Name {code}",
+                "description": f"Description {code}",
+                "authorised_catalogue_size": size,
+            }
+            for code in codes[:candidate_limit]
+        ]
+
+
+def _bridge(
+    retrieval: SyntheticRetrieval,
+    projects: SyntheticProjects | None = None,
+    project_code: str | None = "NHS_RECORDS",
+) -> CoreProjectRetrievalBridge:
     """Create the host-bound bridge with explicit classification policy."""
     return CoreProjectRetrievalBridge(
-        project_code="NHS_RECORDS",
+        project_code=project_code,
         allowed_classifications=frozenset({"RAW_REFERENCE"}),
         retrieval_service=retrieval,  # type: ignore[arg-type]
+        project_repository=projects or SyntheticProjects(),  # type: ignore[arg-type]
     )
 
 
@@ -140,6 +193,12 @@ def test_bridge_bounds_and_personal_rate_limit() -> None:
         bridge.search(principal="clive", query="synthetic")
     assert bridge.search(principal="nicola", query="synthetic")
 
+    discovery_bridge = _bridge(SyntheticRetrieval())
+    for _ in range(30):
+        discovery_bridge.list_projects(principal="clive")
+    with pytest.raises(ProjectRetrievalDenied, match="Retrieval limit reached"):
+        discovery_bridge.search(principal="clive", query="synthetic")
+
 
 def test_bridge_rejects_wildcards_and_hides_core_errors() -> None:
     """A misconfigured scope or failing Core call cannot widen or leak access."""
@@ -149,12 +208,14 @@ def test_bridge_rejects_wildcards_and_hides_core_errors() -> None:
             project_code="*",
             allowed_classifications=frozenset({"RAW_REFERENCE"}),
             retrieval_service=retrieval,  # type: ignore[arg-type]
+            project_repository=SyntheticProjects(),  # type: ignore[arg-type]
         )
     with pytest.raises(ValueError):
         CoreProjectRetrievalBridge(
             project_code="NHS_RECORDS",
             allowed_classifications=frozenset({"*"}),
             retrieval_service=retrieval,  # type: ignore[arg-type]
+            project_repository=SyntheticProjects(),  # type: ignore[arg-type]
         )
 
     def fail_retrieval(*_args: object, **_kwargs: object) -> object:
@@ -166,6 +227,107 @@ def test_bridge_rejects_wildcards_and_hides_core_errors() -> None:
     ) as error:
         _bridge(retrieval).search(principal="clive", query="synthetic")
     assert "private" not in str(error.value)
+
+
+def test_live_project_catalogue_pages_and_restriction() -> None:
+    """Discovery pages current descriptors and honours the administrator cap."""
+    projects = SyntheticProjects()
+    projects.extra = 29
+    bridge = _bridge(SyntheticRetrieval(), projects, project_code=None)
+    first = bridge.list_projects(principal="clive")
+    assert len(first.projects) == 25
+    assert first.next_offset == 25
+    assert first.projects[0].display_name == "Name NHS_RECORDS"
+    assert first.projects[0].description == "Description NHS_RECORDS"
+    second = bridge.list_projects(principal="clive", offset=first.next_offset)
+    assert len(second.projects) == 6
+    assert second.next_offset is None
+    restricted = _bridge(SyntheticRetrieval(), projects).list_projects(
+        principal="clive"
+    )
+    assert [item.project_code for item in restricted.projects] == ["NHS_RECORDS"]
+    projects.active.remove("NHS_RECORDS")
+    assert (
+        _bridge(SyntheticRetrieval(), projects)
+        .list_projects(principal="clive")
+        .projects
+        == ()
+    )
+    projects.grants.remove("clive")
+    assert bridge.list_projects(principal="clive").projects == ()
+
+
+def test_discovery_and_selection_fail_closed() -> None:
+    """Catalogue failures, excess size, and invalid offsets cannot disclose data."""
+    projects = SyntheticProjects()
+    bridge = _bridge(SyntheticRetrieval(), projects, project_code=None)
+    with pytest.raises(ValueError):
+        bridge.list_projects(principal="clive", offset=-1)
+    projects.extra = 4096
+    with pytest.raises(
+        ProjectRetrievalDenied, match="Project catalogue is unavailable"
+    ):
+        bridge.list_projects(principal="clive")
+    projects.extra = 0
+    projects.fail = True
+    with pytest.raises(
+        ProjectRetrievalDenied, match="Project catalogue is unavailable"
+    ):
+        bridge.list_projects(principal="clive")
+    with pytest.raises(
+        ProjectRetrievalDenied, match="Project catalogue is unavailable"
+    ):
+        bridge.search(principal="clive", query="synthetic")
+    projects.fail = False
+    with pytest.raises(ProjectRetrievalDenied, match="Evidence is unavailable"):
+        bridge.search(principal="clive", query="synthetic", project_code="UNKNOWN")
+
+
+def test_global_search_and_revoked_access_across_discovery_search_fetch() -> None:
+    """Core checks access after discovery and again when resolving a reference."""
+    retrieval = SyntheticRetrieval()
+    projects = SyntheticProjects()
+    bridge = _bridge(retrieval, projects, project_code=None)
+    assert len(bridge.list_projects(principal="clive").projects) == 2
+    projects.active.remove("NHS_RECORDS")
+    with pytest.raises(ProjectRetrievalDenied):
+        bridge.search(principal="clive", query="synthetic", project_code="NHS_RECORDS")
+    projects.active.add("NHS_RECORDS")
+    reference = bridge.search(principal="clive", query="synthetic")[0].reference
+    assert retrieval.global_calls == ["clive"]
+    projects.active.remove("NHS_RECORDS")
+    with pytest.raises(ProjectRetrievalDenied):
+        bridge.fetch(principal="clive", reference=reference)
+    projects.active.add("NHS_RECORDS")
+    retrieval.grants.remove("clive")
+    with pytest.raises(ProjectRetrievalDenied):
+        bridge.fetch(principal="clive", reference=reference)
+    with pytest.raises(ProjectRetrievalDenied):
+        bridge.search(principal="clive", query="synthetic", project_code="NHS_RECORDS")
+
+
+def test_administrator_restriction_applies_to_search() -> None:
+    """An omitted selector remains confined to the configured project."""
+    retrieval = SyntheticRetrieval()
+    bridge = _bridge(retrieval)
+    assert bridge.search(principal="clive", query="synthetic")
+    assert retrieval.global_calls == []
+    with pytest.raises(ProjectRetrievalDenied):
+        bridge.search(principal="clive", query="synthetic", project_code="OTHER")
+    with pytest.raises(ValueError):
+        _bridge(retrieval, project_code="")
+
+
+def test_selected_second_project_and_global_classification() -> None:
+    """Selection reaches its own scope and global results retain classification limits."""
+    retrieval = SyntheticRetrieval()
+    retrieval.chunk = replace(retrieval.chunk, scope=KnowledgeScope("PROJECT", "OTHER"))
+    bridge = _bridge(retrieval, project_code=None)
+    selected = bridge.search(principal="clive", query="synthetic", project_code="OTHER")
+    assert selected[0].project_code == "OTHER"
+    assert retrieval.calls == [("clive", KnowledgeScope("PROJECT", "OTHER"))]
+    retrieval.chunk = replace(retrieval.chunk, classification_tags=("PRIVATE",))
+    assert bridge.search(principal="clive", query="synthetic") == ()
 
 
 def test_page_references_require_valid_chunk_coordinates() -> None:
@@ -229,7 +391,7 @@ def test_external_tokens_require_valid_claims_and_subject_mapping() -> None:
 async def test_mcp_protocol_lists_only_read_only_tools_and_requires_identity() -> None:
     """The SDK transport accepts authenticated MCP calls with synthetic data."""
     retrieval = SyntheticRetrieval()
-    mcp = OracKnowledgeServerService._mcp(_bridge(retrieval))
+    mcp = OracKnowledgeServerService._mcp(_bridge(retrieval, project_code=None))
     inner = mcp.streamable_http_app()
     app = _AuthenticatedMcpApp(
         inner,
@@ -269,13 +431,33 @@ async def test_mcp_protocol_lists_only_read_only_tools_and_requires_identity() -
             )
             assert listed.status_code == 200
             assert {tool["name"] for tool in listed.json()["result"]["tools"]} == {
+                "list_projects",
                 "search",
                 "fetch",
             }
             for tool in listed.json()["result"]["tools"]:
-                assert set(tool["inputSchema"]["properties"]) == {
-                    "query" if tool["name"] == "search" else "reference"
-                }
+                assert (
+                    set(tool["inputSchema"]["properties"])
+                    == {
+                        "search": {"query", "project_code"},
+                        "fetch": {"reference"},
+                        "list_projects": {"offset"},
+                    }[tool["name"]]
+                )
+            discovered = await client.post(
+                "/mcp",
+                headers=headers,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {"name": "list_projects", "arguments": {}},
+                },
+            )
+            assert discovered.status_code == 200
+            assert (
+                len(discovered.json()["result"]["structuredContent"]["projects"]) == 2
+            )
             searched = await client.post(
                 "/mcp",
                 headers=headers,
@@ -292,6 +474,29 @@ async def test_mcp_protocol_lists_only_read_only_tools_and_requires_identity() -
                     "document_id"
                 ]
                 == 11
+            )
+            selected = await client.post(
+                "/mcp",
+                headers=headers,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 5,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "search",
+                        "arguments": {
+                            "query": "synthetic",
+                            "project_code": "NHS_RECORDS",
+                        },
+                    },
+                },
+            )
+            assert selected.status_code == 200
+            assert (
+                selected.json()["result"]["structuredContent"]["results"][0][
+                    "project_code"
+                ]
+                == "NHS_RECORDS"
             )
             reference = searched.json()["result"]["structuredContent"]["results"][0][
                 "reference"
