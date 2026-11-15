@@ -192,6 +192,8 @@ def test_video_url_defaults_only_recognised_youtube_ids() -> None:
 
     source = (ROOT / 'apex/orac_chess_admin.sql').read_text()
     page = source.split(" p_id=>41\n", 1)[1].split('prompt --application/pages/', 1)[0]
+    assert "p_lov=>'STATIC:YouTube;YouTube,TikTok;TikTok,Instagram;Instagram,Twitch;Twitch,Vimeo;Vimeo,Facebook;Facebook'" in page
+    assert "p_item_default=>'YouTube'" in page
     action = page.split("p_name=>'Default YouTube video ID'", 1)[1]
     assert "p_triggering_element=>'P41_VIDEO_URL,P41_PLATFORM'" in action
     assert "p_execute_on_page_init=>'N'" in action
@@ -224,7 +226,7 @@ def test_video_url_defaults_only_recognised_youtube_ids() -> None:
     ]
     cases.extend(('YouTube', url, 'manual-value') for url in rejected)
     cases.extend((platform, 'https://youtube.com/watch?v=dQw4w9WgXcQ', 'manual-value')
-                 for platform in ('Other', 'youtube', ''))
+                 for platform in ('TikTok', 'Instagram', 'Twitch', 'Vimeo', 'Facebook', 'Other', 'youtube', ''))
     harness = '''const assert = require("node:assert/strict");
 const code = CODE;
 for (const [platform, url, expected] of CASES) {
@@ -323,7 +325,7 @@ def test_content_source_maintenance_uses_protected_identity_and_version() -> Non
 def test_video_creator_popup_searches_source_and_author_but_returns_creator() -> None:
     """Video selection uses source identity while author remains a searchable column."""
     source = (ROOT / 'apex/orac_chess_admin.sql').read_text()
-    lov = source.split('prompt --application/shared_components/user_interface/lovs/chess_content_sources\n')[1].split('prompt --application/pages/')[0]
+    lov = source.split('prompt --application/shared_components/user_interface/lovs/chess_content_sources\n')[1].split('prompt --application/', 1)[0]
     assert 'select creator, author from orac_chess.chess_content_source_v' in lov
     assert "p_return_column_name=>'CREATOR'" in lov
     assert "p_display_column_name=>'CREATOR'" in lov
@@ -569,3 +571,70 @@ def test_video_modal_uses_protected_origin_and_safe_subject_links() -> None:
         assert "p_clear_cache=>''41''" in content
         assert 'apex_escape.html(r.platform)' in content
         assert 'not exists (select 1 from orac_chess.chess_video_' in content
+
+
+def test_report_entity_lovs_preserve_numeric_keys_and_edit_links() -> None:
+    """Related entities display names while existing Edit links retain raw keys."""
+    expected = {
+        10: {'PARENT_OPENING_ID'},
+        30: {'OPENING_ID', 'GAMBIT_ID', 'PARENT_VARIATION_ID'},
+        51: {'OPENING_ID', 'GAMBIT_ID', 'VARIATION_ID'},
+        60: {'OPENING_ID'},
+        70: {'OPENING_ID', 'GAMBIT_ID', 'VARIATION_ID'},
+        81: {'OPENING_ID', 'GAMBIT_ID', 'VARIATION_ID'},
+    }
+    edit_keys = {10: 'OPENING_ID', 20: 'GAMBIT_ID', 21: 'OPENING_ID',
+                 30: 'VARIATION_ID', 40: 'VIDEO_ID', 50: 'CONCEPT_ID',
+                 60: 'GAME_ID', 70: 'COMMENTARY_ID', 80: 'IMAGE_ID'}
+    for filename in ('orac_chess_admin.sql', 'recovery/orac_chess_admin_readonly.sql'):
+        source = (ROOT / 'apex' / filename).read_text()
+        lovs = {}
+        for entity in ('opening', 'gambit', 'variation'):
+            lov = next(block for block in re.findall(
+                r'wwv_flow_imp_shared.create_list_of_values\(.*?\n\);', source, re.S
+            ) if f"p_lov_name=>'CHESS_{entity.upper()}S'" in block)
+            assert f"select {entity}_id, name from orac_chess.chess_{entity}_v" in lov
+            assert f"p_return_column_name=>'{entity.upper()}_ID'" in lov
+            assert "p_display_column_name=>'NAME'" in lov
+            lovs[entity] = re.search(r'p_id=>wwv_flow_imp.id\((\d+)\)', lov)[1]
+        pages = re.split(r'prompt --application/pages/page_(\d+)\n', source)
+        bindings = 0
+        for index in range(1, len(pages), 2):
+            page, content = int(pages[index]), pages[index + 1]
+            for column in re.findall(
+                r'wwv_flow_imp_page.create_worksheet_column\(.*?\n\);', content, re.S
+            ):
+                key = re.search(r"p_db_column_name=>'([^']+)'", column)[1]
+                if key in expected.get(page, set()):
+                    entity = key.removeprefix('PARENT_').removesuffix('_ID').lower()
+                    label = key.removesuffix('_ID').replace('_', ' ').title()
+                    assert f"p_column_label=>'{label}'" in column
+                    assert "p_column_type=>'NUMBER'" in column
+                    assert "p_display_text_as=>'LOV_ESCAPE_SC'" in column
+                    assert f'p_rpt_named_lov=>wwv_flow_imp.id({lovs[entity]})' in column
+                    assert "p_rpt_show_filter_lov=>'1'" in column
+                    assert 'p_column_link=>' not in column
+                    bindings += 1
+                else:
+                    assert 'p_rpt_named_lov=>' not in column
+                if key == edit_keys.get(page):
+                    assert 'p_column_link=>' in column
+                    assert 'p_column_linktext=>' in column
+                    assert 'p_display_text_as=>' not in column
+        assert bindings == 14
+
+
+def test_related_video_descriptors_use_encoding_safe_html_separators() -> None:
+    """Linked and available video labels retain punctuation across APEX imports."""
+    for export in ('apex/orac_chess_admin.sql', 'apex/recovery/orac_chess_admin_readonly.sql'):
+        source = (ROOT / export).read_text()
+        for page in (11, 21):
+            content = source.split(f'prompt --application/pages/page_{page:05d}', 1)[1].split('prompt --application/pages/', 1)[0]
+            region = next(block for block in re.findall(r'create_page_plug\(.*?\n\);', content, re.S)
+                          if "p_plug_name=>'Related videos'" in block)
+            assert region.count(' - ') == 3
+            assert '—' not in region
+            assert '\ufffd' not in region
+            assert "apex_escape.html(r.title)" in region
+            assert "apex_escape.html(r.creator)" in region
+            assert "apex_escape.html(r.platform)" in region

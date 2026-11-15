@@ -1,7 +1,7 @@
 # Orac Chess plugin
 
 The plugin owns a private relational schema and controlled maintenance APIs,
-with the Universal Theme **Orac Chess Administration** application. See
+with the Universal Theme **Orac Chess Explorer** application. See
 [administration](docs/administration.md) for pages, API boundaries, validation,
 security, installation and testing, and [schema design](docs/schema-design.md)
 for the authoritative relational model and baseline history.

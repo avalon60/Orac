@@ -46,7 +46,7 @@ installed in that environment.
 | `1043` | Plugin Control | Core Orac | Installed | `resources/db/apex/AGENT_CONTEXT.md`; `resources/db/apex/orac_apps/f1043.sql` |
 | `10010` | Home Assistant Status | Plugin: `home_assistant` | Not installed; ID declared | `plugins/home_assistant.json`; `plugins/home_assistant/apex/f10010.sql` |
 | `10020` | Drop Box Admin | Plugin: `drop_box` | Not installed; ID declared | `plugins/drop_box.json`; `plugins/drop_box/apex/f10020.sql` |
-| `10030` | Orac Chess Administration | Plugin: `orac_chess` | Installed; former application `100` removed | `plugins/orac_chess.json`; reservation below |
+| `10030` | Orac Chess Explorer | Plugin: `orac_chess` | Installed; former application `100` removed | `plugins/orac_chess.json`; reservation below |
 | `10042` | Plugin App Scaffold | Core scaffold | Installed | `resources/db/apex/AGENT_CONTEXT.md`; `resources/db/apex/orac_apps/f10042.sql` |
 
 Core application details remain authoritative in
@@ -60,7 +60,7 @@ Treat its ID as occupied. Chess now uses its reserved Plugin-range ID below.
 
 | Workspace | Domain | Inclusive range | Reserved application ID | Owner |
 | --- | --- | --- | --- | --- |
-| `ORAC` | `Plugin` | `10000`–`10100` | `10030` | `orac_chess` — Orac Chess Administration |
+| `ORAC` | `Plugin` | `10000`–`10100` | `10030` | `orac_chess` — Orac Chess Explorer |
 
 The requester selected `10030` on 06-Nov-2026. The range is defined in
 `docs/agent-guardrails/apex-app-id-ranges.csv`. Repository evidence includes
@@ -68,6 +68,10 @@ Home Assistant's `10010`, Drop Box's `10020`, the scaffold's `10042`, and the
 Chess export's existing default application ID `10030`; no competing repository
 claim for `10030` was found. No live APEX check was performed during this
 allocation pass.
+
+The display name changed to **Orac Chess Explorer** on 14-Nov-2026. The approved
+APEX-only import updated the DEV application and host menu registration;
+application ID and alias are unchanged.
 
 The DEV installation verified on 08-Nov-2026 is application `10030`, alias
 `ORAC_CHESS_ADMIN`, with parsing schema `ORAC_APX_PUB`. The manifest explicitly

@@ -120,7 +120,7 @@ def test_install_reachability_and_host_import_boundary(
     monkeypatch.syspath_prepend(str(ROOT / "src"))
     from model.plugin_dependencies import validate_declared_imports
 
-    validate_declared_imports(eco.ROOT, (), plugin_id="orac_chess")
+    validate_declared_imports(eco.ROOT, ("oracledb>=4.0.0,<5.0.0",), plugin_id="orac_chess")
     ns = {"lb": "http://www.liquibase.org/xml/ns/dbchangelog"}
     main = eco.ROOT / "db/liquibase/pluginController.xml"
     includes = ET.parse(main).findall("lb:include", ns)
@@ -144,10 +144,10 @@ def test_install_reachability_and_host_import_boundary(
     ]
     assert len(assets) == len(set(assets)) == 9
     assert all(path.is_file() for path in assets)
-    assert assets.index(eco.SQL_PATH) > next(
+    assert assets.index(eco.ROOT / "db/schema/seed_data/chess_eco_code.sql") > next(
         i for i, path in enumerate(assets) if path.parent.name == "constraint_pk"
     )
-    assert assets.index(eco.SQL_PATH) < next(
+    assert assets.index(eco.ROOT / "db/schema/seed_data/chess_eco_code.sql") < next(
         i for i, path in enumerate(assets) if path.parent.name == "view"
     )
 

@@ -48,7 +48,7 @@
   "apex_apps": [
     {
       "app_alias": "ORAC_CHESS_ADMIN",
-      "label": "Orac Chess Administration",
+      "label": "Orac Chess Explorer",
       "description": "Maintain chess reference and instructional data.",
       "app_export": "apex/orac_chess_admin.sql",
       "workspace": "ORAC",
@@ -69,7 +69,7 @@
       {
         "id": "orac_chess.administration",
         "type": "admin_status",
-        "label": "Orac Chess Administration",
+        "label": "Orac Chess Explorer",
         "description": "Maintain chess reference and instructional data.",
         "target": "apex",
         "audience": "admin",

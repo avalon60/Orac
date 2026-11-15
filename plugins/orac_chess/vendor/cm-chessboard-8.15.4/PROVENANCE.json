@@ -1,0 +1,9 @@
+{
+  "component": "cm-chessboard",
+  "version": "8.15.4",
+  "source": "https://registry.npmjs.org/cm-chessboard/-/cm-chessboard-8.15.4.tgz",
+  "tarball_sha256": "2f02a5025d47f1e99e4c3eb6a315221982dab8a11b84f1d1706b98ef7e288474",
+  "licence": "MIT for code",
+  "local_modifications": "Excluded assets/pieces/standard.svg (CC BY-SA 3.0) and assets/pieces/staunty.svg (CC BY-NC-SA 4.0). All other files retained byte-for-byte. Viewer uses separate original MIT sprite browser/pieces.svg.",
+  "update_policy": "Explicit pinned release; review all sprite licences and rerun browser replay and packaging checks."
+}

@@ -1,3 +1,4 @@
 component_id,path,upstream_url,upstream_version,licence,local_modifications,update_policy
 chess-js,plugins/orac_chess/vendor/chess.js-1.4.0,https://github.com/jhlywa/chess.js,1.4.0,BSD-2-Clause,ESM file renamed byte-for-byte to chess.mjs,Explicit pinned release and corpus verification
 lichess-chess-openings,plugins/orac_chess/vendor/lichess-chess-openings-3ba6b20,https://github.com/lichess-org/chess-openings,3ba6b20d31b2e6125cb0e6a2e792f400717d9d39,CC0-1.0,None; upstream files byte-for-byte,Explicit reviewed pinned update and new immutable seed migration
+cm-chessboard,plugins/orac_chess/vendor/cm-chessboard-8.15.4,https://github.com/shaack/cm-chessboard,8.15.4,MIT,Excluded both upstream share-alike piece sprites; all retained files byte-for-byte,Explicit pinned update with licence and browser regression review

@@ -11,7 +11,7 @@ role. Example questions are “Which openings share this gambit?”, “What ali
 belong to this opening?” and “List this opening's explicitly assigned ECO
 codes.” The model may request clarification or report unsupported scope.
 
-In the existing Orac Chess Administration application 10030, open **Query
+In the existing Orac Chess Explorer application 10030, open **Query
 Chess** (page 120), enter a question and select **Ask Chess**. A session-bound
 background request returns two primary plain-text sections, **From the Chess
 catalogue** and **General chess knowledge**. Supporting rows are retained under

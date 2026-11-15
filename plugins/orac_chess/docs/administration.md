@@ -1,10 +1,17 @@
-# Orac Chess Administration
+# Orac Chess Explorer
 
 The plugin owns the data and all maintenance APIs in `ORAC_CHESS`. Its APEX
 application uses workspace `ORAC`, parsing schema `ORAC_APX_PUB`, Universal Theme,
 and the stable alias `ORAC_CHESS_ADMIN`. The manifest explicitly assigns app ID
 `10030`; the host records its installation receipt. Former app `100` was removed
 on 08-Nov-2026. Never import into an unrelated application ID.
+
+After changing publishers, ECO codes, openings, gambits, variations or videos in
+APEX, follow [Refresh installation seeds](bootstrap-seeds.md) to save the current
+data and its relationships into the packaged seed files. The guide documents
+`refresh_seeds.py`, saved-connection usage, per-file progress output and `--check`
+verification without writing. This includes newly added videos and their gambit
+links, such as videos added to Alien Gambit.
 
 ## Pages
 
@@ -23,9 +30,15 @@ on 08-Nov-2026. Never import into an unrelated application ID.
 | 110 / 111 | Content Sources | Creator / publisher, author and notes |
 | 9999 | Login | Existing Oracle APEX Accounts |
 
-The Opening detail page uses **View** to switch between **Opening Synopsis**,
-**ECO Codes** and **Opening Gambit**. Opening Synopsis is selected when the
-page opens; the selector does not remember the previous selection.
+Opening and Gambit details keep the selected saved name and direct ECO codes
+above **View**. The selector opens on **PGN Viewer**, followed by the subject synopsis
+and **Variations**. Opening also offers **Aliases** and **Gambits**; Gambit offers
+**Linked openings**. The selector does not remember the previous selection.
+Aliases and Gambits appear only when their View tab is selected. Their existing
+link and unlink controls keep the same behaviour.
+The read-only Variations report lists names, line kinds, parents and branch ply
+with native pagination. Opening includes direct variations and variations of
+its linked gambits; Gambit includes only its own variations.
 
 On the Variations collection page, use the native region display selector to
 choose **Report** or **Variations Hierarchy**. Report is ordered first and the
@@ -43,8 +56,9 @@ remain authoritative. Deletes are restrictive, except controlled image deletion 
 removes image associations in its own savepoint. Unlinking never deletes shared
 material.
 
-Video Platform is a static select list, initially containing and defaulting to
-YouTube. Existing platform values remain visible when editing older records.
+Video Platform offers YouTube, TikTok, Instagram, Twitch, Vimeo and Facebook,
+with YouTube selected by default. Enter the external video ID manually for the
+other platforms; URL-based ID extraction remains YouTube-only. Existing platform values remain visible when editing older records.
 The Videos report opens Video URL links in a new browser tab.
 
 Opening and Gambit detail pages have a **Related videos** region. Each linked
@@ -313,10 +327,12 @@ when the editor was not saved. The collection reports filter the direct codes
 shown for each row. A game has its own optional ECO code, independent of its
 linked opening; no classifier runs automatically.
 
-A variation's **Related ECO Codes** shows codes assigned to ancestor variations
+The **Related ECO Codes (context only)** regions on the variation and gambit
+forms are hidden with the APEX **Never** display condition. Their definitions
+are retained for possible future use. A variation's related region contains codes assigned to ancestor variations
 and its owning opening or gambit. A gambit's related codes come from explicitly
 linked openings. Related entries identify their source and are context only; they
-do not assign those codes to the current record. Expand a code to read its full
+do not assign those codes to the current record. Expand a directly assigned code to read its full
 reference description. The same description is used across all three collections.
 
 The ECO extension is installed after the existing administration and seed
@@ -380,7 +396,7 @@ All operations retain optimistic locking and the caller-owned transaction.
 
 ### Gambits linked to an opening
 
-On an Opening, select **Opening Gambit** to see each linked gambit's name and a
+On an Opening, select **Gambits** to see each linked gambit's name and a
 short description (up to 240 characters). Internal identifiers are hidden. Select
 a gambit name to open the read-only **Gambit Details** drawer with its full
 Description and Strategy. **Close** returns to the same opening without saving
@@ -390,3 +406,32 @@ fallback text; an unavailable gambit has a friendly message.
 The **Gambit** selector chooses an existing gambit. **Link** associates it with
 the opening; **Unlink** removes that association and retains the gambit. The
 separate Gambit maintenance page retains its existing editing workflow.
+
+### PGN move viewer and variation exploration
+
+Opening, Gambit and the Gambit Details drawer include read-only board replay and
+a principal/child variation selector. The Variation dialog previews the current
+unsaved PGN using **Update preview**. See [PGN move viewer](pgn-viewer.md) for
+controls, strict input support, child-line semantics and local asset maintenance.
+
+Gambit maintenance groups **PGN Viewer**, **Gambit Synopsis**, **Variations**
+and **Linked openings** using View. Its saved name and direct ECO codes stay
+visible above View; related videos remain visible.
+The Variation drawer opens on **PGN Viewer**. Use its **View** selector
+to switch to **Variation details** or **ECO Codes**. The selection
+resets to details when the drawer opens.
+Variation and Video forms use the same slide-out drawer style as Gambit Details.
+Their Save, Cancel and close/refresh actions retain the existing workflows.
+
+Related entity columns in the Openings, Variations, Concept associations, Games,
+Commentary and Image associations interactive reports use native APEX report
+LOVs to display Opening, Gambit and Variation names (including parent names).
+The three shared LOVs read the approved Chess entity views and return numeric
+entity IDs. Report SQL, column identities, saved report columns and the existing
+Edit links retain their original keys. External Video ID remains a video
+platform identifier. Filtering, sorting and download behaviour must be checked
+in the installed application before relying on name-based semantics.
+
+On Opening, select a name in **Variations** to open the existing Variation
+slide-out drawer. The selected line uses its protected variation ID; the
+Gambit Variations report continues to show plain names.

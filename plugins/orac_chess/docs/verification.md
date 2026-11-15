@@ -3,6 +3,26 @@
 The current DEV identity is application **10030**. Earlier deployment records
 below, including the first 08-Nov-2026 layout import, describe historical states.
 
+## Report descriptors and related ECO visibility — 14-Nov-2026
+
+User-approved scoped import completed into DEV FREEPDB1, workspace ORAC,
+application 10030, parsing schema ORAC_APX_PUB through the receipt-aware host
+APEX importer. The live app was exported first; only three shared entity LOVs,
+14 report-column LOV bindings/headings and two Related ECO region Never
+conditions were applied. Other pending repository app changes were excluded.
+
+Fresh installed-source export verified all 14 escaped LOV mappings and both
+Never conditions. Existing linked worksheet columns, worksheet definitions and
+default report definitions match the pre-import export exactly. A verification
+check caught the host's zero-offset import behaviour; original component IDs
+were restored before final verification. Installed APEX source parsing passed
+all 97 sources. Orac was paused for the maintenance lock and restarted with its
+TCP bridge ready; Oracle remained running.
+
+Evidence and pre-import backup: `/tmp/chess-report-lov-import-20261114/`.
+Browser refresh reached the sign-in page, so authenticated visual checks of
+names, filtering, sorting, downloads and Edit navigation remain pending.
+
 ## Opening detail selector — 13-Nov-2026
 
 Both packaged exports rename the detail region to **Opening Synopsis** and add
@@ -1342,3 +1362,333 @@ and the installer log are under `/tmp/chess-editorial-deploy-20261113/`.
 This verifies the existing DEV upgrade; isolated fresh installation and new
 authenticated browser checks were not performed. Query-table whitespace
 rendering remains unchanged.
+
+### Browser PGN viewer — 14-Nov-2026
+
+Added local browser replay to existing application `10030` (`ORAC_CHESS_ADMIN`,
+workspace `ORAC`, parsing schema `ORAC_APX_PUB`) on Opening11, Gambit21, read-only
+Gambit Details22 and Variation31. Opening11 and Gambit21 have a **PGN Viewer** selection in their
+region display selectors. Gambit21 also groups Synopsis, ECO Codes and Linked
+openings; related ECO context stays within ECO, and related videos stay visible.
+Variation31 and Video41 use the same slide-out drawer template as Gambit
+Details22, preserving their existing form processing and close-dialog actions. Existing maintenance controls, ECO disclosures and authentication and
+authorisation definitions were preserved. No schema change, grant or new role
+restriction was introduced.
+
+The APEX-only update used the existing receipt-aware host installation boundary,
+under the governed maintenance lock, targeting verified `orac-db/FREEPDB1`. The
+configured Orac runner was paused for imports and restored afterward. Mapped
+`orac` inspection confirmed its identity but cannot read private catalogue views;
+mapped `orac-db` administrative access was therefore used for bounded acceptance
+and data comparisons. Host execution outside the network sandbox was required.
+Before/after snapshots contain the same 4,558 variations, 226,760 PGN characters
+and exact SHA256 hashes of every PGN (maximum installed PGN length204 characters,
+so the 4,000-character hash input covers each complete value). Snapshots are
+under `/tmp/chess_viewer_pgn_before.txt` and `/tmp/chess_viewer_pgn_after.txt`.
+
+Installed source parsing passed97 sources with
+`db/acceptance/verify_apex_sources.sql`. The read-only
+`db/acceptance/verify_pgn_viewer.sql` suite executed the installed callback and
+verified selected-PGN fidelity, metadata without PGNs, unrelated-subject denial
+and invalid numeric-identity denial. It created no catalogue fixtures or schema
+objects. Focused regression tests passed49 tests across viewer packaging,
+administration, Opening selector/drawer contracts, continuation, strategy and MLE runtime. Browser model tests cover
+21 cases; renderer/navigation tests cover bounded/direct navigation, flip/reset,
+independent instances, failure clearing, idempotent disposal and serialized
+renderer operations. Adapter tests verify stale AJAX replies, abort/disposal and
+removed-dialog cleanup. All36 installed application static files matched the
+repository bytes across168 SHA256-checked chunks. Viewer/ECO/MLE/recovery generation checks are deterministic.
+
+Authenticated browser checks verified actual installed catalogue examples.
+Black Lion's principal is eight half-moves with `4.f4`; its Lion Claw continuation
+loads the complete independent14-half-move PGN at its branch position. Direct
+selection, navigation and orientation changes displayed correct pieces and move
+highlighting. Alien Gambit is the Caro-Kann line
+`1.e4 c6 2.d4 d5 3.Nc3 dxe4 4.Nxe4 Nf6 5.Ng5 h6 6.Nxf7`, eleven half-moves.
+Gambit21 displayed its final `6.Nxf7`, and reloading left exactly one viewer.
+Opening11's existing linked Gambit Details22 drawer displayed that same complete
+line and closed correctly. Variation31 previewed the stored line; changing its
+unsaved PGN to invalid input cleared the board and disabled navigation. Cancel
+and reopen restored the original eleven-half-move PGN, confirming preview did
+not persist the edit. Existing Save controls remained present; ECO B07 disclosure
+continued to expand.
+
+The standalone fixture also verified focused arrow-key navigation, flip,
+invalid/empty clearing, repeated destruction/remounting and two independent
+viewers. Its synthetic sequences are development fixtures, not catalogue
+assertions. Initial browser checks found escaped static-region HTML and
+concurrent renderer queues; explicit HTML output and serialized rendering with
+deferred disposal corrected those paths. Content-addressed asset directories
+invalidate the complete relative module graph after a source change, preventing
+stale browser code from surviving an APEX import. Automated coverage protects
+all three paths. Final authenticated browser checks after content-addressed
+asset deployment confirmed correct principal-line selector synchronisation,
+rapid move navigation and clean rendering without the earlier queue warnings.
+The new Variation31/Video41 drawer layouts still require a final authenticated
+visual check; earlier preview/cancel behaviour was exercised before their
+template conversion, and their processing remains unchanged.
+
+No fresh database installation is required for this additive browser/APEX feature.
+A complete fresh plugin installation, persisted Save operations and exhaustive
+4MiB input/performance checks were not performed for this change.
+
+## Current seed refresh verification
+
+Run `.venv/bin/python plugins/orac_chess/tools/refresh_seeds.py --from-snapshot
+plugins/orac_chess/seed/current.json --check` from the repository root (as one
+command). `tests/test_orac_chess_seed_refresh.py` checks deterministic lossless
+CLOB packaging, dependency ordering, refusal before writing, read-only transaction
+closure, stable ledger keys after rename, and reachability of every current seed.
+The content-source repeat acceptance SQL now proves matched updates and a second
+unchanged rerun, rolling back its fixture. Run it only against an explicitly
+approved disposable or DEV target; ordinary export never executes it.
+
+A real fresh-install and upgrade Liquibase acceptance run still requires a
+separately approved disposable target. Python checks do not establish Oracle
+compilation or complete installation behaviour.
+
+### Interactive report entity names — repository verification (14-Nov-2026)
+
+The canonical administration export and generated read-only recovery export
+bind 14 related entity columns across 10 interactive reports to native escaped
+report LOVs. Shared Opening, Gambit and Variation LOVs select name/ID pairs from
+`chess_opening_v`, `chess_gambit_v` and `chess_variation_v`. Repository tests
+check all bindings and preserve raw numeric keys and existing Edit links.
+The report queries and default report column lists remain unchanged.
+
+Import and authenticated browser verification remain pending deployment
+approval. After import, check all ten reports for names, null parent values,
+existing Edit navigation, saved reports, filters, sorting and downloads;
+verify HTML in names is escaped. Source checks do not establish rendered
+behaviour or name-based search/export semantics.
+
+The 14-Nov-2026 current snapshot was refreshed from a coherent read-only capture
+through the explicitly authorised `orac_apx_pub` saved connection, verified as
+`ORAC_APX_PUB` in `FREEPDB1`. It contains 31 publishers, 500 ECO codes, 128
+openings, 612 gambits, 4,558 variations and 46 videos, with 2 video/opening links,
+3 video/gambit links and no video/variation links. Both new Alien Gambit videos
+are included with their direct gambit association: Gotham Chess's “The Alien
+Gambit” (`S6dozy6euxc`) and ChessCenturion's “CRUSH The Alien Gambit With This
+Simple System” (`lP6BgSkOPlY`). Gotham Chess's live Notes value `IM` is retained.
+The private identity ledger was not read; existing keys were reused from the
+reviewed snapshot by exact owner/name. No database writes or deployments were
+performed during capture.
+
+The new optional `--sqlcl-connection` CLI adapter has fixture coverage for target
+verification, full Unicode/CLOB results and refused partial/error output. Its
+separate end-to-end live CLI run was not completed; the successful coherent
+capture above used the equivalent read-only SQLcl capture script. Snapshot
+replay and generated-file checks run locally without a connection.
+
+
+### Variation drawer selector and Explorer name — 14-Nov-2026
+
+The repository application display name is now **Orac Chess Explorer** in the
+manifest, canonical export, recovery export and current user documentation.
+Application ID `10030`, alias `ORAC_CHESS_ADMIN`, workspace `ORAC`, parsing schema
+`ORAC_APX_PUB` and existing access controls are retained. Historical evidence
+above records the names used at the time.
+
+Variation drawer 31 now has the native **View** region display selector with
+**Variation details** as the opening selection, followed by **ECO Codes** and
+**PGN Viewer**. Show All and remembered selection are disabled. The related ECO
+context remains hidden and the inline ECO editor remains outside the selector.
+The selector uses a distinct component identity from the recovery export's
+runtime-withdrawal status region. Existing save, delete, cancel, preview and
+close/refresh behaviour is preserved in the page definitions.
+
+Source verification completed:
+
+- `generate_viewer_apex.py --check`, `generate_eco_apex.py --check` and
+  `generate_mle_recovery.py --check` passed.
+- `.venv/bin/python -m pytest -q tests/test_orac_chess_pgn_viewer.py tests/test_orac_chess_administration.py tests/test_orac_chess_opening_selector.py`
+  passed **41 tests**, including shipped Node model, viewer and adapter suites.
+- Before the display-name change, comparison with the pre-change export confirmed
+  only page 31 changed; the Gambit selector and other pages were preserved.
+- Regression checks cover the three Variation selections, hidden ECO context,
+  recovery component identity uniqueness, and display-name/identity consistency.
+
+The user-approved DEV import completed through the receipt-aware host boundary
+into FREEPDB1, workspace ORAC, application 10030, parsing schema ORAC_APX_PUB.
+A fresh live backup supplied the import: only the display-name replacements
+and page 31 selector/membership additions were applied. Original component
+identities and all other installed definitions were preserved. A post-import
+export confirmed the same page inventory; pages 1 and 9999 changed only for
+the new title, page 31 contains exactly one selector and the three intended
+members, and all other pages match the backup. Host menu inspection returns
+**Orac Chess Explorer** with the existing alias and application ID.
+
+Installed-source parsing passed all 97 sources, and the read-only PGN callback
+acceptance suite passed. The active Orac runner was paused for the maintenance
+lock and restored with its TCP bridge ready. Oracle remained running. Backup,
+scoped import source and installed export are under
+`/tmp/chess-explorer-import-20261114/`.
+
+The rendered login screen shows **Orac Chess Explorer**. Authenticated
+desktop/narrow drawer rendering remains pending a fresh sign-in. Check all
+three selections, board visibility and resizing, unsaved PGN preview, Save and
+Cancel, inline ECO editing and drawer close/refresh. No database migration was
+performed or required.
+
+### Related video descriptor encoding — 14-Nov-2026
+
+The Opening (`11`) and Gambit (`21`) Related videos regions use plain ASCII
+` - ` separators, with a space on either side, in both linked-video descriptors
+and available-video choices. Six literal em dashes were replaced in the canonical
+export and its generated read-only recovery export. Dynamic titles, creators,
+platforms and URLs retain their existing APEX escaping.
+
+A fresh DEV export confirmed six groups of three Unicode replacement characters
+in those two live region sources. This matches the encoding symptom recorded for
+query progress ellipses on 13-Nov-2026 above. The bounded repair changes punctuation
+only; data and video associations are unaffected. The focused administration
+suite passed **28 tests** with the ASCII hyphens, and recovery generation
+`--check` passed.
+
+Deployment is **pending**. The target was verified as `FREEPDB1`, workspace `ORAC`,
+application `10030`, alias `ORAC_CHESS_ADMIN`, parsing schema `ORAC_APX_PUB`.
+The fresh backup and scoped host-import source are in
+`/tmp/chess-video-encoding-20261114`. Preparation verifies that only six separators
+in two regions change and preserves physical component identities. The first
+host import attempt stopped at Docker access before importing; the escalated retry
+was cancelled while awaiting execution approval. No successful import or
+post-import comparison has been observed. Browser rendering remains unverified;
+a completed host import, post-export comparison and rendered Opening/Gambit check
+are still required.
+
+
+### Variation preview controls — 14-Nov-2026
+
+Source repair: Variation drawer page 31 now creates only **Update preview**, the
+status message and viewer host. It no longer constructs the empty stored-line
+selector or explorer pagination/return actions. This avoids the stylesheet's
+label display rule exposing an otherwise hidden, unpopulated selector. Opening
+11, Gambit 21 and Gambit Details 22 retain their stored principal/child explorer.
+The preview still reads unsaved editor PGN/FEN, resolves a parent's root FEN,
+ignores stale/disposed replies and leaves persistence to the existing Save action.
+Callback SQL, authentication and authorisation were unchanged.
+
+Source checks passed: Node model **21 tests**, viewer **3 tests**, adapter **5
+tests**; focused `tests/test_orac_chess_pgn_viewer.py` **10 tests**; viewer, ECO
+and MLE recovery generator `--check` commands. Adapter coverage includes no
+selector/explorer requests on page 31, edited PGN/FEN refresh without saves,
+parent-response races/disposal, and grouped full parent/child validation on all
+three explorer pages. Canonical and read-only recovery exports were regenerated.
+
+Import and rendered checks for this repair are **pending**: verify page 31 has
+no empty selector, previews an unsaved edit, and remains usable at desktop/narrow
+widths; verify 11/21/22 still select a principal and child line. Source checks do
+not establish the installed application's rendering. No database writes were
+performed during this source repair.
+
+
+### Subject overview and video platform update — 15-Nov-2026
+
+Opening11 and Gambit21 keep an escaped, persisted subject name and direct ECO
+codes above View. New or missing subjects receive an explanatory read-only
+summary. View starts with PGN Viewer, then Variations and Synopsis. The paginated
+Variations report reads approved views without PGN CLOBs; Opening includes lines
+of linked gambits and Gambit includes its own lines only. Page31 is unchanged.
+Video41 offers YouTube, TikTok, Instagram, Twitch, Vimeo and Facebook; YouTube
+remains the default and the only provider with automatic URL ID extraction.
+
+Source verification covers both generated exports, native selector ordering,
+escaped summaries, variation query execution with unrelated subjects excluded,
+and manual ID preservation for all five added providers. The scoped DEV import
+succeeded for application 10030; metadata confirms both summaries, direct ECO
+regions outside the selector, PGN/Variations/Synopsis sequences 10/20/30 and the
+six-source video LOV. Authenticated visual verification remains blocked by the
+login screen.
+
+The additive Opening update labels the existing regions and worksheets
+**Aliases** and **Gambits**. Both belong to View at their retained sequences
+51 and 53. Source tests verify all five tabs, the alias query and association
+button ownership, plus the existing protected Gambit Details drawer link.
+The follow-up receipt-aware scoped DEV import succeeded; its execution log is
+`/tmp/chess-tabs-import-20261115/import.log`. A fresh SQLcl export at
+`/tmp/chess-tabs-import-20261115/after/f10030.sql` confirms application name
+**Orac Chess Explorer**, Aliases selector membership `Y` at sequence 51 and
+Gambits membership `Y` at sequence 53. Reversing the two region labels, two
+worksheet labels and the added Aliases membership reproduces the prior page11
+exactly. Queries, link/unlink controls and the protected Gambit Details drawer
+link are therefore preserved. Pages 21, 22, 31 and 41 are byte-identical to the
+previous installed export.
+
+Rendered verification remains incomplete: browser access reached the login
+screen and no authenticated credentials were available. After signing in,
+inspect pages 11 and 21 at desktop and narrow widths, confirm the name/ECO
+summary stays above View, and switch through every tab. On Opening, confirm
+Aliases and Gambits appear only while selected and exercise the existing
+association controls and Gambit Details drawer. Confirm page41 offers all six
+platforms, defaults new videos to YouTube and preserves manually entered IDs
+for other platforms. These interactions have source and metadata checks but
+have not been verified in the authenticated rendered application.
+
+### Preview-control correction import verification — 15-Nov-2026
+
+The preview adapter correction passes 21 model, 3 viewer and 5 adapter Node
+tests, 10 focused Python tests, and viewer/ECO/recovery generation checks.
+The receipt-aware DEV importer accepted a scoped replacement of 36 viewer
+assets and their content-addressed URLs. Orac was paused for maintenance and
+restored with its TCP bridge ready. The staged container file matches the
+prepared import file by SHA256.
+
+However, the subsequent installed export still contains the previous
+`pgn/97f67b616252ebd6` assets rather than the corrected
+`pgn/3248147ba8175f41` assets. It also contains the separately documented
+Opening/Gambit layout update and reports application name `ORAC_CHESS_ADMIN`.
+Installed-source parsing passes 101 sources. Database identity checks confirm
+the host importer and saved DEV connection target the same database.
+These observations do not establish the timing or cause of the competing
+update. The correction is therefore **not verified as installed**; retry is
+pending coordination of concurrent APEX work and a fresh backup. No additional
+import was attempted after discovering the mismatch. Evidence is retained in
+`/tmp/chess-preview-fix-import/`. Authenticated rendering also awaits sign-in.
+
+### Synopsis before Variations — 15-Nov-2026
+
+Opening 11 and Gambit 21 now order View as PGN Viewer (10), subject Synopsis
+(20), then Variations (30). The viewer generator and canonical/recovery exports
+agree; current administration and viewer guidance reflect the order. Fifteen
+focused selector/viewer tests, all three generator checks and whitespace checks
+passed.
+
+The receipt-aware APEX-only DEV import succeeded for FREEPDB1 / ORAC / 10030 /
+ORAC_APX_PUB. Fresh host SQLcl export verified both sequences; reversing only
+the Synopsis/Variations sequence changes reproduced each baseline page exactly.
+Staging, backup, import log and installed export are under
+`/tmp/chess-order-import-20261115`. This verification checks installed definitions;
+authenticated rendered checks remain outstanding because of the previously
+observed login requirement.
+
+
+### Opening variation drawer links — 15-Nov-2026
+
+Opening11 Variations names now use the existing native page31 Variation drawer
+link. Names remain escaped and the numeric variation identity stays hidden.
+Ownership queries, pagination, region ordering and page31 security declarations
+are unchanged. The Gambit21 report retains plain names. Source checks cover both
+canonical and recovery exports, link target and text, escaping, hidden numeric
+identity and the existing protected modal drawer. Live import and authenticated
+rendered link/drawer interaction checks remain pending for this addition.
+
+The Opening variation-name link was imported through the receipt-aware APEX-only
+DEV route into FREEPDB1 / ORAC / 10030 / ORAC_APX_PUB. Fresh host SQLcl export
+confirmed the native page 31 URL and `#NAME#` link text. Replacing only the updated
+Name column reproduced baseline page 11 exactly; pages 21, 30 and 31 were
+unchanged. APEX omits the default escaping attribute from its fresh export;
+the maintained source retains `ESCAPE_SC`. The DEV runtime was restarted and its
+TCP bridge became ready. Backup, scoped source, import log and installed export
+are under `/tmp/chess-variation-link-import-20261115`. Authenticated drawer
+click-through, closing without submitting, and retention of unsaved Opening
+values remain unverified because the available browser session requires login.
+
+### Variation drawer viewer first — 15-Nov-2026
+
+Variation drawer 31 now opens with PGN Viewer, followed by Variation details and
+ECO Codes. Recovery export and current documentation were regenerated/updated.
+Twelve focused viewer tests and all three generator checks passed. The scoped
+receipt-aware DEV import succeeded; a fresh host SQLcl export confirmed selector
+order and that only the viewer region sequence changed on page 31. Records are
+under `/tmp/chess-variation-viewer-first-20261115`. Authenticated rendered checks
+remain subject to the previously observed browser login requirement.

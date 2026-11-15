@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Orac PGN viewer offline fixture</title>
+<link rel="stylesheet" href="viewer.css"><style>body {font-family:system-ui;max-width:70rem;margin:2rem auto;padding:1rem} textarea {width:95%;height:6rem}</style>
+<h1>Orac PGN viewer</h1>
+<p>Local modules and SVG assets only. Focus a viewer and use arrow keys, Home or End.</p>
+<label for="pgn">PGN to preview</label><textarea id="pgn">[Event "Synthetic development line"]
+
+1. e4 d6 2. d4 Nf6 3. Nc3 Nbd7 4. Nf3 e5 *</textarea>
+<button id="load">Load PGN</button><button id="invalid">Load invalid PGN</button><button id="empty">Load empty PGN</button><button id="replace">Destroy and remount</button>
+<div id="one"></div><h2>Independent viewer</h2><div id="two"></div>
+<script type="module">
+import {PgnViewer} from './viewer.mjs';
+let one=new PgnViewer({container:document.querySelector('#one')});
+const two=new PgnViewer({container:document.querySelector('#two')});
+const initial=document.querySelector('#pgn').value;
+one.loadPgn(initial);two.loadPgn('1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. Ng5 d5 5. exd5 Na5 6. Nxf7 *');
+document.querySelector('#load').onclick=()=>one.loadPgn(document.querySelector('#pgn').value);
+document.querySelector('#invalid').onclick=()=>one.loadPgn('1. e4 invalid *');
+document.querySelector('#empty').onclick=()=>one.loadPgn('');
+document.querySelector('#replace').onclick=()=>{one.destroy();one.destroy();one=new PgnViewer({container:document.querySelector('#one')});one.loadPgn(initial);};
+</script></html>

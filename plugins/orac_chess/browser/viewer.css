@@ -1,0 +1,13 @@
+@import url('../vendor/cm-chessboard-8.15.4/assets/chessboard.css');
+@import url('../vendor/cm-chessboard-8.15.4/assets/extensions/markers/markers.css');
+.orac-pgn-viewer { max-width: 56rem; display:grid; grid-template-columns:minmax(14rem,28rem) minmax(10rem,1fr); gap:1rem; margin-block:1rem; }
+.orac-pgn-board { width:100%; min-width:0; grid-row:1 / 4; }
+.orac-pgn-controls { display:flex; flex-wrap:wrap; gap:.4rem; align-content:start; }
+.orac-pgn-viewer button, .orac-pgn-explorer button, .orac-pgn-explorer select { padding:.4rem .65rem; border:1px solid #777; border-radius:.25rem; background:var(--ut-component-background-color,#fff); color:inherit; cursor:pointer; }
+.orac-pgn-viewer button:disabled { opacity:.45; cursor:default; }
+.orac-pgn-moves { max-height:18rem; overflow:auto; display:flex; gap:.25rem; flex-wrap:wrap; align-content:start; }
+.orac-pgn-moves button.is-current { background:#205aa7; color:white; }
+.orac-pgn-status { margin:0; overflow-wrap:anywhere; }
+.orac-pgn-explorer label { display:block; margin-block:.5rem; }
+.orac-pgn-explorer select { max-width:100%; }
+@media(max-width:650px) { .orac-pgn-viewer { grid-template-columns:1fr; } .orac-pgn-board { grid-row:auto; max-width:28rem; } }

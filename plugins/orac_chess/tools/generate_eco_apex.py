@@ -44,6 +44,13 @@ def render_component(component: dict[str, object]) -> str:
             if component.get("include_in_selector", False) else ""
         )
         source = source.replace("@SELECTOR_MEMBERSHIP@", membership)
+        source = source.replace("@SEQUENCE@", str(component.get("sequence", 35)))
+        source = source.replace(
+            "@DISPLAY_CONDITION@",
+            ",p_plug_display_condition_type=>'NEVER'\n" if component.get("hidden", False) else "",
+        )
+        parent = component.get("parent_id")
+        source = source.replace("@PARENT_PLUG@", f",p_parent_plug_id=>wwv_flow_imp.id({int(parent)})\n" if parent else "")
         for key in ("id", "name", "query"):
             source = source.replace(f"@{key.upper()}@", str(component[key]))
     else:
