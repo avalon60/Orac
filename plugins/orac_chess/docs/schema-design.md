@@ -857,8 +857,9 @@ A creator can have many videos. Unknown non-null creators are rejected; existing
 names are copied exactly by a distinct insert-only backfill before the FK is
 installed. No video, video version, or creator spelling is rewritten.
 
-The insert-only seed MERGE adds the following missing identities. Repeating it
-preserves edits to existing Author and Notes values.
+The current source seed MERGE inserts missing publishers and updates Author and
+Notes from the reviewed portable snapshot. Repeating unchanged input preserves
+row versions. The original source identities include:
 
 | Creator or Publisher | Author | Notes |
 | --- | --- | --- |
@@ -869,8 +870,8 @@ preserves edits to existing Author and Notes values.
 | ChessCenturion | Alex | ~2000 |
 | Gotham Chess | Levy Rozman | |
 
-The additive 13-Nov-2026 source seed supplies Gotham Chess with blank Notes.
-It preserves an existing matching row, including any user edits.
+Gotham Chess is now part of the same current publisher catalogue, with blank
+Notes in the original source. Its former separate include is retired.
 
 `CHESS_CONTENT_SOURCE_V` explicitly projects all six source columns and grants
 SELECT only to `ORAC_APX_PUB`. Public `CHESS_ADMIN_API.SAVE_CONTENT_SOURCE`
@@ -906,7 +907,7 @@ distinct English source opening names. It has no surrogate key or editing API.
 `CHESS_ECO_CODE_V` projects both columns and grants SELECT to `ORAC_APX_PUB`.
 
 Controller `13_eco_reference.xml` appends table, index, constraints, comments,
-annotations, once-only seed, view and grant after the existing seed controller.
+annotations, current runOnChange MERGE seed, view and grant before dependent APIs.
 Existing `CHESS_OPENING_ECO` links and game ECO columns remain compatible;
 no new foreign key or APEX change is introduced. See
 [bootstrap seeds](bootstrap-seeds.md#eco-reference) for source and update policy.
@@ -960,7 +961,7 @@ is introduced. The natural catalogue-key PK and domain-ID unique constraints
 provide indexes for source lookup and reverse identity resolution.
 
 Controller `18_catalogue_sync.xml` installs this metadata and private planner/API
-before the versioned comprehensive batch in controller `15`. Unchanged-source
+before the current catalogue and video seeds in controller `15`. Unchanged-source
 runs perform no domain or ledger DML, including after local edits. Apply uses one
 savepoint and the existing control lock, changes ledger state last, and does not
 commit. Rollback retains additive support, source baselines and domain data.
@@ -970,9 +971,8 @@ for field/edge ownership, read-only planning, conflict handling and acceptance.
 ### Strategy upgrade ordering
 
 Nullable strategy CLOBs are added before administration writers. The opening
-view retains its legacy six-column shape through the immutable historical
-description batch, whose PL/SQL uses that rowtype. The final strategy view
-projection and catalogue API are then installed before comprehensive and
-strategy releases. This preserves historical seed bytes on clean installations
-as well as upgrades. Catalogue compilation is explicitly repeated after view
+view initially retains its legacy six-column shape. The final strategy view
+projection and catalogue API are installed before the current complete desired
+state. Historical description and release batch files remain unchanged on disk
+and are retired from active includes. Catalogue compilation is explicitly repeated after view
 replacement. Gambit strategy has no historical rowtype consumer at that boundary.

@@ -1,4 +1,93 @@
-# Versioned CSV bootstrap batches
+# Current Chess installation seeds
+
+The maintained desired state lives in `seed/current.json`. Refresh it after APEX
+changes with `tools/refresh_seeds.py`; the command writes one stable
+`runOnChange` changeset per practical data group and describes the saved records,
+counts and file path **as each file is written**. Installation reads packaged SQL
+only and needs neither Python nor a network connection.
+
+```bash
+# Use an explicitly authorised existing saved connection and verify its target.
+.venv/bin/python plugins/orac_chess/tools/refresh_seeds.py \
+  --sqlcl-connection orac_apx_pub --expected-user ORAC_APX_PUB \
+  --expected-container FREEPDB1
+# Explicitly authorised read-only connection; obtain the password in the environment.
+.venv/bin/python plugins/orac_chess/tools/refresh_seeds.py \
+  --dsn YOUR_DSN --user YOUR_APPROVED_READER --password-env ORAC_CHESS_SEED_PASSWORD
+# Reproduce reviewed portable input without connecting to a database.
+.venv/bin/python plugins/orac_chess/tools/refresh_seeds.py \
+  --from-snapshot plugins/orac_chess/seed/current.json
+.venv/bin/python plugins/orac_chess/tools/refresh_seeds.py \
+  --from-snapshot plugins/orac_chess/seed/current.json --check
+```
+
+The live exporter uses the declared `oracledb>=4.0.0,<5.0.0` Python dependency
+(already used by the host). Offline replay uses the standard library only.
+
+Saved-connection mode runs SQLcl with an argument list, verifies the expected
+user/container before capture, prints that verified target, and decodes complete
+hex-delimited JSON results. It requires SQLcl on PATH. Failed connections, wrong
+targets or partial results leave the seed files untouched. The command selects
+no default alias and never falls back to a different connection. The saved alias
+above was explicitly authorised for the DEV capture; it is not an automatic
+inspection-to-APEX connection fallback.
+
+Live capture uses one read-only Oracle transaction and always rolls back and closes
+it. The command selects explicit fields from the Chess reference, instructional
+and association views. It excludes games, images, commentary, audit columns,
+control data, host credentials and ownership baselines. The portable snapshot
+contains stable keys instead of database IDs. It never discovers credentials,
+adds grants, defaults to SYSTEM, deploys SQL or modifies the live database.
+Connection selection remains subject to the repository's SQLcl authorisation
+rules; `--dsn`/`--user` require an already authorised account.
+
+The public APEX reader and saved-connection export mode do not read the private
+catalogue identity ledger. Without
+`--ledger`, capture reuses keys by exact owner/name from the previous snapshot;
+a rename cannot reliably be recognised this way. Use an explicitly authorised direct
+Chess owner connection with `--ledger` when capturing renamed entities: this reads
+only the key, kind and entity identity columns, preserving keys across renames.
+It does not export ownership, tombstones or baseline JSON. No grants are added.
+Review renames carefully when capturing through public views.
+
+`chess_content_source.sql` and `chess_eco_code.sql` use insert/update MERGEs;
+editing a publisher's author/notes or an ECO description in the reviewed snapshot
+updates that reference row on deployment. Publisher versions and timestamps change
+only when its actual values change. These installation-owned reference values
+are authoritative. Omitted rows are retained.
+
+`chess_catalogue.sql` uses `chess_catalogue_api.apply_catalogue` rather than raw
+MERGEs: it validates and resolves parents, preserves stable identities, applies
+safe three-way changes to source-created rows, and protects adopted user rows,
+user overrides and recorded tombstones. `chess_video.sql` uses the public video
+and link APIs. It inserts missing platform/external-ID videos with captured
+metadata, preserves existing video values, and adds missing opening, gambit and
+variation links. It removes no links. Videos have no ownership ledger, so a
+missing video can be reinserted on a later seed rerun; deliberate video deletion
+must also remove it from the reviewed snapshot. Graph tombstones remain protected.
+
+All data is validated and rendered before writing: duplicate identities, missing
+references, cross-owner parents and dependency cycles refuse the refresh. JSON
+text is packaged as UTF-8-safe hex chunks into CLOBs, retaining Unicode, quotes,
+nulls, whitespace and descriptions larger than 32 KB. `--check` reports stale
+files and exits nonzero without writing. Review the snapshot and all SQL together
+before a managed plugin deployment. Rollback retains instructional data.
+
+The controller path is `pluginController.xml` → `08_content_source.xml` and
+`13_eco_reference.xml` for references, then `15_eco_seed_batches.xml` →
+`18_catalogue_sync.xml` for the private API, followed by current catalogue/video
+SQL. The historical bootstrap, starter, description and catalogue release files
+remain unchanged on disk; their data includes are retired from active deployment.
+Existing Liquibase history remains intact, and new current identities work for
+both fresh installation and upgrade. No checksum clearing is required.
+
+## Historical CSV batches
+
+The following describes retained historical generators and provenance. New APEX
+changes should use the current refresh command above rather than append another
+snapshot release. Historical files are not regenerated or reintroduced into the
+active controller chain.
+
 
 Chess installs and upgrades now apply packaged CSV batches through Liquibase,
 after the administration APIs and their compilation checks. The first batch,

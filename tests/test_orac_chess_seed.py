@@ -395,14 +395,14 @@ def test_acceptance_is_generated_from_actual_runtime() -> None:
     assert "Requires explicit isolated seed acceptance opt-in" in sql
 
 
-def test_packaged_generators_need_no_declared_dependencies(
+def test_packaged_tools_use_declared_dependencies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Host installation accepts every packaged tool with the empty dependency contract."""
+    """The optional live exporter dependency is visible to host import checks."""
     monkeypatch.syspath_prepend(str(ROOT / "src"))
     from model.plugin_dependencies import validate_declared_imports
 
-    validate_declared_imports(seed.ROOT, (), plugin_id="orac_chess")
+    validate_declared_imports(seed.ROOT, ("oracledb>=4.0.0,<5.0.0",), plugin_id="orac_chess")
 
 
 def test_host_import_scanner_rejects_generator_dependency_regression(

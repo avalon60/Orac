@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.30.xsd">
-  <!-- Immutable once-only batches: append new includes; never alter a released batch. -->
-  <include file="../../schema/seed_data/chess_batch_2026_11_07_bootstrap.sql" relativeToChangelogFile="true"/>
+  <!-- Historical bootstrap data is retained on disk; current portable seeds run in 15_eco_seed_batches.xml. -->
 </databaseChangeLog>

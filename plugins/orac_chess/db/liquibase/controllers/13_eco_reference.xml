@@ -6,7 +6,7 @@
   <include file="../../schema/constraint_other/chs_eco_code_ck.sql" relativeToChangelogFile="true"/>
   <include file="../../schema/comment/chess_eco_code.sql" relativeToChangelogFile="true"/>
   <include file="../../schema/annotation/chess_eco_code.sql" relativeToChangelogFile="true"/>
-  <include file="../../schema/seed_data/chess_eco_2026_11_07.sql" relativeToChangelogFile="true"/>
+  <include file="../../schema/seed_data/chess_eco_code.sql" relativeToChangelogFile="true"/>
   <include file="../../schema/view/chess_eco_code_v.sql" relativeToChangelogFile="true"/>
   <include file="../../schema/grant/chess_eco_code_reads.sql" relativeToChangelogFile="true"/>
 </databaseChangeLog>

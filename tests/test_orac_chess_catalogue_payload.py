@@ -77,7 +77,7 @@ def test_private_structure_is_reachable_before_catalogue_batches() -> None:
     includes = [n.attrib['file'] for n in ET.parse(ROOT / 'db/liquibase/pluginController.xml').getroot()]
     assert includes.index('controllers/17_continuation.xml') < includes.index('controllers/15_eco_seed_batches.xml')
     batches = [n.attrib['file'] for n in ET.parse(ROOT / 'db/liquibase/controllers/15_eco_seed_batches.xml').getroot()]
-    assert batches.index('../../schema/seed_data/chess_descriptions_2026_11_10.sql') < batches.index('../../schema/view/chess_opening_v_strategy.sql') < batches.index('18_catalogue_sync.xml') < batches.index('../../schema/seed_data/chess_batch_2026_11_10_comprehensive_catalogue.sql')
+    assert batches.index('../../schema/view/chess_opening_v_strategy.sql') < batches.index('18_catalogue_sync.xml') < batches.index('../../schema/seed_data/chess_catalogue.sql') < batches.index('../../schema/seed_data/chess_video.sql')
     control = ROOT / 'db/liquibase/controllers/18_catalogue_sync.xml'
     paths = [(control.parent / n.attrib['file']).resolve() for n in ET.parse(control).getroot()]
     assert all(path.is_file() for path in paths)

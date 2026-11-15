@@ -72,7 +72,11 @@ class OracChessSchemaTests(unittest.TestCase):
         manifest = PluginDiscovery(self.MANIFEST.parent).load_manifest(self.MANIFEST)
         referenced = validate_plugin_liquibase_changelog(manifest)
         source = set(self.SCHEMA.rglob("*.sql"))
-        self.assertEqual(set(referenced), source)
+        retired = {p for p in source if p.parent.name == 'seed_data' and (
+            p.name.startswith('chess_batch_') or p.name in {
+                'chess_descriptions_2026_11_10.sql', 'chess_eco_2026_11_07.sql',
+                'chess_content_source_top_26_gaps_2026_11_14.sql'})}
+        self.assertEqual(set(referenced), source - retired)
         self.assertEqual(len(list((self.SCHEMA / "table").glob("*.sql"))), 26)
         self.assertEqual(len(list((self.SCHEMA / "constraint_fk").glob("*.sql"))), 41)
         self.assertEqual(len(list((self.SCHEMA / "constraint_pk").glob("*.sql"))), 26)
@@ -87,7 +91,8 @@ class OracChessSchemaTests(unittest.TestCase):
                 self.assertNotRegex(content, r"(?i)\b(?:insert|update|delete|all)\b")
                 self.assertNotRegex(content, r"(?i)\bto\s+public\b")
             change_ids.extend(re.findall(r"^--changeset\s+(\S+)", content, re.M))
-            if path.parent.name not in {"comment", "view", "package_spec", "package_body", "grant", "post_install", "annotation", "mle_module", "mle_env", "function"}:
+            current_seed = path.name in {'chess_content_source.sql', 'chess_eco_code.sql', 'chess_catalogue.sql', 'chess_video.sql'}
+            if not current_seed and path.parent.name not in {"comment", "view", "package_spec", "package_body", "grant", "post_install", "annotation", "mle_module", "mle_env", "function"}:
                 self.assertNotIn("runOnChange:true", content, path)
         self.assertEqual(len(change_ids), len(set(change_ids)))
         validate_schema_payload(self.SCHEMA, manifest=manifest)
@@ -111,9 +116,11 @@ class OracChessSchemaTests(unittest.TestCase):
         self.assertIn("p_creator in varchar2", spec)
         self.assertIn("p_original_creator in varchar2", spec)
 
-    def test_content_source_migration_preserves_user_edits_and_existing_names(self) -> None:
-        """Insert-only source seeds and backfill precede the restrictive video FK."""
+    def test_content_source_migration_refreshes_desired_values_and_existing_names(self) -> None:
+        """Current source desired values and backfill precede the restrictive video FK."""
         seed = (self.SCHEMA / "seed_data/chess_content_source.sql").read_text()
+        import json
+        rows = json.loads((self.PLUGIN_DIR / "seed/current.json").read_text())["content_sources"]
         for creator, author, notes in (
             ("ChessVibes", "Nelson Lopez", "NM"),
             ("Square One Chess", "squareonechess6939", "Pundit"),
@@ -121,9 +128,10 @@ class OracChessSchemaTests(unittest.TestCase):
             ("ChesswithAkeem", "Akeem Brown", "CM"),
             ("ChessCenturion", "Alex", "~2000"),
         ):
-            self.assertIn(f"'{creator}' creator, '{author}' author, '{notes}' notes", seed)
+            self.assertIn({"creator": creator, "author": author, "notes": notes}, rows)
         self.assertIn("when not matched then insert", seed.lower())
-        self.assertNotIn("when matched", seed.lower())
+        self.assertIn("when matched then update", seed.lower())
+        self.assertIn("dbms_lob.compare", seed.lower())
         self.assertNotIn("delete from", seed.lower())
         backfill = (self.SCHEMA / "seed_data/chess_content_source_existing.sql").read_text().lower()
         self.assertIn("select distinct creator from orac_chess.chess_video", backfill)
