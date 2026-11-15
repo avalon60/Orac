@@ -35,6 +35,48 @@ bin/orac-backup.sh --skip-db /tmp/orac-backups
 bin/orac-backup.sh --container orac-db --pdb FREEPDB1 /tmp/orac-backups
 ```
 
+## Back Up One Plugin
+
+List available manifest declarations without contacting Docker or the database:
+
+```bash
+bin/orac-backup.sh --list-plugins
+```
+
+The list includes disabled plugins and shows the exact ID, name, enabled flag,
+declared schemas, backup-enabled schemas, and eligibility. It describes the
+checkout's manifests; it does not establish that a plugin or schema is installed.
+
+```bash
+bin/orac-backup.sh --plugin orac_chess --dry-run /tmp/chess-backups
+bin/orac-backup.sh --plugin orac_chess /tmp/chess-backups
+bin/orac-restore.sh /tmp/chess-backups/orac-backup-YYYYMMDD-HHMMSS.tar.gz
+```
+
+`--plugin ID` matches one exact manifest ID and exports rows using Data Pump
+`content=data_only`. It selects only that plugin's private `database.schemas`
+entries whose `backup.include` is true (the default when omitted). Disabled
+plugins remain eligible. Core schemas and schemas shared between manifests are
+refused. Unknown or ambiguous IDs, plugins without eligible schemas, and any
+missing selected schema fail without creating an archive. `--skip-db`,
+`--include-vaults`, and `--export-vaults` cannot be combined with `--plugin`.
+
+The archive retains the existing dump/log layout, selected schema lists,
+foreign-key metadata, and selected plugin metadata. It excludes host config and
+vaults. Its manifest adds `scope: plugin`, `plugin_id`, and
+`database.content: data_only`. Full backups record `scope: full` and
+`database.content: all`; archives without these fields retain those defaults.
+
+The plugin's schemas **and tables must already be installed in the restore
+target**, with definitions compatible with the exported rows. Install the
+plugin through `bin/orac-plugin.sh install --bundled orac_chess` first if needed.
+Rows-only archives cannot restore schema definitions; restore rejects
+`ORAC_RESTORE_CONTENT=all` even with `--dry-run`. The normal `RECOVER`
+confirmation, recovery API prerequisite, schema preflight, foreign-key handling,
+recompilation, and invalid-object checks still apply. Plugin-only restores warn
+about the selected plugin's version and leave the core plugin registry unchanged.
+They do not quarantine plugin runtime state or report core table counts.
+
 ## Vault Handling
 
 Vault files are excluded by default.

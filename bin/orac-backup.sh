@@ -5,7 +5,8 @@
 # Date: 20-May-2026
 # Purpose: Create an Orac backup archive containing database Data Pump export,
 #          host configuration, plugin/schema metadata, and enabled FK metadata.
-# Usage: bin/orac-backup.sh [--skip-db] [--include-vaults|--export-vaults] TARGET_DIR
+# Usage: bin/orac-backup.sh [--plugin ID|--skip-db] [--dry-run] TARGET_DIR
+#        bin/orac-backup.sh --list-plugins
 # Example: bin/orac-backup.sh /backups/orac
 #
 ################################################################################
@@ -23,6 +24,10 @@ VAULT_EXPORT_HELPER="${ORAC_PROJECT_HOME}/src/controller/orac_vault_export.py"
 DOCKER_BIN=${ORAC_DOCKER_BIN:-docker}
 TAR_BIN=${ORAC_TAR_BIN:-tar}
 PYTHON_BIN=${ORAC_PYTHON_BIN:-}
+PLUGIN_ID=""
+LIST_PLUGINS=0
+BACKUP_SCOPE="full"
+BACKUP_CONTENT="all"
 SKIP_DB=0
 DRY_RUN=0
 TARGET_DIR=""
@@ -45,10 +50,13 @@ ORAC_VAULT_DIR=${ORAC_VAULT_DIR/#\~/$HOME}
 usage() {
   cat <<EOF
 Usage: $PROG [options] TARGET_DIR
+       $PROG --list-plugins
 
 Create an Orac backup archive in TARGET_DIR.
 
 Options:
+  --list-plugins     List manifest declarations offline (including disabled plugins).
+  --plugin ID        Export only this plugin's backup-enabled private schema rows.
   --skip-db          Skip Data Pump export and archive only metadata/config.
   --include-vaults   Include allow-listed machine-bound encrypted vault files.
   --export-vaults    Export allow-listed vaults using a recovery passphrase.
@@ -112,6 +120,18 @@ vault_source_display() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --list-plugins)
+        LIST_PLUGINS=1
+        shift
+        ;;
+      --plugin)
+        [[ $# -ge 2 && -n "$2" && "$2" != -* ]] || fail "--plugin requires an ID"
+        [[ -z "$PLUGIN_ID" ]] || fail "Only one --plugin may be supplied"
+        PLUGIN_ID="$2"
+        BACKUP_SCOPE="plugin"
+        BACKUP_CONTENT="data_only"
+        shift 2
+        ;;
       --skip-db)
         SKIP_DB=1
         shift
@@ -155,7 +175,14 @@ parse_args() {
     esac
   done
 
-  [[ -n "$TARGET_DIR" ]] || fail "TARGET_DIR is required"
+  if [[ "$LIST_PLUGINS" -eq 1 ]]; then
+    [[ -z "$TARGET_DIR" && -z "$PLUGIN_ID" && "$SKIP_DB" -eq 0 && "$VAULT_MODE" == "none" ]] || fail "--list-plugins cannot be combined with a target, --plugin, --skip-db, or vault options"
+  else
+    [[ -n "$TARGET_DIR" ]] || fail "TARGET_DIR is required"
+  fi
+  if [[ -n "$PLUGIN_ID" ]]; then
+    [[ "$SKIP_DB" -eq 0 && "$VAULT_MODE" == "none" ]] || fail "--plugin cannot be combined with --skip-db or vault options"
+  fi
 }
 
 discover_manifest_data() {
@@ -163,7 +190,7 @@ discover_manifest_data() {
   local metadata_path="$2"
   local schemas_path="$3"
 
-  "$python" - "$ORAC_PROJECT_HOME" "$PLUGINS_DIR" "$metadata_path" "$schemas_path" <<'PY'
+  "$python" - "$ORAC_PROJECT_HOME" "$PLUGINS_DIR" "$metadata_path" "$schemas_path" "$PLUGIN_ID" "$LIST_PLUGINS" <<'PY'
 import json
 import re
 import sys
@@ -175,9 +202,15 @@ plugins_dir = Path(sys.argv[2])
 metadata_path = Path(sys.argv[3])
 schemas_path = Path(sys.argv[4])
 
+selected_id = sys.argv[5]
+list_plugins = sys.argv[6] == "1"
+core_schemas = {"orac", "orac_core", "orac_api", "orac_code", "orac_plugin", "orac_apx_pub"}
 schemas = ["orac_core", "orac_api", "orac_code"]
+owners = {}
 plugins = []
 schema_name_pattern = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+if selected_id and not schema_name_pattern.fullmatch(selected_id):
+    raise ValueError(f"Invalid plugin ID: {selected_id}")
 
 for manifest_path in sorted(plugins_dir.glob("*.json")):
     with manifest_path.open("rb") as handle:
@@ -185,15 +218,18 @@ for manifest_path in sorted(plugins_dir.glob("*.json")):
 
     database = manifest.get("database") or {}
     database_schemas = []
+    backup_schemas = []
     for schema in database.get("schemas") or []:
         schema_name = str(schema.get("schema_name", "")).strip()
         if schema_name:
             if not schema_name_pattern.fullmatch(schema_name):
                 raise ValueError(f"Invalid database schema name in {manifest_path}: {schema_name}")
             database_schemas.append(schema_name.lower())
+            owners.setdefault(schema_name.lower(), set()).add(str(manifest_path))
             backup = schema.get("backup") or {}
             if backup.get("include", True):
                 schemas.append(schema_name.lower())
+                backup_schemas.append(schema_name.lower())
 
     plugins.append(
         {
@@ -203,8 +239,32 @@ for manifest_path in sorted(plugins_dir.glob("*.json")):
             "enabled": bool(manifest.get("enabled", False)),
             "manifest_path": str(manifest_path.relative_to(project_home)),
             "database_schemas": database_schemas,
+            "backup_schemas": list(dict.fromkeys(backup_schemas)),
         }
     )
+
+for plugin in plugins:
+    unsafe = [name for name in plugin["backup_schemas"] if name in core_schemas or len(owners[name]) > 1]
+    plugin["backup_eligible"] = bool(plugin["backup_schemas"]) and not unsafe
+    plugin["backup_reason"] = "core/shared schema ownership" if unsafe else ("eligible" if plugin["backup_schemas"] else "no backup-enabled schemas")
+
+if list_plugins:
+    print("Manifest declarations only; installed database state has not been checked.")
+    print("ID | Name | Enabled | Declared schemas | Backup-enabled schemas | Eligibility")
+    for plugin in plugins:
+        print(" | ".join([str(plugin["plugin_id"]), str(plugin["name"]), str(plugin["enabled"]).lower(), ",".join(plugin["database_schemas"]) or "-", ",".join(plugin["backup_schemas"]) or "-", plugin["backup_reason"]]))
+    raise SystemExit
+
+if selected_id:
+    matches = [plugin for plugin in plugins if plugin["plugin_id"] == selected_id]
+    if len(matches) != 1:
+        raise ValueError(f"Unknown or ambiguous plugin ID: {selected_id}")
+    selected = matches[0]
+    if not selected["backup_eligible"]:
+        raise ValueError(f"Plugin {selected_id} is not backup eligible: {selected['backup_reason']}")
+    schemas = selected["backup_schemas"]
+    selected["database_schemas"] = schemas
+    plugins = [selected]
 
 unique_schemas = list(dict.fromkeys(schemas))
 
@@ -334,7 +394,7 @@ run_datapump_export() {
 
   log "Exporting schemas: ${schema_csv}"
   "$DOCKER_BIN" exec "$CONTAINER_NAME" bash -lc \
-    "cd '${ORAC_DATAPUMP_PATH}' && expdp system/\"\${ORACLE_PWD}\"@//127.0.0.1:1521/${ORACLE_PDB} schemas=${schema_csv} directory=${ORAC_DATAPUMP_DIR} dumpfile=${dump_file} logfile=${log_file} reuse_dumpfiles=yes"
+    "cd '${ORAC_DATAPUMP_PATH}' && expdp system/\"\${ORACLE_PWD}\"@//127.0.0.1:1521/${ORACLE_PDB} schemas=${schema_csv} directory=${ORAC_DATAPUMP_DIR} dumpfile=${dump_file} logfile=${log_file} reuse_dumpfiles=yes content=${BACKUP_CONTENT}"
 }
 
 copy_datapump_files() {
@@ -480,6 +540,9 @@ write_backup_manifest() {
   ORAC_PLUGIN_METADATA_PATH="$PLUGIN_METADATA_PATH" \
   ORAC_DUMP_FILE="$DUMP_FILE" \
   ORAC_LOG_FILE="$EXPORT_LOG_FILE" \
+  ORAC_BACKUP_SCOPE="$BACKUP_SCOPE" \
+  ORAC_BACKUP_PLUGIN_ID="$PLUGIN_ID" \
+  ORAC_BACKUP_CONTENT="$BACKUP_CONTENT" \
   ORAC_SKIP_DB="$SKIP_DB" \
   ORAC_VAULT_MODE="$VAULT_MODE" \
   ORAC_VAULT_SOURCE_DIR="$(vault_source_display)" \
@@ -516,9 +579,12 @@ elif vault_mode == "portable":
     vaults["warning"] = "Portable vault export requires the recovery passphrase during restore."
 manifest = {
     "backup_format_version": 1,
+    "scope": os.environ["ORAC_BACKUP_SCOPE"],
+    "plugin_id": os.environ["ORAC_BACKUP_PLUGIN_ID"] or None,
     "generated_at_utc": datetime.now(timezone.utc).isoformat(),
     "orac_version": os.environ["ORAC_VERSION_VALUE"],
     "database": {
+        "content": os.environ["ORAC_BACKUP_CONTENT"],
         "container_name": os.environ["ORAC_CONTAINER_NAME"],
         "pdb": os.environ["ORAC_PDB_NAME"],
         "datapump_directory": os.environ["ORAC_DATAPUMP_DIR_VALUE"],
@@ -533,6 +599,8 @@ manifest = {
     "plugins": plugin_metadata,
     "vaults": vaults,
 }
+if os.environ["ORAC_BACKUP_SCOPE"] == "plugin":
+    manifest.pop("vaults")
 Path(os.environ["ORAC_BACKUP_MANIFEST_PATH"]).write_text(
     json.dumps(manifest, indent=2, sort_keys=True) + "\n",
     encoding="utf-8",
@@ -550,12 +618,16 @@ create_archive() {
 }
 
 parse_args "$@"
+PYTHON_BIN=$(find_python)
+if [[ "$LIST_PLUGINS" -eq 1 ]]; then
+  discover_manifest_data "$PYTHON_BIN" /dev/null /dev/null
+  exit 0
+fi
 validate_container_name "$CONTAINER_NAME"
 validate_identifier "$ORACLE_PDB" "ORACLE_PDB"
 validate_identifier "$ORAC_DATAPUMP_DIR" "ORAC_DATAPUMP_DIR"
 validate_datapump_path
 
-PYTHON_BIN=$(find_python)
 STAMP=$(date -u +"%Y%m%d-%H%M%S")
 STAGE_PARENT=$(mktemp -d "${TMPDIR:-/tmp}/orac-backup.XXXXXX")
 STAGE_DIR="${STAGE_PARENT}/orac-backup-${STAMP}"
@@ -583,14 +655,19 @@ discover_vault_files "$VAULT_FILES_PATH"
 log "Orac version: ${ORAC_VERSION_VALUE}"
 log "Requested schemas:"
 sed 's/^/  - /' "$REQUESTED_SCHEMAS_PATH"
-print_vault_dry_run_summary "$VAULT_FILES_PATH"
+log "Backup scope: ${BACKUP_SCOPE}; Data Pump content=${BACKUP_CONTENT}"
+if [[ "$BACKUP_SCOPE" == "full" ]]; then
+  print_vault_dry_run_summary "$VAULT_FILES_PATH"
+fi
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   log "Dry run only. No backup archive created."
   exit 0
 fi
 
-copy_config_files "${STAGE_DIR}/config"
+if [[ "$BACKUP_SCOPE" == "full" ]]; then
+  copy_config_files "${STAGE_DIR}/config"
+fi
 
 case "$VAULT_MODE" in
   none)
@@ -613,6 +690,9 @@ else
   write_missing_schemas "$REQUESTED_SCHEMAS_PATH" "$EXPORTED_SCHEMAS_PATH" "$MISSING_SCHEMAS_PATH"
 
   if [[ -s "$MISSING_SCHEMAS_PATH" ]]; then
+    if [[ "$BACKUP_SCOPE" == "plugin" ]]; then
+      fail "Selected plugin schemas missing from database: $(paste -sd, "$MISSING_SCHEMAS_PATH")"
+    fi
     log "WARNING: requested schemas missing from database:"
     sed 's/^/  - /' "$MISSING_SCHEMAS_PATH"
   fi

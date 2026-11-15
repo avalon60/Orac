@@ -254,6 +254,14 @@ work_dir = Path(sys.argv[4])
 
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 database = manifest.get("database") or {}
+scope = manifest.get("scope", "full")
+content = database.get("content", "all")
+if scope not in {"full", "plugin"} or content not in {"all", "data_only"}:
+    raise ValueError("Unsupported backup scope or database content")
+if scope == "plugin" and content != "data_only":
+    raise ValueError("Plugin backup must contain data_only content")
+(work_dir / "scope.txt").write_text(scope + "\n", encoding="utf-8")
+(work_dir / "content.txt").write_text(content + "\n", encoding="utf-8")
 schema_name_pattern = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 plugin_id_pattern = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 
@@ -273,6 +281,22 @@ backup_plugins = {
     for item in manifest.get("plugins", [])
     if item.get("plugin_id")
 }
+if scope == "plugin":
+    selected_id = manifest.get("plugin_id")
+    selected = backup_plugins.get(selected_id)
+    core_schemas = {"orac", "orac_core", "orac_api", "orac_code", "orac_plugin", "orac_apx_pub"}
+    if not isinstance(selected_id, str) or not plugin_id_pattern.fullmatch(selected_id):
+        raise ValueError("Invalid selected plugin ID in backup manifest")
+    if not selected or len(manifest.get("plugins", [])) != 1 or not schemas:
+        raise ValueError("Plugin backup requires one matching plugin and exported schemas")
+    if {name.lower() for name in schemas} & core_schemas:
+        raise ValueError("Plugin backup cannot import core schemas")
+    if database.get("skip_db") or not database.get("dump_file") or database.get("missing_schemas"):
+        raise ValueError("Plugin backup must contain a complete database export")
+    if set(schemas) != set(database.get("requested_schemas") or []):
+        raise ValueError("Plugin requested and exported schemas differ")
+    if set(schemas) != set(selected.get("database_schemas") or []):
+        raise ValueError("Plugin backup schemas do not match selected plugin metadata")
 schema_plugins = {}
 for backup_plugin in manifest.get("plugins", []):
     plugin_id = str(backup_plugin.get("plugin_id") or "").strip()
@@ -313,7 +337,7 @@ for plugin_id, backup_plugin in sorted(backup_plugins.items()):
             f"current={current_plugin.get('version')}."
         )
 
-for plugin_id in sorted(set(current_plugins) - set(backup_plugins)):
+for plugin_id in sorted(set(current_plugins) - set(backup_plugins)) if scope == "full" else []:
     warnings.append(f"Plugin {plugin_id} exists in this checkout but not in backup.")
 
 (work_dir / "plugin_warnings.txt").write_text("\n".join(warnings) + ("\n" if warnings else ""), encoding="utf-8")
@@ -743,30 +767,34 @@ run_restore_validation() {
   disabled_fk_count=$(awk -F '\t' 'NF && $4 != "ENABLED" { count++ } END { print count + 0 }' "$fk_issues_path")
   unvalidated_fk_count=$(awk -F '\t' 'NF && $5 != "VALIDATED" { count++ } END { print count + 0 }' "$fk_issues_path")
 
-  users_count=$(query_core_table_count "USERS" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.USERS"
-  conversations_count=$(query_core_table_count "CONVERSATIONS" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.CONVERSATIONS"
-  messages_count=$(query_core_table_count "MESSAGES" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.MESSAGES"
-  user_preferences_count=$(query_core_table_count "USER_PREFERENCES" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.USER_PREFERENCES"
-  llm_registry_count=$(query_core_table_count "LLM_REGISTRY" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.LLM_REGISTRY"
-  tts_voices_count=$(query_core_table_count "TTS_VOICES" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.TTS_VOICES"
-  personalities_count=$(query_core_table_count "ORAC_PERSONALITIES" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.ORAC_PERSONALITIES"
-  preference_definitions_count=$(query_core_table_count "PREFERENCE_DEFINITIONS" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.PREFERENCE_DEFINITIONS"
-  generation_presets_count=$(query_core_table_count "MODEL_GENERATION_PRESETS" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.MODEL_GENERATION_PRESETS"
+  if grep -qi '^orac_core$' "$schemas_path"; then
+    users_count=$(query_core_table_count "USERS" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.USERS"
+    conversations_count=$(query_core_table_count "CONVERSATIONS" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.CONVERSATIONS"
+    messages_count=$(query_core_table_count "MESSAGES" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.MESSAGES"
+    user_preferences_count=$(query_core_table_count "USER_PREFERENCES" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.USER_PREFERENCES"
+    llm_registry_count=$(query_core_table_count "LLM_REGISTRY" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.LLM_REGISTRY"
+    tts_voices_count=$(query_core_table_count "TTS_VOICES" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.TTS_VOICES"
+    personalities_count=$(query_core_table_count "ORAC_PERSONALITIES" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.ORAC_PERSONALITIES"
+    preference_definitions_count=$(query_core_table_count "PREFERENCE_DEFINITIONS" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.PREFERENCE_DEFINITIONS"
+    generation_presets_count=$(query_core_table_count "MODEL_GENERATION_PRESETS" "$count_path") || fail "Restore validation row count failed for ORAC_CORE.MODEL_GENERATION_PRESETS"
+  fi
 
   log ""
   log "## Restore validation summary"
   printf '%-25s : %s\n' "Invalid objects" "$invalid_count"
   printf '%-25s : %s\n' "Disabled FK constraints" "$disabled_fk_count"
   printf '%-25s : %s\n' "Unvalidated FKs" "$unvalidated_fk_count"
-  printf '%-25s : %s\n' "Users" "$users_count"
-  printf '%-25s : %s\n' "Conversations" "$conversations_count"
-  printf '%-25s : %s\n' "Messages" "$messages_count"
-  printf '%-25s : %s\n' "User preferences" "$user_preferences_count"
-  printf '%-25s : %s\n' "LLM registry rows" "$llm_registry_count"
-  printf '%-25s : %s\n' "TTS voices" "$tts_voices_count"
-  printf '%-25s : %s\n' "Personalities" "$personalities_count"
-  printf '%-25s : %s\n' "Preference definitions" "$preference_definitions_count"
-  printf '%-25s : %s\n' "Generation presets" "$generation_presets_count"
+  if grep -qi '^orac_core$' "$schemas_path"; then
+    printf '%-25s : %s\n' "Users" "$users_count"
+    printf '%-25s : %s\n' "Conversations" "$conversations_count"
+    printf '%-25s : %s\n' "Messages" "$messages_count"
+    printf '%-25s : %s\n' "User preferences" "$user_preferences_count"
+    printf '%-25s : %s\n' "LLM registry rows" "$llm_registry_count"
+    printf '%-25s : %s\n' "TTS voices" "$tts_voices_count"
+    printf '%-25s : %s\n' "Personalities" "$personalities_count"
+    printf '%-25s : %s\n' "Preference definitions" "$preference_definitions_count"
+    printf '%-25s : %s\n' "Generation presets" "$generation_presets_count"
+  fi
 
   if [[ "$invalid_count" -ne 0 ]]; then
     log ""
@@ -824,6 +852,13 @@ MANIFEST_PATH=$(find "$EXTRACT_DIR" -name backup_manifest.json -print -quit)
 [[ -n "$MANIFEST_PATH" ]] || fail "backup_manifest.json not found in archive"
 
 extract_manifest_details "$PYTHON_BIN" "$MANIFEST_PATH" "$WORK_PARENT"
+
+BACKUP_SCOPE=$(tr -d '\n' <"${WORK_PARENT}/scope.txt")
+BACKUP_CONTENT=$(tr -d '\n' <"${WORK_PARENT}/content.txt")
+if [[ "$BACKUP_CONTENT" == "data_only" && "$ORAC_RESTORE_CONTENT" != "data_only" ]]; then
+  fail "Rows-only backup requires ORAC_RESTORE_CONTENT=data_only; schema definition restore is unavailable"
+fi
+log "Backup scope: ${BACKUP_SCOPE}; stored database content=${BACKUP_CONTENT}"
 
 CURRENT_VERSION=$(read_current_version "$PYTHON_BIN")
 BACKUP_VERSION=$(tr -d '\n' <"${WORK_PARENT}/backup_version.txt")
@@ -891,10 +926,12 @@ if [[ "$IMPORT_STATUS" -ne 0 ]]; then
 fi
 
 normalize_restored_imported_state "${WORK_PARENT}/schemas.txt"
-quarantine_restored_plugin_state || {
-  remove_datapump_dump "$DUMP_FILE"
-  fail "Post-restore plugin quarantine failed. Verify ORAC_CODE.RESTORE_RECOVERY_API is installed and valid, then rerun restore."
-}
+if grep -qi '^orac_core$' "${WORK_PARENT}/schemas.txt"; then
+  quarantine_restored_plugin_state || {
+    remove_datapump_dump "$DUMP_FILE"
+    fail "Post-restore plugin quarantine failed. Verify ORAC_CODE.RESTORE_RECOVERY_API is installed and valid, then rerun restore."
+  }
+fi
 remove_datapump_dump "$DUMP_FILE"
 
 log "Restore import complete."

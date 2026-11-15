@@ -1,4 +1,5 @@
 """Tests for Orac backup and recovery command wrappers."""
+
 # Author: Clive Bostock
 # Date: 2026-05-20
 # Description: Verifies backup archive metadata and recovery confirmation behaviour.
@@ -8,6 +9,7 @@ from __future__ import annotations
 import configparser
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -15,14 +17,12 @@ import tarfile
 import tempfile
 import unittest
 
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from lib.user_security import encrypted_user_credential
-
 
 BACKUP_SCRIPT = PROJECT_ROOT / "bin" / "orac-backup.sh"
 RECOVERY_SCRIPT = PROJECT_ROOT / "bin" / "orac-restore.sh"
@@ -61,6 +61,8 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
 
             requested_schemas = manifest["database"]["requested_schemas"]
             self.assertTrue(manifest["database"]["skip_db"])
+            self.assertEqual(manifest["scope"], "full")
+            self.assertEqual(manifest["database"]["content"], "all")
             self.assertEqual(
                 manifest["vaults"],
                 {
@@ -115,7 +117,9 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-            backup_root = self._extract_single_backup_root(target_dir, temp_path / "extract")
+            backup_root = self._extract_single_backup_root(
+                target_dir, temp_path / "extract"
+            )
             manifest = json.loads(
                 (backup_root / "backup_manifest.json").read_text(encoding="utf-8")
             )
@@ -162,7 +166,9 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-            backup_root = self._extract_single_backup_root(target_dir, temp_path / "extract")
+            backup_root = self._extract_single_backup_root(
+                target_dir, temp_path / "extract"
+            )
             manifest = json.loads(
                 (backup_root / "backup_manifest.json").read_text(encoding="utf-8")
             )
@@ -306,7 +312,9 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-            self.assertIn(f"Selected newest backup archive: {newer_archive}", result.stdout)
+            self.assertIn(
+                f"Selected newest backup archive: {newer_archive}", result.stdout
+            )
             self.assertIn("Backup Orac version : new-version", result.stdout)
             self.assertNotIn(str(older_archive), result.stdout)
             self.assertNotIn("ignored-version", result.stdout)
@@ -532,7 +540,9 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
                 "bin/orac-plugin.sh install --bundled home_assistant",
                 combined_output,
             )
-            self.assertIn("Data-only restore requires all exported schemas", combined_output)
+            self.assertIn(
+                "Data-only restore requires all exported schemas", combined_output
+            )
             docker_log_text = docker_log.read_text(encoding="utf-8")
             self.assertIn("from dba_users", docker_log_text)
             self.assertNotIn("Preparing Data Pump directory", combined_output)
@@ -829,10 +839,16 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
         self.assertIn("enable validate constraint", script_text)
         self.assertIn("from all_objects", script_text)
         self.assertIn("from all_constraints", script_text)
-        self.assertIn('query_invalid_objects "$schemas_path" "$invalid_objects_path"', script_text)
-        self.assertIn('query_fk_constraint_issues "$schemas_path" "$fk_issues_path"', script_text)
+        self.assertIn(
+            'query_invalid_objects "$schemas_path" "$invalid_objects_path"', script_text
+        )
+        self.assertIn(
+            'query_fk_constraint_issues "$schemas_path" "$fk_issues_path"', script_text
+        )
         self.assertIn('recompile_schema_list "$schemas_path"', script_text)
-        self.assertIn('generate_fk_enable_sql "$schemas_path" "$fk_enable_sql"', script_text)
+        self.assertIn(
+            'generate_fk_enable_sql "$schemas_path" "$fk_enable_sql"', script_text
+        )
         self.assertIn("status <> 'VALID'", script_text)
         self.assertIn("status <> 'ENABLED'", script_text)
         self.assertIn("validated <> 'VALIDATED'", script_text)
@@ -854,6 +870,351 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
             "MODEL_GENERATION_PRESETS",
         ):
             self.assertIn(f'query_core_table_count "{table_name}"', script_text)
+
+    def test_plugin_listing_and_dry_run_are_offline(self) -> None:
+        """Disabled declarations remain eligible without a database or target."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            backup, _ = self._write_plugin_fixture(root)
+            listing = self._run_plugin_command(backup, ["--list-plugins"], root)
+            self.assertEqual(listing.returncode, 0, listing.stderr)
+            self.assertIn("Manifest declarations only", listing.stdout)
+            self.assertIn(
+                "selected | Selected | false | private_one,private_two,excluded",
+                listing.stdout,
+            )
+            self.assertIn("no backup-enabled schemas", listing.stdout)
+            dry_run = self._run_plugin_command(
+                backup,
+                ["--plugin", "selected", "--dry-run", str(root / "backups")],
+                root,
+            )
+            self.assertEqual(dry_run.returncode, 0, dry_run.stderr)
+            self.assertIn("content=data_only", dry_run.stdout)
+            self.assertNotIn("  - excluded", dry_run.stdout)
+            self.assertNotIn("  - orac_core", dry_run.stdout)
+            self.assertFalse((root / "docker.log").exists())
+            self.assertFalse((root / "backups").exists())
+
+    def test_plugin_selection_rejects_invalid_and_incompatible_options(self) -> None:
+        """Invalid selectors and combinations fail before contacting Docker."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            backup, _ = self._write_plugin_fixture(root)
+            for args in (
+                ["--plugin", "missing"],
+                ["--plugin", "SELECTED"],
+                ["--plugin", "empty"],
+                ["--plugin", "selected", "--skip-db"],
+                ["--plugin", "selected", "--include-vaults"],
+                ["--plugin", "selected", "--export-vaults"],
+                ["--plugin", "selected", "--plugin", "other"],
+                ["--list-plugins"],
+            ):
+                with self.subTest(args=args):
+                    result = self._run_plugin_command(
+                        backup, [*args, str(root / "backups")], root
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+            self.assertFalse((root / "docker.log").exists())
+            self.assertFalse((root / "backups").exists())
+
+    def test_plugin_selection_refuses_core_shared_and_ambiguous_ownership(self) -> None:
+        """Manifest ambiguity or unsafe schema ownership cannot widen selection."""
+        for schema, duplicate_id in (
+            ("orac_core", False),
+            ("private_one", False),
+            ("other_private", True),
+        ):
+            with (
+                self.subTest(schema=schema, duplicate_id=duplicate_id),
+                tempfile.TemporaryDirectory() as temp_dir,
+            ):
+                root = Path(temp_dir)
+                backup, _ = self._write_plugin_fixture(root)
+                manifest_path = root / "plugins" / "other.json"
+                manifest = json.loads(manifest_path.read_text())
+                manifest["database"]["schemas"] = [{"schema_name": schema}]
+                if duplicate_id:
+                    manifest["plugin_id"] = "selected"
+                elif schema == "orac_core":
+                    selected_path = root / "plugins" / "selected.json"
+                    selected = json.loads(selected_path.read_text())
+                    selected["database"]["schemas"].append({"schema_name": schema})
+                    selected_path.write_text(json.dumps(selected))
+                manifest_path.write_text(json.dumps(manifest))
+                result = self._run_plugin_command(
+                    backup,
+                    ["--plugin", "selected", "--dry-run", str(root / "backups")],
+                    root,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse((root / "docker.log").exists())
+
+    def test_plugin_archive_roundtrip_limits_export_import_and_metadata(self) -> None:
+        """A selected archive restores only its schemas and avoids core mutations."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            backup, restore = self._write_plugin_fixture(root)
+            result = self._run_plugin_command(
+                backup, ["--plugin", "selected", str(root / "backups")], root
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            backup_root = self._extract_single_backup_root(
+                root / "backups", root / "extract"
+            )
+            manifest = json.loads((backup_root / "backup_manifest.json").read_text())
+            self.assertEqual(manifest["scope"], "plugin")
+            self.assertEqual(manifest["plugin_id"], "selected")
+            self.assertEqual(manifest["database"]["content"], "data_only")
+            self.assertEqual(
+                manifest["database"]["exported_schemas"], ["private_one", "private_two"]
+            )
+            self.assertEqual(
+                [item["plugin_id"] for item in manifest["plugins"]], ["selected"]
+            )
+            self.assertEqual(
+                manifest["plugins"][0]["database_schemas"],
+                ["private_one", "private_two"],
+            )
+            self.assertNotIn("vaults", manifest)
+            self.assertFalse((backup_root / "config").exists())
+            self.assertFalse((backup_root / "vaults").exists())
+            archive = next((root / "backups").glob("*.tar.gz"))
+            result = self._run_plugin_command(
+                restore, [str(archive)], root, input_text="RECOVER\n"
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertNotIn("exists in this checkout but not in backup", result.stdout)
+            calls = (root / "docker.log").read_text()
+            self.assertIn("expdp", calls)
+            self.assertIn("schemas=PRIVATE_ONE,PRIVATE_TWO", calls)
+            self.assertIn("content=data_only", calls)
+            self.assertIn("impdp", calls)
+            self.assertNotIn("quarantine_plugin_state", calls)
+            self.assertNotIn("from ORAC_CORE.", calls)
+            self.assertIn("Checking target schemas", result.stdout)
+            self.assertIn("Restore validation complete", result.stdout)
+
+    def test_full_backup_keeps_missing_schema_warning_and_all_content(self) -> None:
+        """Default backups retain tolerant discovery and full metadata content."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            backup, _ = self._write_plugin_fixture(root)
+            result = self._run_plugin_command(backup, [str(root / "backups")], root)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn("WARNING: requested schemas missing", result.stdout)
+            backup_root = self._extract_single_backup_root(
+                root / "backups", root / "extract"
+            )
+            manifest = json.loads((backup_root / "backup_manifest.json").read_text())
+            self.assertEqual(manifest["scope"], "full")
+            self.assertEqual(manifest["database"]["content"], "all")
+            self.assertIn("orac_core", manifest["database"]["requested_schemas"])
+            self.assertIn("other_private", manifest["database"]["requested_schemas"])
+            self.assertTrue((backup_root / "config").is_dir())
+            self.assertIn("vaults", manifest)
+            self.assertIn("content=all", (root / "docker.log").read_text())
+
+    def test_plugin_missing_schema_aborts_before_export(self) -> None:
+        """A plugin backup cannot silently omit one selected schema."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            backup, _ = self._write_plugin_fixture(root)
+            result = self._run_plugin_command(
+                backup,
+                ["--plugin", "selected", str(root / "backups")],
+                root,
+                missing=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Selected plugin schemas missing", result.stderr)
+            self.assertNotIn("expdp", (root / "docker.log").read_text())
+            self.assertFalse((root / "backups").exists())
+
+    def test_rows_only_restore_rejects_metadata_replay_before_confirmation(
+        self,
+    ) -> None:
+        """Rows-only metadata cannot imply that schema definitions are present."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            backup, restore = self._write_plugin_fixture(root)
+            result = self._run_plugin_command(
+                backup, ["--plugin", "selected", str(root / "backups")], root
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            archive = next((root / "backups").glob("*.tar.gz"))
+            (root / "docker.log").unlink()
+            for options in ([], ["--dry-run"]):
+                result = self._run_plugin_command(
+                    restore, [*options, str(archive)], root, content="all"
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Rows-only backup requires", result.stderr)
+                self.assertNotIn("Type RECOVER", result.stdout)
+                self.assertFalse((root / "docker.log").exists())
+
+    def test_plugin_restore_preserves_prerequisites_and_selected_warnings(self) -> None:
+        """Plugin restores require installed schemas and valid recovery API objects."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            backup, restore = self._write_plugin_fixture(root)
+            result = self._run_plugin_command(
+                backup, ["--plugin", "selected", str(root / "backups")], root
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            archive = next((root / "backups").glob("*.tar.gz"))
+            selected_path = root / "plugins" / "selected.json"
+            selected = json.loads(selected_path.read_text())
+            selected["version"] = "2"
+            selected_path.write_text(json.dumps(selected))
+            dry_run = self._run_plugin_command(
+                restore, ["--dry-run", str(archive)], root
+            )
+            self.assertEqual(dry_run.returncode, 0, dry_run.stderr)
+            self.assertIn("Plugin selected version mismatch", dry_run.stdout)
+            self.assertNotIn("Plugin other", dry_run.stdout)
+            for missing_schema, missing_api, expected in (
+                (True, False, "Data-only restore requires all exported schemas"),
+                (False, True, "Restore requires valid ORAC_CODE.RESTORE_RECOVERY_API"),
+            ):
+                (root / "docker.log").unlink()
+                result = self._run_plugin_command(
+                    restore,
+                    [str(archive)],
+                    root,
+                    input_text="RECOVER\n",
+                    missing=missing_schema,
+                    missing_api=missing_api,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected, result.stderr)
+                self.assertNotIn("impdp", (root / "docker.log").read_text())
+
+    def test_plugin_restore_rejects_inconsistent_archive_metadata(self) -> None:
+        """A partial archive must consistently identify its selected plugin and scope."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            backup, restore = self._write_plugin_fixture(root)
+            result = self._run_plugin_command(
+                backup, ["--plugin", "selected", str(root / "backups")], root
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            backup_root = self._extract_single_backup_root(
+                root / "backups", root / "extract"
+            )
+            manifest_path = backup_root / "backup_manifest.json"
+            original = json.loads(manifest_path.read_text())
+            (root / "docker.log").unlink()
+            for change in (
+                "plugin_id",
+                "requested_schemas",
+                "database_schemas",
+                "content",
+                "missing_schemas",
+                "core",
+            ):
+                with self.subTest(change=change):
+                    manifest = json.loads(json.dumps(original))
+                    if change == "plugin_id":
+                        manifest["plugin_id"] = "other"
+                    elif change == "database_schemas":
+                        manifest["plugins"][0]["database_schemas"] = ["other_private"]
+                    elif change == "core":
+                        manifest["database"]["exported_schemas"] = ["orac_core"]
+                    else:
+                        manifest["database"][change] = (
+                            "all" if change == "content" else ["other_private"]
+                        )
+                    manifest_path.write_text(json.dumps(manifest))
+                    archive_path = root / "invalid.tar.gz"
+                    with tarfile.open(archive_path, "w:gz") as archive:
+                        archive.add(backup_root, arcname=backup_root.name)
+                    result = self._run_plugin_command(
+                        restore, ["--dry-run", str(archive_path)], root
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertNotIn("Type RECOVER", result.stdout)
+                    self.assertFalse((root / "docker.log").exists())
+
+    def _run_plugin_command(
+        self,
+        script: Path,
+        args: list[str],
+        root: Path,
+        input_text: str = "",
+        missing: bool = False,
+        content: str = "data_only",
+        missing_api: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run a wrapper against an isolated manifest and Docker fixture."""
+        return subprocess.run(
+            ["bash", str(script), *args],
+            cwd=root,
+            input=input_text,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+            env={
+                **os.environ,
+                "ORAC_PYTHON_BIN": sys.executable,
+                "ORAC_DOCKER_BIN": str(root / "docker"),
+                "ORAC_FAKE_DOCKER_LOG": str(root / "docker.log"),
+                "ORAC_FAKE_MISSING": str(int(missing)),
+                "ORAC_FAKE_MISSING_API": str(int(missing_api)),
+                "ORAC_RESTORE_CONTENT": content,
+            },
+        )
+
+    def _write_plugin_fixture(self, root: Path) -> tuple[Path, Path]:
+        """Build an isolated checkout with disabled and excluded declarations."""
+        (root / "bin").mkdir()
+        (root / "plugins").mkdir()
+        for source in (BACKUP_SCRIPT, RECOVERY_SCRIPT):
+            shutil.copy(source, root / "bin" / source.name)
+        for plugin_id, schemas in {
+            "selected": [
+                {"schema_name": "private_one"},
+                {"schema_name": "private_two", "backup": {"include": True}},
+                {"schema_name": "excluded", "backup": {"include": False}},
+            ],
+            "other": [{"schema_name": "other_private"}],
+            "empty": [],
+        }.items():
+            (root / "plugins" / f"{plugin_id}.json").write_text(
+                json.dumps(
+                    {
+                        "plugin_id": plugin_id,
+                        "name": plugin_id.title(),
+                        "version": "1",
+                        "enabled": False,
+                        "database": {"schemas": schemas},
+                    }
+                ),
+                encoding="utf-8",
+            )
+        (root / "docker").write_text(
+            "#!/usr/bin/env bash\n"
+            "# Author: Clive Bostock\n# Date: 14-Nov-2026\n"
+            "# Purpose: Simulate Docker backup and restore boundary calls.\n"
+            "# Usage: docker COMMAND [ARGS]\n"
+            "set -euo pipefail\n"
+            'printf "%s\\n" "$*" >> "$ORAC_FAKE_DOCKER_LOG"\n'
+            'if [[ "$1" == "cp" && "$2" == *:* ]]; then printf fixture > "$3"; fi\n'
+            'if [[ "$*" == *sqlplus* ]]; then\n'
+            "  sql_input=$(cat)\n"
+            '  printf "%s\\n" "$sql_input" >> "$ORAC_FAKE_DOCKER_LOG"\n'
+            '  if [[ "$sql_input" == *"from dba_users"* ]]; then\n'
+            '    printf "private_one\\n"\n'
+            '    if [[ "$ORAC_FAKE_MISSING" == 0 ]]; then printf "private_two\\n"; fi\n'
+            '  elif [[ "$sql_input" == *RESTORE_RECOVERY_API* && "$ORAC_FAKE_MISSING_API" == 0 ]]; then\n'
+            '    printf "PACKAGE\\tVALID\\nPACKAGE BODY\\tVALID\\n"\n'
+            "  fi\nfi\n",
+            encoding="utf-8",
+        )
+        (root / "docker").chmod(0o755)
+        return root / "bin" / BACKUP_SCRIPT.name, root / "bin" / RECOVERY_SCRIPT.name
 
     def _extract_single_backup_root(self, target_dir: Path, extract_dir: Path) -> Path:
         """Extract the only backup archive in a target directory."""
@@ -952,7 +1313,7 @@ class OracBackupRecoveryScriptTests(unittest.TestCase):
                     '        if [[ "${ORAC_FAKE_PLUGIN_INVALID_OBJECTS:-0}" == "1" ]]; then',
                     '          printf "ORAC_HA\\tPACKAGE\\tBROKEN_PLUGIN\\tINVALID\\n"',
                     "        fi",
-                    "      elif [[ \"$sql_input\" == *\"from all_constraints\"* && \"$sql_input\" == *\"validated\"* ]]; then",
+                    '      elif [[ "$sql_input" == *"from all_constraints"* && "$sql_input" == *"validated"* ]]; then',
                     '        if [[ "${ORAC_FAKE_FK_ISSUES:-0}" == "1" ]]; then',
                     '          printf "ORAC_CORE\\tMESSAGES\\tMSG_CONV_FK\\tDISABLED\\tNOT VALIDATED\\n"',
                     "        fi",
